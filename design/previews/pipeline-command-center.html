@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pipeline Command Center Preview</title>
+    <style>
+      :root {
+        --bg: #080b0d;
+        --rail: #0d1114;
+        --panel: #11171b;
+        --panel-2: #141c20;
+        --panel-3: #182126;
+        --line: #26333a;
+        --line-2: #334148;
+        --text: #edf5f2;
+        --muted: #8ca09a;
+        --soft: #b8c8c3;
+        --accent: #46d49b;
+        --accent-2: #6ed6ff;
+        --warn: #f0bc5e;
+        --danger: #ff6c72;
+        --blocked: #f27c56;
+        --radius: 8px;
+        --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(90deg, rgba(70, 212, 155, 0.04) 1px, transparent 1px),
+          linear-gradient(rgba(110, 214, 255, 0.035) 1px, transparent 1px),
+          radial-gradient(circle at 68% 18%, rgba(70, 212, 155, 0.12), transparent 34rem),
+          var(--bg);
+        background-size:
+          44px 44px,
+          44px 44px,
+          auto,
+          auto;
+        color: var(--text);
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      button {
+        border: 1px solid var(--line-2);
+        border-radius: 7px;
+        min-height: 34px;
+        padding: 0 12px;
+        background: #151f23;
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: rgba(70, 212, 155, 0.55);
+      }
+
+      button.primary {
+        border-color: rgba(70, 212, 155, 0.62);
+        background: #1c3b2f;
+        color: #dffcf1;
+      }
+
+      button.cost {
+        border-color: rgba(255, 108, 114, 0.52);
+        background: rgba(255, 108, 114, 0.12);
+        color: #ffd6d8;
+      }
+
+      button.ghost {
+        background: transparent;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 232px minmax(720px, 1fr) 360px;
+        min-height: 100vh;
+      }
+
+      .rail {
+        border-right: 1px solid var(--line);
+        background: rgba(13, 17, 20, 0.94);
+        padding: 18px 14px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 22px;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(70, 212, 155, 0.35);
+        border-radius: 7px;
+        background: #13221d;
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .brand strong,
+      .brand span,
+      .nav-label,
+      .metric span,
+      .stage-kicker,
+      .eyebrow {
+        display: block;
+      }
+
+      .brand strong {
+        font-size: 15px;
+      }
+
+      .brand span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .nav-section {
+        margin-top: 20px;
+      }
+
+      .nav-label {
+        margin: 0 8px 8px;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .nav-button {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        margin-bottom: 6px;
+        border-color: transparent;
+        background: transparent;
+        color: var(--soft);
+        text-align: left;
+      }
+
+      .nav-button.active {
+        border-color: rgba(70, 212, 155, 0.38);
+        background: rgba(70, 212, 155, 0.08);
+        color: var(--text);
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        margin-top: 5px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+
+      .dot.ready {
+        background: var(--accent);
+      }
+
+      .dot.running {
+        background: var(--accent-2);
+      }
+
+      .dot.warn {
+        background: var(--warn);
+      }
+
+      .dot.blocked {
+        background: var(--blocked);
+      }
+
+      .main {
+        min-width: 0;
+        padding: 18px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 16px;
+      }
+
+      .eyebrow {
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        margin-top: 5px;
+        font-size: 26px;
+        line-height: 1.15;
+      }
+
+      .subline {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .chip,
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 26px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 9px;
+        color: var(--soft);
+        background: rgba(20, 28, 32, 0.72);
+        font-size: 12px;
+      }
+
+      .chip.ready,
+      .status.ready {
+        border-color: rgba(70, 212, 155, 0.4);
+        color: #d8fbef;
+      }
+
+      .chip.warn,
+      .status.warn {
+        border-color: rgba(240, 188, 94, 0.38);
+        color: #ffe4ac;
+      }
+
+      .chip.blocked,
+      .status.blocked {
+        border-color: rgba(242, 124, 86, 0.42);
+        color: #ffd8cc;
+      }
+
+      .overview {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(17, 23, 27, 0.86);
+        padding: 12px;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 22px;
+      }
+
+      .board {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(13, 17, 20, 0.72);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .board-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+        padding: 12px 14px;
+        background: rgba(20, 28, 32, 0.72);
+      }
+
+      .board-head h2 {
+        font-size: 15px;
+      }
+
+      .board-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1px;
+        background: var(--line);
+      }
+
+      .stage {
+        min-height: 188px;
+        border: 0;
+        padding: 14px;
+        background: var(--panel);
+        text-align: left;
+      }
+
+      .stage.active {
+        outline: 2px solid rgba(70, 212, 155, 0.7);
+        outline-offset: -2px;
+        background: #13211d;
+      }
+
+      .stage-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .stage-kicker {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .stage h3 {
+        margin-top: 5px;
+        font-size: 17px;
+      }
+
+      .stage p {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .stage-progress {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 4px;
+        margin-top: 14px;
+      }
+
+      .bar {
+        height: 5px;
+        border-radius: 999px;
+        background: #26333a;
+      }
+
+      .bar.on {
+        background: var(--accent);
+      }
+
+      .bar.warn {
+        background: var(--warn);
+      }
+
+      .bar.blocked {
+        background: var(--blocked);
+      }
+
+      .stage-foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 14px;
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .inspector {
+        border-left: 1px solid var(--line);
+        background: rgba(13, 17, 20, 0.95);
+        padding: 18px 14px;
+      }
+
+      .inspector-panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        overflow: hidden;
+      }
+
+      .inspector-head {
+        padding: 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel-2);
+      }
+
+      .inspector-head h2 {
+        margin-top: 5px;
+        font-size: 20px;
+      }
+
+      .inspector-body {
+        padding: 14px;
+      }
+
+      .detail-list {
+        display: grid;
+        gap: 9px;
+        margin: 12px 0 16px;
+      }
+
+      .detail {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        gap: 10px;
+        border-bottom: 1px solid rgba(38, 51, 58, 0.8);
+        padding-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .detail span {
+        color: var(--muted);
+      }
+
+      .detail strong {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .blockers {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .blocker {
+        border: 1px solid rgba(242, 124, 86, 0.28);
+        border-radius: 7px;
+        background: rgba(242, 124, 86, 0.08);
+        padding: 10px;
+        color: #ffd9cc;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .actions {
+        display: grid;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .timeline {
+        margin-top: 14px;
+        border-top: 1px solid var(--line);
+        padding-top: 14px;
+      }
+
+      .shot-row {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr) 54px;
+        gap: 8px;
+        align-items: center;
+        min-height: 34px;
+        border-bottom: 1px solid rgba(38, 51, 58, 0.68);
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .shot-row strong {
+        color: var(--text);
+      }
+
+      @media (max-width: 1180px) {
+        .app {
+          grid-template-columns: 76px minmax(560px, 1fr) 320px;
+        }
+
+        .brand div:not(.brand-mark),
+        .nav-label,
+        .nav-button span:first-child {
+          display: none;
+        }
+
+        .overview {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .board-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="rail" aria-label="制作导航">
+        <div class="brand">
+          <div class="brand-mark">PX</div>
+          <div>
+            <strong>Pixel Toys</strong>
+            <span>Command Center</span>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-label">Project</span>
+          <button class="nav-button" type="button"><span>项目库</span><span class="dot ready"></span></button>
+          <button class="nav-button active" type="button"><span>总览</span><span class="dot running"></span></button>
+          <button class="nav-button" type="button"><span>剧本</span><span class="dot ready"></span></button>
+          <button class="nav-button" type="button"><span>资产</span><span class="dot warn"></span></button>
+          <button class="nav-button" type="button"><span>Production Board</span><span class="dot ready"></span></button>
+          <button class="nav-button" type="button"><span>视频片段</span><span class="dot blocked"></span></button>
+          <button class="nav-button" type="button"><span>成片组装</span><span class="dot"></span></button>
+        </div>
+
+        <div class="nav-section">
+          <span class="nav-label">Tools</span>
+          <button class="nav-button" type="button"><span>Canvas</span><span>↗</span></button>
+          <button class="nav-button" type="button"><span>日志</span><span>12</span></button>
+          <button class="nav-button" type="button"><span>管理后台</span><span>⌘</span></button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <span class="eyebrow">Episode Unit · 70-90s</span>
+            <h1>《裂隙回声》E04 · Pipeline Command Center</h1>
+            <p class="subline">当前目标：完成 72-88 秒短剧单元，视频片段全部落地为服务器本地 MP4 后再进入组装。</p>
+          </div>
+          <div class="top-actions">
+            <button class="ghost" type="button">保存草稿</button>
+            <button class="primary" type="button">下一步：修复视频阻塞</button>
+          </div>
+        </header>
+
+        <section class="chips" aria-label="项目状态摘要">
+          <span class="chip ready">剧本已保存</span>
+          <span class="chip warn">2 个资产需确认</span>
+          <span class="chip ready">Production Board 9/9</span>
+          <span class="chip blocked">3 个视频缺本地 MP4</span>
+          <span class="chip">Assembly 未解锁</span>
+        </section>
+
+        <section class="overview" aria-label="关键指标">
+          <div class="metric"><span>计划时长</span><strong>82s</strong></div>
+          <div class="metric"><span>镜头段落</span><strong>7</strong></div>
+          <div class="metric"><span>平均段长</span><strong>11.7s</strong></div>
+          <div class="metric"><span>可组装片段</span><strong>4/7</strong></div>
+        </section>
+
+        <section class="board" aria-label="生产阶段">
+          <div class="board-head">
+            <div>
+              <span class="eyebrow">Production Pipeline</span>
+              <h2>阶段状态板</h2>
+            </div>
+            <button class="ghost" type="button">刷新状态</button>
+          </div>
+
+          <div class="board-grid">
+            <button class="stage" type="button" data-stage="script">
+              <div class="stage-top">
+                <div>
+                  <span class="stage-kicker">01 · Source</span>
+                  <h3>剧本</h3>
+                </div>
+                <span class="status ready">Ready</span>
+              </div>
+              <p>对白语言、标题和脚本正文已保存。下一轮变更会重新计算资产和镜头。</p>
+              <div class="stage-progress"><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i></div>
+              <div class="stage-foot"><span>3,842 字</span><strong>英文对白</strong></div>
+            </button>
+
+            <button class="stage" type="button" data-stage="parse">
+              <div class="stage-top">
+                <div>
+                  <span class="stage-kicker">02 · Analysis</span>
+                  <h3>资产解析</h3>
+                </div>
+                <span class="status warn">Review</span>
+              </div>
+              <p>人物、场景、道具已拆分。系统发现 2 个可能被误归类的资产。</p>
+              <div class="stage-progress"><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar warn"></i><i class="bar warn"></i><i class="bar"></i></div>
+              <div class="stage-foot"><span>8 人物 · 5 场景 · 13 道具</span><strong>2 待确认</strong></div>
+            </button>
+
+            <button class="stage active" type="button" data-stage="assets">
+              <div class="stage-top">
+                <div>
+                  <span class="stage-kicker">03 · References</span>
+                  <h3>资产图</h3>
+                </div>
+                <span class="status warn">Partial</span>
+              </div>
+              <p>核心人物和主场景可用。缺失插入物会影响部分近景镜头提示词。</p>
+              <div class="stage-progress"><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar warn"></i><i class="bar"></i></div>
+              <div class="stage-foot"><span>24/28 已就绪</span><strong>4 缺失</strong></div>
+            </button>
+
+            <button class="stage" type="button" data-stage="board">
+              <div class="stage-top">
+                <div>
+                  <span class="stage-kicker">04 · Direction</span>
+                  <h3>Production Board</h3>
+                </div>
+                <span class="status ready">Ready</span>
+              </div>
+              <p>整张 16:9，内部九宫格为 9:16 竖屏分镜。用于构图、调度和节奏。</p>
+              <div class="stage-progress"><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i></div>
+              <div class="stage-foot"><span>9/9 panels</span><strong>已绑定</strong></div>
+            </button>
+
+            <button class="stage" type="button" data-stage="video">
+              <div class="stage-top">
+                <div>
+                  <span class="stage-kicker">05 · Generation</span>
+                  <h3>视频片段</h3>
+                </div>
+                <span class="status blocked">Blocked</span>
+              </div>
+              <p>7 个镜头已规划。3 个片段仍缺本地 MP4，不能进入服务器成片组装。</p>
+              <div class="stage-progress"><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar on"></i><i class="bar blocked"></i><i class="bar blocked"></i></div>
+              <div class="stage-foot"><span>4/7 local MP4</span><strong>3 阻塞</strong></div>
+            </button>
+
+            <button class="stage" type="button" data-stage="assembly">
+              <div class="stage-top">
+                <div>
+                  <span class="stage-kicker">06 · Final</span>
+                  <h3>成片组装</h3>
+                </div>
+                <span class="status">Locked</span>
+              </div>
+              <p>等待所有视频片段通过服务器本地 MP4 验证后，生成 assembly manifest。</p>
+              <div class="stage-progress"><i class="bar"></i><i class="bar"></i><i class="bar"></i><i class="bar"></i><i class="bar"></i><i class="bar"></i></div>
+              <div class="stage-foot"><span>未解锁</span><strong>需要 7/7</strong></div>
+            </button>
+          </div>
+        </section>
+      </main>
+
+      <aside class="inspector" aria-label="阶段详情">
+        <section class="inspector-panel">
+          <header class="inspector-head">
+            <span class="eyebrow" id="inspectorEyebrow">03 · References</span>
+            <h2 id="inspectorTitle">资产图</h2>
+            <p class="subline" id="inspectorSummary">核心参考图可用，但仍有缺失资产会影响镜头级提示词。</p>
+          </header>
+
+          <div class="inspector-body">
+            <span class="status warn" id="inspectorStatus">Partial · 24/28</span>
+            <div class="detail-list" id="detailList"></div>
+            <h3>阻塞项</h3>
+            <div class="blockers" id="blockers"></div>
+            <div class="actions" id="inspectorActions"></div>
+
+            <div class="timeline">
+              <span class="eyebrow">Shot Readiness</span>
+              <div class="shot-row"><strong>SH01</strong><span>雨夜外景 · 推轨进入巷口</span><span>Ready</span></div>
+              <div class="shot-row"><strong>SH02</strong><span>门把手插入镜头缺道具</span><span>Warn</span></div>
+              <div class="shot-row"><strong>SH03</strong><span>人物反应 · 可用尾帧</span><span>Ready</span></div>
+              <div class="shot-row"><strong>SH04</strong><span>硬切到室内 · 不使用尾帧</span><span>Ready</span></div>
+              <div class="shot-row"><strong>SH05</strong><span>视频生成失败，需重试</span><span>Blocked</span></div>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <script>
+      const stages = {
+        script: {
+          eyebrow: "01 · Source",
+          title: "剧本",
+          summary: "脚本已保存，当前对白语言会影响后续提示词和字幕草稿。",
+          status: "Ready · saved",
+          statusClass: "ready",
+          details: [
+            ["文件", "projects/rift_hollow_e04/script.md"],
+            ["对白", "英文对白"],
+            ["上次保存", "2026-07-01 15:42"],
+            ["下游影响", "资产解析、镜头规划、字幕草稿"],
+          ],
+          blockers: ["无阻塞。修改剧本后需重新生成资产解析和视频配置。"],
+          actions: [
+            ["编辑剧本", "primary"],
+            ["重新生成分镜草稿", "ghost"],
+          ],
+        },
+        parse: {
+          eyebrow: "02 · Analysis",
+          title: "资产解析",
+          summary: "检测到两个高风险分类，需要在生成资产图前确认。",
+          status: "Review · 2 conflicts",
+          statusClass: "warn",
+          details: [
+            ["人物", "8"],
+            ["场景", "5"],
+            ["道具", "13"],
+            ["风险", "门把手、霓虹招牌疑似被归为人物"],
+          ],
+          blockers: ["确认非人物资产，避免视频提示词引用错误角色。"],
+          actions: [
+            ["确认解析结果", "primary"],
+            ["重新提取资产", "ghost"],
+          ],
+        },
+        assets: {
+          eyebrow: "03 · References",
+          title: "资产图",
+          summary: "核心参考图可用，但仍有缺失资产会影响镜头级提示词。",
+          status: "Partial · 24/28",
+          statusClass: "warn",
+          details: [
+            ["人物图", "8/8"],
+            ["场景图", "5/5"],
+            ["道具图", "9/13"],
+            ["缺失", "钥匙、门把手、旧磁带、雨水反光地面"],
+          ],
+          blockers: ["4 个道具缺图。若进入视频配置，这些镜头会降级为无道具参考。"],
+          actions: [
+            ["生成缺失资产图", "cost"],
+            ["上传替代资产", "ghost"],
+            ["查看资产库", "ghost"],
+          ],
+        },
+        board: {
+          eyebrow: "04 · Direction",
+          title: "Production Board",
+          summary: "九宫格分镜已就绪，作为视频镜头构图和调度参考。",
+          status: "Ready · 9/9",
+          statusClass: "ready",
+          details: [
+            ["画布比例", "16:9 sheet"],
+            ["分格比例", "9:16 vertical panels"],
+            ["用途", "构图、blocking、camera direction、shot rhythm"],
+            ["限制", "不复制手绘风格，不替代角色/场景资产"],
+          ],
+          blockers: ["无阻塞。视频提示词可使用 Production Board 作为结构参考。"],
+          actions: [
+            ["查看 Production Board", "primary"],
+            ["重新生成", "cost"],
+          ],
+        },
+        video: {
+          eyebrow: "05 · Generation",
+          title: "视频片段",
+          summary: "镜头规划已完成，但缺少 3 个服务器本地 MP4，不能进入成片组装。",
+          status: "Blocked · 4/7 local MP4",
+          statusClass: "blocked",
+          details: [
+            ["计划总长", "82s"],
+            ["镜头数", "7"],
+            ["最长单段", "15s"],
+            ["尾帧策略", "仅 2 个直接动作连续镜头使用"],
+          ],
+          blockers: ["SH05 生成失败。SH06、SH07 只有 provider URL，尚未下载到服务器本地。"],
+          actions: [
+            ["进入视频生成", "primary"],
+            ["下载缺失 MP4", "ghost"],
+            ["重新生成失败片段", "cost"],
+          ],
+        },
+        assembly: {
+          eyebrow: "06 · Final",
+          title: "成片组装",
+          summary: "组装器锁定中。必须等所有片段通过本地 MP4 验证。",
+          status: "Locked · waiting clips",
+          statusClass: "",
+          details: [
+            ["需要片段", "7/7 local MP4"],
+            ["当前可用", "4/7"],
+            ["字幕", "可从配置生成 SRT/ASS 草稿"],
+            ["转场", "首版默认硬切，场景边界后续启用"],
+          ],
+          blockers: ["缺少完整本地 MP4 前，不允许生成 assembly_manifest.json。"],
+          actions: [
+            ["查看组装条件", "primary"],
+            ["导出缺失清单", "ghost"],
+          ],
+        },
+      };
+
+      const stageButtons = document.querySelectorAll(".stage");
+      const title = document.getElementById("inspectorTitle");
+      const eyebrow = document.getElementById("inspectorEyebrow");
+      const summary = document.getElementById("inspectorSummary");
+      const status = document.getElementById("inspectorStatus");
+      const detailList = document.getElementById("detailList");
+      const blockers = document.getElementById("blockers");
+      const actions = document.getElementById("inspectorActions");
+
+      function renderStage(key) {
+        const stage = stages[key];
+        stageButtons.forEach((button) => button.classList.toggle("active", button.dataset.stage === key));
+        eyebrow.textContent = stage.eyebrow;
+        title.textContent = stage.title;
+        summary.textContent = stage.summary;
+        status.textContent = stage.status;
+        status.className = `status ${stage.statusClass || ""}`.trim();
+        detailList.innerHTML = stage.details
+          .map(([label, value]) => `<div class="detail"><span>${label}</span><strong>${value}</strong></div>`)
+          .join("");
+        blockers.innerHTML = stage.blockers.map((item) => `<div class="blocker">${item}</div>`).join("");
+        actions.innerHTML = stage.actions
+          .map(([label, type]) => `<button class="${type}" type="button">${label}</button>`)
+          .join("");
+      }
+
+      stageButtons.forEach((button) => {
+        button.addEventListener("click", () => renderStage(button.dataset.stage));
+      });
+
+      renderStage("assets");
+    </script>
+  </body>
+</html>

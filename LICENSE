@@ -1,0 +1,36 @@
+Pixel Toys — Proprietary Software License
+Copyright (c) 2026 Pixel Toys. All rights reserved.
+
+This software and its associated source code, design, architecture, prompt
+engineering, pipeline logic, generated assets, documentation, and all related
+materials (collectively, the "Software") are the exclusive and proprietary
+property of the copyright holder.
+
+NO LICENSE IS GRANTED. Except where a separate written agreement signed by the
+copyright holder states otherwise, you are NOT permitted to:
+
+  1. Copy, reproduce, or distribute the Software or any portion of it.
+  2. Modify, adapt, translate, or create derivative works from the Software.
+  3. Reverse engineer, decompile, disassemble, or otherwise attempt to derive
+     the source code, architecture, design, or internal logic of the Software,
+     including by analysis of any client-side code served to a browser.
+  4. Use the Software, or any design, technique, prompt, or workflow embodied
+     in it, to build, train, or operate a competing product or service.
+  5. Remove, obscure, or alter any proprietary or copyright notice.
+  6. Access, scrape, or harvest any non-public endpoint, data, or asset of the
+     Software through automated or unauthorized means.
+
+Any client-side code (HTML, CSS, JavaScript) delivered to a browser is provided
+solely to operate the hosted service for authorized users. Its delivery does
+not constitute publication, open-sourcing, or any grant of rights, and the
+prohibitions above apply to it in full.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
+
+Unauthorized use, reproduction, or reverse engineering may result in civil and
+criminal penalties and will be prosecuted to the maximum extent permitted by
+law.
+
+For licensing inquiries, contact the copyright holder.

@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pixel Toys Next Generation Directions</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #0b0b0d;
+        font-family: "SF Pro Display", "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+      }
+      .sheet {
+        width: 1800px;
+        min-height: 2200px;
+        padding: 44px;
+        background: #0b0b0d;
+        color: #f7f4ed;
+      }
+      .intro {
+        display: grid;
+        grid-template-columns: 1fr 520px;
+        gap: 44px;
+        margin-bottom: 34px;
+      }
+      .intro h1 {
+        margin: 0;
+        max-width: 960px;
+        font-size: 82px;
+        line-height: .88;
+        letter-spacing: -.075em;
+      }
+      .intro p {
+        margin: 0;
+        color: rgba(247, 244, 237, .64);
+        font-size: 22px;
+        line-height: 1.42;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 24px;
+      }
+      .card {
+        position: relative;
+        height: 350px;
+        overflow: hidden;
+        border-radius: 34px;
+        background: var(--bg);
+        color: var(--ink);
+        border: 1px solid rgb(255 255 255 / .12);
+      }
+      .card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: var(--fx, none);
+        pointer-events: none;
+      }
+      .meta {
+        position: absolute;
+        left: 28px;
+        right: 28px;
+        top: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        z-index: 2;
+      }
+      .num {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--chip);
+        color: var(--chip-ink);
+        font-weight: 900;
+        font-size: 13px;
+      }
+      .mode {
+        min-height: 30px;
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: rgb(255 255 255 / .14);
+        color: currentColor;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .04em;
+      }
+      .content {
+        position: absolute;
+        left: 28px;
+        right: 28px;
+        bottom: 24px;
+        z-index: 2;
+      }
+      h2 {
+        margin: 0;
+        max-width: 590px;
+        font-size: 42px;
+        line-height: .92;
+        letter-spacing: -.055em;
+      }
+      .desc {
+        margin: 14px 0 0;
+        max-width: 620px;
+        color: color-mix(in srgb, currentColor 68%, transparent);
+        font-size: 15px;
+        line-height: 1.46;
+      }
+      .ui {
+        position: absolute;
+        z-index: 1;
+      }
+      .glass {
+        --bg: radial-gradient(circle at 78% 12%, #d7f2ff 0 160px, transparent 260px), linear-gradient(135deg, #eef7ff, #c8d5e6 58%, #f8f2ea);
+        --ink: #111318;
+        --chip: #111318;
+        --chip-ink: #f8f2ea;
+      }
+      .glass .ui {
+        right: 36px;
+        top: 84px;
+        width: 300px;
+        height: 146px;
+        border-radius: 32px;
+        border: 1px solid rgb(255 255 255 / .72);
+        background: linear-gradient(135deg, rgb(255 255 255 / .54), rgb(255 255 255 / .16));
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / .7), 0 30px 90px rgb(56 72 92 / .22);
+        backdrop-filter: blur(28px);
+      }
+      .gallery {
+        --bg: #f7f0dc;
+        --ink: #16130f;
+        --chip: #ff4b2b;
+        --chip-ink: #fff9ef;
+      }
+      .gallery .ui {
+        right: 32px;
+        top: 70px;
+        display: grid;
+        grid-template-columns: repeat(3, 128px);
+        gap: 12px;
+        transform: rotate(-2deg);
+      }
+      .gallery .ui i {
+        display: block;
+        height: 164px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #16130f, #625f56);
+      }
+      .ambient {
+        --bg: #101012;
+        --ink: #f5f0e6;
+        --chip: #f5f0e6;
+        --chip-ink: #101012;
+        --fx: radial-gradient(circle at 70% 40%, rgb(127 84 255 / .42), transparent 220px), radial-gradient(circle at 34% 20%, rgb(0 210 255 / .28), transparent 240px);
+      }
+      .ambient .ui {
+        right: 42px;
+        top: 74px;
+        width: 360px;
+        height: 180px;
+        border-radius: 50%;
+        border: 1px solid rgb(255 255 255 / .2);
+        transform: skewX(-10deg);
+      }
+      .split {
+        --bg: linear-gradient(90deg, #f8f8f4 0 52%, #111 52%);
+        --ink: #111;
+        --chip: #111;
+        --chip-ink: #fff;
+      }
+      .split .content { color: #111; }
+      .split .mode { background: #fff; }
+      .split .ui {
+        right: 42px;
+        top: 86px;
+        width: 280px;
+        height: 166px;
+        border: 2px solid #fff;
+        background: repeating-linear-gradient(90deg, #fff 0 14px, #111 14px 28px);
+      }
+      .spatial {
+        --bg: #07070a;
+        --ink: #f6f0e7;
+        --chip: #f6f0e7;
+        --chip-ink: #07070a;
+        --fx: radial-gradient(circle at 66% 42%, rgb(255 255 255 / .22), transparent 180px);
+      }
+      .spatial .ui {
+        right: 34px;
+        top: 70px;
+        width: 420px;
+        height: 220px;
+        perspective: 700px;
+      }
+      .spatial .ui i {
+        position: absolute;
+        inset: 20px;
+        display: block;
+        border: 1px solid rgb(255 255 255 / .25);
+        border-radius: 22px;
+        transform: rotateY(-28deg) rotateX(16deg);
+        background: rgb(255 255 255 / .06);
+      }
+      .softos {
+        --bg: #eaf5ee;
+        --ink: #0f241a;
+        --chip: #0f241a;
+        --chip-ink: #eaf5ee;
+      }
+      .softos .ui {
+        right: 40px;
+        top: 76px;
+        width: 360px;
+        display: grid;
+        gap: 10px;
+      }
+      .softos .ui i {
+        display: block;
+        height: 38px;
+        border-radius: 18px;
+        background: #ffffff;
+        box-shadow: 0 12px 32px rgb(35 66 48 / .12);
+      }
+      .noir {
+        --bg: #0e0d0b;
+        --ink: #f4eadb;
+        --chip: #c9ff3d;
+        --chip-ink: #0e0d0b;
+      }
+      .noir .ui {
+        right: 38px;
+        top: 82px;
+        width: 380px;
+        height: 170px;
+        background: linear-gradient(120deg, transparent 0 44%, #c9ff3d 44% 50%, transparent 50%), #181713;
+        border: 1px solid #c9ff3d;
+      }
+      .clay {
+        --bg: #d9cdc0;
+        --ink: #1e1b18;
+        --chip: #1e1b18;
+        --chip-ink: #f8efe4;
+      }
+      .clay .ui {
+        right: 34px;
+        top: 74px;
+        width: 340px;
+        height: 190px;
+        border-radius: 36px;
+        background: #ebe4da;
+        box-shadow: 14px 14px 0 #1e1b18;
+      }
+      .type {
+        --bg: #f6f4ef;
+        --ink: #111;
+        --chip: #111;
+        --chip-ink: #f6f4ef;
+      }
+      .type .ui {
+        right: 30px;
+        top: 62px;
+        color: #111;
+        font-size: 104px;
+        font-weight: 950;
+        letter-spacing: -.09em;
+        line-height: .76;
+      }
+      .type .ui::before { content: "SCENE\\A FLOW"; white-space: pre; }
+      .motion {
+        --bg: #060816;
+        --ink: #f4f8ff;
+        --chip: #ff4d80;
+        --chip-ink: #fff;
+        --fx: linear-gradient(115deg, transparent 0 44%, rgb(255 77 128 / .65) 44% 46%, transparent 46% 100%);
+      }
+      .motion .ui {
+        right: 34px;
+        top: 70px;
+        width: 410px;
+        height: 210px;
+      }
+      .motion .ui i {
+        position: absolute;
+        display: block;
+        width: 96px;
+        height: 96px;
+        border-radius: 26px;
+        background: rgb(255 255 255 / .1);
+        border: 1px solid rgb(255 255 255 / .18);
+      }
+      .motion .ui i:nth-child(1) { left: 0; top: 76px; }
+      .motion .ui i:nth-child(2) { left: 118px; top: 38px; }
+      .motion .ui i:nth-child(3) { left: 236px; top: 0; background: #ff4d80; }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">
+      <section class="intro">
+        <h1>Pixel Toys visual reset, not another dashboard skin.</h1>
+        <p>这 10 个方向抛开旧控制台、旧深蓝玻璃、旧后台卡片。重点是当代站点级设计语言、动效组织、交互概念和产品记忆点。</p>
+      </section>
+      <section class="grid">
+        <article class="card glass">
+          <div class="meta"><span class="num">01</span><span class="mode">fluid material</span></div><div class="ui"></div>
+          <div class="content"><h2>Liquid Production Surface</h2><p class="desc">像 Apple 空间材质和创作面板结合，流程漂浮在半透明层级里。动效是面板折叠、流体聚焦、局部放大。</p></div>
+        </article>
+        <article class="card gallery">
+          <div class="meta"><span class="num">02</span><span class="mode">editorial gallery</span></div><div class="ui"><i></i><i></i><i></i></div>
+          <div class="content"><h2>Gallery Production Wall</h2><p class="desc">把项目当成展览墙，不像后台。镜头、资产、视频是作品卡片，交互是横向策展和局部展开。</p></div>
+        </article>
+        <article class="card ambient">
+          <div class="meta"><span class="num">03</span><span class="mode">ambient ai</span></div><div class="ui"></div>
+          <div class="content"><h2>Ambient Generation Field</h2><p class="desc">生成任务不是列表，而是一个有呼吸感的场。节点随状态移动，失败和等待用空间距离表达。</p></div>
+        </article>
+        <article class="card split">
+          <div class="meta"><span class="num">04</span><span class="mode">split identity</span></div><div class="ui"></div>
+          <div class="content"><h2>Split Screen Studio OS</h2><p class="desc">左侧白色决策区，右侧黑色预览区。强对比、少装饰，像高端创意软件官网进入产品态。</p></div>
+        </article>
+        <article class="card spatial">
+          <div class="meta"><span class="num">05</span><span class="mode">spatial stack</span></div><div class="ui"><i></i></div>
+          <div class="content"><h2>Spatial Workflow Stack</h2><p class="desc">所有流程以 3D 层叠卡片存在，不是平面表格。动效是镜头穿梭、层级拉近、任务压入队列。</p></div>
+        </article>
+        <article class="card softos">
+          <div class="meta"><span class="num">06</span><span class="mode">soft operating</span></div><div class="ui"><i></i><i></i><i></i><i></i></div>
+          <div class="content"><h2>Soft Creator Operating System</h2><p class="desc">柔和、低压、现代生产力工具感。适合长期使用，靠排版、微动效和轻量状态建立高级感。</p></div>
+        </article>
+        <article class="card noir">
+          <div class="meta"><span class="num">07</span><span class="mode">neo noir</span></div><div class="ui"></div>
+          <div class="content"><h2>Neo Noir Film Machine</h2><p class="desc">不是老式剪辑台，而是电影品牌站里的工具界面。黑、荧光黄、硬切场景转场，动效像片头。</p></div>
+        </article>
+        <article class="card clay">
+          <div class="meta"><span class="num">08</span><span class="mode">tactile ui</span></div><div class="ui"></div>
+          <div class="content"><h2>Tactile Object Interface</h2><p class="desc">界面像可触摸物件。按钮、流程、镜头都是实体块，动效是推、压、吸附，避免传统软件味。</p></div>
+        </article>
+        <article class="card type">
+          <div class="meta"><span class="num">09</span><span class="mode">kinetic type</span></div><div class="ui"></div>
+          <div class="content"><h2>Kinetic Type Workflow</h2><p class="desc">用文字本身做界面。流程切换时大字重组，状态像字幕轨，适合强 CSSDA 视觉表达。</p></div>
+        </article>
+        <article class="card motion">
+          <div class="meta"><span class="num">10</span><span class="mode">motion first</span></div><div class="ui"><i></i><i></i><i></i></div>
+          <div class="content"><h2>Motion First Production Map</h2><p class="desc">先定义动效，再长出界面。所有模块围绕生成中的状态迁移，适合做成有记忆点的产品首页。</p></div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

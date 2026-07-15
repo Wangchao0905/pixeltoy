@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pipeline Command Center</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        background: #03060b;
+        color: #edf6ff;
+        font-family: "SF Pro Text", "PingFang SC", Inter, system-ui, sans-serif;
+      }
+      .stack { display: grid; gap: 28px; }
+      .artboard {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+        border-radius: 0;
+        background:
+          radial-gradient(circle at 18% 0%, rgba(43, 141, 255, .26), transparent 460px),
+          radial-gradient(circle at 88% 14%, rgba(255, 62, 106, .14), transparent 380px),
+          linear-gradient(135deg, #040811, #081629 52%, #03080f);
+        border: 1px solid rgba(136, 190, 255, .18);
+      }
+      .artboard::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: .24;
+        background-image:
+          linear-gradient(rgba(135, 189, 255, .13) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(135, 189, 255, .13) 1px, transparent 1px);
+        background-size: 38px 38px;
+      }
+      .artboard::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(180deg, transparent 0 62%, rgba(0, 0, 0, .18));
+      }
+      .chrome {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-rows: 82px minmax(0, 1fr);
+        height: 100%;
+        padding: 24px;
+        gap: 16px;
+      }
+      .topbar {
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 20px;
+        padding: 0 20px;
+        border-radius: 22px;
+        border: 1px solid rgba(143, 197, 255, .18);
+        background: rgba(7, 15, 29, .72);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 24px 70px rgba(0,0,0,.28);
+        backdrop-filter: blur(20px);
+      }
+      .logo {
+        width: 176px;
+        height: 31px;
+        background: url("../../public/pixel-toys-logo.png") center / contain no-repeat;
+      }
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .step {
+        position: relative;
+        height: 44px;
+        overflow: hidden;
+        border-radius: 13px;
+        border: 1px solid rgba(139, 194, 255, .14);
+        background: rgba(255,255,255,.045);
+        color: rgba(223, 234, 251, .68);
+        font-size: 11px;
+        font-weight: 760;
+      }
+      .step span {
+        position: absolute;
+        left: 12px;
+        top: 8px;
+      }
+      .step b {
+        position: absolute;
+        right: 10px;
+        bottom: 7px;
+        font-size: 10px;
+        color: rgba(192, 212, 238, .52);
+      }
+      .step.active {
+        border-color: rgba(72, 220, 255, .62);
+        background: linear-gradient(180deg, rgba(72, 203, 255, .24), rgba(255,255,255,.045));
+        color: #f5fcff;
+        box-shadow: 0 0 28px rgba(47, 185, 255, .16);
+      }
+      .actions { display: flex; gap: 10px; }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 16px;
+        border-radius: 13px;
+        border: 1px solid rgba(154, 201, 255, .22);
+        background: rgba(255,255,255,.055);
+        color: #edf6ff;
+        font-size: 13px;
+        font-weight: 780;
+      }
+      .btn.primary {
+        border-color: rgba(117, 213, 255, .72);
+        background: linear-gradient(180deg, #82dcff, #2f97ff);
+        color: #021425;
+        box-shadow: 0 18px 40px rgba(47, 151, 255, .34);
+      }
+      .workspace {
+        display: grid;
+        grid-template-columns: 310px minmax(0, 1fr) 360px;
+        gap: 16px;
+        min-height: 0;
+      }
+      .panel {
+        overflow: hidden;
+        border-radius: 22px;
+        border: 1px solid rgba(143, 197, 255, .14);
+        background: rgba(7, 16, 30, .76);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.055);
+        backdrop-filter: blur(20px);
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 62px;
+        padding: 0 18px;
+        border-bottom: 1px solid rgba(143, 197, 255, .09);
+      }
+      h2, h3, p { margin: 0; }
+      h2 { font-size: 28px; letter-spacing: -.02em; }
+      h3 { font-size: 15px; }
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        height: 26px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.06);
+        color: rgba(220, 233, 250, .72);
+        font-size: 11px;
+        font-weight: 720;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #58f0b0;
+        box-shadow: 0 0 16px rgba(88, 240, 176, .62);
+      }
+      .list { padding: 12px; display: grid; gap: 10px; }
+      .project, .control, .shot, .log {
+        border-radius: 16px;
+        border: 1px solid rgba(145, 196, 255, .1);
+        background: rgba(255,255,255,.045);
+      }
+      .project { padding: 14px; }
+      .project strong, .shot strong, .log strong { display: block; font-size: 13px; }
+      .project span, .shot span, .log span {
+        display: block;
+        margin-top: 6px;
+        color: rgba(195, 214, 238, .58);
+        font-size: 11px;
+      }
+      .project.selected {
+        border-color: rgba(80, 219, 255, .48);
+        background: rgba(80, 190, 255, .13);
+      }
+      .center {
+        display: grid;
+        grid-template-rows: 210px minmax(0, 1fr);
+        gap: 16px;
+      }
+      .brief { padding: 20px; }
+      .brief .tag { margin-bottom: 13px; }
+      .brief p {
+        max-width: 840px;
+        margin-top: 12px;
+        color: rgba(215, 229, 247, .68);
+        font-size: 14px;
+        line-height: 1.68;
+      }
+      .scene-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        padding: 12px;
+      }
+      .shot { overflow: hidden; }
+      .thumb {
+        height: 118px;
+        margin: 10px;
+        border-radius: 14px;
+        background:
+          radial-gradient(circle at 70% 26%, rgba(255, 68, 106, .28), transparent 36%),
+          linear-gradient(135deg, rgba(66, 197, 255, .28), transparent),
+          #101b2b;
+      }
+      .shot .meta { padding: 0 12px 13px; }
+      .side {
+        display: grid;
+        grid-template-rows: 1fr auto;
+      }
+      .controls { display: grid; gap: 10px; padding: 14px; }
+      .control {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        min-height: 48px;
+        padding: 0 13px;
+        color: rgba(220, 234, 250, .72);
+        font-size: 12px;
+      }
+      .control b { color: #f4fbff; }
+      .submit { margin: 14px; min-height: 58px; }
+      .timeline {
+        position: absolute;
+        left: 24px;
+        right: 24px;
+        bottom: 18px;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: 310px 1fr 360px;
+        gap: 16px;
+        pointer-events: none;
+      }
+      .timeline > div {
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.08);
+        overflow: hidden;
+      }
+      .timeline i {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #54f0b1, #42c8ff);
+      }
+      .asset-focus .center { grid-template-rows: 150px minmax(0, 1fr); }
+      .asset-focus .scene-grid { grid-template-columns: 1fr 1fr; }
+      .asset-card {
+        min-height: 230px;
+        border-radius: 18px;
+        border: 1px solid rgba(143, 197, 255, .12);
+        background: rgba(255,255,255,.045);
+        padding: 14px;
+      }
+      .asset-preview {
+        height: 140px;
+        border-radius: 16px;
+        margin-bottom: 12px;
+        background:
+          radial-gradient(circle at 48% 28%, rgba(85, 241, 178, .28), transparent 34%),
+          radial-gradient(circle at 70% 70%, rgba(82, 174, 255, .2), transparent 38%),
+          #101b25;
+      }
+      .warning { color: #ffcf66; }
+      .render-focus .center { grid-template-rows: 1fr; }
+      .render-grid {
+        display: grid;
+        grid-template-columns: 1.1fr .9fr;
+        gap: 14px;
+        height: 100%;
+        padding: 14px;
+      }
+      .render-preview {
+        border-radius: 18px;
+        border: 1px solid rgba(143, 197, 255, .12);
+        background:
+          linear-gradient(180deg, transparent 62%, rgba(0,0,0,.68)),
+          radial-gradient(circle at 46% 18%, rgba(65, 165, 255, .26), transparent 38%),
+          #0d1421;
+      }
+      .log { padding: 13px; margin-bottom: 10px; }
+    </style>
+  </head>
+  <body>
+    <main class="stack">
+      <section class="artboard overview" id="overview">
+        <div class="chrome">
+          <header class="topbar">
+            <div class="logo"></div>
+            <div class="steps">
+              <div class="step active"><span>剧本解析</span><b>ready</b></div>
+              <div class="step"><span>资产生成</span><b>2 missing</b></div>
+              <div class="step"><span>故事板</span><b>6 / 8</b></div>
+              <div class="step"><span>视频任务</span><b>queued</b></div>
+              <div class="step"><span>成片审核</span><b>locked</b></div>
+            </div>
+            <div class="actions"><button class="btn">保存</button><button class="btn primary">推进流程</button></div>
+          </header>
+          <section class="workspace">
+            <aside class="panel">
+              <div class="head"><h3>项目队列</h3><span class="tag"><i class="dot"></i>online</span></div>
+              <div class="list">
+                <div class="project selected"><strong>雨夜车站</strong><span>8 scenes / 24 assets / 3 video tasks</span></div>
+                <div class="project"><strong>海港追逐</strong><span>3 scenes waiting for references</span></div>
+                <div class="project"><strong>神秘实验室</strong><span>storyboard pass in progress</span></div>
+                <div class="project"><strong>沙漠广播塔</strong><span>script parse complete</span></div>
+              </div>
+            </aside>
+            <main class="center">
+              <section class="panel brief">
+                <span class="tag">COMMAND CENTER</span>
+                <h2>一个画面完成剧本、资产、故事板和视频提交</h2>
+                <p>当前项目的所有生产步骤都被压缩在同一张操作台中。用户可以从左侧切换项目，在中间处理镜头和缺失项，在右侧提交生成任务。</p>
+              </section>
+              <section class="panel scene-grid">
+                <div class="shot"><div class="thumb"></div><div class="meta"><strong>SC 01 车站入口</strong><span>assets ready / storyboard ready</span></div></div>
+                <div class="shot"><div class="thumb"></div><div class="meta"><strong>SC 02 红色手提箱</strong><span class="warning">missing prop reference</span></div></div>
+                <div class="shot"><div class="thumb"></div><div class="meta"><strong>SC 03 列车灯光</strong><span>video queued</span></div></div>
+                <div class="shot"><div class="thumb"></div><div class="meta"><strong>SC 04 追逐开始</strong><span>storyboard draft</span></div></div>
+                <div class="shot"><div class="thumb"></div><div class="meta"><strong>SC 05 月台对峙</strong><span>needs character lock</span></div></div>
+                <div class="shot"><div class="thumb"></div><div class="meta"><strong>SC 06 远景收束</strong><span>ready to render</span></div></div>
+              </section>
+            </main>
+            <aside class="panel side">
+              <div>
+                <div class="head"><h3>生成控制</h3><span class="tag">Seed 48219</span></div>
+                <div class="controls">
+                  <div class="control"><span>视觉风格</span><b>Cinematic noir</b></div>
+                  <div class="control"><span>画幅比例</span><b>16:9</b></div>
+                  <div class="control"><span>视频模型</span><b>Seedance 2.0</b></div>
+                  <div class="control"><span>参考强度</span><b>72%</b></div>
+                  <div class="control"><span>并发任务</span><b>3</b></div>
+                  <div class="control"><span>失败策略</span><b>auto retry</b></div>
+                </div>
+              </div>
+              <button class="btn primary submit">提交整条流水线</button>
+            </aside>
+          </section>
+        </div>
+        <div class="timeline"><div><i style="width:82%"></i></div><div><i style="width:64%"></i></div><div><i style="width:38%"></i></div></div>
+      </section>
+
+      <section class="artboard asset-focus" id="asset-focus">
+        <div class="chrome">
+          <header class="topbar">
+            <div class="logo"></div>
+            <div class="steps">
+              <div class="step"><span>剧本解析</span><b>done</b></div>
+              <div class="step active"><span>资产生成</span><b>active</b></div>
+              <div class="step"><span>故事板</span><b>blocked</b></div>
+              <div class="step"><span>视频任务</span><b>waiting</b></div>
+              <div class="step"><span>成片审核</span><b>locked</b></div>
+            </div>
+            <div class="actions"><button class="btn">批量替换</button><button class="btn primary">生成缺失资产</button></div>
+          </header>
+          <section class="workspace">
+            <aside class="panel">
+              <div class="head"><h3>缺失项</h3><span class="tag"><i class="dot"></i>2 items</span></div>
+              <div class="list">
+                <div class="project selected"><strong>红色手提箱</strong><span>required by SC 02 / SC 04</span></div>
+                <div class="project selected"><strong>主角雨衣</strong><span>identity consistency risk</span></div>
+                <div class="project"><strong>车站标识</strong><span>optional environment detail</span></div>
+              </div>
+            </aside>
+            <main class="center">
+              <section class="panel brief">
+                <span class="tag">ASSET RESOLUTION</span>
+                <h2>缺失资产在原位解决，不跳转页面</h2>
+                <p>资产问题直接覆盖在流程中处理。生成、上传、替换引用和重新推进故事板都发生在同一屏。</p>
+              </section>
+              <section class="panel scene-grid">
+                <div class="asset-card"><div class="asset-preview"></div><strong>生成红色手提箱</strong><span>prop / glossy red / wet platform lighting</span></div>
+                <div class="asset-card"><div class="asset-preview"></div><strong>锁定主角雨衣</strong><span>character wardrobe / reference strength 78%</span></div>
+                <div class="asset-card"><div class="asset-preview"></div><strong>上传参考图</strong><span>drag image here / auto crop subject</span></div>
+                <div class="asset-card"><div class="asset-preview"></div><strong>影响镜头</strong><span>SC 02, SC 04, SC 05 will update</span></div>
+              </section>
+            </main>
+            <aside class="panel side">
+              <div>
+                <div class="head"><h3>资产参数</h3><span class="tag">Flux Kontext</span></div>
+                <div class="controls">
+                  <div class="control"><span>主体隔离</span><b>on</b></div>
+                  <div class="control"><span>透明背景</span><b>required</b></div>
+                  <div class="control"><span>风格匹配</span><b>project look</b></div>
+                  <div class="control"><span>自动挂接</span><b>SC 02</b></div>
+                </div>
+              </div>
+              <button class="btn primary submit">生成并推进故事板</button>
+            </aside>
+          </section>
+        </div>
+        <div class="timeline"><div><i style="width:100%"></i></div><div><i style="width:48%"></i></div><div><i style="width:0%"></i></div></div>
+      </section>
+
+      <section class="artboard render-focus" id="render-focus">
+        <div class="chrome">
+          <header class="topbar">
+            <div class="logo"></div>
+            <div class="steps">
+              <div class="step"><span>剧本解析</span><b>done</b></div>
+              <div class="step"><span>资产生成</span><b>done</b></div>
+              <div class="step"><span>故事板</span><b>done</b></div>
+              <div class="step active"><span>视频任务</span><b>running</b></div>
+              <div class="step"><span>成片审核</span><b>next</b></div>
+            </div>
+            <div class="actions"><button class="btn">暂停队列</button><button class="btn primary">提交全部镜头</button></div>
+          </header>
+          <section class="workspace">
+            <aside class="panel">
+              <div class="head"><h3>任务队列</h3><span class="tag"><i class="dot"></i>3 running</span></div>
+              <div class="list">
+                <div class="project selected"><strong>SC 03 列车灯光</strong><span>rendering / 42%</span></div>
+                <div class="project selected"><strong>SC 04 追逐开始</strong><span>queued / reference locked</span></div>
+                <div class="project"><strong>SC 05 月台对峙</strong><span>waiting for slot</span></div>
+              </div>
+            </aside>
+            <main class="center">
+              <section class="panel render-grid">
+                <div class="render-preview"></div>
+                <div>
+                  <div class="log"><strong>系统检查</strong><span>all references are available</span></div>
+                  <div class="log"><strong>一致性</strong><span>character lock and prop lock enabled</span></div>
+                  <div class="log"><strong>输出</strong><span>16:9 / 6 seconds / cinematic motion</span></div>
+                  <div class="log"><strong>失败恢复</strong><span>auto retry with lower motion strength</span></div>
+                </div>
+              </section>
+            </main>
+            <aside class="panel side">
+              <div>
+                <div class="head"><h3>视频参数</h3><span class="tag">Seedance 2.0</span></div>
+                <div class="controls">
+                  <div class="control"><span>镜头时长</span><b>6s</b></div>
+                  <div class="control"><span>运动强度</span><b>medium</b></div>
+                  <div class="control"><span>音效提示</span><b>rain rail</b></div>
+                  <div class="control"><span>提交策略</span><b>scene batch</b></div>
+                  <div class="control"><span>审核模式</span><b>side by side</b></div>
+                </div>
+              </div>
+              <button class="btn primary submit">进入成片审核</button>
+            </aside>
+          </section>
+        </div>
+        <div class="timeline"><div><i style="width:100%"></i></div><div><i style="width:100%"></i></div><div><i style="width:58%"></i></div></div>
+      </section>
+    </main>
+  </body>
+</html>

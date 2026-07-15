@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in · Pixel Toys</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css?v=202607040215" />
+  </head>
+  <body class="auth-page">
+    <main class="auth-shell">
+      <div class="auth-orbit-lines" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <header class="auth-topbar">
+        <a class="auth-logo" href="/" aria-label="Pixel Toys">
+          <span>PIXEL TOYS</span>
+        </a>
+        <div class="auth-top-actions">
+          <span>FILM WORKFLOW</span>
+          <button class="auth-menu-dot" type="button" aria-label="Menu">MENU</button>
+        </div>
+      </header>
+
+      <section class="auth-hero" aria-label="Pixel Toys sign in">
+        <div class="auth-copy">
+          <p class="auth-kicker">SCRIPT · SHOT · RENDER</p>
+          <h1>
+            Build cinematic<br />
+            AI film<br />
+            workflows.
+          </h1>
+          <p class="auth-lead">Plan scenes, manage characters, assemble storyboards, and generate video shots from one production canvas.</p>
+        </div>
+
+        <div class="auth-infinity-stage" aria-hidden="true">
+          <canvas class="auth-infinity-canvas"></canvas>
+          <span class="auth-infinity-shadow"></span>
+        </div>
+
+        <div class="auth-card">
+          <div class="auth-brand">
+            <div>
+              <strong>Pixel Toys</strong>
+              <span>AI film pipeline access</span>
+            </div>
+          </div>
+
+        <div class="auth-tabs" role="tablist" aria-label="Authentication mode">
+          <button class="is-active" type="button" data-auth-mode="login">Sign in</button>
+          <button type="button" data-auth-mode="register">Request access</button>
+        </div>
+
+        <form
+          id="authForm"
+          class="auth-form"
+          method="post"
+          action="/api/auth/login"
+          onsubmit="return window.pixelToysAuthSubmit ? window.pixelToysAuthSubmit(event) : false"
+        >
+          <label>
+            <span>Username</span>
+            <input name="username" autocomplete="username" placeholder="studio-name" required />
+          </label>
+          <label>
+            <span>Password</span>
+            <input name="password" type="password" autocomplete="current-password" minlength="8" required />
+          </label>
+          <label id="displayNameField" class="hidden">
+            <span>Studio name</span>
+            <input name="displayName" autocomplete="name" placeholder="Production team" />
+          </label>
+          <label id="inviteCodeField" class="hidden">
+            <span>Invite code</span>
+            <input name="inviteCode" autocomplete="off" placeholder="Enter your private beta code" />
+          </label>
+          <p id="authMessage" class="auth-message" aria-live="polite"></p>
+          <button id="authSubmit" class="primary" type="submit">Enter studio</button>
+        </form>
+        </div>
+      </section>
+
+      <footer class="auth-footer">
+        <span>PRE-PRODUCTION TO FINAL SHOT</span>
+        <span>Designed for small teams building AI-native films.</span>
+      </footer>
+    </main>
+    <script src="/auth.js?v=202606300213"></script>
+    <script src="/auth-infinity.js?v=202606301445"></script>
+  </body>
+</html>

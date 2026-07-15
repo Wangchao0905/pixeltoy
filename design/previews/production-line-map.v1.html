@@ -1,0 +1,882 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Production Line Map Preview</title>
+    <style>
+      :root {
+        --bg: #070a09;
+        --floor: #0c1110;
+        --ink: #eef8f3;
+        --muted: #8ba19a;
+        --soft: #b9cac4;
+        --line: rgba(123, 148, 140, 0.22);
+        --line-strong: rgba(140, 168, 158, 0.34);
+        --panel: rgba(14, 20, 18, 0.86);
+        --panel-solid: #111917;
+        --ready: #51d59a;
+        --running: #63c7ff;
+        --warn: #efbf62;
+        --blocked: #ff775c;
+        --locked: #65736e;
+        --paid: #ff6b78;
+        --radius: 10px;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--ink);
+      }
+
+      body {
+        background:
+          radial-gradient(circle at 20% 10%, rgba(81, 213, 154, 0.11), transparent 32rem),
+          radial-gradient(circle at 88% 84%, rgba(99, 199, 255, 0.09), transparent 32rem),
+          linear-gradient(135deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+          linear-gradient(45deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+          var(--floor);
+        background-size:
+          auto,
+          auto,
+          54px 54px,
+          54px 54px,
+          auto;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .map-shell {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        min-width: 1180px;
+        min-height: 760px;
+      }
+
+      .top-strip {
+        position: absolute;
+        inset: 18px 22px auto 22px;
+        z-index: 10;
+        display: grid;
+        grid-template-columns: minmax(320px, 1fr) auto;
+        gap: 18px;
+        align-items: start;
+        pointer-events: none;
+      }
+
+      .project-title,
+      .quick-panel,
+      .legend,
+      .shot-strip,
+      .station-detail {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(10, 14, 13, 0.7);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+      }
+
+      .project-title {
+        display: inline-grid;
+        width: max-content;
+        max-width: min(760px, 60vw);
+        padding: 14px 16px;
+        pointer-events: auto;
+      }
+
+      .eyebrow {
+        color: var(--ready);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        margin-top: 4px;
+        font-size: 28px;
+        line-height: 1.14;
+      }
+
+      .subtitle {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .quick-panel {
+        display: flex;
+        gap: 8px;
+        padding: 10px;
+        pointer-events: auto;
+      }
+
+      .action {
+        min-height: 34px;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        padding: 0 12px;
+        background: rgba(19, 28, 25, 0.9);
+        color: var(--ink);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .action.primary {
+        border-color: rgba(81, 213, 154, 0.58);
+        background: rgba(32, 72, 55, 0.92);
+      }
+
+      .action.cost {
+        border-color: rgba(255, 107, 120, 0.58);
+        background: rgba(255, 107, 120, 0.12);
+        color: #ffd9de;
+      }
+
+      .factory-map {
+        position: absolute;
+        inset: 0;
+      }
+
+      .belt-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+
+      .belt-shadow {
+        fill: none;
+        stroke: rgba(0, 0, 0, 0.34);
+        stroke-width: 34;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .belt-base {
+        fill: none;
+        stroke: rgba(50, 63, 58, 0.92);
+        stroke-width: 26;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .belt-inner {
+        fill: none;
+        stroke: rgba(81, 213, 154, 0.3);
+        stroke-width: 2;
+        stroke-dasharray: 10 14;
+        stroke-linecap: round;
+        animation: flow 1.2s linear infinite;
+      }
+
+      .belt-warning {
+        fill: none;
+        stroke: rgba(255, 119, 92, 0.78);
+        stroke-width: 5;
+        stroke-dasharray: 10 12;
+        stroke-linecap: round;
+        animation: flow 0.8s linear infinite;
+      }
+
+      @keyframes flow {
+        to {
+          stroke-dashoffset: -48;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .belt-inner,
+        .belt-warning,
+        .pulse {
+          animation: none !important;
+        }
+      }
+
+      .station {
+        position: absolute;
+        z-index: 2;
+        width: 218px;
+        min-height: 136px;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        padding: 12px;
+        background: linear-gradient(180deg, rgba(19, 29, 26, 0.94), rgba(11, 16, 15, 0.93));
+        color: var(--ink);
+        text-align: left;
+        box-shadow:
+          0 22px 70px rgba(0, 0, 0, 0.34),
+          inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        cursor: pointer;
+      }
+
+      .station:hover,
+      .station.active {
+        border-color: rgba(81, 213, 154, 0.72);
+        box-shadow:
+          0 24px 72px rgba(0, 0, 0, 0.4),
+          0 0 0 2px rgba(81, 213, 154, 0.15),
+          inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      }
+
+      .station.active {
+        background: linear-gradient(180deg, rgba(24, 44, 36, 0.98), rgba(12, 18, 16, 0.96));
+      }
+
+      .station.script {
+        left: 6.8%;
+        top: 28%;
+      }
+
+      .station.parse {
+        left: 22%;
+        top: 17%;
+      }
+
+      .station.assets {
+        left: 37%;
+        top: 31%;
+      }
+
+      .station.board {
+        left: 51%;
+        top: 17.5%;
+      }
+
+      .station.plan {
+        left: 62.5%;
+        top: 38%;
+      }
+
+      .station.video {
+        left: 76%;
+        top: 24%;
+      }
+
+      .station.assembly {
+        left: 82%;
+        top: 55%;
+      }
+
+      .station-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .station-index {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .station h2 {
+        margin-top: 5px;
+        font-size: 17px;
+        line-height: 1.14;
+      }
+
+      .station p {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .lamp {
+        display: inline-grid;
+        place-items: center;
+        min-width: 24px;
+        height: 24px;
+        border: 1px solid currentColor;
+        border-radius: 999px;
+        color: var(--ready);
+        font-size: 0;
+      }
+
+      .lamp::after {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 18px currentColor;
+      }
+
+      .lamp.running {
+        color: var(--running);
+      }
+
+      .lamp.warn {
+        color: var(--warn);
+      }
+
+      .lamp.blocked {
+        color: var(--blocked);
+      }
+
+      .lamp.locked {
+        color: var(--locked);
+      }
+
+      .station-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+
+      .mini-pill {
+        min-height: 23px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 7px;
+        color: var(--soft);
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 11px;
+      }
+
+      .block-marker {
+        position: absolute;
+        z-index: 3;
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        border: 1px solid rgba(255, 119, 92, 0.7);
+        border-radius: 50%;
+        background: rgba(44, 17, 13, 0.96);
+        color: #ffd8cf;
+        font-size: 18px;
+        box-shadow: 0 0 28px rgba(255, 119, 92, 0.32);
+      }
+
+      .block-marker.one {
+        left: 70.3%;
+        top: 33.4%;
+      }
+
+      .block-marker.two {
+        left: 78.5%;
+        top: 50.5%;
+      }
+
+      .legend {
+        position: absolute;
+        left: 22px;
+        bottom: 22px;
+        z-index: 8;
+        display: flex;
+        gap: 8px;
+        padding: 9px;
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .legend i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ready);
+      }
+
+      .legend .running i {
+        background: var(--running);
+      }
+
+      .legend .warn i {
+        background: var(--warn);
+      }
+
+      .legend .blocked i {
+        background: var(--blocked);
+      }
+
+      .shot-strip {
+        position: absolute;
+        left: 50%;
+        bottom: 22px;
+        z-index: 8;
+        width: min(700px, 52vw);
+        transform: translateX(-50%);
+        padding: 12px;
+      }
+
+      .shot-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .shots {
+        display: grid;
+        grid-template-columns: 12fr 15fr 9fr 14fr 11fr 10fr 11fr;
+        gap: 4px;
+        height: 38px;
+      }
+
+      .shot {
+        position: relative;
+        display: grid;
+        align-items: center;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0 6px;
+        background: rgba(255, 255, 255, 0.035);
+        color: var(--soft);
+        font-size: 11px;
+        overflow: hidden;
+      }
+
+      .shot.ready {
+        border-color: rgba(81, 213, 154, 0.4);
+      }
+
+      .shot.blocked {
+        border-color: rgba(255, 119, 92, 0.52);
+        color: #ffd8cf;
+      }
+
+      .station-detail {
+        position: absolute;
+        right: 22px;
+        bottom: 22px;
+        z-index: 12;
+        width: 360px;
+        padding: 14px;
+      }
+
+      .detail-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .detail-head h2 {
+        margin-top: 4px;
+        font-size: 20px;
+      }
+
+      .close-detail {
+        width: 32px;
+        height: 32px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: transparent;
+        color: var(--soft);
+        cursor: pointer;
+      }
+
+      .detail-grid {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .detail-row {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr);
+        gap: 8px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 7px;
+        font-size: 13px;
+      }
+
+      .detail-row span {
+        color: var(--muted);
+      }
+
+      .detail-row strong {
+        overflow-wrap: anywhere;
+      }
+
+      .block-copy {
+        margin-top: 12px;
+        border: 1px solid rgba(255, 119, 92, 0.38);
+        border-radius: 8px;
+        padding: 10px;
+        background: rgba(255, 119, 92, 0.08);
+        color: #ffd8cf;
+        font-size: 13px;
+        line-height: 1.42;
+      }
+
+      .detail-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .map-tools {
+        position: absolute;
+        right: 22px;
+        top: 92px;
+        z-index: 9;
+        display: grid;
+        gap: 8px;
+        width: 180px;
+      }
+
+      .tool-tile {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px;
+        background: rgba(10, 14, 13, 0.66);
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .tool-tile strong {
+        display: block;
+        margin-top: 3px;
+        color: var(--ink);
+        font-size: 16px;
+      }
+
+      @media (max-width: 1200px) {
+        .map-shell {
+          min-width: 100vw;
+          overflow-x: auto;
+        }
+
+        .factory-map {
+          width: 1240px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="map-shell">
+      <header class="top-strip">
+        <section class="project-title">
+          <span class="eyebrow">Production Line Map · Episode Unit 70-90s</span>
+          <h1>《裂隙回声》E04 生产线地图</h1>
+          <p class="subtitle">从剧本入口到本地 MP4 验收，再进入成片组装。阻塞会直接卡在生产线上，而不是藏在标签页里。</p>
+        </section>
+
+        <section class="quick-panel" aria-label="快速操作">
+          <button class="action" type="button">项目库</button>
+          <button class="action" type="button">打开 Canvas</button>
+          <button class="action primary" type="button">定位阻塞</button>
+          <button class="action cost" type="button">生成缺失项</button>
+        </section>
+      </header>
+
+      <section class="factory-map" aria-label="生产线地图">
+        <svg class="belt-svg" viewBox="0 0 1440 900" preserveAspectRatio="none" aria-hidden="true">
+          <path class="belt-shadow" d="M110 390 C230 190 320 240 410 355 C505 476 610 224 740 250 C875 276 855 542 1000 486 C1115 442 1130 260 1260 330 C1355 382 1270 595 1340 650" />
+          <path class="belt-base" d="M110 390 C230 190 320 240 410 355 C505 476 610 224 740 250 C875 276 855 542 1000 486 C1115 442 1130 260 1260 330 C1355 382 1270 595 1340 650" />
+          <path class="belt-inner" d="M110 390 C230 190 320 240 410 355 C505 476 610 224 740 250 C875 276 855 542 1000 486 C1115 442 1130 260 1260 330 C1355 382 1270 595 1340 650" />
+          <path class="belt-warning" d="M985 485 C1115 442 1130 260 1260 330 C1355 382 1270 595 1340 650" />
+        </svg>
+
+        <button class="station script" type="button" data-station="script">
+          <div class="station-top">
+            <div>
+              <span class="station-index">01 · Intake</span>
+              <h2>剧本入口</h2>
+            </div>
+            <span class="lamp"></span>
+          </div>
+          <p>脚本已锁定，作为后续资产与镜头计划的唯一来源。</p>
+          <div class="station-metrics"><span class="mini-pill">3,842 字</span><span class="mini-pill">英文对白</span></div>
+        </button>
+
+        <button class="station parse" type="button" data-station="parse">
+          <div class="station-top">
+            <div>
+              <span class="station-index">02 · Sorter</span>
+              <h2>资产分拣</h2>
+            </div>
+            <span class="lamp warn"></span>
+          </div>
+          <p>角色、场景、道具被分流到不同产线，2 个分类待确认。</p>
+          <div class="station-metrics"><span class="mini-pill">8 人物</span><span class="mini-pill">5 场景</span><span class="mini-pill">13 道具</span></div>
+        </button>
+
+        <button class="station assets active" type="button" data-station="assets">
+          <div class="station-top">
+            <div>
+              <span class="station-index">03 · Forge</span>
+              <h2>参考图锻造</h2>
+            </div>
+            <span class="lamp warn"></span>
+          </div>
+          <p>核心参考已完成，缺失道具会让部分近景镜头降级。</p>
+          <div class="station-metrics"><span class="mini-pill">24/28 ready</span><span class="mini-pill">4 missing</span></div>
+        </button>
+
+        <button class="station board" type="button" data-station="board">
+          <div class="station-top">
+            <div>
+              <span class="station-index">04 · Board</span>
+              <h2>Production Board</h2>
+            </div>
+            <span class="lamp"></span>
+          </div>
+          <p>16:9 sheet 内含 9 个 9:16 分格，用于构图和节奏。</p>
+          <div class="station-metrics"><span class="mini-pill">9/9 panels</span><span class="mini-pill">已绑定</span></div>
+        </button>
+
+        <button class="station plan" type="button" data-station="plan">
+          <div class="station-top">
+            <div>
+              <span class="station-index">05 · Planner</span>
+              <h2>镜头计划</h2>
+            </div>
+            <span class="lamp running"></span>
+          </div>
+          <p>7 个镜头，82 秒，尾帧只用于直接动作连续。</p>
+          <div class="station-metrics"><span class="mini-pill">7 shots</span><span class="mini-pill">82s</span><span class="mini-pill">2 tail</span></div>
+        </button>
+
+        <button class="station video" type="button" data-station="video">
+          <div class="station-top">
+            <div>
+              <span class="station-index">06 · Video Bay</span>
+              <h2>视频工位</h2>
+            </div>
+            <span class="lamp blocked"></span>
+          </div>
+          <p>4 个片段可用，3 个片段阻塞，生产线在这里降速。</p>
+          <div class="station-metrics"><span class="mini-pill">4/7 MP4</span><span class="mini-pill">3 blocked</span></div>
+        </button>
+
+        <button class="station assembly" type="button" data-station="assembly">
+          <div class="station-top">
+            <div>
+              <span class="station-index">07 · Gate</span>
+              <h2>成片闸门</h2>
+            </div>
+            <span class="lamp locked"></span>
+          </div>
+          <p>等待本地 MP4 验收完成后，生成 assembly manifest。</p>
+          <div class="station-metrics"><span class="mini-pill">locked</span><span class="mini-pill">needs 7/7</span></div>
+        </button>
+
+        <div class="block-marker one" title="视频阻塞">!</div>
+        <div class="block-marker two" title="组装未解锁">!</div>
+      </section>
+
+      <aside class="map-tools" aria-label="全局指标">
+        <div class="tool-tile">计划时长<strong>82s</strong></div>
+        <div class="tool-tile">镜头段落<strong>7</strong></div>
+        <div class="tool-tile">本地 MP4<strong>4/7</strong></div>
+        <div class="tool-tile">可组装<strong>未解锁</strong></div>
+      </aside>
+
+      <section class="legend" aria-label="状态图例">
+        <span><i></i>Ready</span>
+        <span class="running"><i></i>Running</span>
+        <span class="warn"><i></i>Review</span>
+        <span class="blocked"><i></i>Blocked</span>
+      </section>
+
+      <section class="shot-strip" aria-label="镜头长度分布">
+        <div class="shot-head">
+          <strong>Episode Timeline · 82s</strong>
+          <span>每段 4-15s，长短随剧情内容变化</span>
+        </div>
+        <div class="shots">
+          <div class="shot ready">SH01 · 12s</div>
+          <div class="shot ready">SH02 · 15s</div>
+          <div class="shot ready">SH03 · 9s</div>
+          <div class="shot ready">SH04 · 14s</div>
+          <div class="shot blocked">SH05 · 11s</div>
+          <div class="shot blocked">SH06 · 10s</div>
+          <div class="shot blocked">SH07 · 11s</div>
+        </div>
+      </section>
+
+      <aside class="station-detail" aria-label="工位详情">
+        <div class="detail-head">
+          <div>
+            <span class="eyebrow" id="detailEyebrow">03 · Forge</span>
+            <h2 id="detailTitle">参考图锻造</h2>
+          </div>
+          <button class="close-detail" type="button" id="closeDetail" aria-label="收起详情">×</button>
+        </div>
+        <p class="subtitle" id="detailSummary">核心参考图可用，但仍有缺失道具会影响镜头级提示词。</p>
+        <div class="detail-grid" id="detailGrid"></div>
+        <div class="block-copy" id="blockCopy">4 个道具缺失：钥匙、门把手、旧磁带、雨水反光地面。若进入视频配置，这些镜头会降级为无道具参考。</div>
+        <div class="detail-actions" id="detailActions"></div>
+      </aside>
+    </main>
+
+    <script>
+      const data = {
+        script: {
+          eyebrow: "01 · Intake",
+          title: "剧本入口",
+          summary: "剧本已锁定，后续任何生产线变更都从这里重新流入。",
+          rows: [
+            ["状态", "Ready"],
+            ["对白", "英文对白"],
+            ["体量", "3,842 字"],
+            ["影响", "资产解析、镜头计划、字幕草稿"],
+          ],
+          block: "无阻塞。修改剧本会标记下游为需要刷新。",
+          actions: [["编辑剧本", "primary"], ["重新生成分镜草稿", ""]],
+        },
+        parse: {
+          eyebrow: "02 · Sorter",
+          title: "资产分拣",
+          summary: "分拣工位把人物、场景、道具分流，避免道具被送进人物线。",
+          rows: [
+            ["人物", "8"],
+            ["场景", "5"],
+            ["道具", "13"],
+            ["待确认", "门把手、霓虹招牌"],
+          ],
+          block: "2 个分类待确认。确认前不建议批量生成资产图。",
+          actions: [["确认分类", "primary"], ["重新解析", ""]],
+        },
+        assets: {
+          eyebrow: "03 · Forge",
+          title: "参考图锻造",
+          summary: "核心参考图可用，但仍有缺失道具会影响镜头级提示词。",
+          rows: [
+            ["人物图", "8/8"],
+            ["场景图", "5/5"],
+            ["道具图", "9/13"],
+            ["缺失", "钥匙、门把手、旧磁带、雨水反光地面"],
+          ],
+          block: "4 个道具缺失。若进入视频配置，这些镜头会降级为无道具参考。",
+          actions: [["生成缺失项", "cost"], ["上传替代资产", ""], ["查看资产库", ""]],
+        },
+        board: {
+          eyebrow: "04 · Board",
+          title: "Production Board",
+          summary: "这里定义镜头构图、blocking 和节奏，不替代最终角色/场景资产。",
+          rows: [
+            ["整图", "16:9 sheet"],
+            ["分格", "9 个 9:16 panels"],
+            ["用途", "构图、调度、节奏"],
+            ["限制", "不复制手绘质感"],
+          ],
+          block: "无阻塞。可作为视频提示词结构参考。",
+          actions: [["查看大图", "primary"], ["重新生成", "cost"]],
+        },
+        plan: {
+          eyebrow: "05 · Planner",
+          title: "镜头计划",
+          summary: "把剧情切成 4-15 秒片段，并决定哪些镜头需要尾帧连续。",
+          rows: [
+            ["总长", "82s"],
+            ["镜头", "7"],
+            ["平均", "11.7s"],
+            ["尾帧", "2 个直接动作连续镜头"],
+          ],
+          block: "当前无规划阻塞，但 SH05-SH07 未通过视频验收。",
+          actions: [["查看镜头表", "primary"], ["重算时长", ""]],
+        },
+        video: {
+          eyebrow: "06 · Video Bay",
+          title: "视频工位",
+          summary: "视频生成和本地 MP4 验收被拆开显示，避免只看到 provider URL 就误以为可组装。",
+          rows: [
+            ["任务", "7"],
+            ["本地 MP4", "4/7"],
+            ["失败", "SH05"],
+            ["未下载", "SH06、SH07"],
+          ],
+          block: "生产线在视频工位阻塞：3 个片段没有通过服务器本地 MP4 验收。",
+          actions: [["下载缺失 MP4", "primary"], ["重试失败片段", "cost"], ["打开 Canvas", ""]],
+        },
+        assembly: {
+          eyebrow: "07 · Gate",
+          title: "成片闸门",
+          summary: "只有所有片段都是服务器本地有效 MP4 后，才允许进入组装。",
+          rows: [
+            ["闸门", "Locked"],
+            ["需要", "7/7 local MP4"],
+            ["当前", "4/7"],
+            ["首版", "硬切 + 字幕草稿"],
+          ],
+          block: "组装锁定。缺少完整本地 MP4 前，不生成 assembly manifest。",
+          actions: [["导出缺失清单", "primary"], ["查看组装条件", ""]],
+        },
+      };
+
+      const stations = document.querySelectorAll(".station");
+      const detail = document.querySelector(".station-detail");
+      const detailEyebrow = document.getElementById("detailEyebrow");
+      const detailTitle = document.getElementById("detailTitle");
+      const detailSummary = document.getElementById("detailSummary");
+      const detailGrid = document.getElementById("detailGrid");
+      const blockCopy = document.getElementById("blockCopy");
+      const detailActions = document.getElementById("detailActions");
+      const closeDetail = document.getElementById("closeDetail");
+
+      function openStation(key) {
+        const item = data[key];
+        stations.forEach((station) => station.classList.toggle("active", station.dataset.station === key));
+        detail.hidden = false;
+        detailEyebrow.textContent = item.eyebrow;
+        detailTitle.textContent = item.title;
+        detailSummary.textContent = item.summary;
+        detailGrid.innerHTML = item.rows
+          .map(([label, value]) => `<div class="detail-row"><span>${label}</span><strong>${value}</strong></div>`)
+          .join("");
+        blockCopy.textContent = item.block;
+        detailActions.innerHTML = item.actions
+          .map(([label, type]) => `<button class="action ${type}" type="button">${label}</button>`)
+          .join("");
+      }
+
+      stations.forEach((station) => {
+        station.addEventListener("click", () => openStation(station.dataset.station));
+      });
+
+      closeDetail.addEventListener("click", () => {
+        detail.hidden = true;
+        stations.forEach((station) => station.classList.remove("active"));
+      });
+
+      openStation("assets");
+    </script>
+  </body>
+</html>

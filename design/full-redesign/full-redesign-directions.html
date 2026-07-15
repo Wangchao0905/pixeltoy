@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pixel Toys Full Redesign Directions</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #111;
+        font-family: "SF Pro Display", "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+      }
+      .stack { display: grid; gap: 34px; }
+      .frame {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+        color: var(--ink);
+        background: var(--bg);
+      }
+      .logo {
+        width: 174px;
+        height: 30px;
+        background: url("../../public/pixel-toys-logo.png") center / contain no-repeat;
+        filter: var(--logo-filter, none);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 15px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 760;
+      }
+      .btn.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        height: 24px;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 760;
+        letter-spacing: .02em;
+      }
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      /* Direction 1 */
+      .paper {
+        --bg: #f4f7fb;
+        --surface: #ffffff;
+        --ink: #111827;
+        --muted: #6b7280;
+        --line: #c8d2df;
+        --accent: #ff4d2e;
+        --accent-ink: #fff7f2;
+        --radius: 6px;
+        --radius-sm: 4px;
+        --logo-filter: invert(1);
+        display: grid;
+        grid-template-columns: 410px 1fr;
+        gap: 0;
+      }
+      .paper .left {
+        padding: 34px 30px;
+        border-right: 1px solid var(--line);
+        background:
+          linear-gradient(90deg, rgba(17,24,39,.04) 1px, transparent 1px),
+          linear-gradient(rgba(17,24,39,.04) 1px, transparent 1px),
+          #fbfcff;
+        background-size: 26px 26px;
+      }
+      .paper h1 {
+        margin: 46px 0 20px;
+        max-width: 300px;
+        font-size: 54px;
+        line-height: .95;
+        letter-spacing: -.055em;
+      }
+      .paper .copy {
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+      .paper .nav {
+        display: grid;
+        gap: 8px;
+        margin-top: 42px;
+      }
+      .paper .nav div {
+        display: grid;
+        grid-template-columns: 24px 1fr auto;
+        align-items: center;
+        min-height: 46px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+        font-size: 13px;
+        font-weight: 760;
+      }
+      .paper .nav .active {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .paper .right {
+        display: grid;
+        grid-template-rows: 78px 1fr 190px;
+      }
+      .paper .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 28px;
+        border-bottom: 1px solid var(--line);
+      }
+      .paper .work {
+        display: grid;
+        grid-template-columns: 1.15fr .85fr;
+        gap: 18px;
+        padding: 24px;
+      }
+      .paper .script {
+        padding: 24px;
+        border-radius: var(--radius);
+      }
+      .paper .script h2 {
+        margin: 18px 0;
+        font-size: 34px;
+        letter-spacing: -.03em;
+      }
+      .paper .rows {
+        display: grid;
+        gap: 10px;
+      }
+      .paper .row {
+        display: grid;
+        grid-template-columns: 58px 1fr 92px;
+        align-items: center;
+        min-height: 58px;
+        border-top: 1px solid var(--line);
+        font-size: 13px;
+      }
+      .paper .inspector {
+        display: grid;
+        gap: 12px;
+      }
+      .paper .card {
+        padding: 18px;
+        border-radius: var(--radius);
+        border: 1px solid var(--line);
+        background: #fff;
+      }
+      .paper .strip {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 12px;
+        padding: 18px 24px 26px;
+        border-top: 1px solid var(--line);
+      }
+      .paper .shot {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: linear-gradient(135deg, #eef3f8, #cfd9e7);
+      }
+
+      /* Direction 2 */
+      .mono {
+        --bg: #f7f7f2;
+        --surface: #101010;
+        --ink: #f7f7f2;
+        --muted: #9e9e94;
+        --line: #2d2d2a;
+        --accent: #d7ff45;
+        --accent-ink: #101010;
+        --radius: 0;
+        --radius-sm: 0;
+        display: grid;
+        grid-template-rows: 92px 1fr;
+        background: #f7f7f2;
+      }
+      .mono .mast {
+        display: grid;
+        grid-template-columns: 260px 1fr 340px;
+        align-items: center;
+        border-bottom: 2px solid #111;
+        color: #111;
+      }
+      .mono .logo { margin-left: 28px; filter: invert(1); }
+      .mono .ticker {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        height: 100%;
+        border-left: 2px solid #111;
+        border-right: 2px solid #111;
+      }
+      .mono .ticker div {
+        display: grid;
+        place-items: center;
+        border-right: 2px solid #111;
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+      .mono .ticker .active { background: #d7ff45; }
+      .mono .tools {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding-right: 26px;
+      }
+      .mono .tools .btn {
+        border: 2px solid #111;
+        background: #f7f7f2;
+        color: #111;
+      }
+      .mono .tools .primary {
+        background: #111;
+        color: #f7f7f2;
+      }
+      .mono .body {
+        display: grid;
+        grid-template-columns: 290px 1fr 410px;
+        color: #111;
+      }
+      .mono .col {
+        border-right: 2px solid #111;
+        padding: 22px;
+      }
+      .mono h2 {
+        margin: 0 0 18px;
+        font-size: 42px;
+        line-height: .96;
+        letter-spacing: -.05em;
+      }
+      .mono .block {
+        min-height: 72px;
+        padding: 14px;
+        border: 2px solid #111;
+        margin-bottom: 12px;
+        background: #fff;
+      }
+      .mono .block.active {
+        background: #111;
+        color: #f7f7f2;
+      }
+      .mono .board {
+        display: grid;
+        grid-template-rows: 180px 1fr;
+        padding: 22px;
+        gap: 18px;
+      }
+      .mono .hero-card {
+        display: grid;
+        grid-template-columns: 1fr 240px;
+        border: 2px solid #111;
+        background: #fff;
+      }
+      .mono .hero-card > div { padding: 20px; }
+      .mono .visual {
+        background:
+          linear-gradient(45deg, #111 25%, transparent 25% 50%, #111 50% 75%, transparent 75%),
+          #d7ff45;
+        background-size: 24px 24px;
+      }
+      .mono .cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+      .mono .tile {
+        padding: 16px;
+        border: 2px solid #111;
+        background: #fff;
+      }
+      .mono .inspector {
+        border-left: 0;
+        background: #111;
+        color: #f7f7f2;
+      }
+      .mono .inspector .block {
+        border-color: #f7f7f2;
+        background: #161616;
+      }
+
+      /* Direction 3 */
+      .play {
+        --bg: #121017;
+        --surface: #fff7d7;
+        --ink: #141017;
+        --muted: #645b5f;
+        --line: #141017;
+        --accent: #00d5ff;
+        --accent-ink: #061219;
+        --radius: 28px;
+        --radius-sm: 999px;
+        --logo-filter: invert(1);
+        background:
+          radial-gradient(circle at 84% 12%, #ff3f7f 0 120px, transparent 122px),
+          radial-gradient(circle at 12% 76%, #00d5ff 0 150px, transparent 152px),
+          #17131d;
+        padding: 24px;
+      }
+      .play .shell {
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        gap: 20px;
+        height: 100%;
+      }
+      .play .menu {
+        padding: 24px;
+        border: 3px solid #fff7d7;
+        border-radius: 36px;
+        background: #ffe85c;
+        color: #17131d;
+        box-shadow: 12px 12px 0 #00d5ff;
+      }
+      .play .logo { filter: invert(1); margin-bottom: 30px; }
+      .play h2 {
+        margin: 0 0 16px;
+        font-size: 42px;
+        line-height: .96;
+        letter-spacing: -.04em;
+      }
+      .play .pill {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        min-height: 58px;
+        margin-top: 10px;
+        padding: 0 16px;
+        border: 3px solid #17131d;
+        border-radius: 999px;
+        background: #fff7d7;
+        font-weight: 900;
+      }
+      .play .pill.active { background: #00d5ff; }
+      .play .stage {
+        display: grid;
+        grid-template-rows: 76px 1fr 160px;
+        border: 3px solid #fff7d7;
+        border-radius: 36px;
+        background: #fff7d7;
+        color: #17131d;
+        overflow: hidden;
+      }
+      .play .bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 22px;
+        border-bottom: 3px solid #17131d;
+      }
+      .play .bar .btn {
+        border: 3px solid #17131d;
+        background: #ff3f7f;
+        color: #fff7d7;
+      }
+      .play .main {
+        position: relative;
+        background:
+          linear-gradient(90deg, rgba(20,16,23,.08) 1px, transparent 1px),
+          linear-gradient(rgba(20,16,23,.08) 1px, transparent 1px),
+          #fff7d7;
+        background-size: 34px 34px;
+      }
+      .play .node {
+        position: absolute;
+        width: 210px;
+        min-height: 128px;
+        padding: 18px;
+        border: 3px solid #17131d;
+        border-radius: 28px;
+        background: #fff;
+        box-shadow: 8px 8px 0 #17131d;
+      }
+      .play .node:nth-child(1) { left: 60px; top: 70px; background: #00d5ff; }
+      .play .node:nth-child(2) { left: 360px; top: 120px; background: #ffe85c; }
+      .play .node:nth-child(3) { right: 180px; top: 58px; background: #ff9ec0; }
+      .play .node:nth-child(4) { left: 240px; bottom: 64px; background: #fff; }
+      .play .node:nth-child(5) { right: 60px; bottom: 86px; background: #b8ff73; }
+      .play .dock {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        padding: 16px;
+        border-top: 3px solid #17131d;
+        background: #17131d;
+      }
+      .play .dock div {
+        border-radius: 24px;
+        border: 3px solid #fff7d7;
+        background: #241d2c;
+        color: #fff7d7;
+        padding: 16px;
+        font-weight: 800;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="stack">
+      <section class="frame paper" id="paper">
+        <aside class="left">
+          <div class="logo"></div>
+          <h1>Production paper, not dashboard chrome.</h1>
+          <p class="copy">一个像编辑台和生产单据结合的界面。所有流程保留，但视觉从控制台转向清爽、高对比、可批注的制作桌面。</p>
+          <div class="nav">
+            <div class="active"><span>01</span><strong>剧本</strong><em>ready</em></div>
+            <div><span>02</span><strong>资产</strong><em>2 missing</em></div>
+            <div><span>03</span><strong>故事板</strong><em>6 / 8</em></div>
+            <div><span>04</span><strong>视频</strong><em>queued</em></div>
+          </div>
+        </aside>
+        <section class="right">
+          <header class="top">
+            <span class="tag">Pixel Toys Production Sheet</span>
+            <div><button class="btn">保存版本</button> <button class="btn primary">推进流程</button></div>
+          </header>
+          <main class="work">
+            <section class="panel script">
+              <span class="tag">Current Script</span>
+              <h2>雨夜车站，红色手提箱，列车灯光扫过月台。</h2>
+              <div class="rows">
+                <div class="row"><b>SC 01</b><span>车站入口，主角进入画面。</span><strong>ready</strong></div>
+                <div class="row"><b>SC 02</b><span>红色手提箱出现，资产缺失。</span><strong>fix</strong></div>
+                <div class="row"><b>SC 03</b><span>列车灯光扫过角色背影。</span><strong>queue</strong></div>
+                <div class="row"><b>SC 04</b><span>追逐开始，镜头向前推进。</span><strong>draft</strong></div>
+              </div>
+            </section>
+            <aside class="inspector">
+              <div class="card"><span class="tag">Color</span><h3>Paper white, graphite, hot vermilion</h3></div>
+              <div class="card"><span class="tag">Interaction</span><h3>Inline correction, sheet annotations, batch advance</h3></div>
+              <div class="card"><span class="tag">Best for</span><h3>长剧本、多人审核、低视觉疲劳</h3></div>
+            </aside>
+          </main>
+          <footer class="strip">
+            <div class="shot"></div><div class="shot"></div><div class="shot"></div><div class="shot"></div><div class="shot"></div><div class="shot"></div>
+          </footer>
+        </section>
+      </section>
+
+      <section class="frame mono" id="mono">
+        <header class="mast">
+          <div class="logo"></div>
+          <nav class="ticker">
+            <div class="active">Script</div><div>Assets</div><div>Boards</div><div>Video</div><div>Review</div>
+          </nav>
+          <div class="tools"><button class="btn">Archive</button><button class="btn primary">Run Batch</button></div>
+        </header>
+        <main class="body">
+          <aside class="col">
+            <h2>Brutal production OS</h2>
+            <div class="block active">雨夜车站 / active</div>
+            <div class="block">海港追逐 / blocked</div>
+            <div class="block">沙漠广播塔 / parsed</div>
+          </aside>
+          <section class="board">
+            <div class="hero-card">
+              <div><span class="tag">Selected scene</span><h2>SC 03 train light sweep</h2></div>
+              <div class="visual"></div>
+            </div>
+            <div class="cards">
+              <div class="tile"><h3>Script</h3><p>8 scenes parsed</p></div>
+              <div class="tile"><h3>Assets</h3><p>2 references missing</p></div>
+              <div class="tile"><h3>Video</h3><p>3 tasks ready</p></div>
+              <div class="tile"><h3>Consistency</h3><p>character locked</p></div>
+              <div class="tile"><h3>Audio</h3><p>rain rail ambience</p></div>
+              <div class="tile"><h3>Review</h3><p>side by side</p></div>
+            </div>
+          </section>
+          <aside class="col inspector">
+            <h2>Control stack</h2>
+            <div class="block">Model Seedance 2.0</div>
+            <div class="block">Ratio 16:9</div>
+            <div class="block">Motion medium</div>
+            <div class="block active">Submit all scenes</div>
+          </aside>
+        </main>
+      </section>
+
+      <section class="frame play" id="play">
+        <main class="shell">
+          <aside class="menu">
+            <div class="logo"></div>
+            <h2>Toybox flow map</h2>
+            <div class="pill active"><span>剧本</span><b>ready</b></div>
+            <div class="pill"><span>资产</span><b>2 missing</b></div>
+            <div class="pill"><span>故事板</span><b>6 / 8</b></div>
+            <div class="pill"><span>视频</span><b>running</b></div>
+          </aside>
+          <section class="stage">
+            <header class="bar">
+              <span class="tag">Single screen flow map</span>
+              <button class="btn">启动整条生产线</button>
+            </header>
+            <main class="main">
+              <div class="node"><h3>剧本解析</h3><p>8 scenes ready</p></div>
+              <div class="node"><h3>资产补齐</h3><p>prop and wardrobe</p></div>
+              <div class="node"><h3>故事板</h3><p>drag to reorder</p></div>
+              <div class="node"><h3>视频任务</h3><p>3 running</p></div>
+              <div class="node"><h3>审核</h3><p>compare outputs</p></div>
+            </main>
+            <footer class="dock">
+              <div>Click node to edit</div><div>Drag flow priority</div><div>Batch submit</div><div>Fix in place</div>
+            </footer>
+          </section>
+        </main>
+      </section>
+    </main>
+  </body>
+</html>

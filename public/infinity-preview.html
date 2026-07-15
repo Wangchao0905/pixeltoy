@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>粒子 ∞ 预览 · Pixel Toys</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        min-height: 100dvh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        background:
+          radial-gradient(circle at 50% 38%, rgba(30, 112, 255, 0.28), transparent 32rem),
+          linear-gradient(90deg, #05070d 0%, #09224f 46%, #050914 100%);
+        color: #e9f1ff;
+        font-family:
+          ui-sans-serif,
+          -apple-system,
+          "SF Pro Display",
+          "Segoe UI",
+          sans-serif;
+        overflow: hidden;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 22px;
+        border-bottom: 1px solid rgba(120, 160, 220, 0.16);
+      }
+      header h1 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: rgba(233, 241, 255, 0.86);
+      }
+      header .hint {
+        font-size: 12px;
+        color: rgba(170, 192, 224, 0.7);
+      }
+      .stage {
+        display: grid;
+        place-items: center;
+        min-height: 0;
+        padding: 24px;
+      }
+      .auth-infinity-stage {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: min(86vmin, 720px);
+        aspect-ratio: 1 / 1;
+        overflow: visible;
+      }
+      .auth-infinity-canvas {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        height: auto;
+        display: block;
+        overflow: visible;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>粒子 ∞ 预览</h1>
+      <span class="hint">缓慢扭曲 · 旋转 · 边缘飘散 — Cmd+Shift+R 强制刷新</span>
+    </header>
+    <main class="stage">
+      <div class="auth-infinity-stage" aria-hidden="true">
+        <canvas class="auth-infinity-canvas"></canvas>
+      </div>
+    </main>
+    <script src="/auth-infinity.js?v=202606301430"></script>
+  </body>
+</html>

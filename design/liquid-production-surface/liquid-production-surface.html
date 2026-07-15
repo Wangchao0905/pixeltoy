@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Liquid Production Surface</title>
+    <style>
+      * { box-sizing: border-box; }
+      :root {
+        --ink: #111722;
+        --muted: #667083;
+        --paper: #f6f8fb;
+        --line: rgba(47, 67, 93, .13);
+        --blue: #1d8cff;
+        --cyan: #65d9ff;
+        --rose: #ff4d76;
+        --mint: #49e3b0;
+        --shadow: rgba(43, 58, 82, .16);
+      }
+      body {
+        margin: 0;
+        padding: 30px;
+        background: #0b0d10;
+        font-family: "SF Pro Display", "SF Pro Text", "PingFang SC", Inter, system-ui, sans-serif;
+      }
+      .stack { display: grid; gap: 30px; }
+      .surface {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 18% 18%, rgba(112, 215, 255, .48), transparent 320px),
+          radial-gradient(circle at 84% 12%, rgba(255, 176, 196, .34), transparent 360px),
+          radial-gradient(circle at 68% 90%, rgba(164, 241, 212, .36), transparent 360px),
+          linear-gradient(135deg, #f8fbff 0%, #e8eef7 47%, #fbf2ea 100%);
+        border-radius: 0;
+      }
+      .surface::before {
+        content: "";
+        position: absolute;
+        inset: -120px;
+        opacity: .38;
+        background:
+          radial-gradient(circle at 28% 40%, rgba(255, 255, 255, .78), transparent 260px),
+          conic-gradient(from 210deg at 58% 38%, rgba(101, 217, 255, .22), rgba(255,255,255,0), rgba(255, 77, 118, .18), rgba(255,255,255,0), rgba(73, 227, 176, .18));
+        filter: blur(18px);
+      }
+      .surface::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: .15;
+        background-image:
+          linear-gradient(rgba(31, 45, 67, .26) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(31, 45, 67, .22) 1px, transparent 1px);
+        background-size: 44px 44px;
+        mask-image: radial-gradient(circle at 50% 42%, black, transparent 78%);
+      }
+      .grain {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        opacity: .11;
+        background-image: repeating-radial-gradient(circle at 12% 20%, #111 0 1px, transparent 1px 3px);
+        mix-blend-mode: soft-light;
+      }
+      .chrome {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        grid-template-rows: 86px minmax(0, 1fr);
+        height: 100%;
+        padding: 26px;
+        gap: 18px;
+      }
+      .topbar {
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 18px;
+        padding: 0 18px;
+        border: 1px solid rgba(255,255,255,.72);
+        border-radius: 999px;
+        background:
+          linear-gradient(135deg, rgba(255,255,255,.68), rgba(255,255,255,.24)),
+          rgba(255,255,255,.18);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.8),
+          0 24px 80px rgba(55,75,102,.16);
+        backdrop-filter: blur(26px) saturate(160%);
+      }
+      .logo {
+        width: 172px;
+        height: 30px;
+        background: url("../../public/pixel-toys-logo.png") center / contain no-repeat;
+        filter: invert(1);
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .flow-step {
+        position: relative;
+        min-height: 46px;
+        padding: 9px 12px;
+        overflow: hidden;
+        border-radius: 999px;
+        border: 1px solid rgba(42, 68, 98, .12);
+        background: rgba(255,255,255,.34);
+        color: rgba(28, 42, 62, .6);
+        font-size: 11px;
+        font-weight: 760;
+      }
+      .flow-step b {
+        display: block;
+        margin-top: 3px;
+        color: rgba(28, 42, 62, .38);
+        font-size: 9px;
+        font-weight: 780;
+      }
+      .flow-step.active {
+        background:
+          linear-gradient(135deg, rgba(29, 140, 255, .22), rgba(101, 217, 255, .2)),
+          rgba(255,255,255,.5);
+        color: #0a2442;
+        border-color: rgba(29, 140, 255, .32);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 12px 34px rgba(29,140,255,.18);
+      }
+      .actions { display: flex; gap: 10px; }
+      .button {
+        min-height: 44px;
+        padding: 0 18px;
+        border: 1px solid rgba(42, 68, 98, .14);
+        border-radius: 999px;
+        background: rgba(255,255,255,.38);
+        color: #172336;
+        font-weight: 820;
+        font-size: 12px;
+      }
+      .button.primary {
+        border-color: rgba(29, 140, 255, .46);
+        background: linear-gradient(180deg, #65d9ff, #1d8cff);
+        color: #061725;
+        box-shadow: 0 16px 42px rgba(29,140,255,.28);
+      }
+      .workspace {
+        position: relative;
+        min-height: 0;
+      }
+      .hero-copy {
+        position: absolute;
+        left: 18px;
+        top: 24px;
+        width: 420px;
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        padding: 0 11px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,.62);
+        background: rgba(255,255,255,.32);
+        color: rgba(17,23,34,.58);
+        font-size: 11px;
+        font-weight: 840;
+      }
+      h1 {
+        margin: 18px 0 0;
+        font-size: 52px;
+        line-height: 1.04;
+        letter-spacing: -.055em;
+      }
+      .hero-copy p {
+        margin: 18px 0 0;
+        max-width: 360px;
+        color: rgba(17,23,34,.62);
+        font-size: 16px;
+        line-height: 1.5;
+      }
+      .project-orb {
+        position: absolute;
+        left: 34px;
+        bottom: 28px;
+        width: 360px;
+        min-height: 258px;
+        padding: 20px;
+        border-radius: 36px;
+        border: 1px solid rgba(255,255,255,.72);
+        background: rgba(255,255,255,.32);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.82), 0 32px 90px var(--shadow);
+        backdrop-filter: blur(26px) saturate(160%);
+      }
+      .project-orb h3,
+      .lens h3,
+      .side-lens h3 { margin: 0; font-size: 16px; }
+      .project {
+        display: grid;
+        gap: 4px;
+        margin-top: 14px;
+        padding: 13px 14px;
+        border-radius: 22px;
+        background: rgba(255,255,255,.36);
+        border: 1px solid rgba(255,255,255,.5);
+      }
+      .project strong { font-size: 13px; }
+      .project span { color: rgba(17,23,34,.5); font-size: 11px; }
+      .project.active {
+        background: rgba(29, 140, 255, .12);
+        border-color: rgba(29,140,255,.3);
+      }
+      .stage {
+        position: absolute;
+        left: 434px;
+        right: 392px;
+        top: 22px;
+        bottom: 28px;
+      }
+      .scene-cloud {
+        position: absolute;
+        inset: 0;
+        border-radius: 48px;
+        border: 1px solid rgba(255,255,255,.72);
+        background:
+          linear-gradient(135deg, rgba(255,255,255,.48), rgba(255,255,255,.18)),
+          rgba(255,255,255,.2);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.88),
+          0 40px 110px rgba(63, 86, 117, .16);
+        backdrop-filter: blur(32px) saturate(170%);
+      }
+      .shot {
+        position: absolute;
+        display: grid;
+        grid-template-rows: 1fr auto;
+        width: 220px;
+        height: 182px;
+        overflow: hidden;
+        border: 1px solid rgba(255,255,255,.72);
+        border-radius: 34px;
+        background: rgba(255,255,255,.36);
+        box-shadow: 0 18px 46px rgba(57,75,101,.14);
+      }
+      .shot:nth-child(1) { left: 40px; top: 62px; transform: rotate(-4deg); }
+      .shot:nth-child(2) { left: 284px; top: 34px; transform: rotate(2deg); }
+      .shot:nth-child(3) { right: 48px; top: 90px; transform: rotate(5deg); }
+      .shot:nth-child(4) { left: 112px; bottom: 94px; transform: rotate(3deg); }
+      .shot:nth-child(5) { right: 154px; bottom: 62px; transform: rotate(-5deg); }
+      .shot.selected {
+        width: 284px;
+        height: 226px;
+        left: 300px;
+        top: 258px;
+        z-index: 3;
+        transform: rotate(0deg);
+        border-color: rgba(29,140,255,.42);
+        box-shadow: 0 28px 80px rgba(29,140,255,.22);
+      }
+      .thumb {
+        margin: 12px;
+        border-radius: 24px;
+        background:
+          radial-gradient(circle at 70% 24%, rgba(255,77,118,.24), transparent 34%),
+          radial-gradient(circle at 36% 72%, rgba(73,227,176,.18), transparent 42%),
+          linear-gradient(135deg, #d9e5f2, #f7eee4);
+      }
+      .shot footer {
+        padding: 0 14px 14px;
+      }
+      .shot strong { display: block; font-size: 12px; }
+      .shot span { display: block; margin-top: 4px; color: rgba(17,23,34,.48); font-size: 10px; }
+      .liquid-line {
+        position: absolute;
+        z-index: 2;
+        left: 108px;
+        right: 122px;
+        top: 354px;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, rgba(29,140,255,.42), rgba(73,227,176,.42), transparent);
+        filter: blur(.2px);
+      }
+      .side-lens {
+        position: absolute;
+        right: 18px;
+        top: 24px;
+        width: 348px;
+        min-height: 570px;
+        padding: 22px;
+        border: 1px solid rgba(255,255,255,.74);
+        border-radius: 42px;
+        background:
+          linear-gradient(145deg, rgba(255,255,255,.62), rgba(255,255,255,.24)),
+          rgba(255,255,255,.22);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.9),
+          0 34px 110px rgba(67, 87, 112, .18);
+        backdrop-filter: blur(30px) saturate(170%);
+      }
+      .lens-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        min-height: 54px;
+        margin-top: 11px;
+        padding: 0 14px;
+        border-radius: 22px;
+        background: rgba(255,255,255,.32);
+        border: 1px solid rgba(255,255,255,.45);
+        color: rgba(17,23,34,.62);
+        font-size: 12px;
+      }
+      .lens-row b { color: #111722; }
+      .large-action {
+        position: absolute;
+        left: 22px;
+        right: 22px;
+        bottom: 22px;
+        height: 64px;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(180deg, #65d9ff, #1d8cff);
+        color: #061725;
+        font-weight: 900;
+        font-size: 14px;
+        box-shadow: 0 22px 54px rgba(29,140,255,.34);
+      }
+      .floating-note {
+        position: absolute;
+        right: 392px;
+        bottom: 60px;
+        width: 300px;
+        padding: 16px;
+        border-radius: 26px;
+        border: 1px solid rgba(255,255,255,.72);
+        background: rgba(255,255,255,.36);
+        backdrop-filter: blur(24px);
+        color: rgba(17,23,34,.64);
+        font-size: 12px;
+        line-height: 1.45;
+        box-shadow: 0 22px 70px rgba(43,58,82,.13);
+      }
+      .focus .shot:not(.selected) {
+        opacity: .36;
+        filter: blur(1.5px) saturate(.8);
+      }
+      .focus .stage {
+        left: 360px;
+        right: 430px;
+      }
+      .focus .hero-copy h1 {
+        font-size: 48px;
+        line-height: 1.05;
+      }
+      .focus .project-orb {
+        transform: scale(.94);
+        opacity: .72;
+      }
+      .focus .side-lens {
+        width: 406px;
+        min-height: 640px;
+      }
+      .focus .side-lens::before {
+        content: "";
+        display: block;
+        height: 190px;
+        margin: 14px 0 16px;
+        border-radius: 30px;
+        background:
+          radial-gradient(circle at 70% 24%, rgba(255,77,118,.24), transparent 34%),
+          linear-gradient(135deg, #d8e6f4, #f7eee4);
+        border: 1px solid rgba(255,255,255,.68);
+      }
+      .submit .stage {
+        left: 398px;
+        right: 398px;
+      }
+      .submit .scene-cloud {
+        transform: scale(.96);
+      }
+      .submit .shot {
+        opacity: .44;
+      }
+      .submit .shot.selected {
+        opacity: 1;
+      }
+      .submit .submission {
+        position: absolute;
+        z-index: 5;
+        left: 50%;
+        top: 50%;
+        width: 520px;
+        min-height: 380px;
+        transform: translate(-50%, -50%);
+        padding: 28px;
+        border-radius: 52px;
+        border: 1px solid rgba(255,255,255,.78);
+        background:
+          linear-gradient(145deg, rgba(255,255,255,.68), rgba(255,255,255,.22)),
+          rgba(255,255,255,.24);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.92),
+          0 42px 120px rgba(37, 72, 108, .22);
+        backdrop-filter: blur(34px) saturate(180%);
+      }
+      .submission h2 {
+        margin: 0;
+        font-size: 40px;
+        line-height: .98;
+        letter-spacing: -.05em;
+      }
+      .submit-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .submit-item {
+        display: grid;
+        grid-template-columns: 20px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        min-height: 46px;
+        padding: 0 13px;
+        border-radius: 999px;
+        background: rgba(255,255,255,.34);
+        color: rgba(17,23,34,.64);
+        font-size: 12px;
+      }
+      .check {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--mint);
+      }
+      .motion-note {
+        position: absolute;
+        z-index: 3;
+        left: 34px;
+        top: 776px;
+        color: rgba(17,23,34,.42);
+        font-size: 11px;
+        font-weight: 760;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stack">
+      <section class="surface overview" id="liquid-overview">
+        <div class="grain"></div>
+        <main class="chrome">
+          <header class="topbar">
+            <div class="logo"></div>
+            <nav class="flow">
+              <div class="flow-step active">剧本解析<b>ready</b></div>
+              <div class="flow-step">资产生成<b>2 missing</b></div>
+              <div class="flow-step">故事板<b>6 / 8</b></div>
+              <div class="flow-step">视频任务<b>queued</b></div>
+              <div class="flow-step">审核<b>locked</b></div>
+            </nav>
+            <div class="actions"><button class="button">保存</button><button class="button primary">推进</button></div>
+          </header>
+          <section class="workspace">
+            <div class="hero-copy">
+              <span class="eyebrow">Liquid Production Surface</span>
+              <h1>生产流程像一层<br />可聚焦的流体表面。</h1>
+              <p>剧本、资产、故事板和视频任务在同一张材质表面上浮动、聚焦、推进。</p>
+            </div>
+            <aside class="project-orb">
+              <h3>项目</h3>
+              <div class="project active"><strong>雨夜车站</strong><span>8 scenes / 24 assets / 3 videos</span></div>
+              <div class="project"><strong>海港追逐</strong><span>3 scenes waiting references</span></div>
+              <div class="project"><strong>神秘实验室</strong><span>storyboard pass active</span></div>
+            </aside>
+            <section class="stage">
+              <div class="scene-cloud"></div>
+              <div class="liquid-line"></div>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 01</strong><span>entrance ready</span></footer></article>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 02</strong><span>missing prop</span></footer></article>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 03</strong><span>queued</span></footer></article>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 04</strong><span>draft</span></footer></article>
+              <article class="shot selected"><div class="thumb"></div><footer><strong>SC 05 月台对峙</strong><span>needs character lock</span></footer></article>
+            </section>
+            <aside class="side-lens">
+              <h3>生成控制</h3>
+              <div class="lens-row"><span>视觉风格</span><b>wet cinematic</b></div>
+              <div class="lens-row"><span>角色一致性</span><b>locked</b></div>
+              <div class="lens-row"><span>资产引用</span><b>2 missing</b></div>
+              <div class="lens-row"><span>视频模型</span><b>Seedance 2.0</b></div>
+              <div class="lens-row"><span>并发任务</span><b>3</b></div>
+              <button class="large-action">生成缺失项</button>
+            </aside>
+            <div class="floating-note">交互：点击任一镜头，当前镜头像液态镜片一样放大，右侧参数贴近该镜头，非当前元素退到背景。</div>
+          </section>
+        </main>
+      </section>
+
+      <section class="surface focus" id="liquid-focus">
+        <div class="grain"></div>
+        <main class="chrome">
+          <header class="topbar">
+            <div class="logo"></div>
+            <nav class="flow">
+              <div class="flow-step">剧本解析<b>done</b></div>
+              <div class="flow-step active">资产生成<b>active</b></div>
+              <div class="flow-step">故事板<b>blocked</b></div>
+              <div class="flow-step">视频任务<b>waiting</b></div>
+              <div class="flow-step">审核<b>locked</b></div>
+            </nav>
+            <div class="actions"><button class="button">替换引用</button><button class="button primary">生成资产</button></div>
+          </header>
+          <section class="workspace">
+            <div class="hero-copy">
+              <span class="eyebrow">Focus Mode</span>
+              <h1>局部放大，原地修复缺失资产。</h1>
+              <p>焦点不是跳到新页面，而是在当前表面上形成一块液态检查窗口，所有修复动作都保持上下文。</p>
+            </div>
+            <aside class="project-orb">
+              <h3>影响范围</h3>
+              <div class="project active"><strong>红色手提箱</strong><span>used by SC 02, SC 04, SC 05</span></div>
+              <div class="project active"><strong>主角雨衣</strong><span>identity risk</span></div>
+              <div class="project"><strong>车站标识</strong><span>optional</span></div>
+            </aside>
+            <section class="stage">
+              <div class="scene-cloud"></div>
+              <div class="liquid-line"></div>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 01</strong><span>ready</span></footer></article>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 02</strong><span>missing prop</span></footer></article>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 03</strong><span>waiting</span></footer></article>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 04</strong><span>affected</span></footer></article>
+              <article class="shot selected"><div class="thumb"></div><footer><strong>SC 05 月台对峙</strong><span>editing asset references</span></footer></article>
+            </section>
+            <aside class="side-lens">
+              <h3>SC 05 资产修复</h3>
+              <div class="lens-row"><span>缺失道具</span><b>red suitcase</b></div>
+              <div class="lens-row"><span>角色服装</span><b>raincoat lock</b></div>
+              <div class="lens-row"><span>背景</span><b>platform haze</b></div>
+              <div class="lens-row"><span>生成方式</span><b>transparent asset</b></div>
+              <div class="lens-row"><span>自动挂接</span><b>enabled</b></div>
+              <button class="large-action">生成并返回流程</button>
+            </aside>
+            <div class="floating-note">动效：镜头卡片向前漂浮，参数面板从右侧液化展开，背景镜头轻微虚化。</div>
+          </section>
+        </main>
+      </section>
+
+      <section class="surface submit" id="liquid-submit">
+        <div class="grain"></div>
+        <main class="chrome">
+          <header class="topbar">
+            <div class="logo"></div>
+            <nav class="flow">
+              <div class="flow-step">剧本解析<b>done</b></div>
+              <div class="flow-step">资产生成<b>done</b></div>
+              <div class="flow-step">故事板<b>done</b></div>
+              <div class="flow-step active">视频任务<b>ready</b></div>
+              <div class="flow-step">审核<b>next</b></div>
+            </nav>
+            <div class="actions"><button class="button">预检查</button><button class="button primary">提交</button></div>
+          </header>
+          <section class="workspace">
+            <div class="hero-copy">
+              <span class="eyebrow">Submit Flow</span>
+              <h1>提交前只保留真正需要确认的内容。</h1>
+              <p>当流程抵达视频阶段，界面收束成一个中心确认层，避免传统后台式的多表单噪音。</p>
+            </div>
+            <aside class="project-orb">
+              <h3>队列</h3>
+              <div class="project active"><strong>SC 03</strong><span>ready to render</span></div>
+              <div class="project active"><strong>SC 04</strong><span>ready to render</span></div>
+              <div class="project"><strong>SC 05</strong><span>waiting slot</span></div>
+            </aside>
+            <section class="stage">
+              <div class="scene-cloud"></div>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 01</strong><span>done</span></footer></article>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 02</strong><span>done</span></footer></article>
+              <article class="shot selected"><div class="thumb"></div><footer><strong>SC 03</strong><span>ready</span></footer></article>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 04</strong><span>ready</span></footer></article>
+              <article class="shot"><div class="thumb"></div><footer><strong>SC 05</strong><span>queued</span></footer></article>
+            </section>
+            <aside class="side-lens">
+              <h3>视频参数</h3>
+              <div class="lens-row"><span>模型</span><b>Seedance 2.0</b></div>
+              <div class="lens-row"><span>镜头时长</span><b>6s</b></div>
+              <div class="lens-row"><span>运动强度</span><b>medium</b></div>
+              <div class="lens-row"><span>失败恢复</span><b>auto retry</b></div>
+            </aside>
+            <div class="submission">
+              <span class="eyebrow">Ready to submit</span>
+              <h2>整条生产线可以进入视频生成。</h2>
+              <div class="submit-list">
+                <div class="submit-item"><i class="check"></i><span>所有必需资产已挂接</span><b>ok</b></div>
+                <div class="submit-item"><i class="check"></i><span>角色一致性已锁定</span><b>ok</b></div>
+                <div class="submit-item"><i class="check"></i><span>3 个镜头进入队列</span><b>ready</b></div>
+                <div class="submit-item"><i class="check"></i><span>失败恢复策略已设置</span><b>auto</b></div>
+              </div>
+              <button class="large-action">提交视频任务</button>
+            </div>
+            <div class="motion-note">Interaction model: focus, repair, submit. No page switching.</div>
+          </section>
+        </main>
+      </section>
+    </div>
+  </body>
+</html>

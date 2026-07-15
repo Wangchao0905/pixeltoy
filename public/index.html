@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pixel Toys</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css?v=2026071512" />
+  </head>
+  <body>
+    <div id="app">
+      <section id="exploreHome" class="explore-home hidden">
+        <header class="explore-topbar">
+          <button class="explore-brand" type="button" data-explore-canvas-home aria-label="Pixel Toys">
+            <span>Pixel Toys</span>
+          </button>
+          <nav aria-label="Creative tools">
+            <button type="button" data-explore-tool="short-drama-workspace" title="Open short drama workspace">Short Drama</button>
+            <button type="button" data-explore-canvas-home data-explore-primary-canvas>Canvas</button>
+            <button type="button" data-explore-tool="image-generation">Image</button>
+            <button type="button" data-explore-placeholder="super-pixel" title="Coming soon: conversational model" disabled>Super Pixel</button>
+          </nav>
+          <div class="explore-account-actions">
+            <span id="exploreAuthUserLabel"></span>
+            <button id="exploreTeamButton" type="button" aria-haspopup="dialog" aria-controls="teamPanel" title="团队">Team</button>
+            <button id="exploreRefresh" type="button" aria-label="刷新项目" title="刷新项目">↻</button>
+            <button id="exploreAccount" type="button" aria-label="修改密码" title="修改密码">◉</button>
+            <section id="teamPanel" class="team-panel hidden" role="dialog" aria-label="团队">
+              <header>
+                <strong id="teamPanelTitle">Team</strong>
+                <button id="closeTeamPanel" type="button" aria-label="关闭" title="关闭">×</button>
+              </header>
+              <div id="teamEmptyState">
+                <form id="teamCreateForm">
+                  <input name="name" required maxlength="80" placeholder="团队名称" />
+                  <button class="primary small" type="submit">创建团队</button>
+                </form>
+                <form id="teamJoinForm">
+                  <input name="code" required maxlength="80" placeholder="邀请码" />
+                  <button class="ghost small" type="submit">加入</button>
+                </form>
+              </div>
+              <div id="teamMemberState" class="hidden">
+                <div id="teamSummary"></div>
+                <div id="teamProjectProgress"></div>
+                <div id="teamMemberList"></div>
+                <div id="teamOwnerControls"></div>
+                <button id="leaveTeamButton" class="ghost small" type="button">退出团队</button>
+              </div>
+            </section>
+          </div>
+        </header>
+        <main class="explore-main canvas-home">
+          <section class="explore-canvas-library" aria-label="画布列表">
+            <div class="explore-canvas-toolbar">
+              <div class="explore-canvas-filters" role="tablist" aria-label="画布筛选">
+                <button class="is-active" type="button" role="tab" data-explore-scope="all">All</button>
+                <button type="button" role="tab" data-explore-scope="personal">Personal</button>
+                <button type="button" role="tab" data-explore-scope="team">Team</button>
+              </div>
+              <input id="exploreProjectSearch" type="search" aria-label="搜索画布" placeholder="搜索" />
+            </div>
+            <div id="exploreCanvasGrid" class="explore-canvas-grid"></div>
+          </section>
+        </main>
+        <section id="imageExploreView" class="image-explore-view hidden" aria-label="Image generation">
+          <header class="image-explore-head">
+            <div>
+              <span class="image-explore-kicker">IMAGE STUDIO</span>
+              <h1>Generate images</h1>
+              <p>从文字或参考图开始，快速生成可继续进入画布的视觉素材。</p>
+            </div>
+            <button id="imageExploreClear" class="image-explore-clear" type="button">清空历史</button>
+          </header>
+          <div id="imageExploreGallery" class="image-explore-gallery" aria-live="polite"></div>
+          <div id="imageExploreEmpty" class="image-explore-empty">
+            <strong>Describe the scene you imagine</strong>
+            <span>生成结果会出现在这里，可以继续作为画布参考图使用。</span>
+          </div>
+          <form id="imageExploreComposer" class="image-explore-composer">
+            <div class="image-explore-prompt-row">
+              <label class="image-explore-attach" for="imageExploreReference" title="添加参考图">
+                <input id="imageExploreReference" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" multiple />
+                <span>+</span>
+              </label>
+              <div id="imageExploreReferenceList" class="image-explore-reference-list"></div>
+              <textarea id="imageExplorePrompt" rows="2" maxlength="4000" placeholder="Describe the scene you imagine"></textarea>
+            </div>
+            <div class="image-explore-control-row">
+              <label class="image-explore-control image-explore-model">
+                <span>模型</span>
+                <select id="imageExploreModel">
+                  <option value="gpt-image-2">GPT Image 2</option>
+                </select>
+              </label>
+              <label class="image-explore-control image-explore-ratio">
+                <span>比例</span>
+                <select id="imageExploreRatio" aria-label="画面比例">
+                  <option value="16:9">横屏 16:9</option>
+                  <option value="4:3">横屏 4:3</option>
+                  <option value="3:2">横屏 3:2</option>
+                  <option value="21:9">超宽 21:9</option>
+                  <option value="1:1">方形 1:1</option>
+                  <option value="4:5">人像 4:5</option>
+                  <option value="3:4">人像 3:4</option>
+                  <option value="2:3">人像 2:3</option>
+                  <option value="9:16">竖屏 9:16</option>
+                </select>
+              </label>
+              <label class="image-explore-control image-explore-resolution">
+                <span>规格</span>
+                <select id="imageExploreResolution">
+                  <option value="1k">1K</option>
+                  <option value="2k" selected>2K</option>
+                  <option value="4k">4K</option>
+                </select>
+              </label>
+              <div class="image-explore-count" aria-label="生成数量">
+                <span>数量</span>
+                <button id="imageExploreCountDown" type="button" aria-label="减少数量">-</button>
+                <output id="imageExploreCount">1</output>
+                <button id="imageExploreCountUp" type="button" aria-label="增加数量">+</button>
+              </div>
+              <span id="imageExploreStatus" class="image-explore-status" aria-live="polite"></span>
+              <button id="imageExploreGenerate" class="image-explore-generate" type="submit">生成图片 <span aria-hidden="true">↗</span></button>
+            </div>
+          </form>
+        </section>
+      </section>
+
+      <section id="projectHome" class="project-home">
+        <header class="project-home-header">
+          <div class="brand">
+            <div class="mark pixel-toys-wordmark" aria-label="Pixel Toys"></div>
+          </div>
+          <div class="project-home-actions">
+            <span id="authUserLabel" class="auth-user-label"></span>
+            <a id="adminLink" class="ghost hidden" href="/admin.html">管理后台</a>
+            <button id="changePasswordButton" class="ghost" type="button">修改密码</button>
+            <button id="logoutButton" class="ghost" type="button">退出</button>
+            <button id="refreshProjects" class="ghost" type="button">刷新</button>
+            <button id="openNewProject" class="primary" type="button">新建项目</button>
+          </div>
+        </header>
+
+        <main class="project-home-main">
+          <section class="project-home-card canvas-entry-card hidden" aria-label="独立画布">
+            <div>
+              <span class="section-label">Canvas</span>
+              <h2>空白画布</h2>
+              <p>独立保存，不绑定剧本项目。</p>
+            </div>
+            <div id="blankCanvasList" class="blank-canvas-grid" aria-label="独立画布列表"></div>
+          </section>
+
+          <section class="project-list project-home-card">
+            <div class="section-head compact project-index-head">
+              <div>
+                <span class="section-label">Projects</span>
+                <h2>项目库</h2>
+                <p id="projectCount">正在读取项目</p>
+              </div>
+            </div>
+            <div id="projectList" class="projects"></div>
+          </section>
+        </main>
+      </section>
+
+      <div id="projectCreateModal" class="project-modal hidden" role="dialog" aria-modal="true" aria-label="新建项目">
+        <section class="project-modal-card">
+          <div class="section-head compact">
+            <div>
+              <h2>新建项目</h2>
+              <p>创建后会直接进入当前项目的制作页面。</p>
+            </div>
+            <button id="closeProjectModal" class="ghost small" type="button">关闭</button>
+          </div>
+          <form id="projectForm" class="stack">
+            <label>
+              <span>项目名</span>
+              <input name="projectName" placeholder="rift_hollow" required />
+            </label>
+            <div class="two">
+              <label>
+                <span>集数</span>
+                <input name="episodeSlug" placeholder="e01" value="e01" />
+              </label>
+              <label>
+                <span>标题</span>
+                <input name="title" placeholder="Deadstock" />
+              </label>
+            </div>
+            <label>
+              <span>剧本</span>
+              <textarea name="scriptText" rows="7" placeholder="粘贴剧本，或上传 .md/.txt/.docx"></textarea>
+            </label>
+            <div class="upload-row">
+              <input id="scriptUpload" type="file" accept=".md,.txt,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+              <label class="upload-pill" for="scriptUpload">选择上传剧本</label>
+              <span id="scriptUploadName">支持 .md / .txt / .docx</span>
+            </div>
+            <p id="projectCreateStatus" class="project-create-status" aria-live="polite"></p>
+            <div class="project-form-actions">
+              <button id="seriesPreflightButton" class="ghost" type="button">短剧预检</button>
+              <button class="primary" type="submit">创建制作台</button>
+            </div>
+            <section id="seriesPreflightResult" class="series-preflight-result hidden" aria-live="polite"></section>
+          </form>
+        </section>
+      </div>
+
+      <section id="studioShell" class="studio-shell hidden">
+        <aside class="studio-sidebar" aria-label="制作工具栏">
+          <div class="studio-sidebar-brand">
+            <div class="mark pixel-toys-wordmark" aria-label="Pixel Toys"></div>
+          </div>
+          <nav class="studio-sidebar-nav" aria-label="全局操作">
+            <button id="studioProjectsButton" class="studio-rail-button" type="button">项目</button>
+            <button id="studioNewProject" class="studio-rail-button" type="button">新建</button>
+            <button id="studioCanvasButton" class="studio-rail-button" type="button">画布</button>
+          </nav>
+          <nav class="studio-mode-rail" aria-label="功能模式">
+            <button type="button" data-workspace-mode-button="script" aria-label="剧本" title="剧本">▤</button>
+            <button type="button" data-workspace-mode-button="image" aria-label="图片" title="图片">▧</button>
+            <button type="button" data-workspace-mode-button="video" aria-label="视频" title="视频">▶</button>
+            <button type="button" data-workspace-mode-button="storyboard" aria-label="故事板" title="故事板">▦</button>
+            <button type="button" data-workspace-mode-button="assets" aria-label="资产" title="资产">◇</button>
+          </nav>
+        </aside>
+
+        <main class="main studio-stage">
+          <header class="topbar studio-topbar">
+            <div>
+              <p class="kicker">short drama pipeline</p>
+              <h1 id="projectTitle">选择或新建项目</h1>
+              <form id="projectDisplayNameForm" class="project-display-name-form hidden">
+                <input id="projectDisplayNameInput" type="text" placeholder="输入项目名称，例如《镜界》" autocomplete="off" />
+                <button class="primary small" type="submit">保存名称</button>
+              </form>
+            </div>
+            <div class="topbar-right">
+              <button id="backToProjects" class="ghost small" type="button">返回项目页</button>
+              <div class="workspace-controls" aria-label="工作台缩放">
+                <button id="zoomOut" class="ghost small" type="button">-</button>
+                <span id="zoomLabel">100%</span>
+                <button id="zoomIn" class="ghost small" type="button">+</button>
+                <button id="zoomFit" class="ghost small" type="button">适配</button>
+                <button id="resetLayout" class="ghost small" type="button">重置布局</button>
+              </div>
+              <div class="status-pills" id="statusPills"></div>
+            </div>
+          </header>
+
+          <div id="emptyState" class="empty">
+            <h2>把剧本放进来，剩下交给流程。</h2>
+            <p>资产图、分镜提示词、Seedance 配置和生成状态都会在这里集中显示。</p>
+          </div>
+
+          <div id="workspaceViewport" class="workspace-viewport hidden">
+            <div id="workspace" class="workspace studio-board">
+              <section class="studio-console" data-workspace-mode="script" aria-label="生成控制台">
+                <div class="studio-console-head">
+                  <div>
+                    <span class="section-label">Control</span>
+                    <h2>生成控制台</h2>
+                    <p>剧本、对白语言和资产解析固定在这里，下面的标签页只负责查看和执行。</p>
+                  </div>
+                  <div class="studio-console-actions">
+                    <button id="studioAssetsTabShortcut" class="ghost small" type="button" data-studio-tab="assets">查看资产库</button>
+                    <button id="studioVideoTabShortcut" class="primary small" type="button" data-studio-tab="video">进入视频生成</button>
+                  </div>
+                </div>
+                <div class="studio-console-grid">
+                  <section class="panel script-panel flow-main draggable-window" data-window-id="script">
+                    <div class="section-head">
+                      <div>
+                        <h2>剧本</h2>
+                        <p id="scriptPath" class="path-line"></p>
+                      </div>
+                      <div class="actions">
+                        <div class="segmented" role="radiogroup" aria-label="对白语言">
+                          <label>
+                            <input type="radio" name="draftDialogueLanguage" value="en" checked />
+                            <span>英文对白</span>
+                          </label>
+                          <label>
+                            <input type="radio" name="draftDialogueLanguage" value="zh" />
+                            <span>中文对白</span>
+                          </label>
+                        </div>
+                        <div class="segmented analyzer-segmented" role="radiogroup" aria-label="资产解析模型">
+                          <label>
+                            <input type="radio" name="assetAnalyzerModel" value="claude-opus-4-8" checked />
+                            <span>Claude Opus 4.8</span>
+                          </label>
+                          <label>
+                            <input type="radio" name="assetAnalyzerModel" value="gpt-5.5-thinking" />
+                            <span>GPT 5.5 Thinking</span>
+                          </label>
+                        </div>
+                        <button data-save="script" class="ghost" type="button">保存</button>
+                        <button id="draftBtn" class="primary" type="button">资产提取</button>
+                      </div>
+                    </div>
+                    <textarea id="scriptText" class="editor tall"></textarea>
+                  </section>
+
+                  <section class="panel asset-manifest-panel flow-main draggable-window" data-window-id="manifest">
+                    <div class="section-head">
+                      <div>
+                        <h2>资产解析</h2>
+                        <p id="assetManifestStatus">先提取剧本中的人物和场景。</p>
+                      </div>
+                      <div class="actions">
+                        <button id="extractAssetsBtn" class="ghost" type="button">生成视频配置</button>
+                        <button id="confirmAssetManifestBtn" class="primary" type="button">确认解析结果</button>
+                      </div>
+                    </div>
+                    <div id="assetManifestOverview" class="asset-manifest-overview"></div>
+                    <textarea id="assetManifestText" class="editor compact-editor raw-data-store" aria-hidden="true" tabindex="-1"></textarea>
+                  </section>
+                </div>
+              </section>
+
+              <section class="studio-flow-strip" aria-label="流程状态">
+                <div id="studioFlowStatus" class="studio-flow-status"></div>
+              </section>
+
+              <section class="studio-content-shell" aria-label="项目内容">
+                <div class="studio-tabbar" role="tablist" aria-label="制作内容">
+                  <button class="studio-tab-button is-active" type="button" role="tab" data-studio-tab="assets" aria-controls="studioTabAssets">资产库</button>
+                  <button class="studio-tab-button" type="button" role="tab" data-studio-tab="storyboards" aria-controls="studioTabStoryboards">故事板</button>
+                  <button class="studio-tab-button" type="button" role="tab" data-studio-tab="video" aria-controls="studioTabVideo">视频片段</button>
+                  <button class="studio-tab-button" type="button" role="tab" data-studio-tab="logs" aria-controls="studioTabLogs">日志</button>
+                </div>
+
+                <div class="studio-tab-panels">
+                  <section id="studioTabAssets" class="studio-tab-panel is-active" data-studio-panel="assets" data-workspace-mode="image assets" data-asset-workspace-view="assets" role="tabpanel">
+                    <section class="panel media-panel asset-preview-panel flow-preview draggable-window" data-window-id="assets">
+                      <div class="section-head">
+                        <div>
+                          <h2>资产图</h2>
+                          <p id="assetCount"></p>
+                        </div>
+                        <div class="actions asset-generation-only">
+                          <label class="quality-pill">
+                            <span>画质</span>
+                            <select id="assetQuality">
+                              <option value="1k" selected>1K</option>
+                              <option value="2k">2K</option>
+                              <option value="4k">4K</option>
+                            </select>
+                          </label>
+                          <label class="quality-pill asset-range-pill">
+                            <span>范围</span>
+                            <select id="assetGenerateRange">
+                              <option value="missing" selected>缺失</option>
+                              <option value="selected">选中</option>
+                              <option value="failed">失败</option>
+                              <option value="all">全部</option>
+                            </select>
+                          </label>
+                          <button data-job="assets" class="primary" type="button">生成资产图</button>
+                          <button id="refreshState" class="ghost" type="button">刷新</button>
+                        </div>
+                        <button id="teamResourceButton" class="ghost small hidden" type="button">Team resources</button>
+                      </div>
+                      <div class="asset-style-console asset-generation-only" aria-label="资产图风格控制">
+                        <label>
+                          <span>资产风格</span>
+                          <select id="assetStylePreset">
+                            <option value="photoreal">超写实</option>
+                            <option value="cg_3d" selected>3D 渲染 / CG 质感</option>
+                            <option value="pixar_3d">皮克斯 / 迪士尼 3D</option>
+                            <option value="ghibli_miyazaki">宫崎骏 / 吉卜力</option>
+                            <option value="retro_american_cel">复古美式赛璐璐</option>
+                            <option value="american_bold_toon">美式粗线条</option>
+                            <option value="modern_anime_cel">日式动漫赛璐璐</option>
+                            <option value="american_painterly">美式厚涂插画</option>
+                            <option value="claymation">定格动画 / 黏土</option>
+                            <option value="chinese_ink">水墨 / 国风</option>
+                            <option value="pixel_art">复古像素</option>
+                            <option value="custom">自定义</option>
+                          </select>
+                        </label>
+                        <label class="asset-style-custom">
+                          <span>风格补充</span>
+                          <input id="assetStyleCustom" placeholder="例如：冷调赛博西部，硬边轮廓，低饱和胶片颗粒" />
+                        </label>
+                        <div class="style-reference-row">
+                          <div class="asset-file-row">
+                            <input id="assetStyleReferenceFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                            <label class="upload-pill" for="assetStyleReferenceFile">上传风格参考</label>
+                            <span id="assetStyleReferenceName">未上传</span>
+                          </div>
+                          <label class="style-reference-toggle">
+                            <input id="assetStyleReferenceEnabled" type="checkbox" checked />
+                            <span>启用</span>
+                          </label>
+                          <button id="assetStyleReferenceRemove" class="ghost small" type="button">移除</button>
+                        </div>
+                        <div id="assetStylePreview" class="style-preview"></div>
+                      </div>
+                      <div id="assetJobStatus" class="inline-status asset-generation-only"></div>
+                      <section id="teamResourcePanel" class="team-resource-panel hidden" aria-label="团队资源">
+                        <div class="team-resource-tabs" role="tablist" aria-label="资源类型">
+                          <button class="is-active" type="button" data-team-resource-type="asset-image">Asset images</button>
+                          <button type="button" data-team-resource-type="storyboard">Storyboards</button>
+                          <button type="button" data-team-resource-type="shot">Shots</button>
+                        </div>
+                        <div id="teamResourceList"></div>
+                      </section>
+                      <form id="assetUploadForm" class="asset-upload-form asset-library-only">
+                        <label>
+                          <span>绑定资产</span>
+                          <select id="assetUploadTarget"></select>
+                        </label>
+                        <div class="asset-file-row">
+                          <input id="assetUploadFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                          <label class="upload-pill" for="assetUploadFile">上传资产图</label>
+                          <span id="assetUploadName">PNG / JPG / WEBP</span>
+                        </div>
+                        <p id="assetUploadHint" class="asset-upload-hint">上传后使用资产解析名称保存。</p>
+                        <button id="assetUploadButton" class="primary" type="submit">绑定上传</button>
+                      </form>
+                      <div class="asset-library-layout">
+                        <div class="asset-library-main">
+                          <div id="assetGallery" class="gallery"></div>
+                        </div>
+                        <aside id="assetInspector" class="asset-inspector asset-library-only hidden" aria-label="资产检查器">
+                          <header>
+                            <div>
+                              <strong id="assetInspectorName"></strong>
+                              <span id="assetInspectorMeta"></span>
+                            </div>
+                            <button id="closeAssetInspector" type="button" aria-label="关闭检查器" title="关闭">×</button>
+                          </header>
+                          <label for="assetInspectorPrompt">生成提示词</label>
+                          <textarea id="assetInspectorPrompt" maxlength="4000" rows="14"></textarea>
+                          <div class="asset-inspector-draft">
+                            <span id="assetInspectorDraftStatus"></span>
+                            <span id="assetInspectorPromptCount">0 / 4000</span>
+                          </div>
+                          <details>
+                            <summary>风格锁与负向约束</summary>
+                            <pre id="assetInspectorPolicy"></pre>
+                          </details>
+                          <div class="asset-inspector-actions">
+                            <button id="restoreAssetPrompt" type="button">还原</button>
+                            <button id="saveAssetPrompt" type="button">保存提示词</button>
+                          </div>
+                          <button id="regenerateAssetFromInspector" class="asset-inspector-regenerate" type="button">使用修改后的提示词重新生成</button>
+                          <p>重新生成会消耗额度；保存提示词不会生成图片。</p>
+                        </aside>
+                      </div>
+                    </section>
+                  </section>
+
+                  <section id="studioTabStoryboards" class="studio-tab-panel" data-studio-panel="storyboards" data-workspace-mode="storyboard" role="tabpanel" hidden>
+                    <section class="panel media-panel storyboard-grid-panel flow-preview draggable-window" data-window-id="storyboards">
+                      <div class="section-head">
+                        <div>
+                          <h2>Production Board</h2>
+                          <p id="storyboardGridCount"></p>
+                        </div>
+                        <div class="actions">
+                          <label class="quality-pill">
+                            <span>范围</span>
+                            <select id="storyboardGenerateRange">
+                              <option value="missing" selected>缺失</option>
+                              <option value="all">全部</option>
+                            </select>
+                          </label>
+                          <button data-job="storyboards" class="primary" type="button">生成 Production Board</button>
+                          <button id="refreshStoryboards" class="ghost" type="button">刷新</button>
+                        </div>
+                      </div>
+                      <div id="storyboardJobStatus" class="inline-status"></div>
+                      <form id="storyboardUploadForm" class="asset-upload-form storyboard-upload-form">
+                        <label>
+                          <span>绑定 Production Board</span>
+                          <select id="storyboardUploadTarget"></select>
+                        </label>
+                        <div class="asset-file-row">
+                          <input id="storyboardUploadFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                          <label class="upload-pill" for="storyboardUploadFile">上传 Production Board</label>
+                          <span id="storyboardUploadName">PNG / JPG / WEBP</span>
+                        </div>
+                        <button id="storyboardUploadButton" class="primary" type="submit">绑定上传</button>
+                      </form>
+                      <div id="storyboardGridGallery" class="gallery storyboard-gallery"></div>
+                    </section>
+                  </section>
+
+                  <section id="studioTabVideo" class="studio-tab-panel" data-studio-panel="video" data-workspace-mode="video" role="tabpanel" hidden>
+                    <div class="video-workflow flow-status draggable-window" data-window-id="video">
+                      <section class="panel video-generate-panel">
+                        <div class="section-head">
+                          <div>
+                            <h2>视频生成</h2>
+                            <p id="videoConfigLabel">Seedance 2.0 / 操作台直接生成</p>
+                          </div>
+                          <div class="actions">
+                            <button id="buildConfigBtn" class="primary" type="button">生成视频配置</button>
+                            <button id="generateAllSegments" class="primary" type="button">全部发送到画布并生成</button>
+                          </div>
+                        </div>
+                        <div id="videoConfigStatus" class="inline-status"></div>
+                        <div class="video-settings" aria-label="视频生成参数">
+                          <label>
+                            <span>生成模式</span>
+                            <select id="configPromptMode">
+                              <option value="production_board">Production Board</option>
+                              <option value="prompt">提示词 + 同场景尾帧</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>比例</span>
+                            <select id="configRatio">
+                              <option value="9:16">9:16</option>
+                              <option value="16:9">16:9</option>
+                              <option value="1:1">1:1</option>
+                              <option value="4:3">4:3</option>
+                              <option value="3:4">3:4</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>规格</span>
+                            <select id="configResolution">
+                              <option value="480p">480p</option>
+                              <option value="720p">720p</option>
+                              <option value="1080p">1080p</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>模型选择</span>
+                            <select id="configModel">
+                              <option value="seedance-2-0">Seedance 2.0</option>
+                              <option value="seedance-2-0-fast">Seedance 2.0 Fast</option>
+                              <option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div class="config-store" aria-hidden="true">
+                          <span id="configPath"></span>
+                          <input id="configGroup" />
+                          <textarea id="configText"></textarea>
+                        </div>
+                        <div id="videoProgressSummary" class="progress-summary"></div>
+                        <div id="videoProgressList" class="segment-progress"></div>
+                      </section>
+                    </div>
+                    <section class="panel final-cut-panel">
+                      <div class="section-head">
+                        <div>
+                          <h2>成片</h2>
+                          <p id="finalCutLabel">把已完成片段按顺序硬切拼成完整成片（1080×1920 / 24fps，保留音频）。</p>
+                        </div>
+                        <div class="actions">
+                          <button id="assembleFinalCutBtn" class="primary" type="button">组装成片</button>
+                        </div>
+                      </div>
+                      <div id="finalCutStatus" class="inline-status"></div>
+                      <div id="finalCutPreview" class="final-cut-preview"></div>
+                    </section>
+                  </section>
+
+                  <section id="studioTabLogs" class="studio-tab-panel" data-studio-panel="logs" role="tabpanel" hidden>
+                    <section class="panel studio-log-panel">
+                      <div class="section-head">
+                        <div>
+                          <h2>运行日志</h2>
+                          <p>只显示当前项目最近的资产、故事板和视频状态。</p>
+                        </div>
+                        <button class="ghost" type="button" data-studio-tab="video">查看视频片段</button>
+                      </div>
+                      <div id="studioLogContent" class="studio-log-content"></div>
+                    </section>
+                  </section>
+                </div>
+              </section>
+
+              <section class="panel storyboard-panel flow-main hidden" data-window-id="storyboard">
+                <div class="section-head">
+                  <div>
+                    <h2>分镜</h2>
+                    <p id="storyboardPath" class="path-line"></p>
+                  </div>
+                  <button data-save="storyboard" class="ghost" type="button">保存</button>
+                </div>
+                <textarea id="storyboardText" class="editor"></textarea>
+              </section>
+
+              <div class="workflow-storage hidden" aria-hidden="true">
+                <span id="assetPromptsPath"></span>
+                <textarea id="assetPromptsText"></textarea>
+              </div>
+
+              <section class="panel seedance-panel flow-main hidden" data-window-id="seedance" aria-hidden="true">
+                <span id="seedancePath" class="path-line"></span>
+                <textarea id="seedanceText" class="editor tall"></textarea>
+              </section>
+            </div>
+          </div>
+        </main>
+      </section>
+    </div>
+
+    <div id="imageLightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-label="资产图预览">
+      <button id="closeLightbox" class="ghost small lightbox-close" type="button">关闭</button>
+      <figure>
+        <img id="lightboxImage" src="" alt="" />
+        <video id="lightboxVideo" class="hidden" controls playsinline></video>
+        <figcaption>
+          <strong id="lightboxTitle"></strong>
+          <span id="lightboxMeta"></span>
+        </figcaption>
+      </figure>
+    </div>
+    <dialog id="changePasswordDialog" class="password-dialog">
+      <form id="changePasswordForm" class="password-dialog-card" method="dialog">
+        <div class="password-dialog-head">
+          <div>
+            <span class="section-label">Account</span>
+            <h2>修改密码</h2>
+          </div>
+          <button class="ghost" type="button" data-close-password>关闭</button>
+        </div>
+        <label>
+          <span>当前密码</span>
+          <input name="currentPassword" type="password" autocomplete="current-password" minlength="8" required />
+        </label>
+        <label>
+          <span>新密码</span>
+          <input name="newPassword" type="password" autocomplete="new-password" minlength="8" required />
+        </label>
+        <label>
+          <span>确认新密码</span>
+          <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required />
+        </label>
+        <p id="changePasswordMessage" class="auth-message" aria-live="polite"></p>
+        <button class="primary" type="submit">保存新密码</button>
+      </form>
+    </dialog>
+    <div id="toast" class="toast hidden"></div>
+    <script src="/workspace-shell.js"></script>
+    <script src="/app.js?v=2026071512"></script>
+  </body>
+</html>

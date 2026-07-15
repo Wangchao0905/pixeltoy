@@ -1,0 +1,1617 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Production Line Map Preview</title>
+    <style>
+      :root {
+        --bg: #080d14;
+        --floor: #0b1119;
+        --floor-2: #111a28;
+        --ink: #f7fbff;
+        --muted: #7d8aa0;
+        --soft: #c6d1e0;
+        --line: rgba(84, 111, 149, 0.26);
+        --line-strong: rgba(112, 147, 196, 0.38);
+        --panel: rgba(21, 30, 44, 0.82);
+        --panel-solid: #151e2c;
+        --ready: #2fd06b;
+        --running: #2f96ff;
+        --warn: #a5f12c;
+        --blocked: #ff5b52;
+        --locked: #657085;
+        --paid: #ff5b52;
+        --cyan: #2f96ff;
+        --mint: #2fd06b;
+        --coral: #ff5b52;
+        --canvas-blue: #0c49a6;
+        --card: #172131;
+        --radius: 10px;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--ink);
+      }
+
+      body {
+        background:
+          radial-gradient(ellipse at 50% 0%, rgba(22, 93, 197, 0.72), transparent 42rem),
+          radial-gradient(circle at 43% 16%, rgba(47, 150, 255, 0.2), transparent 26rem),
+          radial-gradient(circle at 88% 20%, rgba(47, 208, 107, 0.1), transparent 24rem),
+          radial-gradient(circle, rgba(101, 128, 168, 0.34) 1px, transparent 1.4px),
+          linear-gradient(90deg, rgba(52, 83, 126, 0.11) 1px, transparent 1px),
+          linear-gradient(rgba(52, 83, 126, 0.1) 1px, transparent 1px),
+          linear-gradient(180deg, #0b1420 0%, #0b1119 48%, #070b10 100%),
+          var(--floor);
+        background-size:
+          auto,
+          auto,
+          auto,
+          10px 10px,
+          80px 80px,
+          80px 80px,
+          auto,
+          auto;
+        animation: ambient-shift 18s ease-in-out infinite alternate;
+      }
+
+      body::before,
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      body::before {
+        opacity: 0.42;
+        background:
+          radial-gradient(circle at 50% 7%, rgba(47, 150, 255, 0.32), transparent 38rem),
+          linear-gradient(90deg, rgba(0, 0, 0, 0.72), transparent 18%, transparent 74%, rgba(0, 0, 0, 0.72));
+        mask-image: linear-gradient(180deg, black, rgba(0, 0, 0, 0.82) 54%, transparent 100%);
+      }
+
+      body::after {
+        background:
+          linear-gradient(105deg, transparent 0 42%, rgba(47, 150, 255, 0.06) 48%, transparent 56%),
+          linear-gradient(180deg, rgba(0, 0, 0, 0.16), transparent 20%, rgba(0, 0, 0, 0.52));
+        animation: scan-sweep 7s linear infinite;
+      }
+
+      @keyframes ambient-shift {
+        from {
+          background-position:
+            0 0,
+            0 0,
+            0 0,
+            0 0,
+            0 0,
+            0 0,
+            0 0;
+        }
+        to {
+          background-position:
+            28px -16px,
+            -22px 18px,
+            18px 26px,
+            4px 3px,
+            0 0,
+            0 0,
+            0 0;
+        }
+      }
+
+      @keyframes scan-sweep {
+        from {
+          transform: translateX(-18%);
+        }
+        to {
+          transform: translateX(18%);
+        }
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .map-shell {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        min-width: 1180px;
+        min-height: 760px;
+      }
+
+      .top-strip {
+        position: absolute;
+        inset: 22px 22px auto 22px;
+        z-index: 10;
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 18px;
+        align-items: start;
+        pointer-events: none;
+      }
+
+      .project-title,
+      .quick-panel,
+      .legend,
+      .shot-strip,
+      .station-detail {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background:
+          linear-gradient(180deg, rgba(31, 43, 62, 0.78), rgba(15, 22, 33, 0.84)),
+          rgba(21, 30, 44, 0.74);
+        box-shadow:
+          0 24px 72px rgba(0, 0, 0, 0.36),
+          inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(20px) saturate(1.1);
+        -webkit-backdrop-filter: blur(20px) saturate(1.1);
+      }
+
+      .project-title {
+        position: relative;
+        display: inline-grid;
+        grid-column: 2;
+        width: min(620px, 45vw);
+        min-height: 118px;
+        place-items: center;
+        padding: 18px 28px;
+        border-color: rgba(47, 150, 255, 0.9);
+        border-radius: 0;
+        background: rgba(13, 54, 126, 0.18);
+        box-shadow:
+          0 0 0 1px rgba(47, 150, 255, 0.38),
+          0 0 36px rgba(47, 150, 255, 0.14);
+        pointer-events: auto;
+        text-align: center;
+      }
+
+      .project-title::after {
+        content: "";
+        position: absolute;
+        inset: -5px;
+        pointer-events: none;
+        background:
+          radial-gradient(circle at 0 0, #7bc2ff 0 3px, transparent 4px),
+          radial-gradient(circle at 100% 0, #7bc2ff 0 3px, transparent 4px),
+          radial-gradient(circle at 0 100%, #7bc2ff 0 3px, transparent 4px),
+          radial-gradient(circle at 100% 100%, #7bc2ff 0 3px, transparent 4px);
+      }
+
+      .project-title::before {
+        content: "";
+        width: 0;
+        height: 0;
+        margin: 0;
+        border-radius: 999px;
+      }
+
+      .eyebrow {
+        color: #94a3ba;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        margin-top: 8px;
+        font-size: 34px;
+        line-height: 1.04;
+        letter-spacing: -0.01em;
+      }
+
+      .subtitle {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .quick-panel {
+        grid-column: 3;
+        justify-self: end;
+        display: flex;
+        gap: 8px;
+        padding: 8px;
+        pointer-events: auto;
+      }
+
+      .action {
+        min-height: 32px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        padding: 0 12px;
+        background:
+          linear-gradient(180deg, rgba(38, 50, 70, 0.72), rgba(18, 25, 36, 0.92));
+        color: var(--ink);
+        cursor: pointer;
+        white-space: nowrap;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.05),
+          0 10px 24px rgba(0, 0, 0, 0.24);
+        transition:
+          transform 160ms ease,
+          border-color 160ms ease,
+          box-shadow 160ms ease,
+          background 160ms ease;
+      }
+
+      .action:hover {
+        transform: translateY(-1px);
+        border-color: rgba(104, 216, 255, 0.42);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.08),
+          0 14px 34px rgba(0, 0, 0, 0.3),
+          0 0 22px rgba(104, 216, 255, 0.1);
+      }
+
+      .action.primary {
+        border-color: rgba(47, 208, 107, 0.58);
+        background:
+          linear-gradient(180deg, rgba(32, 119, 66, 0.78), rgba(15, 55, 33, 0.94));
+      }
+
+      .action.cost {
+        border-color: rgba(255, 91, 82, 0.62);
+        background:
+          linear-gradient(180deg, rgba(103, 41, 39, 0.42), rgba(31, 19, 19, 0.94));
+        color: #ffdedc;
+      }
+
+      .factory-map {
+        position: absolute;
+        inset: 0;
+      }
+
+      .belt-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+
+      .belt-shadow {
+        fill: none;
+        stroke: rgba(0, 0, 0, 0.24);
+        stroke-width: 4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .belt-base {
+        fill: none;
+        stroke: rgba(125, 151, 190, 0.28);
+        stroke-width: 1.4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .belt-plate {
+        fill: none;
+        stroke: rgba(108, 132, 170, 0.24);
+        stroke-width: 3;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 2 18;
+        filter: drop-shadow(0 0 6px rgba(47, 150, 255, 0.14));
+      }
+
+      .belt-inner {
+        fill: none;
+        stroke: rgba(47, 150, 255, 0.76);
+        stroke-width: 2;
+        stroke-dasharray: 1 22;
+        stroke-linecap: round;
+        filter: drop-shadow(0 0 8px rgba(47, 150, 255, 0.44));
+        animation: flow 0.72s linear infinite;
+      }
+
+      .belt-sheen {
+        fill: none;
+        stroke: rgba(47, 208, 107, 0.42);
+        stroke-width: 1.2;
+        stroke-linecap: round;
+        stroke-dasharray: 54 240;
+        filter: drop-shadow(0 0 10px rgba(47, 208, 107, 0.3));
+        animation: flow 1.8s linear infinite reverse;
+      }
+
+      .belt-warning {
+        fill: none;
+        stroke: rgba(255, 106, 77, 0.9);
+        stroke-width: 2.8;
+        stroke-dasharray: 1 18;
+        stroke-linecap: round;
+        filter: drop-shadow(0 0 12px rgba(255, 106, 77, 0.5));
+        animation: flow 0.42s linear infinite;
+      }
+
+      @keyframes flow {
+        to {
+          stroke-dashoffset: -48;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .belt-inner,
+        .belt-warning,
+        .pulse,
+        body,
+        body::after,
+        .station,
+        .lamp::after,
+        .block-marker,
+        .shot-strip::after {
+          animation: none !important;
+        }
+      }
+
+      .station {
+        position: absolute;
+        z-index: 2;
+        width: 208px;
+        min-height: 128px;
+        border: 1px solid rgba(89, 114, 153, 0.46);
+        border-radius: 13px;
+        padding: 12px 12px 11px;
+        background:
+          linear-gradient(180deg, rgba(31, 43, 62, 0.92), rgba(18, 27, 40, 0.94));
+        color: var(--ink);
+        text-align: left;
+        box-shadow:
+          0 18px 48px rgba(0, 0, 0, 0.26),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        cursor: pointer;
+        animation: station-drift 7s ease-in-out infinite alternate;
+        transition:
+          transform 180ms ease,
+          border-color 180ms ease,
+          box-shadow 180ms ease,
+          background 180ms ease;
+      }
+
+      .station:nth-of-type(2n) {
+        animation-duration: 8.5s;
+        animation-delay: -2s;
+      }
+
+      .station:nth-of-type(3n) {
+        animation-duration: 9.5s;
+        animation-delay: -4s;
+      }
+
+      @keyframes station-drift {
+        from {
+          transform: translate3d(0, 0, 0);
+        }
+        to {
+          transform: translate3d(0, -5px, 0);
+        }
+      }
+
+      .station::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        background:
+          radial-gradient(circle at 75% 0%, rgba(47, 150, 255, 0.12), transparent 42%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 36%);
+        opacity: 0.82;
+      }
+
+      .station::after {
+        content: "";
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        top: 8px;
+        height: 1px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(47, 150, 255, 0.8), transparent 66%);
+        opacity: 0;
+      }
+
+      .station:hover,
+      .station.active {
+        border-color: rgba(47, 150, 255, 0.94);
+        transform: translate3d(0, -5px, 0) scale(1.01);
+        box-shadow:
+          0 20px 56px rgba(0, 0, 0, 0.34),
+          0 0 0 1px rgba(47, 150, 255, 0.42),
+          0 0 34px rgba(47, 150, 255, 0.16),
+          inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+
+      .station.active {
+        background:
+          linear-gradient(180deg, rgba(31, 54, 86, 0.94), rgba(19, 31, 49, 0.94));
+      }
+
+      .station.active::after,
+      .station:hover::after {
+        opacity: 1;
+      }
+
+      .station.video:hover,
+      .station.video.active {
+        border-color: rgba(255, 91, 82, 0.82);
+        box-shadow:
+          0 20px 56px rgba(0, 0, 0, 0.34),
+          0 0 0 1px rgba(255, 91, 82, 0.3),
+          0 0 36px rgba(255, 91, 82, 0.18),
+          inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+
+      .station.script {
+        left: 7.2%;
+        top: 32.5%;
+      }
+
+      .station.parse {
+        left: 23%;
+        top: 24%;
+      }
+
+      .station.assets {
+        left: 38%;
+        top: 36%;
+      }
+
+      .station.board {
+        left: 52%;
+        top: 24.5%;
+      }
+
+      .station.plan {
+        left: 64%;
+        top: 42%;
+      }
+
+      .station.video {
+        left: 76%;
+        top: 30%;
+      }
+
+      .station.assembly {
+        left: 82%;
+        top: 58%;
+      }
+
+      .station-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .station-index {
+        color: rgba(184, 196, 216, 0.62);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+      }
+
+      .station h2 {
+        margin-top: 5px;
+        font-size: 16px;
+        line-height: 1.14;
+      }
+
+      .station p {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 11.5px;
+        line-height: 1.4;
+      }
+
+      .lamp {
+        display: inline-grid;
+        place-items: center;
+        min-width: 24px;
+        height: 24px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.2));
+        color: var(--ready);
+        font-size: 0;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.1),
+          0 8px 18px rgba(0, 0, 0, 0.28);
+      }
+
+      .lamp::after {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow:
+          0 0 14px currentColor,
+          0 0 28px currentColor;
+        animation: lamp-breathe 1.8s ease-in-out infinite alternate;
+      }
+
+      @keyframes lamp-breathe {
+        from {
+          opacity: 0.68;
+          transform: scale(0.88);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1.15);
+        }
+      }
+
+      .lamp.running {
+        color: var(--running);
+      }
+
+      .lamp.warn {
+        color: var(--warn);
+      }
+
+      .lamp.blocked {
+        color: var(--blocked);
+      }
+
+      .lamp.locked {
+        color: var(--locked);
+      }
+
+      .station-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+
+      .mini-pill {
+        min-height: 21px;
+        border: 1px solid rgba(105, 132, 174, 0.36);
+        border-radius: 999px;
+        padding: 2px 7px;
+        color: var(--soft);
+        background: rgba(8, 14, 24, 0.42);
+        font-size: 11px;
+      }
+
+      .block-marker {
+        position: absolute;
+        z-index: 3;
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        border: 1px solid rgba(255, 91, 82, 0.72);
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at 50% 40%, rgba(255, 91, 82, 0.32), transparent 46%),
+          rgba(44, 20, 24, 0.96);
+        color: #ffd8cf;
+        font-size: 18px;
+        box-shadow:
+          0 0 0 5px rgba(240, 117, 84, 0.08),
+          0 0 34px rgba(240, 117, 84, 0.36);
+        animation: alert-pulse 1s ease-in-out infinite alternate;
+      }
+
+      @keyframes alert-pulse {
+        from {
+          transform: scale(0.94);
+          box-shadow:
+            0 0 0 3px rgba(255, 106, 77, 0.08),
+            0 0 24px rgba(255, 106, 77, 0.28);
+        }
+        to {
+          transform: scale(1.06);
+          box-shadow:
+            0 0 0 10px rgba(255, 106, 77, 0.02),
+            0 0 46px rgba(255, 106, 77, 0.52);
+        }
+      }
+
+      .block-marker.one {
+        left: 70.7%;
+        top: 39.8%;
+      }
+
+      .block-marker.two {
+        left: 78.5%;
+        top: 53.5%;
+      }
+
+      .asset-deck {
+        position: absolute;
+        left: 29.5%;
+        top: 58%;
+        z-index: 7;
+        width: 520px;
+        border: 1px solid rgba(47, 150, 255, 0.32);
+        border-radius: 14px;
+        padding: 12px;
+        background:
+          linear-gradient(180deg, rgba(25, 37, 56, 0.78), rgba(12, 18, 28, 0.86)),
+          rgba(16, 25, 39, 0.72);
+        box-shadow:
+          0 22px 62px rgba(0, 0, 0, 0.34),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        transition:
+          opacity 180ms ease,
+          transform 180ms ease;
+      }
+
+      .asset-deck.is-hidden {
+        opacity: 0;
+        transform: translateY(10px) scale(0.985);
+        pointer-events: none;
+      }
+
+      .asset-deck.is-video {
+        left: auto;
+        right: 392px;
+        top: 52%;
+        width: 420px;
+        border-color: rgba(255, 91, 82, 0.34);
+      }
+
+      .asset-deck.is-parse {
+        left: 18.5%;
+        top: 51%;
+        width: 498px;
+      }
+
+      .asset-deck-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .asset-deck h3 {
+        margin-top: 4px;
+        font-size: 16px;
+      }
+
+      .asset-deck-note {
+        color: var(--muted);
+        font-size: 11.5px;
+        line-height: 1.35;
+      }
+
+      .asset-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .asset-tab {
+        min-height: 26px;
+        border: 1px solid rgba(89, 114, 153, 0.45);
+        border-radius: 999px;
+        padding: 0 8px;
+        background: rgba(11, 18, 29, 0.68);
+        color: var(--soft);
+        font-size: 11px;
+      }
+
+      .asset-tab.active {
+        border-color: rgba(47, 208, 107, 0.58);
+        background: rgba(47, 208, 107, 0.16);
+        color: #dfffe9;
+      }
+
+      .asset-groups {
+        display: grid;
+        grid-template-columns: 1.05fr 1fr 1fr;
+        gap: 10px;
+      }
+
+      .asset-group {
+        min-width: 0;
+      }
+
+      .asset-group-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 7px;
+        color: var(--soft);
+        font-size: 11px;
+      }
+
+      .asset-group-title strong {
+        color: var(--ink);
+        font-size: 12px;
+      }
+
+      .asset-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .asset-card {
+        position: relative;
+        display: grid;
+        align-content: end;
+        min-height: 70px;
+        overflow: hidden;
+        border: 1px solid rgba(89, 114, 153, 0.42);
+        border-radius: 10px;
+        padding: 6px;
+        background:
+          linear-gradient(180deg, transparent 0 42%, rgba(5, 8, 12, 0.78) 100%),
+          var(--asset-bg, linear-gradient(135deg, #263b5f, #152236));
+        color: white;
+        font-size: 10px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      }
+
+      .asset-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 62% 22%, rgba(255, 255, 255, 0.22), transparent 18%),
+          linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+        opacity: 0.8;
+      }
+
+      .asset-card span {
+        position: relative;
+        z-index: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .asset-card em {
+        position: relative;
+        z-index: 1;
+        margin-top: 2px;
+        color: rgba(222, 232, 247, 0.68);
+        font-size: 9px;
+        font-style: normal;
+        white-space: nowrap;
+      }
+
+      .asset-card.character {
+        --asset-bg: linear-gradient(135deg, #143b5d, #294d84 52%, #101926);
+      }
+
+      .asset-card.scene {
+        --asset-bg: linear-gradient(135deg, #132e4e, #335f80 50%, #0e1520);
+      }
+
+      .asset-card.prop {
+        --asset-bg: linear-gradient(135deg, #25305a, #4b5d7d 48%, #111722);
+      }
+
+      .asset-card.usable {
+        border-color: rgba(47, 208, 107, 0.56);
+      }
+
+      .asset-card.missing {
+        border-style: dashed;
+        border-color: rgba(255, 91, 82, 0.54);
+        background:
+          repeating-linear-gradient(135deg, rgba(255, 91, 82, 0.12) 0 6px, rgba(255, 255, 255, 0.02) 6px 12px),
+          rgba(18, 23, 33, 0.9);
+        color: #ffd9d6;
+      }
+
+      .asset-card.missing::before {
+        opacity: 0;
+      }
+
+      .asset-badge {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        z-index: 2;
+        min-width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        background: rgba(47, 208, 107, 0.88);
+        box-shadow: 0 0 12px rgba(47, 208, 107, 0.38);
+      }
+
+      .asset-card.missing .asset-badge {
+        background: rgba(255, 91, 82, 0.9);
+        box-shadow: 0 0 12px rgba(255, 91, 82, 0.42);
+      }
+
+      .asset-routing {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+
+      .asset-route {
+        border: 1px solid rgba(47, 150, 255, 0.28);
+        border-radius: 999px;
+        padding: 4px 8px;
+        background: rgba(47, 150, 255, 0.09);
+        color: #cfe7ff;
+        font-size: 11px;
+      }
+
+      .asset-route.warn {
+        border-color: rgba(255, 91, 82, 0.36);
+        background: rgba(255, 91, 82, 0.1);
+        color: #ffd9d6;
+      }
+
+      .asset-route.ready {
+        border-color: rgba(47, 208, 107, 0.38);
+        background: rgba(47, 208, 107, 0.1);
+        color: #dfffe9;
+      }
+
+      .legend {
+        position: absolute;
+        left: 22px;
+        bottom: 22px;
+        z-index: 8;
+        display: flex;
+        gap: 8px;
+        padding: 8px 10px;
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .legend i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ready);
+      }
+
+      .legend .running i {
+        background: var(--running);
+      }
+
+      .legend .warn i {
+        background: var(--warn);
+      }
+
+      .legend .blocked i {
+        background: var(--blocked);
+      }
+
+      .shot-strip {
+        position: absolute;
+        left: 50%;
+        bottom: 22px;
+        z-index: 8;
+        width: min(700px, 52vw);
+        transform: translateX(-50%);
+        padding: 11px 12px;
+        overflow: hidden;
+      }
+
+      .shot-strip::after {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 -30%;
+        width: 28%;
+        background: linear-gradient(90deg, transparent, rgba(104, 216, 255, 0.14), transparent);
+        transform: skewX(-18deg);
+        animation: timeline-scan 3.2s linear infinite;
+        pointer-events: none;
+      }
+
+      @keyframes timeline-scan {
+        to {
+          left: 108%;
+        }
+      }
+
+      .shot-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+        color: var(--soft);
+        font-size: 11.5px;
+      }
+
+      .shots {
+        display: grid;
+        grid-template-columns: 12fr 15fr 9fr 14fr 11fr 10fr 11fr;
+        gap: 4px;
+        height: 38px;
+      }
+
+      .shot {
+        position: relative;
+        display: grid;
+        align-items: center;
+        min-width: 0;
+        border: 1px solid rgba(184, 203, 191, 0.18);
+        border-radius: 6px;
+        padding: 0 6px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(0, 0, 0, 0.1));
+        color: var(--soft);
+        font-size: 11px;
+        overflow: hidden;
+      }
+
+      .shot::before {
+        content: "";
+        position: absolute;
+        inset: auto 0 0;
+        height: 2px;
+        background: linear-gradient(90deg, rgba(101, 240, 177, 0.7), rgba(104, 216, 255, 0.38));
+      }
+
+      .shot.ready {
+        border-color: rgba(81, 213, 154, 0.4);
+      }
+
+      .shot.blocked {
+        border-color: rgba(255, 119, 92, 0.52);
+        color: #ffd8cf;
+      }
+
+      .shot.blocked::before {
+        background: linear-gradient(90deg, rgba(255, 106, 77, 0.92), rgba(255, 79, 104, 0.52));
+      }
+
+      .station-detail {
+        position: absolute;
+        right: 22px;
+        bottom: 22px;
+        z-index: 12;
+        width: 354px;
+        padding: 13px;
+        animation: detail-enter 220ms ease both;
+      }
+
+      @keyframes detail-enter {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.985);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .detail-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .detail-head h2 {
+        margin-top: 4px;
+        font-size: 20px;
+      }
+
+      .close-detail {
+        width: 32px;
+        height: 32px;
+        border: 1px solid rgba(184, 203, 191, 0.2);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--soft);
+        cursor: pointer;
+      }
+
+      .detail-grid {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .detail-row {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr);
+        gap: 8px;
+        border-bottom: 1px solid rgba(184, 203, 191, 0.13);
+        padding-bottom: 7px;
+        font-size: 13px;
+      }
+
+      .detail-row span {
+        color: var(--muted);
+      }
+
+      .detail-row strong {
+        overflow-wrap: anywhere;
+      }
+
+      .block-copy {
+        margin-top: 12px;
+        border: 1px solid rgba(255, 119, 92, 0.38);
+        border-radius: 8px;
+        padding: 10px;
+        background: rgba(255, 119, 92, 0.08);
+        color: #ffd8cf;
+        font-size: 13px;
+        line-height: 1.42;
+      }
+
+      .detail-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .map-tools {
+        position: absolute;
+        right: 22px;
+        top: 154px;
+        z-index: 9;
+        display: grid;
+        gap: 8px;
+        width: 180px;
+      }
+
+      .tool-tile {
+        border: 1px solid rgba(184, 203, 191, 0.15);
+        border-radius: 8px;
+        padding: 8px 9px;
+        background:
+          linear-gradient(180deg, rgba(18, 24, 21, 0.76), rgba(8, 11, 10, 0.78));
+        color: var(--soft);
+        font-size: 12px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      }
+
+      .tool-tile strong {
+        display: block;
+        margin-top: 3px;
+        color: var(--ink);
+        font-size: 15px;
+      }
+
+      @media (max-width: 1200px) {
+        .map-shell {
+          min-width: 100vw;
+          overflow-x: auto;
+        }
+
+        .factory-map {
+          width: 1240px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="map-shell">
+      <header class="top-strip">
+        <section class="project-title">
+          <span class="eyebrow">Production Line Map · Episode Unit 70-90s</span>
+          <h1>《裂隙回声》E04 生产线地图</h1>
+          <p class="subtitle">从剧本入口到本地 MP4 验收，再进入成片组装。阻塞会直接卡在生产线上，而不是藏在标签页里。</p>
+        </section>
+
+        <section class="quick-panel" aria-label="快速操作">
+          <button class="action" type="button">项目库</button>
+          <button class="action" type="button">打开 Canvas</button>
+          <button class="action primary" type="button">定位阻塞</button>
+          <button class="action cost" type="button">生成缺失项</button>
+        </section>
+      </header>
+
+      <section class="factory-map" aria-label="生产线地图">
+        <svg class="belt-svg" viewBox="0 0 1440 900" preserveAspectRatio="none" aria-hidden="true">
+          <path class="belt-shadow" d="M238 377 C332 292 405 306 492 379 C576 450 635 342 746 342 C864 342 860 548 998 500 C1108 462 1128 366 1234 392 C1318 413 1290 544 1248 602" />
+          <path class="belt-base" d="M238 377 C332 292 405 306 492 379 C576 450 635 342 746 342 C864 342 860 548 998 500 C1108 462 1128 366 1234 392 C1318 413 1290 544 1248 602" />
+          <path class="belt-plate" d="M238 377 C332 292 405 306 492 379 C576 450 635 342 746 342 C864 342 860 548 998 500 C1108 462 1128 366 1234 392 C1318 413 1290 544 1248 602" />
+          <path class="belt-inner" d="M238 377 C332 292 405 306 492 379 C576 450 635 342 746 342 C864 342 860 548 998 500 C1108 462 1128 366 1234 392 C1318 413 1290 544 1248 602" />
+          <path class="belt-sheen" d="M238 377 C332 292 405 306 492 379 C576 450 635 342 746 342 C864 342 860 548 998 500 C1108 462 1128 366 1234 392 C1318 413 1290 544 1248 602" />
+          <path class="belt-warning" d="M998 500 C1108 462 1128 366 1234 392 C1318 413 1290 544 1248 602" />
+        </svg>
+
+        <button class="station script" type="button" data-station="script">
+          <div class="station-top">
+            <div>
+              <span class="station-index">01 · Intake</span>
+              <h2>剧本入口</h2>
+            </div>
+            <span class="lamp"></span>
+          </div>
+          <p>脚本已锁定，作为后续资产与镜头计划的唯一来源。</p>
+          <div class="station-metrics"><span class="mini-pill">3,842 字</span><span class="mini-pill">英文对白</span></div>
+        </button>
+
+        <button class="station parse" type="button" data-station="parse">
+          <div class="station-top">
+            <div>
+              <span class="station-index">02 · Sorter</span>
+              <h2>资产分拣</h2>
+            </div>
+            <span class="lamp warn"></span>
+          </div>
+          <p>角色、场景、道具被分流到不同产线，2 个分类待确认。</p>
+          <div class="station-metrics"><span class="mini-pill">8 人物</span><span class="mini-pill">5 场景</span><span class="mini-pill">13 道具</span></div>
+        </button>
+
+        <button class="station assets active" type="button" data-station="assets">
+          <div class="station-top">
+            <div>
+              <span class="station-index">03 · Forge</span>
+              <h2>参考图锻造</h2>
+            </div>
+            <span class="lamp warn"></span>
+          </div>
+          <p>核心参考已完成，缺失道具会让部分近景镜头降级。</p>
+          <div class="station-metrics"><span class="mini-pill">24/28 ready</span><span class="mini-pill">4 missing</span></div>
+        </button>
+
+        <button class="station board" type="button" data-station="board">
+          <div class="station-top">
+            <div>
+              <span class="station-index">04 · Board</span>
+              <h2>Production Board</h2>
+            </div>
+            <span class="lamp"></span>
+          </div>
+          <p>16:9 sheet 内含 9 个 9:16 分格，用于构图和节奏。</p>
+          <div class="station-metrics"><span class="mini-pill">9/9 panels</span><span class="mini-pill">已绑定</span></div>
+        </button>
+
+        <button class="station plan" type="button" data-station="plan">
+          <div class="station-top">
+            <div>
+              <span class="station-index">05 · Planner</span>
+              <h2>镜头计划</h2>
+            </div>
+            <span class="lamp running"></span>
+          </div>
+          <p>7 个镜头，82 秒，尾帧只用于直接动作连续。</p>
+          <div class="station-metrics"><span class="mini-pill">7 shots</span><span class="mini-pill">82s</span><span class="mini-pill">2 tail</span></div>
+        </button>
+
+        <button class="station video" type="button" data-station="video">
+          <div class="station-top">
+            <div>
+              <span class="station-index">06 · Video Bay</span>
+              <h2>视频工位</h2>
+            </div>
+            <span class="lamp blocked"></span>
+          </div>
+          <p>4 个片段可用，3 个片段阻塞，生产线在这里降速。</p>
+          <div class="station-metrics"><span class="mini-pill">4/7 MP4</span><span class="mini-pill">3 blocked</span></div>
+        </button>
+
+        <button class="station assembly" type="button" data-station="assembly">
+          <div class="station-top">
+            <div>
+              <span class="station-index">07 · Gate</span>
+              <h2>成片闸门</h2>
+            </div>
+            <span class="lamp locked"></span>
+          </div>
+          <p>等待本地 MP4 验收完成后，生成 assembly manifest。</p>
+          <div class="station-metrics"><span class="mini-pill">locked</span><span class="mini-pill">needs 7/7</span></div>
+        </button>
+
+        <div class="block-marker one" title="视频阻塞">!</div>
+        <div class="block-marker two" title="组装未解锁">!</div>
+      </section>
+
+      <section class="asset-deck" id="assetDeck" aria-label="资产图显示逻辑">
+        <div class="asset-deck-head">
+          <div>
+            <span class="eyebrow" id="assetDeckEyebrow">Reference Deck</span>
+            <h3 id="assetDeckTitle">资产图引用池</h3>
+            <p class="asset-deck-note" id="assetDeckNote">故事板分镜图默认隐藏；这里只显示可被提示词和视频任务引用的明确资产图。</p>
+          </div>
+          <div class="asset-tabs" id="assetDeckTabs" aria-label="资产分组状态"></div>
+        </div>
+        <div class="asset-groups" id="assetGroups"></div>
+        <div class="asset-routing" id="assetRouting"></div>
+      </section>
+
+      <aside class="map-tools" aria-label="全局指标">
+        <div class="tool-tile">计划时长<strong>82s</strong></div>
+        <div class="tool-tile">镜头段落<strong>7</strong></div>
+        <div class="tool-tile">本地 MP4<strong>4/7</strong></div>
+        <div class="tool-tile">可组装<strong>未解锁</strong></div>
+      </aside>
+
+      <section class="legend" aria-label="状态图例">
+        <span><i></i>Ready</span>
+        <span class="running"><i></i>Running</span>
+        <span class="warn"><i></i>Review</span>
+        <span class="blocked"><i></i>Blocked</span>
+      </section>
+
+      <section class="shot-strip" aria-label="镜头长度分布">
+        <div class="shot-head">
+          <strong>Episode Timeline · 82s</strong>
+          <span>每段 4-15s，长短随剧情内容变化</span>
+        </div>
+        <div class="shots">
+          <div class="shot ready">SH01 · 12s</div>
+          <div class="shot ready">SH02 · 15s</div>
+          <div class="shot ready">SH03 · 9s</div>
+          <div class="shot ready">SH04 · 14s</div>
+          <div class="shot blocked">SH05 · 11s</div>
+          <div class="shot blocked">SH06 · 10s</div>
+          <div class="shot blocked">SH07 · 11s</div>
+        </div>
+      </section>
+
+      <aside class="station-detail" aria-label="工位详情">
+        <div class="detail-head">
+          <div>
+            <span class="eyebrow" id="detailEyebrow">03 · Forge</span>
+            <h2 id="detailTitle">参考图锻造</h2>
+          </div>
+          <button class="close-detail" type="button" id="closeDetail" aria-label="收起详情">×</button>
+        </div>
+        <p class="subtitle" id="detailSummary">核心参考图可用，但仍有缺失道具会影响镜头级提示词。</p>
+        <div class="detail-grid" id="detailGrid"></div>
+        <div class="block-copy" id="blockCopy">4 个道具缺失：钥匙、门把手、旧磁带、雨水反光地面。若进入视频配置，这些镜头会降级为无道具参考。</div>
+        <div class="detail-actions" id="detailActions"></div>
+      </aside>
+    </main>
+
+    <script>
+      const data = {
+        script: {
+          eyebrow: "01 · Intake",
+          title: "剧本入口",
+          summary: "剧本已锁定，后续任何生产线变更都从这里重新流入。",
+          rows: [
+            ["状态", "Ready"],
+            ["对白", "英文对白"],
+            ["体量", "3,842 字"],
+            ["影响", "资产解析、镜头计划、字幕草稿"],
+          ],
+          block: "无阻塞。修改剧本会标记下游为需要刷新。",
+          actions: [["编辑剧本", "primary"], ["重新生成分镜草稿", ""]],
+        },
+        parse: {
+          eyebrow: "02 · Sorter",
+          title: "资产分拣",
+          summary: "分拣工位把人物、场景、道具分流，避免道具被送进人物线。",
+          rows: [
+            ["人物", "8"],
+            ["场景", "5"],
+            ["道具", "13"],
+            ["待确认", "门把手、霓虹招牌"],
+          ],
+          block: "2 个分类待确认。确认前不建议批量生成资产图。",
+          actions: [["确认分类", "primary"], ["重新解析", ""]],
+        },
+        assets: {
+          eyebrow: "03 · Forge",
+          title: "参考图锻造",
+          summary: "核心参考图可用，但仍有缺失道具会影响镜头级提示词。",
+          rows: [
+            ["人物图", "8/8"],
+            ["场景图", "5/5"],
+            ["道具图", "9/13"],
+            ["缺失", "钥匙、门把手、旧磁带、雨水反光地面"],
+          ],
+          block: "4 个道具缺失。若进入视频配置，这些镜头会降级为无道具参考。",
+          actions: [["生成缺失项", "cost"], ["上传替代资产", ""], ["查看资产库", ""]],
+        },
+        board: {
+          eyebrow: "04 · Board",
+          title: "Production Board",
+          summary: "这里定义镜头构图、blocking 和节奏，不替代最终角色/场景资产。",
+          rows: [
+            ["整图", "16:9 sheet"],
+            ["分格", "9 个 9:16 panels"],
+            ["用途", "构图、调度、节奏"],
+            ["限制", "不复制手绘质感"],
+          ],
+          block: "无阻塞。可作为视频提示词结构参考。",
+          actions: [["查看大图", "primary"], ["重新生成", "cost"]],
+        },
+        plan: {
+          eyebrow: "05 · Planner",
+          title: "镜头计划",
+          summary: "把剧情切成 4-15 秒片段，并决定哪些镜头需要尾帧连续。",
+          rows: [
+            ["总长", "82s"],
+            ["镜头", "7"],
+            ["平均", "11.7s"],
+            ["尾帧", "2 个直接动作连续镜头"],
+          ],
+          block: "当前无规划阻塞，但 SH05-SH07 未通过视频验收。",
+          actions: [["查看镜头表", "primary"], ["重算时长", ""]],
+        },
+        video: {
+          eyebrow: "06 · Video Bay",
+          title: "视频工位",
+          summary: "视频生成和本地 MP4 验收被拆开显示，避免只看到 provider URL 就误以为可组装。",
+          rows: [
+            ["任务", "7"],
+            ["本地 MP4", "4/7"],
+            ["失败", "SH05"],
+            ["未下载", "SH06、SH07"],
+          ],
+          block: "生产线在视频工位阻塞：3 个片段没有通过服务器本地 MP4 验收。",
+          actions: [["下载缺失 MP4", "primary"], ["重试失败片段", "cost"], ["打开 Canvas", ""]],
+        },
+        assembly: {
+          eyebrow: "07 · Gate",
+          title: "成片闸门",
+          summary: "只有所有片段都是服务器本地有效 MP4 后，才允许进入组装。",
+          rows: [
+            ["闸门", "Locked"],
+            ["需要", "7/7 local MP4"],
+            ["当前", "4/7"],
+            ["首版", "硬切 + 字幕草稿"],
+          ],
+          block: "组装锁定。缺少完整本地 MP4 前，不生成 assembly manifest。",
+          actions: [["导出缺失清单", "primary"], ["查看组装条件", ""]],
+        },
+      };
+
+      const assetDeckStates = {
+        parse: {
+          mode: "parse",
+          eyebrow: "Sorter Review",
+          title: "资产分类复核",
+          note: "资产图不在故事板里露出；这里只显示被解析出的明确对象，方便发现道具误入人物线。",
+          tabs: ["人物 8", "场景 5", "道具 13", "待确认 2"],
+          groups: [
+            {
+              label: "人物",
+              count: "8 ready",
+              type: "character",
+              items: [
+                ["Mercy Cain", "character", "usable"],
+                ["Toby Finch", "character", "usable"],
+                ["Elias Voss", "character", "usable"],
+              ],
+            },
+            {
+              label: "场景",
+              count: "5 ready",
+              type: "scene",
+              items: [
+                ["Rain Alley", "scene", "usable"],
+                ["Neon Corridor", "scene", "usable"],
+                ["Safehouse", "scene", "usable"],
+              ],
+            },
+            {
+              label: "道具",
+              count: "2 review",
+              type: "prop",
+              items: [
+                ["Old Tape", "prop", "usable"],
+                ["Door Handle", "prop", "missing"],
+                ["Neon Sign", "prop", "missing"],
+              ],
+            },
+          ],
+          routes: [
+            ["清晰命名资产 26", "ready"],
+            ["待确认分类 2", "warn"],
+            ["不显示 Storyboard 图", ""],
+          ],
+        },
+        assets: {
+          mode: "assets",
+          eyebrow: "Reference Deck",
+          title: "资产图引用池",
+          note: "故事板分镜图隐藏；人物、场景、道具资产图集中显示，并用清晰名称供提示词 @ 引用。",
+          tabs: ["全部 28", "可引用 24", "缺失 4"],
+          groups: [
+            {
+              label: "人物",
+              count: "8/8",
+              type: "character",
+              items: [
+                ["Mercy Cain", "character", "usable"],
+                ["Toby Finch", "character", "usable"],
+                ["Elias Voss", "character", "usable"],
+              ],
+            },
+            {
+              label: "场景",
+              count: "5/5",
+              type: "scene",
+              items: [
+                ["Rain Alley", "scene", "usable"],
+                ["Neon Corridor", "scene", "usable"],
+                ["Safehouse", "scene", "usable"],
+              ],
+            },
+            {
+              label: "道具",
+              count: "9/13",
+              type: "prop",
+              items: [
+                ["Key", "prop", "missing"],
+                ["Old Tape", "prop", "missing"],
+                ["Wet Pavement", "prop", "missing"],
+              ],
+            },
+          ],
+          routes: [
+            ["视频可引用 24", "ready"],
+            ["缺失 4", "warn"],
+            ["Board 仅显示状态", ""],
+          ],
+        },
+        video: {
+          mode: "video",
+          eyebrow: "Video References",
+          title: "视频可引用资产",
+          note: "视频工位只展示当前镜头可用的 @资产名；缺失项以空槽显示，不从故事板截图兜底。",
+          tabs: ["SH01-SH04 ready", "SH05 blocked", "SH06-SH07 pending"],
+          groups: [
+            {
+              label: "人物",
+              count: "3 used",
+              type: "character",
+              items: [
+                ["Mercy Cain", "character", "usable"],
+                ["Toby Finch", "character", "usable"],
+                ["Elias Voss", "character", "usable"],
+              ],
+            },
+            {
+              label: "场景",
+              count: "3 used",
+              type: "scene",
+              items: [
+                ["Rain Alley", "scene", "usable"],
+                ["Neon Corridor", "scene", "usable"],
+                ["Safehouse", "scene", "usable"],
+              ],
+            },
+            {
+              label: "阻塞道具",
+              count: "3 missing",
+              type: "prop",
+              items: [
+                ["Key", "prop", "missing"],
+                ["Door Handle", "prop", "missing"],
+                ["Old Tape", "prop", "missing"],
+              ],
+            },
+          ],
+          routes: [
+            ["可进入提示词 @资产 22", "ready"],
+            ["缺失导致阻塞 3", "warn"],
+            ["禁止使用 @剧情描述", "warn"],
+          ],
+        },
+      };
+
+      const stations = document.querySelectorAll(".station");
+      const detail = document.querySelector(".station-detail");
+      const detailEyebrow = document.getElementById("detailEyebrow");
+      const detailTitle = document.getElementById("detailTitle");
+      const detailSummary = document.getElementById("detailSummary");
+      const detailGrid = document.getElementById("detailGrid");
+      const blockCopy = document.getElementById("blockCopy");
+      const detailActions = document.getElementById("detailActions");
+      const closeDetail = document.getElementById("closeDetail");
+      const assetDeck = document.getElementById("assetDeck");
+      const assetDeckEyebrow = document.getElementById("assetDeckEyebrow");
+      const assetDeckTitle = document.getElementById("assetDeckTitle");
+      const assetDeckNote = document.getElementById("assetDeckNote");
+      const assetDeckTabs = document.getElementById("assetDeckTabs");
+      const assetGroups = document.getElementById("assetGroups");
+      const assetRouting = document.getElementById("assetRouting");
+
+      function renderAssetDeck(key) {
+        const deck = assetDeckStates[key];
+        assetDeck.classList.toggle("is-hidden", !deck);
+        assetDeck.classList.toggle("is-video", deck?.mode === "video");
+        assetDeck.classList.toggle("is-parse", deck?.mode === "parse");
+        if (!deck) return;
+
+        assetDeckEyebrow.textContent = deck.eyebrow;
+        assetDeckTitle.textContent = deck.title;
+        assetDeckNote.textContent = deck.note;
+        assetDeckTabs.innerHTML = deck.tabs
+          .map((tab, index) => `<button class="asset-tab ${index === 0 ? "active" : ""}" type="button">${tab}</button>`)
+          .join("");
+        assetGroups.innerHTML = deck.groups
+          .map(
+            (group) => `
+              <section class="asset-group">
+                <div class="asset-group-title"><strong>${group.label}</strong><span>${group.count}</span></div>
+                <div class="asset-grid">
+                  ${group.items
+                    .map(
+                      ([name, type, state]) => `
+                        <div class="asset-card ${type} ${state}">
+                          <i class="asset-badge"></i>
+                          <span>${name}</span>
+                          <em>@${name}</em>
+                        </div>
+                      `,
+                    )
+                    .join("")}
+                </div>
+              </section>
+            `,
+          )
+          .join("");
+        assetRouting.innerHTML = deck.routes
+          .map(([label, type]) => `<span class="asset-route ${type}">${label}</span>`)
+          .join("");
+      }
+
+      function openStation(key) {
+        const item = data[key];
+        stations.forEach((station) => station.classList.toggle("active", station.dataset.station === key));
+        detail.hidden = false;
+        detailEyebrow.textContent = item.eyebrow;
+        detailTitle.textContent = item.title;
+        detailSummary.textContent = item.summary;
+        detailGrid.innerHTML = item.rows
+          .map(([label, value]) => `<div class="detail-row"><span>${label}</span><strong>${value}</strong></div>`)
+          .join("");
+        blockCopy.textContent = item.block;
+        detailActions.innerHTML = item.actions
+          .map(([label, type]) => `<button class="action ${type}" type="button">${label}</button>`)
+          .join("");
+        renderAssetDeck(key);
+      }
+
+      stations.forEach((station) => {
+        station.addEventListener("click", () => openStation(station.dataset.station));
+      });
+
+      closeDetail.addEventListener("click", () => {
+        detail.hidden = true;
+        stations.forEach((station) => station.classList.remove("active"));
+      });
+
+      openStation("assets");
+    </script>
+  </body>
+</html>

@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pixel Toys One Screen Flow Mockups</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #05070b;
+        color: #eaf1ff;
+        font-family: Inter, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+      }
+
+      .stack {
+        display: grid;
+        gap: 34px;
+      }
+
+      .board {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+        border: 1px solid rgba(145, 191, 255, 0.2);
+        background: #07101c;
+      }
+
+      .logo {
+        width: 178px;
+        height: 31px;
+        background: url("../../public/pixel-toys-logo.png") center / contain no-repeat;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 18px;
+        border-radius: 12px;
+        border: 1px solid rgba(154, 199, 255, 0.22);
+        background: rgba(255, 255, 255, 0.055);
+        color: #e7f0ff;
+        font-size: 13px;
+        font-weight: 760;
+      }
+
+      .btn.primary {
+        border-color: rgba(118, 206, 255, 0.72);
+        background: linear-gradient(180deg, #7ed7ff, #2f95ff);
+        color: #031324;
+        box-shadow: 0 14px 34px rgba(44, 149, 255, 0.34);
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 26px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(222, 232, 248, 0.72);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #51f4b2;
+        box-shadow: 0 0 16px rgba(81, 244, 178, 0.62);
+      }
+
+      .a {
+        background:
+          radial-gradient(circle at 18% 6%, rgba(48, 143, 255, 0.28), transparent 26rem),
+          radial-gradient(circle at 92% 18%, rgba(255, 67, 103, 0.14), transparent 26rem),
+          linear-gradient(135deg, #050a12, #081526 46%, #050b12);
+      }
+
+      .a::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: 0.28;
+        background-image:
+          linear-gradient(rgba(125, 181, 255, 0.12) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(125, 181, 255, 0.12) 1px, transparent 1px);
+        background-size: 40px 40px;
+      }
+
+      .a .top {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: 220px 1fr auto;
+        align-items: center;
+        gap: 18px;
+        height: 86px;
+        margin: 26px 28px 0;
+        padding: 0 22px;
+        border: 1px solid rgba(139, 190, 255, 0.18);
+        border-radius: 22px;
+        background: rgba(7, 15, 29, 0.76);
+        backdrop-filter: blur(18px);
+      }
+
+      .a .pipeline {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+      }
+
+      .a .step {
+        position: relative;
+        height: 42px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(128, 184, 255, 0.16);
+        background: rgba(255, 255, 255, 0.045);
+        color: rgba(226, 236, 250, 0.76);
+        font-size: 11px;
+        font-weight: 760;
+      }
+
+      .a .step.active {
+        border-color: rgba(91, 224, 255, 0.54);
+        background: linear-gradient(180deg, rgba(61, 193, 255, 0.22), rgba(255, 255, 255, 0.04));
+        color: #f2fbff;
+      }
+
+      .a .grid {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: 330px 1fr 360px;
+        gap: 16px;
+        height: 740px;
+        padding: 18px 28px 28px;
+      }
+
+      .panel {
+        border: 1px solid rgba(145, 190, 255, 0.15);
+        border-radius: 20px;
+        background: rgba(8, 17, 31, 0.74);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+        backdrop-filter: blur(20px);
+      }
+
+      .panel h3 {
+        margin: 0;
+        color: #f4f8ff;
+        font-size: 15px;
+      }
+
+      .panel .head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px;
+        border-bottom: 1px solid rgba(145, 190, 255, 0.1);
+      }
+
+      .a .left .item {
+        margin: 12px 14px;
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(150, 194, 255, 0.1);
+      }
+
+      .a .item strong,
+      .c .item strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .a .item span,
+      .c .item span {
+        display: block;
+        margin-top: 6px;
+        color: rgba(195, 210, 232, 0.58);
+        font-size: 11px;
+      }
+
+      .a .center {
+        display: grid;
+        grid-template-rows: 260px 1fr;
+        gap: 16px;
+      }
+
+      .a .script {
+        padding: 22px;
+      }
+
+      .a .script h1 {
+        margin: 0 0 12px;
+        font-size: 34px;
+        letter-spacing: -0.02em;
+      }
+
+      .a .script p {
+        max-width: 780px;
+        color: rgba(213, 225, 243, 0.68);
+        font-size: 14px;
+        line-height: 1.72;
+      }
+
+      .a .lanes {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .a .lane {
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(145, 190, 255, 0.1);
+      }
+
+      .a .thumb {
+        height: 128px;
+        margin: 12px;
+        border-radius: 14px;
+        background:
+          linear-gradient(135deg, rgba(90, 197, 255, 0.34), transparent),
+          radial-gradient(circle at 70% 20%, rgba(255, 76, 118, 0.28), transparent 42%),
+          #0d1728;
+      }
+
+      .a .right {
+        display: grid;
+        grid-template-rows: 1fr auto;
+      }
+
+      .a .controls {
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .control {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        min-height: 50px;
+        padding: 0 14px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.045);
+        color: rgba(226, 236, 250, 0.78);
+        font-size: 12px;
+      }
+
+      .a .run {
+        margin: 16px;
+        height: 58px;
+      }
+
+      .b {
+        background:
+          radial-gradient(circle at 50% 0%, rgba(247, 36, 86, 0.2), transparent 24rem),
+          linear-gradient(180deg, #09080b, #0d1016);
+      }
+
+      .b .shell {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        height: 100%;
+      }
+
+      .b .rail {
+        padding: 28px 20px;
+        border-right: 1px solid rgba(255, 255, 255, 0.09);
+        background: rgba(255, 255, 255, 0.035);
+      }
+
+      .b .rail .logo {
+        margin-bottom: 30px;
+      }
+
+      .b .nav {
+        display: grid;
+        gap: 10px;
+      }
+
+      .b .nav div {
+        display: flex;
+        justify-content: space-between;
+        padding: 14px;
+        border-radius: 14px;
+        color: rgba(235, 238, 245, 0.68);
+        background: rgba(255, 255, 255, 0.035);
+      }
+
+      .b .nav .active {
+        color: #fff;
+        background: rgba(255, 58, 98, 0.16);
+        border: 1px solid rgba(255, 73, 111, 0.34);
+      }
+
+      .b .work {
+        display: grid;
+        grid-template-rows: 86px 1fr 170px;
+        min-width: 0;
+      }
+
+      .b .bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 26px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .b .bar h2 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      .b .main {
+        display: grid;
+        grid-template-columns: 1.2fr 0.9fr;
+        gap: 18px;
+        padding: 18px;
+        min-height: 0;
+      }
+
+      .b .preview {
+        border-radius: 22px;
+        background:
+          linear-gradient(180deg, transparent 64%, rgba(0, 0, 0, 0.78)),
+          radial-gradient(circle at 40% 24%, rgba(69, 176, 255, 0.22), transparent 34%),
+          linear-gradient(135deg, #171b24, #090a0e);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .b .preview::after {
+        content: "SHOT 04 / TRAIN ARRIVES AT RAIN STATION";
+        position: absolute;
+        left: 22px;
+        bottom: 22px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.72);
+        letter-spacing: 0.08em;
+      }
+
+      .b .inspector {
+        padding: 18px;
+      }
+
+      .b .strip {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 12px;
+        padding: 16px 18px 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .b .frame {
+        border-radius: 14px;
+        background:
+          radial-gradient(circle at 60% 20%, rgba(255, 70, 111, 0.34), transparent 34%),
+          #171b22;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .b .frame::before {
+        content: "";
+        display: block;
+        padding-top: 64%;
+      }
+
+      .c {
+        background:
+          radial-gradient(circle at 14% 80%, rgba(0, 229, 194, 0.18), transparent 28rem),
+          radial-gradient(circle at 82% 22%, rgba(255, 219, 87, 0.14), transparent 24rem),
+          #061116;
+      }
+
+      .c .grid {
+        display: grid;
+        grid-template-columns: 360px 1fr 390px;
+        gap: 18px;
+        height: 100%;
+        padding: 24px;
+      }
+
+      .c .left,
+      .c .middle,
+      .c .right {
+        border-radius: 24px;
+        border: 1px solid rgba(124, 246, 222, 0.16);
+        background: rgba(5, 20, 25, 0.72);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      }
+
+      .c .left {
+        padding: 20px;
+      }
+
+      .c .left .logo {
+        margin-bottom: 24px;
+      }
+
+      .c h2 {
+        margin: 0;
+        font-size: 30px;
+        letter-spacing: -0.02em;
+      }
+
+      .c .item {
+        margin-top: 14px;
+        padding: 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(124, 246, 222, 0.12);
+      }
+
+      .c .middle {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        padding: 18px;
+      }
+
+      .c .orbit {
+        position: relative;
+        margin-top: 18px;
+        border-radius: 22px;
+        background:
+          linear-gradient(rgba(124, 246, 222, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(124, 246, 222, 0.08) 1px, transparent 1px),
+          rgba(255, 255, 255, 0.025);
+        background-size: 34px 34px;
+        overflow: hidden;
+      }
+
+      .c .node {
+        position: absolute;
+        width: 168px;
+        min-height: 104px;
+        padding: 14px;
+        border-radius: 20px;
+        background: rgba(8, 31, 36, 0.92);
+        border: 1px solid rgba(122, 246, 221, 0.26);
+        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+      }
+
+      .c .node:nth-child(1) { left: 46px; top: 56px; }
+      .c .node:nth-child(2) { left: 300px; top: 42px; border-color: rgba(255, 216, 91, 0.42); }
+      .c .node:nth-child(3) { left: 560px; top: 132px; }
+      .c .node:nth-child(4) { left: 260px; top: 306px; border-color: rgba(255, 90, 128, 0.46); }
+
+      .c .right {
+        padding: 18px;
+      }
+
+      .c .palette {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+        margin: 16px 0;
+      }
+
+      .swatch {
+        height: 46px;
+        border-radius: 14px;
+      }
+
+      .c .chat {
+        display: grid;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .bubble {
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.055);
+        color: rgba(224, 238, 241, 0.78);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stack">
+      <section class="board a" id="command-center">
+        <div class="top">
+          <div class="logo"></div>
+          <div class="pipeline">
+            <div class="step active">剧本解析</div>
+            <div class="step">资产生成</div>
+            <div class="step">故事板</div>
+            <div class="step">视频任务</div>
+            <div class="step">成片审核</div>
+          </div>
+          <button class="btn primary">一键推进</button>
+        </div>
+        <div class="grid">
+          <aside class="panel left">
+            <div class="head"><h3>项目队列</h3><span class="tag"><i class="dot"></i>live</span></div>
+            <div class="item"><strong>雨夜车站</strong><span>8 scenes / 24 assets / video ready</span></div>
+            <div class="item"><strong>海港追逐</strong><span>3 scenes waiting for references</span></div>
+            <div class="item"><strong>神秘实验室</strong><span>storyboard pass in progress</span></div>
+          </aside>
+          <main class="center">
+            <section class="panel script">
+              <span class="tag">CURRENT PROJECT</span>
+              <h1>一屏完成从剧本到视频的生产流</h1>
+              <p>左侧选择项目，中间编辑剧本和镜头，右侧调整生成参数。流程状态始终可见，用户不需要在资产、故事板、视频页面之间切换。</p>
+              <button class="btn primary">生成缺失资产</button>
+              <button class="btn">重新解析剧本</button>
+            </section>
+            <section class="panel lanes">
+              <div class="lane"><div class="thumb"></div><div class="item"><strong>SC 01</strong><span>角色进入车站</span></div></div>
+              <div class="lane"><div class="thumb"></div><div class="item"><strong>SC 02</strong><span>发现红色手提箱</span></div></div>
+              <div class="lane"><div class="thumb"></div><div class="item"><strong>SC 03</strong><span>列车灯光扫过</span></div></div>
+            </section>
+          </main>
+          <aside class="panel right">
+            <div class="head"><h3>生成控制</h3><span class="tag">Seed 48219</span></div>
+            <div class="controls">
+              <div class="control"><span>风格</span><strong>Cinematic noir</strong></div>
+              <div class="control"><span>比例</span><strong>16:9</strong></div>
+              <div class="control"><span>视频模型</span><strong>Seedance 2.0</strong></div>
+              <div class="control"><span>参考强度</span><strong>72%</strong></div>
+              <div class="control"><span>并发</span><strong>3 tasks</strong></div>
+            </div>
+            <button class="btn primary run">提交整条流水线</button>
+          </aside>
+        </div>
+      </section>
+
+      <section class="board b" id="editing-bay">
+        <div class="shell">
+          <aside class="rail">
+            <div class="logo"></div>
+            <div class="nav">
+              <div class="active"><span>Script</span><b>01</b></div>
+              <div><span>Assets</span><b>24</b></div>
+              <div><span>Storyboard</span><b>08</b></div>
+              <div><span>Video</span><b>03</b></div>
+              <div><span>Review</span><b>02</b></div>
+            </div>
+          </aside>
+          <main class="work">
+            <header class="bar">
+              <h2>Cinematic Editing Bay</h2>
+              <div><button class="btn">保存版本</button> <button class="btn primary">渲染选中镜头</button></div>
+            </header>
+            <section class="main">
+              <div class="preview"></div>
+              <aside class="panel inspector">
+                <div class="head"><h3>镜头参数</h3><span class="tag"><i class="dot"></i>ready</span></div>
+                <div class="controls">
+                  <div class="control"><span>镜头运动</span><strong>Dolly in</strong></div>
+                  <div class="control"><span>光线</span><strong>wet neon</strong></div>
+                  <div class="control"><span>角色一致性</span><strong>locked</strong></div>
+                  <div class="control"><span>音效</span><strong>rain + rail</strong></div>
+                  <div class="control"><span>字幕</span><strong>on</strong></div>
+                </div>
+              </aside>
+            </section>
+            <footer class="strip">
+              <div class="frame"></div><div class="frame"></div><div class="frame"></div><div class="frame"></div>
+              <div class="frame"></div><div class="frame"></div><div class="frame"></div><div class="frame"></div>
+            </footer>
+          </main>
+        </div>
+      </section>
+
+      <section class="board c" id="toy-lab">
+        <div class="grid">
+          <aside class="left">
+            <div class="logo"></div>
+            <h2>Neon Toy Lab</h2>
+            <div class="item"><strong>当前目标</strong><span>完成所有生产步骤，不离开当前屏幕。</span></div>
+            <div class="item"><strong>主操作</strong><span>节点式推进，任何失败都在原地修复。</span></div>
+            <div class="item"><strong>反馈</strong><span>颜色直接表达状态：青色可用，黄色待确认，红色需要处理。</span></div>
+            <button class="btn primary" style="width: 100%; margin-top: 18px;">启动生产</button>
+          </aside>
+          <main class="middle">
+            <div class="head"><h3>流程节点地图</h3><span class="tag">所有流程 / 单屏</span></div>
+            <div class="orbit">
+              <div class="node"><strong>剧本</strong><span>已解析 8 scenes</span></div>
+              <div class="node"><strong>资产</strong><span>2 个角色待确认</span></div>
+              <div class="node"><strong>故事板</strong><span>6/8 可生成</span></div>
+              <div class="node"><strong>视频</strong><span>3 tasks running</span></div>
+            </div>
+          </main>
+          <aside class="right">
+            <div class="head"><h3>交互与色彩</h3><span class="tag"><i class="dot"></i>interactive</span></div>
+            <div class="palette">
+              <div class="swatch" style="background:#061116"></div>
+              <div class="swatch" style="background:#7cf6de"></div>
+              <div class="swatch" style="background:#ffd85b"></div>
+              <div class="swatch" style="background:#ff5a80"></div>
+              <div class="swatch" style="background:#eafcff"></div>
+            </div>
+            <div class="chat">
+              <div class="bubble">点击任一节点，右侧变成该节点的参数和错误修复面板。</div>
+              <div class="bubble">拖动节点可以改变流程优先级，系统自动重排任务队列。</div>
+              <div class="bubble">底部可以展开批量操作，但默认保持单屏不跳转。</div>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

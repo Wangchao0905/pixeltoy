@@ -10,6 +10,8 @@ assert.match(app, /function imageExploreReferenceButtonHtml\(/);
 assert.match(app, /data-image-reference-add/);
 assert.match(app, /function addImageExploreReferenceFromResult\(/);
 assert.match(app, /state\.imageStudio\.references\.length >= 4/);
+assert.match(app, /libraryPreviewUrl\(reference, 240\)/);
+assert.match(app, /dataUrl, localOnly: true/);
 assert.match(app, /\$\("#imageExplorePrompt"\)\?\.focus\(\)/);
 assert.match(styles, /button\[data-image-reference-add\]/);
 

@@ -10061,10 +10061,13 @@ async function createPublicCanvasAsset(body = {}) {
   if (decoded.buffer.length > 30 * 1024 * 1024) throw new Error("图片超过 30MB，请压缩后重试。");
   const localUrl = persistDecodedPublicAsset(decoded, body.name || "portrait");
   const fileName = decodeURIComponent(localUrl.replace(/^\/public-assets\/+/, ""));
-  const storageUrl = await uploadPublicAssetToS3({ buffer: decoded.buffer, mime: decoded.mime, fileName });
+  const localOnly = body.localOnly === true;
+  const storageUrl = localOnly
+    ? null
+    : await uploadPublicAssetToS3({ buffer: decoded.buffer, mime: decoded.mime, fileName });
   const baseUrl = publicAssetBaseUrl();
   const hasPublicBaseUrl = !!baseUrl && /^https:\/\//i.test(baseUrl);
-  const publicUrl = storageUrl || (hasPublicBaseUrl ? `${baseUrl}${localUrl}` : "");
+  const publicUrl = localOnly ? "" : storageUrl || (hasPublicBaseUrl ? `${baseUrl}${localUrl}` : "");
   return {
     url: publicUrl,
     localUrl,
@@ -10072,9 +10075,11 @@ async function createPublicCanvasAsset(body = {}) {
     size: decoded.buffer.length,
     mime: decoded.mime,
     publicReady: !!publicUrl,
-    message: publicUrl
-      ? "已生成公网 HTTPS 素材地址"
-      : "图片已保存到本地预览地址，但还缺少 PUBLIC_ASSET_BASE_URL 或对象存储配置，远端服务暂不能抓取这张图。",
+    message: localOnly
+      ? "图片已快速保存到本地预览地址"
+      : publicUrl
+        ? "已生成公网 HTTPS 素材地址"
+        : "图片已保存到本地预览地址，但还缺少 PUBLIC_ASSET_BASE_URL 或对象存储配置，远端服务暂不能抓取这张图。",
   };
 }
 

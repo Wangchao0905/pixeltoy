@@ -2027,7 +2027,7 @@ function imageExploreHistoryItemHtml(item = {}) {
   }
   return `<article class="image-explore-card">
     <div class="image-explore-card-preview" data-image-preview="${id}" role="button" tabindex="0" aria-label="打开大图">
-      <img src="${escapeAttr(item.url)}" alt="${prompt}" loading="lazy" decoding="async" />
+      <img src="${escapeAttr(libraryPreviewUrl(item, 480))}" alt="${prompt}" loading="lazy" decoding="async" />
       <button type="button" class="image-explore-regen" data-image-regenerate="${id}" title="重新生成" aria-label="重新生成">↻</button>
       ${imageExploreReferenceButtonHtml(id)}
       <button type="button" data-image-history-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
@@ -2073,7 +2073,7 @@ function imageExploreStoryboardHistoryItemHtml(item = {}) {
   </article>`).join("");
   return `<article class="image-explore-card image-explore-storyboard-card">
     <div class="image-explore-card-preview image-explore-storyboard-preview" data-image-preview="${id}" role="button" tabindex="0" aria-label="打开${escapeAttr(boardLabel)}">
-      <img src="${escapeAttr(item.url)}" alt="${prompt}" loading="lazy" decoding="async" />
+      <img src="${escapeAttr(libraryPreviewUrl(item, 480))}" alt="${prompt}" loading="lazy" decoding="async" />
       <button type="button" class="image-explore-regen" data-image-regenerate="${id}" title="重新生成" aria-label="重新生成">↻</button>
       ${imageExploreReferenceButtonHtml(id)}
       <button type="button" data-storyboard-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
@@ -2097,7 +2097,7 @@ function renderImageExploreReferences() {
   node.innerHTML = state.imageStudio.references
     .map(
       (reference) => `<span class="image-explore-reference${reference.uploading ? " is-uploading" : ""}" title="${escapeAttr(reference.name)}" aria-busy="${reference.uploading ? "true" : "false"}">
-        <img src="${escapeAttr(reference.previewUrl || reference.url)}" alt="" />
+        <img src="${escapeAttr(libraryPreviewUrl(reference, 240))}" alt="" loading="lazy" decoding="async" />
         ${reference.uploading ? `<span class="image-explore-reference-loading" aria-label="上传中"></span>` : ""}
         <button type="button" data-image-reference-remove="${escapeAttr(reference.id)}" aria-label="移除参考图">×</button>
       </span>`,
@@ -2684,7 +2684,7 @@ async function uploadImageExploreReferences(event) {
         const dataUrl = await prepareImageReferenceDataUrl(file);
         const data = await api("/api/canvas/public-assets", {
           method: "POST",
-          body: JSON.stringify({ name: file.name || "image-reference", dataUrl }),
+          body: JSON.stringify({ name: file.name || "image-reference", dataUrl, localOnly: true }),
         });
         const result = data.result || {};
         const localUrl = result.localUrl || result.url;

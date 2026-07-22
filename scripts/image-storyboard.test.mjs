@@ -40,6 +40,9 @@ assert.match(app, /plannerReferenceImages/);
 assert.match(app, /请求失败：/);
 assert.match(app, /ratio: "16:9"/);
 assert.match(app, /storyboardHistory/);
+assert.match(app, /libraryPreviewUrl\(item, 480\)/);
+assert.match(app, /libraryPreviewUrl\(reference, 240\)/);
+assert.match(app, /dataUrl, localOnly: true/);
 assert.match(app, /IMAGE_EXPLORE_STORYBOARD_RECOVERY_LOOKBACK_MS = 36 \* 60 \* 60 \* 1000/);
 assert.match(app, /function recoverImageExploreStoryboards/);
 assert.match(app, /isRecoverableImageStoryboardAsset/);
@@ -62,6 +65,7 @@ assert.match(server, /openAiCompatUrl\("\/v1\/chat\/completions", "storyboard"\)
 assert.match(server, /出图后处理失败：/);
 assert.match(server, /"Cache-Control": "no-store"/);
 assert.match(server, /status: "completed",\n    url: `\/public-assets/);
+assert.match(server, /body\.localOnly === true/);
 assert.match(server, /recoverCanvasImageJobFromOutput/);
 assert.match(styles, /\.image-explore-storyboard-options/);
 assert.match(styles, /\.image-explore-storyboard-panels/);

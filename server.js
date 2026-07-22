@@ -21219,12 +21219,20 @@ function serveMedia(req, res, file, options = {}) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   // Defensive headers applied to every response. Set via setHeader so they
   // merge with (and are preserved through) later res.writeHead calls.
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("Referrer-Policy", "no-referrer");
+  // 扫描器/爬虫常发畸形路径(如 //%252eenv、//?phpinfo=1),new URL 会抛
+  // TypeError: Invalid URL。必须在总 try 之前兜住,否则未捕获异常会让整个进程
+  // 崩溃重启,并清空内存里的视频生成队列。畸形 URL 直接回 400。
+  let url;
+  try {
+    url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  } catch {
+    return fail(res, 400, "bad request url");
+  }
   try {
     if (isAuthApiPath(url.pathname)) return await handleAuthApi(req, res, url);
     if (!requireAuth(req, res, url)) return;
@@ -21262,6 +21270,21 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     return fail(res, error.statusCode || 500, error.message, process.env.NODE_ENV === "development" ? error.stack : undefined);
   }
+});
+
+// 畸形 HTTP(坏请求行/头)在解析层触发,不会进入 requestListener。默认行为是
+// 直接销毁连接,但要显式兜底避免噪声;这里回 400 后关闭,不影响进程存活。
+server.on("clientError", (err, socket) => {
+  if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+});
+
+// 最后一道防线:任何未捕获异常/未处理 Promise 只记录,绝不让进程崩溃。
+// 视频生成队列存活在内存中,一次崩溃重启会清空整批进行中的任务(本次事故根因)。
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err && err.stack ? err.stack : err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason && reason.stack ? reason.stack : reason);
 });
 
 if (require.main === module) {

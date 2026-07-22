@@ -5,26 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=2026071512" />
+    <link rel="stylesheet" href="/styles.css?v=20260722001500" />
   </head>
   <body>
     <div id="app">
       <section id="exploreHome" class="explore-home hidden">
         <header class="explore-topbar">
           <button class="explore-brand" type="button" data-explore-canvas-home aria-label="Pixel Toys">
-            <span>Pixel Toys</span>
+            <span class="explore-brand-mark pixel-toys-wordmark" aria-hidden="true"></span>
           </button>
           <nav aria-label="Creative tools">
             <button type="button" data-explore-tool="short-drama-workspace" title="Open short drama workspace">Short Drama</button>
             <button type="button" data-explore-canvas-home data-explore-primary-canvas>Canvas</button>
             <button type="button" data-explore-tool="image-generation">Image</button>
+            <button type="button" data-explore-tool="asset-library">素材库</button>
             <button type="button" data-explore-placeholder="super-pixel" title="Coming soon: conversational model" disabled>Super Pixel</button>
           </nav>
           <div class="explore-account-actions">
             <span id="exploreAuthUserLabel"></span>
+            <a id="exploreAdminLink" class="explore-account-link hidden" href="/admin.html">Admin</a>
             <button id="exploreTeamButton" type="button" aria-haspopup="dialog" aria-controls="teamPanel" title="团队">Team</button>
             <button id="exploreRefresh" type="button" aria-label="刷新项目" title="刷新项目">↻</button>
-            <button id="exploreAccount" type="button" aria-label="修改密码" title="修改密码">◉</button>
+            <button id="exploreAccount" type="button" aria-label="个人中心" title="个人中心">◉</button>
             <section id="teamPanel" class="team-panel hidden" role="dialog" aria-label="团队">
               <header>
                 <strong id="teamPanelTitle">Team</strong>
@@ -51,6 +53,28 @@
           </div>
         </header>
         <main class="explore-main canvas-home">
+          <section class="video-showcase video-showcase-six" aria-label="视频作品">
+            <div class="video-showcase-grid video-showcase-grid-six">
+              <article class="video-slot video-slot-card" data-video-slot="work-01">
+                <video data-video-src="/home-videos/work-01.mp4" poster="/home-videos/posters/work-01.jpg" muted loop playsinline preload="none"></video>
+              </article>
+              <article class="video-slot video-slot-card" data-video-slot="work-02">
+                <video data-video-src="/home-videos/work-02.mp4" poster="/home-videos/posters/work-02.jpg" muted loop playsinline preload="none"></video>
+              </article>
+              <article class="video-slot video-slot-card" data-video-slot="work-03">
+                <video data-video-src="/home-videos/work-03.mp4" poster="/home-videos/posters/work-03.jpg" muted loop playsinline preload="none"></video>
+              </article>
+              <article class="video-slot video-slot-card" data-video-slot="work-04">
+                <video data-video-src="/home-videos/work-04.mp4" poster="/home-videos/posters/work-04.jpg" muted loop playsinline preload="none"></video>
+              </article>
+              <article class="video-slot video-slot-card" data-video-slot="work-05">
+                <video data-video-src="/home-videos/work-05.mp4" poster="/home-videos/posters/work-05.jpg" muted loop playsinline preload="none"></video>
+              </article>
+              <article class="video-slot video-slot-card" data-video-slot="work-06">
+                <video data-video-src="/home-videos/work-06.mp4" poster="/home-videos/posters/work-06.jpg" muted loop playsinline preload="none"></video>
+              </article>
+            </div>
+          </section>
           <section class="explore-canvas-library" aria-label="画布列表">
             <div class="explore-canvas-toolbar">
               <div class="explore-canvas-filters" role="tablist" aria-label="画布筛选">
@@ -96,22 +120,22 @@
               <label class="image-explore-control image-explore-ratio">
                 <span>比例</span>
                 <select id="imageExploreRatio" aria-label="画面比例">
-                  <option value="16:9">横屏 16:9</option>
-                  <option value="4:3">横屏 4:3</option>
-                  <option value="3:2">横屏 3:2</option>
-                  <option value="21:9">超宽 21:9</option>
-                  <option value="1:1">方形 1:1</option>
-                  <option value="4:5">人像 4:5</option>
-                  <option value="3:4">人像 3:4</option>
-                  <option value="2:3">人像 2:3</option>
-                  <option value="9:16">竖屏 9:16</option>
+                  <option value="16:9">16:9</option>
+                  <option value="4:3">4:3</option>
+                  <option value="3:2">3:2</option>
+                  <option value="21:9">21:9</option>
+                  <option value="1:1">1:1</option>
+                  <option value="4:5">4:5</option>
+                  <option value="3:4">3:4</option>
+                  <option value="2:3">2:3</option>
+                  <option value="9:16">9:16</option>
                 </select>
               </label>
               <label class="image-explore-control image-explore-resolution">
                 <span>规格</span>
                 <select id="imageExploreResolution">
-                  <option value="1k">1K</option>
-                  <option value="2k" selected>2K</option>
+                  <option value="1k" selected>1K</option>
+                  <option value="2k">2K</option>
                   <option value="4k">4K</option>
                 </select>
               </label>
@@ -125,6 +149,24 @@
               <button id="imageExploreGenerate" class="image-explore-generate" type="submit">生成图片 <span aria-hidden="true">↗</span></button>
             </div>
           </form>
+        </section>
+        <section id="assetLibraryView" class="asset-library-view hidden" aria-label="素材库">
+          <header class="asset-library-view-head">
+            <div>
+              <span class="image-explore-kicker">ASSET LIBRARY</span>
+              <h1>素材库</h1>
+              <p>Image 生成结果会自动保存到这里，工作流和画布可以直接调用。</p>
+            </div>
+            <div class="asset-library-view-tools">
+              <input id="assetLibrarySearch" type="search" placeholder="搜索素材名称或提示词" aria-label="搜索素材库" />
+              <button id="assetLibraryRefresh" class="ghost" type="button">刷新</button>
+            </div>
+          </header>
+          <div id="assetLibraryGallery" class="asset-library-gallery" aria-live="polite"></div>
+          <div id="assetLibraryEmpty" class="image-explore-empty hidden">
+            <strong>素材库还没有图片</strong>
+            <span>在 Image 中生成图片后会自动出现在这里。</span>
+          </div>
         </section>
       </section>
 
@@ -191,8 +233,12 @@
               </label>
             </div>
             <label>
-              <span>剧本</span>
-              <textarea name="scriptText" rows="7" placeholder="粘贴剧本，或上传 .md/.txt/.docx"></textarea>
+              <span>剧本（剧情）</span>
+              <textarea name="scriptText" rows="7" placeholder="只粘贴剧情，用于分镜/节拍"></textarea>
+            </label>
+            <label>
+              <span>资产描述（可选）</span>
+              <textarea name="assetDescriptionText" rows="5" placeholder="只粘贴人物/场景/道具的外观描述，用于资产解析；资产名与剧情称呼一致。留空则用剧情提取资产。"></textarea>
             </label>
             <div class="upload-row">
               <input id="scriptUpload" type="file" accept=".md,.txt,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
@@ -211,20 +257,12 @@
 
       <section id="studioShell" class="studio-shell hidden">
         <aside class="studio-sidebar" aria-label="制作工具栏">
-          <div class="studio-sidebar-brand">
-            <div class="mark pixel-toys-wordmark" aria-label="Pixel Toys"></div>
-          </div>
-          <nav class="studio-sidebar-nav" aria-label="全局操作">
-            <button id="studioProjectsButton" class="studio-rail-button" type="button">项目</button>
-            <button id="studioNewProject" class="studio-rail-button" type="button">新建</button>
-            <button id="studioCanvasButton" class="studio-rail-button" type="button">画布</button>
-          </nav>
           <nav class="studio-mode-rail" aria-label="功能模式">
-            <button type="button" data-workspace-mode-button="script" aria-label="剧本" title="剧本">▤</button>
-            <button type="button" data-workspace-mode-button="image" aria-label="图片" title="图片">▧</button>
-            <button type="button" data-workspace-mode-button="video" aria-label="视频" title="视频">▶</button>
-            <button type="button" data-workspace-mode-button="storyboard" aria-label="故事板" title="故事板">▦</button>
-            <button type="button" data-workspace-mode-button="assets" aria-label="资产" title="资产">◇</button>
+            <button type="button" data-workspace-mode-button="script" data-nav-index="01" aria-label="剧本" title="剧本（剧情→生成分镜草稿）">剧本</button>
+            <button type="button" data-workspace-mode-button="image" data-nav-index="02" aria-label="资产图" title="资产图（资产描述→资产提取）">资产图</button>
+            <button type="button" data-workspace-mode-button="shots" data-nav-index="03" aria-label="分镜" title="分镜（视频提示词→生成视频配置）">分镜</button>
+            <button type="button" data-workspace-mode-button="storyboard" data-nav-index="04" aria-label="故事板" title="故事板">故事板</button>
+            <button type="button" data-workspace-mode-button="video" data-nav-index="05" aria-label="视频" title="视频">视频</button>
           </nav>
         </aside>
 
@@ -270,56 +308,30 @@
                     <button id="studioVideoTabShortcut" class="primary small" type="button" data-studio-tab="video">进入视频生成</button>
                   </div>
                 </div>
-                <div class="studio-console-grid">
-                  <section class="panel script-panel flow-main draggable-window" data-window-id="script">
-                    <div class="section-head">
-                      <div>
-                        <h2>剧本</h2>
-                        <p id="scriptPath" class="path-line"></p>
-                      </div>
-                      <div class="actions">
-                        <div class="segmented" role="radiogroup" aria-label="对白语言">
-                          <label>
-                            <input type="radio" name="draftDialogueLanguage" value="en" checked />
-                            <span>英文对白</span>
-                          </label>
-                          <label>
-                            <input type="radio" name="draftDialogueLanguage" value="zh" />
-                            <span>中文对白</span>
-                          </label>
-                        </div>
-                        <div class="segmented analyzer-segmented" role="radiogroup" aria-label="资产解析模型">
-                          <label>
-                            <input type="radio" name="assetAnalyzerModel" value="claude-opus-4-8" checked />
-                            <span>Claude Opus 4.8</span>
-                          </label>
-                          <label>
-                            <input type="radio" name="assetAnalyzerModel" value="gpt-5.5-thinking" />
-                            <span>GPT 5.5 Thinking</span>
-                          </label>
-                        </div>
-                        <button data-save="script" class="ghost" type="button">保存</button>
-                        <button id="draftBtn" class="primary" type="button">资产提取</button>
-                      </div>
+                <section class="panel script-panel flow-main draggable-window" data-window-id="script">
+                  <div class="section-head">
+                    <div>
+                      <h2>剧本（剧情）</h2>
+                      <p id="scriptPath" class="path-line"></p>
                     </div>
-                    <textarea id="scriptText" class="editor tall"></textarea>
-                  </section>
-
-                  <section class="panel asset-manifest-panel flow-main draggable-window" data-window-id="manifest">
-                    <div class="section-head">
-                      <div>
-                        <h2>资产解析</h2>
-                        <p id="assetManifestStatus">先提取剧本中的人物和场景。</p>
+                    <div class="actions">
+                      <div class="segmented" role="radiogroup" aria-label="对白语言">
+                        <label>
+                          <input type="radio" name="draftDialogueLanguage" value="en" checked />
+                          <span>英文对白</span>
+                        </label>
+                        <label>
+                          <input type="radio" name="draftDialogueLanguage" value="zh" />
+                          <span>中文对白</span>
+                        </label>
                       </div>
-                      <div class="actions">
-                        <button id="extractAssetsBtn" class="ghost" type="button">生成视频配置</button>
-                        <button id="confirmAssetManifestBtn" class="primary" type="button">确认解析结果</button>
-                      </div>
+                      <button data-save="script" class="ghost" type="button">保存</button>
+                      <button id="extractAssetsBtn" class="primary" type="button">生成分镜草稿</button>
                     </div>
-                    <div id="assetManifestOverview" class="asset-manifest-overview"></div>
-                    <textarea id="assetManifestText" class="editor compact-editor raw-data-store" aria-hidden="true" tabindex="-1"></textarea>
-                  </section>
-                </div>
+                  </div>
+                  <p class="dual-input-hint">只写剧情，用于分镜/节拍。生成分镜草稿前请先到「资产图」完成资产提取。</p>
+                  <textarea id="scriptText" class="editor tall"></textarea>
+                </section>
               </section>
 
               <section class="studio-flow-strip" aria-label="流程状态">
@@ -336,6 +348,33 @@
 
                 <div class="studio-tab-panels">
                   <section id="studioTabAssets" class="studio-tab-panel is-active" data-studio-panel="assets" data-workspace-mode="image assets" data-asset-workspace-view="assets" role="tabpanel">
+                    <section class="panel asset-parse-panel flow-main">
+                      <div class="section-head">
+                        <div>
+                          <h2>资产解析</h2>
+                          <p id="assetManifestStatus">先提取人物、场景和道具。</p>
+                        </div>
+                        <div class="actions">
+                          <div class="segmented analyzer-segmented" role="radiogroup" aria-label="资产解析模型">
+                            <label>
+                              <input type="radio" name="assetAnalyzerModel" value="claude-opus-4-8" checked />
+                              <span>Claude Opus 4.8</span>
+                            </label>
+                            <label>
+                              <input type="radio" name="assetAnalyzerModel" value="gpt-5.5-thinking" />
+                              <span>GPT 5.5 Thinking</span>
+                            </label>
+                          </div>
+                          <button data-save="assetDescription" class="ghost" type="button">保存</button>
+                          <button id="draftBtn" class="primary" type="button">资产提取</button>
+                        </div>
+                      </div>
+                      <p class="dual-input-hint">资产描述：只写人物/场景/道具的外观描述；资产名与剧情中的称呼保持一致以便严格匹配。留空则回退用剧情提取。</p>
+                      <textarea id="assetDescriptionText" class="editor" rows="6" placeholder="粘贴人物 / 场景 / 道具的外观描述。"></textarea>
+                      <div id="assetManifestOverview" class="asset-manifest-overview"></div>
+                      <button id="confirmAssetManifestBtn" class="primary" type="button">确认分类</button>
+                      <textarea id="assetManifestText" class="editor compact-editor raw-data-store" aria-hidden="true" tabindex="-1"></textarea>
+                    </section>
                     <section class="panel media-panel asset-preview-panel flow-preview draggable-window" data-window-id="assets">
                       <div class="section-head">
                         <div>
@@ -410,19 +449,84 @@
                         </div>
                         <div id="teamResourceList"></div>
                       </section>
+                      <section id="referenceKitPanel" class="reference-kit-panel" aria-label="Reference Kit">
+                        <div class="reference-kit-panel-head">
+                          <div>
+                            <span class="eyebrow">CONTINUITY</span>
+                            <h3>Reference Kit</h3>
+                            <p>把同一组角色、场景与故事板绑定到指定 Shot。</p>
+                          </div>
+                          <button id="newReferenceKit" class="ghost small" type="button">新建 Kit</button>
+                        </div>
+                        <form id="referenceKitForm" class="reference-kit-form hidden">
+                          <input type="hidden" name="kitId" />
+                          <label class="reference-kit-name-field"><span>名称</span><input name="kitName" maxlength="120" placeholder="例如：主角连续性套件" required /></label>
+                          <div class="reference-kit-role-grid">
+                            <fieldset><legend>角色</legend><div data-reference-kit-options="character"></div></fieldset>
+                            <fieldset><legend>场景</legend><div data-reference-kit-options="scene"></div></fieldset>
+                            <fieldset><legend>道具</legend><div data-reference-kit-options="props"></div></fieldset>
+                            <fieldset><legend>风格</legend><div data-reference-kit-options="style"></div></fieldset>
+                            <fieldset><legend>故事板</legend><div data-reference-kit-options="storyboard"></div></fieldset>
+                          </div>
+                          <div class="reference-kit-policy-row" aria-label="锁定策略">
+                            <label><input type="checkbox" name="identityLock" checked />身份</label>
+                            <label><input type="checkbox" name="sceneLock" checked />场景</label>
+                            <label><input type="checkbox" name="wardrobeLock" checked />服装</label>
+                            <label><input type="checkbox" name="styleLock" checked />风格</label>
+                          </div>
+                          <div class="reference-kit-form-actions"><button id="referenceKitCancel" class="ghost small" type="button">取消</button><button class="primary small" type="submit">保存 Kit</button></div>
+                        </form>
+                        <div id="referenceKitList" class="reference-kit-list"></div>
+                      </section>
                       <form id="assetUploadForm" class="asset-upload-form asset-library-only">
-                        <label>
-                          <span>绑定资产</span>
-                          <select id="assetUploadTarget"></select>
-                        </label>
+                        <div class="asset-upload-fields">
+                          <label>
+                            <span>上传方式</span>
+                            <select id="assetUploadMode">
+                              <option value="local">新增本地资产</option>
+                              <option value="bind">绑定解析资产</option>
+                            </select>
+                          </label>
+                          <label id="assetUploadLocalNameField">
+                            <span>资产名称</span>
+                            <input id="assetUploadLabel" type="text" maxlength="80" placeholder="例如：林夏" autocomplete="off" />
+                          </label>
+                          <label id="assetUploadLocalTypeField">
+                            <span>资产类型</span>
+                            <select id="assetUploadType">
+                              <option value="Character">人物</option>
+                              <option value="Scene">场景</option>
+                              <option value="Prop">道具</option>
+                              <option value="Insert">插入镜头</option>
+                            </select>
+                          </label>
+                          <label id="assetUploadTargetField" class="hidden">
+                            <span>绑定资产</span>
+                            <select id="assetUploadTarget"></select>
+                          </label>
+                        </div>
                         <div class="asset-file-row">
                           <input id="assetUploadFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
                           <label class="upload-pill" for="assetUploadFile">上传资产图</label>
                           <span id="assetUploadName">PNG / JPG / WEBP</span>
                         </div>
-                        <p id="assetUploadHint" class="asset-upload-hint">上传后使用资产解析名称保存。</p>
-                        <button id="assetUploadButton" class="primary" type="submit">绑定上传</button>
+                        <p id="assetUploadHint" class="asset-upload-hint">命名后会作为项目资产保存，可直接被视频引用。</p>
+                        <button id="assetUploadButton" class="primary" type="submit">添加本地资产</button>
                       </form>
+                      <section id="workflowAssetLibrary" class="workflow-asset-library asset-library-only hidden" aria-label="从素材库导入">
+                        <div class="workflow-asset-library-head">
+                          <div>
+                            <strong>从素材库导入</strong>
+                            <span>可替换当前解析槽位，也可添加为新的项目资产。</span>
+                          </div>
+                          <div class="workflow-asset-library-actions">
+                            <input id="workflowAssetLibrarySearch" type="search" placeholder="搜索素材" aria-label="搜索素材库" />
+                            <button id="workflowAssetLibraryRefresh" class="ghost small" type="button">刷新</button>
+                            <button id="workflowAssetLibraryToggle" class="ghost small" type="button" aria-expanded="false">展开</button>
+                          </div>
+                        </div>
+                        <div id="workflowAssetLibraryList" class="workflow-asset-library-list"></div>
+                      </section>
                       <div class="asset-library-layout">
                         <div class="asset-library-main">
                           <div id="assetGallery" class="gallery"></div>
@@ -453,6 +557,26 @@
                           <p>重新生成会消耗额度；保存提示词不会生成图片。</p>
                         </aside>
                       </div>
+                    </section>
+                  </section>
+
+                  <section id="studioTabShots" class="studio-tab-panel" data-studio-panel="shots" data-workspace-mode="shots" role="tabpanel" hidden>
+                    <section class="panel seedance-shots-panel flow-main">
+                      <div class="section-head">
+                        <div>
+                          <h2>分镜（视频提示词）</h2>
+                          <p id="seedancePath" class="path-line">「生成分镜草稿」后在此查看/手动修改每个镜头的视频提示词，确认无误再点「生成视频配置」。</p>
+                        </div>
+                        <div class="actions">
+                          <button data-save="seedancePrompts" class="ghost" type="button">保存修改</button>
+                          <button id="buildConfigBtn" class="primary" type="button">生成视频配置</button>
+                        </div>
+                      </div>
+                      <div id="shotsTable" class="shots-table"></div>
+                      <details class="shots-raw-details">
+                        <summary>原始文本（高级：直接编辑 markdown）</summary>
+                        <textarea id="seedanceText" class="editor tall"></textarea>
+                      </details>
                     </section>
                   </section>
 
@@ -501,8 +625,7 @@
                             <p id="videoConfigLabel">Seedance 2.0 / 操作台直接生成</p>
                           </div>
                           <div class="actions">
-                            <button id="buildConfigBtn" class="primary" type="button">生成视频配置</button>
-                            <button id="generateAllSegments" class="primary" type="button">全部发送到画布并生成</button>
+                            <button id="generateAllSegments" class="primary" type="button">视频生成</button>
                           </div>
                         </div>
                         <div id="videoConfigStatus" class="inline-status"></div>
@@ -537,7 +660,9 @@
                             <select id="configModel">
                               <option value="seedance-2-0">Seedance 2.0</option>
                               <option value="seedance-2-0-fast">Seedance 2.0 Fast</option>
+                              <option value="seedance-2-0-mini">Seedance 2.0 Mini</option>
                               <option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option>
+                              <option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option>
                             </select>
                           </label>
                         </div>
@@ -562,6 +687,23 @@
                       </div>
                       <div id="finalCutStatus" class="inline-status"></div>
                       <div id="finalCutPreview" class="final-cut-preview"></div>
+                      <div class="chatcut-workflow" aria-labelledby="chatcutTitle">
+                        <div class="section-head">
+                          <div>
+                            <h3 id="chatcutTitle">ChatCut 剪辑</h3>
+                            <div id="chatcutStatus" class="chatcut-status chatcut-status-idle" aria-live="polite">
+                              <span class="chatcut-status-dot" aria-hidden="true"></span>
+                              <span class="chatcut-status-label">等待素材准备</span>
+                              <span class="chatcut-status-detail">生成全部视频片段后即可开始剪辑</span>
+                            </div>
+                          </div>
+                          <div class="actions">
+                            <button id="chatcutEditBtn" class="primary" type="button">剪辑</button>
+                            <a id="openChatcutFileBtn" class="ghost chatcut-open-button hidden" href="" target="_blank" rel="noopener" aria-label="打开剪辑好的成片">打开成片</a>
+                          </div>
+                        </div>
+                        <div id="chatcutProgress" class="chatcut-progress" hidden role="progressbar" aria-label=""></div>
+                      </div>
                     </section>
                   </section>
 
@@ -596,10 +738,6 @@
                 <textarea id="assetPromptsText"></textarea>
               </div>
 
-              <section class="panel seedance-panel flow-main hidden" data-window-id="seedance" aria-hidden="true">
-                <span id="seedancePath" class="path-line"></span>
-                <textarea id="seedanceText" class="editor tall"></textarea>
-              </section>
             </div>
           </div>
         </main>
@@ -608,12 +746,19 @@
 
     <div id="imageLightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-label="资产图预览">
       <button id="closeLightbox" class="ghost small lightbox-close" type="button">关闭</button>
+      <a id="lightboxDownloadControl" class="lightbox-download-control hidden" href="" download aria-label="下载预览图片" title="下载">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 11 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+      </a>
       <figure>
         <img id="lightboxImage" src="" alt="" />
         <video id="lightboxVideo" class="hidden" controls playsinline></video>
         <figcaption>
-          <strong id="lightboxTitle"></strong>
-          <span id="lightboxMeta"></span>
+          <div class="lightbox-caption-copy">
+            <strong id="lightboxTitle"></strong>
+            <span id="lightboxMeta"></span>
+            <p id="lightboxPrompt" class="lightbox-prompt hidden"></p>
+          </div>
+          <a id="lightboxDownload" class="lightbox-download hidden" href="" download>下载</a>
         </figcaption>
       </figure>
     </div>
@@ -642,8 +787,28 @@
         <button class="primary" type="submit">保存新密码</button>
       </form>
     </dialog>
+    <dialog id="personalCenterDialog" class="password-dialog personal-center-dialog">
+      <section class="password-dialog-card">
+        <div class="password-dialog-head">
+          <div>
+            <span class="section-label">Account</span>
+            <h2>个人中心</h2>
+          </div>
+          <button class="ghost" type="button" data-close-personal-center>关闭</button>
+        </div>
+        <div class="personal-center-profile">
+          <strong id="personalCenterName"></strong>
+          <span id="personalCenterUsername"></span>
+          <span id="personalCenterRole"></span>
+        </div>
+        <div class="personal-center-actions">
+          <button id="personalCenterPasswordButton" class="ghost" type="button">修改密码</button>
+          <button id="personalCenterLogoutButton" class="ghost" type="button">退出登录</button>
+        </div>
+      </section>
+    </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=2026071512"></script>
+    <script src="/app.js?v=20260722001500"></script>
   </body>
 </html>

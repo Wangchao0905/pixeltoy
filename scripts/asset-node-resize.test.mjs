@@ -11,8 +11,8 @@ const canvasCss = fs.readFileSync(path.join(root, "public", "canvas.css"), "utf8
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 
 assert.match(canvasHtml, /id="assetNodeTemplate"[\s\S]*data-resize-handle/, "asset nodes should expose a resize handle");
-assert.match(canvas, /const ASSET_NODE_DEFAULT_WIDTH = 300;/, "asset nodes should use a larger default width");
-assert.match(canvas, /const ASSET_NODE_DEFAULT_HEIGHT = 200;/, "asset nodes should use a larger default height");
+assert.match(canvas, /const ASSET_NODE_DEFAULT_WIDTH = 400;/, "asset nodes should use a larger default width");
+assert.match(canvas, /const ASSET_NODE_DEFAULT_HEIGHT = 280;/, "asset nodes should use a larger default height");
 assert.match(canvas, /function assetNodeSize\(node(?:\s*=\s*\{\})?\)/, "asset node size should read the node dimensions");
 assert.match(canvas, /clampAssetNodeDimension\(node\?\.width, ASSET_NODE_MIN_WIDTH, ASSET_NODE_MAX_WIDTH, ASSET_NODE_DEFAULT_WIDTH\)/, "asset width should use the saved clamped dimension");
 assert.match(canvas, /restored\.width = legacyDefaultSize[\s\S]*clampAssetNodeDimension\(node\.width/, "restored asset nodes should keep their saved width");

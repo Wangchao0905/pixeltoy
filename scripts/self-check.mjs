@@ -272,8 +272,9 @@ assert(!server.includes("if (references.length >= maxImages) break"), "Seedance 
 assert(server.includes("function assertProjectTailFrameReadyForShot"), "project video generation must block until the previous segment tail frame is ready");
 assert(canvas.includes("function missingUpstreamTailFrameForVideoNode"), "canvas video generation must block when an upstream video tail frame is missing");
 const videoPreviewRenderer = sectionBetween(canvas, "function renderVideoPreview(node) {", "function nodePrompt(node) {");
-assert(canvas.includes("function videoResultStatusLabel") && videoPreviewRenderer.includes("videoResultStatusLabel(node)"), "video result preview must sanitize internal tail-frame status labels for display");
-assert(!videoPreviewRenderer.includes('>尾帧已就绪<') && !videoPreviewRenderer.includes("node.tailFrameReady ? `<span"), "video result preview must not show a tail-frame-ready badge over the video");
+assert(videoPreviewRenderer.includes('controls playsinline preload="metadata"'), "completed video previews must expose native controls without autoplay");
+assert(!videoPreviewRenderer.includes('controls playsinline autoplay'), "completed video previews must not request autoplay on refresh");
+assert(!videoPreviewRenderer.includes("video-result-captions") && !videoPreviewRenderer.includes('>尾帧已就绪<'), "video result preview must not show status captions over the video");
 assert(!server.includes("const forceGravitexMode = /^seedance-2-0-(?:liveness-face|person-reference)$/i.test(modelMode)"), "AI photoreal assets must not force a Gravitex provider route");
 assert(server.includes("sourceAssets.some((asset) => asset?.arkPersonAsset?.enabled === true)"), "only explicitly bound Ark person assets may select the Ark provider");
 assert(!canvasCss.includes('body.canvas-page:not(.show-advanced-ui) #livenessLibraryToggle'), "compact canvas UI must not hide the liveness/person asset library entry");
@@ -297,6 +298,12 @@ assert(canvas.includes('api("/api/canvas/project-video-generate"'), "canvas proj
 assert(server.includes("submittedAt: compactLine(node.submittedAt"), "canvas state must persist video submission timestamps");
 assert(canvas.includes("timeoutMs: VIDEO_SUBMIT_TIMEOUT_MS"), "video submit requests must use explicit long submit timeouts");
 assert(canvas.includes("function pollProjectVideoNode"), "project video nodes must keep polling project state until completion");
+assert(canvas.includes("function resumeVideoPolls"), "canvas restore must resume saved video tasks");
+assert(canvas.includes("resumeVideoPolls();"), "canvas load must resume saved video tasks after hydration");
+assert(canvas.includes("pollVideoNode(node.id, node.taskId, node.taskProvider || \"\")"), "saved standalone video tasks must resume with their provider");
+assert(canvasCss.includes(".video-preview-slot .media-download-button") && canvasCss.includes("bottom: auto"), "tail-frame capture control must share the top action row with download");
+assert(canvas.includes("tailFrameUrl: node.tailFrameUrl || \"\"") && canvas.includes("videoLocalFile: saved.videoLocalFile || node.videoLocalFile || \"\""), "manual tail-frame capture must reuse saved frame and local video paths");
+assert(server.includes("复用已缓存尾帧") && server.includes("const downloadTarget = `${tmp}.download-"), "tail-frame extraction must reuse cached frames and avoid partial source files");
 assert(canvas.includes("function videoDownloadHref") && canvas.includes('url.searchParams.set("download", "1")'), "same-origin canvas video downloads must force /media attachment mode");
 assert(canvas.includes('`/api/canvas/video-download?url=${encodeURIComponent(raw)}&name=${encodeURIComponent(videoDownloadName(node))}`'), "remote canvas video downloads must use the same-origin attachment proxy with a filename");
 assert(server.includes('if (url.pathname === "/api/canvas/video-download") return await proxyVideoDownload(req, res, url);'), "canvas remote video download proxy route must exist");
@@ -442,9 +449,11 @@ assert(html.includes("canvas-entry-card hidden"), "canvas entry card must start 
 assert(canvasHtml.includes("<title>canvas</title>"), "canvas browser title must be canvas");
 assert(canvasHtml.includes("<strong>canvas</strong>"), "canvas visible brand title must be canvas only");
 assert(!canvasHtml.includes("画布 canvas") && !canvasHtml.includes("空白画布") && !canvasHtml.includes("Pixel Toys Canvas"), "canvas brand area must not show old canvas wording");
+assert(!canvasHtml.includes('id="canvasProjectSelect"'), "canvas topbar must not show the standalone canvas project list");
 assert(!canvas.includes('"空白画布"'), "canvas runtime must not restore the old blank canvas subtitle");
 assert(canvasCss.includes(".canvas-brand-title"), "canvas brand title wrapper must exist for centerline alignment");
 assert(canvasCss.includes(".canvas-brand-title {\n  display: flex;") && canvasCss.includes("align-items: center;"), "canvas text must align to the logo centerline");
+assert(canvasCss.includes(".canvas-topbar {\n  min-height: 44px;") && canvasCss.includes("background: transparent;"), "canvas topbar must use a compact transparent layout");
 const assetNodeTemplateHtml = sectionBetween(canvasHtml, 'id="assetNodeTemplate"', "</template>");
 assert(assetNodeTemplateHtml.includes("data-resize-handle"), "canvas asset node must expose a drag-resize handle");
 const imageNodeTemplateHtml = sectionBetween(canvasHtml, 'id="imageNodeTemplate"', "</template>");
@@ -616,7 +625,10 @@ assert(!server.includes("非超写实资产跳过素材库验证"), "validateCan
 assert(server.includes("function assertArkPersonAssetsReady"), "Ark-bound person assets must be server-validated");
 assert(server.includes('role: "first_frame"') && server.includes('role: "last_frame"'), "Ark payload must use official first/last-frame roles");
 assert(canvas.includes("arkPersonAsset") && canvas.includes('frameControl === "first_last"'), "standalone canvas must preserve Ark binding and manual frame state");
-assert(server.includes('"seedance-2-0-person-reference",\n]);'), "only explicit person-reference mode may use the Ark person-asset route");
+assert(
+  /const ARK_PERSON_TARGET_MODELS = new Set\(\[\s*"seedance-2-0",\s*"seedance-2-0-fast",\s*"seedance-2-0-mini",\s*\]\)/.test(server),
+  "Ark private-library routing must target Seedance 2.0, Fast, and Mini",
+);
 assert(canvas.includes('PERSON_REFERENCE_MODEL'), "canvas must keep the explicit person-reference mode separate from AI photoreal assets");
 
 assert(server.includes("referencedStoryboardNodeIds") && server.includes("剪除") , "画布同步必须剪除未被当前镜头引用的故事板孤儿节点");
@@ -636,6 +648,11 @@ assert(server.includes("skipEmptySeedancePromptOverwrite"), "file save API must 
 assert(server.includes("const beatHasPerson =") && server.includes("继承最近一段有角色"), "beat 描写人却无具名角色时必须就近继承人物参考(避免乱编人脸)");
 
 assert(server.includes("const processQueueShot = async") && server.includes("await runWithConcurrency(selected, concurrency, processQueueShot)"), "故事板模式必须并发出片(工作池),受并发上限约束");
-assert(server.includes("const r = await processQueueShot(shot);") && server.includes("if (r && r.failed) break;"), "首尾帧模式必须保持串行且失败即停");
+assert(
+  server.includes("await runWithDependencies(selected, concurrency, processQueueShot") &&
+    server.includes("const onBlocked =") &&
+    server.includes("本段未提交"),
+  "首尾帧模式必须按依赖链串行并在前序失败时阻断下游",
+);
 
 console.log("Pixel Toys self-check passed.");

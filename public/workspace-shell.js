@@ -1,5 +1,5 @@
 (function exposeWorkspaceShell(root) {
-  const WORKSPACE_MODES = ["script", "image", "video", "storyboard", "assets"];
+  const WORKSPACE_MODES = ["script", "image", "shots", "video", "storyboard", "assets"];
   const TOOL_MODE_MAP = {
     "short-drama": "script",
     "short-drama-workspace": "script",

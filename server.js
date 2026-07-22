@@ -1,4 +1,6 @@
 const http = require("node:http");
+const dns = require("node:dns");
+const net = require("node:net");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -6,12 +8,31 @@ const crypto = require("node:crypto");
 const { spawn, execFileSync } = require("node:child_process");
 const { pipeline } = require("node:stream/promises");
 const { pathToFileURL, fileURLToPath } = require("node:url");
-const { collectReferencedAssetNames, classifyReferenceAssets, evaluateReferenceReadiness, runWithConcurrency } = require("./scripts/video-ref-prep.js");
+const { collectReferencedAssetNames, classifyReferenceAssets, evaluateReferenceReadiness, runWithConcurrency, runWithDependencies } = require("./scripts/video-ref-prep.js");
 const { analyzeSeriesPreflight } = require("./scripts/series-preflight.js");
 const { createTeamStore } = require("./server/team-store.js");
 const { canAccessResource, canDeleteResource, resourceScope } = require("./server/team-access.js");
 const { createReference, referenceStatus, updateReference, copyReferenceFileSnapshot } = require("./server/team-references.js");
+const {
+  bindReferenceKitToShot,
+  normalizeReferenceKit,
+  unbindReferenceKitFromShot,
+} = require("./server/reference-kits.js");
 const { buildTeamProjectProgressFacts, calculateTeamProjectProgress, selectVideoConfigRecord } = require("./server/team-progress.js");
+const { createAssetLibrary } = require("./server/asset-library.js");
+const { CHATCUT_STATUS, createChatcutAdapter } = require("./server/chatcut-adapter.js");
+const { createChatcutQueue } = require("./server/chatcut-queue.js");
+const { createChatcutAgent } = require("./server/chatcut-agent.js");
+const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, parseSeedanceDesignFromPrompt, seedanceDirectorEnabled } = require("./server/seedance-director.js");
+const { ensureThumbnail } = require("./server/thumbnailer.js");
+
+// Keep outbound provider requests reliable on hosts with broken IPv6 routing.
+// ipv4first alone is insufficient: Node 20+ enables Happy Eyeballs (autoSelectFamily),
+// so undici races IPv4/IPv6 concurrently and a dead IPv6 route (ETIMEDOUT) poisons the
+// attempt regardless of DNS order. Disabling autoSelectFamily forces strict IPv4-first
+// sequential connects, so provider fetch() calls (storyboard/asset/image models) succeed.
+dns.setDefaultResultOrder("ipv4first");
+if (typeof net.setDefaultAutoSelectFamily === "function") net.setDefaultAutoSelectFamily(false);
 
 const APP_ROOT = process.cwd();
 const HOME = os.homedir();
@@ -41,10 +62,6 @@ const IMAGE_API_KEY_ENV_NAMES = [
   "OPENAI_API_KEY",
 ];
 const VIDEO_API_KEY_ENV_NAMES = [
-  "XLUO_SESSION_TOKEN",
-  "XLUO_API_KEY",
-  "XLUO_AUTH_TOKEN",
-  "XLUO_TOKEN",
   "VOLC_ARK_API_KEY",
   "ARK_API_KEY",
   "PIXEL_TOYS_VIDEO_API_KEY",
@@ -52,9 +69,6 @@ const VIDEO_API_KEY_ENV_NAMES = [
   "GRAVITEXAI_API_KEY",
   "SEEDANCE_API_KEY",
 ];
-// XLUO /generations/* is a web-session API. Do not treat a generic sk-* API key
-// as a bearer token: XLUO accepts the logged-in token stored in xluo-user.token.
-const XLUO_VIDEO_API_KEY_ENV_NAMES = ["XLUO_SESSION_TOKEN", "XLUO_AUTH_TOKEN", "XLUO_TOKEN"];
 const ARK_VIDEO_API_KEY_ENV_NAMES = [
   "VOLC_ARK_API_KEY",
   "ARK_API_KEY",
@@ -68,7 +82,6 @@ const GRAVITEX_VIDEO_API_KEY_ENV_NAMES = [
   "GRAVITEXAI_API_KEY",
   "SEEDANCE_API_KEY",
   "PIXEL_TOYS_VIDEO_API_KEY",
-  "XLUO_API_KEY",
 ];
 const BYTEPLUS_ARK_VIDEO_API_KEY_ENV_NAMES = [
   "BYTEPLUS_ARK_API_KEY",
@@ -76,7 +89,6 @@ const BYTEPLUS_ARK_VIDEO_API_KEY_ENV_NAMES = [
 ];
 // 火山方舟(Ark)官方视频网关。Gravitex 使用独立的 Seedance 网关。
 // BytePlus ModelArk 是 Ark 的国际版(ap-southeast 区),API 结构与火山中国区一致,仅 base URL / key / 模型 ID 前缀不同(dreamina- vs doubao-)。
-const DEFAULT_XLUO_VIDEO_BASE_URL = "https://xluo.ai/api/v3";
 const DEFAULT_VOLC_ARK_VIDEO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 const DEFAULT_BYTEPLUS_ARK_VIDEO_BASE_URL = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_GRAVITEX_VIDEO_BASE_URL = "https://api.gravitex.ai/v1";
@@ -97,11 +109,17 @@ const AUTH_USERS_PATH = path.join(APP_ROOT, ".pixel-toys-users.json");
 const AUTH_SESSIONS_PATH = path.join(APP_ROOT, ".pixel-toys-sessions.json");
 const AUTH_USAGE_PATH = path.join(APP_ROOT, ".pixel-toys-usage.json");
 const TEAM_STORE_PATH = path.join(APP_ROOT, ".pixel-toys-teams.json");
+const ASSET_LIBRARY_PATH = path.join(APP_ROOT, ".pixel-toys-asset-library.json");
 const teamStore = createTeamStore({ filePath: TEAM_STORE_PATH });
+const assetLibrary = createAssetLibrary({ filePath: ASSET_LIBRARY_PATH });
 const AUTH_COOKIE_NAME = "pixel_toys_session";
 const AUTH_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
 const DEFAULT_DAILY_VIDEO_LIMIT = 10;
 const DEFAULT_CONCURRENT_VIDEO_LIMIT = 2;
+const STORYBOARD_IMAGE_CONCURRENCY = (() => {
+  const parsed = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_CONCURRENCY || "", 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 3;
+})();
 const ACTIVE_VIDEO_TASK_TTL_MS = 1000 * 60 * 60 * 6;
 const DEFAULT_SEEDANCE_MODEL_MAP = {
   "seedance-2-0": "doubao-seedance-2-0-260128",
@@ -114,17 +132,13 @@ const DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP = {
   "seedance-2-0-fast": "dreamina-seedance-2-0-260128",
   "seedance-2-0-mini": "dreamina-seedance-2-0-260128",
 };
-const DEFAULT_XLUO_VIDEO_MODEL_MAP = {
-  "seedance-2-0": "ef719399-8b59-471e-b559-f2c6ea68e642",
-  "seedance-2-0-fast": "21dd509b-d591-4862-aae9-ba584c98845d",
-  "seedance-2-0-liveness-face": "2965515c-99ef-4f99-9ae8-ac6a11edbb0e",
-  "seedance-2-0-person-reference": "ef719399-8b59-471e-b559-f2c6ea68e642",
-};
 const SEEDANCE_MAX_IMAGE_REFERENCES = 9;
-// 只有显式选择「参考图/人物参考」并绑定方舟人物素材时，才使用方舟人物素材契约。
-// 普通模型收到 AI 写实参考图时保持原有视频通道，不触发真人认证或素材库路由。
+// 标准 2.0 / Fast / Mini 绑定方舟私域人物素材后使用 Ark asset:// 契约。
+// 未绑定素材时保持当前视频通道；人物参考模型继续使用自己的独立链路。
 const ARK_PERSON_TARGET_MODELS = new Set([
-  "seedance-2-0-person-reference",
+  "seedance-2-0",
+  "seedance-2-0-fast",
+  "seedance-2-0-mini",
 ]);
 const DEFAULT_VIDEO_CONFIG_MODEL = "seedance-2-0-fast";
 const FALLBACK_ASSET_ANALYZER_MODEL = "claude-opus-4-8";
@@ -191,6 +205,7 @@ const MIME = {
 };
 
 function send(res, status, data, headers = {}) {
+  if (res.headersSent) return; // 防止响应已发后二次写头(ERR_HTTP_HEADERS_SENT)
   if (Buffer.isBuffer(data)) {
     res.writeHead(status, headers);
     res.end(data);
@@ -374,6 +389,7 @@ function publicUser(user = {}) {
     id: user.id || "",
     username: user.username || "",
     displayName: user.displayName || user.username || "",
+    avatarUrl: user.avatarUrl || "",
     role: computedUserRole(user),
     disabled: !!user.disabled,
     canvasEnabled: userCanUseCanvas(user),
@@ -393,6 +409,30 @@ function readAuthUsers() {
 
 function writeAuthUsers(data) {
   writeJsonFile(AUTH_USERS_PATH, { users: Array.isArray(data.users) ? data.users : [] });
+}
+
+function saveUserProfile(userId, body = {}) {
+  const store = readAuthUsers();
+  const user = store.users.find((item) => item.id === userId);
+  if (!user) throw new Error("用户不存在");
+
+  if (typeof body.displayName === "string") {
+    user.displayName = compactLine(body.displayName).slice(0, 80) || user.username;
+  }
+
+  const avatarDataUrl = String(body.avatarDataUrl || "");
+  if (avatarDataUrl) {
+    const decoded = decodeDataImageUrl(avatarDataUrl);
+    const detectedExtension = detectImageExtension(decoded?.buffer);
+    if (!decoded || !detectedExtension) throw new Error("个人头像只支持 PNG、JPG、WEBP");
+    if (decoded.buffer.length > 2 * 1024 * 1024) throw new Error("个人头像不能超过 2MB");
+    user.avatarUrl = persistDecodedPublicAsset({ ...decoded, ext: detectedExtension }, `avatar-${user.id}`);
+    user.avatarUpdatedAt = new Date().toISOString();
+  }
+
+  user.updatedAt = new Date().toISOString();
+  writeAuthUsers(store);
+  return publicUser(user);
 }
 
 function readAuthSessions() {
@@ -621,7 +661,8 @@ function isAuthApiPath(pathname = "") {
     pathname === "/api/auth/register" ||
     pathname === "/api/auth/login" ||
     pathname === "/api/auth/logout" ||
-    pathname === "/api/auth/password"
+    pathname === "/api/auth/password" ||
+    pathname === "/api/auth/profile"
   );
 }
 
@@ -631,15 +672,24 @@ function isAdminApiPath(pathname = "") {
 
 function isPublicStaticPath(pathname = "") {
   return (
+    pathname === "/" ||
+    pathname === "/index.html" ||
+    pathname === "/app.js" ||
+    pathname === "/workspace-shell.js" ||
     pathname === "/auth.html" ||
     pathname === "/auth.js" ||
     pathname === "/styles.css" ||
+    pathname === "/infinity-3d.png" ||
     pathname === "/pixel-infinity-logo.png" ||
     pathname === "/pixel-toys-logo.png" ||
     pathname === "/pixel-toy-symbol.png" ||
     pathname === "/logo11-source.png" ||
     pathname.startsWith("/fonts/")
   );
+}
+
+function isStandaloneImageGenerationApiPath(pathname = "") {
+  return pathname === "/api/canvas/image-generation" || /^\/api\/canvas\/image-generations\/[^/]+$/.test(pathname);
 }
 
 function requireAuth(req, res, url) {
@@ -655,6 +705,13 @@ function requireAuth(req, res, url) {
     }
     if (!isAdminUser(user)) {
       fail(res, 403, "需要管理员权限");
+      return false;
+    }
+    return true;
+  }
+  if (isStandaloneImageGenerationApiPath(url.pathname)) {
+    if (!currentUserFromRequest(req)) {
+      fail(res, 401, "请先登录");
       return false;
     }
     return true;
@@ -678,11 +735,8 @@ function requireAuth(req, res, url) {
     fail(res, 401, "请先登录");
     return false;
   }
-  if (url.pathname === "/" || url.pathname === "/index.html") {
-    if (currentUserFromRequest(req)) return true;
-    redirect(res, `/auth.html?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
-    return false;
-  }
+  // 首页是公开的创作入口；项目、画布和生成 API 仍在上面的鉴权分支中保护。
+  if (url.pathname === "/" || url.pathname === "/index.html") return true;
   return true;
 }
 
@@ -756,6 +810,12 @@ async function handleAuthApi(req, res, url) {
     user.updatedAt = new Date().toISOString();
     writeAuthUsers(store);
     return send(res, 200, { ok: true });
+  }
+  if (req.method === "POST" && url.pathname === "/api/auth/profile") {
+    const currentUser = currentUserFromRequest(req);
+    if (!currentUser) return fail(res, 401, "请先登录");
+    const user = saveUserProfile(currentUser.id, await readBody(req));
+    return send(res, 200, { ok: true, user });
   }
   return fail(res, 404, "not found");
 }
@@ -1058,7 +1118,7 @@ function sanitizeCanvasState(body = {}) {
     ? "active"
     : livenessStatus;
   const normalizedLivenessError = livenessGroupId && isStaleLivenessVerificationError(livenessError) ? "" : livenessError;
-  return {
+  return repairCanvasAssetReferences({
     version: 1,
     updatedAt: new Date().toISOString(),
     projectId: compactLine(body.projectId || "standalone"),
@@ -1097,6 +1157,19 @@ function sanitizeCanvasState(body = {}) {
         aiGenerated: asset.aiGenerated === true,
         verificationType: compactLine(asset.verificationType || asset.verification_type || "").slice(0, 40),
         source: compactLine(asset.source).slice(0, 40),
+        arkPersonAsset: asset.arkPersonAsset && typeof asset.arkPersonAsset === "object"
+          ? {
+              enabled: asset.arkPersonAsset.enabled === true,
+              assetId: compactLine(asset.arkPersonAsset.assetId || "").slice(0, 200),
+              assetUrl: /^asset:\/\//i.test(compactLine(asset.arkPersonAsset.assetUrl || ""))
+                ? compactLine(asset.arkPersonAsset.assetUrl).slice(0, 260)
+                : "",
+              groupId: compactLine(asset.arkPersonAsset.groupId || "").slice(0, 200),
+              status: compactLine(asset.arkPersonAsset.status || "").slice(0, 40),
+              boundAt: compactLine(asset.arkPersonAsset.boundAt || "").slice(0, 80),
+              error: compactLine(asset.arkPersonAsset.error || "").slice(0, 1000),
+            }
+          : undefined,
       }))
       .filter((asset) => asset.id && (asset.url || asset.previewUrl || asset.localUrl || asset.publicUrl || asset.assetUrl)),
     nodes: nodes
@@ -1124,6 +1197,10 @@ function sanitizeCanvasState(body = {}) {
           : node.kind === "video"
             ? clampCanvasAssetDimension(node.height, CANVAS_VIDEO_MIN_HEIGHT, CANVAS_VIDEO_MAX_HEIGHT, CANVAS_VIDEO_DEFAULT_HEIGHT)
             : undefined,
+        // 持久化图片/视频节点的手动缩放标记,否则 reload 后 ratioSizedNodeDimensions 判 hasManualSize 失败,
+        // 会用 ratio 预设尺寸覆盖用户拖动后的宽高(表现为"缩放被重置")。
+        ratioManualSize: node.ratioManualSize === true,
+        ratioLayoutRatio: compactLine(node.ratioLayoutRatio || "").slice(0, 16),
         assets: Array.isArray(node.assets) ? node.assets.map(compactLine).filter(Boolean).slice(0, 20) : [],
         prompt: String(node.prompt || "").slice(0, 20000),
         settings: node.settings && typeof node.settings === "object" ? node.settings : undefined,
@@ -1131,6 +1208,9 @@ function sanitizeCanvasState(body = {}) {
         status: compactLine(node.status).slice(0, 40),
         statusMessage: String(node.statusMessage || "").slice(0, 2000),
         videoUrl: String(node.videoUrl || "").slice(0, 12000),
+        // 图片节点的生成结果:必须持久化,否则刷新后 imageUrl 丢失→预览只剩占位符(无预览图)。
+        imageUrl: String(node.imageUrl || "").slice(0, 12000),
+        generatedAssetId: compactLine(node.generatedAssetId || "").slice(0, 120),
         videoLocalFile: compactLine(node.videoLocalFile || "").slice(0, 12000),
         taskId: compactLine(node.taskId).slice(0, 260),
         taskProvider: compactLine(node.taskProvider).slice(0, 80),
@@ -1188,7 +1268,85 @@ function sanitizeCanvasState(body = {}) {
               : [],
           }
         : undefined,
+  }).state;
+}
+
+function canvasReferenceAssetKey(value = "") {
+  const raw = compactLine(value);
+  if (!raw) return "";
+  const localName = raw.match(/^(?:local|localvid)_\d+_\d+_(.+)$/i)?.[1] || raw;
+  let fileName = localName;
+  try {
+    fileName = path.basename(decodeURIComponent(new URL(localName, "http://localhost").pathname || ""));
+  } catch {
+    fileName = path.basename(localName);
+  }
+  return fileName
+    .replace(/^[a-f0-9]{16}-/i, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+// 上传完成后会保留原节点的 local_* ID；极少数历史保存会让该 ID 与资产列表脱节。
+// 仅在文件身份唯一命中时修复，不能猜测或把同名素材错误连接到一起。
+function repairCanvasAssetReferences(state = {}) {
+  const assets = Array.isArray(state.assets) ? state.assets : [];
+  const knownIds = new Set(assets.map((asset) => compactLine(asset?.id)).filter(Boolean));
+  const candidatesByKey = new Map();
+  for (const asset of assets) {
+    const id = compactLine(asset?.id);
+    if (!id) continue;
+    const keys = new Set([
+      asset.name,
+      asset.url,
+      asset.previewUrl || asset.preview_url,
+      asset.localUrl || asset.local_url,
+      asset.publicUrl || asset.public_url,
+      id,
+    ].map(canvasReferenceAssetKey).filter(Boolean));
+    for (const key of keys) {
+      const matches = candidatesByKey.get(key) || new Set();
+      matches.add(id);
+      candidatesByKey.set(key, matches);
+    }
+  }
+  const resolveAssetId = (value = "") => {
+    const id = compactLine(value);
+    if (!id || knownIds.has(id)) return id;
+    const matches = candidatesByKey.get(canvasReferenceAssetKey(id));
+    return matches?.size === 1 ? [...matches][0] : id;
   };
+  let changed = false;
+  const nodes = (Array.isArray(state.nodes) ? state.nodes : []).map((node) => {
+    if (!node || typeof node !== "object") return node;
+    const assetsBefore = Array.isArray(node.assets) ? node.assets : [];
+    const repairedAssets = [...new Set(assetsBefore.map(resolveAssetId))];
+    const generatedAssetId = resolveAssetId(node.generatedAssetId || "");
+    const settings = node.settings && typeof node.settings === "object" ? node.settings : null;
+    const repairedSettings = settings
+      ? {
+          ...settings,
+          firstFrameAssetId: resolveAssetId(settings.firstFrameAssetId || ""),
+          lastFrameAssetId: resolveAssetId(settings.lastFrameAssetId || ""),
+        }
+      : settings;
+    const nodeChanged =
+      JSON.stringify(assetsBefore) !== JSON.stringify(repairedAssets) ||
+      generatedAssetId !== compactLine(node.generatedAssetId || "") ||
+      (settings && (
+        repairedSettings.firstFrameAssetId !== compactLine(settings.firstFrameAssetId || "") ||
+        repairedSettings.lastFrameAssetId !== compactLine(settings.lastFrameAssetId || "")
+      ));
+    if (!nodeChanged) return node;
+    changed = true;
+    return {
+      ...node,
+      assets: repairedAssets,
+      generatedAssetId,
+      ...(repairedSettings ? { settings: repairedSettings } : {}),
+    };
+  });
+  return changed ? { state: { ...state, nodes }, changed: true } : { state, changed: false };
 }
 
 function persistMigratedCanvasDataUrl(dataUrl = "", asset = {}, index = 0) {
@@ -1287,7 +1445,8 @@ function migrateCanvasStateDataUrls(state = {}) {
     }
     nextState.livenessLibrary = library;
   }
-  return { state: nextState, changed };
+  const repaired = repairCanvasAssetReferences(nextState);
+  return { state: repaired.state, changed: changed || repaired.changed };
 }
 
 function readCanvasState(projectId = "") {
@@ -1383,6 +1542,13 @@ function writeCanvasState(body = {}, user = null) {
   const migrated = migrateCanvasStateDataUrls(body);
   const incoming = sanitizeCanvasState(migrated.state);
   const previous = readCanvasState(incoming.projectId) || null;
+  const baseUpdatedAt = compactLine(body.baseUpdatedAt || "");
+  const preserveMissingNodes = !!(
+    previous &&
+    baseUpdatedAt &&
+    previous.updatedAt &&
+    baseUpdatedAt !== previous.updatedAt
+  );
   const standaloneCanvas = !episodeRootFromCanvasProjectId(incoming.projectId) && incoming.projectId !== "standalone";
   if (standaloneCanvas && user?.id) {
     if (previous && !userCanAccessCanvasState(user, previous)) {
@@ -1396,7 +1562,7 @@ function writeCanvasState(body = {}, user = null) {
     incoming.lastModifiedByUserId = user.id;
     incoming.lastModifiedByUsername = user.username || "";
   }
-  const state = mergeCanvasStateForWrite(previous, incoming);
+  const state = mergeCanvasStateForWrite(previous, incoming, { preserveMissingNodes });
   return persistCanvasState(state);
 }
 
@@ -1412,6 +1578,52 @@ function blankCanvasCover(state = {}) {
     if (url && !isDataImageUrl(url)) return String(url);
   }
   return "";
+}
+
+// 项目卡封面提速:把封面原图 URL 改写成本地小缩略图(几十 KB webp),根治"打开项目页首屏加载 2-3MB 原图很慢"。
+// 仅当本地有对应文件时才改写(公网 TOS 图按文件名回映本地镜像;/media 图直接加 thumb),否则原样返回,绝不制造 404。
+function coverThumbUrl(cover = "", width = 360) {
+  const url = String(cover || "");
+  if (!url || isDataImageUrl(url)) return url;
+  try {
+    // /media?path=<abs> —— 本地文件,直接挂 thumb 参数(端点已支持,失败自动回退原图)。
+    if (url.startsWith("/media?") || url.includes("/media?path=")) {
+      return url.includes("thumb=") ? url : `${url}${url.includes("?") ? "&" : "?"}thumb=${width}`;
+    }
+    // 公网/本地 public-assets:按 basename 找本地镜像;有才改写成本地 thumb 端点。
+    const m = url.match(/public-assets\/([^/?#]+)/);
+    if (m && m[1]) {
+      const fileName = decodeURIComponent(m[1]);
+      if (fs.existsSync(path.join(CANVAS_PUBLIC_ASSET_DIR, fileName))) {
+        return `/public-assets/${encodeURIComponent(fileName)}?thumb=${width}`;
+      }
+    }
+  } catch {
+    // 任何异常都退回原图,保证封面始终可显示
+  }
+  return url;
+}
+
+// 资产图页面提速:下发画布 state 时,把每个资产/图片节点的 previewUrl 改写成本地小缩略图。
+// 只动"下发副本"的 previewUrl,不改存储、不改 url(生成/放大/下载仍用全清原图)。宽 640 兼顾清晰与体积。
+function canvasStateWithThumbPreviews(state = {}) {
+  if (!state || typeof state !== "object") return state;
+  const out = { ...state };
+  if (Array.isArray(state.assets)) {
+    out.assets = state.assets.map((a) => {
+      if (!a || typeof a !== "object" || !a.previewUrl) return a;
+      const thumb = coverThumbUrl(a.previewUrl, 640);
+      return thumb === a.previewUrl ? a : { ...a, previewUrl: thumb };
+    });
+  }
+  if (Array.isArray(state.nodes)) {
+    out.nodes = state.nodes.map((n) => {
+      if (!n || typeof n !== "object" || n.kind !== "image" || !n.previewUrl) return n;
+      const thumb = coverThumbUrl(n.previewUrl, 640);
+      return thumb === n.previewUrl ? n : { ...n, previewUrl: thumb };
+    });
+  }
+  return out;
 }
 
 function canvasScopeRecord(state = {}) {
@@ -1445,7 +1657,7 @@ function blankCanvasSummary(state = {}, user = {}) {
     name: compactLine(state.name || "") || "未命名画布",
     updatedAt: state.updatedAt || "",
     nodeCount: Array.isArray(state.nodes) ? state.nodes.length : 0,
-    cover: blankCanvasCover(state),
+    cover: coverThumbUrl(blankCanvasCover(state)),
     scope: scope.scope,
     teamId: scope.teamId,
     canDelete: userCanDeleteCanvasState(user, state),
@@ -1538,6 +1750,24 @@ function syncCanvasStateFromProjectSnapshots(projectId = "") {
 function mergeCanvasAssetState(existing = {}, incoming = {}) {
   const existingActive = String(existing.validationStatus || "").toLowerCase() === "active" && /^asset:\/\//i.test(existing.assetUrl || "");
   const incomingActive = String(incoming.validationStatus || "").toLowerCase() === "active" && /^asset:\/\//i.test(incoming.assetUrl || "");
+  const existingReferenceUrl = compactLine(existing.publicUrl || existing.public_url || existing.url || existing.previewUrl || existing.preview_url || existing.localUrl || existing.local_url || "");
+  const incomingReferenceUrl = compactLine(incoming.publicUrl || incoming.public_url || incoming.url || incoming.previewUrl || incoming.preview_url || incoming.localUrl || incoming.local_url || "");
+  // A browser may save a local blob preview after it has been stripped for persistence.
+  // That empty record is stale when this asset ID already has an uploaded URL; retaining
+  // the stable URLs keeps connected image nodes from submitting zero reference images.
+  if (existingReferenceUrl && !incomingReferenceUrl) {
+    return {
+      ...existing,
+      ...incoming,
+      url: existing.url || existing.publicUrl || existing.localUrl || "",
+      previewUrl: existing.previewUrl || existing.localUrl || existing.publicUrl || existing.url || "",
+      publicUrl: existing.publicUrl || existing.public_url || "",
+      localUrl: existing.localUrl || existing.local_url || "",
+      uploading: false,
+      uploadFailed: false,
+      uploadMessage: "",
+    };
+  }
   if (existingActive && !incomingActive) {
     return {
       ...incoming,
@@ -1560,9 +1790,21 @@ function isAssetLibraryTimeoutMessage(message = "") {
   return /\/v1\/assets|素材库|VIDEO_API_TIMEOUT|请求超时|网关请求超时/i.test(String(message || ""));
 }
 
-function mergeCanvasStateForWrite(previous, incoming) {
+function mergeCanvasStateForWrite(previous, incoming, options = {}) {
   if (!previous || !incoming) return incoming;
+  const preserveMissingNodes = options.preserveMissingNodes === true;
   const previousAssets = new Map((previous.assets || []).map((asset) => [asset.id, asset]));
+  const incomingReferenceKeys = new Set();
+  for (const node of Array.isArray(incoming.nodes) ? incoming.nodes : []) {
+    for (const id of Array.isArray(node?.assets) ? node.assets : []) {
+      const key = canvasReferenceAssetKey(id);
+      if (key) incomingReferenceKeys.add(key);
+    }
+    for (const id of [node?.generatedAssetId, node?.settings?.firstFrameAssetId, node?.settings?.lastFrameAssetId]) {
+      const key = canvasReferenceAssetKey(id);
+      if (key) incomingReferenceKeys.add(key);
+    }
+  }
   const assets = (incoming.assets || []).map((asset) => {
     const existing = previousAssets.get(asset.id);
     if (!existing) return asset;
@@ -1573,6 +1815,17 @@ function mergeCanvasStateForWrite(previous, incoming) {
       assetStyleLabel: merged.assetStyleLabel || asset.assetStyleLabel || existing.assetStyleLabel || "",
     };
   });
+  const knownAssetIds = new Set(assets.map((asset) => compactLine(asset?.id)).filter(Boolean));
+  for (const asset of previousAssets.values()) {
+    const id = compactLine(asset?.id);
+    if (!id || knownAssetIds.has(id)) continue;
+    const keys = [asset.id, asset.name, asset.url, asset.previewUrl, asset.localUrl, asset.publicUrl]
+      .map(canvasReferenceAssetKey)
+      .filter(Boolean);
+    if (!keys.some((key) => incomingReferenceKeys.has(key))) continue;
+    assets.push(asset);
+    knownAssetIds.add(id);
+  }
   const previousNodes = new Map((previous.nodes || []).map((node) => [node.id, node]));
   const mergeCanvasVideoNodeState = (existing = {}, node = {}) => {
     const existingHasTail = existing.tailFrameReady === true && (existing.tailFrameUrl || existing.tailFrameLocalFile || existing.tailFrameFileUrl);
@@ -1654,7 +1907,57 @@ function mergeCanvasStateForWrite(previous, incoming) {
       ...videoState,
     };
   });
-  return { ...incoming, name: incoming.name || previous.name || "", ownerUserId: incoming.ownerUserId || previous.ownerUserId || "", assets, nodes };
+  if (preserveMissingNodes) {
+    const knownNodeIds = new Set(nodes.map((node) => compactLine(node?.id)).filter(Boolean));
+    for (const node of previousNodes.values()) {
+      const id = compactLine(node?.id);
+      if (!id || knownNodeIds.has(id)) continue;
+      nodes.push(node);
+      knownNodeIds.add(id);
+    }
+    const referencedAssetKeys = new Set();
+    for (const node of nodes) {
+      for (const id of Array.isArray(node?.assets) ? node.assets : []) {
+        const key = canvasReferenceAssetKey(id);
+        if (key) referencedAssetKeys.add(key);
+      }
+      for (const id of [node?.generatedAssetId, node?.settings?.firstFrameAssetId, node?.settings?.lastFrameAssetId]) {
+        const key = canvasReferenceAssetKey(id);
+        if (key) referencedAssetKeys.add(key);
+      }
+    }
+    for (const asset of previousAssets.values()) {
+      const id = compactLine(asset?.id);
+      if (!id || knownAssetIds.has(id)) continue;
+      const keys = [asset.id, asset.name, asset.url, asset.previewUrl, asset.localUrl, asset.publicUrl]
+        .map(canvasReferenceAssetKey)
+        .filter(Boolean);
+      if (!keys.some((key) => referencedAssetKeys.has(key))) continue;
+      assets.push(asset);
+      knownAssetIds.add(id);
+    }
+  }
+  const connections = Array.isArray(incoming.connections) ? [...incoming.connections] : [];
+  if (preserveMissingNodes) {
+    const knownConnections = new Set(connections.map((connection) => `${connection?.from || ""}:${connection?.to || ""}`));
+    const knownNodeIds = new Set(nodes.map((node) => compactLine(node?.id)).filter(Boolean));
+    for (const connection of Array.isArray(previous.connections) ? previous.connections : []) {
+      const from = compactLine(connection?.from);
+      const to = compactLine(connection?.to);
+      const key = `${from}:${to}`;
+      if (!from || !to || !knownNodeIds.has(from) || !knownNodeIds.has(to) || knownConnections.has(key)) continue;
+      connections.push({ from, to });
+      knownConnections.add(key);
+    }
+  }
+  return repairCanvasAssetReferences({
+    ...incoming,
+    name: incoming.name || previous.name || "",
+    ownerUserId: incoming.ownerUserId || previous.ownerUserId || "",
+    assets,
+    nodes,
+    connections,
+  }).state;
 }
 
 function stripSeedancePromptRules(markdown) {
@@ -1741,7 +2044,6 @@ function imageApiKeySource() {
 }
 
 function videoApiKeyNamesForProvider(provider = canvasVideoProvider()) {
-  if (provider === "xluo") return XLUO_VIDEO_API_KEY_ENV_NAMES;
   if (provider === "gravitex") return GRAVITEX_VIDEO_API_KEY_ENV_NAMES;
   if (provider === "byteplus") return BYTEPLUS_ARK_VIDEO_API_KEY_ENV_NAMES;
   return ARK_VIDEO_API_KEY_ENV_NAMES;
@@ -1766,12 +2068,11 @@ function normalizeCanvasVideoProvider(value) {
   if (["gravitex", "gravitex-ai", "gravitexai", "seedance", "seedance-2", "seedance-2-0"].includes(raw)) return "gravitex";
   if (["byteplus", "byteplus-ark", "byteplus-modelark", "modelark", "ark-intl", "ark-international"].includes(raw)) return "byteplus";
   if (["ark", "volc", "volcengine", "volcengine-ark", "bytedance-ark"].includes(raw)) return "ark";
-  if (["xluo", "xluo-ai", "xluoai"].includes(raw)) return "xluo";
-  return "xluo";
+  return "ark";
 }
 
 function canvasVideoProvider() {
-  return normalizeCanvasVideoProvider(process.env.CANVAS_VIDEO_PROVIDER || process.env.VIDEO_PROVIDER || "xluo");
+  return normalizeCanvasVideoProvider(process.env.CANVAS_VIDEO_PROVIDER || process.env.VIDEO_PROVIDER || "ark");
 }
 
 function canvasVideoProviderForBody(body = {}) {
@@ -1779,15 +2080,10 @@ function canvasVideoProviderForBody(body = {}) {
   // 显式选择「海外火山」模型选项时,本次生成走 BytePlus ModelArk(ap-southeast 区),优先于全局默认与自动路由。
   if (/^seedance-2-0-byteplus$/i.test(modelMode)) return "byteplus";
   const sourceAssets = Array.isArray(body.assets) ? body.assets : [];
-  if (sourceAssets.some((asset) => asset?.arkPersonAsset?.enabled === true)) return "ark";
-  // 本地 aiGenerated 标记不是 Ark 授信；AI 写实图固定走 XLUO 图片参考通道，避免进入 Ark 的真人/隐私审核路径。
-  if (sourceAssets.some(isCanvasAiGeneratedPhotorealAsset)) return "xluo";
+  if (isArkPersonTargetModel(modelMode) && sourceAssets.some((asset) => asset?.arkPersonAsset?.enabled === true)) return "ark";
+  // 走配置的 provider(CANVAS_VIDEO_PROVIDER,默认 ark 火山方舟)。
   const configuredProvider = canvasVideoProvider();
   return configuredProvider;
-}
-
-function xluoVideoBaseUrl() {
-  return (process.env.XLUO_API_BASE_URL || process.env.XLUO_BASE_URL || DEFAULT_XLUO_VIDEO_BASE_URL).replace(/\/+$/, "");
 }
 
 function volcArkVideoBaseUrl() {
@@ -1812,7 +2108,6 @@ function gravitexVideoBaseUrl() {
 
 function canvasVideoBaseUrl() {
   const provider = canvasVideoProvider();
-  if (provider === "xluo") return xluoVideoBaseUrl();
   if (provider === "gravitex") return gravitexVideoBaseUrl();
   if (provider === "byteplus") return bytePlusArkVideoBaseUrl();
   return volcArkVideoBaseUrl();
@@ -1825,7 +2120,7 @@ function runtimeStatus() {
     videoApiKeyConfigured: !!videoApiKey(),
     videoApiKeySource: videoApiKeySource(),
     videoProvider:
-      canvasVideoProvider() === "xluo" ? "XLUO AI v3" : canvasVideoProvider() === "gravitex" ? "Gravitex Seedance 2.0" : canvasVideoProvider() === "byteplus" ? "BytePlus ModelArk Seedance" : "Volcengine Ark Seedance",
+      canvasVideoProvider() === "gravitex" ? "Gravitex Seedance 2.0" : canvasVideoProvider() === "byteplus" ? "BytePlus ModelArk Seedance" : "Volcengine Ark Seedance",
     videoBaseUrl: canvasVideoBaseUrl(),
     assetAnalyzerModel: defaultAssetAnalyzerModel(),
     assetAnalyzerAvailable: !!assetAnalyzerApiKey(),
@@ -1840,12 +2135,17 @@ function runtimeStatus() {
 
 function uiRuntimeConfig() {
   return {
-    exploreEnabled: process.env.PIXEL_TOYS_EXPLORE_UI === "1",
+    // Explore 首页现在是默认入口；设置为 0 才回退到旧版项目首页。
+    exploreEnabled: process.env.PIXEL_TOYS_EXPLORE_UI !== "0",
   };
 }
 
 function defaultAssetAnalyzerModel() {
   return process.env.ASSET_ANALYZER_MODEL || FALLBACK_ASSET_ANALYZER_MODEL;
+}
+
+function assetAuditModel(value) {
+  return compactLine(value || process.env.ASSET_AUDIT_MODEL || "claude-haiku-4-5");
 }
 
 function normalizeAssetAnalyzerModel(value) {
@@ -2462,6 +2762,34 @@ function writeWorkflowState(episodeRoot, state) {
   return state;
 }
 
+function projectReferenceKits(workflow = {}) {
+  return (Array.isArray(workflow.referenceKits) ? workflow.referenceKits : [])
+    .map((kit) => normalizeReferenceKit(kit, { now: kit?.updatedAt || kit?.createdAt || new Date().toISOString() }))
+    .filter((kit) => kit.id);
+}
+
+function projectReferenceKitShots(config = {}) {
+  return (Array.isArray(config.shots) ? config.shots : [])
+    .map((shot, index) => ({
+      id: compactLine(shot?.name || shot?.id || `shot_${index + 1}`),
+      name: compactLine(shot?.name || shot?.id || `shot_${index + 1}`),
+      title: compactLine(shot?.title || shot?.description || shot?.name || `镜头 ${index + 1}`),
+      duration: Number(shot?.duration || 0) || 0,
+      refs: Array.isArray(shot?.refs) ? shot.refs.filter(Boolean) : [],
+      storyboardRefs: Array.isArray(shot?.storyboardRefs) ? shot.storyboardRefs.filter(Boolean) : [],
+      referenceKitId: compactLine(shot?.referenceKitId || ""),
+      referenceKitVersion: Number(shot?.referenceKitVersion || 0) || 0,
+    }))
+    .filter((shot) => shot.name);
+}
+
+function projectReferenceKitState(workflow = {}, config = {}) {
+  return {
+    referenceKits: projectReferenceKits(workflow),
+    referenceKitShots: projectReferenceKitShots(config),
+  };
+}
+
 function projectIsolationFingerprint(episodeRoot, scriptText = null) {
   const script =
     typeof scriptText === "string"
@@ -2618,6 +2946,23 @@ function scriptDigestFromText(text) {
   return sha1Text(cleanScriptForDraft(text || ""));
 }
 
+// 覆写剧本前把当前内容存进 01_script/.script_history/,便于事故回滚。best-effort,失败不阻断主流程。
+function backupScriptBeforeOverwrite(episodeRoot, scriptText, tag = "overwrite") {
+  try {
+    const text = String(scriptText || "");
+    if (!text.trim()) return null;
+    const dir = path.join(episodeRoot, "01_script", ".script_history");
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const file = path.join(dir, `${episodeSlug(episodeRoot)}_script.${stamp}.${tag}.md`);
+    writeText(file, text);
+    return file;
+  } catch (error) {
+    console.error(`[scriptBackup] 备份失败(不阻断):${error?.message || error}`);
+    return null;
+  }
+}
+
 function writeScriptWithWorkflowIsolation(episodeRoot, scriptText, reason = "script changed") {
   const file = findProjectFile(episodeRoot, "script");
   const before = readText(file);
@@ -2626,6 +2971,24 @@ function writeScriptWithWorkflowIsolation(episodeRoot, scriptText, reason = "scr
     return { file, changed: true, ...resetWorkflowForContentChange(episodeRoot, reason) };
   }
   return { file, changed: false, workflow: ensureWorkflowNamespace(episodeRoot, reason), archive: null };
+}
+
+// 「资产描述」独立输入:与剧情剧本分开存放,只用于资产解析(人物/场景/道具),不参与剧情节拍/分镜。
+// 专用文件名,避免与 01_script 里的剧本 .md 冲突(findProjectFile 的 script 走 defaults 优先,不会误取)。
+function assetDescriptionPath(episodeRoot) {
+  return path.join(episodeRoot, "01_script", `${episodeSlug(episodeRoot)}_asset_description.md`);
+}
+
+function readAssetDescription(episodeRoot) {
+  const file = assetDescriptionPath(episodeRoot);
+  return fs.existsSync(file) ? readText(file) : "";
+}
+
+function writeAssetDescription(episodeRoot, text) {
+  const file = assetDescriptionPath(episodeRoot);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeText(file, typeof text === "string" ? text : "");
+  return file;
 }
 
 function currentRunStartMs(episodeRoot, configData = null) {
@@ -2871,7 +3234,9 @@ function findProjectFile(episodeRoot, kind) {
     return found || defaults[kind];
   }
   if (folders[kind]) {
-    const found = firstFile(path.join(episodeRoot, folders[kind]), (file) => file.endsWith(".md") || file.endsWith(".txt"));
+    // 排除 01_script 里的资产描述文件——它与剧本同目录,字母序在 _script.md 之前,
+    // 剧本文件缺失时会被 firstFile 误取成剧本(症状:资产描述"变成剧本")。
+    const found = firstFile(path.join(episodeRoot, folders[kind]), (file) => (file.endsWith(".md") || file.endsWith(".txt")) && !/_asset_description\.md$/i.test(file));
     if (found) return found;
     return defaults[kind];
   }
@@ -4081,6 +4446,86 @@ function normalizeDialogueItems(value, dialogueLanguage = "en") {
     .slice(0, 6);
 }
 
+// 合并模型对白与剧本对白:优先保留模型台词内容,但说话人以剧本(带 speaker)为准回填。
+// - 模型行已带 speaker 的,保留;
+// - 模型行缺 speaker 的,按台词包含关系匹配剧本对白拿 speaker;匹配不到再退回剧本对白本身。
+function backfillDialogueSpeakers(modelItems = [], beatDialogues = [], { appendMissing = true } = {}) {
+  const model = Array.isArray(modelItems) ? modelItems.filter((item) => item?.text) : [];
+  const script = Array.isArray(beatDialogues) ? beatDialogues.filter((item) => item?.text) : [];
+  if (!model.length) return script.slice(0, 4);
+  const filled = model.map((item) => {
+    if (item.speaker) return item;
+    const hit = script.find(
+      (s) => s.speaker && (s.text.includes(item.text) || item.text.includes(s.text)),
+    );
+    return hit ? { speaker: hit.speaker, text: item.text } : item;
+  });
+  // 模型完全没提到、但剧本里有的对白(且带 speaker)补进来,避免漏台词。
+  // appendMissing=false 时只补 speaker、不追加(用于全剧本 map:否则会把别的 shot 台词灌进来)。
+  if (appendMissing) {
+    for (const s of script) {
+      if (!s.speaker) continue;
+      if (filled.some((d) => d.text.includes(s.text) || s.text.includes(d.text))) continue;
+      filled.push(s);
+    }
+  }
+  return filled.slice(0, 4);
+}
+
+// 全剧本 speaker 地图:从脚本提取所有角色台词(无上限),用于 config 阶段为模型对白补 speaker。
+// 必须覆盖 dialoguesForText 的全部四种格式(否则标准剧本格式C/项目符号D的项目会拿到空 map):
+//  ① parseSpeakerDialogues — 说话人独占行、台词在下(标准剧本格式)
+//  ② explicitInlineDialogues — 「◦名字：台词」项目符号格式
+//  ③ inlineColonDialogues — 密集内联「名字：台词」(竹编式)、多行冒号
+//  ④ quotedDialoguesForText — 引号包裹台词
+// 区别于 dialoguesForText:这里处理全文、不设 slice 上限,覆盖跨节拍全部台词。
+function buildScriptSpeakerMap(script, dialogueLanguage = "zh") {
+  const source = String(script || "");
+  const lang = normalizeDialogueLanguage(dialogueLanguage, "en");
+  const out = [];
+  const push = (block) => {
+    if (!block?.speaker || !block?.text) return;
+    const bilingual = splitBilingualDialogue(block.text);
+    const spoken = lang === "zh" ? bilingual.zh || block.text : bilingual.en || block.text;
+    if (spoken && !out.some((d) => d.speaker === block.speaker && d.text === spoken)) out.push({ speaker: block.speaker, text: spoken });
+  };
+  for (const block of extractDialogueBlocks(stripExplicitInlineDialogues(source))) push(block); // 用底层提取器,绕过 parseSpeakerDialogues 的 12 条上限
+  for (const block of explicitInlineDialogues(source)) push(block);
+  for (const block of inlineColonDialogues(source, lang, { limit: Infinity })) push(block);
+  for (const block of quotedDialoguesForText(source, lang)) push(block);
+  return out;
+}
+
+// 从 seedance section body 提取「对白：」行内容,拆分并去掉模型可能自加的「名字：」前缀,返回纯台词字符串数组。
+// 之所以直接读对白行而不用 dialoguesForText(beat),是因为 beat 在 config 阶段可能是设计块(不含台词)。
+function parseSectionDialogueTexts(sectionBody = "") {
+  const match = String(sectionBody).match(/^[ \t]*对白\s*[：:]\s*(.+)/m);
+  if (!match) return [];
+  const line = compactLine(match[1]);
+  if (!line || /^（无|无台词|—|无对白/i.test(line)) return [];
+  return line
+    .split(/\s*\/\s*/)
+    .map((seg) => {
+      // 去掉模型可能自加的「名字：台词」前缀,只留台词文本
+      const inner = seg.replace(/^[^：:]{2,8}[：:]/, "").trim();
+      return compactLine(inner || seg);
+    })
+    .filter(Boolean);
+}
+
+// config 阶段的 shot 对白解析:优先从 section body 的对白行取台词文本,再用剧本 speakerMap 匹配说话人。
+// beat 是 fallback(当 section 没有对白行时用 dialoguesForText(beat))。
+function dialoguesForShotWithSpeakers(beat, sectionBody, speakerMap, dialogueLanguage) {
+  const texts = parseSectionDialogueTexts(sectionBody);
+  if (texts.length) {
+    const items = texts.slice(0, 4).map((text) => ({ speaker: "", text }));
+    // appendMissing=false:只给本 shot 的模型台词补 speaker,不把全剧本其他台词灌进来。
+    return backfillDialogueSpeakers(items, speakerMap, { appendMissing: false });
+  }
+  // fallback:直接从剧本 beat 提取(beat 可能是真实剧本节拍)
+  return dialoguesForText(beat, dialogueLanguage);
+}
+
 function dialogueItemsForSegment(segment = {}) {
   const existing = normalizeDialogueItems(segment.dialogues || segment.dialogueLines || [], segment.dialogueLanguage || "en");
   if (existing.length) return existing;
@@ -4152,6 +4597,107 @@ function resetVideoCanvasBindingForNewDraft(episodeRoot) {
     writeText(configRecord.file, `${JSON.stringify(next, null, 2)}\n`);
   }
   return reset;
+}
+
+function assetManifestIdentityMap(manifest = {}) {
+  const items = Array.isArray(manifest?.items) ? manifest.items : [];
+  return new Map(
+    items
+      .map((item) => {
+        const id = compactLine(item?.id || item?.name || "");
+        const type = normalizeAssetType(item?.type || inferAssetTypeFromName(id), "Prop");
+        return id ? [id, type] : null;
+      })
+      .filter(Boolean),
+  );
+}
+
+function assetManifestIdentityChanged(previous = {}, next = {}) {
+  const before = assetManifestIdentityMap(previous);
+  const after = assetManifestIdentityMap(next);
+  if (!before.size) return false;
+  if (before.size !== after.size) return true;
+  for (const [id, type] of before) {
+    if (after.get(id) !== type) return true;
+  }
+  return false;
+}
+
+function hasUnboundVideoDerivatives(episodeRoot, manifest = {}) {
+  const promptText = readText(findProjectFile(episodeRoot, "seedancePrompts"));
+  const hasPromptShots = parsePromptSections(promptText).some(isShotPromptSection);
+  const config = readVideoConfig(episodeRoot, { allowEmptyShots: true })?.data || {};
+  const hasConfigShots = Array.isArray(config.shots) && config.shots.length > 0;
+  if (!hasPromptShots && !hasConfigShots) return false;
+  const productionAssets = projectProductionAssetsForState(episodeRoot, normalizeAssetManifest(manifest));
+  return !productionAssets.some((asset) => !asset.invalid && !(asset.conflicts || []).length);
+}
+
+function moveWorkflowArtifactToArchive(episodeRoot, source, archiveRoot) {
+  if (!source || !fs.existsSync(source) || !fs.statSync(source).isFile()) return "";
+  const rel = path.relative(episodeRoot, source).replace(/^(\.\.[/\\])+/, "");
+  if (!rel || rel.startsWith("..")) return "";
+  const target = path.join(archiveRoot, rel);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  try {
+    fs.renameSync(source, target);
+  } catch (error) {
+    if (error.code !== "EXDEV") throw error;
+    fs.copyFileSync(source, target);
+    fs.unlinkSync(source);
+  }
+  return target;
+}
+
+function invalidateDerivedVideoArtifactsForAssetManifestChange(episodeRoot, previous = {}, next = {}) {
+  const reason = "asset manifest identities changed";
+  const reset = resetWorkflowForContentChange(episodeRoot, reason);
+  const archiveRoot = reset.archive?.archiveDir || path.join(episodeRoot, "06_videos", "workflow_archive", new Date().toISOString().replace(/[:.]/g, "-"));
+  const defaults = defaultPaths(episodeRoot);
+  const staleFiles = [
+    findProjectFile(episodeRoot, "storyboard"),
+    defaults.storyboard,
+    findProjectFile(episodeRoot, "seedancePrompts"),
+    defaults.seedancePrompts,
+  ];
+  const archived = [...new Set(staleFiles)].map((file) => moveWorkflowArtifactToArchive(episodeRoot, file, archiveRoot)).filter(Boolean);
+  const workflow = reset.workflow;
+  const configRecord = readVideoConfig(episodeRoot, { allowEmptyShots: true });
+  if (configRecord?.file && configRecord?.data) {
+    const nextConfig = {
+      ...configRecord.data,
+      groupName: isolatedDefaultGroupName(episodeRoot, workflow.currentNamespace),
+      ...isolationMetadataFor(episodeRoot, workflow),
+      promptsPath: "",
+      shots: [],
+      assets: [],
+      storyboardReferences: [],
+      storyboardPlans: [],
+      missingAssets: [],
+      rejectedAssets: [],
+      referenceWarnings: ["资产清单的 ID 或类型已变更；旧分镜和视频提示词已归档，需在资产图生成后重新建立视频配置。"],
+      configReady: false,
+      tailFrameAssets: {},
+      videoCanvasId: createVideoCanvasId(episodeRoot),
+      videoCanvasCreatedAt: new Date().toISOString(),
+    };
+    writeText(configRecord.file, `${JSON.stringify(nextConfig, null, 2)}\n`);
+  }
+  writeText(
+    path.join(archiveRoot, "asset_manifest_change.json"),
+    `${JSON.stringify(
+      {
+        reason,
+        invalidatedAt: new Date().toISOString(),
+        previous: [...assetManifestIdentityMap(previous)],
+        next: [...assetManifestIdentityMap(next)],
+        archived: archived.map((file) => path.relative(episodeRoot, file)),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return { reset, archiveDir: archiveRoot, archived };
 }
 
 // 在一块 panelCount 格的板里,把 count 句对白铺到"中间格"(尽量避开首建立格和末切点格),
@@ -5123,6 +5669,7 @@ function addManualAsset(episodeRoot, body = {}) {
       ? `用户手动添加，已自动绑定相关分镜片段；参考图：${referenceAssetNames.join("、")}`
       : "用户手动添加，已自动绑定相关分镜片段",
     referenceAssetNames,
+    generate: body.generate !== false,
   };
   const assets = [...existingAssets, manualAsset];
   const nextManifest = assetManifestFromAssets({
@@ -5158,6 +5705,35 @@ function addManualAsset(episodeRoot, body = {}) {
     asset: normalized.items.find((item) => item.id === id),
     binding,
     manifest: normalized,
+  };
+}
+
+function uploadLocalAsset(episodeRoot, body = {}) {
+  const type = manualAssetType(body.type);
+  const label = compactLine(body.label || body.name || "");
+  if (!label) throw new Error("请填写资产名称");
+
+  // Validate the image before changing the asset manifest, so an invalid upload
+  // never leaves an unusable reference slot behind.
+  decodeUploadedImage(body);
+  const created = addManualAsset(episodeRoot, {
+    type,
+    label,
+    description: compactLine(body.description || `本地上传的${type}资产图`),
+    evidence: compactLine(body.evidence || "用户本地上传"),
+    generate: false,
+  });
+  const upload = uploadBoundAsset(episodeRoot, {
+    assetId: created.asset.id,
+    filename: body.filename,
+    contentBase64: body.contentBase64,
+  });
+  return {
+    asset: created.asset,
+    manifest: created.manifest,
+    binding: created.binding,
+    upload,
+    message: `已添加本地资产：${created.asset.label}，可直接作为视频参考图使用`,
   };
 }
 
@@ -6191,9 +6767,16 @@ function configReadiness(episodeRoot, configData = null) {
   }
   if (!productionAssets.length) missing.push("缺少资产图");
   if (!shots.length) missing.push("缺少视频片段");
+  // 仅当缺失资产被某片段(refs/storyboardRefs)真正引用时才锁定生成;未被引用的死资产不阻塞。
+  // 片段引用了未生成资产另有 shotsWithMissingRefs 精准兜底。
+  const shotReferencedAssetNames = new Set();
+  for (const shot of shots) {
+    for (const r of (Array.isArray(shot.refs) ? shot.refs : [])) { const c = compactLine(r); if (c) shotReferencedAssetNames.add(c); }
+    for (const r of (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])) { const c = compactLine(r); if (c) shotReferencedAssetNames.add(c); }
+  }
   for (const name of Array.isArray(config.missingAssets) ? config.missingAssets : []) {
     const clean = compactLine(name);
-    if (clean) missing.push(`缺少资产图：${clean}`);
+    if (clean && shotReferencedAssetNames.has(clean)) missing.push(`缺少资产图：${clean}`);
   }
   const promptMode = config.settings?.promptMode || (config.settings?.enableStoryboards === true ? "production_board" : "prompt");
   if (promptMode === "production_board" && !storyboards.length) missing.push("缺少 Production Board");
@@ -6260,8 +6843,8 @@ function isAssetActivationWaitFailure(message = "") {
 }
 
 function shotPhotorealReferencesAreActive(config = {}, shot = {}) {
-  const refs = projectShotUsableVideoReferenceAssets("", config, shot).filter(isCanvasPhotorealAsset);
-  if (!refs.length) return false;
+  const refs = projectShotUsableVideoReferenceAssets("", config, shot).filter(isArkPersonReferenceAsset);
+  if (!refs.length) return true;
   return refs.every((asset) => {
     const status = compactLine(asset.validationStatus || asset.status || "").toLowerCase();
     const assetUrl = compactLine(asset.assetUrl || asset.asset_url || "");
@@ -7159,6 +7742,15 @@ function ffprobeReadable(file) {
     return false;
   }
 }
+function ffprobeDurationSeconds(file) {
+  try {
+    const out = execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file], { encoding: "utf8", timeout: 20000 });
+    const duration = Number(String(out || "").trim());
+    return Number.isFinite(duration) && duration > 0 ? Math.round(duration * 1000) / 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
 function runFfmpegAssembly(args, timeoutMs = 20 * 60 * 1000) {
   return new Promise((resolve, reject) => {
     const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
@@ -7329,6 +7921,122 @@ function maybeAutoAssembleFinalCut(episodeRoot) {
   }
 }
 
+const chatcutAdapter = createChatcutAdapter();
+const chatcutQueue = createChatcutQueue();
+const chatcutAgent = createChatcutAgent();
+const CHATCUT_AGENT_POLL_MS = Math.max(5_000, Number(process.env.CHATCUT_AGENT_POLL_MS || 10_000));
+let chatcutWorkerRunning = false;
+
+function chatcutStatus(episodeRoot) {
+  const current = chatcutAdapter.status(episodeRoot);
+  current.diagnosis = chatcutAgent.diagnose();
+  current.queue = chatcutQueue.read(episodeRoot);
+  const exported = current.export?.path;
+  if (exported && fs.existsSync(exported) && fs.statSync(exported).isFile() && allowedPath(exported)) {
+    current.export = {
+      ...current.export,
+      url: `/media?path=${encodeURIComponent(exported)}&v=${Math.round(fs.statSync(exported).mtimeMs)}`,
+      downloadUrl: `/media?path=${encodeURIComponent(exported)}&v=${Math.round(fs.statSync(exported).mtimeMs)}&download=1`,
+    };
+  }
+  return current;
+}
+
+function chatcutPackageInput(episodeRoot) {
+  const config = readVideoConfig(episodeRoot)?.data || {};
+  const { clips, missing } = collectFinalCutClips(episodeRoot, config);
+  if (!clips.length) throw new Error("没有可导出的已完成片段，请先生成视频片段");
+  if (missing.length) throw new Error(`以下片段尚未完成，无法准备 ChatCut 制作包：${missing.join("、")}`);
+  const clipByName = new Map(clips.map((clip) => [clip.name, clip.file]));
+  const shots = (Array.isArray(config.shots) ? config.shots : []).map((shot) => {
+    const filePath = clipByName.get(compactLine(shot?.name || ""));
+    if (!filePath) return null;
+    const configuredDuration = Number(shot?.durationSeconds ?? shot?.duration ?? shot?.durationSec ?? 0);
+    return {
+      ...shot,
+      filePath,
+      durationSeconds: Number.isFinite(configuredDuration) && configuredDuration > 0 ? configuredDuration : ffprobeDurationSeconds(filePath),
+    };
+  }).filter(Boolean);
+  return {
+    episodeRoot,
+    project: projectSummary(episodeRoot),
+    roughCutPath: finalCutOutputFile(episodeRoot),
+    shots,
+  };
+}
+
+function chatcutAgentContext(episodeRoot, job) {
+  const root = path.resolve(episodeRoot);
+  const packagePath = path.resolve(root, job.packageDir || "12_chatcut");
+  const manifestPath = path.resolve(root, job.manifestFile || "12_chatcut/assembly_manifest.json");
+  const editBriefPath = path.resolve(root, job.editBriefFile || "12_chatcut/edit_brief.md");
+  const outputDir = path.join(packagePath, "exports");
+  for (const file of [packagePath, manifestPath, editBriefPath, outputDir]) {
+    if (!allowedPath(file) || !isInside(root, file)) throw new Error("ChatCut Agent 路径必须位于当前项目内");
+  }
+  if (!fs.existsSync(manifestPath) || !fs.statSync(manifestPath).isFile()) throw new Error("ChatCut 制作包缺少 assembly_manifest.json");
+  if (!fs.existsSync(editBriefPath) || !fs.statSync(editBriefPath).isFile()) throw new Error("ChatCut 制作包缺少 edit_brief.md");
+  fs.mkdirSync(outputDir, { recursive: true });
+  return {
+    packagePath,
+    manifestPath,
+    editBriefPath,
+    outputDir,
+    jobFile: chatcutQueue.queueFile(root),
+  };
+}
+
+function resolveChatcutExportPath(episodeRoot, exportPath) {
+  const root = path.resolve(episodeRoot);
+  const candidate = path.resolve(root, String(exportPath || ""));
+  if (!allowedPath(candidate) || !isInside(root, candidate) || !fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) {
+    throw new Error("ChatCut Agent 返回的导出文件必须存在于当前项目目录内");
+  }
+  return candidate;
+}
+
+async function processChatcutQueueOnce() {
+  if (chatcutWorkerRunning || !chatcutAgent.diagnose().enabled) return null;
+  chatcutWorkerRunning = true;
+  try {
+    for (const episodeRoot of scanEpisodeRoots()) {
+      chatcutQueue.recover(episodeRoot);
+      const job = chatcutQueue.claim(episodeRoot, { workerId: `pixel-toys-${process.pid}` });
+      if (!job) continue;
+      try {
+        const context = chatcutAgentContext(episodeRoot, job);
+        chatcutQueue.heartbeat(episodeRoot, { workerId: job.workerId });
+        const result = await chatcutAgent.run(job, context);
+        if (result.dryRun === true) {
+          chatcutQueue.complete(episodeRoot, { ...result, verifiedAt: new Date().toISOString() });
+          return job.id;
+        }
+        const sourceFile = resolveChatcutExportPath(episodeRoot, result.exportPath);
+        const imported = chatcutAdapter.importExport(episodeRoot, sourceFile, { fileName: result.fileName || "chatcut_export" });
+        chatcutQueue.complete(episodeRoot, {
+          ...result,
+          exportPath: imported.export.path,
+          importedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        chatcutQueue.fail(episodeRoot, error);
+      }
+      return job.id;
+    }
+  } finally {
+    chatcutWorkerRunning = false;
+  }
+  return null;
+}
+
+function startChatcutAgentWorker() {
+  if (!chatcutAgent.diagnose().enabled) return null;
+  const tick = () => processChatcutQueueOnce().catch(() => {});
+  tick();
+  return setInterval(tick, CHATCUT_AGENT_POLL_MS);
+}
+
 function fullProjectState(episodeRoot) {
   if (!allowedPath(episodeRoot) || !fs.existsSync(episodeRoot)) throw new Error("project not found");
   const workflow = readWorkflowState(episodeRoot);
@@ -7355,7 +8063,7 @@ function fullProjectState(episodeRoot) {
   const videos = scanVideos(episodeRoot, { minModifiedAt: runStart });
   const progress = videoProgress(episodeRoot, localJobs, videos);
   const videoQueue = projectVideoQueues.get(projectVideoQueueKey(episodeRoot)) || null;
-  if (videoQueue && (videoQueue.running || videoQueue.status === "preparing" || videoQueue.status === "failed")) {
+  if (videoQueue && (videoQueue.running || videoQueue.status === "preparing" || videoQueue.status === "failed" || videoQueue.status === "blocked")) {
     if (videoQueue.running) progress.running = true;
     progress.queue = {
       id: videoQueue.id,
@@ -7394,6 +8102,7 @@ function fullProjectState(episodeRoot) {
   const assetSlots = normalizedAssetManifest ? assetSlotsForState(episodeRoot, normalizedAssetManifest, visibleAssets, { minFailedAt: runStart, minModifiedAt: runStart }) : [];
   const storyboardSlots = storyboardSlotsForState(episodeRoot, normalizedAssetManifest || null, storyboardAssets, { configData: config?.data });
   const dialogueLanguage = projectDialogueLanguage(episodeRoot, "en");
+  const referenceKitState = projectReferenceKitState(workflow, config?.data || {});
   return {
     ok: true,
     runtime: runtimeStatus(),
@@ -7405,9 +8114,11 @@ function fullProjectState(episodeRoot) {
     },
     project: projectSummary(episodeRoot),
     teamReferences: Array.isArray(workflow.teamReferences) ? workflow.teamReferences.map(publicTeamReference) : [],
+    ...referenceKitState,
     files,
     contents: {
       script: readText(files.script),
+      assetDescription: readAssetDescription(episodeRoot),
       storyboard: readText(files.storyboard),
       assetManifest: readText(files.assetManifest),
       assetPrompts: readText(files.assetPrompts),
@@ -7439,6 +8150,7 @@ function fullProjectState(episodeRoot) {
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     tailFrames: scanTailFrames(episodeRoot),
     finalCut: finalCutStatus(episodeRoot),
+    chatcut: chatcutStatus(episodeRoot),
     summary: readSummary(episodeRoot, { runNamespace }),
     jobs: localJobs.map(jobSummary),
   };
@@ -7454,7 +8166,7 @@ function projectStatusSnapshot(episodeRoot) {
   const videos = scanVideos(episodeRoot, { minModifiedAt: runStart });
   const progress = videoProgress(episodeRoot, localJobs, videos);
   const videoQueue = projectVideoQueues.get(projectVideoQueueKey(episodeRoot)) || null;
-  if (videoQueue && (videoQueue.running || videoQueue.status === "preparing" || videoQueue.status === "failed")) {
+  if (videoQueue && (videoQueue.running || videoQueue.status === "preparing" || videoQueue.status === "failed" || videoQueue.status === "blocked")) {
     if (videoQueue.running) progress.running = true;
     progress.queue = {
       id: videoQueue.id,
@@ -7492,17 +8204,20 @@ function projectStatusSnapshot(episodeRoot) {
   const storyboardSlots = storyboardSlotsForState(episodeRoot, normalizedAssetManifest || null, storyboardAssets, {
     configData: config?.data,
   });
+  const referenceKitState = projectReferenceKitState(workflow, config?.data || {});
   return {
     ok: true,
     runtime: runtimeStatus(),
     project: lightweightProjectSummary(episodeRoot),
     teamReferences: Array.isArray(workflow.teamReferences) ? workflow.teamReferences.map(publicTeamReference) : [],
+    ...referenceKitState,
     videoProgress: progress,
     videoConfigStatus: configReadiness(episodeRoot, config?.data),
     assetJob: jobSummary(latestVisibleAssetJob(localJobs)),
     storyboardJob: jobSummary(latestJobForTypes(localJobs, ["storyboards", "storyboard-regenerate"])),
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     finalCut: finalCutStatus(episodeRoot),
+    chatcut: chatcutStatus(episodeRoot),
     jobs: localJobs.map(jobSummary),
     assetManifest: normalizedAssetManifest,
     assets: productionAssets,
@@ -7580,6 +8295,41 @@ function hasProductionField(value, names) {
       const field = productionFieldLine(part);
       return field && wanted.has(field.name);
     });
+}
+
+// 密集单段剧本:对白内联在旁白里(名字：台词），用 △/句号分隔、不换行。逐行/项目符号/引号三个提取器都吃不下,
+// 这里按「名字：台词」切:名字须过 isValidCharacterLabel(排除旁白/场景/道具误判),台词取到下一个 名字：/△/换行/段末。
+function inlineColonDialogues(source, dialogueLanguage = "en", { limit = 8 } = {}) {
+  const text = String(source || "");
+  const language = normalizeDialogueLanguage(dialogueLanguage, "en");
+  const nameToken = "(?:[一-龥·]{2,8}|[A-Z][A-Za-z .'\\-]{1,32})";
+  // 说话人后可带一段括注舞台提示再接冒号,如「周桂兰（摸摸小宝的头，笑了）：」。
+  // 括注在冒号前、不进入 speaker 捕获组;lookahead 同样识别,避免上一句台词把带括注的说话人吞掉。
+  const paren = "(?:[（(][^）)]{0,24}[）)])?";
+  const re = new RegExp(
+    `(${nameToken})${paren}\\s*[：:]\\s*([^：:\\n△]{1,140}?)(?=${nameToken}${paren}\\s*[：:]|[△\\n]|$)`,
+    "g",
+  );
+  const out = [];
+  for (const match of text.matchAll(re)) {
+    const before = text[(match.index || 0) - 1];
+    // 说话人前须为句子边界(段首/句末标点/△),避免把台词内部出现的「…名字：」误当新说话人。
+    if (before && !/[\s。！？!?、，,；;：:）)”"』」△]/.test(before)) continue;
+    const speaker = cleanSpeakerCue(match[1]);
+    if (!speaker || !isValidCharacterLabel(speaker)) continue;
+    // 元信息/分镜设计字段(字段名：值)会伪装成对白,一律排除。两类:
+    // ① 剧本头/元信息:内外人物、参考资产、推荐时长、画幅、时间地点等;
+    // ② seedance 分镜设计块字段:剧情动作、光线、调色、画面、环境、声音、表演、构图、材质、节奏、运镜、景别、景深、机位、氛围、色调、镜头运动、特效等。
+    if (
+      /^(内|外|画外)?(人物|旁白|字幕|备注|参考资产|推荐时长|时长|时间|地点|场景|画幅|景别|机位|镜号|集数|第[一二三四五六七八九十百\d]+集)$/.test(speaker) ||
+      /^(剧情动作|动作|表演|画面|环境|声音|音效|光线|调色|色调|构图|材质|质感|节奏|运镜|镜头运动|镜头|景别|景深|氛围|特效|视效|服饰|服装|道具|色彩|布光|机位|摄影|画幅)$/.test(speaker)
+    )
+      continue;
+    const bilingual = splitBilingualDialogue(compactLine(match[2]));
+    const spoken = language === "zh" ? bilingual.zh || compactLine(match[2]) : bilingual.en || compactLine(match[2]);
+    if (spoken) out.push({ speaker, text: spoken });
+  }
+  return Number.isFinite(limit) ? out.slice(0, limit) : out;
 }
 
 function explicitInlineDialogues(source) {
@@ -7672,6 +8422,9 @@ function extractDialogueBlocks(script) {
       if (!line) break;
       if (isSceneHeadingLine(line) || isSpeakerCueLine(lines, j)) break;
       if (/^(CUT|FADE|TITLE|MONTAGE|END|BLACK|DISSOLVE|SMASH CUT|MATCH CUT)\b/i.test(line)) break;
+      // 结构边界:场景卡/人物卡〔…〕【…】、镜头号(数字｜/数字|,全角或半角竖线)、markdown 引用式对白(>)。
+      // 缺这些边界时,一个被误判的说话人会把整段正文吞成一个"对白块"→ 翻译时整篇被替换(整篇变英文事故根因)。
+      if (/^[〔【]/.test(line) || /^\d+\s*[｜|]/.test(line) || /^>/.test(compactLine(lines[j]))) break;
       if (isParentheticalLine(line)) continue;
       if (lineIndexes.length && isActionLineAfterDialogue(line, speaker)) break;
       lineIndexes.push(j);
@@ -7689,6 +8442,38 @@ function extractDialogueBlocks(script) {
   return blocks;
 }
 
+function blockquoteDialogueBlocks(source, dialogueLanguage = "en") {
+  const lines = String(source || "").split(/\r?\n/);
+  const language = normalizeDialogueLanguage(dialogueLanguage, "en");
+  const blocks = [];
+  const linePattern = /^(\s*>\s*)([A-Za-z][A-Za-z .'\-]{1,32}|[一-龥·]{1,8})(\s*[（(][^）)]{0,24}[）)])?(\s*[：:])\s*(.*)$/;
+  const addBlock = (lineIndex, speaker, text, prefix) => {
+    const bilingual = splitBilingualDialogue(compactLine(text));
+    const spoken = language === "zh" ? bilingual.zh || compactLine(text) : bilingual.en || compactLine(text);
+    const validSpeaker = isValidCharacterLabel(speaker) || (/^[一-龥·]$/.test(speaker) && !isNonCharacterHeading(speaker));
+    if (spoken && validSpeaker) {
+      blocks.push({ id: blocks.length, speaker, text: spoken, lineIndexes: [lineIndex], prefix, blockquote: true });
+    }
+  };
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = lines[i].match(linePattern);
+    if (!match) continue;
+    const speaker = cleanSpeakerCue(match[2]);
+    const prefix = `${match[1]}${match[2]}${match[3] || ""}${match[4]}`;
+    if (match[5].trim()) {
+      addBlock(i, speaker, match[5], prefix);
+      continue;
+    }
+    const next = lines[i + 1]?.match(/^(\s*>\s*)(.+)$/);
+    if (next && !next[2].match(linePattern)) addBlock(i + 1, speaker, next[2], next[1]);
+  }
+  return blocks;
+}
+
+function blockquoteDialogues(source, dialogueLanguage = "en") {
+  return blockquoteDialogueBlocks(source, dialogueLanguage).map(({ speaker, text }) => ({ speaker, text }));
+}
+
 function applyDialogueTranslations(script, blocks, translations) {
   const lines = String(script || "").split(/\r?\n/);
   const byId = new Map(translations.map((item) => [Number(item.id), compactLine(item.text)]));
@@ -7701,6 +8486,23 @@ function applyDialogueTranslations(script, blocks, translations) {
       .filter((line) => line.trim());
     if (!replacement.length) continue;
     lines.splice(block.lineIndexes[0], block.lineIndexes.length, ...replacement);
+  }
+  return lines.join("\n");
+}
+
+function applyDialogueAndBlockquoteTranslations(script, blocks, blockquoteBlocks, translations) {
+  const lines = String(script || "").split(/\r?\n/);
+  const byId = new Map(translations.map((item) => [Number(item.id), compactLine(item.text)]));
+  const allBlocks = [...blocks, ...blockquoteBlocks].sort((a, b) => b.lineIndexes[0] - a.lineIndexes[0]);
+  for (const block of allBlocks) {
+    const translated = byId.get(block.id);
+    if (!translated) continue;
+    if (block.blockquote) {
+      lines[block.lineIndexes[0]] = `${block.prefix}${translated}`;
+      continue;
+    }
+    const replacement = translated.split(/\r?\n/).map((line) => `${block.indent}${compactLine(line)}`).filter((line) => line.trim());
+    if (replacement.length) lines.splice(block.lineIndexes[0], block.lineIndexes.length, ...replacement);
   }
   return lines.join("\n");
 }
@@ -7765,13 +8567,49 @@ async function translateDialogueBlocks(blocks, targetLanguage, modelName) {
   return { ok: true, model, translations };
 }
 
+// 熔断护栏:检测"对白块疑似误吞了非对白正文"。对白块本不该含场景卡〔〕/【】、镜头号(数字｜)、或跨越过多行。
+// 命中任一条即判定不安全 → 上层中止写回,绝不用误译结果覆盖剧本(这是整篇变英文事故的直接护栏)。
+function dialogueBlocksLookSafe(script, blocks) {
+  const lines = String(script || "").split(/\r?\n/);
+  const nonEmpty = lines.filter((l) => compactLine(l)).length || 1;
+  let replaced = 0;
+  for (const block of blocks || []) {
+    for (const idx of block.lineIndexes || []) {
+      const line = compactLine(lines[idx]);
+      replaced += 1;
+      // 对白块里混进了场景卡/人物卡/镜头号 → 一定是吞过界了。
+      if (/^[〔【]/.test(line) || /^\d+\s*[｜|]/.test(line)) {
+        return { safe: false, reason: `对白块#${block.id}(${block.speaker})误吞了非对白行:${line.slice(0, 24)}` };
+      }
+    }
+    // 单个对白块跨越 >6 行几乎必是误吞(正常对白极少连续超过几行)。
+    if ((block.lineIndexes || []).length > 6) {
+      return { safe: false, reason: `对白块#${block.id}(${block.speaker})跨越${block.lineIndexes.length}行,疑似误吞整段正文` };
+    }
+  }
+  // 单次翻译替换过半正文 → 不该发生。
+  if (replaced / nonEmpty > 0.5) {
+    return { safe: false, reason: `本次将替换 ${replaced}/${nonEmpty} 行(>50%),疑似格式误判` };
+  }
+  return { safe: true, reason: "" };
+}
+
 async function convertScriptDialogueLanguage(script, targetLanguage, modelName) {
   const blocks = extractDialogueBlocks(script);
-  const result = await translateDialogueBlocks(blocks, targetLanguage, modelName);
+  const guard = dialogueBlocksLookSafe(script, blocks);
+  if (!guard.safe) {
+    // 中止:不翻译、不改动剧本。上层据 aborted 返回错误提示,原文原样返回。
+    return { model: null, count: blocks.length, script, aborted: true, abortReason: guard.reason };
+  }
+  const blockquoteBlocks = blockquoteDialogueBlocks(script, targetLanguage).map((block, index) => ({
+    ...block,
+    id: blocks.length + index,
+  }));
+  const result = await translateDialogueBlocks([...blocks, ...blockquoteBlocks], targetLanguage, modelName);
   return {
     model: result.model,
-    count: blocks.length,
-    script: applyDialogueTranslations(script, blocks, result.translations),
+    count: blocks.length + blockquoteBlocks.length,
+    script: applyDialogueAndBlockquoteTranslations(script, blocks, blockquoteBlocks, result.translations),
   };
 }
 
@@ -7888,13 +8726,14 @@ function inferWorldProfile(script) {
 
 function deriveNarrativeLocations(script) {
   const locations = [];
+  const hasMetroLocation = /地铁|车厢|隧道|列车/i.test(script);
   for (const match of String(script || "").matchAll(/(?:字幕\s*[（(]?\s*地点条\s*[）)]?|地点|场景)\s*[：:]\s*([^\r\n]+)/g)) {
     let label = compactLine(match[1])
       .replace(/\d{3,4}年.*$/, "")
       .replace(/[。；;，,]+$/g, "")
       .replace(/[·.]/g, " ")
       .trim();
-    if (/(藏地|扎西岗)/.test(label) && /神山|寺庙|雪坡|经幡/.test(script)) label = "藏地扎西岗雪坡神山寺庙";
+    if (/(?:西藏|藏地(?:扎西岗|雪坡|神山|寺庙|高原)|扎西岗)/.test(label) && /神山|寺庙|雪坡|经幡/.test(script)) label = "藏地扎西岗雪坡神山寺庙";
     if (label && !isGenericGroupCharacterLabel(label) && !isActionPhraseCharacterLabel(label)) pushUnique(locations, label);
   }
   if (/Dead Psalm/i.test(script)) {
@@ -7909,10 +8748,10 @@ function deriveNarrativeLocations(script) {
   if (/(?:新港市[\s\S]{0,80}(?:地铁|车厢|隧道|列车)|(?:地铁|车厢|隧道|列车)[\s\S]{0,80}新港市)/i.test(script)) {
     pushUnique(locations, "2103年新港市地铁列车车厢与隧道");
   }
-  if (/暗紫色|频闪|电流爆破|车身剧烈震颤/i.test(script)) {
+  if (hasMetroLocation && /暗紫色|频闪|电流爆破|车身剧烈震颤/i.test(script)) {
     pushUnique(locations, "暗紫色应急灯下震颤的地铁车厢");
   }
-  if (/狼藉|血腥味|铁锈味|杂物散落|人间炼狱/i.test(script)) {
+  if (hasMetroLocation && /狼藉|血腥味|铁锈味|杂物散落|人间炼狱/i.test(script)) {
     pushUnique(locations, "灾变后狼藉血腥的地铁车厢");
   }
   if (/Peterson[\s\S]{0,80}(牧场|农场|围栏|cattle|cow|deadstock)|(牧场|农场|围栏|cattle|cow|deadstock)[\s\S]{0,80}Peterson/i.test(script)) {
@@ -7924,7 +8763,7 @@ function deriveNarrativeLocations(script) {
   if (/学校|school/i.test(script)) {
     pushUnique(locations, "小镇学校方向");
   }
-  if (/藏地|扎西岗|神山|金顶寺庙|五彩经幡|向阳雪坡/.test(script)) {
+  if (/(?:西藏|藏地(?:扎西岗|雪坡|神山|寺庙|高原)|扎西岗|神山|金顶寺庙|五彩经幡|向阳雪坡)/.test(script)) {
     pushUnique(locations, "藏地扎西岗雪坡神山寺庙");
   }
   if (/空旷雪原土路|雪原土路|骑旧自行车沿空旷雪原|倒地空转的自行车/.test(script)) {
@@ -8305,6 +9144,163 @@ function extractManualAssetPromptBlocks(script) {
   return blocks;
 }
 
+function structuredAssetType(value = "") {
+  const heading = compactLine(value)
+    .replace(/[【】\[\]]/g, "")
+    .replace(/^[◆◇]\s*/u, "")
+    .replace(/^(?:第\s*)?(?:[一二三四五六七八九十百]+|\d+)\s*[、.．)）]\s*/, "")
+    .replace(/[：:]\s*$/, "")
+    .toLowerCase();
+  if (/^(?:人物|角色)\s*(?:卡|段|card|section)(?:\s+characters?)?/i.test(heading) || /^(?:人物|角色)\s+characters?\b/i.test(heading)) return "Character";
+  if (/^(?:场景|环境|地点)\s*(?:卡|段|card|section)(?:\s+scenes?)?/i.test(heading) || /^(?:场景|环境|地点)\s+(?:scenes?|environment|locations?)\b/i.test(heading)) return "Scene";
+  if (/^(?:道具|物件|物体)\s*(?:卡|段|card|section)(?:\s+props?|objects?)?/i.test(heading) || /^(?:道具|物件|物体)\s+(?:props?|objects?)\b/i.test(heading)) return "Prop";
+  if (/^(?:插入|细节|特写)\s*(?:卡|段|card|section)(?:\s+inserts?|details?)?/i.test(heading) || /^(?:插入|细节|特写)\s+(?:inserts?|details?)\b/i.test(heading)) return "Insert";
+  if (/^(?:(?:主要|核心|主角|配角(?:与|及)?单元)?(?:人物|角色))(?:设定|列表|清单)?$|^(?:character|characters)$/.test(heading)) return "Character";
+  if (/^(?:(?:主要|核心|关键)?(?:场景|环境|地点))(?:设定|列表|清单)?$|^(?:scene|scenes|environment|location)$/.test(heading)) return "Scene";
+  if (/^(?:(?:主要|核心|关键)?(?:道具|物件|物体))(?:设定|列表|清单)?$|^(?:prop|props|object|objects)$/.test(heading)) return "Prop";
+  if (/^(?:(?:关键)?(?:插入|细节|特写))(?:设定|列表|清单)?$|^(?:insert|inserts|detail|details)$/.test(heading)) return "Insert";
+  return "";
+}
+
+function structuredAssetLabel(type, description = "") {
+  let label = compactLine(description)
+    .replace(/^[①②③④⑤⑥⑦⑧⑨⑩㊀㊁㊂㊃㊄㊅㊆㊇㊈㊉]\s*/u, "")
+    .replace(/^\d+\s*[.)、]\s*/, "")
+    .replace(/^(?:名称|名字|资产名|描述|设定)\s*[：:]\s*/i, "")
+    .replace(/^[-•*]\s*/, "");
+  if (label.includes("：") || label.includes(":")) label = label.split(/[：:]/)[0];
+  label = label.split(/[，,。；;]/)[0].replace(/[（(].*$/, "").trim();
+  if (type === "Character") label = label.replace(/^(?:人物|角色|主角|男主|女主|反派)\s*/, "");
+  if (type === "Scene") label = label.replace(/^(?:场景|环境|地点)\s*/, "");
+  if (type === "Prop") label = label.replace(/^(?:道具|物件|物体)\s*/, "");
+  if (type === "Insert") label = label.replace(/^(?:插入|细节|特写)\s*/, "");
+  label = compactLine(label).slice(0, 42);
+  if (!label || !isModelAssetLabelUsable(label)) return "";
+  if (type === "Character" && (isLikelyLocationOrTimeLabel(label) || isNonVisualAudioCueLabel(label))) return "";
+  if (type === "Scene" && /^(?:无人物|空景|环境)$/i.test(label)) return "";
+  if ((type === "Prop" || type === "Insert") && /^(?:道具|物件|细节|特写)$/i.test(label)) return "";
+  return label;
+}
+
+function structuredSectionAssetEntry(type, rawLine = "") {
+  if (/^·\s*/.test(rawLine)) return null;
+  const isBullet = /^[-•*]\s*/.test(rawLine);
+  const line = compactLine(rawLine).replace(/^[-•*]\s*/, "");
+  if (!line) return null;
+  if (/^[═━─—]{3,}$/.test(line)) return null;
+  // 描述字段不是新的资产条目，例如“外观：…”、“灯光：…”应归入前一资产的 visual。
+  if (/^(?:描述|视觉|外观|身份|设定|造型|年龄|体型|脸部|发型|服装|气质|空间|氛围|灯光|材质|纹理|结构|用途|特征|构图|时间|天气|色彩|标志物|生理线|配色|一致性锚点|一句话|中文提示词|EN prompt|关键变体|关键元素|光线氛围|定位|核心美学|调色板逻辑)\s*[：:]/i.test(line)) return null;
+
+  const label = structuredAssetLabel(type, line);
+  if (!label) return null;
+  const hasDescriptorPunctuation = /[，,。；;]/.test(line);
+  const hasParentheticalIdentity = /^[^：:，,。；;]{1,42}[（(][^（）()]{1,80}[）)](?:\s*[：:—-].*)?$/.test(line);
+  // 冒号前出现逗号/句号时通常是上一条资产的描述内部字段（如“封存白昼的祭刀，……半柄残刃：……”），
+  // 不能把它误作新的“名称：描述”条目。
+  const hasNameDescription = /^[^：:，,。；;]{1,42}[：:]\s*.+$/.test(line);
+  const characterName = /^[\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z0-9·.' /-]{0,24}$/u.test(label);
+  const sceneName = /[·・]|(?:场|厅|殿|楼|塔|城|市|街|巷|区|域|站|口|谷|渊|窟|室|庄|院|寺|府|地|台|营|阁|海|山|河|桥|船|车|港|原|林|房|顶)$/.test(label);
+  const propName = /[\/／]|(?:刀|剑|刃|印|环|纹|符|器|物|具|石|玉|链|钥匙|枪|书|卷|镜|盒|灯|冠|甲|鼎|图|牌|令|血|尸|衣|管|道|源|柱|锁|针|鞘|旗|匣|徽)$/.test(label);
+  if (isBullet || hasParentheticalIdentity) return { label, visual: line };
+  if (hasNameDescription) {
+    if (type === "Character" && characterName && !/[、，,]/.test(label)) return { label, visual: line };
+    if (type === "Scene" && sceneName) return { label, visual: line };
+    if ((type === "Prop" || type === "Insert") && propName) return { label, visual: line };
+    return null;
+  }
+  if (hasDescriptorPunctuation) return null;
+
+  if (type === "Character") {
+    return characterName
+      ? { label, visual: line }
+      : null;
+  }
+  if (type === "Scene") {
+    return sceneName
+      ? { label, visual: line }
+      : null;
+  }
+  if (type === "Prop" || type === "Insert") {
+    return propName
+      ? { label, visual: line }
+      : null;
+  }
+  return null;
+}
+
+function isStructuredAssetMarkerLine(line = "") {
+  return /^(?:[①-⑳㊀-㊉]|\d+\s*[.)、．）])(?:\s|$)/u.test(compactLine(line));
+}
+
+// “资产描述”与剧情剧本的语法不同：除了“人物：姓名，外观”，还常用
+// “一、主要人物 / 三、场景 / 四、关键道具”编号标题，条目名和视觉描述分行书写。
+// 不经过这个专用通道时，剧情规则会把这类说明漏掉或混进错误类别。
+function parseStructuredAssetDescriptions(script = "") {
+  const assets = [];
+  let activeType = "";
+  let structuredCardMode = false;
+  let pending = null;
+  const push = (type, description, labelHint = "") => {
+    const visual = compactLine(description);
+    const label = labelHint || structuredAssetLabel(type, visual);
+    if (!label || !visual) return;
+    if (assets.some((asset) => asset.type === type && sameAssetLabel(asset.label, label))) return;
+    assets.push({
+      type,
+      label,
+      evidence: `用户提供${type === "Character" ? "人物" : type === "Scene" ? "场景" : type === "Insert" ? "插入镜头" : "道具"}视觉描述：${visual}`,
+      visual,
+    });
+  };
+  const flushPending = () => {
+    if (!pending) return;
+    push(pending.type, pending.lines.join(" "), pending.label);
+    pending = null;
+  };
+
+  for (const rawLine of String(script || "").split(/\r?\n/)) {
+    const line = compactLine(rawLine);
+    if (!line) continue;
+    const sectionType = structuredAssetType(line);
+    if (sectionType) {
+      flushPending();
+      activeType = sectionType;
+      structuredCardMode = /^◆.*(?:卡|card)/i.test(line);
+      continue;
+    }
+    if (/^◆/.test(line)) {
+      flushPending();
+      activeType = "";
+      structuredCardMode = false;
+      continue;
+    }
+    if (/^[═━─—]{3,}$/.test(line)) continue;
+    const direct = line.match(/^(?:[-•*]\s*)?(人物|角色|character|characters|场景|环境|地点|scene|scenes|environment|location|道具|物件|prop|props|object|objects|插入|细节|特写|insert|inserts|detail|details)\s*[：:]\s*(.+)$/i);
+    if (direct) {
+      if (!structuredCardMode) {
+        flushPending();
+        const type = structuredAssetType(direct[1]);
+        if (type) push(type, direct[2]);
+      } else if (pending) {
+        pending.lines.push(line);
+      }
+      continue;
+    }
+    if (!activeType) continue;
+    const entry = structuredCardMode && !isStructuredAssetMarkerLine(line)
+      ? null
+      : structuredSectionAssetEntry(activeType, line);
+    if (entry) {
+      flushPending();
+      pending = { type: activeType, label: entry.label, lines: [entry.visual] };
+    } else if (pending) {
+      pending.lines.push(line);
+    }
+  }
+  flushPending();
+  return assets;
+}
+
 function parseCharacters(script) {
   const candidates = new Set();
   for (const block of extractManualAssetPromptBlocks(script).filter((item) => item.type === "Character")) {
@@ -8333,6 +9329,9 @@ function parseCharacters(script) {
   for (const match of mixedNameMatches) candidates.add(match[0].trim());
   const chineseWesternNameMatches = script.matchAll(/(?:(维修工程师|警长|副警长|博士|医生|特工|司机)\s*)?([一-龥]{1,6}·[一-龥]{1,4})/g);
   for (const match of chineseWesternNameMatches) {
+    const lineStart = script.lastIndexOf("\n", match.index) + 1;
+    const beforeMatch = script.slice(lineStart, match.index);
+    if (isStructuredAssetMarkerLine(beforeMatch) && /[（(][^）)]*$/.test(beforeMatch)) continue;
     const name = `${match[1] || ""}${match[2]}`.trim();
     if (isValidCharacterLabel(name) && (match[1] || !isLikelyLocationOrTimeLabel(name))) candidates.add(name);
   }
@@ -8390,7 +9389,7 @@ const NON_CHARACTER_ASSET_LABEL_RE =
 const SCENE_ASSET_EVIDENCE_RE =
   /(?:外景|内景|外部|内部|地点|场景|环境|空间|房间|厨房|走廊|街道|小巷|咖啡店|吧台|总部|办公室|实验室|农场|牧场|围栏|巡逻车|押运车|车厢|隧道|地铁|列车|高架桥|桥面|港口|指挥室|学校|城市|藏地|扎西岗|神山|寺庙|雪坡|雪原|土路|经幡|裂缝|虚空|清晨|早晨|上午|下午|傍晚|黄昏|夜晚|深夜|黎明|日落|日出|暴雨|wide establishing|environment|location|interior|exterior|no people|empty environment)/i;
 const PROP_ASSET_EVIDENCE_RE =
-  /(?:道具|物件|物体|文件|文件夹|照片|相片|画册|速写本|自行车|电话|手机|屏幕|纸条|单据|检修单|钥匙|饰品|项链|武器|刀|能量刃|核心|装置|押运车|装甲车|手铐|按钮|三视图|front view|side view|back view|prop|object|item|folder|photo|phone|paperwork|weapon|blade)/i;
+  /(?:道具|物件|物体|文件|文件夹|照片|相片|画册|速写本|自行车|电话|手机|屏幕|纸条|单据|检修单|钥匙|饰品|项链|武器|枪|手枪|步枪|手雷|弹匣|消音器|刀|匕首|能量刃|核心|装置|押运车|装甲车|手铐|按钮|三视图|front view|side view|back view|prop|object|item|folder|photo|phone|paperwork|weapon|blade|gun|pistol|rifle|firearm|silencer)/i;
 const INSERT_ASSET_EVIDENCE_RE =
   /(?:插入|特写|微距|证据|法医|局部|细节|镜界|冻结现象|时间冻结|现实吞噬|黑日|超自然力场|纹路|光芒|裂缝|虚空|尸体|伤口|瞳孔|手指|胸口|屏幕|画册页|预言图画|insert|close.?up|macro|forensic|evidence|detail|phenomenon|anomaly|rift)/i;
 const CHARACTER_ASSET_EVIDENCE_RE =
@@ -8409,11 +9408,32 @@ function correctedAssetPromptForType(asset, type) {
 
 function correctAssetRoleFromEvidence(asset = {}, context = {}) {
   const originalType = normalizeAssetType(asset.type || "Prop", "Prop");
-  if (asset.lockedManual) return asset;
   const label = compactLine(asset.label || asset.name || "");
   const evidence = compactLine(asset.evidence || "");
   const visual = compactLine(asset.visual || "");
   const hay = `${label} ${evidence} ${visual}`;
+  // 用户在资产描述中已明确放入“人物/场景/道具”分段时，分类就是输入事实。
+  if (asset.lockedManual || asset.lockedStructured) return asset;
+  const modelDeclaredCharacter = asset.analyzerType === "Character" || asset.modelDeclaredType === "Character";
+  const modelCharacterLabel =
+    modelDeclaredCharacter &&
+    isModelAssetLabelUsable(label) &&
+    !isProductionFieldLabel(label) &&
+    !isLikelyLocationOrTimeLabel(label) &&
+    !isNonVisualAudioCueLabel(label);
+  if (modelCharacterLabel && originalType !== "Character") {
+    const typeIndex = Number(context.typeIndexes?.get?.("Character") || 0) + 1;
+    context.typeIndexes?.set?.("Character", typeIndex);
+    const name = correctedAssetNameForType(asset, "Character", typeIndex);
+    return {
+      ...asset,
+      type: "Character",
+      name,
+      matchCode: assetMatchCode("Character", name, typeIndex),
+      analyzerNote: compactLine([asset.analyzerNote || "", "模型明确声明为 Character，覆盖本地误分类"].filter(Boolean).join("；")),
+    };
+  }
+  // 后续启发式不能因为“昼”是单字或“血契”含“血”而把它们重新改类。
   let correctedType = originalType;
   const reasons = [];
 
@@ -8444,12 +9464,14 @@ function correctAssetRoleFromEvidence(asset = {}, context = {}) {
     if (INSERT_ASSET_EVIDENCE_RE.test(hay) && !PROP_ASSET_EVIDENCE_RE.test(label)) {
       correctedType = "Insert";
       reasons.push("insert/detail evidence found in prop candidate");
-    } else if (SCENE_ASSET_EVIDENCE_RE.test(hay) && !PROP_ASSET_EVIDENCE_RE.test(label)) {
+    } else if (SCENE_ASSET_EVIDENCE_RE.test(label) && !PROP_ASSET_EVIDENCE_RE.test(hay)) {
+      // 只有「label 本身就是地点」才翻成场景;不能因道具证据台词里提到所在地点(如「翻进厨房,一把手枪」)
+      // 就把道具误升为场景(修:带消音器的手枪被错纠成 S002_..._WIDE_ESTABLISHING)。
       correctedType = "Scene";
       reasons.push("scene/location evidence found in prop candidate");
     }
   } else if (originalType === "Insert") {
-    if (SCENE_ASSET_EVIDENCE_RE.test(hay) && !INSERT_ASSET_EVIDENCE_RE.test(label)) {
+    if (SCENE_ASSET_EVIDENCE_RE.test(label) && !INSERT_ASSET_EVIDENCE_RE.test(hay)) {
       correctedType = "Scene";
       reasons.push("scene/location evidence found in insert candidate");
     }
@@ -8495,17 +9517,42 @@ function correctAssetRolesFromEvidence(assets = []) {
   return corrected;
 }
 
+function scriptCharacterNamesForRoleEnforcement(script = "") {
+  const names = [];
+  const add = (value, force = false) => {
+    const name = cleanCharacterName(value).replace(/\s+/g, "");
+    if (!name || isNonVisualAudioCueLabel(name)) return;
+    if (force || isValidCharacterLabel(name) || /^[一-龥·]$/.test(name) || /^杀手[A-Z0-9一二三四五六七八九十]+$/i.test(name)) {
+      if (!names.some((item) => sameAssetLabel(item, name))) names.push(name);
+    }
+  };
+  for (const name of parseCharacters(script)) add(name);
+  for (const asset of parseStructuredAssetDescriptions(script).filter((item) => item.type === "Character")) {
+    const primary = compactLine(asset.label).match(/^[A-Z][A-Z0-9_-]*/i)?.[0] || compactLine(asset.label).split(/\s*\/\s*/)[0];
+    add(primary, true);
+  }
+  for (const item of inlineColonDialogues(script, "zh", { limit: Infinity })) add(item.speaker);
+  for (const match of String(script).matchAll(/杀手\s*[A-Z0-9一二三四五六七八九十]+/gi)) add(match[0]);
+  for (const match of String(script).matchAll(/(?:^|\n)\s*([一-龥·]{1,8}|[A-Za-z][A-Za-z0-9 .'-]{1,32})\s*[（(][^）)]{1,32}[）)]\s*[：:]/g)) add(match[1]);
+  return names;
+}
+
 function enforceCharacterProfileAssets(assets = [], script = "", worldProfile = {}) {
-  const profileNames = extractCharacterProfileNames(script);
+  const profileNames = scriptCharacterNamesForRoleEnforcement(script);
   if (!profileNames.length) return assets;
-  const profileNameMatches = (value) => profileNames.some((name) => sameAssetLabel(name, value));
+  const explicitNonCharacterLabels = parseStructuredAssetDescriptions(script)
+    .filter((asset) => asset.type !== "Character")
+    .map((asset) => asset.label);
+  const isExplicitNonCharacter = (value) => explicitNonCharacterLabels.some((label) => sameAssetLabel(label, value));
+  const profileNameMatches = (value) => profileNames.some((name) => sameAssetLabel(name, value) || sameAssetLabel(name, cleanCharacterName(value)) || assetLabelConflict(name, value));
   const corrected = [];
   for (const asset of assets) {
-    if (profileNameMatches(asset?.label || asset?.name) && asset.type !== "Character") continue;
+    if (profileNameMatches(asset?.label || asset?.name) && asset.type !== "Character" && !asset.lockedStructured) continue;
     corrected.push(asset);
   }
   for (const name of profileNames) {
-    if (corrected.some((asset) => asset.type === "Character" && sameAssetLabel(asset.label, name))) continue;
+    if (isExplicitNonCharacter(name)) continue;
+    if (corrected.some((asset) => asset.type === "Character" && (sameAssetLabel(asset.label, name) || assetLabelConflict(asset.label, name)))) continue;
     let typeIndex = corrected.filter((asset) => asset.type === "Character").length + 1;
     let assetName = typedAssetName("Character", typeIndex, name);
     while (
@@ -8533,11 +9580,6 @@ function enforceCharacterProfileAssets(assets = [], script = "", worldProfile = 
 
 function compactLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function xluoVideoUrl(pathname) {
-  const clean = pathname.startsWith("/") ? pathname : `/${pathname}`;
-  return `${xluoVideoBaseUrl()}${clean}`;
 }
 
 function gravitexVideoUrl(pathname) {
@@ -8593,22 +9635,12 @@ function normalizeGravitexSeedanceModel(value) {
 function normalizeVideoConfigModelName(value = "") {
   const raw = compactLine(value || DEFAULT_VIDEO_CONFIG_MODEL);
   const lower = raw.toLowerCase();
-  if (["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference"].includes(raw)) return raw;
+  if (["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus"].includes(raw)) return raw;
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0-person-reference";
+  if (/byteplus|海外|modelark|ap-southeast/.test(lower)) return "seedance-2-0-byteplus";
   if (/mini|迷你/.test(lower)) return "seedance-2-0-mini";
   if (/fast|快速/.test(lower)) return "seedance-2-0-fast";
   return "seedance-2-0";
-}
-
-function normalizeXluoVideoModel(value) {
-  const raw = compactLine(value || "seedance-2-0");
-  const map = {
-    "seedance-2-0": process.env.XLUO_SEEDANCE_MODEL || DEFAULT_XLUO_VIDEO_MODEL_MAP["seedance-2-0"],
-    "seedance-2-0-fast": process.env.XLUO_SEEDANCE_FAST_MODEL || DEFAULT_XLUO_VIDEO_MODEL_MAP["seedance-2-0-fast"],
-    "seedance-2-0-liveness-face": process.env.XLUO_SEEDANCE_LIVENESS_MODEL || DEFAULT_XLUO_VIDEO_MODEL_MAP["seedance-2-0-liveness-face"],
-    "seedance-2-0-person-reference": process.env.XLUO_SEEDANCE_MODEL || DEFAULT_XLUO_VIDEO_MODEL_MAP["seedance-2-0-person-reference"],
-  };
-  return map[raw] || raw;
 }
 
 function normalizeVideoRatio(value) {
@@ -8626,8 +9658,10 @@ function normalizeReferenceVideoRatio(value) {
 function normalizeVideoResolution(value, model = "") {
   const raw = compactLine(value || "720p");
   const lower = raw.toLowerCase();
-  if (lower === "2k") return "2K";
-  if (["480p", "720p", "1080p"].includes(lower)) return lower;
+  const isFastOrMini = /(?:fast|mini)/i.test(String(model || ""));
+  if (["480p", "720p"].includes(lower)) return lower;
+  if (lower === "1080p" && !isFastOrMini) return lower;
+  if (lower === "4k" && !isFastOrMini) return "4k";
   return "720p";
 }
 
@@ -8642,18 +9676,6 @@ function normalizeSeedanceDuration(value) {
   const number = Math.round(Number(value || 5));
   if (!Number.isFinite(number)) return 5;
   return Math.max(4, Math.min(15, number));
-}
-
-function normalizeXluoResolution(value) {
-  const raw = compactLine(value || "720p").toUpperCase();
-  if (raw === "2K") return "2K";
-  if (raw === "4K") return "4K";
-  if (["480P", "720P", "1080P"].includes(raw)) return raw;
-  return "720P";
-}
-
-function normalizeXluoAudioGeneration(value) {
-  return value === false ? "Disabled" : "Enabled";
 }
 
 function publicRemoteAssetUrl(url) {
@@ -8703,8 +9725,13 @@ function localPublicAssetPathFromUrl(url) {
   } catch {
     return "";
   }
-  if (!parsed.pathname.startsWith("/public-assets/")) return "";
-  const fileName = path.basename(decodeURIComponent(parsed.pathname.replace(/^\/public-assets\/+/, "")));
+  // 本地上传的图总会先在 CANVAS_PUBLIC_ASSET_DIR 落盘,再上传 S3。因此不论引用地址是本地相对形式
+  // `/public-assets/xxx`,还是 S3 公网形式 `https://<bucket>/<prefix>/public-assets/xxx`,
+  // 只要 `/public-assets/` 作为路径段出现,就按 basename 命中本地镜像——避免走 fetch 网络往返
+  // (慢且易超时,是"参考图解析到0张"的根因)。路径穿越由 isInside + basename 双重防护。
+  const segMatch = parsed.pathname.match(/(?:^|\/)public-assets\/(.+)$/);
+  if (!segMatch) return "";
+  const fileName = path.basename(decodeURIComponent(segMatch[1]));
   const file = path.join(CANVAS_PUBLIC_ASSET_DIR, fileName);
   if (!fileName || !isInside(CANVAS_PUBLIC_ASSET_DIR, file) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return "";
   return file;
@@ -8753,6 +9780,163 @@ function awsUriEncode(value) {
 
 function objectPublicUrl(baseUrl, key) {
   return `${baseUrl.replace(/\/+$/, "")}/${key.split("/").map(awsUriEncode).join("/")}`;
+}
+
+function arkVirtualPersonConfig(overrides = {}) {
+  return {
+    accessKeyId: compactLine(
+      Object.prototype.hasOwnProperty.call(overrides, "accessKeyId")
+        ? overrides.accessKeyId
+        : readLocalEnvValue("ARK_ASSETS_ACCESS_KEY_ID") || process.env.ARK_ASSETS_ACCESS_KEY_ID || "",
+    ),
+    secretAccessKey: compactLine(
+      Object.prototype.hasOwnProperty.call(overrides, "secretAccessKey")
+        ? overrides.secretAccessKey
+        : readLocalEnvValue("ARK_ASSETS_SECRET_ACCESS_KEY") || process.env.ARK_ASSETS_SECRET_ACCESS_KEY || "",
+    ),
+    groupId: compactLine(overrides.groupId || readLocalEnvValue("ARK_VIRTUAL_PERSON_GROUP_ID") || process.env.ARK_VIRTUAL_PERSON_GROUP_ID || ""),
+    region: compactLine(overrides.region || readLocalEnvValue("ARK_ASSETS_REGION") || process.env.ARK_ASSETS_REGION || "cn-beijing"),
+    projectName: compactLine(overrides.projectName || readLocalEnvValue("ARK_ASSETS_PROJECT_NAME") || process.env.ARK_ASSETS_PROJECT_NAME || "default"),
+    service: compactLine(overrides.service || "ark"),
+    endpoint: compactLine(overrides.endpoint || readLocalEnvValue("ARK_ASSETS_ENDPOINT") || process.env.ARK_ASSETS_ENDPOINT || "https://ark.cn-beijing.volcengineapi.com").replace(/\/+$/, ""),
+    version: compactLine(overrides.version || "2024-01-01"),
+  };
+}
+
+function buildArkAssetOpenApiRequest(action, payload = {}, overrides = {}) {
+  const config = arkVirtualPersonConfig(overrides);
+  if (!config.accessKeyId || !config.secretAccessKey) {
+    throw new Error("缺少方舟私域虚拟人像 AK/SK：请配置 ARK_ASSETS_ACCESS_KEY_ID 和 ARK_ASSETS_SECRET_ACCESS_KEY。");
+  }
+  const endpoint = new URL(config.endpoint);
+  if (endpoint.protocol !== "https:") throw new Error("ARK_ASSETS_ENDPOINT 必须使用 HTTPS。");
+  const query = [
+    ["Action", compactLine(action)],
+    ["Version", config.version],
+  ]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${awsUriEncode(key)}=${awsUriEncode(value)}`)
+    .join("&");
+  const body = JSON.stringify(payload);
+  const payloadHash = sha256Hex(body);
+  const now = overrides.now instanceof Date ? overrides.now : new Date();
+  const requestDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const shortDate = requestDate.slice(0, 8);
+  const signedHeaders = "host;x-content-sha256;x-date";
+  const canonicalHeaders = `host:${endpoint.host}\nx-content-sha256:${payloadHash}\nx-date:${requestDate}\n`;
+  const canonicalRequest = ["POST", "/", query, canonicalHeaders, signedHeaders, payloadHash].join("\n");
+  const credentialScope = `${shortDate}/${config.region}/${config.service}/request`;
+  const stringToSign = ["HMAC-SHA256", requestDate, credentialScope, sha256Hex(canonicalRequest)].join("\n");
+  const kDate = hmac(config.secretAccessKey, shortDate);
+  const kRegion = hmac(kDate, config.region);
+  const kService = hmac(kRegion, config.service);
+  const kSigning = hmac(kService, "request");
+  const signature = hmac(kSigning, stringToSign, "hex");
+  return {
+    url: `${config.endpoint}/?${query}`,
+    body,
+    headers: {
+      Authorization: `HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+      "Content-Type": "application/json",
+      Host: endpoint.host,
+      "X-Content-Sha256": payloadHash,
+      "X-Date": requestDate,
+    },
+  };
+}
+
+function normalizeArkVirtualPersonAsset(raw = {}) {
+  const result = raw.Result || raw.result || raw.Data || raw.data || raw;
+  const assetId = compactLine(result.Id || result.AssetId || result.asset_id || result.id || "");
+  const rawStatus = compactLine(
+    result.Status || result.status || result.AssetStatus || result.asset_status || result.State || result.state || (assetId ? "Processing" : ""),
+  );
+  const normalizedStatus = rawStatus.toLowerCase();
+  const status = /^(active|ready|completed|success|succeeded|enabled)$/.test(normalizedStatus)
+    ? "active"
+    : /^(failed|failure|rejected|denied|error|disabled)$/.test(normalizedStatus)
+      ? "failed"
+      : "processing";
+  const error = compactLine(
+    result.Error?.Message ||
+      result.Error?.message ||
+      result.error?.Message ||
+      result.error?.message ||
+      result.FailedReason ||
+      result.failed_reason ||
+      result.Message ||
+      result.message ||
+      "",
+  );
+  return {
+    assetId,
+    assetUrl: assetId ? `asset://${assetId}` : "",
+    groupId: compactLine(result.GroupId || result.group_id || ""),
+    status,
+    error,
+  };
+}
+
+async function callArkAssetOpenApi(action, payload = {}, options = {}) {
+  const request = buildArkAssetOpenApiRequest(action, payload, options.config || {});
+  const fetchImpl = options.fetchImpl || fetch;
+  const response = await fetchImpl(request.url, {
+    method: "POST",
+    headers: request.headers,
+    body: request.body,
+  });
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { message: text };
+  }
+  const apiError = data.ResponseMetadata?.Error || data.responseMetadata?.error || data.Error || data.error;
+  if (!response.ok || apiError) {
+    const message = compactLine(apiError?.Message || apiError?.message || data.message || `HTTP ${response.status}`);
+    throw new Error(`方舟私域虚拟人像接口失败：${message}`);
+  }
+  return data;
+}
+
+async function createArkVirtualPersonAsset(body = {}, options = {}) {
+  const asset = body.asset && typeof body.asset === "object" ? body.asset : body;
+  const manualCertification = asset.manualCertification === true;
+  if (!manualCertification && !isArkPersonEligibleAsset(asset)) {
+    throw new Error("仅支持 AI 生成的写实或角色类图片认证为私域虚拟人像。");
+  }
+  if (asset.mediaType === "video" || /\.(mp4|mov|webm|m4v)(?:$|[?#])/i.test(compactLine(asset.url || asset.name || ""))) {
+    throw new Error("私域虚拟人像认证仅支持图片。");
+  }
+  const config = arkVirtualPersonConfig(options.config || {});
+  if (!config.groupId) throw new Error("缺少私域虚拟人像素材组 ID：请配置 ARK_VIRTUAL_PERSON_GROUP_ID。");
+  const publicAsset = await (options.publicize || canvasAssetToPublicUrl)(asset, 0);
+  const publicUrl = compactLine(publicAsset?.url || "");
+  if (!/^https:\/\//i.test(publicUrl)) throw new Error("图片尚未获得公网 HTTPS 地址，无法提交方舟认证。");
+  const raw = await callArkAssetOpenApi(
+    "CreateAsset",
+    {
+      GroupId: config.groupId,
+      URL: publicUrl,
+      AssetType: "Image",
+      Name: canvasAssetName(asset, 0),
+      ProjectName: config.projectName,
+    },
+    { ...options, config },
+  );
+  const result = normalizeArkVirtualPersonAsset(raw);
+  if (!result.assetId) throw new Error("方舟 CreateAsset 未返回素材 ID。");
+  return { ...result, groupId: result.groupId || config.groupId, publicUrl };
+}
+
+async function getArkVirtualPersonAsset(assetId, options = {}) {
+  const cleanAssetId = compactLine(assetId || "");
+  if (!cleanAssetId) throw new Error("缺少待查询的方舟素材 ID。");
+  const config = arkVirtualPersonConfig(options.config || {});
+  const raw = await callArkAssetOpenApi("GetAsset", { Id: cleanAssetId, ProjectName: config.projectName }, { ...options, config });
+  const result = normalizeArkVirtualPersonAsset(raw);
+  return { ...result, assetId: result.assetId || cleanAssetId, assetUrl: `asset://${result.assetId || cleanAssetId}` };
 }
 
 async function uploadPublicAssetToS3({ buffer, mime, fileName }) {
@@ -8859,7 +10043,7 @@ async function createCanvasVideoAsset(body = {}) {
 async function createPublicCanvasAsset(body = {}) {
   const decoded = decodeDataImageUrl(body.dataUrl || body.data_url || "");
   if (!decoded) throw new Error("当前只支持 PNG/JPG/WEBP 的 dataURL 图片上传。");
-  if (decoded.buffer.length > 30 * 1024 * 1024) throw new Error("图片超过 30MB，Gravitex 素材库不接受。");
+  if (decoded.buffer.length > 30 * 1024 * 1024) throw new Error("图片超过 30MB，请压缩后重试。");
   const localUrl = persistDecodedPublicAsset(decoded, body.name || "portrait");
   const fileName = decodeURIComponent(localUrl.replace(/^\/public-assets\/+/, ""));
   const storageUrl = await uploadPublicAssetToS3({ buffer: decoded.buffer, mime: decoded.mime, fileName });
@@ -8875,7 +10059,97 @@ async function createPublicCanvasAsset(body = {}) {
     publicReady: !!publicUrl,
     message: publicUrl
       ? "已生成公网 HTTPS 素材地址"
-      : "图片已保存到本地预览地址，但还缺少 PUBLIC_ASSET_BASE_URL 或对象存储配置，Gravitex 暂不能抓取这张图。",
+      : "图片已保存到本地预览地址，但还缺少 PUBLIC_ASSET_BASE_URL 或对象存储配置，远端服务暂不能抓取这张图。",
+  };
+}
+
+function publicAssetLibraryRecord(record = {}) {
+  if (!record || typeof record !== "object") return null;
+  const { ownerUserId, ...publicRecord } = record;
+  return publicRecord;
+}
+
+function assetLibraryUserId(req) {
+  const user = currentUserFromRequest(req);
+  if (!user?.id) throw new Error("未登录，无法访问素材库");
+  return user.id;
+}
+
+async function saveAssetToLibrary(body = {}, userId = "") {
+  const input = body.asset && typeof body.asset === "object" ? { ...body.asset, ...body } : { ...body };
+  let url = compactLine(input.url || input.publicUrl || input.previewUrl || "");
+  let localUrl = compactLine(input.localUrl || "");
+  if (isDataImageUrl(input.dataUrl || input.data_url || "")) {
+    const publicAsset = await createPublicCanvasAsset({
+      name: input.name || input.assetName || "library-asset",
+      dataUrl: input.dataUrl || input.data_url,
+    });
+    url = publicAsset.url || publicAsset.localUrl || url;
+    localUrl = publicAsset.localUrl || localUrl;
+  }
+  if (!url) throw new Error("素材库资产缺少图片地址");
+  const record = assetLibrary.upsert({
+    ...input,
+    url,
+    localUrl,
+    previewUrl: input.previewUrl || localUrl || url,
+  }, { userId });
+  return publicAssetLibraryRecord(record);
+}
+
+function localPathForAssetLibraryUrl(url = "") {
+  const clean = compactLine(url);
+  return localPublicAssetPathFromUrl(clean) || localMediaPathFromUrl(clean) || localFilePathFromUrl(clean) || "";
+}
+
+async function assetLibraryImageBuffer(record = {}) {
+  const local = localPathForAssetLibraryUrl(record.localUrl || record.url || record.previewUrl || "");
+  if (local && fs.existsSync(local)) {
+    return { buffer: fs.readFileSync(local), mime: MIME[path.extname(local).toLowerCase()] || "image/png", name: record.name || path.basename(local) };
+  }
+  const url = compactLine(record.url || record.previewUrl || "");
+  if (!/^https?:\/\//i.test(url)) throw new Error("素材库图片地址不可读取");
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`读取素材库图片失败：HTTP ${response.status}`);
+  const contentType = String(response.headers.get("content-type") || "image/png").split(";", 1)[0].toLowerCase();
+  if (!contentType.startsWith("image/")) throw new Error("素材库记录不是图片");
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length || buffer.length > 30 * 1024 * 1024) throw new Error("素材库图片超过 30MB");
+  return { buffer, mime: contentType, name: record.name || "library-asset" };
+}
+
+async function importAssetLibraryAsset(episodeRoot, body = {}, userId = "") {
+  const libraryId = compactLine(body.libraryId || body.id || "");
+  if (!libraryId) throw new Error("缺少素材库资产 ID");
+  const record = assetLibrary.get(libraryId, { userId });
+  if (!record) throw new Error("素材库资产不存在或无权访问");
+  let assetId = safeManifestAssetId(body.assetId || "");
+  let added = null;
+  if (!assetId) {
+    const requestedType = compactLine(record.type || "");
+    const type = ["Character", "Scene", "Prop", "Insert"].includes(requestedType) ? requestedType : "Prop";
+    added = addManualAsset(episodeRoot, {
+      type,
+      label: record.name,
+      description: record.prompt || `从素材库导入：${record.name}`,
+      evidence: "从网站素材库导入",
+      generate: false,
+    });
+    assetId = added.asset.id;
+  }
+  const source = await assetLibraryImageBuffer(record);
+  const upload = uploadBoundAsset(episodeRoot, {
+    assetId,
+    filename: source.name,
+    contentBase64: source.buffer.toString("base64"),
+  });
+  return {
+    libraryAsset: publicAssetLibraryRecord(record),
+    asset: upload.asset,
+    manifestItem: upload.manifestItem,
+    added: !!added,
+    replaced: !!upload.replaced,
+    message: `${upload.replaced ? "已替换" : "已添加"}项目资产：${assetId}`,
   };
 }
 
@@ -8889,11 +10163,32 @@ function isCanvasPhotorealAsset(asset = {}) {
   return preset === "photoreal" || /超写实|photoreal|photo-real|hyperreal|hyper-real/i.test(label);
 }
 
-function isCanvasAiGeneratedPhotorealAsset(asset = {}) {
-  if (!isCanvasPhotorealAsset(asset)) return false;
+// AI 生成判定(不含画风约束):供“放宽到角色类”复用。
+function isCanvasAiGeneratedAsset(asset = {}) {
   if (asset.aiGenerated === true || compactLine(asset.verificationType || asset.verification_type) === "ai-generated") return true;
   const source = `${asset.source || ""} ${asset.generationMode || asset.generation_mode || ""}`;
   return /canvas-image|image-generation|ai[-_ ]?generated|gpt[-_ ]?image/i.test(source);
+}
+
+function isCanvasAiGeneratedPhotorealAsset(asset = {}) {
+  if (!isCanvasPhotorealAsset(asset)) return false;
+  return isCanvasAiGeneratedAsset(asset);
+}
+
+// 角色类参考判定(按声明类型或命名 C\d{3}_ / _CHARACTER_SHEET)。用于放宽“进人像库”的画风限制:
+// 被平台误判真人的风格化角色也应能走人像库认证成 asset://,而道具/场景不纳入。
+function isCharacterRefAsset(asset = {}) {
+  const declared = compactLine(asset.manifestType || asset.assetType || "");
+  if (/^Character$/i.test(declared)) return true;
+  const name = compactLine(asset.name || asset.assetName || "");
+  return name ? inferAssetTypeFromName(name) === "Character" : false;
+}
+
+// 进人像库资格:超写实(AI 生成),或 AI 生成的角色类素材。保留“AI 生成”硬约束以挡掉手动导入图;
+// 角色约束挡掉道具/场景。批量链路认证阶段会强制 aiGenerated,画布手动认证走此判据防误收。
+function isArkPersonEligibleAsset(asset = {}) {
+  if (isCanvasAiGeneratedPhotorealAsset(asset)) return true;
+  return isCharacterRefAsset(asset) && isCanvasAiGeneratedAsset(asset);
 }
 
 function isArkPersonTargetModel(value = "") {
@@ -8906,18 +10201,41 @@ function arkPersonAssetUrl(asset = {}) {
   return /^asset:\/\//i.test(url) ? url : "";
 }
 
+function arkPersonAssetReadyUrl(asset = {}) {
+  const status = compactLine(asset?.arkPersonAsset?.status || "").toLowerCase();
+  const url = arkPersonAssetUrl(asset);
+  return status === "active" ? url : "";
+}
+
+function isArkPersonReferenceAsset(asset = {}) {
+  const rawType = compactLine(asset.manifestType || asset.assetType || asset.type || "");
+  if (/character|person|真人|人物|角色/i.test(rawType)) return true;
+  if (!isCanvasPhotorealAsset(asset)) return false;
+  // Explicit scene/prop/insert assets are ordinary visual references, even when rendered photorealistically.
+  if (rawType && /scene|environment|location|场景|环境|prop|object|item|道具|insert|插入/i.test(rawType)) return false;
+  return true;
+}
+
 function assertArkPersonAssetsReady(body = {}) {
   const modelMode = compactLine(body.modelMode || body.model || "");
   if (!isArkPersonTargetModel(modelMode)) return;
-  const invalid = (Array.isArray(body.assets) ? body.assets : [])
+  const sourceAssets = Array.isArray(body.assets) ? body.assets : [];
+  const invalid = sourceAssets
     .filter((asset) => asset?.arkPersonAsset?.enabled === true)
-    .filter((asset) => !arkPersonAssetUrl(asset))
+    .filter((asset) => !arkPersonAssetReadyUrl(asset))
     .map((asset) => compactLine(asset.name || asset.id || "未命名真人素材"));
-  if (invalid.length) throw new Error(`方舟真人素材未绑定有效 asset://：${invalid.join("、")}`);
+  if (invalid.length) throw new Error(`方舟私域虚拟人像未绑定有效 asset://：${invalid.join("、")}`);
+  const missing = sourceAssets
+    .filter((asset) => isArkPersonReferenceAsset(asset))
+    .filter((asset) => !arkPersonAssetReadyUrl(asset))
+    .map((asset) => compactLine(asset.name || asset.id || "未命名真人素材"));
+  if (missing.length) {
+    throw new Error(`真人/角色参考图必须先完成方舟私域虚拟人像认证并达到 active（asset://）：${missing.join("、")}`);
+  }
 }
 
 function canvasVideoAssetSubmitUrl(asset = {}, { preferArkPersonAsset = false } = {}) {
-  const arkPersonUrl = preferArkPersonAsset ? arkPersonAssetUrl(asset) : "";
+  const arkPersonUrl = preferArkPersonAsset ? arkPersonAssetReadyUrl(asset) : "";
   if (arkPersonUrl) return arkPersonUrl;
   const assetUrl = compactLine(asset.assetUrl || asset.asset_url || "");
   if (isCanvasPhotorealAsset(asset)) {
@@ -9095,21 +10413,6 @@ async function ensurePublicReferenceUrl(asset = {}) {
   }
 }
 
-async function assetUrlToXluoImageData(url) {
-  const raw = compactLine(url);
-  if (!raw) return "";
-  if (/^data:image\//i.test(raw)) return raw;
-  const localFile = localMediaPathFromUrl(raw);
-  if (localFile) return fileToDataUrl(localFile);
-  const localUrlFile = localFilePathFromUrl(raw);
-  if (localUrlFile) return fileToDataUrl(localUrlFile);
-  const localPublicAsset = localPublicAssetPathFromUrl(raw);
-  if (localPublicAsset) return fileToDataUrl(localPublicAsset);
-  if (/^https?:\/\//i.test(raw)) return raw;
-  if (/^asset:\/\//i.test(raw)) return raw;
-  return "";
-}
-
 async function assetUrlToReferenceUrl(url, { allowAssetUrl = false } = {}) {
   const raw = compactLine(url);
   if (!raw) return "";
@@ -9179,7 +10482,7 @@ async function resolveSeedanceImageReferences(assets = [], maxImages = SEEDANCE_
     throw new Error(`参考图数量超出 Seedance 上限：本段图片 ${sourceAssets.length} 张，当前剩余上限 ${maxImages} 张。`);
   }
   for (const asset of sourceAssets) {
-    const arkPersonUrl = options.preferArkPersonAsset ? arkPersonAssetUrl(asset) : "";
+    const arkPersonUrl = options.preferArkPersonAsset ? arkPersonAssetReadyUrl(asset) : "";
     const assetUrl = compactLine(asset.assetUrl || asset.asset_url || "");
     const sourceUrl = options.allowAssetUrl && (arkPersonUrl || assetUrl)
       ? arkPersonUrl || assetUrl
@@ -9464,8 +10767,9 @@ function promptWithStoryboardGuidance(prompt = "", guidanceText = "") {
 async function buildSeedanceGenerationPayload(body = {}) {
   const prompt = cleanSeedancePromptForSubmission(body.prompt);
   if (!prompt) throw new Error("缺少视频提示词");
+  const useArkPersonAssets = isArkPersonTargetModel(body.modelMode || body.model);
   assertArkPersonAssetsReady(body);
-  const assets = canvasVideoSubmitCapableAssets(body.assets, { preferArkPersonAsset: true });
+  const assets = canvasVideoSubmitCapableAssets(body.assets, { preferArkPersonAsset: useArkPersonAssets });
   const model = normalizeSeedanceModel(body.model, body.__provider);
   const frameControl = compactLine(body.frameControl || "reference");
   const firstFrameUrl = compactLine(body.firstFrameUrl || body.first_frame_url || "");
@@ -9487,7 +10791,7 @@ async function buildSeedanceGenerationPayload(body = {}) {
   const imageReferences = await resolveSeedanceImageReferences(
     assets,
     SEEDANCE_MAX_IMAGE_REFERENCES - frameCount,
-    { allowAssetUrl: true, required: false, preferArkPersonAsset: true },
+    { allowAssetUrl: true, required: false, preferArkPersonAsset: useArkPersonAssets },
   );
   const resolvedAssets = imageReferences.map((reference) => reference.asset);
   const framePromptReferences = [
@@ -9652,58 +10956,6 @@ async function buildGravitexVideoGenerationPayload(body = {}) {
   };
   if (body.seed !== undefined && body.seed !== null && body.seed !== "") payload.seed = Number(body.seed);
   return payload;
-}
-
-async function buildXluoVideoGenerationPayload(body = {}) {
-  const prompt = cleanSeedancePromptForSubmission(body.prompt);
-  if (!prompt) throw new Error("缺少视频提示词");
-  const assets = canvasVideoSubmitCapableAssets(body.assets);
-  const imageData = [];
-  const startFrameUrl = compactLine(body.startFrameUrl || body.start_frame_url || "");
-  const startFrameData = startFrameUrl ? await assetUrlToXluoImageData(startFrameUrl) : "";
-  assertSeedanceReferenceBudget({ startFrameUrl: startFrameData || startFrameUrl, assets });
-  const imageReferences = await resolveSeedanceImageReferences(
-    assets,
-    SEEDANCE_MAX_IMAGE_REFERENCES - (startFrameData ? 1 : 0),
-    { allowAssetUrl: true, required: false },
-  );
-  const resolvedAssets = imageReferences.map((reference) => reference.asset);
-  for (const imageReference of imageReferences) {
-    const reference = await assetUrlToXluoImageData(imageReference.url);
-    if (!reference) throw new Error(`Xluo 提交已拦截：参考图无法解析为可提交图片：${imageReference.asset?.name || imageReference.asset?.id || "未命名资产"}`);
-    imageData.push(reference);
-  }
-  assertResolvedAllSeedanceReferences({
-    provider: "Xluo Seedance",
-    startFrameUrl,
-    startFrameReferenceUrl: startFrameData,
-    assets: resolvedAssets,
-    imageReferences,
-    mediaReferences: [...(startFrameData ? [startFrameData] : []), ...imageData],
-  });
-  const finalPrompt = promptWithStoryboardGuidance(
-    `${prompt}${startFrameData ? "\n\n上一段视频的尾帧，直接作为本段的首帧（起始帧）。" : ""}${seedanceAssetPromptSuffix(imageReferences)}`.trim(),
-    body.storyboardGuidanceText,
-  );
-  const [firstImageData, ...referenceImages] = imageData;
-  const startFrameBase64 = startFrameData || firstImageData || "";
-  const remainingReferenceImages = startFrameData ? imageData : referenceImages;
-  return {
-    prompt: finalPrompt,
-    count: 1,
-    params: {
-      duration: String(normalizeSeedanceDuration(body.duration)),
-      model: normalizeXluoVideoModel(body.modelMode || body.model),
-      count: 1,
-      orientation: normalizeVideoRatio(body.ratio),
-      resolution: normalizeXluoResolution(body.resolution),
-      audioGeneration: normalizeXluoAudioGeneration(body.generateAudio),
-      ...(remainingReferenceImages.length ? { referenceImages: remainingReferenceImages.map((data) => ({ data })) } : {}),
-    },
-    startFrameBase64: startFrameBase64 || null,
-    endFrameBase64: null,
-    source: process.env.XLUO_VIDEO_SOURCE || "pixel_toys_canvas",
-  };
 }
 
 function findFirstStringDeep(value, keys) {
@@ -9910,64 +11162,6 @@ function normalizeSeedanceStatus(raw = {}) {
   };
 }
 
-function normalizeXluoEnvelope(raw = {}) {
-  const data = raw?.data?.data || raw?.data || raw;
-  return data?.generation || data;
-}
-
-function normalizeXluoCreateStatus(raw = {}) {
-  const data = raw?.data?.data || raw?.data || raw;
-  const generation = Array.isArray(data?.generations) && data.generations.length ? data.generations[0] : data?.generation || data;
-  const taskId = compactLine(generation?.id || generation?.taskId || generation?.task_id || "");
-  const normalized = normalizeXluoGenerationStatus(generation || raw);
-  return {
-    ...normalized,
-    taskId: taskId || normalized.taskId,
-    status: normalized.status === "completed" ? "completed" : "running",
-    message: normalized.message || "任务已提交",
-    raw,
-  };
-}
-
-function normalizeXluoGenerationStatus(raw = {}) {
-  const generation = normalizeXluoEnvelope(raw);
-  const statusRaw = compactLine(generation?.status || raw?.status || "").toUpperCase();
-  const rawVideoUrl = compactLine(generation?.result || generation?.resultUrl || generation?.videoUrl || findVideoUrlDeep(generation || raw));
-  const videoUrl = videoUrlFrom(rawVideoUrl);
-  const invalidVideo = invalidVideoUrlReason(rawVideoUrl);
-  const tailFrameUrl = findTailFrameUrlDeep(generation || raw);
-  const taskId = compactLine(generation?.id || generation?.taskId || generation?.task_id || findFirstStringDeep(generation || raw, ["id", "taskId", "task_id"]));
-  const message = compactLine(generation?.errorMessage || generation?.error || raw?.error || raw?.message || "");
-  const progress = normalizeProgressValue(
-    generation?.progress,
-    generation?.percent,
-    generation?.progressPercent,
-    raw?.progress,
-    raw?.percent,
-    raw?.progressPercent,
-    extractProgressDeep(generation || raw),
-  );
-  if (invalidVideo) {
-    return { status: "failed", statusRaw: statusRaw || "FAILED", taskId, videoUrl: "", tailFrameUrl, progress: progress ?? 100, message: invalidVideo, raw };
-  }
-  if (statusRaw === "COMPLETED" || videoUrl) {
-    return { status: "completed", statusRaw, taskId, videoUrl, tailFrameUrl, progress: 100, message: "生成完成", raw };
-  }
-  if (["FAILED", "ERROR", "CANCELLED", "CANCELED"].includes(statusRaw)) {
-    return { status: "failed", statusRaw, taskId, videoUrl: "", tailFrameUrl, progress: progress ?? 100, message: message ? normalizeVideoGenerationErrorMessage(message) : "视频生成失败", raw };
-  }
-  return {
-    status: "running",
-    statusRaw: statusRaw || "PENDING",
-    taskId,
-    videoUrl: "",
-    tailFrameUrl,
-    progress,
-    message: message || (statusRaw === "PROCESSING" ? "任务生成中" : "任务排队中"),
-    raw,
-  };
-}
-
 function extractVideoApiError(data = {}) {
   // 火山 Ark 失败结构: { error: { code, message, type } }
   if (data && typeof data.error === "object" && data.error) {
@@ -10090,30 +11284,6 @@ async function callGravitexJson(pathname, options = {}) {
     if (/invalid\s*token|unauthor|forbidden|token\s*无效|鉴权|密钥/i.test(message)) {
       throw new Error(
         `Gravitex 鉴权失败：真人模型/真人核验走 Gravitex，不使用火山 Ark 的 VOLC_ARK_API_KEY。当前 GRAVITEX_API_KEY 无效或已过期，请换成 Gravitex 控制台的 sk-... key。上游返回：${message}`,
-      );
-    }
-    throw error;
-  }
-}
-
-async function callXluoJson(pathname, options = {}) {
-  try {
-    return await callVideoJson(
-      xluoVideoUrl(pathname),
-      options,
-      "缺少 XLUO 登录态 token：请在 .env.local 配置 XLUO_SESSION_TOKEN 后重启服务。",
-      "xluo",
-    );
-  } catch (error) {
-    const message = String(error?.message || "");
-    if (/token无效|未授权，请先登录|please\s*login/i.test(message)) {
-      throw new Error(
-      "XLUO 视频生成鉴权失败：/generations/video 只接受 XLUO 网页登录态 token，不接受 sk-* API Key。请在服务端 .env.local 配置 XLUO_SESSION_TOKEN（登录 XLUO 后的 xluo-user.token），然后重启服务；普通文本生成也可以改用火山方舟 VOLC_ARK_API_KEY。",
-      );
-    }
-    if (/api\s*key|ak\/sk|unauthor|invalid|forbidden|鉴权|密钥|未授权/i.test(message)) {
-      throw new Error(
-        `XLUO 视频生成鉴权失败：请确认 .env.local 中配置的是 XLUO_SESSION_TOKEN（网页登录 token），不是 XLUO_API_KEY 或旧的 VOLC_ARK_API_KEY。上游返回：${message}`,
       );
     }
     throw error;
@@ -10518,62 +11688,33 @@ async function getGravitexCanvasVideoGeneration(taskId) {
   return { ...normalizeGravitexGenerationStatus(raw), provider: "gravitex" };
 }
 
-async function createXluoCanvasVideoGeneration(body = {}) {
-  const payload = await buildXluoVideoGenerationPayload(body);
-  const raw = await callXluoJson("/generations/video", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  const result = normalizeXluoCreateStatus(raw);
-  return {
-    ...result,
-    provider: "xluo",
-    request: {
-      ...payload,
-      startFrameBase64: payload.startFrameBase64 ? "[image]" : null,
-      params: {
-        ...payload.params,
-        referenceImages: payload.params.referenceImages?.length ? `[${payload.params.referenceImages.length} images]` : undefined,
-      },
-    },
-  };
-}
-
-async function getXluoCanvasVideoGeneration(taskId) {
-  const cleanTaskId = compactLine(taskId);
-  if (!cleanTaskId) throw new Error("缺少任务 ID");
-  const raw = await callXluoJson(`/generations/${encodeURIComponent(cleanTaskId)}`, { method: "GET" });
-  return { ...normalizeXluoGenerationStatus(raw), provider: "xluo" };
-}
-
 async function createCanvasVideoGeneration(body = {}) {
   const provider = canvasVideoProviderForBody(body);
   if (provider === "gravitex") return createGravitexCanvasVideoGeneration(body);
-  if (provider === "ark") return createArkCanvasVideoGeneration(body);
   if (provider === "byteplus") return createBytePlusArkCanvasVideoGeneration(body);
-  return createXluoCanvasVideoGeneration(body);
+  return createArkCanvasVideoGeneration(body);
 }
 
 async function getCanvasVideoGeneration(taskId, provider = canvasVideoProvider()) {
   const normalizedProvider = normalizeCanvasVideoProvider(provider);
   if (normalizedProvider === "gravitex") return getGravitexCanvasVideoGeneration(taskId);
-  if (normalizedProvider === "ark") return getArkCanvasVideoGeneration(taskId);
   if (normalizedProvider === "byteplus") return getBytePlusArkCanvasVideoGeneration(taskId);
-  return getXluoCanvasVideoGeneration(taskId);
+  return getArkCanvasVideoGeneration(taskId);
 }
 
 // ---- 画布图片生成通道（gpt-image-2，直接 spawn image-gen.js，输出到画布公共资产目录） ----
 const canvasImageJobs = new Map();
+// GPT Image 2 size constraints: each edge is 16px-aligned, <=3840px, and total pixels <=8,294,400.
 const CANVAS_IMAGE_SIZE_TABLE = {
   "16:9": { "1k": "1280x720", "2k": "2048x1152", "4k": "3840x2160" },
-  "4:3": { "1k": "1280x960", "2k": "2048x1536", "4k": "3840x2880" },
-  "3:2": { "1k": "1536x1024", "2k": "3072x2048", "4k": "4096x2731" },
-  "21:9": { "1k": "1680x720", "2k": "3360x1440", "4k": "3840x1646" },
+  "4:3": { "1k": "1280x960", "2k": "2048x1536", "4k": "3200x2400" },
+  "3:2": { "1k": "1536x1024", "2k": "3072x2048", "4k": "3360x2240" },
+  "21:9": { "1k": "1680x720", "2k": "3360x1440", "4k": "3840x1648" },
   "9:16": { "1k": "720x1280", "2k": "1152x2048", "4k": "2160x3840" },
-  "4:5": { "1k": "1024x1280", "2k": "1638x2048", "4k": "3277x4096" },
-  "3:4": { "1k": "960x1280", "2k": "1536x2048", "4k": "2880x3840" },
-  "2:3": { "1k": "1024x1536", "2k": "2048x3072", "4k": "2731x4096" },
-  "1:1": { "1k": "1024x1024", "2k": "2048x2048", "4k": "4096x4096" },
+  "4:5": { "1k": "1024x1280", "2k": "1632x2048", "4k": "2560x3200" },
+  "3:4": { "1k": "960x1280", "2k": "1536x2048", "4k": "2304x3072" },
+  "2:3": { "1k": "1024x1536", "2k": "2048x3072", "4k": "2304x3456" },
+  "1:1": { "1k": "1024x1024", "2k": "2048x2048", "4k": "2880x2880" },
 };
 const CANVAS_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
 
@@ -10582,8 +11723,47 @@ function canvasImageSizeFor(ratio, resolution) {
   return r[String(resolution || "1k").toLowerCase()] || r["1k"];
 }
 
-// 把画布传来的参考图（dataURL / /media?path= / /public-assets/ / file://）解析成本地文件路径。
-function resolveCanvasImageReferenceToLocalPath(url = "") {
+// GPT Image 的 image_generation 工具只接受方形、横向或纵向三种尺寸。
+// 具体比例在生成完成后按 CANVAS_IMAGE_SIZE_TABLE 裁切，避免网关静默忽略自定义尺寸。
+function canvasImageProviderSizeFor(ratio) {
+  const [width, height] = String(ratio || "16:9").split(":").map(Number);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return "1536x1024";
+  if (width === height) return "1024x1024";
+  return width > height ? "1536x1024" : "1024x1536";
+}
+
+async function normalizeCanvasImageOutput(entry = {}) {
+  if (!entry.outPath || !fs.existsSync(entry.outPath)) return false;
+  const match = String(entry.size || "").match(/^(\d+)x(\d+)$/);
+  if (!match) return false;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) return false;
+  const tempPath = `${entry.outPath}.ratio-${process.pid}-${Date.now()}.png`;
+  const filter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
+  try {
+    execFileSync("ffmpeg", [
+      "-y",
+      "-i", entry.outPath,
+      "-vf", filter,
+      "-frames:v", "1",
+      "-f", "image2",
+      tempPath,
+    ], { stdio: ["ignore", "ignore", "pipe"], timeout: 120_000 });
+    if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size < 1000) throw new Error("ffmpeg 未生成有效图片");
+    fs.renameSync(tempPath, entry.outPath);
+    return true;
+  } catch (error) {
+    entry.outputNormalizationError = compactLine(error?.message || "比例校正失败").slice(-240);
+    try {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    } catch {}
+    return false;
+  }
+}
+
+// 把画布传来的参考图（dataURL / /media?path= / /public-assets/ / file:// / https）解析成本地文件路径。
+async function resolveCanvasImageReferenceToLocalPath(url = "") {
   const clean = compactLine(url);
   if (!clean) return "";
   if (isDataImageUrl(clean)) {
@@ -10600,10 +11780,32 @@ function resolveCanvasImageReferenceToLocalPath(url = "") {
   if (publicAsset && fs.existsSync(publicAsset)) return publicAsset;
   const filePath = localFilePathFromUrl(clean);
   if (filePath && fs.existsSync(filePath)) return filePath;
+  if (/^https?:\/\//i.test(clean) && !/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])/i.test(clean)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+      const response = await fetch(clean, { signal: controller.signal });
+      if (!response.ok) return "";
+      const contentType = String(response.headers.get("content-type") || "").split(";", 1)[0].toLowerCase();
+      if (contentType && !contentType.startsWith("image/")) return "";
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (!buffer.length || buffer.length > 25 * 1024 * 1024) return "";
+      const extension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : contentType === "image/gif" ? "gif" : "jpg";
+      const name = `canvas-image-ref-${crypto.createHash("sha1").update(clean).digest("hex").slice(0, 16)}-${Date.now()}.${extension}`;
+      const target = path.join(CANVAS_PUBLIC_ASSET_DIR, name);
+      fs.mkdirSync(CANVAS_PUBLIC_ASSET_DIR, { recursive: true });
+      fs.writeFileSync(target, buffer);
+      return target;
+    } catch {
+      return "";
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   return "";
 }
 
-function runCanvasImageJob(taskId, args, env) {
+function runCanvasImageJob(taskId, args, env, attempt = 0) {
   const child = spawn(process.execPath, args, { env });
   const job = canvasImageJobs.get(taskId);
   if (job) job.child = child;
@@ -10616,24 +11818,75 @@ function runCanvasImageJob(taskId, args, env) {
     const entry = canvasImageJobs.get(taskId);
     if (entry) Object.assign(entry, { status: "failed", message: `无法启动出图进程：${error.message}` });
   });
-  child.on("close", (code) => {
+  child.on("close", async (code) => {
     const entry = canvasImageJobs.get(taskId);
     if (!entry) return;
     if (code === 0 && fs.existsSync(entry.outPath)) {
+      await normalizeCanvasImageOutput(entry);
       const version = Math.round(fs.statSync(entry.outPath).mtimeMs);
       Object.assign(entry, {
-        status: "completed",
+        status: "finalizing",
         url: `/public-assets/${encodeURIComponent(entry.fileName)}?v=${version}`,
-        message: "生成完成",
+        message: "正在保存到素材库",
+      });
+      await finalizeGeneratedCanvasAsset(entry);
+      Object.assign(entry, {
+        status: "completed",
+        message: entry.libraryError
+          ? `生成完成，但素材库保存失败：${entry.libraryError}`
+          : entry.outputNormalizationError
+            ? `生成完成，但比例校正失败：${entry.outputNormalizationError}`
+            : "生成完成",
       });
     } else {
+      const failMessage = classifyImageGenError(stderr) || `出图失败（退出码 ${code}）`;
+      // 上游生图瞬时错误(stream_read_error/超时/5xx/网络)自动重试,最多 2 次退避;审核/参数类不重试。
+      if (attempt < 2 && /stream|api_stream_error|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|502|503|504|522|523|524|限流|超时|流/i.test(stderr)) {
+        Object.assign(entry, { status: "running", message: `上游波动，正在自动重试（${attempt + 1}/2）…` });
+        entry.child = null;
+        setTimeout(() => runCanvasImageJob(taskId, args, env, attempt + 1), 4000 * (attempt + 1));
+        return;
+      }
       Object.assign(entry, {
         status: "failed",
-        message: classifyImageGenError(stderr) || `出图失败（退出码 ${code}）`,
+        message: failMessage,
       });
     }
     entry.child = null;
   });
+}
+
+async function finalizeGeneratedCanvasAsset(entry = {}) {
+  if (!entry.ownerUserId || !entry.outPath || !fs.existsSync(entry.outPath)) return null;
+  try {
+    const publicAsset = await createPublicCanvasAsset({
+      name: entry.fileName || `canvas-image-${entry.taskId}.png`,
+      dataUrl: fileToDataUrl(entry.outPath),
+    });
+    const record = await saveAssetToLibrary({
+      id: `image_${entry.taskId}`,
+      name: entry.prompt ? compactLine(entry.prompt).slice(0, 80) : entry.fileName,
+      url: publicAsset.url || publicAsset.localUrl || entry.url,
+      previewUrl: publicAsset.localUrl || publicAsset.url || entry.url,
+      localUrl: publicAsset.localUrl || "",
+      source: "image-generation",
+      prompt: entry.prompt,
+      ratio: entry.ratio,
+      resolution: entry.resolution,
+      assetStylePreset: "photoreal",
+      assetStyleLabel: "AI 写实",
+      generationMode: "ai-generated",
+      verificationType: "ai-generated",
+      aiGenerated: true,
+      metadata: { taskId: entry.taskId, size: entry.size },
+    }, entry.ownerUserId);
+    entry.libraryAssetId = record?.id || "";
+    entry.libraryAsset = record || null;
+    return record;
+  } catch (error) {
+    entry.libraryError = compactLine(error.message || "素材库入库失败");
+    return null;
+  }
 }
 
 function classifyImageGenError(stderr = "") {
@@ -10644,7 +11897,7 @@ function classifyImageGenError(stderr = "") {
   return text.split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 200) || "";
 }
 
-function createCanvasImageGeneration(body = {}) {
+async function createCanvasImageGeneration(body = {}) {
   const prompt = compactLine(body.prompt || "");
   if (!prompt) throw new Error("请先填写图片描述（prompt）");
   if (!imageApiKey()) throw new Error("缺少 OPENAI_API_KEY：画布出图需要 api.apikey.fun 的 gpt-image-2 生图 Key，请在 .env.local 配置后重启服务。");
@@ -10652,32 +11905,49 @@ function createCanvasImageGeneration(body = {}) {
   const ratio = CANVAS_IMAGE_SIZE_TABLE[body.ratio] ? body.ratio : "16:9";
   const resolution = ["1k", "2k", "4k"].includes(String(body.resolution || "").toLowerCase()) ? String(body.resolution).toLowerCase() : "1k";
   const size = canvasImageSizeFor(ratio, resolution);
+  const providerSize = canvasImageProviderSizeFor(ratio);
   fs.mkdirSync(CANVAS_PUBLIC_ASSET_DIR, { recursive: true });
   const taskId = crypto.randomUUID();
   const fileName = `canvas-image-${taskId}.png`;
   const outPath = path.join(CANVAS_PUBLIC_ASSET_DIR, fileName);
   // 参考图（可选）：有则走 image 模式（首图为基准，其余为参考），否则纯文生图。
-  const references = (Array.isArray(body.referenceImages) ? body.referenceImages : [])
-    .map(resolveCanvasImageReferenceToLocalPath)
-    .filter(Boolean)
-    .slice(0, 4);
+  const requestedReferences = (Array.isArray(body.referenceImages) ? body.referenceImages : []).map(compactLine).filter(Boolean).slice(0, 4);
+  const references = (await Promise.all(requestedReferences.map(resolveCanvasImageReferenceToLocalPath))).filter(Boolean);
+  if (requestedReferences.length && references.length !== requestedReferences.length) {
+    throw new Error(`参考图解析失败：要求 ${requestedReferences.length} 张，实际解析到 ${references.length} 张。请重新上传或导入参考图。`);
+  }
   const timeout = String(Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10));
   let args;
   if (references.length) {
     args = [
       IMAGE_GEN_SKILL_SCRIPT, "--mode", "image",
       "--image", references[0],
-      "--prompt", prompt, "--size", size,
+      "--prompt", prompt, "--size", providerSize,
       "--model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini",
       "--image-model", CANVAS_IMAGE_MODEL,
       "--out", outPath, "--timeout", timeout,
     ];
     if (references.length > 1) args.push("--reference-image", references.slice(1).join(path.delimiter));
   } else {
-    args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", size, "--model", CANVAS_IMAGE_MODEL, "--out", outPath, "--timeout", timeout];
+    args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", CANVAS_IMAGE_MODEL, "--out", outPath, "--timeout", timeout];
   }
   const env = { ...process.env, OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "" };
-  canvasImageJobs.set(taskId, { status: "running", message: "生成中", url: "", outPath, fileName, ratio, resolution, size, createdAt: Date.now(), child: null });
+  canvasImageJobs.set(taskId, {
+    taskId, // fix:image_undefined — finalize 用 entry.taskId 生成库 id,缺此字段会导致 id 恒为 image_undefined,每次覆盖同一条
+    status: "running",
+    message: "生成中",
+    url: "",
+    outPath,
+    fileName,
+    ratio,
+    resolution,
+    size,
+    providerSize,
+    prompt,
+    ownerUserId: compactLine(body.ownerUserId || ""),
+    createdAt: Date.now(),
+    child: null,
+  });
   runCanvasImageJob(taskId, args, env);
   // 清理老任务（>30 分钟）避免内存无界增长。
   for (const [id, job] of canvasImageJobs) {
@@ -10689,7 +11959,16 @@ function createCanvasImageGeneration(body = {}) {
 function getCanvasImageGeneration(taskId) {
   const job = canvasImageJobs.get(compactLine(taskId));
   if (!job) return { status: "failed", message: "任务不存在或已过期，请重新生成" };
-  return { status: job.status, url: job.url || "", message: job.message || "", size: job.size, ratio: job.ratio, resolution: job.resolution };
+  return {
+    status: job.status,
+    url: job.url || "",
+    message: job.message || "",
+    size: job.size,
+    ratio: job.ratio,
+    resolution: job.resolution,
+    libraryAssetId: job.libraryAssetId || "",
+    libraryAsset: job.libraryAsset || null,
+  };
 }
 
 function projectAssetForVideoPayload(episodeRoot, asset = {}) {
@@ -10717,6 +11996,22 @@ function projectAssetForVideoPayload(episodeRoot, asset = {}) {
     generationMode: compactLine(asset.generationMode || asset.generation_mode || ""),
     aiGenerated: asset.aiGenerated === true,
     verificationType: compactLine(asset.verificationType || asset.verification_type || ""),
+    // 方舟私域虚拟人像绑定状态必须透传:asset:// 只存在 arkPersonAsset.assetUrl,
+    // 丢了它 → 提交时 canvasVideoAssetSubmitUrl 拿不到 asset:// → 退回发原图 → 被上游判真人 400。
+    arkPersonAsset:
+      asset.arkPersonAsset && typeof asset.arkPersonAsset === "object"
+        ? {
+            enabled: asset.arkPersonAsset.enabled === true,
+            assetId: compactLine(asset.arkPersonAsset.assetId || ""),
+            assetUrl: /^asset:\/\//i.test(compactLine(asset.arkPersonAsset.assetUrl || ""))
+              ? compactLine(asset.arkPersonAsset.assetUrl)
+              : "",
+            groupId: compactLine(asset.arkPersonAsset.groupId || ""),
+            status: compactLine(asset.arkPersonAsset.status || ""),
+            boundAt: compactLine(asset.arkPersonAsset.boundAt || ""),
+            error: compactLine(asset.arkPersonAsset.error || ""),
+          }
+        : undefined,
   };
 }
 
@@ -10883,7 +12178,18 @@ function videoReferenceAssetHasPotentialSource(asset = {}) {
 }
 
 function projectShotUsableVideoReferenceAssets(episodeRoot = "", config = {}, shot = {}) {
-  return projectShotAllVideoReferenceAssets(config, shot)
+  const configured = new Map(
+    projectShotAllVideoReferenceAssets(config, shot).map((asset) => [compactLine(asset?.name || asset?.assetName || asset?.id || ""), asset]),
+  );
+  const names = [
+    ...(Array.isArray(shot.refs) ? shot.refs : []),
+    ...(Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : []),
+  ]
+    .map(compactLine)
+    .filter(Boolean);
+  return [...new Set(names)]
+    .map((name) => configured.get(name) || (episodeRoot ? resolveScannedAssetByName(episodeRoot, name) : null))
+    .filter(Boolean)
     .map((asset) => (episodeRoot ? projectAssetForVideoPayload(episodeRoot, asset) : asset))
     .filter(videoReferenceAssetHasPotentialSource);
 }
@@ -10938,12 +12244,56 @@ function referenceAssetSource(episodeRoot, assetByName, name) {
   return { ...base, name, assetUrl, publicUrl, url: source };
 }
 
+// 批量链路:把单个超写实素材认证进火山虚拟人像库并轮询到 active。永不抛错——
+// 失败/超时返回非 active 状态,交由就绪校验停止对应片段(不静默删引用、不卡死整批)。
+async function ensureBatchArkVirtualPerson(asset, deadlineTs) {
+  const existing = (asset && asset.arkPersonAsset) || {};
+  const existingUrl = compactLine(existing.assetUrl || "");
+  if (existing.enabled === true && compactLine(existing.status || "").toLowerCase() === "active" && /^asset:\/\//i.test(existingUrl)) {
+    return { status: "active", assetUrl: existingUrl, assetId: compactLine(existing.assetId || ""), error: "" };
+  }
+  try {
+    let assetId = compactLine(existing.assetId || "");
+    let assetUrl = existingUrl;
+    let status = compactLine(existing.status || "").toLowerCase();
+    if (!assetId) {
+      const created = await createArkVirtualPersonAsset({ asset: { ...asset, aiGenerated: true, verificationType: compactLine(asset.verificationType || "") || "ai-generated" } });
+      assetId = compactLine(created.assetId || "");
+      assetUrl = compactLine(created.assetUrl || (assetId ? `asset://${assetId}` : ""));
+      status = compactLine(created.status || "processing").toLowerCase();
+    }
+    while (status !== "active" && status !== "failed" && Date.now() < deadlineTs) {
+      await new Promise((r) => setTimeout(r, PREPARE_REFS_POLL_MS));
+      const got = await getArkVirtualPersonAsset(assetId);
+      status = compactLine(got.status || "").toLowerCase();
+      if (got.assetUrl) assetUrl = compactLine(got.assetUrl);
+      if (status === "failed") return { status: "failed", assetUrl, assetId, error: compactLine(got.error || "火山虚拟人像认证失败") };
+    }
+    if (status === "active" && /^asset:\/\//i.test(assetUrl)) return { status: "active", assetUrl, assetId, error: "" };
+    return { status: status || "processing", assetUrl, assetId, error: status === "failed" ? "火山虚拟人像认证失败" : "火山虚拟人像认证超时未 active" };
+  } catch (e) {
+    return { status: "failed", assetUrl: "", assetId: compactLine(existing.assetId || ""), error: compactLine(e && e.message ? e.message : "火山虚拟人像认证异常") };
+  }
+}
+
 async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, options = {}) {
   const timeoutMs = Number(options.timeoutMs || PREPARE_REFS_TIMEOUT_MS);
   let config = configRecord && configRecord.data ? configRecord.data : {};
   const names = collectReferencedAssetNames(shots);
-  const { personTrack, publicTrack } = classifyReferenceAssets(names);
+  const classified = classifyReferenceAssets(names);
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
+  const usesGravitexPersonRef = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference";
+  // 超写实素材、或角色类素材(含被平台误判真人的风格化角色):统一走火山虚拟人像库,
+  // 认证成 asset:// 后作为人物参考,绕过视频接口真人/隐私审核;其余素材走公网 HTTPS 直传。
+  // 项目资产均为管线 AI 生成,认证阶段强制 aiGenerated;道具/场景非角色不纳入。
+  // person-reference 模型保留 Gravitex 人物素材库流程(交接文档边界)。
+  const arkPersonNames = usesGravitexPersonRef ? [] : names.filter((n) => {
+    const a = referenceAssetSource(episodeRoot, assetByName, n);
+    return a && isArkPersonReferenceAsset(a);
+  });
+  const arkPersonSet = new Set(arkPersonNames);
+  const personTrack = usesGravitexPersonRef ? classified.personTrack : [];
+  const publicTrack = usesGravitexPersonRef ? classified.publicTrack : names.filter((n) => !arkPersonSet.has(n));
 
   // 非人物轨:确保稳定公网 https;结果(含错误)写回 config。无论本批是否含人物轨都立即落盘,
   // 否则后续 generateProjectVideoShot 重读旧 config 会丢失刚备好的 publicUrl(修 #1)。
@@ -10964,6 +12314,34 @@ async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, opt
     publicChanged = true;
   }
   if (publicChanged) writeVideoConfigRecord(configRecord, config);
+
+  // 超写实素材轨:自动认证进火山虚拟人像库(asset://)并轮询到 active。失败/超时不抛错,
+  // 写入 arkPersonAsset.status(failed/processing),由就绪校验停止对应片段(不静默删引用)。
+  if (arkPersonNames.length) {
+    const arkDeadline = Date.now() + timeoutMs;
+    const arkGroupId = arkVirtualPersonConfig().groupId;
+    for (const name of arkPersonNames) {
+      const asset = referenceAssetSource(episodeRoot, assetByName, name);
+      if (!asset) {
+        mergeConfigAssetPatch(config, name, { arkPersonAsset: { enabled: true, status: "failed", error: "找不到图源" } });
+        writeVideoConfigRecord(configRecord, config);
+        continue;
+      }
+      const r = await ensureBatchArkVirtualPerson(asset, arkDeadline);
+      mergeConfigAssetPatch(config, name, {
+        arkPersonAsset: {
+          enabled: true,
+          assetId: r.assetId || (asset.arkPersonAsset && asset.arkPersonAsset.assetId) || "",
+          assetUrl: r.assetUrl || "",
+          groupId: arkGroupId,
+          status: r.status,
+          boundAt: new Date().toISOString(),
+          error: r.error || "",
+        },
+      });
+      writeVideoConfigRecord(configRecord, config);
+    }
+  }
 
   // 人物轨:先把引用名补种进 config.assets(修 #3:磁盘有、config 无的资产验证结果才回写得进去),再验证 + 轮询 active。
   const personAssets = [];
@@ -11006,6 +12384,11 @@ async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, opt
   const cur = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   const items = names.map((name) => {
     const a = cur.get(name) || {};
+    if (arkPersonSet.has(name)) {
+      const ap = a.arkPersonAsset || {};
+      // 火山虚拟人像轨:就绪 = status active 且 asset://(evaluateReferenceReadiness 对 person 轨的判定)。
+      return { name, track: "person", status: compactLine(ap.status || ""), assetUrl: compactLine(ap.assetUrl || ""), publicUrl: "", error: compactLine(ap.error || "") };
+    }
     const track = personTrack.includes(name) ? "person" : "public";
     return {
       name,
@@ -11018,11 +12401,11 @@ async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, opt
   });
   const { ready, stuck } = evaluateReferenceReadiness(items);
   return {
-    ready: true,
+    ready,
     stuck,
     skipped: stuck,
     config,
-    message: stuck.length ? `有 ${stuck.length} 个参考资产未就绪，默认按提示词生成。` : "",
+    message: stuck.length ? `有 ${stuck.length} 个参考资产未就绪，已阻止批量提交。` : "",
   };
 }
 
@@ -11035,10 +12418,20 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
   if (hydrated.changed) writeVideoConfigRecord(configRecord, config);
   const names = collectReferencedAssetNames([shot]);
   if (!names.length) return { config, ready: true, summary: { total: 0, active: 0, pending: 0, failed: 0, skipped: 0 } };
-  const { personTrack } = classifyReferenceAssets(names);
+  const usesGravitexPersonRef = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference";
   const byName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
+  // 超写实素材走火山虚拟人像轨(读 arkPersonAsset);person-reference 模型走 Gravitex 人物轨;其余公网轨。
+  const arkPersonSet = new Set(usesGravitexPersonRef ? [] : names.filter((n) => {
+    const a = referenceAssetSource(episodeRoot, byName, n);
+    return a && isArkPersonReferenceAsset(a);
+  }));
+  const personTrack = usesGravitexPersonRef ? classifyReferenceAssets(names).personTrack : [];
   const items = names.map((name) => {
     const a = byName.get(name) || {};
+    if (arkPersonSet.has(name)) {
+      const ap = a.arkPersonAsset || {};
+      return { name, track: "person", status: compactLine(ap.status || ""), assetUrl: compactLine(ap.assetUrl || ""), publicUrl: "", error: compactLine(ap.error || "") };
+    }
     return {
       name,
       track: personTrack.includes(name) ? "person" : "public",
@@ -11049,6 +12442,18 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
     };
   });
   const { stuck } = evaluateReferenceReadiness(items);
+  // 超写实素材必须完成火山虚拟人像认证(active + asset://)才提交:未就绪则停止该片段并报错,
+  // 不静默按提示词生成(交接文档:批量必须停,禁止静默删引用)。
+  const arkStuck = stuck.filter((s) => arkPersonSet.has(s.name));
+  if (arkStuck.length) {
+    return {
+      config,
+      ready: false,
+      skipped: stuck,
+      summary: { total: names.length, active: names.length - stuck.length, pending: arkStuck.length, failed: 0, skipped: stuck.length },
+      message: `超写实素材未完成火山虚拟人像认证：${arkStuck.map((s) => `${s.name}（${s.reason || s.status || "未 active"}）`).join("、")}，已停止该片段。`,
+    };
+  }
   return {
     config,
     ready: true,
@@ -11061,7 +12466,7 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
 async function ensureTailFrameAssetReference(episodeRoot, config = {}, shot = {}, startFrameUrl = "") {
   const cleanStartFrameUrl = compactLine(startFrameUrl || "");
   if (!cleanStartFrameUrl || /^asset:\/\//i.test(cleanStartFrameUrl)) return { url: cleanStartFrameUrl, config, ready: true, message: "" };
-  // 仅「真人」片段需要把尾帧转成 Gravitex asset:// 引用；普通片段(Ark/XLUO)
+  // 仅「真人」片段需要把尾帧转成 Gravitex asset:// 引用；普通片段(Ark)
   // 直接把尾帧当图片发送,跳过 Gravitex 素材库转换。
   if (normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) !== "seedance-2-0-person-reference") {
     return { url: cleanStartFrameUrl, config, ready: true, message: "" };
@@ -11242,6 +12647,10 @@ function canvasNodeFromConfigShot(shot = {}, index = 0, config = {}) {
     videoPromptMode: storyboardsActive ? "production_board" : "prompt",
     storyboardRefs: Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs.filter(Boolean) : [],
     storyboardGuidance: shot.storyboardGuidance || null,
+    referenceKitId: compactLine(shot.referenceKitId || ""),
+    referenceKitName: compactLine(shot.referenceKitName || ""),
+    referenceKitVersion: Number(shot.referenceKitVersion || 0) || 0,
+    referenceKitSnapshot: shot.referenceKitSnapshot || null,
   };
 }
 
@@ -11448,6 +12857,11 @@ function assertVideoConfigAssetsReady(config = {}, shot = null, episodeRoot = ""
           ])
         : []);
   const missingRefs = [...new Set(refs.map(compactLine).filter((ref) => ref && !assetNames.has(ref)))];
+  if (missingRefs.length) {
+    const error = new Error(`参考图验证失败：缺少或未生成 ${missingRefs.length} 张引用图：${missingRefs.join("、")}`);
+    error.statusCode = 409;
+    throw error;
+  }
   skippedReferenceAssets.push(...missingRefs);
   if (shot) {
     projectShotUsableVideoReferenceAssets(config.episodeRoot || "", config, shot);
@@ -11625,6 +13039,9 @@ async function extractProjectTailFrameFromVideo(episodeRoot, shotName, localVide
     return { file: "", message: "未检测到 ffmpeg，无法从本地视频抽取尾帧" };
   }
   const target = tailFrameFileForShot(episodeRoot, shotName, "png");
+  if (fs.existsSync(target) && fs.statSync(target).isFile() && fs.statSync(target).size > 1024) {
+    return { file: target, message: "复用已缓存尾帧" };
+  }
   const attempts = [
     ["-y", "-sseof", "-0.5", "-i", videoFile, "-frames:v", "1", "-q:v", "2", "-update", "1", target],
     ["-y", "-sseof", "-1.0", "-i", videoFile, "-frames:v", "1", "-q:v", "2", "-update", "1", target],
@@ -11699,6 +13116,9 @@ async function extractCanvasTailFrameFromVideo(tailDir, nodeId, localVideoFile) 
     return { file: "", message: "未检测到 ffmpeg，无法从本地视频抽取尾帧" };
   }
   const target = path.join(tailDir, `${nodeId}_tail.png`);
+  if (fs.existsSync(target) && fs.statSync(target).isFile() && fs.statSync(target).size > 1024) {
+    return { file: target, message: "复用已缓存尾帧" };
+  }
   const attempts = [
     ["-y", "-sseof", "-0.5", "-i", videoFile, "-frames:v", "1", "-q:v", "2", "-update", "1", target],
     ["-y", "-sseof", "-1.0", "-i", videoFile, "-frames:v", "1", "-q:v", "2", "-update", "1", target],
@@ -11736,10 +13156,25 @@ async function resolveCanvasVideoLocalFile(tailDir, nodeId, videoUrl) {
   if (localMedia && fs.existsSync(localMedia)) return localMedia;
   if (/^https?:\/\//i.test(clean)) {
     const tmp = path.join(tailDir, `${nodeId}_src.mp4`);
-    const response = await fetch(clean);
-    if (!response.ok || !response.body) throw new Error(`视频下载失败：HTTP ${response.status || 502}`);
-    await pipeline(response.body, fs.createWriteStream(tmp));
-    return tmp;
+    if (fs.existsSync(tmp) && fs.statSync(tmp).isFile() && fs.statSync(tmp).size > 1024) {
+      try {
+        assertValidDownloadedVideo(tmp);
+        return tmp;
+      } catch {
+        fs.rmSync(tmp, { force: true });
+      }
+    }
+    const downloadTarget = `${tmp}.download-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
+    try {
+      const response = await fetch(clean);
+      if (!response.ok || !response.body) throw new Error(`视频下载失败：HTTP ${response.status || 502}`);
+      await pipeline(response.body, fs.createWriteStream(downloadTarget));
+      assertValidDownloadedVideo(downloadTarget);
+      fs.renameSync(downloadTarget, tmp);
+      return tmp;
+    } finally {
+      if (fs.existsSync(downloadTarget)) fs.rmSync(downloadTarget, { force: true });
+    }
   }
   return "";
 }
@@ -11772,29 +13207,29 @@ async function persistCanvasTailFrame(body = {}) {
   let file = "";
   let localVideoFile = "";
   let message = "";
-  if (result.videoUrl) {
-    try {
-      localVideoFile = await resolveCanvasVideoLocalFile(tailDir, nodeId, result.videoUrl);
-    } catch (error) {
-      message = `本地视频保存失败：${compactLine(error.message)}`;
-    }
-  }
   const remoteTailFrameUrl = result.tailFrameUrl;
   if (remoteTailFrameUrl) {
-    try {
-      const response = await fetch(remoteTailFrameUrl);
-      if (!response.ok || !response.body) throw new Error(`尾帧下载失败：HTTP ${response.status || 502}`);
-      const target = path.join(tailDir, `${nodeId}_tail.${imageFileExtensionFromUrl(remoteTailFrameUrl)}`);
-      await pipeline(response.body, fs.createWriteStream(target));
-      file = target;
-      message = "已保存接口返回尾帧";
-    } catch (error) {
-      message = `接口尾帧保存失败：${compactLine(error.message)}`;
+    const cachedFrame = localMediaPathFromUrl(remoteTailFrameUrl) || localFilePathFromUrl(remoteTailFrameUrl);
+    if (cachedFrame) {
+      file = cachedFrame;
+      message = "复用已缓存尾帧";
+    } else if (/^https?:\/\//i.test(remoteTailFrameUrl)) {
+      try {
+        const response = await fetch(remoteTailFrameUrl);
+        if (!response.ok || !response.body) throw new Error(`尾帧下载失败：HTTP ${response.status || 502}`);
+        const target = path.join(tailDir, `${nodeId}_tail.${imageFileExtensionFromUrl(remoteTailFrameUrl)}`);
+        await pipeline(response.body, fs.createWriteStream(target));
+        file = target;
+        message = "已保存接口返回尾帧";
+      } catch (error) {
+        message = `接口尾帧保存失败：${compactLine(error.message)}`;
+      }
     }
   }
   // ffmpeg 本地兜底:provider 没返回尾帧URL(或下载失败)时,用 videoUrl 从视频抽最后一帧
   if (!file && result.videoUrl) {
     try {
+      localVideoFile = await resolveCanvasVideoLocalFile(tailDir, nodeId, result.videoUrl);
       if (localVideoFile) {
         const extracted = await extractCanvasTailFrameFromVideo(tailDir, nodeId, localVideoFile);
         file = extracted.file || "";
@@ -12229,14 +13664,16 @@ async function runProjectVideoGenerationQueue(queue, episodeRoot, selected, body
         (/queued_local|waiting_asset_active|waiting_tail_frame/i.test(compactLine(existing.statusRaw || "")) ||
           isAssetActivationWaitFailure(existing.message || ""))
       ) continue;
+      const tailFrameDependent =
+        !queueUsesProductionBoard && shot.useTailFrame === true && compactLine(shot.tailFrameSource || "");
       markProjectVideoShotQueued(
         episodeRoot,
         shotName,
         index === 0 && queue.recovered !== true
-          ? "排队中：准备提交第一个片段"
-          : queueUsesProductionBoard
-            ? "排队中：等待前序片段完成"
-            : "排队中：等待前序片段完成并准备尾帧",
+          ? "排队中：准备提交"
+          : tailFrameDependent
+            ? "排队中：等待前序片段尾帧"
+            : "排队中：并发提交",
       );
     }
     const processQueueShot = async (shot) => {
@@ -12323,16 +13760,38 @@ async function runProjectVideoGenerationQueue(queue, episodeRoot, selected, body
       }
     };
 
+    const concurrency = Math.min(6, Math.max(1, Number(body.concurrency) || concurrentVideoLimitForUser(body.authUser) || DEFAULT_CONCURRENT_VIDEO_LIMIT));
     if (queueUsesProductionBoard) {
       // 故事板模式：各段独立无尾帧依赖 -> 并发提交（受账号并发上限约束，封顶 6）。
-      const concurrency = Math.min(6, Math.max(1, Number(body.concurrency) || concurrentVideoLimitForUser(body.authUser) || DEFAULT_CONCURRENT_VIDEO_LIMIT));
       await runWithConcurrency(selected, concurrency, processQueueShot);
     } else {
-      // 首尾帧模式：后段依赖前段尾帧 -> 串行，且某段失败即停。
-      for (const shot of selected) {
-        const r = await processQueueShot(shot);
-        if (r && r.failed) break;
-      }
+      // 首尾帧模式：只有真正续接尾帧(useTailFrame 且尾帧源在本批内)的片段才等其源片段完成；
+      // 其余(独立段/多条链)并发提交。尾帧链内部按序串行;某段失败只中断其下游链,不拖累独立段。
+      const selectedNames = new Set(selected.map((shot) => compactLine(shot.name)).filter(Boolean));
+      const depOf = (shot) => {
+        const src = compactLine(shot.tailFrameSource || "");
+        return shot.useTailFrame === true && src && selectedNames.has(src) ? src : "";
+      };
+      const onBlocked = (shot, depKey) => {
+        const shotName = compactLine(shot.name);
+        const message = `前序片段「${depKey}」生成失败，尾帧链中断，本段未提交`;
+        writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
+          runNamespace: queue.runNamespace,
+          taskInfo: { status: 3, progressPercent: 100, failedReason: message, message, updatedAt: new Date().toISOString() },
+        });
+        const failedResult = { shotName, failed: true, blocked: true, error: message };
+        results.push(failedResult);
+        queue.completed = results.length;
+        queue.results = results;
+        queue.updatedAt = new Date().toISOString();
+        projectVideoQueues.set(queue.key, queue);
+        return failedResult;
+      };
+      await runWithDependencies(selected, concurrency, processQueueShot, {
+        keyOf: (shot) => compactLine(shot.name),
+        depOf,
+        onBlocked,
+      });
     }
     queue.status = "complete";
   } catch (error) {
@@ -12451,9 +13910,17 @@ async function generateProjectVideoShotsSequentially(episodeRoot, body = {}) {
     if (!prep.ready) {
       const list = prep.stuck.map((s) => `${s.name}(${s.reason})`).join("、");
       queue.stuck = prep.stuck;
-      queue.status = "running";
-      queue.message = `参考图素材库验证未通过，已跳过这些资产并默认按提示词生成：${list}`;
+      queue.running = false;
+      queue.status = "blocked";
+      queue.error = `参考图验证未通过，视频未提交：${list}`;
+      queue.message = "请先生成或导入缺失参考图，并确认其来源可用后再提交批量视频。";
+      queue.finishedAt = new Date().toISOString();
       projectVideoQueues.set(queueKey, queue);
+      setTimeout(() => {
+        const latest = projectVideoQueues.get(queueKey);
+        if (latest?.id === queue.id && latest.running !== true) projectVideoQueues.delete(queueKey);
+      }, 10 * 60 * 1000);
+      return;
     }
     queue.status = "running";
     queue.message = "";
@@ -12618,6 +14085,7 @@ function withAssetMatchRule(prompt, asset) {
 
 function buildRuleAssets(script, worldProfile) {
   const manualBlocks = extractManualAssetPromptBlocks(script);
+  const structuredDescriptions = parseStructuredAssetDescriptions(script);
   const locations = parseLocations(script);
   const characters = parseCharacters(script).filter((name) => !shouldSuppressRuleCharacter(name, manualBlocks));
   const hasPhone = /phone|手机|电话|未知号码|calls?|VOSS/i.test(script);
@@ -12658,7 +14126,13 @@ function buildRuleAssets(script, worldProfile) {
 
   const assets = [];
   const pushAsset = (asset) => {
-    if (assets.some((item) => item.type === asset.type && assetLabelConflict(item.label, asset.label))) return;
+    const duplicate = assets.some((item) => {
+      if (item.type !== asset.type) return false;
+      // 编号分段中的地点名经常有同一长前缀（如“灰幕维护塔·外环/塔心”）。
+      // 这类用户明确列出的资产只能按完整名称去重，不能因共用前缀相互吞掉。
+      return asset.lockedStructured ? sameAssetLabel(item.label, asset.label) : assetLabelConflict(item.label, asset.label);
+    });
+    if (duplicate) return;
     assets.push(asset);
   };
   for (const block of manualBlocks) {
@@ -12674,7 +14148,23 @@ function buildRuleAssets(script, worldProfile) {
       worldProfile,
     });
   }
+  for (const item of structuredDescriptions) {
+    const typeIndex = assets.filter((asset) => asset.type === item.type).length + 1;
+    pushAsset({
+      type: item.type,
+      name: typedAssetName(item.type, typeIndex, item.label),
+      label: item.label,
+      evidence: item.evidence,
+      visual: item.visual,
+      worldProfile,
+      lockedStructured: true,
+      analyzerSource: "rules",
+      analyzerNote: "用户提供资产视觉描述，分类已锁定",
+    });
+  }
+  const hasExplicitStructuredLabel = (label) => structuredDescriptions.some((item) => sameAssetLabel(item.label, label));
   characters.forEach((name, index) => {
+    if (hasExplicitStructuredLabel(name)) return;
     pushAsset({
       type: "Character",
       name: typedAssetName("Character", assets.filter((asset) => asset.type === "Character").length + 1, name),
@@ -12684,6 +14174,7 @@ function buildRuleAssets(script, worldProfile) {
     });
   });
   locations.forEach((location, index) => {
+    if (hasExplicitStructuredLabel(location)) return;
     pushAsset({
       type: "Scene",
       name: typedAssetName("Scene", assets.filter((asset) => asset.type === "Scene").length + 1, location),
@@ -12711,6 +14202,32 @@ function stripJsonFence(value) {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   return start >= 0 && end > start ? text.slice(start, end + 1) : text;
+}
+
+function assetAuditSystemPrompt() {
+  return `你是资产分类审核员。逐条判断“当前类型”是否正确，只依据原文证据。
+重点抓三类范畴错：
+① 人物/角色/生物被误判为 Scene/Prop/Insert；
+② 地点/环境被误判为 Character；
+③ 道具/物件被误判为 Character。
+不要吹毛求疵改措辞；只在类型范畴明确错时才提出。只输出 JSON，不输出 Markdown 或解释。`;
+}
+
+function assetAuditUserPrompt({ script, assets }) {
+  const listed = assets.map((asset) => ({
+    label: asset.label,
+    type: asset.type,
+    evidence: String(asset.evidence || "").slice(0, 200),
+  }));
+  return `原文：
+${script}
+
+结果清单：
+${JSON.stringify(listed, null, 2)}
+
+请逐条审核结果清单中的每条资产，输出 JSON：
+{ "reviews": [ { "label", "currentType", "shouldBeType", "confidence": 0-1, "reason" } ] }
+shouldBeType 与 currentType 相同表示认可；shouldBeType 只能是 Character、Scene、Prop、Insert。`;
 }
 
 function assetAnalyzerSystemPrompt() {
@@ -12816,36 +14333,72 @@ function validateAnalyzerPrompt(asset, prompt) {
   return prompt.trim();
 }
 
+// 分批解析:整份文档一次性解析要吐 ~1万 tokens、200-300秒常超时,超时即回退本地傻规则(把单字名昼/绯乱塞进道具)。
+// 拆成按类型的小请求(人物/场景/道具各一个,实测人物专项仅 65秒/2851 tokens),每个远低于超时线。
+// FOCUS_SPEC:每个焦点对应输出数组名 + 追加到系统 prompt 的"本次只输出该类"约束。
+const ANALYZER_FOCUSES = [
+  { key: "characters", label: "人物 characters", instruction: "本次只输出 characters 数组(列出所有出场人物,含单字名、配角、群体角色、怪物实体,不得遗漏);scenes 和 props 必须为空数组 []。" },
+  { key: "scenes", label: "场景 scenes", instruction: "本次只输出 scenes 数组(列出所有地点/环境/空间);characters 和 props 必须为空数组 []。" },
+  { key: "props", label: "道具/插入 props", instruction: "本次只输出 props 数组(列出所有道具与插入特写 Insert);characters 和 scenes 必须为空数组 []。" },
+];
+
+function assetAnalyzerSystemPromptForFocus(instruction) {
+  return `${assetAnalyzerSystemPrompt()}
+
+本次请求的特别约束(分批解析):
+- ${instruction}
+- 其余规则不变;仍需对本类资产逐项修正 fallbackCandidates 并原样保留 sourceId。`;
+}
+
+// 把多个 typed 结果合并成单一 data。哪个焦点成功就采纳哪个的数组;world 取第一个非空。纯函数,可单测。
+function mergeTypedAnalyzerResults(results) {
+  const data = { world: "", characters: [], scenes: [], props: [] };
+  const succeeded = [];
+  const failed = [];
+  for (const r of results) {
+    if (r?.ok && r.data) {
+      succeeded.push(r.focus);
+      if (!data.world && r.data.world) data.world = r.data.world;
+      if (Array.isArray(r.data.characters)) data.characters.push(...r.data.characters);
+      if (Array.isArray(r.data.scenes)) data.scenes.push(...r.data.scenes);
+      if (Array.isArray(r.data.props)) data.props.push(...r.data.props);
+    } else {
+      failed.push(`${r?.focus || "?"}(${r?.reason || "失败"})`);
+    }
+  }
+  return { data, succeeded, failed };
+}
+
 async function callAssetAnalyzerModel({ script, fallbackAssets, worldProfile, modelName }) {
   const primary = normalizeAssetAnalyzerModel(modelName);
   if (primary === "rules") return { ok: false, model: primary, reason: "使用本地规则解析，未调用外部资产解析模型" };
   const apiKey = assetAnalyzerApiKey();
   if (!apiKey) return { ok: false, model: primary, reason: "未配置资产解析模型 API Key" };
-  const requestBody = (model, withJsonMode) => ({
+  const requestBody = (model, withJsonMode, focus) => ({
     model,
     temperature: 0.25,
     ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
     messages: [
-      { role: "system", content: assetAnalyzerSystemPrompt() },
+      { role: "system", content: focus ? assetAnalyzerSystemPromptForFocus(focus.instruction) : assetAnalyzerSystemPrompt() },
       { role: "user", content: assetAnalyzerUserPrompt({ script, fallbackAssets, worldProfile }) },
     ],
   });
-  const post = (model, withJsonMode) =>
+  const post = (model, withJsonMode, focus) =>
     fetchAssetAnalyzer(openAiCompatUrl("/v1/chat/completions"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(requestBody(model, withJsonMode)),
+      body: JSON.stringify(requestBody(model, withJsonMode, focus)),
     });
   // 单个模型跑一次,返回 { ok, data } / { retryable, reason }
-  const tryModel = async (model) => {
+  const tryModel = async (model, focus) => {
     try {
-      let response = await post(model, true);
+      let response = await post(model, true, focus);
       let raw = await response.text();
       if (!response.ok && response.status === 400 && /response_format|json_object/i.test(raw)) {
-        response = await post(model, false);
+        response = await post(model, false, focus);
         raw = await response.text();
       }
       if (!response.ok) {
@@ -12868,18 +14421,106 @@ async function callAssetAnalyzerModel({ script, fallbackAssets, worldProfile, mo
   // 注意:api.apikey.fun 是 Claude-only 模型组(只有 claude-opus/sonnet/haiku 各版本),填 gpt 名会 404。
   const FALLBACK_MODEL = "claude-sonnet-5";
   const candidates = primary === FALLBACK_MODEL ? [primary] : [primary, FALLBACK_MODEL];
+  // 单个焦点:opus 失败(超时/网关抽风)立刻切 sonnet;鉴权类致命错(401/403)直接放弃。
+  const runFocus = async (focus) => {
+    let lastReason = "";
+    for (let i = 0; i < candidates.length; i += 1) {
+      const model = candidates[i];
+      const result = await tryModel(model, focus);
+      if (result.ok) return { focus: focus.label, ok: true, model, data: result.data };
+      lastReason = `${model}: ${result.reason}`;
+      if (!result.retryable) return { focus: focus.label, ok: false, model, reason: result.reason };
+      if (i < candidates.length - 1) {
+        console.error(`[assetAnalyzer] ${focus.label} ${model} 失败(${result.reason})，切换到 ${candidates[i + 1]}`);
+      }
+    }
+    return { focus: focus.label, ok: false, model: candidates[candidates.length - 1], reason: lastReason };
+  };
+  // 三类并行(每个小请求实测 ~65s,远低于超时线),墙钟≈最慢单个而非累加。
+  const settled = await Promise.all(ANALYZER_FOCUSES.map((focus) => runFocus(focus)));
+  const { data, succeeded, failed } = mergeTypedAnalyzerResults(settled);
+  const charactersOk = settled.find((r) => r.focus.startsWith("人物"))?.ok;
+  console.error(`[assetAnalyzer] 分批完成 成功=[${succeeded.join(",")}] 失败=[${failed.join(",")}] 人物=${data.characters.length} 场景=${data.scenes.length} 道具=${data.props.length}`);
+  // 部分成功韧性:只要"人物"这批成功就视为可用(人物最关键,绝不能靠傻规则乱分类);
+  // 场景/道具若失败暂缺,但不再全盘回退本地规则。三类全败才 ok:false。
+  if (charactersOk || succeeded.length) {
+    return { ok: true, model: primary, data, reason: failed.length ? `部分类别失败：${failed.join("；")}` : "" };
+  }
+  return { ok: false, model: primary, reason: `所有类别均失败：${failed.join("；")}` };
+}
+
+const ASSET_TYPES = new Set(["Character", "Scene", "Prop", "Insert"]);
+
+async function auditAssetRoles({ assets = [], script = "", modelName, hasCompleteStructuredAssetPlan = false }) {
+  if (hasCompleteStructuredAssetPlan) {
+    return { ok: true, model: "skip", checkedCount: assets.length, flippedCount: 0, flips: [], flagged: [], reason: "完整结构化分段，全部锁定，跳过复核", assets };
+  }
+  const apiKey = assetAnalyzerApiKey();
+  if (!apiKey) {
+    return { ok: false, model: "", checkedCount: 0, flippedCount: 0, flips: [], flagged: [], reason: "未配置资产审核模型 API Key", assets };
+  }
+  const primary = assetAuditModel(modelName);
+  const fallback = "claude-haiku-4-5";
+  const candidates = primary === fallback ? [primary] : [primary, fallback];
+  const auditAssets = assets.map((asset) => ({ label: asset.label, type: asset.type, evidence: String(asset.evidence || "").slice(0, 200) }));
+  const requestBody = (model, withJsonMode) => ({
+    model,
+    temperature: 0.1,
+    ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
+    messages: [
+      { role: "system", content: assetAuditSystemPrompt() },
+      { role: "user", content: assetAuditUserPrompt({ script, assets: auditAssets }) },
+    ],
+  });
+  const post = (model, withJsonMode) => fetchAssetAnalyzer(openAiCompatUrl("/v1/chat/completions"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody(model, withJsonMode)),
+  });
+  const tryModel = async (model) => {
+    let response = await post(model, true);
+    let raw = await response.text();
+    if (!response.ok && response.status === 400 && /response_format|json_object/i.test(raw)) {
+      response = await post(model, false);
+      raw = await response.text();
+    }
+    if (!response.ok) throw new Error(`模型接口返回 HTTP ${response.status}: ${raw.slice(0, 300)}`);
+    const parsed = JSON.parse(stripJsonFence(JSON.parse(raw).choices?.[0]?.message?.content || ""));
+    if (!Array.isArray(parsed.reviews)) throw new Error("审核模型返回缺少 reviews");
+    return { model, reviews: parsed.reviews };
+  };
+
+  let auditResult;
   let lastReason = "";
-  for (let i = 0; i < candidates.length; i += 1) {
-    const model = candidates[i];
-    const result = await tryModel(model);
-    if (result.ok) return { ok: true, model, data: result.data };
-    lastReason = `${model}: ${result.reason}`;
-    if (!result.retryable) return { ok: false, model, reason: result.reason };
-    if (i < candidates.length - 1) {
-      console.error(`[assetAnalyzer] ${model} 失败(${result.reason})，立即切换到 ${candidates[i + 1]}`);
+  for (const model of candidates) {
+    try {
+      auditResult = await tryModel(model);
+      break;
+    } catch (error) {
+      lastReason = `${model}: ${error?.message || String(error)}`;
+      if (model !== candidates[candidates.length - 1]) console.error(`[assetAudit] ${lastReason}，切换到 ${fallback}`);
     }
   }
-  return { ok: false, model: candidates[candidates.length - 1], reason: `所有模型均失败：${lastReason}` };
+  if (!auditResult) {
+    return { ok: false, model: fallback, checkedCount: 0, flippedCount: 0, flips: [], flagged: [], reason: `资产角色交叉审核失败：${lastReason}`, assets };
+  }
+
+  const flagged = [];
+  const reviewedLabels = new Set();
+  for (const review of auditResult.reviews) {
+    const label = compactLine(review?.label || "");
+    const assetIndex = assets.findIndex((asset) => compactLine(asset.label) === label);
+    if (!label || assetIndex < 0 || reviewedLabels.has(label)) continue;
+    reviewedLabels.add(label);
+    const asset = assets[assetIndex];
+    const shouldBeType = compactLine(review?.shouldBeType || "");
+    const confidence = Number(review?.confidence);
+    if (asset.lockedManual || !ASSET_TYPES.has(shouldBeType) || shouldBeType === asset.type) continue;
+    flagged.push({ label, currentType: asset.type, suspectType: shouldBeType, confidence, reason: compactLine(review.reason || "审核建议人工复核"), type: asset.type, note: "AI建议可能分错，待人工复核" });
+  }
+  const missing = assets.filter((asset) => !reviewedLabels.has(compactLine(asset.label))).map((asset) => asset.label);
+  if (missing.length) return { ok: false, model: auditResult.model, checkedCount: reviewedLabels.size, flippedCount: 0, flips: [], flagged: [], reason: `审核模型未逐条返回资产：${missing.join("、")}`, assets };
+  return { ok: true, model: auditResult.model, checkedCount: reviewedLabels.size, flippedCount: 0, flips: [], flagged, reason: flagged.length ? "存在审核建议项" : "", assets };
 }
 
 function analyzerItemsByType(data, type) {
@@ -13014,6 +14655,18 @@ function findAnalyzerItemForAsset(asset, analyzerResult, usedItems, script = "")
   return null;
 }
 
+// 模型为准:模型解析成功时,信任模型对"这是不是一个资产/属于哪类"的判定,只做最轻量的垃圾防护
+// (挡空 label、纯 production 字段名如"画面/灯光/音效",不再用严格的 isValidCharacterLabel 否决单字名等)。
+// 严格的本地校验(isValidCharacterLabel/assetHasScriptEvidence)只在模型失败、纯本地规则兜底时才把关。
+function isModelAssetLabelUsable(label) {
+  const name = compactLine(label);
+  if (!name) return false;
+  if (name.length > 40) return false; // 过长多半是把描述句当了 label
+  if (isProductionFieldLabel(name)) return false; // 画面/灯光/对白/音效/镜头…纯字段名
+  if (/^[\d\s.、，,。;；:：/／|]+$/.test(name)) return false; // 纯标点/数字
+  return true;
+}
+
 function buildModelDiscoveredAssets(analyzerResult, existingAssets, worldProfile, script = "") {
   if (!analyzerResult?.ok) return [];
   const discovered = [];
@@ -13023,9 +14676,11 @@ function buildModelDiscoveredAssets(analyzerResult, existingAssets, worldProfile
     const assetType = entry.type;
     if (compactLine(item?.sourceId || "") && existingIds.has(compactLine(item.sourceId))) continue;
       const label = compactLine(item?.label || "");
-      if (assetType === "Character" && !isValidCharacterLabel(label)) continue;
-      if (assetType === "Scene" && isValidCharacterLabel(label) && !isLikelyLocationOrTimeLabel(label)) continue;
-      if (!assetHasScriptEvidence(script, item)) continue;
+      // 模型为准:仅轻量垃圾防护,不用 isValidCharacterLabel 否决(单字名昼/绯/阙、含"夜"的名字等都合法)。
+      if (!isModelAssetLabelUsable(label)) continue;
+      // 模型 ok 时不再用 assetHasScriptEvidence 硬否决:模型读了全文才产出该资产,其 visual/prompt 本身即证据。
+      // 但用户已经在结构化分段中明确分类的资产不能被模型以另一种类型重复新增。
+      if (existingAssets.some((asset) => asset.lockedStructured && sameAssetLabel(asset.label, label))) continue;
       if (!label || assetExistsByLabel(existingAssets, label, assetType) || assetExistsByLabel(discovered, label, assetType)) continue;
       const visual = compactLine(item?.visual || "");
       const evidence = compactLine(item?.evidence || "");
@@ -13038,6 +14693,7 @@ function buildModelDiscoveredAssets(analyzerResult, existingAssets, worldProfile
       const prompt = validateAnalyzerPrompt({ type: assetType }, item?.textToImagePrompt || "");
       discovered.push({
         type: assetType,
+        analyzerType: assetType,
         name,
         label,
         evidence,
@@ -13057,6 +14713,15 @@ function findAnalyzerMatchAcrossTypes(asset, analyzerResult, usedItems, script =
     (entry) => !usedItems.has(entry.item) && assetHasScriptEvidence(script, entry.item),
   );
   if (!entries.length) return null;
+  const characterByLabel = entries.find(
+    (entry) =>
+      entry.type === "Character" &&
+      (sameAssetLabel(entry.item?.label, asset.label) || assetLabelConflict(entry.item?.label, asset.label)),
+  );
+  if (characterByLabel) {
+    usedItems.add(characterByLabel.item);
+    return { item: characterByLabel.item, type: "Character" };
+  }
   const bySource = entries.find(
     (entry) => compactLine(entry.item?.sourceId || "") && compactLine(entry.item?.sourceId || "") === asset.name,
   );
@@ -13082,23 +14747,29 @@ function mergeAnalyzerAssets(fallbackAssets, analyzerResult, worldProfile, scrip
       ...asset,
       worldProfile,
       analyzerSource: asset.lockedManual ? "manual" : "rules",
-      analyzerNote: asset.lockedManual ? "用户提供资产生图提示词" : analyzerResult?.reason || "本地规则解析",
+      analyzerNote: asset.lockedManual
+        ? "用户提供资产生图提示词"
+        : asset.lockedStructured
+          ? `用户明确分类，保留本地解析：${analyzerResult?.reason || "未调用模型"}`
+          : analyzerResult?.reason || "本地规则解析",
     }));
   }
   const usedItems = new Set();
-  // 第一遍:跨类型把每个候选匹配到模型输出,采纳模型判定的类型(模型对人物/场景/道具分类有最终裁量权)
+  // 第一遍:跨类型把每个候选匹配到模型输出。用户明确分段的资产可让模型补充视觉信息，
+  // 但类型不得被模型或本地规则改写。
   const prelim = fallbackAssets.map((asset) => {
     if (asset.lockedManual) return { asset, locked: true, finalType: asset.type, changed: false };
     const match = findAnalyzerMatchAcrossTypes(asset, analyzerResult, usedItems, script);
-    const finalType = match ? match.type : asset.type;
-    return { asset, match, finalType, changed: finalType !== asset.type };
+    const lockedType = !!asset.lockedStructured;
+    const finalType = lockedType ? asset.type : match ? match.type : asset.type;
+    return { asset, match, lockedType, finalType, changed: finalType !== asset.type };
   });
-  // 模型对"哪些才是资产"有裁量权:非锁定、且模型没在任何类别里确认的候选(如台词碎片被粗规则误当人物)一律丢弃
-  const dropped = prelim.filter((p) => !p.locked && !p.match);
+  // 模型对"哪些才是资产"有裁量权，但用户明确列出的资产不能因模型漏项而被删除。
+  const dropped = prelim.filter((p) => !p.locked && !p.lockedType && !p.match);
   if (dropped.length) {
     console.error(`[assetAnalyzer] ${analyzerResult.model} 丢弃 ${dropped.length} 个模型未确认的粗规则候选: ${dropped.map((p) => p.asset.label).join("、")}`);
   }
-  const kept = prelim.filter((p) => p.locked || p.match);
+  const kept = prelim.filter((p) => p.locked || p.lockedType || p.match);
   // 计算各类型现有最大序号(取自未改类型/锁定资产的名字),给被改判的资产分配不冲突的新序号
   const maxIndexByType = {};
   const readIndex = (name) => {
@@ -13113,9 +14784,9 @@ function mergeAnalyzerAssets(fallbackAssets, analyzerResult, worldProfile, scrip
       return { ...p.asset, worldProfile, analyzerSource: "manual", analyzerNote: "用户提供资产生图提示词，已锁定优先使用" };
     }
     const picked = p.match?.item || {};
-    const visual = compactLine(picked.visual || "");
+    const visual = compactLine(picked.visual || p.asset.visual || "");
     const evidence = compactLine(picked.evidence || p.asset.evidence);
-    const label = compactLine(picked.label || p.asset.label);
+    const label = compactLine((p.lockedType ? p.asset.label : picked.label) || p.asset.label);
     const prompt = validateAnalyzerPrompt({ type: p.finalType }, picked.textToImagePrompt || "");
     let name = p.asset.name;
     if (p.changed) {
@@ -13126,6 +14797,7 @@ function mergeAnalyzerAssets(fallbackAssets, analyzerResult, worldProfile, scrip
     return {
       ...p.asset,
       type: p.finalType,
+      analyzerType: p.match?.type || p.asset.analyzerType || "",
       name,
       label,
       evidence,
@@ -13133,7 +14805,11 @@ function mergeAnalyzerAssets(fallbackAssets, analyzerResult, worldProfile, scrip
       textToImagePromptOverride: prompt,
       worldProfile,
       analyzerSource: prompt || visual ? "model" : "rules",
-      analyzerNote: p.changed
+      analyzerNote: p.lockedType
+        ? prompt
+          ? `用户明确分类为 ${p.asset.type}，模型补充视觉信息：${analyzerResult.model}`
+          : `用户明确分类为 ${p.asset.type}，保留本地视觉描述：${analyzerResult.model}`
+        : p.changed
         ? `资产解析模型改判为 ${p.finalType}：${analyzerResult.model}`
         : prompt
           ? `资产解析模型：${analyzerResult.model}`
@@ -13303,6 +14979,7 @@ function buildCoverageAssets(coverageResult, existingAssets, worldProfile, scrip
       1;
     discovered.push({
       type,
+      analyzerType: type,
       name: typedAssetName(type, typeIndex, label),
       label,
       evidence,
@@ -14358,6 +16035,9 @@ function dialoguesForText(text, dialogueLanguage) {
       lines.push({ speaker: block.speaker, text: spoken });
     }
   }
+  for (const block of inlineColonDialogues(source, dialogueLanguage)) {
+    if (!lines.some((item) => item.speaker === block.speaker && item.text === block.text)) lines.push(block);
+  }
   for (const block of quotedDialoguesForText(source, dialogueLanguage)) {
     if (!lines.some((item) => item.speaker === block.speaker && item.text === block.text)) lines.push(block);
   }
@@ -14445,8 +16125,12 @@ function assetLookupFromAssets(assets = []) {
 }
 
 function assetTypeForLookupRecord(asset, fallbackName = "") {
-  const raw = asset?.manifestType || asset?.type || "";
-  return normalizeAssetType(raw, inferAssetTypeFromName(asset?.name || asset?.assetName || fallbackName) || "Prop");
+  const assetName = asset?.name || asset?.assetName || fallbackName;
+  const canonicalType = inferAssetTypeFromName(assetName);
+  // 资产编号和后缀由工作流生成，是正式身份；历史 video config 中遗留的 type
+  // 不能把 C001_*_CHARACTER_SHEET 这类人物资产重新解释成道具。
+  if (canonicalType) return canonicalType;
+  return normalizeAssetType(asset?.manifestType || asset?.type || "", "Prop");
 }
 
 function splitRefsByAssetType(refs, lookup = null) {
@@ -15033,16 +16717,25 @@ function seedanceDialogueText(shot) {
   const dialogues = Array.isArray(shot.dialogues) ? shot.dialogues : Array.isArray(shot.dialogueLines) ? shot.dialogueLines : [];
   if (!dialogues.length) return "无对白；保留呼吸、停顿和环境声";
   return dialogues
-    .map((item) => (typeof item === "string" ? item : `${item.speaker || "角色"}：${item.text || ""}`))
+    .map((item) => {
+      if (typeof item === "string") return item;
+      const speaker = compactLine(item.speaker || "");
+      const text = compactLine(item.text || "");
+      if (!text) return "";
+      return speaker ? `${speaker}：${text}` : text;
+    })
     .map(compactLine)
     .filter(Boolean)
     .slice(0, 4)
     .join(" / ");
 }
 
-// 按资产风格生成一条“风格定律”,强制注入视频提示词,确保成片风格与所选资产风格一致(而非默认写实真人)。
+// 按已经绑定的正式资产风格生成“风格定律”。资产尚未生成时只允许规划镜头，
+// 不能擅自把整片锁成超写实或任何其他画风。
 function seedanceStyleLawForPreset(preset = "") {
-  const key = normalizeAssetStylePreset(preset || "cg_3d");
+  const raw = compactLine(preset || "");
+  if (!raw) return "视觉风格：待正式资产图生成并绑定后确定；当前只按剧本规划镜头，不预设写实、动画或任何画风。";
+  const key = normalizeAssetStylePreset(raw);
   const label = ASSET_IMAGE_STYLE_PRESETS[key]?.label || "指定风格";
   if (key === "photoreal") {
     return "全片强制超写实真人电影实拍质感：真实皮肤、毛孔、自然光影与真实材质，写实人体比例。";
@@ -15055,7 +16748,8 @@ function seedanceJsonObjectForShot(shot, index, dialogueLanguage) {
   const plan = cameraPlanForShot(shot, index);
   const story = videoSafeBeatText(shot.beat || shot.purpose || shot.title);
   const duration = `${clampShotDuration(shot.duration || 8)}s`;
-  const stylePreset = normalizeAssetStylePreset(shot.videoStylePreset || "cg_3d");
+  const stylePreset = compactLine(shot.videoStylePreset || "") ? normalizeAssetStylePreset(shot.videoStylePreset) : "";
+  const styleLocked = !!stylePreset;
   const photoreal = stylePreset === "photoreal";
   const motionIntensity =
     /action|continuation|危机|追|冲|扑|逃|战|爆|震|跑|摔|attack|run|fight/i.test(`${design.shotPurpose || ""} ${story}`)
@@ -15063,7 +16757,8 @@ function seedanceJsonObjectForShot(shot, index, dialogueLanguage) {
       : /insert|reaction|close|特写|停顿|凝视|呼吸|whisper/i.test(`${design.shotPurpose || ""} ${story}`)
         ? "low"
         : "medium";
-  return {
+  // 启发式基线(回退)。style 由资产风格锁定、duration 由后端计算、dialogue 由对白行生成——这三项不交给模型。
+  const base = {
     style: seedanceStyleLawForPreset(stylePreset),
     scene: story,
     subject: design.composition || "当前镜头中的主要人物、场景和关键道具",
@@ -15074,15 +16769,29 @@ function seedanceJsonObjectForShot(shot, index, dialogueLanguage) {
     environment: design.composition || "空间方向、站位、道具状态和场景纵深保持连续",
     lighting: photoreal
       ? design.lighting || "真实物理光，明确光源方向、色温和阴影层次"
-      : "光源方向、色温和阴影层次清晰，严格符合所选风格的灯光语言，不使用真人实拍写实光效",
+      : styleLocked
+        ? "光源方向、色温和阴影层次清晰，严格符合所选风格的灯光语言，不使用真人实拍写实光效"
+        : design.lighting || "明确光源方向、色温和阴影层次；最终渲染质感由正式资产图确定",
     effects: "仅呈现剧本中明确出现的能量、烟雾、震动、粒子、光晕或环境变化",
     color_palette: photoreal
       ? "克制电影调色，场景主色保持一致，肤色自然，黑位干净"
-      : "克制电影调色，严格保持所选风格的色彩语言，主色一致，黑位干净",
+      : styleLocked
+        ? "克制电影调色，严格保持所选风格的色彩语言，主色一致，黑位干净"
+        : "克制电影调色、主色一致；最终色彩语言由正式资产图确定",
     mood: design.shotPurpose || "电影化、克制、叙事明确",
     dialogue: seedanceDialogueText(shot),
     sound: "环境底噪、空间混响、脚步、衣料摩擦、道具声和对白同步，音乐克制",
   };
+  // seedance 导演引擎:模型逐镜产出的 design 字段优先(缺失字段回退到上面的启发式基线)。
+  // style/duration/dialogue 始终保持基线,不被模型覆盖(锁风格、锁时长、对白单独本地化)。
+  const videoDesign = shot.videoDesign;
+  if (seedanceDirectorEnabled() && videoDesign && typeof videoDesign === "object") {
+    for (const key of Object.keys(videoDesign)) {
+      if (key === "style" || key === "duration" || key === "dialogue") continue;
+      if (videoDesign[key]) base[key] = videoDesign[key];
+    }
+  }
+  return base;
 }
 
 function seedanceJsonPromptForShot(shot, index, dialogueLanguage) {
@@ -15091,9 +16800,34 @@ function seedanceJsonPromptForShot(shot, index, dialogueLanguage) {
   return `{\n${lines.join(",\n")}\n}`;
 }
 
-function jsonOnlySeedancePrompt(shot, index, dialogueLanguage) {
+// Seedance skill 全权:输出自然语言散文提示词(非 JSON,遵循 prompt-compiler.md)。
+// 复用导演字段(seedanceJsonObjectForShot 含 skill videoDesign),拼成提交端消费的段落格式:
+// 叙事全进「剧情动作」块(内部用行内小标签,不触发 section 拆分),对白/声音各自成段。
+function seedanceProsePromptForShot(shot, index, dialogueLanguage) {
   const refs = (shot.refs || []).map((ref, refIndex) => seedanceReferenceLine(ref, refIndex, shot.assetLookup)).join("\n");
-  return `${refs}\n${seedanceJsonPromptForShot(shot, index, dialogueLanguage)}`.trim();
+  const d = seedanceJsonObjectForShot(shot, index, dialogueLanguage);
+  const story = [];
+  const add = (v) => { const s = compactLine(v || ""); if (s) story.push(s); };
+  add(d.style);
+  add(d.scene);
+  if (compactLine(d.subject)) add(`画面主体：${compactLine(d.subject)}`);
+  add(d.action);
+  if (compactLine(d.camera_movement)) add(`镜头：${compactLine(d.camera_movement)}`);
+  if (compactLine(d.environment)) add(`环境：${compactLine(d.environment)}`);
+  if (compactLine(d.lighting)) add(`光线：${compactLine(d.lighting)}`);
+  if (compactLine(d.effects)) add(`特效：${compactLine(d.effects)}`);
+  if (compactLine(d.color_palette)) add(`调色：${compactLine(d.color_palette)}`);
+  if (compactLine(d.mood)) add(`氛围：${compactLine(d.mood)}`);
+  const blocks = [`剧情动作：${story.join("；")}`];
+  const dlg = compactLine(d.dialogue);
+  if (dlg) blocks.push(`对白：${dlg}`);
+  const snd = compactLine(d.sound);
+  if (snd) blocks.push(`声音：${snd}`);
+  return `${refs ? refs + "\n\n" : ""}${blocks.join("\n\n")}`.trim();
+}
+
+function jsonOnlySeedancePrompt(shot, index, dialogueLanguage) {
+  return seedanceProsePromptForShot(shot, index, dialogueLanguage);
 }
 
 // 故事板模式的极简提示词:只标注各参考图身份(人物/场景)+ 故事板作为唯一画面依据 + 风格锁 + 对白;
@@ -15102,20 +16836,34 @@ function jsonOnlySeedancePrompt(shot, index, dialogueLanguage) {
 function storyboardSeedancePrompt(shot, index, dialogueLanguage) {
   const refs = Array.isArray(shot.refs) ? shot.refs : [];
   const storyboardRefs = Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [];
-  const refLines = refs.map((ref, i) => seedanceReferenceLine(ref, i, shot.assetLookup));
+  const lookup = shot.assetLookup || null;
+  const refLines = refs.map((ref, i) => seedanceReferenceLine(ref, i, lookup));
   const sbLines = storyboardRefs.map(
     (ref, i) => `@图片${refs.length + i + 1} 是 Production Board 故事板,作为画面构图、人物站位、镜头景别、动作方向与节奏的唯一依据。`,
   );
-  const stylePreset = normalizeAssetStylePreset(shot.videoStylePreset || "cg_3d");
-  const data = {
-    style: seedanceStyleLawForPreset(stylePreset),
-    storyboard:
-      "严格按 Production Board 故事板执行画面构图、人物站位、镜头景别、动作与节奏;各 @图片 的身份见上,人物与场景外观以对应参考图为准,不要臆造未出现的人物或物体。",
-    dialogue: seedanceDialogueText(shot),
+  // 角色映射:新故事板画的是可区分的真实角色但不再带 PT 码,故在提示词里显式把"故事板中的角色"绑到对应参考图,
+  // 让视频模型按参考图还原每个角色的身份/外观(靠 visual 描述消歧,不足时用角色名)。
+  const isCharacterRef = (ref) => {
+    const t = compactLine(((lookup && lookup.get && lookup.get(ref)) || {}).type || "");
+    return t === "Character" || inferAssetTypeFromName(ref) === "Character";
   };
-  const fields = ["style", "storyboard", "dialogue"];
-  const lines = fields.map((k) => `  "${k}": "${seedanceJsonValue(data[k])}"`);
-  return `${[...refLines, ...sbLines].join("\n")}\n{\n${lines.join(",\n")}\n}`.trim();
+  const roleMapLines = refs
+    .map((ref, i) => ({ ref, i }))
+    .filter(({ ref }) => isCharacterRef(ref))
+    .map(({ ref, i }) => {
+      const asset = (lookup && lookup.get && lookup.get(ref)) || {};
+      const name = seedanceReferenceDisplayName(ref, lookup);
+      const desc = compactLine(asset.visual || asset.label || "").slice(0, 60);
+      const who = desc ? `Production Board 中「${desc}」这一角色即${name}` : `Production Board 中出现的${name}`;
+      return `${who},严格以 @图片${i + 1} 参考图还原其面孔、发型、服装、体型与身份,不要另编长相或与其他角色混淆。`;
+    });
+  const stylePreset = compactLine(shot.videoStylePreset || "") ? normalizeAssetStylePreset(shot.videoStylePreset) : "";
+  // 散文(非 JSON):风格定律 + 故事板权威说明进「剧情动作」块;对白单独成段。@图片/角色映射/故事板行照旧。
+  const storyText = `${seedanceStyleLawForPreset(stylePreset)}；严格按 Production Board 故事板执行画面构图、人物站位、镜头景别、动作与节奏;故事板中各角色的身份按上方「角色映射」绑定到对应 @图片 参考图还原,人物与场景外观一律以参考图为准,不要臆造未出现的人物或物体。`;
+  const blocks = [`剧情动作：${storyText}`];
+  const dlg = compactLine(seedanceDialogueText(shot));
+  if (dlg) blocks.push(`对白：${dlg}`);
+  return `${[...refLines, ...roleMapLines, ...sbLines].join("\n")}\n\n${blocks.join("\n\n")}`.trim();
 }
 
 // 按生成模式自动选择提示词方案:故事板模式=极简(跟故事板);首尾帧/普通模式=完整电影化提示词。
@@ -15154,19 +16902,12 @@ function storyboardSystemPrompt() {
 - Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落拆成带编号面板的 Production Board；最后在 videoPrompt 中按面板编号描述动作、构图、镜头框、运动箭头和剪辑点。Production Board 只控制动作/构图/节奏/资产绑定，不替代正式资产。
 - 当使用 Production Board 时，videoPrompt 需要明确本段读取哪些面板或镜头 A/B/C 的节奏来源，说明动作方向、演员站位、镜头框、切换点和同场景衔接；外层制作板为 16:9 排版，每个被读取的镜头面板必须对应最终 9:16 成片构图。
 - 使用 Production Board 时，videoPrompt 仍然只写最终执行内容：图片参考、剧情与镜头、对白、摄影与声音。Production Board 中的人物槽位、场景区域、道具区域必须通过 PT-C/PT-S/PT-P/PT-I 编号绑定到正式 Character / Scene / Prop / Insert 资产。
-- 视频提示词必须使用中文，英文对白除外。
-- 未使用故事版的镜头，videoPrompt 必须是可直接提交给 Seedance 2.0 的完整中文执行提示词。
-- 每个 videoPrompt 只允许包含：图片参考（先写 @图片，再说明这张图片是什么、作为什么参考）、剧情动作、导演设计、连续性开场、镜头语言、镜头切换、IMAX胶片相机设定、光影描述、时间轴、动作/表演、对白、声音。
+- 每个镜头的画面拆解必须用下方《导演引擎》方法，并输出为结构化的 design 对象（字段值用具体中文，禁用感觉词）。design 字段内容使用中文，英文对白只出现在 dialogueLines。
 - 同一场景只有第一个镜头可以承担短建立镜头；后续镜头必须直接承接上一镜的站位、视线、道具状态、动作方向和情绪，不得重新展示环境，不得用空镜或大全景重启本段。
 - 相邻镜头必须有不同镜头目的，可在 establish / action_continuation / dialogue_reaction / insert / over_shoulder / close_reaction 中选择；不要连续输出同一种中景站立镜头。
-- 每个 videoPrompt 必须写导演设计：镜头目的、景别、运镜、构图、光影、人物微表情或肢体动作；表演要具体到眼神、呼吸、手指、肩颈、身体重心或停顿。
-- videoPrompt 中不要写提示词规则、负面约束、素材规则、身份规则、审核规则、不要/不得/必须类元指令；只写希望模型实际生成的画面、动作、对白、摄影、光影和声音。
-- 镜头语言必须明确景别、焦段、机位、构图、景深和运镜，例如大全景、低机位、中近景、特写、推镜、横移、跟拍、手持呼吸感、焦点转移。
-- 镜头切换必须明确 2-4 个镜头之间如何切换，例如硬切、反应镜头切换、遮挡切、声音桥、焦点拉动转场、故事版衔接。
-- IMAX胶片相机设定必须写入每个 videoPrompt：IMAX 竖屏大画幅构图，ARRI Alexa 65 或 70mm film camera look，24fps，真实镜头畸变，克制胶片颗粒，高动态范围。
-- 光影描述必须具体到光源、方向、色温、明暗层次和空间氛围，例如清晨冷蓝自然光、车内应急灯闪烁、柔和窗光、低照度边缘轮廓光、阴影吞没背景。
-- 时间轴必须按秒拆成 3 段以上，覆盖整个推荐时长，并描述每段的镜头、动作和情绪变化。
 - 触发审核风险的暴力/恐怖内容，要用遮挡、影子、反应镜头、环境变化和声音替代直白血腥描写，同时最大限度保留剧本原意。
+
+${SEEDANCE_DIRECTOR_SYSTEM_ZH}
 
 输出 JSON 结构：
 {
@@ -15179,7 +16920,19 @@ function storyboardSystemPrompt() {
       "purpose": "分镜目标",
       "refs": ["S001_example", "C001_example"],
       "dialogueLines": ["英文或中文对白"],
-      "videoPrompt": "中文 Seedance 2.0 最终执行提示词；只写图片参考、剧情/动作、对白、镜头语言、镜头切换、IMAX胶片相机、光影和声音"
+      "design": {
+        "scene": "本镜剧情与所在空间",
+        "subject": "主体人物 + 关键道具 + 构图/站位",
+        "action": "一个明确的可见动作与其终点",
+        "camera_movement": "景别 + 焦段 + 机位/高度 + 运镜",
+        "motion_intensity": "low 或 medium 或 high",
+        "environment": "空间方向、站位、道具状态与场景纵深如何连续",
+        "lighting": "光源方向 + 色温 + 光比 + 阴影层次（有可信来源）",
+        "effects": "仅剧本明确出现的能量/烟雾/粒子/环境变化，否则写 无特效",
+        "color_palette": "克制电影调色、主色一致、符合所选风格的色彩语言",
+        "mood": "本镜的镜头目的与情绪，写成具体画面读法",
+        "sound": "环境声、动效、道具声与对白同步，音乐克制"
+      }
     }
   ]
 }`;
@@ -15224,15 +16977,24 @@ function normalizeStoryboardShot(raw, index, context) {
   const refs = Array.isArray(raw.refs) ? raw.refs.map(compactLine).filter((ref) => allowedRefs.has(ref)) : [];
   const fallbackRefs = refsForBeat(beat || title, context.assets, { beats: context.beats, index });
   const finalRefs = [...new Set([...(refs.length ? refs : fallbackRefs)])].slice(0, 8);
-  const dialogueLines = Array.isArray(raw.dialogueLines)
-    ? raw.dialogueLines.map(compactLine).filter(Boolean).slice(0, 4)
-    : dialoguesForText(beat, context.dialogueLanguage);
+  // 对白说话人:剧本是「谁说的」的地面真相。分镜模型返回的 dialogueLines 常是无归属的纯台词字符串,
+  // 直接用会丢说话人(渲染成 seedanceDialogueText 的字符串分支 → 「台词／台词」无名字)。这里统一规范成
+  // {speaker,text}:模型行先按「名字：台词」解析,speaker 缺失时用本镜剧本节拍(原始 script beat)提取回填。
+  const scriptBeat = compactLine(context.beats?.[index] || "") || beat;
+  const beatDialogues = dialoguesForText(scriptBeat, context.dialogueLanguage);
+  const modelItems = Array.isArray(raw.dialogueLines)
+    ? normalizeDialogueItems(raw.dialogueLines.slice(0, 4), context.dialogueLanguage)
+    : [];
+  const dialogueLines = backfillDialogueSpeakers(modelItems, beatDialogues);
+  // 模型按导演引擎输出的每镜画面拆解;上层 seedanceJsonObjectForShot 优先用它填 JSON 字段,缺失回退启发式。
+  const videoDesign = sanitizeSeedanceDesign(raw.design);
   const videoPrompt = enforceVideoPromptCinematicRules(compactLine(raw.videoPrompt || raw.prompt || ""), {
     title,
     duration,
     refs: finalRefs,
     beat,
     dialogueLines,
+    videoDesign,
     index,
   });
   if (!title || !beat || !finalRefs.length) return null;
@@ -15244,6 +17006,7 @@ function normalizeStoryboardShot(raw, index, context) {
     refs: finalRefs,
     dialogues: dialogueLines,
     beat,
+    videoDesign,
     modelVideoPrompt: videoPrompt.length > 120 ? videoPrompt : "",
     assetLookup,
   };
@@ -15642,7 +17405,7 @@ Text rule: if readable text is necessary, use only exact text explicitly present
 Negative constraints: no watermark, no random logos, no extra people, no cartoon style, no CG look.`;
 }
 
-function assetManifestFromAssets({ title, script, worldProfile, assets, analyzerResult, modelName, coverage = null }) {
+function assetManifestFromAssets({ title, script, worldProfile, assets, analyzerResult, modelName, coverage = null, audit = null }) {
   const byTypeOrder = { Character: 0, Scene: 1, Prop: 2, Insert: 3 };
   const items = assets
     .map((asset, index) => ({
@@ -15689,6 +17452,28 @@ function assetManifestFromAssets({ title, script, worldProfile, assets, analyzer
       summary: "",
       added: [],
     },
+    audit: audit
+      ? {
+          ok: !!audit.ok,
+          pending: audit.pending === true,
+          model: compactLine(audit.model || ""),
+          checkedCount: Number(audit.checkedCount) || 0,
+          flippedCount: Number(audit.flippedCount) || 0,
+          flips: Array.isArray(audit.flips) ? audit.flips : [],
+          flagged: Array.isArray(audit.flagged)
+            ? audit.flagged.map((item) => ({
+                label: compactLine(item.label || ""),
+                currentType: compactLine(item.currentType || item.type || ""),
+                suspectType: compactLine(item.suspectType || item.to || ""),
+                confidence: Number(item.confidence) || 0,
+                reason: compactLine(item.reason || item.note || ""),
+                type: compactLine(item.type || item.currentType || ""),
+                note: compactLine(item.note || item.reason || ""),
+              }))
+            : [],
+          reason: compactLine(audit.reason || ""),
+        }
+      : null,
     counts: {
       characters: items.filter((item) => item.type === "Character").length,
       scenes: items.filter((item) => item.type === "Scene").length,
@@ -15747,7 +17532,12 @@ function manifestItemCompatibleWithType(item) {
   const label = compactLine(item?.label || item?.id || "");
   if (!label) return false;
   if (isNonVisualAudioCueLabel(label)) return false;
-  if (item.type === "Character") return isValidCharacterLabel(label);
+  // 人物候选已经由结构化分段 / 模型解析和角色纠偏处理过；这里不能再套用旧的
+  // “至少两字”的粗筛，否则昼、绯、阙、砾等合法单字角色会在落盘时被静默删掉。
+  // 仍保留地点、音频提示和纯 production 字段的拦截。
+  if (item.type === "Character") {
+    return isModelAssetLabelUsable(label) && !isLikelyLocationOrTimeLabel(label);
+  }
   if (item.type === "Scene") return SCENE_ASSET_EVIDENCE_RE.test(`${label} ${item.evidence || ""} ${item.visual || ""}`) || !isValidCharacterLabel(label) || isLikelyLocationOrTimeLabel(label);
   if (item.type === "Storyboard") return true;
   return true;
@@ -15792,6 +17582,28 @@ function normalizeAssetManifest(raw) {
       summary: "",
       added: [],
     },
+    audit: raw?.audit && typeof raw.audit === "object"
+      ? {
+          ok: !!raw.audit.ok,
+          pending: raw.audit.pending === true,
+          model: compactLine(raw.audit.model || ""),
+          checkedCount: Number(raw.audit.checkedCount) || 0,
+          flippedCount: Number(raw.audit.flippedCount) || 0,
+          flips: Array.isArray(raw.audit.flips) ? raw.audit.flips : [],
+          flagged: Array.isArray(raw.audit.flagged)
+            ? raw.audit.flagged.map((item) => ({
+                label: compactLine(item.label || ""),
+                currentType: compactLine(item.currentType || item.type || ""),
+                suspectType: compactLine(item.suspectType || item.to || ""),
+                confidence: Number(item.confidence) || 0,
+                reason: compactLine(item.reason || item.note || ""),
+                type: compactLine(item.type || item.currentType || ""),
+                note: compactLine(item.note || item.reason || ""),
+              }))
+            : [],
+          reason: compactLine(raw.audit.reason || ""),
+        }
+      : null,
     counts: {
       characters: items.filter((item) => item.type === "Character").length,
       scenes: items.filter((item) => item.type === "Scene").length,
@@ -15963,54 +17775,132 @@ function writeAssetManifest(episodeRoot, manifest) {
   return normalized;
 }
 
+async function runAssetAuditInBackground(
+  episodeRoot,
+  { assets = [], script = "", modelName, hasCompleteStructuredAssetPlan = false } = {},
+) {
+  try {
+    let audit;
+    try {
+      audit = await auditAssetRoles({ assets, script, modelName, hasCompleteStructuredAssetPlan });
+    } catch (error) {
+      audit = { ok: false, model: "", checkedCount: 0, flippedCount: 0, flips: [], flagged: [], reason: error?.message || String(error) };
+      console.error(`[assetAudit] 后台审核异常: ${audit.reason}`);
+    }
+    const current = readAssetManifest(episodeRoot)?.data;
+    if (!current) return null;
+    if (!audit.ok) console.error(`[assetAudit] 后台审核未通过: ${audit.reason || "未知原因"}`);
+    return writeAssetManifest(episodeRoot, {
+      ...current,
+      audit: {
+        ok: !!audit.ok,
+        model: compactLine(audit.model || ""),
+        checkedCount: Number(audit.checkedCount) || 0,
+        flippedCount: Number(audit.flippedCount) || 0,
+        flips: Array.isArray(audit.flips) ? audit.flips : [],
+        flagged: Array.isArray(audit.flagged) ? audit.flagged : [],
+        reason: compactLine(audit.reason || ""),
+        pending: false,
+      },
+    });
+  } catch (error) {
+    console.error(`[assetAudit] 后台审核写回异常: ${error?.message || String(error)}`);
+    return null;
+  }
+}
+
 async function extractAssetManifest(episodeRoot, options = {}) {
   const slug = episodeSlug(episodeRoot);
   const rawScript = typeof options.scriptText === "string" ? options.scriptText : readText(findProjectFile(episodeRoot, "script"));
-  const script = cleanStoryScriptForDraft(rawScript);
-  const assetSourceScript = cleanScriptForDraft(rawScript);
-  if (!script.trim()) throw new Error("script is empty");
+  // 「资产描述」独立输入:传入则落盘;资产解析优先以它为来源(只含人物/场景/道具描述,避免剧情干扰);
+  // 没有资产描述时回退用剧情剧本(向后兼容)。剧情剧本仍单独保存,供分镜/节拍使用。
+  if (typeof options.assetDescriptionText === "string") writeAssetDescription(episodeRoot, options.assetDescriptionText);
+  const assetDescription =
+    typeof options.assetDescriptionText === "string" ? options.assetDescriptionText : readAssetDescription(episodeRoot);
+  const rawAssetSource = String(assetDescription || "").trim() ? assetDescription : rawScript;
+  const plotScript = cleanStoryScriptForDraft(rawScript);
+  const script = cleanStoryScriptForDraft(rawAssetSource);
+  const assetSourceScript = cleanScriptForDraft(rawAssetSource);
+  // 资产描述包含的是视觉事实，不是剧情。模型合并和补漏必须看到未剥离的原文，
+  // 否则“人物：… / 场景：… / 道具：…”或手工资产块会在 cleanStoryScriptForDraft 后失去证据。
+  const assetAnalysisSource = assetSourceScript || script;
+  if (!script.trim() && !plotScript.trim()) throw new Error("script is empty");
   if (typeof options.scriptText === "string") writeScriptWithWorkflowIsolation(episodeRoot, rawScript, "asset extraction script input");
   const dialogueLanguage = persistProjectDialogueLanguage(
     episodeRoot,
     normalizeDialogueLanguage(options.dialogueLanguage || projectDialogueLanguage(episodeRoot), "en"),
   );
-  const title = titleFromScript(assetSourceScript || script, slug, options.title);
-  const worldProfile = inferWorldProfile(assetSourceScript || script);
-  const rulePlan = buildRuleAssets(assetSourceScript || script, worldProfile);
-  const analyzerResult = await callAssetAnalyzerModel({
-    script,
-    fallbackAssets: rulePlan.assets,
-    worldProfile,
-    modelName: options.assetAnalyzerModel,
-  });
+  const title = titleFromScript(plotScript || assetSourceScript || script, slug, options.title);
+  const worldProfile = inferWorldProfile(assetAnalysisSource);
+  const rulePlan = buildRuleAssets(assetAnalysisSource, worldProfile);
+  // 用户已把人物 / 场景 / 道具逐项明确分段时，本地解析就是权威来源。
+  // 跳过模型复核，既避免长请求超时，也避免模型遗漏后污染完整的资产表。
+  const structuredTypes = new Set(rulePlan.assets.filter((asset) => asset.lockedManual || asset.lockedStructured).map((asset) => asset.type));
+  const hasCompleteStructuredAssetPlan =
+    rulePlan.assets.length > 0 &&
+    structuredTypes.has("Character") &&
+    structuredTypes.has("Scene") &&
+    ["Prop", "Insert"].some((type) => structuredTypes.has(type)) &&
+    rulePlan.assets.every((asset) => asset.lockedManual || asset.lockedStructured);
+  const analyzerResult = hasCompleteStructuredAssetPlan
+    ? { ok: false, model: "rules", reason: "用户提供完整结构化资产描述，直接保留明确分类" }
+    : await callAssetAnalyzerModel({
+        script: assetAnalysisSource,
+        fallbackAssets: rulePlan.assets,
+        worldProfile,
+        modelName: options.assetAnalyzerModel,
+      });
   let assets = enforceCharacterProfileAssets(
-    correctAssetRolesFromEvidence(mergeAnalyzerAssets(rulePlan.assets, analyzerResult, worldProfile, assetSourceScript || script)),
-    assetSourceScript || script,
+    correctAssetRolesFromEvidence(mergeAnalyzerAssets(rulePlan.assets, analyzerResult, worldProfile, assetAnalysisSource)),
+    assetAnalysisSource,
     worldProfile,
   );
-  const coverageResult = await ensureAssetCoverage({
-    script,
-    assets,
-    shots: [],
-    worldProfile,
-    modelName: options.assetAnalyzerModel,
+  const coverageResult = hasCompleteStructuredAssetPlan
+    ? {
+        assets,
+        coverage: {
+          checkedAt: new Date().toISOString(),
+          model: "rules",
+          ok: true,
+          reason: "",
+          summary: "已按用户明确分段建立人物、场景和道具资产清单。",
+          added: [],
+        },
+      }
+    : await ensureAssetCoverage({
+        script: assetAnalysisSource,
+        assets,
+        shots: [],
+        worldProfile,
+        modelName: options.assetAnalyzerModel,
   });
-  assets = enforceCharacterProfileAssets(correctAssetRolesFromEvidence(coverageResult.assets), assetSourceScript || script, worldProfile);
+  assets = enforceCharacterProfileAssets(correctAssetRolesFromEvidence(coverageResult.assets), assetAnalysisSource, worldProfile);
+  const audit = hasCompleteStructuredAssetPlan
+    ? {
+        ok: true,
+        model: "skip",
+        checkedCount: assets.length,
+        flippedCount: 0,
+        flips: [],
+        flagged: [],
+        reason: "完整结构化分段，全部锁定，跳过复核",
+        pending: false,
+      }
+    : { ok: false, model: "", checkedCount: 0, flippedCount: 0, flips: [], flagged: [], reason: "审核进行中", pending: true };
   const previous = readAssetManifest(episodeRoot)?.data || {};
   const manifest = assetManifestFromAssets({
     title,
-    script,
+    script: assetAnalysisSource,
     worldProfile,
     assets,
     analyzerResult,
     modelName: options.assetAnalyzerModel,
     coverage: coverageResult.coverage,
+    audit,
   });
-  // 提取后自动确认:资产解析产出即视为已确认，"生成资产图"提取完立即可用（去掉手动"确认资产解析"门槛）。
-  // writeAssetManifest 每次都会同步 assetPrompts，服务端生成门槛(16508)也只看 confirmed，故置 true 即可正常生成。
-  const autoConfirmedAt = new Date().toISOString();
-  manifest.confirmed = true;
-  manifest.confirmedAt = autoConfirmedAt;
+  const staleVideoDerivatives = hasUnboundVideoDerivatives(episodeRoot, manifest);
+  const downstreamInvalidated = assetManifestIdentityChanged(previous, manifest) || staleVideoDerivatives;
+  const invalidation = downstreamInvalidated ? invalidateDerivedVideoArtifactsForAssetManifestChange(episodeRoot, previous, manifest) : null;
   const normalized = writeAssetManifest(episodeRoot, {
     ...manifest,
     dialogueLanguage,
@@ -16019,9 +17909,17 @@ async function extractAssetManifest(episodeRoot, options = {}) {
       dialogueLanguage,
     },
     generatedAt: new Date().toISOString(),
-    confirmed: true,
-    confirmedAt: autoConfirmedAt,
+    confirmed: false,
+    confirmedAt: "",
   });
+  if (!hasCompleteStructuredAssetPlan) {
+    runAssetAuditInBackground(episodeRoot, {
+      assets,
+      script: assetAnalysisSource,
+      modelName: options.assetAuditModel,
+      hasCompleteStructuredAssetPlan,
+    }).catch((error) => console.error(`[assetAudit] 后台写回异常: ${error?.message || String(error)}`));
+  }
   return {
     assetManifest: findProjectFile(episodeRoot, "assetManifest"),
     assetPrompts: findProjectFile(episodeRoot, "assetPrompts"),
@@ -16031,6 +17929,9 @@ async function extractAssetManifest(episodeRoot, options = {}) {
       scenes: normalized.items.filter((item) => item.type === "Scene").map((item) => item.label),
     },
     previousConfirmed: !!previous.confirmed,
+    downstreamInvalidated,
+    staleVideoDerivatives,
+    invalidation,
   };
 }
 
@@ -16115,11 +18016,11 @@ async function buildDraft(episodeRoot, options = {}) {
 - 默认视频目标：Seedance 2.0 Fast，480p，9:16，image2video，开启声音。
 - 视频分镜来源：${storyboardModelResult.ok ? "已使用后端指定视频分镜模型" : `已回退本地规则拆解；原因：${storyboardModelResult.reason || "未知"}`}。
 - 素材身份必须严格区分：人物图只作人物身份参考，场景图只作环境/空间参考，道具/插入图只作物件或证据细节参考。
-- 人物参考图必须是 16:9、纯白背景、全身三视图加半身特写、超写实真人皮肤细节。
-- 场景参考图必须是 16:9 无人物全景/大全景环境图。
+- 人物参考图必须是 16:9、纯白背景、全身三视图加半身特写；最终画风由资产图实际选择的风格决定。
+- 场景参考图必须是 16:9 无人物全景/大全景环境图；最终画风由资产图实际选择的风格决定。
 - 资产文件名必须包含剧本中的人物名、场景名、道具名或插入主体，避免画布连线混淆。
 - 本集目标时长：${durationPlan.target}s，在 ${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS} 秒范围内按剧本复杂度规划。
-- 影像语言：IMAX 竖屏构图、ARRI Alexa 65、70mm realism、24fps、真实物理光、克制调色。
+- 影像风格：待正式资产图生成并绑定后确定；当前只规划镜头语言、构图、动作与节奏，不预设写实或任何画风。
 
 ## 剧本人物清单
 
@@ -16473,23 +18374,29 @@ function storyboardPromptForSlot(slot) {
     dialogueLanguage === "zh"
       ? "Dialogue language: Chinese only. Every speech bubble and dialogue caption must use the exact Chinese line after 对白 in the panel guide. Do not add English dialogue or English labels for dialogue."
       : "Dialogue language: English only. Every speech bubble and dialogue caption must use the exact English line after Dialogue in the panel guide. Do not add Chinese dialogue.";
+  // 新故事板设计(参考专业影视故事板文档):精细写实电影级速写 + 顶部信息栏 + 建立镜头 + 编号带说明格 + 底部总结栏。
+  // 取代旧的"粗剪影 + 蓝红箭头 + PT码"版式;人物一致性交给资产参考图锁定,速写只导构图/表演/镜头。
+  void gridLabel;
+  void roleLegend;
   return [
-    `Create one 9:16 vertical (portrait) Production Board sheet — the whole sheet is taller than it is wide, matching the final vertical 9:16 short-drama video. It holds a ${gridLabel} grid of ${panelCount} storyboard panels.`,
-    `Layout: ${STORYBOARD_BOARD_COLUMNS} columns by ${rows} rows, ${panelCount} panels total, read left-to-right then top-to-bottom (P1 top-left, P2 top-right, next row below, and so on). Keep even gutters between rows and columns; panels must not overlap or merge. Do NOT add any asset reference strip, thumbnail row, or reference boxes — the board contains ONLY the ${panelCount} story panels. Full board visible, no cropping.`,
-    "Each panel is a portrait story frame that represents a vertical 9:16 camera view; stage the action inside a standing-phone-screen vertical composition. Draw the red camera/framing box as the true 9:16 crop.",
-    "Panel style: professional hand-drawn commercial storyboard document on warm off-white paper: clean black pencil/ink linework, rough but expressive character poses, clear foreground/background staging, handwritten-style shot notes, blue movement arrows, dashed blue breath/flow arrows, and red camera/framing boxes.",
-    `Every panel must have a distinct cinematic composition and shot scale following the plan below. Do not repeat the same drawing or camera position across the ${panelCount} panels.`,
-    "Story panels are simplified hand-drawn black line sketches that tell the plot. Do not paste official character/scene/prop asset images or thumbnails anywhere on the board.",
-    `Do not include any ASSET REFERENCES strip, asset thumbnails, or PT-code reference boxes. Output only the ${panelCount} hand-drawn story panels.`,
-    `Time coverage: ${timeRange}; sequence duration ${slot.duration || PRODUCTION_BOARD_MAX_SECONDS}s.`,
+    "Create ONE 9:16 vertical (portrait) professional film storyboard sheet — clearly taller than wide, matching the final vertical 9:16 short-drama video. It must read as a clean, high-end commercial storyboard document on warm off-white paper. Full sheet visible, no cropping.",
+    "Sheet layout, top to bottom:",
+    `1) TOP HEADER BAND spanning the full width: left side = the sequence title and its timecode range "${timeRange}" and the core emotion of the sequence; right side = a small boxed metadata list (project, scene setting, sequence duration, lens style, color style). Keep header text minimal and legible.`,
+    "2) ESTABLISHING SHOT: one larger wide establishing frame directly under the header that locks the location, spatial geography and mood, with a short one-line caption strip beneath it.",
+    `3) STORY PANELS: a ${STORYBOARD_BOARD_COLUMNS}-column grid of ${panelCount} numbered panels below the establishing shot, read left-to-right then top-to-bottom (panel 1, 2, 3 …). Each panel carries a small number badge and its own timecode in the top corner, the shot sketch, and a short caption strip beneath it holding a concrete one-line action followed by compact fields for shot size / camera height, duration, camera movement, sound, and transition.`,
+    "4) BOTTOM SUMMARY BAND spanning the full width: a one-line summary of this sequence plus a short row of visual keywords.",
+    "Drawing style: detailed, realistic, expressive hand-drawn cinematic storyboard sketches in clean black pencil and ink with light professional shading — real character poses, faces, gestures and full staging. NOT crude silhouettes, NOT stick figures, NOT flat icons.",
+    "Cinematic composition with clear foreground / midground / background and correct vertical 9:16 framing in every panel; each panel is a true standing-phone-screen vertical camera view.",
+    "Keep characters visually consistent across every panel (same identity, face, hairstyle, wardrobe and body type as the referenced character assets). The sketches define composition, staging, performance and camera only; final faces, wardrobe colors, textures and lighting are locked by the official character/scene/prop asset images, not by these sketches.",
+    "Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips, thumbnails or PT-code boxes — the action and continuity notes in the plan are staging guidance, not diagram elements to render. Draw a clean film storyboard, not a technical markup diagram.",
+    `Every panel must use a distinct shot scale and camera angle per the plan below — do not repeat the same drawing. Time coverage ${timeRange}; sequence duration ${slot.duration || PRODUCTION_BOARD_MAX_SECONDS}s.`,
     `Source shots: ${shots}.`,
-    `Story beat: ${(beat || "cinematic story progression from the screenplay.").slice(0, 360)}`,
-    `Asset bindings: ${refs}.`,
-    roleLegend,
+    `Scene / story beat: ${(beat || "cinematic story progression from the screenplay.").slice(0, 360)}`,
+    `Characters and assets to keep consistent (do not invent new characters): ${refs}.`,
     dialogueRule,
-    `Use this exact ${panelCount}-panel plan:`,
+    "Per-panel plan — follow exactly, one panel each, in order:",
     panelGuide,
-    "No random text, unrelated glyphs, watermark, extra characters, or invented dialogue.",
+    "Keep every caption and label short and legible. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
   ].join("\n");
 }
 
@@ -16521,16 +18428,12 @@ ${storyboardPromptForSlot({ ...slot, dialogueLanguage: slot.dialogueLanguage || 
 
 ## 规则
 
-- Production Board 和资产图共用 image-gen 生图模型链路，但 Production Board 必须引用/整合已确定的资产身份。
-- Production Board 整张是 9:16 竖版工作纸（与最终竖屏视频一致）；面板走 2 列布局（剧情少用 4 格 2×2，标准用 6 格 2×3），每格是竖版画框，对应最终竖屏画面；不含任何资产参考栏。
-- 每张 Production Board 最多覆盖 ${PRODUCTION_BOARD_MAX_SECONDS} 秒连续场景段落；最终视频片段仍按 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS} 秒拆分。
-- Production Board 只包含：从 P1 起按阅读序（左→右、上→下）编号的竖版分镜格（2 列，4 或 6 格）；不含出场人物/场景/道具/插入参考区，也不含 PT 编号区，只有分镜画面。
-- Production Board 只控制编号面板、动作箭头、镜头框、构图、站位、镜头方向、动作节奏、资产绑定和切镜结构。
-- Production Board 对白语言必须跟随剧本解析阶段设置：${dialogueLanguage === "zh" ? "中文对白" : "英文对白"}，不得中英混用。
-- Production Board 需要包含图例：实心蓝色箭头代表动作/移动，虚线蓝色箭头代表呼吸/情绪流，红色矩形代表 9:16 摄影机/取景框，PT 编号代表资产绑定。
-- 分镜格必须是可读的黑白导演线稿剧情格：每一格都要画出该格剧情动作、人物站位、视线、关键道具/动作细节、空间关系和剪辑出口，不能只显示资产图、通用小人或文字说明。
-- 每一格必须有不同的镜头构图和景别，按弧线展开：建立镜头 →（站位广角/动作方向）→ 转折/高潮 → 反应特写 → 最终剪辑点，按实际格数（4 或 6）取用，不能各格重复同一张图或同一机位。
-- 正式人物/场景/道具资产只放在资产参考栏中用于身份绑定，不得直接贴进分镜剧情格；资产参考栏必须清楚标示出本 Sequence 使用的正式人物/场景/道具资产。
+- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整体版式(从上到下):①顶部信息栏(序列标题+时间码区间+核心情绪 / 项目·场景设定·时长·镜头风格·色调风格)②一个较大的 ESTABLISHING SHOT 建立镜头③编号分镜格(2 列,标准 6 格 2×3、剧情少时 4 格 2×2),每格带序号+时间码+速写+下方说明条(具体动作 / 镜头景别·机位 / 时长 / 运动 / 声音 / 转场)④底部本 Sequence 总结 + 视觉关键词。
+- 分镜格是**精细写实电影级黑白铅笔/墨线速写**:真实人物姿态、面部、表演与完整调度;禁止粗剪影、火柴人、扁平图标。每格构图/景别/机位各异,按弧线展开(建立→站位→转折/高潮→反应→剪辑点),不得各格重复同一张图。
+- 人物身份靠正式资产参考图锁定;速写只导构图/站位/表演/镜头,最终面孔·妆造·颜色·材质·光线以资产图为准。**不再画蓝红箭头、镜头框、资产参考栏、PT 编号等技术标注**——那些是给画面的调度指引,不作为图元绘制。
+- 每张 Production Board 最多覆盖 ${PRODUCTION_BOARD_MAX_SECONDS} 秒连续场景段落;最终视频片段仍按 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS} 秒拆分。
+- Production Board 对白语言必须跟随剧本解析阶段设置:${dialogueLanguage === "zh" ? "中文对白" : "英文对白"},不得中英混用。
+- ⚠️ 清晰的中文信息栏/说明条文字若靠生图模型直接渲染易糊/漏字;稳妥做法是生图只画速写、文字栏由后处理精确叠加(Phase 2)。
 
 ${body}
 `;
@@ -16683,6 +18586,14 @@ function assetStyleFromBody(body = {}) {
     label: ASSET_IMAGE_STYLE_PRESETS[preset].label,
     prompt: ASSET_IMAGE_STYLE_PRESETS[preset].prompt,
   };
+}
+
+function videoStylePresetFromProductionAssets(productionAssets = [], body = {}) {
+  const assetPreset = (productionAssets || []).map((asset) => compactLine(asset?.assetStylePreset || "")).find(Boolean);
+  if (assetPreset) return normalizeAssetStylePreset(assetPreset);
+  const mode = compactLine(body.videoStyleMode || "").toLowerCase();
+  const manualPreset = compactLine(body.videoStylePreset || body.assetStylePreset || "");
+  return mode === "manual" && manualPreset ? normalizeAssetStylePreset(manualPreset) : "";
 }
 
 function assetStyleNeedsOverride(style) {
@@ -17055,12 +18966,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   const assets = storyboardsActive ? [...productionAssets, ...storyboardRecords] : productionAssets;
   const assetNames = productionAssets.map((asset) => asset.name);
   const assetLookup = new Map(productionAssets.map((asset) => [asset.name, asset]));
-  // 视频风格来源:优先取参考资产实际生成风格,其次 body,最后兜底 cg_3d。用于给每个 shot 注入强制风格定律。
-  const videoStylePreset = normalizeAssetStylePreset(
-    productionAssets.map((asset) => compactLine(asset.assetStylePreset || "")).find(Boolean) ||
-      compactLine(body.assetStylePreset || "") ||
-      "cg_3d",
-  );
+  // 视频风格只能继承已生成并实际绑定的正式资产。素材缺失时保留为空，避免把规划阶段
+  // 误锁为超写实；只有显式 manual 模式才允许在未绑定资产时由请求指定风格。
+  const videoStylePreset = videoStylePresetFromProductionAssets(productionAssets, body);
   const refAssets = productionAssets.map((asset) => assetModelForRefs(asset, manifest));
   const referenceNames = assetNames.length ? assetNames : plannedAssetNames;
   const promptPath = findProjectFile(episodeRoot, "seedancePrompts");
@@ -17074,6 +18982,8 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     /英文对白保留/.test(promptMarkdown) ? "en" : /中文对白/.test(promptMarkdown) ? "zh" : projectDialogueLanguage(episodeRoot, "en"),
   );
   persistProjectDialogueLanguage(episodeRoot, dialogueLanguage);
+  // 全剧本 speaker 地图:模型对白常无归属,config 阶段据此为每个 shot 的对白补正确说话人。
+  const scriptSpeakerMap = buildScriptSpeakerMap(script, dialogueLanguage);
   const naturalBeatCount = continuityBeats.flatMap((beat) => splitScriptBeatIntoNaturalUnits(beat, dialogueLanguage)).length || continuityBeats.length;
   const preferredCount = Math.max(naturalBeatCount || 0, preferredShotCount(script, continuityBeats));
   if (!sections.length && !preferredCount) throw new Error("未找到可用的视频分镜：Seedance 提示词没有可识别分段，剧本也无法拆解。");
@@ -17114,6 +19024,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     });
     const originalPrompt = fencedTextFromSectionBody(sectionBody);
     const shouldReusePrompt = originalPrompt && promptMatchesBeat(originalPrompt, beat, sectionName);
+    // 从 Stage 1 序列化的 JSON 块反解出 seedance 导演拆解字段(仅当该块匹配本节拍时复用),
+    // 使模型拆解跨两阶段不丢失;后续所有提示词重合成都会优先用它,缺失字段回退启发式。
+    const videoDesign = shouldReusePrompt ? parseSeedanceDesignFromPrompt(originalPrompt) : {};
     const duration = clampShotDuration((shouldReusePrompt ? rawSectionDurations[index] : 0) || durationPlan.durations[index] || 10, durationPlan.durations[index] || 10);
     const sourceName = shouldReusePrompt && sectionName ? sectionName : beatTitle(beat, index);
     const name = shouldReusePrompt && /^[A-Z]\d+_V\d+/i.test(sourceName) ? sourceName : `${code}_V${String(index + 1).padStart(3, "0")}_${safeSlug(sourceName)}`;
@@ -17123,9 +19036,10 @@ async function buildVideoConfig(episodeRoot, body = {}) {
       title: beatTitle(beat, index),
       purpose: `还原剧本节拍：${beat || section.name}`,
       refs,
-      dialogues: dialoguesForText(beat, dialogueLanguage),
+      dialogues: dialoguesForShotWithSpeakers(beat, sectionBody, scriptSpeakerMap, dialogueLanguage),
       dialogueLanguage,
       beat,
+      videoDesign,
       assetLookup: new Map(refAssets.map((asset) => [asset.name, asset])),
     };
     if (originalPrompt && !shouldReusePrompt) {
@@ -17151,6 +19065,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
       title: beatTitle(beat, index),
       dialogues: promptShot.dialogues,
       dialogueLanguage,
+      videoDesign,
       prompt: cleanVideoPromptForSubmission(prompt),
       x: 120 + (index % 3) * 460,
       y: 620 + Math.floor(index / 3) * 320,
@@ -17530,10 +19445,9 @@ async function startToolJob(episodeRoot, type, body = {}) {
     const isDryRun = type === "assets-dry-run" || type === "asset-regenerate-dry-run" || type === "asset-edit-dry-run";
     const isRegenerate = type === "asset-regenerate" || type === "asset-regenerate-dry-run";
     const isEdit = type === "asset-edit" || type === "asset-edit-dry-run";
-    if (type === "assets") {
-      const manifest = readAssetManifest(episodeRoot)?.data;
-      if (!manifest?.items?.length) throw new Error("还没有资产解析结果，请先提取资产再生成");
-    }
+    const manifest = readAssetManifest(episodeRoot)?.data;
+    if (!manifest?.items?.length) throw new Error("还没有资产解析结果，请先提取资产再生成");
+    if (!manifest.confirmed) throw new Error("资产解析尚未确认，请先确认分类再生图");
     if (!isDryRun && !imageApiKey()) {
       throw new Error("缺少 OPENAI_API_KEY：请在启动 Pixel Toys 的终端或项目 .env.local 中配置 api.apikey.fun 的 OpenAI 兼容 API Key，然后重启服务。");
     }
@@ -17682,6 +19596,10 @@ async function startToolJob(episodeRoot, type, body = {}) {
       args.push("--reference-image", referenceImage);
     }
     args.push("--size", size);
+    const storyboardConcurrency = Math.max(1, Math.min(STORYBOARD_IMAGE_CONCURRENCY, selectedStoryboardNames.length));
+    if (!isRegenerate && storyboardConcurrency > 1) {
+      args.push("--concurrency", String(storyboardConcurrency));
+    }
     const job = startProcessJob({
       episodeRoot,
       type,
@@ -17746,7 +19664,6 @@ function apiStatusRows() {
     { id: "image", label: "图片生成 API", configured: configuredEnv(IMAGE_API_KEY_ENV_NAMES) },
     { id: "assetAnalyzer", label: "资产解析 API", configured: configuredEnv(["ASSET_ANALYZER_API_KEY", ...IMAGE_API_KEY_ENV_NAMES]) },
     { id: "storyboard", label: "故事板生成 API", configured: configuredEnv(["STORYBOARD_API_KEY", ...IMAGE_API_KEY_ENV_NAMES]) },
-    { id: "xluoVideo", label: "XLUO 视频 API", configured: configuredEnv(XLUO_VIDEO_API_KEY_ENV_NAMES) },
     { id: "arkVideo", label: "火山 Ark 视频 API", configured: configuredEnv(ARK_VIDEO_API_KEY_ENV_NAMES) },
     { id: "byteplusVideo", label: "BytePlus ModelArk 视频 API", configured: configuredEnv(BYTEPLUS_ARK_VIDEO_API_KEY_ENV_NAMES) },
     { id: "gravitexVideo", label: "Gravitex/Seedance 视频 API", configured: configuredEnv(GRAVITEX_VIDEO_API_KEY_ENV_NAMES) },
@@ -17960,7 +19877,7 @@ async function handleApi(req, res, url) {
       const user = currentUserFromRequest(req);
       if (!userCanAccessCanvasState(user, state)) return fail(res, 404, "canvas not found");
     }
-    return send(res, 200, { ok: true, state });
+    return send(res, 200, { ok: true, state: canvasStateWithThumbPreviews(state) }, { "Cache-Control": "no-store" });
   }
 
   if (req.method === "POST" && url.pathname === "/api/canvas/state") {
@@ -18075,11 +19992,9 @@ async function handleApi(req, res, url) {
     const provider = canvasVideoProviderForBody(body);
     const payload = provider === "gravitex"
       ? await buildGravitexVideoGenerationPayload(body)
-      : provider === "ark"
-        ? await buildSeedanceGenerationPayload(body)
-        : provider === "byteplus"
-          ? await buildSeedanceGenerationPayload({ ...body, __provider: "byteplus" })
-          : await buildXluoVideoGenerationPayload(body);
+      : provider === "byteplus"
+        ? await buildSeedanceGenerationPayload({ ...body, __provider: "byteplus" })
+        : await buildSeedanceGenerationPayload(body);
     return send(res, 200, {
       ok: true,
       provider,
@@ -18129,6 +20044,16 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, result });
   }
 
+  if (req.method === "POST" && url.pathname === "/api/canvas/ark-virtual-person") {
+    const result = await createArkVirtualPersonAsset(await readBody(req));
+    return send(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/canvas/ark-virtual-person") {
+    const result = await getArkVirtualPersonAsset(url.searchParams.get("assetId") || "");
+    return send(res, 200, { ok: true, result });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/canvas/photoreal-assets/validate") {
     const result = await validateCanvasPhotorealAssets(await readBody(req));
     return send(res, 200, { ok: true, result });
@@ -18154,13 +20079,46 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, result });
   }
 
+  if (req.method === "GET" && url.pathname === "/api/asset-library") {
+    const userId = assetLibraryUserId(req);
+    const assets = assetLibrary.list({
+      userId,
+      search: url.searchParams.get("search") || "",
+      limit: url.searchParams.get("limit") || 100,
+    }).map(publicAssetLibraryRecord);
+    return send(res, 200, { ok: true, assets });
+  }
+
+  const assetLibraryMatch = url.pathname.match(/^\/api\/asset-library\/([^/]+)$/);
+  if (req.method === "GET" && assetLibraryMatch) {
+    const userId = assetLibraryUserId(req);
+    const asset = assetLibrary.get(decodeURIComponent(assetLibraryMatch[1]), { userId });
+    if (!asset) return fail(res, 404, "素材库资产不存在");
+    return send(res, 200, { ok: true, asset: publicAssetLibraryRecord(asset) });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/asset-library") {
+    const userId = assetLibraryUserId(req);
+    const asset = await saveAssetToLibrary(await readBody(req), userId);
+    return send(res, 200, { ok: true, asset });
+  }
+
+  if (req.method === "DELETE" && assetLibraryMatch) {
+    const userId = assetLibraryUserId(req);
+    const removed = assetLibrary.remove(decodeURIComponent(assetLibraryMatch[1]), { userId });
+    if (!removed) return fail(res, 404, "素材库资产不存在");
+    return send(res, 200, { ok: true, removed: true });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/canvas/video-assets") {
     const result = await createCanvasVideoAsset(await readBody(req));
     return send(res, 200, { ok: true, result });
   }
 
   if (req.method === "POST" && url.pathname === "/api/canvas/image-generation") {
-    const result = createCanvasImageGeneration(await readBody(req));
+    const body = await readBody(req);
+    const userId = assetLibraryUserId(req);
+    const result = await createCanvasImageGeneration({ ...body, ownerUserId: userId });
     return send(res, 200, { ok: true, result });
   }
 
@@ -18241,6 +20199,8 @@ async function handleApi(req, res, url) {
     const hasScriptText = typeof body.scriptText === "string" && body.scriptText.trim();
     if (hasScriptText) writeScriptWithWorkflowIsolation(episodeRoot, body.scriptText, "new project script");
     else ensureWorkflowNamespace(episodeRoot, "new project");
+    // 「资产描述」独立输入(只做资产解析,不影响剧情/分镜);建项目时一并落盘。
+    if (typeof body.assetDescriptionText === "string") writeAssetDescription(episodeRoot, body.assetDescriptionText);
     if (requestedDisplayName) persistProjectDisplayName(episodeRoot, requestedDisplayName);
     return send(res, 200, fullProjectState(episodeRoot));
   }
@@ -18280,6 +20240,73 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && action === "status") {
     const user = currentUserFromRequest(req);
     return send(res, 200, projectStatusSnapshotForUser(episodeRoot, user));
+  }
+
+  const referenceKitBindingMatch = action.match(/^reference-kits\/([^/]+)\/(bind|unbind)$/);
+  if (req.method === "GET" && action === "reference-kits") {
+    const workflow = readWorkflowState(episodeRoot);
+    const config = ensureVideoConfigIsolation(episodeRoot);
+    return send(res, 200, { ok: true, ...projectReferenceKitState(workflow, config?.data || {}) });
+  }
+
+  if (req.method === "POST" && action === "reference-kits") {
+    const body = await readBody(req);
+    const workflow = readWorkflowState(episodeRoot);
+    const kits = projectReferenceKits(workflow);
+    const requestedId = compactLine(body.id || "");
+    const existingIndex = requestedId ? kits.findIndex((kit) => kit.id === requestedId) : -1;
+    const previous = existingIndex >= 0 ? kits[existingIndex] : null;
+    const kit = normalizeReferenceKit(
+      {
+        ...body,
+        id: requestedId || `kit_${crypto.randomUUID()}`,
+      },
+      { previous, now: new Date().toISOString() },
+    );
+    const nextKits = [...kits];
+    if (existingIndex >= 0) nextKits[existingIndex] = kit;
+    else nextKits.push(kit);
+    writeWorkflowState(episodeRoot, { ...workflow, referenceKits: nextKits });
+    return send(res, 200, fullProjectStateForUser(episodeRoot, currentUserFromRequest(req)));
+  }
+
+  if (req.method === "POST" && referenceKitBindingMatch) {
+    const kitId = decodeURIComponent(referenceKitBindingMatch[1]);
+    const operation = referenceKitBindingMatch[2];
+    const workflow = readWorkflowState(episodeRoot);
+    const kit = projectReferenceKits(workflow).find((item) => item.id === kitId);
+    if (!kit) return fail(res, 404, "Reference Kit 不存在");
+    const body = await readBody(req);
+    const shotName = compactLine(body.shotName || body.shotId || "");
+    const configRecord = ensureVideoConfigIsolation(episodeRoot);
+    if (!configRecord?.data || !Array.isArray(configRecord.data.shots)) return fail(res, 409, "当前项目还没有可绑定的 Shot");
+    const shotIndex = configRecord.data.shots.findIndex((shot, index) => compactLine(shot?.name || shot?.id || `shot_${index + 1}`) === shotName);
+    if (shotIndex < 0) return fail(res, 404, "Shot 不存在");
+    const currentShot = configRecord.data.shots[shotIndex];
+    const nextShot = operation === "bind"
+      ? bindReferenceKitToShot(currentShot, kit)
+      : unbindReferenceKitFromShot(currentShot, kit);
+    const nextShots = [...configRecord.data.shots];
+    nextShots[shotIndex] = nextShot;
+    writeVideoConfigRecord(configRecord, { ...configRecord.data, shots: nextShots });
+    return send(res, 200, fullProjectStateForUser(episodeRoot, currentUserFromRequest(req)));
+  }
+
+  const referenceKitDeleteMatch = action.match(/^reference-kits\/([^/]+)$/);
+  if (req.method === "DELETE" && referenceKitDeleteMatch) {
+    const kitId = decodeURIComponent(referenceKitDeleteMatch[1]);
+    const workflow = readWorkflowState(episodeRoot);
+    const kits = projectReferenceKits(workflow);
+    if (!kits.some((kit) => kit.id === kitId)) return fail(res, 404, "Reference Kit 不存在");
+    const nextWorkflow = { ...workflow, referenceKits: kits.filter((kit) => kit.id !== kitId) };
+    const configRecord = ensureVideoConfigIsolation(episodeRoot);
+    if (configRecord?.data && Array.isArray(configRecord.data.shots)) {
+      const deletedKit = kits.find((kit) => kit.id === kitId);
+      const nextShots = configRecord.data.shots.map((shot) => shot?.referenceKitId === kitId ? unbindReferenceKitFromShot(shot, deletedKit) : shot);
+      writeVideoConfigRecord(configRecord, { ...configRecord.data, shots: nextShots });
+    }
+    writeWorkflowState(episodeRoot, nextWorkflow);
+    return send(res, 200, fullProjectStateForUser(episodeRoot, currentUserFromRequest(req)));
   }
 
   if (req.method === "POST" && action === "references") {
@@ -18369,9 +20396,12 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && action === "file") {
     const body = await readBody(req);
     const key = body.key;
-    if (!["script", "storyboard", "assetManifest", "assetPrompts", "seedancePrompts", "config"].includes(key)) throw new Error("invalid file key");
+    if (!["script", "assetDescription", "storyboard", "assetManifest", "assetPrompts", "seedancePrompts", "config"].includes(key)) throw new Error("invalid file key");
     if (key === "script") {
       writeScriptWithWorkflowIsolation(episodeRoot, body.content || "", "script file edited");
+    } else if (key === "assetDescription") {
+      // 「资产描述」独立输入,只做资产解析源,不触发剧情/分镜工作流重置。
+      writeAssetDescription(episodeRoot, body.content || "");
     } else {
       const file = findProjectFile(episodeRoot, key);
       const content = body.content || "";
@@ -18421,6 +20451,18 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
   }
 
+  if (req.method === "POST" && action === "asset-upload-local") {
+    const body = await readBody(req);
+    const result = uploadLocalAsset(episodeRoot, body);
+    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "asset-import-library") {
+    const body = await readBody(req);
+    const result = await importAssetLibraryAsset(episodeRoot, body, assetLibraryUserId(req));
+    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+  }
+
   if (req.method === "POST" && action === "asset-style-reference") {
     const body = await readBody(req);
     const result = updateAssetStyleReference(episodeRoot, body);
@@ -18458,6 +20500,12 @@ async function handleApi(req, res, url) {
     const targetLanguage = body.targetLanguage === "zh" ? "zh" : "en";
     const script = typeof body.scriptText === "string" ? body.scriptText : readText(findProjectFile(episodeRoot, "script"));
     const result = await convertScriptDialogueLanguage(script, targetLanguage, body.assetAnalyzerModel);
+    // 熔断:提取到疑似误吞(对白块含场景卡/镜头/过半正文)→ 不写回,原样保留剧本,返回明确错误。
+    if (result.aborted) {
+      return send(res, 422, { ok: false, error: `对白语言切换已中止,未改动剧本:${result.abortReason}。请检查剧本格式或联系维护者。` });
+    }
+    // 写回前先备份原剧本到 .script_history,任何意外都可回滚(此前事故正因无备份且直接覆写)。
+    backupScriptBeforeOverwrite(episodeRoot, script, `dialogue-language-${targetLanguage}`);
     writeScriptWithWorkflowIsolation(episodeRoot, result.script, "dialogue language changed");
     persistProjectDialogueLanguage(episodeRoot, targetLanguage);
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
@@ -18502,6 +20550,69 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && action === "assemble-final-cut") {
     const result = startFinalCutAssembly(episodeRoot);
+    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "GET" && action === "chatcut/status") {
+    return send(res, 200, { ok: true, chatcut: chatcutStatus(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "chatcut/package") {
+    const result = chatcutAdapter.buildPackage(chatcutPackageInput(episodeRoot));
+    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "chatcut/state") {
+    const body = await readBody(req);
+    const result = chatcutAdapter.setState(episodeRoot, body.status, { note: body.note || "" });
+    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "chatcut/import") {
+    const body = await readBody(req);
+    const rawPath = compactLine(body.filePath || body.path || body.exportPath || "");
+    const sourceFile = path.resolve(path.isAbsolute(rawPath) ? rawPath : path.join(episodeRoot, rawPath));
+    if (!rawPath || !allowedPath(sourceFile) || !fs.existsSync(sourceFile) || !fs.statSync(sourceFile).isFile()) {
+      throw new Error("请提供本地 ChatCut 导出视频路径");
+    }
+    const result = chatcutAdapter.importExport(episodeRoot, sourceFile, { fileName: body.fileName || "" });
+    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "chatcut/approve") {
+    const result = chatcutAdapter.setState(episodeRoot, CHATCUT_STATUS.APPROVED, { note: "人工确认本集" });
+    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "chatcut/automate") {
+    const body = await readBody(req);
+    let packageStatus = chatcutAdapter.status(episodeRoot);
+    if (!packageStatus.packageExists) {
+      const packageResult = chatcutAdapter.buildPackage(chatcutPackageInput(episodeRoot));
+      packageStatus = chatcutAdapter.status(episodeRoot);
+      packageStatus.packageResult = packageResult;
+    }
+    const user = currentUserFromRequest(req);
+    const queued = chatcutQueue.enqueue(episodeRoot, {
+      project: projectSummary(episodeRoot),
+      sourceDigest: packageStatus.sourceDigest,
+      packageDir: "12_chatcut",
+      manifestFile: "12_chatcut/assembly_manifest.json",
+      editBriefFile: "12_chatcut/edit_brief.md",
+      requestedBy: user?.id || body.requestedBy || "",
+    });
+    if (queued.created || queued.job.status === "queued" || queued.job.status === "running") {
+      chatcutAdapter.setState(episodeRoot, CHATCUT_STATUS.EDITING, { note: "已提交服务器 ChatCut Agent 队列" });
+    }
+    const result = {
+      enabled: chatcutAgent.diagnose().enabled,
+      queued: queued.created,
+      job: queued.job,
+      diagnosis: chatcutAgent.diagnose(),
+      reason: chatcutAgent.diagnose().enabled
+        ? "已进入服务器 ChatCut Agent 队列"
+        : "已写入服务器队列，但尚未配置独立 ChatCut Agent",
+    };
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
   }
 
@@ -18577,7 +20688,13 @@ function serveMedia(req, res, file, options = {}) {
   // change to the file changes v and therefore the URL, so we can cache them
   // hard. This stops every page refresh from re-downloading all asset images.
   const versioned = !options.download && /[?&]v=/.test(req.url || "");
-  const cacheControl = versioned ? "public, max-age=31536000, immutable" : "no-store";
+  // 缩略图按源文件 mtime+size 落盘缓存,内容稳定;给它一个中期浏览器缓存,
+  // 消除"每次刷新全量重下预览图"的延迟。带 v= 的仍走 immutable 强缓存。
+  const cacheControl = versioned
+    ? "public, max-age=31536000, immutable"
+    : options.cacheSeconds
+      ? `public, max-age=${options.cacheSeconds}`
+      : "no-store";
   if (!range) {
     return send(res, 200, fs.readFileSync(file), {
       "Content-Type": contentType,
@@ -18625,7 +20742,14 @@ const server = http.createServer(async (req, res) => {
       if (!allowedPath(file) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return fail(res, 404, "media not found");
       const episodeRoot = episodeRootForFile(file);
       if (episodeRoot) assertUserCanAccessProject(req, episodeRoot);
-      return serveMedia(req, res, file, { download: url.searchParams.get("download") === "1" });
+      const download = url.searchParams.get("download") === "1";
+      // 画布预览缩略图:?thumb=<宽> 时返回小图(下载/无 thumb 走原图);失败回退原图。
+      const thumbParam = url.searchParams.get("thumb");
+      if (thumbParam && !download) {
+        const thumb = await ensureThumbnail(file, thumbParam);
+        if (thumb) return serveMedia(req, res, thumb, { cacheSeconds: 86400 });
+      }
+      return serveMedia(req, res, file, { download });
     }
     if (url.pathname === "/api/canvas/video-download") return await proxyVideoDownload(req, res, url);
     if (url.pathname.startsWith("/public-assets/")) {
@@ -18633,6 +20757,11 @@ const server = http.createServer(async (req, res) => {
       const file = path.join(CANVAS_PUBLIC_ASSET_DIR, fileName);
       if (!fileName || !file.startsWith(CANVAS_PUBLIC_ASSET_DIR) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
         return fail(res, 404, "public asset not found");
+      }
+      const thumbParam = url.searchParams.get("thumb");
+      if (thumbParam) {
+        const thumb = await ensureThumbnail(file, thumbParam);
+        if (thumb) return serveMedia(req, res, thumb, { cacheSeconds: 86400 });
       }
       return serveMedia(req, res, file);
     }
@@ -18647,6 +20776,7 @@ if (require.main === module) {
   server.listen(PORT, () => {
     console.log(`Pixel Toys running at http://localhost:${PORT}`);
     console.log(`Workspace: ${APP_ROOT}`);
+    if (startChatcutAgentWorker()) console.log(`ChatCut Agent worker enabled (poll ${CHATCUT_AGENT_POLL_MS} ms)`);
   });
 }
 
@@ -18655,19 +20785,83 @@ module.exports = {
   prepareBatchVideoReferences,
   readVideoConfig,
   __test: {
+    dialogue: {
+      dialoguesForText,
+      inlineColonDialogues,
+      backfillDialogueSpeakers,
+      normalizeDialogueItems,
+      seedanceDialogueText,
+      buildScriptSpeakerMap,
+      parseSectionDialogueTexts,
+      dialoguesForShotWithSpeakers,
+    },
     assetParser: {
       assetManifestFromAssets,
       buildRuleAssets,
       correctAssetRolesFromEvidence,
       enforceCharacterProfileAssets,
       inferWorldProfile,
+      mergeAnalyzerAssets,
+      buildModelDiscoveredAssets,
+      isModelAssetLabelUsable,
+      mergeTypedAnalyzerResults,
+      callAssetAnalyzerModel,
+      auditAssetRoles,
+      runAssetAuditInBackground,
+      extractAssetManifest,
+      startToolJob,
+      assetManifestIdentityChanged,
+      invalidateDerivedVideoArtifactsForAssetManifestChange,
+      seedanceReferenceLine,
+      seedancePromptForShotMode,
+      normalizeAssetManifest,
     },
     assetPrompt: {
       updateAssetPromptInManifest,
     },
+    assetUpload: {
+      uploadLocalAsset,
+      projectProductionAssetsForState,
+      resolveReferenceAssets,
+    },
+    dialogue: {
+      extractDialogueBlocks,
+      isSpeakerCueLine,
+      dialogueBlocksLookSafe,
+      blockquoteDialogues,
+      convertScriptDialogueLanguage,
+      dialoguesForText,
+      inlineColonDialogues,
+      backfillDialogueSpeakers,
+      normalizeDialogueItems,
+      seedanceDialogueText,
+      buildScriptSpeakerMap,
+      parseSectionDialogueTexts,
+      dialoguesForShotWithSpeakers,
+    },
     canvasVideo: {
       canvasVideoProviderForBody,
       buildSeedanceGenerationPayload,
+      normalizeVideoResolution,
+    },
+    videoReferences: {
+      assertVideoConfigAssetsReady,
+      projectShotUsableVideoReferenceAssets,
+    },
+    canvasImageRef: {
+      localPublicAssetPathFromUrl,
+      CANVAS_PUBLIC_ASSET_DIR,
+    },
+    arkVirtualPerson: {
+      buildOpenApiRequest: buildArkAssetOpenApiRequest,
+      normalizeAssetResult: normalizeArkVirtualPersonAsset,
+      createAsset: createArkVirtualPersonAsset,
+      getAsset: getArkVirtualPersonAsset,
+      sanitizeState: sanitizeCanvasState,
+      mergeState: mergeCanvasStateForWrite,
+      isArkPersonEligibleAsset,
+      isCharacterRefAsset,
+      isCanvasPhotorealAsset,
     },
   },
 };

@@ -12,3 +12,8 @@ assert.match(app, /assetGalleryHidden/, "asset gallery should be hidden before p
 assert.match(app, /assetJobStatusHidden/, "asset job status should be hidden before parsed assets exist");
 assert.doesNotMatch(app, /还没有读取到资产图。可以先上传资产图，或生成资产图。/, "pre-parse empty asset copy should not render");
 assert.doesNotMatch(app, /资产图：未开始/, "pre-parse asset status should not render");
+assert.match(
+  app,
+  /const targetNames = Array\.isArray\(job\.targetAssetNames\)[\s\S]*?if \(targetNames\.length\) targets\.push\(\.\.\.targetNames\)/,
+  "a running batch asset job must keep every target marked as generating",
+);

@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Sign in · Pixel Toys</title>
+    <title>Enter the frame · Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=202607040215" />
+    <link rel="stylesheet" href="/styles.css?v=202607211530" />
   </head>
   <body class="auth-page">
     <main class="auth-shell">
@@ -16,35 +16,46 @@
       </div>
       <header class="auth-topbar">
         <a class="auth-logo" href="/" aria-label="Pixel Toys">
+          <span class="auth-logo-index">PX / 01</span>
           <span>PIXEL TOYS</span>
         </a>
         <div class="auth-top-actions">
-          <span>FILM WORKFLOW</span>
-          <button class="auth-menu-dot" type="button" aria-label="Menu">MENU</button>
+          <span class="auth-route">PRIVATE STUDIO / ACCESS</span>
+          <span class="auth-status"><i aria-hidden="true"></i> SYSTEM READY</span>
         </div>
       </header>
 
       <section class="auth-hero" aria-label="Pixel Toys sign in">
         <div class="auth-copy">
-          <p class="auth-kicker">SCRIPT · SHOT · RENDER</p>
+          <p class="auth-kicker">PIXEL TOYS / MOTION SYSTEM</p>
           <h1>
-            Build cinematic<br />
-            AI film<br />
-            workflows.
+            Make the<br />
+            <em>next frame</em><br />
+            move.
           </h1>
-          <p class="auth-lead">Plan scenes, manage characters, assemble storyboards, and generate video shots from one production canvas.</p>
+          <p class="auth-lead">A focused production space for turning scripts, characters, and references into moving images.</p>
+          <div class="auth-copy-stats" aria-label="Pixel Toys workflow">
+            <span><strong>01</strong> SCRIPT</span>
+            <span><strong>02</strong> SHOT</span>
+            <span><strong>03</strong> MOTION</span>
+          </div>
         </div>
 
         <div class="auth-infinity-stage" aria-hidden="true">
-          <canvas class="auth-infinity-canvas"></canvas>
+          <div class="auth-stage-meta"><span>LOOP / 001</span><span>24 FPS</span></div>
+          <div class="auth-stage-frame"><i></i><i></i><i></i><i></i></div>
+          <div class="auth-stage-axis"></div>
+          <canvas class="auth-infinity-canvas" data-body="480" data-drift="90" data-spawn="28" data-rotate="0.05" data-fill="0.74" data-psize="0.82"></canvas>
           <span class="auth-infinity-shadow"></span>
+          <div class="auth-stage-caption"><span>LIVE REFERENCE LOOP</span><span>PX_SIGNAL_01</span></div>
         </div>
 
         <div class="auth-card">
+          <div class="auth-card-topline"><span>PX / ACCESS</span><span>SECURE CHANNEL</span></div>
           <div class="auth-brand">
             <div>
               <strong>Pixel Toys</strong>
-              <span>AI film pipeline access</span>
+              <span>Motion workspace access</span>
             </div>
           </div>
 
@@ -83,11 +94,11 @@
       </section>
 
       <footer class="auth-footer">
-        <span>PRE-PRODUCTION TO FINAL SHOT</span>
-        <span>Designed for small teams building AI-native films.</span>
+        <span>PIXEL TOYS / PRODUCTION CONSOLE</span>
+        <span>BUILD QUIETLY. MAKE THE FRAME MOVE.</span>
       </footer>
     </main>
-    <script src="/auth.js?v=202606300213"></script>
+    <script src="/auth.js?v=202607211500"></script>
     <script src="/auth-infinity.js?v=202606301445"></script>
   </body>
 </html>

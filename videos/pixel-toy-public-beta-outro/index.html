@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>PIXEL TOYS / PUBLIC BETA</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --black: #000000;
+        --white: #f4f3ef;
+        --soft-white: rgba(244, 243, 239, 0.66);
+        --violet: #ad43ff;
+        --blue: #29c8f2;
+        --line: rgba(244, 243, 239, 0.2);
+        --mono: "JetBrains Mono", "Roboto Mono", monospace;
+        --sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        margin: 0;
+        overflow: hidden;
+        background: var(--black);
+      }
+
+      body {
+        color: var(--white);
+        font-family: var(--sans);
+      }
+
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--black);
+      }
+
+      .clip {
+        position: absolute;
+        box-sizing: border-box;
+      }
+
+      #field {
+        inset: 0;
+        background: var(--black);
+      }
+
+      #grid {
+        inset: -80px;
+        background-image: radial-gradient(circle, rgba(105, 80, 180, 0.24) 1.2px, transparent 1.6px);
+        background-size: 42px 42px;
+        opacity: 0;
+        transform-origin: 50% 50%;
+        mix-blend-mode: screen;
+      }
+
+      #halo {
+        left: 50%;
+        top: 46%;
+        width: 940px;
+        height: 470px;
+        margin-left: -470px;
+        margin-top: -235px;
+        border: 2px solid rgba(91, 163, 255, 0.32);
+        border-radius: 50%;
+        opacity: 0;
+        box-shadow:
+          0 0 52px rgba(67, 94, 255, 0.24),
+          0 0 180px rgba(174, 57, 255, 0.14),
+          inset 0 0 70px rgba(20, 196, 243, 0.08);
+      }
+
+      #halo::before,
+      #halo::after {
+        position: absolute;
+        display: block;
+        content: "";
+        border-radius: 50%;
+      }
+
+      #halo::before {
+        inset: 56px 132px;
+        border: 1px solid rgba(180, 67, 255, 0.34);
+      }
+
+      #halo::after {
+        inset: -16px 260px;
+        border-left: 1px solid rgba(43, 201, 243, 0.75);
+        border-right: 1px solid rgba(180, 67, 255, 0.55);
+      }
+
+      #grain {
+        inset: 0;
+        opacity: 0.18;
+        background-image: radial-gradient(circle at 17% 28%, rgba(255, 255, 255, 0.22) 0 0.8px, transparent 1.4px),
+          radial-gradient(circle at 73% 62%, rgba(255, 255, 255, 0.16) 0 0.7px, transparent 1.3px),
+          radial-gradient(circle at 48% 88%, rgba(255, 255, 255, 0.13) 0 0.65px, transparent 1.2px);
+        background-size: 19px 23px, 29px 31px, 37px 41px;
+        mix-blend-mode: screen;
+        pointer-events: none;
+      }
+
+      .hairline {
+        height: 2px;
+        background: var(--line);
+        transform-origin: center center;
+        opacity: 0;
+      }
+
+      #hairline-top {
+        left: 170px;
+        right: 170px;
+        top: 152px;
+        transform: scaleX(0.2);
+      }
+
+      #hairline-bottom {
+        left: 170px;
+        right: 170px;
+        bottom: 146px;
+        transform: scaleX(0.2);
+      }
+
+      .corner {
+        width: 34px;
+        height: 34px;
+        opacity: 0;
+      }
+
+      .corner::before,
+      .corner::after {
+        position: absolute;
+        display: block;
+        content: "";
+        background: rgba(244, 243, 239, 0.72);
+      }
+
+      .corner::before {
+        width: 34px;
+        height: 2px;
+      }
+
+      .corner::after {
+        width: 2px;
+        height: 34px;
+      }
+
+      #corner-tl {
+        left: 170px;
+        top: 152px;
+      }
+
+      #corner-tr {
+        right: 170px;
+        top: 152px;
+        transform: rotate(90deg);
+      }
+
+      #corner-bl {
+        left: 170px;
+        bottom: 146px;
+        transform: rotate(-90deg);
+      }
+
+      #corner-br {
+        right: 170px;
+        bottom: 146px;
+        transform: rotate(180deg);
+      }
+
+      #lockup {
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding-bottom: 12px;
+        text-align: center;
+      }
+
+      #logo-mark {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 760px;
+        height: 142px;
+        opacity: 0;
+        transform: scale(0.72) rotate(-2deg);
+        filter: drop-shadow(0 0 24px rgba(255, 255, 255, 0.2)) drop-shadow(0 0 72px rgba(60, 186, 255, 0.22));
+      }
+
+      #logo-image {
+        display: block;
+        width: 720px;
+        height: auto;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+
+      #wordmark {
+        margin-top: 34px;
+        color: var(--white);
+        font-size: 68px;
+        font-weight: 800;
+        letter-spacing: 0.26em;
+        line-height: 1;
+        opacity: 0;
+        transform: translateX(-70px);
+        text-indent: 0.26em;
+        text-shadow: 0 0 34px rgba(255, 255, 255, 0.12);
+      }
+
+      #rule {
+        width: 360px;
+        height: 3px;
+        margin-top: 34px;
+        background: var(--blue);
+        box-shadow: 92px 0 26px rgba(174, 67, 255, 0.76), -92px 0 26px rgba(43, 201, 243, 0.52);
+        opacity: 0;
+        transform: scaleX(0);
+        transform-origin: center center;
+      }
+
+      #tagline {
+        margin-top: 30px;
+        color: var(--soft-white);
+        font-family: var(--mono);
+        font-size: 26px;
+        font-weight: 500;
+        letter-spacing: 0.34em;
+        line-height: 1;
+        opacity: 0;
+        transform: translateY(34px);
+        text-indent: 0.34em;
+      }
+
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        color: rgba(244, 243, 239, 0.5);
+        font-family: var(--mono);
+        font-size: 18px;
+        font-weight: 500;
+        letter-spacing: 0.18em;
+        line-height: 1;
+        opacity: 0;
+      }
+
+      .meta::before {
+        display: block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--violet);
+        box-shadow: 0 0 18px rgba(174, 67, 255, 0.9);
+        content: "";
+      }
+
+      #meta-left {
+        left: 206px;
+        top: 214px;
+        transform: translateX(-32px);
+      }
+
+      #meta-right {
+        right: 206px;
+        bottom: 208px;
+        transform: translateX(32px);
+      }
+
+      #sweep {
+        left: 0;
+        top: 0;
+        width: 5px;
+        height: 100%;
+        background: var(--blue);
+        box-shadow: 0 0 30px rgba(43, 201, 243, 0.88), 0 0 120px rgba(174, 67, 255, 0.36);
+        opacity: 0;
+        transform: translateX(-40px);
+      }
+
+      #end-fade {
+        inset: 0;
+        background: var(--black);
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="4" data-width="1920" data-height="1080">
+      <div id="field" class="clip" data-start="0" data-duration="4" data-track-index="0"></div>
+      <div id="grid" class="clip" data-start="0" data-duration="4" data-track-index="1"></div>
+      <div id="halo" class="clip" data-start="0" data-duration="4" data-track-index="2"></div>
+      <div id="grain" class="clip" data-start="0" data-duration="4" data-track-index="3"></div>
+      <div id="hairline-top" class="clip hairline" data-start="0" data-duration="4" data-track-index="4"></div>
+      <div id="hairline-bottom" class="clip hairline" data-start="0" data-duration="4" data-track-index="5"></div>
+      <div id="corner-tl" class="clip corner" data-start="0" data-duration="4" data-track-index="6"></div>
+      <div id="corner-tr" class="clip corner" data-start="0" data-duration="4" data-track-index="7"></div>
+      <div id="corner-bl" class="clip corner" data-start="0" data-duration="4" data-track-index="8"></div>
+      <div id="corner-br" class="clip corner" data-start="0" data-duration="4" data-track-index="9"></div>
+      <div id="meta-left" class="clip meta" data-start="0" data-duration="4" data-track-index="10">PIXEL TOY / 2026</div>
+      <div id="meta-right" class="clip meta" data-start="0" data-duration="4" data-track-index="11">A NEW VISUAL WORKSPACE</div>
+      <div id="lockup" class="clip" data-start="0" data-duration="4" data-track-index="12">
+        <div id="logo-mark">
+          <img id="logo-image" src="assets/pixel-toys-logo.png" alt="PIXEL TOYS" draggable="false" />
+        </div>
+        <div id="wordmark">PIXEL TOYS</div>
+        <div id="rule"></div>
+        <div id="tagline">PUBLIC BETA COMING SOON</div>
+      </div>
+      <div id="sweep" class="clip" data-start="0" data-duration="4" data-track-index="13"></div>
+      <div id="end-fade" class="clip" data-start="0" data-duration="4" data-track-index="14"></div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#field", { opacity: 0 }, { opacity: 1, duration: 0.65, ease: "power2.out" }, 0.08);
+      tl.fromTo("#grid", { opacity: 0, scale: 1.12 }, { opacity: 0.62, scale: 1, duration: 1.8, ease: "sine.out" }, 0.16);
+      tl.fromTo("#halo", { opacity: 0, scale: 0.78, rotation: -6 }, { opacity: 0.88, scale: 1, rotation: 0, duration: 1.18, ease: "expo.out" }, 0.22);
+      tl.fromTo("#hairline-top, #hairline-bottom", { opacity: 0, scaleX: 0.2 }, { opacity: 1, scaleX: 1, duration: 0.82, ease: "power4.out", stagger: 0.07 }, 0.28);
+      tl.fromTo(".corner", { opacity: 0, scale: 0.65 }, { opacity: 1, scale: 1, duration: 0.58, ease: "back.out(1.8)", stagger: 0.04 }, 0.36);
+      tl.fromTo("#meta-left", { opacity: 0, x: -32 }, { opacity: 1, x: 0, duration: 0.58, ease: "power3.out" }, 0.42);
+      tl.fromTo("#meta-right", { opacity: 0, x: 32 }, { opacity: 1, x: 0, duration: 0.58, ease: "circ.out" }, 0.54);
+      tl.fromTo("#logo-mark", { opacity: 0, scale: 0.72, rotation: -2 }, { opacity: 1, scale: 1, rotation: 0, duration: 1.08, ease: "expo.out" }, 0.58);
+      tl.fromTo("#wordmark", { opacity: 0, x: -70 }, { opacity: 1, x: 0, duration: 0.72, ease: "power4.out" }, 1.08);
+      tl.fromTo("#rule", { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: 0.7, ease: "expo.out" }, 1.38);
+      tl.fromTo("#tagline", { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.72, ease: "sine.out" }, 1.52);
+      tl.fromTo("#sweep", { opacity: 0, x: -40 }, { opacity: 0.55, x: 1940, duration: 1.25, ease: "power2.inOut" }, 1.7);
+      tl.to("#halo", { scale: 1.045, opacity: 0.72, duration: 0.88, ease: "sine.inOut", yoyo: true, repeat: 1 }, 1.72);
+      tl.to("#lockup", { y: -8, duration: 0.92, ease: "sine.inOut", yoyo: true, repeat: 1 }, 1.76);
+      tl.to("#meta-left, #meta-right, #hairline-top, #hairline-bottom, .corner", { opacity: 0, duration: 0.28, ease: "power2.in", stagger: 0.015 }, 3.58);
+      tl.to("#tagline, #rule, #wordmark, #logo-mark, #halo, #grid, #sweep", { opacity: 0, duration: 0.28, ease: "power2.in" }, 3.62);
+      tl.fromTo("#end-fade", { opacity: 0 }, { opacity: 1, duration: 0.27, ease: "power2.in" }, 3.73);
+
+      tl.seek(0);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

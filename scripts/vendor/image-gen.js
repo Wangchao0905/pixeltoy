@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 /* eslint-disable @typescript-eslint/no-var-requires */
 const { access, mkdir, readFile, writeFile } = require("node:fs/promises");
+const dns = require("node:dns");
 const path = require("node:path");
+
+// Some production hosts have an unreachable IPv6 route while the gateway is
+// reachable over IPv4. Node's default resolver may choose IPv6 first, causing
+// the generation child process to time out before the provider sees a request.
+dns.setDefaultResultOrder("ipv4first");
 
 class UserError extends Error {
   constructor(code, message, detail = {}) {
@@ -144,18 +150,25 @@ function timeoutSignal(seconds) {
   return { signal: controller.signal, clear: () => clearTimeout(timer) };
 }
 
-async function fetchWithTimeout(url, options, timeoutSeconds) {
-  const timeout = timeoutSignal(timeoutSeconds);
-  try {
-    return await fetch(url, { ...options, signal: timeout.signal });
-  } catch (error) {
-    if (error.name === "AbortError") {
-      throw new UserError("request_timeout", "接口请求超时", { timeout: timeoutSeconds, url });
+async function fetchWithTimeout(url, options, timeoutSeconds, retries = 2) {
+  // 网关(api.apikey.fun)偶发瞬时 fetch failed,单张出图又要几十秒——不重试就直接判失败。
+  // 仅对网络失败退避重试;超时(AbortError)已等满,不重试。
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const timeout = timeoutSignal(timeoutSeconds);
+    try {
+      return await fetch(url, { ...options, signal: timeout.signal });
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new UserError("request_timeout", "接口请求超时", { timeout: timeoutSeconds, url });
+      }
+      lastError = error;
+    } finally {
+      timeout.clear();
     }
-    throw new UserError("network_error", "接口请求网络失败", { url, reason: error.message });
-  } finally {
-    timeout.clear();
+    if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
   }
+  throw new UserError("network_error", "接口请求网络失败", { url, reason: lastError && lastError.message, attempts: retries + 1 });
 }
 
 async function ensureOkResponse(response, url) {
@@ -172,6 +185,20 @@ async function* readSseJson(response) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  const parseFrame = (frame) => {
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n")
+      .trim();
+    if (!data || data === "[DONE]") return null;
+    try {
+      return JSON.parse(data);
+    } catch (error) {
+      throw new UserError("sse_json_parse_error", "SSE data 不是合法 JSON", { data, reason: error.message });
+    }
+  };
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -179,20 +206,14 @@ async function* readSseJson(response) {
     const frames = buffer.split(/\r?\n\r?\n/);
     buffer = frames.pop() || "";
     for (const frame of frames) {
-      const data = frame
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n")
-        .trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        yield JSON.parse(data);
-      } catch (error) {
-        throw new UserError("sse_json_parse_error", "SSE data 不是合法 JSON", { data, reason: error.message });
-      }
+      const event = parseFrame(frame);
+      if (event) yield event;
     }
   }
+  // A few gateways close the stream immediately after the final data line
+  // without sending the optional blank line that terminates an SSE frame.
+  const finalEvent = parseFrame(buffer);
+  if (finalEvent) yield finalEvent;
 }
 
 function isPartialImageEvent(event) {
@@ -201,16 +222,17 @@ function isPartialImageEvent(event) {
 }
 
 function throwIfErrorEvent(event) {
-  if (event?.type !== "error" && event?.type !== "response.failed") return;
-  throw new UserError("api_stream_error", "生图接口在流式事件中返回错误", {
+  if (event?.type !== "error" && event?.type !== "response.failed" && !event?.error && !event?.response?.error) return;
+  const message = event.response?.error?.message || event.error?.message || event.message || "";
+  throw new UserError("api_stream_error", message ? `上游生图错误：${message}` : "生图接口在流式事件中返回错误", {
     type: event.type,
-    message: event.response?.error?.message || event.error?.message || "",
+    message,
     event,
   });
 }
 
 function collectImages(event, images = []) {
-  for (const key of ["b64_json", "base64", "image_base64"]) {
+  for (const key of ["b64_json", "base64", "image_base64", "partial_image_b64"]) {
     if (typeof event?.[key] === "string" && event[key]) images.push(event[key]);
   }
   for (const item of event?.data || []) collectImages(item, images);
@@ -276,6 +298,16 @@ async function buildRequest(args, mode) {
 
   const image = requireArg(args, "image");
   if (mode === "image") {
+    // 主图 + 附加参考图（--reference-image，多张用平台分隔符隔开）全部作为 input_image 传入，
+    // gpt-image-2 会直接看到这些像素作为参考。此前只发主图，--reference-image 被静默丢弃。
+    const extraReferences = String(args["reference-image"] || "")
+      .split(path.delimiter)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const allImages = [image, ...extraReferences];
+    const imageContent = await Promise.all(
+      allImages.map(async (item) => ({ type: "input_image", image_url: await imageToInputUrl(item) })),
+    );
     return {
       url: buildApiUrl(args["base-url"], "/v1/responses"),
       defaultOut: "generated-image.png",
@@ -293,7 +325,7 @@ async function buildRequest(args, mode) {
             role: "user",
             content: [
               { type: "input_text", text: prompt },
-              { type: "input_image", image_url: await imageToInputUrl(image) },
+              ...imageContent,
             ],
           }],
           tools: [{
@@ -369,5 +401,7 @@ main().catch((error) => {
     detail: error.detail || {},
   };
   process.stderr.write(`${JSON.stringify(payload, null, 2)}\n`);
+  // Keep a human-readable final line for callers that only retain the tail of stderr.
+  process.stderr.write(`${payload.message}\n`);
   process.exitCode = 1;
 });

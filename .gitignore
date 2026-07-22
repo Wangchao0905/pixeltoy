@@ -13,6 +13,7 @@ public/dist/
 .pixel-toys-sessions.json
 .pixel-toys-usage.json
 .pixel-toys-teams.json
+.pixel-toys-asset-library.json
 
 # ===== 运行时数据 / 生成产物(体积大、非源码) =====
 projects/
@@ -20,6 +21,7 @@ outputs/
 work/
 .pixel-toys-canvas-states/
 .pixel-toys-public-assets/
+.pixel-toys-image-jobs/
 .pixel-toys-hidden-scene-references/
 .pixel-toys-canvas-tail-frames/
 
@@ -45,3 +47,19 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+
+# 部署备份(scp时留的)
+.deploy-backup*
+.deploy_bak/
+# 临时诊断
+nana_diag.mjs
+nana_script.md
+_regen_check.html
+public/_regen_check.html
+
+# 大媒体素材(不入库,保持仓库轻量;生产服务器保留)
+public/home-videos/
+videos/**/renders/
+*.mp4
+*.mov
+*.webm

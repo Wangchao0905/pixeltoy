@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { __test } = require("../server.js");
 
-process.env.CANVAS_VIDEO_PROVIDER = "xluo";
+process.env.CANVAS_VIDEO_PROVIDER = "ark";
 
 const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
 assert.match(
@@ -12,12 +12,17 @@ assert.match(
   "Mini must default to the currently available Ark model ID",
 );
 
-const { canvasVideoProviderForBody, buildSeedanceGenerationPayload } = __test.canvasVideo;
+const { canvasVideoProviderForBody, buildSeedanceGenerationPayload, normalizeVideoResolution } = __test.canvasVideo;
 const ARK_MODELS = [
   "seedance-2-0",
   "seedance-2-0-fast",
   "seedance-2-0-mini",
 ];
+const ARK_MODEL_IDS = {
+  "seedance-2-0": "doubao-seedance-2-0-260128",
+  "seedance-2-0-fast": "doubao-seedance-2-0-fast-260128",
+  "seedance-2-0-mini": "doubao-seedance-2-0-mini-260615",
+};
 const aiPhotoreal = {
   id: "person-a",
   name: "AI 写实人物",
@@ -29,44 +34,64 @@ const aiPhotoreal = {
   assetStylePreset: "photoreal",
   assetStyleLabel: "AI 写实",
 };
+const arkPerson = {
+  ...aiPhotoreal,
+  arkPersonAsset: {
+    enabled: true,
+    assetUrl: "asset://person-1",
+    assetId: "person-1",
+  },
+};
+
+assert.equal(normalizeVideoResolution("4k", "doubao-seedance-2-0-260128"), "4k");
+assert.equal(normalizeVideoResolution("1080p", "doubao-seedance-2-0-fast-260128"), "720p");
+assert.equal(normalizeVideoResolution("4k", "doubao-seedance-2-0-fast-260128"), "720p");
+assert.equal(normalizeVideoResolution("4k", "doubao-seedance-2-0-mini-260615"), "720p");
 
 assert.equal(
   canvasVideoProviderForBody({ model: "seedance-2-0-fast", modelMode: "seedance-2-0-fast", assets: [aiPhotoreal] }),
-  "xluo",
+  "ark",
 );
 for (const model of ARK_MODELS) {
   assert.equal(
     canvasVideoProviderForBody({ model, modelMode: model, assets: [aiPhotoreal] }),
-    "xluo",
+    "ark",
     `${model} should keep the selected/default provider for an AI photoreal asset`,
   );
 }
 assert.equal(
   canvasVideoProviderForBody({ model: "seedance-2-0", modelMode: "seedance-2-0", frameControl: "first_last", assets: [] }),
-  "xluo",
+  "ark",
 );
 process.env.CANVAS_VIDEO_PROVIDER = "ark";
 assert.equal(
   canvasVideoProviderForBody({ model: "seedance-2-0-fast", modelMode: "seedance-2-0-fast", assets: [aiPhotoreal] }),
-  "xluo",
-  "AI photoreal references must use the image-reference-capable XLUO route instead of Ark content review",
-);
-assert.equal(
-  canvasVideoProviderForBody({
-    model: "seedance-2-0-person-reference",
-    modelMode: "seedance-2-0-person-reference",
-    assets: [{ arkPersonAsset: { enabled: true, assetUrl: "asset://person-1" } }],
-  }),
   "ark",
-  "explicitly bound Ark person assets must keep the Ark person-reference route",
+  "unbound image references should keep the configured provider",
 );
 process.env.CANVAS_VIDEO_PROVIDER = "gravitex";
 assert.equal(
   canvasVideoProviderForBody({ model: "seedance-2-0", modelMode: "seedance-2-0", assets: [aiPhotoreal] }),
-  "xluo",
-  "AI photoreal references must never use a legacy Gravitex default provider",
+  "gravitex",
+  "unbound image references should keep the configured provider",
 );
-process.env.CANVAS_VIDEO_PROVIDER = "xluo";
+for (const model of ARK_MODELS) {
+  assert.equal(
+    canvasVideoProviderForBody({ model, modelMode: model, assets: [arkPerson] }),
+    "ark",
+    `${model} must use Ark when a private-library asset is bound`,
+  );
+}
+assert.equal(
+  canvasVideoProviderForBody({
+    model: "seedance-2-0-person-reference",
+    modelMode: "seedance-2-0-person-reference",
+    assets: [arkPerson],
+  }),
+  "gravitex",
+  "the separate person-reference model must not be forced into the three-model Ark library route",
+);
+process.env.CANVAS_VIDEO_PROVIDER = "ark";
 
 (async () => {
   const payload = await buildSeedanceGenerationPayload({
@@ -78,17 +103,31 @@ process.env.CANVAS_VIDEO_PROVIDER = "xluo";
     frameControl: "first_last",
     firstFrameUrl: "asset://first-frame",
     lastFrameUrl: "asset://last-frame",
-    assets: [aiPhotoreal],
+    assets: [arkPerson],
   });
   assert.deepEqual(payload.content.map((item) => item.role || item.type), ["text", "first_frame", "last_frame", "reference_image"]);
-  assert.equal(payload.content[3].image_url.url, "https://preview.example/person-a.png");
+  assert.equal(payload.content[3].image_url.url, "asset://person-1");
   for (const model of ARK_MODELS) {
     const modelPayload = await buildSeedanceGenerationPayload({
       prompt: "剧情动作：人物向前走。",
       model,
-      assets: [aiPhotoreal],
+      modelMode: model,
+      assets: [arkPerson],
     });
-    assert.equal(modelPayload.content[1].image_url.url, "https://preview.example/person-a.png", `${model} should include the AI photoreal asset`);
+    assert.equal(modelPayload.model, ARK_MODEL_IDS[model], `${model} should preserve its Ark model ID`);
+    assert.equal(modelPayload.content[1].image_url.url, "asset://person-1", `${model} should submit the private-library asset URI`);
+  }
+  for (const model of ARK_MODELS) {
+    await assert.rejects(
+      () => buildSeedanceGenerationPayload({
+        prompt: "剧情动作：人物向前走。",
+        model,
+        modelMode: model,
+        assets: [{ ...aiPhotoreal, arkPersonAsset: { enabled: true, assetUrl: "" } }],
+      }),
+      /方舟私域虚拟人像未绑定有效 asset:\/\//,
+      `${model} must reject an enabled library binding without an asset URI`,
+    );
   }
   await assert.rejects(
     () => buildSeedanceGenerationPayload({ prompt: "剧情动作：测试。", model: "seedance-2-0", frameControl: "first_last", firstFrameUrl: "asset://first-frame" }),

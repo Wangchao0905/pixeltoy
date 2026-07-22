@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-const { execFileSync } = require("node:child_process");
+const { execFileSync, execFile } = require("node:child_process");
+const { promisify } = require("node:util");
+const execFileAsync = promisify(execFile);
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -29,7 +31,7 @@ function usage() {
 }
 
 function parseArgs(argv) {
-  const args = { promptsPath: "", episodeRoot: "", dryRun: false, force: false, assetName: "", editInstruction: "", referenceImages: [], assetReferenceMap: "", styleReferenceImage: "", size: "1280x720" };
+  const args = { promptsPath: "", episodeRoot: "", dryRun: false, force: false, assetName: "", editInstruction: "", referenceImages: [], assetReferenceMap: "", styleReferenceImage: "", size: "1280x720", concurrency: 1 };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") {
@@ -64,6 +66,11 @@ function parseArgs(argv) {
     if (arg === "--style-reference-image") {
       const styleReferenceImage = argv[++i] || "";
       if (styleReferenceImage) args.styleReferenceImage = path.resolve(styleReferenceImage);
+      continue;
+    }
+    if (arg === "--concurrency") {
+      const parsed = Number.parseInt(argv[++i] || "", 10);
+      args.concurrency = Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
       continue;
     }
     if (arg === "--size") {
@@ -1053,6 +1060,10 @@ function promptHash(prompt) {
   return crypto.createHash("sha256").update(prompt).digest("hex").slice(0, 16);
 }
 
+function sleepAsync(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
 function sleepSync(ms) {
   if (!ms || ms <= 0) return;
   try {
@@ -1293,18 +1304,19 @@ board.save(board_path)
   });
 }
 
-function runImageGenWithRetry(imageArgs, env, label, maxRetries = 0, execTimeoutMs = 1000 * 1000) {
+async function runImageGenWithRetry(imageArgs, env, label, maxRetries = 0, execTimeoutMs = 1000 * 1000) {
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     try {
-      return execFileSync("node", imageArgs, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: execTimeoutMs, env });
+      const { stdout } = await execFileAsync("node", imageArgs, { encoding: "utf8", timeout: execTimeoutMs, maxBuffer: 64 * 1024 * 1024, env });
+      return stdout;
     } catch (error) {
       lastError = error;
       const detail = imageGenErrorDetail(error);
       if (attempt >= maxRetries || !isTransientImageGenFailure(detail)) break;
       const delay = 12_000 * (attempt + 1);
       console.error(`${new Date().toISOString()} ${label}: transient image-gen failure, retrying in ${Math.round(delay / 1000)}s`);
-      sleepSync(delay);
+      await sleepAsync(delay);
     }
   }
   throw lastError;
@@ -1320,7 +1332,7 @@ function storyboardPortraitSize(size) {
   return w > h ? `${h}x${w}` : `${w}x${h}`;
 }
 
-function runStoryboardReferenceBoardRoute(asset, outPath, size, referenceImages, env, logsDir, originalDetail = "") {
+async function runStoryboardReferenceBoardRoute(asset, outPath, size, referenceImages, env, logsDir, originalDetail = "") {
   if (asset?.type === "Storyboard") size = storyboardPortraitSize(size);
   const board = storyboardReferenceContactSheet(asset, referenceImages, logsDir);
   const prompt = [
@@ -1349,20 +1361,20 @@ function runStoryboardReferenceBoardRoute(asset, outPath, size, referenceImages,
     String(timeout),
   ];
   try {
-    return runImageGenWithRetry(
+    return (await runImageGenWithRetry(
       editArgs,
       env,
       `${asset.name} reference-board image-gen route`,
       0,
       execTimeoutMsFor(timeout),
-    ).trim();
+    )).trim();
   } catch (error) {
     const detail = imageGenErrorDetail(error);
     throw new Error(`${asset.name} image-gen reference route failed, and reference-board image-gen route also failed${detail ? `:\n${detail}` : ""}${originalDetail ? `\n\nOriginal reference route failure:\n${originalDetail}` : ""}`);
   }
 }
 
-function runOne(asset, outPath, size, referenceImages = [], logsDir = os.tmpdir(), styleReferenceImage = "", options = {}) {
+async function runOne(asset, outPath, size, referenceImages = [], logsDir = os.tmpdir(), styleReferenceImage = "", options = {}) {
   if (asset?.type === "Storyboard") size = storyboardPortraitSize(size);
   for (const referenceImage of [...referenceImages, styleReferenceImage].filter(Boolean)) {
     if (!fs.existsSync(referenceImage) || fs.statSync(referenceImage).size < 1000) {
@@ -1414,7 +1426,7 @@ function runOne(asset, outPath, size, referenceImages = [], logsDir = os.tmpdir(
       const extraHidden = options.hiddenSceneReferences instanceof Set && extraImages.some((image) => options.hiddenSceneReferences.has(image));
       imageArgs.push("--reference-image", extraImages.join(path.delimiter), "--reference-role", extraRoles[0] || referenceRoleFor(asset, "generate", { hiddenSceneReference: extraHidden }));
     }
-    const output = runImageGenWithRetry(
+    const output = await runImageGenWithRetry(
       imageArgs,
       env,
       asset.name,
@@ -1430,13 +1442,13 @@ function runOne(asset, outPath, size, referenceImages = [], logsDir = os.tmpdir(
     const detail = [stdout, stderr].filter(Boolean).join("\n");
     if (asset.type === "Storyboard" && referenceImages.length && shouldFallbackStoryboardToText(detail || error.message)) {
       console.error(`${new Date().toISOString()} ${asset.name}: reference-image route unavailable; trying reference-board image-gen route`);
-      return runStoryboardReferenceBoardRoute(asset, outPath, size, referenceImages, env, logsDir, detail || error.message);
+      return await runStoryboardReferenceBoardRoute(asset, outPath, size, referenceImages, env, logsDir, detail || error.message);
     }
     throw new Error(`${asset.name} image-gen failed${detail ? `:\n${detail}` : `: ${error.message}`}`);
   }
 }
 
-function runEdit(asset, outPath, size, editInstruction, logsDir, referenceImages = [], styleReferenceImage = "", options = {}) {
+async function runEdit(asset, outPath, size, editInstruction, logsDir, referenceImages = [], styleReferenceImage = "", options = {}) {
   if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 1000) {
     throw new Error(`${asset.name} cannot be edited because the current image does not exist: ${outPath}`);
   }
@@ -1506,7 +1518,7 @@ function runEdit(asset, outPath, size, editInstruction, logsDir, referenceImages
     let mode = extraReferenceImages.length ? "image-edit-with-references" : "edit";
     let output;
     try {
-      output = runImageGenWithRetry(
+      output = await runImageGenWithRetry(
         imageArgs,
         env,
         `${asset.name} edit`,
@@ -1516,7 +1528,7 @@ function runEdit(asset, outPath, size, editInstruction, logsDir, referenceImages
     } catch (error) {
       if (!shouldFallbackToImageMode(error)) throw error;
       const fallbackArgs = [IMAGE_GEN, "--mode", "image", "--image", outPath, "--prompt", prompt, "--size", size, "--model", IMAGE_GEN_ORCHESTRATION_MODEL, "--image-model", IMAGE_GEN_IMAGE_MODEL, "--out", tmpOut, "--timeout", String(primaryTimeoutSeconds)];
-      output = runImageGenWithRetry(
+      output = await runImageGenWithRetry(
         fallbackArgs,
         env,
         `${asset.name} edit fallback`,
@@ -1571,7 +1583,7 @@ function shouldFallbackStoryboardToText(message) {
   );
 }
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv);
   if (!fs.existsSync(args.promptsPath)) throw new Error(`missing asset prompts: ${args.promptsPath}`);
   if (!fs.existsSync(IMAGE_GEN)) throw new Error(`missing image-gen script: ${IMAGE_GEN}; checked: ${IMAGE_GEN_CANDIDATES.join(", ")}`);
@@ -1603,7 +1615,13 @@ function main() {
   const logsDir = path.join(args.episodeRoot, "04_assets", "generation_logs");
   if (!args.dryRun) fs.mkdirSync(logsDir, { recursive: true });
   const results = [];
-  for (const asset of assets) {
+  let aborted = false;
+  const effectiveConcurrency = args.assetName || args.editInstruction ? 1 : Math.max(1, Number(args.concurrency) || 1);
+  if (effectiveConcurrency > 1) {
+    console.log(`${new Date().toISOString()} image generation concurrency: ${effectiveConcurrency}`);
+  }
+  async function processAsset(asset) {
+    if (aborted) return;
     const out = outputPath(args.episodeRoot, asset);
     const prompt = promptFor(asset);
     const assetReferenceImages = [
@@ -1623,7 +1641,7 @@ function main() {
     if (canReuse) {
       console.log(`${new Date().toISOString()} skipping existing ${asset.name} -> ${out}`);
       results.push({ name: asset.name, skipped: true, reason: "exists", out });
-      continue;
+      return;
     }
     if (args.dryRun) {
       results.push({
@@ -1639,7 +1657,7 @@ function main() {
         sourceExists: fs.existsSync(out),
         wouldRegenerate: args.force || !!args.editInstruction || (fs.existsSync(out) && oldHash !== currentHash) || !fs.existsSync(out),
       });
-      continue;
+      return;
     }
     console.log(`${new Date().toISOString()} ${args.editInstruction ? "editing" : "generating"} ${asset.name} (${args.size}) -> ${out}`);
     if (assetReferenceImages.length) {
@@ -1649,8 +1667,8 @@ function main() {
       console.log(`${new Date().toISOString()} ${asset.name} style-only reference: ${path.basename(args.styleReferenceImage)}`);
     }
     try {
-      const editResult = args.editInstruction ? runEdit(asset, out, args.size, args.editInstruction, logsDir, assetReferenceImages, args.styleReferenceImage, { hiddenSceneReferences }) : null;
-      const raw = editResult ? editResult.raw : runOne(asset, out, args.size, assetReferenceImages, logsDir, args.styleReferenceImage, { hiddenSceneReferences });
+      const editResult = args.editInstruction ? await runEdit(asset, out, args.size, args.editInstruction, logsDir, assetReferenceImages, args.styleReferenceImage, { hiddenSceneReferences }) : null;
+      const raw = editResult ? editResult.raw : await runOne(asset, out, args.size, assetReferenceImages, logsDir, args.styleReferenceImage, { hiddenSceneReferences });
       ensureStoryboardCanvas(asset, out, args.size);
       stampStoryboardAssetReferences(asset, out, assetReferenceImages);
       fs.writeFileSync(path.join(logsDir, `${asset.name}.json`), raw ? `${raw}\n` : "");
@@ -1696,12 +1714,22 @@ function main() {
       console.error(`${new Date().toISOString()} failed ${asset.name}: ${message}`);
       results.push({ name: asset.name, failed: true, error: message, out });
       if (shouldAbortBatchAfterFailure(message)) {
+        aborted = true;
         console.error(`${new Date().toISOString()} aborting batch after infrastructure failure at ${asset.name}; retry later instead of continuing`);
-        break;
+        return;
       }
       console.error(`${new Date().toISOString()} continuing after failed asset ${asset.name}`);
     }
   }
+  let nextIndex = 0;
+  async function worker() {
+    while (!aborted) {
+      const index = nextIndex++;
+      if (index >= assets.length) return;
+      await processAsset(assets[index]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(effectiveConcurrency, assets.length || 1) }, () => worker()));
   const failures = results.filter((result) => result.failed);
   if (failures.length) console.error(`${new Date().toISOString()} completed with ${failures.length} failed asset(s); generated/skipped assets are still usable`);
   console.log(
@@ -1714,9 +1742,7 @@ function main() {
   if (failures.length) process.exitCode = 1;
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   console.error(`[pixel-assets] ${error.message}`);
   process.exit(1);
-}
+});

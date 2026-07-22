@@ -7,6 +7,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const canvasJs = fs.readFileSync(path.join(root, "public", "canvas.js"), "utf8");
 const canvasCss = fs.readFileSync(path.join(root, "public", "canvas.css"), "utf8");
+const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const appCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+
+assert.match(appJs, /segment-status-indicator/, "video queue cards should use a visual status indicator");
+assert.doesNotMatch(
+  appJs,
+  /<span class="pill \$\{progressClass\(item\.status\)\}">\$\{escapeHtml\(item\.label\)\}<\/span>/,
+  "video queue cards should not render long status descriptions as visible pills",
+);
+assert.match(appJs, /segment-state-button/, "queued and running cards should use a visual state button");
+assert.match(appCss, /#videoProgressList \.segment-status-indicator[\s\S]*animation:/, "status indicators should animate without changing progress data");
+assert.match(appCss, /#videoProgressList \.segment-state-queued[\s\S]*background:/, "queued state should have a distinct color");
+assert.match(appCss, /#videoProgressList \.segment-state-running[\s\S]*border:/, "running state should have a distinct ring");
 
 assert.match(canvasJs, /画面正在拼装/, "running video UI should use the approved assembly copy");
 assert.match(canvasJs, /video-tetris-rain/, "running video UI should render the falling block layer");
@@ -30,6 +43,6 @@ assert.match(
 );
 assert.match(
   canvasJs,
-  /statusMessage: node\.status === "completed" \? node\.statusMessage \|\| "" : ""/,
+  /status: node\.status \|\| "",[\s\S]*tailFrameUrl: node\.tailFrameUrl \|\| ""/,
   "ordinary running status messages must not invalidate the preview DOM",
 );

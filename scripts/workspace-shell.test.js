@@ -6,7 +6,8 @@ const {
   shouldEnableExplore,
 } = require("../public/workspace-shell.js");
 
-assert.deepEqual(WORKSPACE_MODES, ["script", "image", "video", "storyboard", "assets"]);
+assert.deepEqual(WORKSPACE_MODES, ["script", "image", "shots", "video", "storyboard", "assets"]);
+assert.equal(normalizeWorkspaceMode("shots"), "shots");
 assert.equal(normalizeWorkspaceMode("storyboard"), "storyboard");
 assert.equal(normalizeWorkspaceMode("logs"), "assets");
 assert.equal(normalizeWorkspaceMode(""), "assets");

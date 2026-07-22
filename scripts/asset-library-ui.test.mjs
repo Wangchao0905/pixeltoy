@@ -1,0 +1,37 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+
+const root = path.resolve(new URL("..", import.meta.url).pathname);
+const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const index = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
+const app = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
+const canvasHtml = fs.readFileSync(path.join(root, "public/canvas.html"), "utf8");
+const canvas = fs.readFileSync(path.join(root, "public/canvas.js"), "utf8");
+const styles = fs.readFileSync(path.join(root, "public/styles.css"), "utf8");
+const canvasCss = fs.readFileSync(path.join(root, "public/canvas.css"), "utf8");
+
+assert.match(server, /GET.*\/api\/asset-library|url\.pathname === "\/api\/asset-library"/);
+assert.match(server, /assetLibraryUserId/);
+assert.match(server, /finalizeGeneratedCanvasAsset/);
+assert.match(server, /libraryAssetId/);
+assert.match(server, /asset-import-library/);
+assert.match(index, /data-explore-tool="asset-library"/);
+assert.match(index, /id="assetLibraryView"/);
+assert.match(index, /id="workflowAssetLibrary"/);
+assert.match(app, /\/api\/asset-library/);
+assert.match(app, /importWorkflowLibraryAsset/);
+assert.match(app, /asset-import-library/);
+assert.match(app, /data-workflow-library-use/);
+assert.match(app, /data-workflow-library-add/);
+assert.match(canvasHtml, /id="assetLibraryToggle"/);
+assert.match(canvasHtml, /id="sharedAssetLibraryPanel"/);
+assert.match(canvas, /loadSharedAssetLibrary/);
+assert.match(canvas, /sharedLibraryAssetToCanvasAsset/);
+assert.match(canvas, /libraryAssetId/);
+assert.match(styles, /\.asset-library-view/);
+assert.match(styles, /\.workflow-asset-library/);
+assert.match(canvasCss, /\.shared-asset-library-panel/);
+assert.match(canvasCss, /\.canvas-asset-library-list/);
+
+console.log("asset library UI contract tests passed");

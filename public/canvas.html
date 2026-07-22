@@ -5,28 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>canvas</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=202607040215" />
-    <link rel="stylesheet" href="/canvas.css?v=202607151637" />
+    <link rel="stylesheet" href="/styles.css?v=20260720095000" />
+    <link rel="stylesheet" href="/canvas.css?v=20260721012950" />
   </head>
   <body class="canvas-page hide-liveness-library-ui">
     <div id="canvasApp" class="generation-canvas-shell">
       <header class="canvas-topbar">
         <a class="canvas-brand" href="/" aria-label="返回 Pixel Toys">
-          <span class="canvas-mark pixel-toys-wordmark" aria-label="Pixel Toys"></span>
           <span class="canvas-brand-title">
             <strong>canvas</strong>
           </span>
         </a>
         <div class="canvas-top-actions">
-          <select id="canvasProjectSelect" aria-label="选择项目"></select>
           <button id="autoImportAssets" class="canvas-button" type="button">导入项目资产</button>
           <button id="batchGenerateVideos" class="canvas-button" type="button">批量生成视频</button>
           <label class="canvas-button upload-button" for="canvasAssetUpload">
             上传资产
             <input id="canvasAssetUpload" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" multiple />
           </label>
+          <button id="assetLibraryToggle" class="canvas-button" type="button" aria-expanded="false" aria-controls="sharedAssetLibraryPanel" onclick="toggleSharedAssetLibrary()">素材库</button>
           <button id="livenessLibraryToggle" class="canvas-button" type="button">人物素材库</button>
-          <a id="canvasStudioBack" class="canvas-button" href="/">制作台</a>
+          <a id="canvasStudioBack" class="canvas-button" href="/" title="返回当前项目">返回项目</a>
           <button id="canvasClear" class="canvas-button danger" type="button">清空</button>
         </div>
       </header>
@@ -43,7 +42,7 @@
         <div id="selectionMarquee" class="selection-marquee hidden" aria-hidden="true"></div>
         <div id="canvasZoomReadout" class="canvas-zoom-readout" aria-live="polite">100%</div>
 
-        <aside id="assetTray" class="asset-tray collapsed" aria-label="画布资产托盘">
+        <aside id="assetTray" class="asset-tray collapsed" aria-label="画布资产托盘" hidden>
           <button id="assetTrayToggle" type="button">
             <span>Assets</span>
             <strong id="assetTrayCount">0</strong>
@@ -120,6 +119,18 @@
           <div id="livenessAssetList" class="liveness-asset-list"></div>
         </aside>
 
+        <aside id="sharedAssetLibraryPanel" class="shared-asset-library-panel hidden" role="dialog" aria-modal="true" aria-label="素材库">
+          <header>
+            <div>
+              <strong>素材库</strong>
+              <span>Image 生成和项目共享</span>
+            </div>
+            <button id="sharedAssetLibraryClose" type="button" title="关闭素材库" aria-label="关闭素材库" onclick="toggleSharedAssetLibrary(false)">×</button>
+          </header>
+          <!-- library-redesign-html: search/refresh removed -->
+          <div id="canvasAssetLibraryList" class="canvas-asset-library-list" aria-live="polite"></div>
+        </aside>
+
         <div id="contextMenu" class="canvas-context-menu hidden" role="menu">
           <button type="button" data-create-node="image" role="menuitem">
             <span class="context-icon image">IMG</span>
@@ -133,10 +144,21 @@
             <span class="context-icon upload">REF</span>
             <strong>导入项目资产</strong>
           </button>
+          <button type="button" data-menu-action="open-asset-library" role="menuitem">
+            <span class="context-icon library">LIB</span>
+            <strong>打开素材库</strong>
+          </button>
         </div>
 
         <div id="connectionMenu" class="connection-create-menu hidden" role="menu" aria-label="引用该图片生成">
           <div class="connection-menu-title">引用该图片生成</div>
+          <button type="button" data-connection-create="image" role="menuitem">
+            <span class="connection-icon image">IMG</span>
+            <span>
+              <strong>图片生成</strong>
+              <small>使用当前图片作为参考图</small>
+            </span>
+          </button>
           <button type="button" data-connection-create="video" role="menuitem">
             <span class="connection-icon video">VID</span>
             <span>
@@ -147,6 +169,10 @@
         </div>
 
         <div id="assetContextMenu" class="asset-context-menu hidden" role="menu" aria-label="图片操作">
+          <button type="button" data-asset-action="certify-ark-virtual-person" role="menuitem">
+            <span>✓</span>
+            <strong>认证为私域虚拟人像</strong>
+          </button>
           <button type="button" data-asset-action="mark-ai-photoreal" role="menuitem">
             <span>AI</span>
             <strong>标记为 AI 写实图</strong>
@@ -169,14 +195,19 @@
         <div class="node-titlebar">
           <div>
             <span class="node-kind">Image Generation</span>
-            <h2>Image Generator</h2>
           </div>
           <button class="node-close" type="button" aria-label="删除节点">×</button>
         </div>
         <div class="image-preview-slot">生成结果预览</div>
         <section class="image-composer">
-          <textarea class="node-prompt" placeholder="Describe what you want to create..."></textarea>
-          <div class="node-control-row">
+          <div class="image-prompt-field">
+            <div class="image-field-heading">
+              <span>提示词</span>
+              <small>描述你想生成的画面</small>
+            </div>
+            <textarea class="node-prompt" placeholder="描述主体、环境、光线和画面风格…"></textarea>
+          </div>
+          <div class="node-control-row image-control-row image-parameter-strip">
             <label>
               <span>尺寸</span>
               <select data-node-field="ratio">
@@ -194,11 +225,9 @@
               </select>
             </label>
           </div>
-          <div class="node-dropzone" data-dropzone="image">拖入参考图或资产</div>
           <div class="node-flow-summary">连入参考图或拖入素材作出图参考；输出可再作视频参考图。</div>
           <div class="node-assets"></div>
           <div class="node-action-row">
-            <button class="ghost" type="button" disabled>保存资产</button>
             <button class="primary" type="button" data-image-action="generate">生成图片</button>
           </div>
         </section>
@@ -210,6 +239,7 @@
       <article class="canvas-node asset-node" data-node-kind="asset">
         <button class="node-port output-port asset-connector" type="button" data-port="output" aria-label="拖动连接到视频模块">+</button>
         <button class="node-close" type="button" aria-label="删除图片">×</button>
+        <div class="ark-virtual-person-badge" title="方舟私域虚拟人像已认证" aria-label="方舟私域虚拟人像已认证" hidden>✓</div>
         <img class="asset-node-image" alt="" draggable="false" />
         <div class="asset-node-caption"></div>
         <div class="node-resize-handle" data-resize-handle title="拖拽调整素材大小" aria-label="拖拽调整素材大小"></div>
@@ -226,18 +256,11 @@
           <span class="video-selection-handle handle-bottom-left" data-resize-handle data-resize-corner="bottom-left" role="button" tabindex="0" aria-label="从左下角调整视频模块大小"></span>
           <span class="video-selection-handle handle-bottom-right" data-resize-handle data-resize-corner="bottom-right" role="button" tabindex="0" aria-label="从右下角调整视频模块大小"></span>
         </div>
-        <div class="video-side-ports" aria-hidden="true">
-          <span class="video-side-port video-side-port-image"><i>▧</i></span>
-          <span class="video-side-port video-side-port-camera"><i>▣</i></span>
-          <span class="video-side-port video-side-port-audio"><i>|||</i></span>
-          <span class="video-side-port video-side-port-text"><i>T</i></span>
-          <span class="video-side-port video-side-port-output"><i>▣</i></span>
-        </div>
         <div class="node-titlebar video-titlebar">
           <div class="video-title-lockup">
             <span class="video-kind-icon" aria-hidden="true"></span>
             <div>
-              <span class="node-kind">Video Generation</span>
+              <span class="node-kind">视频生成</span>
               <h2>Seedance 2.0</h2>
             </div>
           </div>
@@ -252,26 +275,25 @@
         </section>
 
         <section class="video-composer">
-          <button class="node-dropzone video-add-reference" type="button" data-dropzone="video" aria-label="添加参考素材">+</button>
           <textarea class="node-prompt video-prompt" placeholder="Describe what you want to create..."></textarea>
           <div class="node-flow-summary">等待图片连接。</div>
-          <div class="node-assets video-reference-assets"></div>
+          <div class="video-reference-dock">
+            <div class="node-assets video-reference-assets"></div>
+          </div>
 
           <div class="video-settings-strip">
             <div class="video-setting-row">
-              <label class="video-setting video-setting-model">
-                <span>模式</span>
-                <select data-node-field="model">
-                  <option value="seedance-2-0">文生视频 · Seedance 2.0</option>
-                  <option value="seedance-2-0-fast">文生视频 · Seedance 2.0 Fast</option>
-                  <option value="seedance-2-0-mini">文生视频 · Seedance 2.0 Mini</option>
-                  <option value="seedance-2-0-person-reference">参考图/人物参考 · Seedance 2.0</option>
-                  <option value="seedance-2-0-byteplus">文生视频 · Seedance 2.0(海外火山)</option>
+              <label class="video-setting video-setting-model" title="生成模式">
+                <select data-node-field="model" aria-label="生成模式">
+                  <option value="seedance-2-0">Seedance 2.0</option>
+                  <option value="seedance-2-0-fast">Seedance 2.0 Fast</option>
+                  <option value="seedance-2-0-mini">Seedance 2.0 Mini</option>
+                  <option value="seedance-2-0-person-reference">Seedance 2.0 · 人物参考</option>
+                  <option value="seedance-2-0-byteplus">Seedance 2.0(海外火山)</option>
                 </select>
               </label>
-              <label class="video-setting">
-                <span>比例</span>
-                <select data-node-field="ratio">
+              <label class="video-setting" title="画面比例">
+                <select data-node-field="ratio" aria-label="画面比例">
                   <option value="9:16">9:16</option>
                   <option value="16:9">16:9</option>
                   <option value="3:4">3:4</option>
@@ -281,12 +303,12 @@
                   <option value="adaptive">自适应</option>
                 </select>
               </label>
-              <label class="video-setting">
-                <span>清晰度</span>
-                <select data-node-field="resolution">
+              <label class="video-setting" title="清晰度">
+                <select data-node-field="resolution" aria-label="清晰度">
                   <option value="480p">480p</option>
                   <option value="720p">720p</option>
                   <option value="1080p">1080p</option>
+                  <option value="4k">4K</option>
                 </select>
               </label>
             </div>
@@ -312,12 +334,12 @@
               </section>
               <section class="video-ark-person-panel hidden" data-ark-person-panel>
                 <div class="video-ark-person-heading">
-                  <strong>方舟真人认证素材（标准 Seedance 模式）</strong>
+                  <strong>方舟私域虚拟人像（2.0 / Fast / Mini）</strong>
                   <span data-ark-person-status>未选择素材</span>
                 </div>
                 <label>
                   <span>连接素材</span>
-                  <select data-ark-person-asset-select aria-label="选择方舟真人素材"></select>
+                  <select data-ark-person-asset-select aria-label="选择方舟私域虚拟人像"></select>
                 </label>
                 <label>
                   <span>素材地址</span>
@@ -330,7 +352,7 @@
                     href="https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-260128"
                     target="_blank"
                     rel="noreferrer"
-                  >前往方舟认证</a>
+                  >打开方舟素材库</a>
                   <button type="button" data-ark-person-action="clear">清除</button>
                   <button type="button" data-ark-person-action="bind">绑定</button>
                 </div>
@@ -368,8 +390,9 @@
             </div>
             <div class="video-action-row">
               <label class="video-duration-field">
+                <span class="video-duration-caption">时长</span>
                 <button type="button" data-duration-step="-1" aria-label="减少时长">−</button>
-                <span><strong data-duration-label>5s</strong></span>
+                <span class="video-duration-value"><strong data-duration-label>5s</strong></span>
                 <input type="range" min="4" max="15" step="1" value="5" data-node-field="duration" />
                 <button type="button" data-duration-step="1" aria-label="增加时长">+</button>
               </label>
@@ -382,6 +405,6 @@
     </template>
 
     <div id="canvasToast" class="toast hidden"></div>
-    <script src="/canvas.js?v=202607151600"></script>
+    <script src="/canvas.js?v=20260721035000"></script>
   </body>
 </html>

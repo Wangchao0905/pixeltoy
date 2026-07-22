@@ -1925,7 +1925,7 @@ function imageExploreHistoryItemHtml(item = {}) {
       <div class="image-explore-card-preview">
         <strong>生成失败</strong>
         <small>${escapeHtml(item.message || "请重试")}</small>
-        <button type="button" data-image-remove="${id}" title="移除" aria-label="移除失败结果">×</button>
+        <button type="button" data-image-history-remove="${id}" title="移除" aria-label="移除失败结果">×</button>
       </div>
     </article>`;
   }
@@ -1934,7 +1934,7 @@ function imageExploreHistoryItemHtml(item = {}) {
       <img src="${escapeAttr(item.url)}" alt="${prompt}" loading="lazy" decoding="async" />
       <button type="button" class="image-explore-regen" data-image-regenerate="${id}" title="重新生成" aria-label="重新生成">↻</button>
       ${imageExploreReferenceButtonHtml(id)}
-      <button type="button" data-image-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
+      <button type="button" data-image-history-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
     </div>
   </article>`;
 }
@@ -1965,7 +1965,7 @@ function imageExploreStoryboardHistoryItemHtml(item = {}) {
         <strong>${escapeHtml(boardLabel)}失败</strong>
         <small>${escapeHtml(item.message || "请重试")}</small>
         <button type="button" class="image-explore-regen" data-image-regenerate="${id}" title="重新生成" aria-label="重新生成">↻</button>
-        <button type="button" data-image-remove="${id}" title="移除" aria-label="移除失败结果">×</button>
+        <button type="button" data-storyboard-remove="${id}" title="移除" aria-label="移除失败结果">×</button>
       </div>
     </article>`;
   }
@@ -1980,7 +1980,7 @@ function imageExploreStoryboardHistoryItemHtml(item = {}) {
       <img src="${escapeAttr(item.url)}" alt="${prompt}" loading="lazy" decoding="async" />
       <button type="button" class="image-explore-regen" data-image-regenerate="${id}" title="重新生成" aria-label="重新生成">↻</button>
       ${imageExploreReferenceButtonHtml(id)}
-      <button type="button" data-image-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
+      <button type="button" data-storyboard-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
     </div>
     <div class="image-explore-storyboard-caption">
       <strong>${escapeHtml(boardLabel)} · 3×3</strong>
@@ -6287,12 +6287,17 @@ function bind() {
       renderImageExploreView();
       return;
     }
-    const imageId = event.target.closest("[data-image-remove]")?.dataset.imageRemove;
+    const storyboardRemoveId = event.target.closest("[data-storyboard-remove]")?.dataset.storyboardRemove;
+    if (storyboardRemoveId) {
+      state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.filter((item) => item.id !== storyboardRemoveId);
+      persistImageExploreStoryboardHistory();
+      renderImageExploreView();
+      return;
+    }
+    const imageId = event.target.closest("[data-image-history-remove]")?.dataset.imageHistoryRemove;
     if (imageId) {
       state.imageStudio.history = state.imageStudio.history.filter((item) => item.id !== imageId);
-      state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.filter((item) => item.id !== imageId);
       persistImageExploreHistory();
-      persistImageExploreStoryboardHistory();
       renderImageExploreView();
       return;
     }

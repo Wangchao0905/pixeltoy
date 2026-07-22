@@ -17,8 +17,10 @@ const PROJECT_REFRESH_HIDDEN_MS = 15000;
 const PROJECT_REFRESH_RETRY_MS = 5000;
 const IMAGE_EXPLORE_HISTORY_KEY = "pixelToys.imageExploreHistory.v1";
 const IMAGE_EXPLORE_STORYBOARD_HISTORY_KEY = "pixelToys.imageStoryboardHistory.v1";
+const IMAGE_EXPLORE_STORYBOARD_RECOVERY_KEY = "pixelToys.imageStoryboardRecovery.v1";
 const IMAGE_EXPLORE_POLL_INTERVAL_MS = 1200;
 const IMAGE_EXPLORE_POLL_MAX_ATTEMPTS = 3000;
+const IMAGE_EXPLORE_STORYBOARD_RECOVERY_LOOKBACK_MS = 36 * 60 * 60 * 1000;
 let initialProjectHandled = false;
 let teamProgressOpenToken = null;
 
@@ -30,6 +32,11 @@ function imageExploreStorageKey(user = null) {
 function imageExploreStoryboardStorageKey(user = null) {
   const identity = user?.id || user?.username || "anonymous";
   return `${IMAGE_EXPLORE_STORYBOARD_HISTORY_KEY}.${identity}`;
+}
+
+function imageExploreStoryboardRecoveryStorageKey(user = null) {
+  const identity = user?.id || user?.username || "anonymous";
+  return `${IMAGE_EXPLORE_STORYBOARD_RECOVERY_KEY}.${identity}`;
 }
 
 function layoutStorageKey(key, user = null) {
@@ -341,6 +348,7 @@ async function syncAuthUser() {
     state.imageStudio.history = readImageExploreHistory(state.authUser);
     state.imageStudio.storyboardHistory = readImageExploreStoryboardHistory(state.authUser);
     renderImageExploreView();
+    recoverImageExploreStoryboards().catch(() => {});
     resumeImageExploreGenerations().catch(() => {});
     const authDisplayName = data.user?.role === "admin"
       ? data.user?.username || "superadmin"
@@ -1892,6 +1900,94 @@ function persistImageExploreStoryboardHistory() {
     imageExploreStoryboardStorageKey(state.authUser),
     JSON.stringify(trimmed.filter((item) => (item.status === "running" && item.taskId) || item.status === "completed" || item.status === "failed")),
   );
+}
+
+function readImageExploreStoryboardRecovery(user = null) {
+  try {
+    const value = JSON.parse(localStorage.getItem(imageExploreStoryboardRecoveryStorageKey(user)) || "[]");
+    return new Set(Array.isArray(value) ? value.filter(Boolean).slice(0, 200) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistImageExploreStoryboardRecovery(taskIds, user = state.authUser) {
+  localStorage.setItem(
+    imageExploreStoryboardRecoveryStorageKey(user),
+    JSON.stringify([...taskIds].filter(Boolean).slice(-200)),
+  );
+}
+
+function isRecoverableImageStoryboardAsset(asset = {}) {
+  const taskId = String(asset.metadata?.taskId || "").trim();
+  const text = `${asset.name || ""} ${asset.prompt || ""}`;
+  return asset.source === "image-generation"
+    && /^[a-z0-9-]{16,80}$/i.test(taskId)
+    && /九宫格|故事板|分镜|storyboard/i.test(text);
+}
+
+function imageExploreStoryboardItemFromAsset(asset = {}) {
+  const taskId = String(asset.metadata?.taskId || "").trim();
+  const prompt = String(asset.prompt || asset.name || "已恢复故事板").trim();
+  const sequence = prompt.match(/第\s*(\d+)\s*\/\s*(\d+)\s*张/);
+  const boardIndex = sequence ? Number(sequence[1]) : 1;
+  const totalBoards = sequence ? Number(sequence[2]) : 1;
+  const timeRange = prompt.match(/(?:时长|时间范围)[：:\s]*([0-9]+-[0-9]+s)/i)?.[1] || "0-15s";
+  const summary = prompt.match(/本张剧情摘要[：:]\s*([^。]+。?)/)?.[1] || "已恢复生成结果，原图已保留";
+  const url = asset.localUrl || asset.previewUrl || asset.url || "";
+  return {
+    id: `storyboard-recovered-${taskId}`,
+    taskId,
+    status: "completed",
+    url,
+    previewUrl: url,
+    prompt,
+    ratio: asset.ratio || "16:9",
+    resolution: asset.resolution || "1k",
+    boardCount: totalBoards,
+    totalBoards,
+    source: "image-storyboard-recovery",
+    createdAt: asset.createdAt || new Date().toISOString(),
+    board: {
+      index: boardIndex,
+      timeRange,
+      summary,
+      panels: [],
+    },
+  };
+}
+
+async function recoverImageExploreStoryboards() {
+  if (!state.authUser) return;
+  const data = await api("/api/asset-library?limit=100");
+  const cutoff = Date.now() - IMAGE_EXPLORE_STORYBOARD_RECOVERY_LOOKBACK_MS;
+  const recoveryIds = readImageExploreStoryboardRecovery(state.authUser);
+  const existingTaskIds = new Set(
+    state.imageStudio.storyboardHistory.map((item) => String(item?.taskId || "")).filter(Boolean),
+  );
+  const recovered = [];
+  for (const asset of Array.isArray(data.assets) ? data.assets : []) {
+    if (!isRecoverableImageStoryboardAsset(asset)) continue;
+    const createdAt = Date.parse(asset.createdAt || "");
+    if (Number.isFinite(createdAt) && createdAt < cutoff) continue;
+    const taskId = String(asset.metadata.taskId);
+    if (existingTaskIds.has(taskId) || recoveryIds.has(taskId)) {
+      recoveryIds.add(taskId);
+      continue;
+    }
+    const item = imageExploreStoryboardItemFromAsset(asset);
+    if (!item.url) continue;
+    state.imageStudio.storyboardHistory.unshift(item);
+    existingTaskIds.add(taskId);
+    recoveryIds.add(taskId);
+    recovered.push(item);
+  }
+  state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.slice(0, 24);
+  persistImageExploreStoryboardRecovery(recoveryIds);
+  if (!recovered.length) return;
+  persistImageExploreStoryboardHistory();
+  renderImageExploreView();
+  toast(`已恢复 ${recovered.length} 张故事板`);
 }
 
 function beginImageExploreGeneration() {
@@ -6289,6 +6385,12 @@ function bind() {
     }
     const storyboardRemoveId = event.target.closest("[data-storyboard-remove]")?.dataset.storyboardRemove;
     if (storyboardRemoveId) {
+      const removed = state.imageStudio.storyboardHistory.find((item) => item.id === storyboardRemoveId);
+      if (removed?.taskId) {
+        const recoveryIds = readImageExploreStoryboardRecovery(state.authUser);
+        recoveryIds.add(removed.taskId);
+        persistImageExploreStoryboardRecovery(recoveryIds);
+      }
       state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.filter((item) => item.id !== storyboardRemoveId);
       persistImageExploreStoryboardHistory();
       renderImageExploreView();

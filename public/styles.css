@@ -8693,6 +8693,27 @@ body.is-explore-ui .explore-canvas-library {
   color: #fff;
 }
 
+.image-explore-card-preview > button[data-image-reference-add] {
+  right: 80px;
+  width: auto;
+  min-width: 76px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.image-explore-card-preview > button[data-image-reference-add]::before {
+  content: none;
+}
+
+.image-explore-card-preview > button[data-image-reference-add]:hover,
+.image-explore-card-preview > button[data-image-reference-add]:focus-visible {
+  border-color: rgba(101, 169, 255, 0.9);
+  background: rgba(23, 76, 133, 0.92);
+  color: #fff;
+}
+
 .image-explore-card.is-running .image-explore-card-preview {
   border-color: rgba(168, 255, 54, 0.36);
 }

@@ -1892,6 +1892,10 @@ function imageExploreLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function imageExploreReferenceButtonHtml(id) {
+  return `<button type="button" class="image-explore-reference-action" data-image-reference-add="${escapeAttr(id)}" title="作为参考图" aria-label="作为参考图">作为参考图</button>`;
+}
+
 function imageExploreHistoryItemHtml(item = {}) {
   const id = escapeAttr(item.id || "");
   const prompt = escapeHtml(String(item.prompt || "未命名图片").slice(0, 120));
@@ -1913,6 +1917,7 @@ function imageExploreHistoryItemHtml(item = {}) {
     <div class="image-explore-card-preview" data-image-preview="${id}" role="button" tabindex="0" aria-label="打开大图">
       <img src="${escapeAttr(item.url)}" alt="${prompt}" loading="lazy" decoding="async" />
       <button type="button" class="image-explore-regen" data-image-regenerate="${id}" title="重新生成" aria-label="重新生成">↻</button>
+      ${imageExploreReferenceButtonHtml(id)}
       <button type="button" data-image-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
     </div>
   </article>`;
@@ -1957,6 +1962,7 @@ function imageExploreStoryboardHistoryItemHtml(item = {}) {
     <div class="image-explore-card-preview image-explore-storyboard-preview" data-image-preview="${id}" role="button" tabindex="0" aria-label="打开${escapeAttr(boardLabel)}">
       <img src="${escapeAttr(item.url)}" alt="${prompt}" loading="lazy" decoding="async" />
       <button type="button" class="image-explore-regen" data-image-regenerate="${id}" title="重新生成" aria-label="重新生成">↻</button>
+      ${imageExploreReferenceButtonHtml(id)}
       <button type="button" data-image-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
     </div>
     <div class="image-explore-storyboard-caption">
@@ -1984,6 +1990,33 @@ function renderImageExploreReferences() {
       </span>`,
     )
     .join("");
+}
+
+function addImageExploreReferenceFromResult(item = {}) {
+  const imageUrl = String(item.url || "").trim();
+  if (!imageUrl) return;
+  const existing = state.imageStudio.references.find((reference) => (reference.localUrl || reference.url) === imageUrl);
+  if (existing) {
+    $("#imageExplorePrompt")?.focus();
+    toast("这张图片已经是参考图");
+    return;
+  }
+  if (state.imageStudio.references.length >= 4) {
+    toast("最多添加 4 张参考图");
+    return;
+  }
+  state.imageStudio.references.push({
+    id: `generated-reference-${item.id || Date.now()}`,
+    name: item.historyKind === "storyboard" ? "故事板生成图" : "生成图片",
+    url: imageUrl,
+    localUrl: imageUrl,
+    previewUrl: imageUrl,
+    uploading: false,
+    generated: true,
+  });
+  renderImageExploreView();
+  $("#imageExplorePrompt")?.focus();
+  toast("已添加为参考图");
 }
 
 function renderImageExploreGallery() {
@@ -6062,6 +6095,13 @@ function bind() {
     renderImageExploreView();
   });
   $("#imageExploreView")?.addEventListener("click", (event) => {
+    const referenceAddId = event.target.closest("[data-image-reference-add]")?.dataset.imageReferenceAdd;
+    if (referenceAddId) {
+      const item = state.imageStudio.history.find((entry) => entry.id === referenceAddId)
+        || state.imageStudio.storyboardHistory.find((entry) => entry.id === referenceAddId);
+      if (item?.status === "completed") addImageExploreReferenceFromResult(item);
+      return;
+    }
     const referenceId = event.target.closest("[data-image-reference-remove]")?.dataset.imageReferenceRemove;
     if (referenceId) {
       const reference = state.imageStudio.references.find((item) => item.id === referenceId);

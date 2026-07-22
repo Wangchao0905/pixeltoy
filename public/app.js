@@ -2841,11 +2841,18 @@ function renderWorkspace() {
 function hydrateConfigInputs(configText) {
   try {
     const config = JSON.parse(configText);
+    const settings = config.settings || {};
+    const hasProductionBoardConfig = settings.storyboardWorkflowExplicit === true
+      || (
+        settings.promptMode === "production_board"
+        && ((Array.isArray(config.storyboardPlans) && config.storyboardPlans.length > 0)
+          || (Array.isArray(config.storyboardReferences) && config.storyboardReferences.length > 0))
+      );
     $("#configGroup").value = config.groupName || "";
     $("#configModel").value = normalizeVideoModelName(config.modelName);
-    $("#configResolution").value = config.settings?.resolution || "480p";
-    $("#configRatio").value = config.settings?.ratio || "9:16";
-    $("#configPromptMode").value = config.settings?.promptMode || (config.settings?.enableStoryboards ? "production_board" : "prompt");
+    $("#configResolution").value = settings.resolution || "480p";
+    $("#configRatio").value = settings.ratio || "9:16";
+    $("#configPromptMode").value = hasProductionBoardConfig ? "production_board" : "prompt";
   } catch {
     $("#configGroup").value = "";
     $("#configModel").value = "seedance-2-0-fast";
@@ -5913,7 +5920,20 @@ async function changeDialogueLanguage(targetLanguage) {
 }
 
 async function buildConfig() {
-  await refreshVideoConfig({ silent: false });
+  const button = $("#buildConfigBtn");
+  const originalLabel = button?.textContent || "生成视频配置";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "生成中...";
+  }
+  try {
+    await refreshVideoConfig({ silent: false });
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
 }
 
 async function refreshVideoConfig({ silent } = { silent: false }) {

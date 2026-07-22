@@ -109,6 +109,7 @@ function resetInputs() {
   elements.get("configModel").value = "seedance-2-0-fast";
   elements.get("configResolution").value = "480p";
   elements.get("configRatio").value = "9:16";
+  elements.get("configPromptMode").value = "prompt";
 }
 
 resetInputs();
@@ -116,6 +117,11 @@ vm.runInContext('hydrateConfigInputs("")', context);
 assert.equal(elements.get("configPromptMode").value, "prompt", "an empty config must default to the prompt flow");
 vm.runInContext('hydrateConfigInputs(JSON.stringify({ settings: { enableStoryboards: false } }))', context);
 assert.equal(elements.get("configPromptMode").value, "prompt", "a config without storyboard mode must default to the prompt flow");
+vm.runInContext('hydrateConfigInputs(JSON.stringify({ settings: { enableStoryboards: true, promptMode: "production_board" }, storyboardPlans: [], storyboardReferences: [] }))', context);
+assert.equal(elements.get("configPromptMode").value, "prompt", "a legacy default Production Board config without board data must use the prompt flow");
+vm.runInContext('hydrateConfigInputs(JSON.stringify({ settings: { storyboardWorkflowExplicit: true, promptMode: "production_board" }, storyboardPlans: [] }))', context);
+assert.equal(elements.get("configPromptMode").value, "production_board", "an explicitly selected Production Board flow must remain available");
+resetInputs();
 vm.runInContext(buildConfigBinding, context);
 await elements.get("buildConfigBtn").listeners.get("click")();
 

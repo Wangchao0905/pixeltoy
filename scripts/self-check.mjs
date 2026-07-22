@@ -239,6 +239,8 @@ assert(!storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_16_9"), "Production B
 assert(!storyboardJobRoute.includes('aspectRatio: "16:9"'), "Production Board generation must not mark the whole board as 16:9");
 assert(server.includes("Create ONE 9:16 vertical (portrait)"), "Production Board prompt must make the whole board a 9:16 vertical sheet");
 assert(productionBoardPrompt.includes("exactly ${panelCount} equal-size storyboard panels"), "Production Board prompt must require nine equal-sized panels");
+assert(productionBoardPrompt.includes("integrated lower annotation area"), "Production Board prompt must require readable per-panel shot descriptions");
+assert(productionBoardPrompt.includes("Do not summarize, paraphrase, omit, or truncate any supplied plot or dialogue"), "Production Board prompt must preserve full plot and dialogue text");
 assert(!productionBoardPrompt.includes("ESTABLISHING SHOT:"), "Production Board must not reserve a separate large establishing-shot panel");
 assert(!productionBoardPrompt.includes("below the establishing shot"), "Production Board grid must start immediately below the header");
 assert(server.includes("竖版 9:16 工作纸"), "Production Board policy must describe the whole board as a 9:16 vertical sheet");
@@ -591,7 +593,10 @@ assert(assetRunner.includes("P1-P9: show chronological story beats"), "storyboar
 assert(!assetRunner.includes("Keep the asset references readable in the ASSET REFERENCES strip"), "storyboard reference fallback must not add an asset strip to the final board");
 assert(!assetRunner.includes("stampStoryboardAssetReferences"), "storyboard renderer must not post-process an asset strip onto the final board");
 assert(!assetRunner.includes("16:9 landscape Production Board"), "storyboard edits must preserve the vertical Production Board contract");
-assert(assetRunner.includes("production-board-imagegen-v12-strict-equal-nine-panel-sheet"), "storyboard renderer revision must invalidate legacy non-grid boards");
+assert(assetRunner.includes("production-board-imagegen-v13-annotated-equal-nine-panel-sheet"), "storyboard renderer revision must invalidate boards missing panel annotations");
+assert(assetRunner.includes("function stampStoryboardPanelNotes"), "storyboard renderer must overlay readable panel annotations after image generation");
+assert(assetRunner.includes("stampStoryboardPanelNotes(asset, out);"), "storyboard renderer must apply panel annotations to every completed board");
+assert(!assetRunner.includes("note_lines[:3]"), "storyboard renderer must not truncate plot or dialogue annotation lines");
 assert(assetRunner.includes("function isMissingPillowError"), "storyboard post-processing must detect missing Pillow separately");
 assert(assetRunner.includes("optionalStoryboardPostprocess"), "missing Pillow must not fail an already generated Production Board image");
 assert(server.includes("server-dependency") && server.includes("Python Pillow"), "Pillow dependency failures must not be reported as unknown");

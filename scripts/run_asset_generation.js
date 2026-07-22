@@ -24,7 +24,7 @@ const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_
 const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "900", 10);
 const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRIES || "2", 10);
 const STORYBOARD_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_RETRIES || "1", 10);
-const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v12-strict-equal-nine-panel-sheet";
+const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v13-annotated-equal-nine-panel-sheet";
 
 function usage() {
   console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--size 1280x720|2048x1152|3840x2160]");
@@ -151,7 +151,7 @@ function typeCounts(assets) {
 function promptFor(asset) {
   const storyboardRule =
     asset.type === "Storyboard"
-      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Do NOT add a header, footer, metadata table, caption band, ASSET REFERENCES strip, asset thumbnails, or reference boxes — output ONLY the nine story panels."
+      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Inside the lower half of every panel, reserve a clean integrated annotation area for the panel label, time range, complete plot/action description, exact dialogue, and complete camera/movement note. Do not summarize, paraphrase, omit, or truncate supplied plot or dialogue. Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, asset thumbnails, or reference boxes — output ONLY the nine story panels."
       : "";
   return [
     "Production-grade reference asset. Follow the selected visual style, layout, identity, and safety constraints exactly.",
@@ -443,7 +443,7 @@ function compactStoryboardPanelLines(prompt) {
     .map((line) => line.trim())
     .filter((line) => /^P[1-9]\s+\d/.test(line))
     .slice(0, 9)
-    .map((line) => line.replace(/\s+/g, " ").slice(0, 180))
+    .map((line) => line.replace(/\s+/g, " "))
     .join("\n");
 }
 
@@ -456,13 +456,18 @@ function storyboardPanelObjects(prompt) {
       const match = line.match(/^(P[1-9])\s+([^:：]+)[:：]?\s*(.*)$/i);
       const raw = match ? match[3] : line;
       const description = raw
-        .replace(/;\s*(No dialogue|Dialogue|对白)[\s\S]*$/i, "")
+        .replace(/;\s*(No dialogue|Dialogue|对白|无对白)[\s\S]*$/i, "")
         .replace(/\s+/g, " ")
         .trim() || line;
       return {
         label: match?.[1] || `P${index + 1}`,
+        timeRange: match?.[2]?.trim() || "",
         raw: line,
         description,
+        dialogue: (raw.match(/;\s*((?:No dialogue|Dialogue|对白|无对白)[^;]*)/i)?.[1] || "").trim(),
+        action: (raw.match(/(?:^|;)\s*action=([^;]+)/i)?.[1] || "").trim(),
+        camera: (raw.match(/(?:^|;)\s*camera=([^;]+)/i)?.[1] || "").trim(),
+        continuity: (raw.match(/(?:^|;)\s*continuity=([^;]+)/i)?.[1] || "").trim(),
       };
     });
 }
@@ -564,6 +569,8 @@ title_font = font(max(18, w // 48), True)
 small_font = font(max(10, w // 110))
 tiny_font = font(max(8, w // 150))
 micro_font = font(max(7, w // 175))
+note_heading_font = font(max(12, w // 56), True)
+note_font = font(max(11, w // 62))
 
 # 9:16 竖版板:整张就是固定 3×3 九格。每个外格保持竖版 9:16，禁止页眉、页脚或大建立镜头占用网格空间。
 margin = 22
@@ -617,7 +624,26 @@ def panel_caption(text):
     text = re.sub(r"^P[1-9]\s+[^:：]{0,90}[:：]\s*", "", str(text or "")).strip()
     text = re.sub(r";\s*(No dialogue|Dialogue|对白)[\s\S]*$", "", text, flags=re.I).strip()
     text = text.replace("action=blue", "action").replace("camera=red", "camera")
-    return text[:120] or "story beat"
+    return text or "story beat"
+
+def wrap_note(text, font_obj, max_width, max_lines):
+    clean = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not clean:
+        return []
+    lines = []
+    current = ""
+    for char in clean:
+        candidate = current + char
+        if not current or draw.textlength(candidate, font=font_obj) <= max_width:
+            current = candidate
+            continue
+        lines.append(current)
+        if len(lines) >= max_lines:
+            return lines
+        current = char
+    if current and len(lines) < max_lines:
+        lines.append(current)
+    return lines
 
 def has_any(text, needles):
     low = str(text or "").lower()
@@ -921,15 +947,46 @@ for i in range(n_panels):
     x = grid_x + c * (cell_w + gap)
     y = grid_y + r * (cell_h + gap)
     draw.rectangle([x, y, x + cell_w, y + cell_h], fill=(255, 255, 250), outline=(68, 68, 64), width=1)
-    draw.text((x + 7, y + 5), f"P{i+1}", fill=(24, 24, 24), font=small_font)
-    # The visible storyboard camera panel is always a true vertical 9:16 frame.
-    frame_w = min(cell_w - 16, int((cell_h - 16) * 9 / 16))
+    # Keep each panel's camera frame vertical while reserving a legible note block inside the same panel.
+    annotation_h = max(160, round(cell_h * 0.48))
+    frame_w = min(cell_w - 16, int((cell_h - annotation_h - 16) * 9 / 16))
     frame_h = int(frame_w * 16 / 9)
     frame_x = x + (cell_w - frame_w) // 2
-    frame_y = y + (cell_h - frame_h) // 2
+    frame_y = y + 8
     panel = panels[i] if i < len(panels) else {"description": "chronological story beat"}
     note = panel_text(panel)
     draw_panel_story([frame_x, frame_y, frame_x + frame_w, frame_y + frame_h], note, i)
+    annotation_y = frame_y + frame_h + 6
+    annotation_bottom = y + cell_h - 8
+    draw.rectangle([x + 8, annotation_y, x + cell_w - 8, annotation_bottom], fill=(250, 247, 239))
+    draw.line([x + 8, annotation_y, x + cell_w - 8, annotation_y], fill=(90, 90, 86), width=1)
+    label = str(panel.get("label") or f"P{i+1}") if isinstance(panel, dict) else f"P{i+1}"
+    time_range = str(panel.get("timeRange") or "") if isinstance(panel, dict) else ""
+    draw.text((x + 12, annotation_y + 4), f"{label}  {time_range}".strip(), fill=(28, 28, 26), font=note_heading_font)
+    caption = panel_caption(note)
+    dialogue = str(panel.get("dialogue") or "") if isinstance(panel, dict) else ""
+    action = str(panel.get("action") or "") if isinstance(panel, dict) else ""
+    camera = str(panel.get("camera") or "") if isinstance(panel, dict) else ""
+    continuity = str(panel.get("continuity") or "") if isinstance(panel, dict) else ""
+    sections = [("PLOT: ", caption), ("DIALOGUE: ", dialogue), ("ACTION: ", action), ("CAMERA: ", camera), ("CONTINUITY: ", continuity)]
+    available_h = annotation_bottom - (annotation_y + note_heading_font.size + 8) - 2
+    active_note_font = note_font
+    note_lines = []
+    for font_size in range(note_font.size, 5, -1):
+        candidate_font = font(font_size)
+        candidate_lines = []
+        for prefix, content in sections:
+            if content:
+                candidate_lines += wrap_note(prefix + content, candidate_font, cell_w - 24, 999)
+        line_h = max(1, int(candidate_font.size * 1.18))
+        active_note_font = candidate_font
+        note_lines = candidate_lines
+        if len(candidate_lines) * line_h <= available_h:
+            break
+    text_y = annotation_y + note_heading_font.size + 8
+    for line in note_lines:
+        draw.text((x + 12, text_y), line, fill=(50, 50, 47), font=active_note_font)
+        text_y += int(active_note_font.size * 1.18)
 img.save(out)
 `;
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -946,10 +1003,10 @@ function rescueStoryboardPromptFor(asset, referenceImages = []) {
   return [
     "Generate one professional hand-drawn commercial Production Board image.",
     "The board is a single 9:16 vertical (portrait) sheet — taller than it is wide — on warm off-white paper, full sheet visible, no cropping.",
-    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells.",
+    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells. Inside the lower half of each panel, reserve a clean integrated annotation area for the panel label, time range, complete plot/action description, exact dialogue, and complete camera/movement note. Do not summarize, paraphrase, omit, or truncate supplied plot or dialogue.",
     "Each panel must be a distinct black pencil/ink storyboard drawing, not repeated panels and not a UI wireframe: use varied shot scales, camera angles, blocking, foreground/background staging, actor poses, eyelines, and cut points.",
     "Use a clean professional production-storyboard visual language: black linework, expressive character poses, light shading, and concise handwritten-style shot notes. Do not add colored technical diagrams or camera-frame overlays.",
-    "Do NOT add a header, footer, metadata table, caption band, ASSET REFERENCES strip, asset thumbnails, or reference boxes. The board contains ONLY the nine equal hand-drawn story panels.",
+    "Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, asset thumbnails, or reference boxes. The board contains ONLY the nine equal hand-drawn story panels.",
     "Do not paste final asset images anywhere on the board. Story panels are hand-drawn story action only.",
     firstPromptLine(prompt, "Time coverage:", ""),
     firstPromptLine(prompt, "Source shots:", ""),
@@ -967,7 +1024,7 @@ function editPromptFor(asset, instruction, referenceImages = [], styleReferenceI
       : asset.type === "Scene"
         ? "Keep this as one 16:9 wide establishing environment reference image with absolutely no people, no silhouettes, no crowds, and no human figures."
         : asset.type === "Storyboard"
-          ? "Keep this as one 9:16 vertical Production Board made only of exactly 9 equal-size vertical 9:16 storyboard panels in a 3-column grid. P1 must remain an ordinary top-left cell; no panel may span rows or columns. Do not add headers, footers, captions outside a cell, asset strips, thumbnails, PT labels, arrows, or camera-frame overlays."
+          ? "Keep this as one 9:16 vertical Production Board made only of exactly 9 equal-size vertical 9:16 storyboard panels in a 3-column grid. P1 must remain an ordinary top-left cell; no panel may span rows or columns. Retain each panel's integrated lower annotation area with its complete plot/action description, exact dialogue, and complete camera note; do not summarize, paraphrase, omit, or truncate supplied plot or dialogue. Do not add headers, footers, captions outside a cell, asset strips, thumbnails, PT labels, arrows, or camera-frame overlays."
           : asset.type === "Prop"
             ? "Keep this as one 16:9 pure-white-background prop turnaround reference sheet with the same single prop shown in front view, side view, and back view."
             : "Keep this as one 16:9 realistic cinematic insert or evidence-detail reference image with the main subject clear and physically believable.";
@@ -1130,6 +1187,118 @@ with Image.open(path) as source:
 `;
   optionalStoryboardPostprocess("canvas fit", () => {
     execFileSync("python3", ["-c", py, outPath, String(width), String(height)], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 });
+  });
+}
+
+function stampStoryboardPanelNotes(asset, outPath) {
+  if (asset?.type !== "Storyboard" || !fs.existsSync(outPath)) return;
+  const panels = storyboardPanelObjects(asset.prompt).slice(0, 9);
+  if (!panels.length) return;
+  const py = String.raw`
+import json, re, sys
+from PIL import Image, ImageDraw, ImageFont
+
+path = sys.argv[1]
+payload = json.loads(sys.stdin.read())
+panels = payload.get("panels") or []
+
+def font(size, bold=False):
+    candidates = [
+        "/System/Library/Fonts/STHeiti Medium.ttc" if bold else "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
+    ]
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+def wrap_full(text, font_obj, max_width):
+    clean = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not clean:
+        return []
+    lines, current = [], ""
+    for char in clean:
+        candidate = current + char
+        if not current or draw.textlength(candidate, font=font_obj) <= max_width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = char
+    if current:
+        lines.append(current)
+    return lines
+
+with Image.open(path) as source:
+    img = source.convert("RGB")
+w, h = img.size
+draw = ImageDraw.Draw(img)
+margin = max(12, round(w * 0.03))
+gap = max(6, round(w * 0.0165))
+cols, rows = 3, 3
+max_grid_w = w - margin * 2
+max_grid_h = h - margin * 2
+cell_w = min(
+    (max_grid_w - gap * (cols - 1)) // cols,
+    int(((max_grid_h - gap * (rows - 1)) / rows) * 9 / 16),
+)
+cell_w = max(40, cell_w)
+cell_h = max(72, round(cell_w * 16 / 9))
+grid_w = cell_w * cols + gap * (cols - 1)
+grid_h = cell_h * rows + gap * (rows - 1)
+grid_x = max(0, (w - grid_w) // 2)
+grid_y = max(0, (h - grid_h) // 2)
+heading_font = font(max(12, w // 56), True)
+preferred_note_size = max(11, w // 62)
+
+for i in range(9):
+    row, col = divmod(i, cols)
+    panel = panels[i] if i < len(panels) else {"label": f"P{i+1}", "description": "Storyboard beat."}
+    x = grid_x + col * (cell_w + gap)
+    y = grid_y + row * (cell_h + gap)
+    note_h = max(160, round(cell_h * 0.48))
+    note_y = y + cell_h - note_h - 8
+    note_bottom = y + cell_h - 8
+    draw.rectangle([x + 8, note_y, x + cell_w - 8, note_bottom], fill=(250, 247, 239), outline=(90, 90, 86), width=1)
+    label = str(panel.get("label") or f"P{i+1}")
+    time_range = str(panel.get("timeRange") or "")
+    draw.text((x + 12, note_y + 5), (label + "  " + time_range).strip(), fill=(24, 24, 22), font=heading_font)
+    sections = [
+        ("PLOT: ", panel.get("description") or ""),
+        ("DIALOGUE: ", panel.get("dialogue") or ""),
+        ("ACTION: ", panel.get("action") or ""),
+        ("CAMERA: ", panel.get("camera") or ""),
+        ("CONTINUITY: ", panel.get("continuity") or ""),
+    ]
+    available_h = note_bottom - (note_y + heading_font.size + 9) - 3
+    chosen_font = font(preferred_note_size)
+    note_lines = []
+    for size in range(preferred_note_size, 2, -1):
+        candidate_font = font(size)
+        candidate_lines = []
+        for prefix, value in sections:
+            if str(value).strip():
+                candidate_lines += wrap_full(prefix + str(value), candidate_font, cell_w - 24)
+        line_h = max(1, int(candidate_font.size * 1.18))
+        chosen_font, note_lines = candidate_font, candidate_lines
+        if len(candidate_lines) * line_h <= available_h:
+            break
+    text_y = note_y + heading_font.size + 9
+    for line in note_lines:
+        draw.text((x + 12, text_y), line, fill=(48, 48, 45), font=chosen_font)
+        text_y += int(chosen_font.size * 1.18)
+img.save(path)
+`;
+  optionalStoryboardPostprocess("panel annotations", () => {
+    execFileSync("python3", ["-c", py, outPath], {
+      input: JSON.stringify({ panels }),
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 60_000,
+    });
   });
 }
 
@@ -1498,6 +1667,7 @@ async function main() {
       const editResult = args.editInstruction ? await runEdit(asset, out, args.size, args.editInstruction, logsDir, assetReferenceImages, args.styleReferenceImage, { hiddenSceneReferences }) : null;
       const raw = editResult ? editResult.raw : await runOne(asset, out, args.size, assetReferenceImages, logsDir, args.styleReferenceImage, { hiddenSceneReferences });
       ensureStoryboardCanvas(asset, out, args.size);
+      stampStoryboardPanelNotes(asset, out);
       fs.writeFileSync(path.join(logsDir, `${asset.name}.json`), raw ? `${raw}\n` : "");
       writePromptMeta(
         logsDir,

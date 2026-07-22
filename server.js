@@ -18860,14 +18860,14 @@ function storyboardPanelPromptLine(panel = {}, dialogueLanguage = "en") {
   const language = normalizeDialogueLanguage(dialogueLanguage, "en");
   const label = panel.label || `P${panel.panel || "?"}`;
   const timeRange = panel.timeRange || storyboardTimeRangeLabel(panel.startSecond || 0, panel.endSecond || (panel.startSecond || 0) + (panel.duration || 1));
-  const description = compactLine(panel.description || panel.title || "Storyboard beat.").slice(0, 180);
-  const action = compactLine(panel.actionArrow || "staged action direction and performance beat").slice(0, 90);
-  const camera = compactLine(panel.cameraFrame || "9:16 composition and shot scale").slice(0, 90);
-  const continuity = compactLine(panel.continuityExit || "preserve axis and cut handoff").slice(0, 90);
+  const description = compactLine(panel.description || panel.title || "Storyboard beat.");
+  const action = compactLine(panel.actionArrow || "staged action direction and performance beat");
+  const camera = compactLine(panel.cameraFrame || "9:16 composition and shot scale");
+  const continuity = compactLine(panel.continuityExit || "preserve axis and cut handoff");
   const dialogue = panel.dialogue?.text
     ? language === "zh"
-      ? `对白：${compactLine(panel.dialogue.speaker || "角色")}：“${compactLine(panel.dialogue.text).slice(0, 120)}”`
-      : `Dialogue: ${compactLine(panel.dialogue.speaker || "Character")}: "${compactLine(panel.dialogue.text).slice(0, 120)}"`
+      ? `对白：${compactLine(panel.dialogue.speaker || "角色")}：“${compactLine(panel.dialogue.text)}”`
+      : `Dialogue: ${compactLine(panel.dialogue.speaker || "Character")}: "${compactLine(panel.dialogue.text)}"`
     : language === "zh"
       ? "无对白"
       : "No dialogue";
@@ -18908,8 +18908,8 @@ function storyboardPromptForSlot(slot) {
     "Create ONE 9:16 vertical (portrait) professional film storyboard sheet — clearly taller than wide, matching the final vertical 9:16 short-drama video. Full sheet visible, no cropping.",
     `The complete sheet is one edge-to-edge ${gridLabel} grid of exactly ${panelCount} equal-size storyboard panels, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Every panel outer boundary has the same portrait 9:16 proportion, with uniform narrow gutters.`,
     "P1 is the establishing composition, but it must occupy exactly one ordinary top-left grid cell. No panel may span multiple rows or columns.",
-    "Do not draw a separate establishing strip, full-width image, top header, metadata table, footer, sequence summary band, or any other content outside the nine equal panels. Keep only a small P1-P9 number badge inside the top corner of each panel.",
-    "Each panel is a self-contained vertical 9:16 camera frame with its sketch filling the cell. Do not reserve an external caption bar; any note must remain tiny and inside its own cell.",
+    "Do not draw a separate establishing strip, full-width image, top header, metadata table, footer, sequence summary band, or any other content outside the nine equal panels.",
+    "Each panel is a self-contained vertical 9:16 camera frame. Reserve an integrated lower annotation area inside each panel, using as much as the lower half when needed: show the P1-P9 label and time range, the complete plot/action description, the exact dialogue line, plus the complete shot-size and camera-movement note. Do not summarize, paraphrase, omit, or truncate any supplied plot or dialogue. The annotation must wrap cleanly, remain readable at full-sheet scale, and never extend outside its own cell.",
     "Drawing style: detailed, realistic, expressive hand-drawn cinematic storyboard sketches in clean black pencil and ink with light professional shading — real character poses, faces, gestures and full staging. NOT crude silhouettes, NOT stick figures, NOT flat icons.",
     "Cinematic composition with clear foreground / midground / background and correct vertical 9:16 framing in every panel; each panel is a true standing-phone-screen vertical camera view.",
     "Keep characters visually consistent across every panel (same identity, face, hairstyle, wardrobe and body type as the referenced character assets). The sketches define composition, staging, performance and camera only; final faces, wardrobe colors, textures and lighting are locked by the official character/scene/prop asset images, not by these sketches.",
@@ -18921,7 +18921,7 @@ function storyboardPromptForSlot(slot) {
     dialogueRule,
     "Per-panel plan — follow exactly, one panel each, in order:",
     panelGuide,
-    "Keep every caption and label short and legible. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
+    "Keep every annotation short and legible. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
   ].join("\n");
 }
 
@@ -18953,12 +18953,12 @@ ${storyboardPromptForSlot({ ...slot, dialogueLanguage: slot.dialogueLanguage || 
 
 ## 规则
 
-- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整体版式(从上到下):①顶部信息栏(序列标题+时间码区间+核心情绪 / 项目·场景设定·时长·镜头风格·色调风格)②标准 3×3 九格编号分镜,从左到右、从上到下阅读;每格带序号+时间码+速写+下方说明条(具体动作 / 镜头景别·机位 / 时长 / 运动 / 声音 / 转场)③底部本 Sequence 总结 + 视觉关键词。
+- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整张只由标准 3×3 九个等大竖格组成,从左到右、从上到下阅读;禁止顶部信息栏、底部总结栏和任何格外文字。每格内部下方保留说明区:序号+时间码+完整剧情动作+完整对白+完整镜头/运动说明,不得摘要、改写、遗漏或截断。
 - 分镜格是**精细写实电影级黑白铅笔/墨线速写**:真实人物姿态、面部、表演与完整调度;禁止粗剪影、火柴人、扁平图标。每格构图/景别/机位各异,按弧线展开(建立→站位→转折/高潮→反应→剪辑点),不得各格重复同一张图。
 - 人物身份靠正式资产参考图锁定;速写只导构图/站位/表演/镜头,最终面孔·妆造·颜色·材质·光线以资产图为准。**不再画蓝红箭头、镜头框、资产参考栏、PT 编号等技术标注**——那些是给画面的调度指引,不作为图元绘制。
 - 每张 Production Board 最多覆盖 ${PRODUCTION_BOARD_MAX_SECONDS} 秒连续场景段落;最终视频片段仍按 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS} 秒拆分。
 - Production Board 对白语言必须跟随剧本解析阶段设置:${dialogueLanguage === "zh" ? "中文对白" : "英文对白"},不得中英混用。
-- ⚠️ 清晰的中文信息栏/说明条文字若靠生图模型直接渲染易糊/漏字;稳妥做法是生图只画速写、文字栏由后处理精确叠加(Phase 2)。
+- 格内说明文字由后处理精确叠加，确保不会被生图模型漏掉或渲染成乱码；不影响画面速写和九格布局。
 
 ${body}
 `;

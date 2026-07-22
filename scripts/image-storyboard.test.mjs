@@ -10,8 +10,10 @@ const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
 
 assert.match(html, /id="imageExploreStoryboardToggle"/);
 assert.match(html, /id="imageExploreStoryboardOptions"/);
-assert.match(html, /<strong>3×3 九宫格<\/strong>/);
-assert.match(html, /<option value="1" selected>1 张<\/option>/);
+const storyboardOptions = html.match(/<section id="imageExploreStoryboardOptions"[\s\S]*?<\/section>/)?.[0] || "";
+assert.match(storyboardOptions, /<span>张数<\/span>/);
+assert.match(storyboardOptions, /<option value="1" selected>1 张<\/option>/);
+assert.doesNotMatch(storyboardOptions, /3×3 九宫格|每张 15 秒|多张自动保持剧情衔接/);
 assert.match(html, /id="imageExploreReference"/);
 assert.match(html, /id="imageExploreStoryboardCount"/);
 assert.match(app, /storyboardMode: false/);

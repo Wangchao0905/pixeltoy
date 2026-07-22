@@ -8935,20 +8935,6 @@ body.is-explore-ui .explore-canvas-library {
   flex-wrap: wrap;
 }
 
-.image-explore-storyboard-format {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  color: #e6edf6;
-  font-size: 10px;
-}
-
-.image-explore-storyboard-format span,
-.image-explore-storyboard-continuity {
-  color: #7f90a6;
-  font-size: 10px;
-}
-
 .image-explore-storyboard-count {
   min-height: 28px;
   padding: 0 8px;

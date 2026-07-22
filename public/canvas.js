@@ -1732,21 +1732,8 @@ function videoDownloadName(node) {
 }
 
 function videoDownloadHref(node) {
-  const raw = String(node?.videoUrl || "").trim();
-  if (!raw) return "";
-  if (/^https?:\/\//i.test(raw)) {
-    return `/api/canvas/video-download?url=${encodeURIComponent(raw)}&name=${encodeURIComponent(videoDownloadName(node))}`;
-  }
-  try {
-    const url = new URL(raw, window.location.origin);
-    if (url.origin === window.location.origin && url.pathname === "/media") {
-      url.searchParams.set("download", "1");
-      return `${url.pathname}${url.search}`;
-    }
-  } catch {
-    return raw;
-  }
-  return raw;
+  // 下载图标与播放器原生菜单共用同一地址，避免代理或强制下载参数改变传输路径。
+  return String(node?.videoUrl || "").trim();
 }
 
 function renderVideoPreview(node) {

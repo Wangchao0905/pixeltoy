@@ -2778,13 +2778,13 @@ function hydrateConfigInputs(configText) {
     $("#configModel").value = normalizeVideoModelName(config.modelName);
     $("#configResolution").value = config.settings?.resolution || "480p";
     $("#configRatio").value = config.settings?.ratio || "9:16";
-    $("#configPromptMode").value = config.settings?.promptMode || (config.settings?.enableStoryboards ? "production_board" : "production_board");
+    $("#configPromptMode").value = config.settings?.promptMode || (config.settings?.enableStoryboards ? "production_board" : "prompt");
   } catch {
     $("#configGroup").value = "";
     $("#configModel").value = "seedance-2-0-fast";
     $("#configResolution").value = "480p";
     $("#configRatio").value = "9:16";
-    $("#configPromptMode").value = "production_board";
+    $("#configPromptMode").value = "prompt";
   }
 }
 

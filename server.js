@@ -11733,6 +11733,9 @@ async function getCanvasVideoGeneration(taskId, provider = canvasVideoProvider()
 
 // ---- 画布图片生成通道（GPT Image 2 + Seedream 5.0，输出到画布公共资产目录） ----
 const canvasImageJobs = new Map();
+const canvasImageQueue = [];
+let canvasImageActiveJobs = 0;
+const CANVAS_IMAGE_MAX_CONCURRENCY = Math.max(1, Math.min(4, Number.parseInt(process.env.PIXEL_TOYS_IMAGE_CONCURRENCY || "4", 10)));
 // GPT Image 2 size constraints: each edge is 16px-aligned, <=3840px, and total pixels <=8,294,400.
 const CANVAS_IMAGE_SIZE_TABLE = {
   "16:9": { "1k": "1280x720", "2k": "2048x1152", "4k": "3840x2160" },
@@ -11996,47 +11999,91 @@ async function runSeedreamCanvasImageJob(taskId) {
   }
 }
 
+function drainCanvasImageQueue() {
+  while (canvasImageActiveJobs < CANVAS_IMAGE_MAX_CONCURRENCY && canvasImageQueue.length) {
+    const queued = canvasImageQueue.shift();
+    canvasImageActiveJobs += 1;
+    const entry = canvasImageJobs.get(queued.taskId);
+    if (entry) Object.assign(entry, { status: "running", message: "生成中" });
+    Promise.resolve()
+      .then(queued.run)
+      .catch((error) => {
+        const current = canvasImageJobs.get(queued.taskId);
+        if (current) Object.assign(current, { status: "failed", message: `出图失败：${compactLine(error?.message || "未知错误")}` });
+      })
+      .finally(() => {
+        canvasImageActiveJobs = Math.max(0, canvasImageActiveJobs - 1);
+        drainCanvasImageQueue();
+      });
+  }
+}
+
+function enqueueCanvasImageJob(taskId, run) {
+  const entry = canvasImageJobs.get(taskId);
+  if (entry && (canvasImageActiveJobs >= CANVAS_IMAGE_MAX_CONCURRENCY || canvasImageQueue.length)) {
+    Object.assign(entry, { status: "running", message: `排队中（当前并发上限 ${CANVAS_IMAGE_MAX_CONCURRENCY}）` });
+  }
+  canvasImageQueue.push({ taskId, run });
+  drainCanvasImageQueue();
+}
+
 function runCanvasImageJob(taskId, args, env, attempt = 0) {
-  const child = spawn(process.execPath, args, { env });
-  const job = canvasImageJobs.get(taskId);
-  if (job) job.child = child;
-  let stderr = "";
-  child.stderr.on("data", (chunk) => {
-    stderr += chunk.toString();
-    if (stderr.length > 8000) stderr = stderr.slice(-8000);
-  });
-  child.on("error", (error) => {
-    const entry = canvasImageJobs.get(taskId);
-    if (entry) Object.assign(entry, { status: "failed", message: `无法启动出图进程：${error.message}` });
-  });
-  child.on("close", async (code) => {
-    const entry = canvasImageJobs.get(taskId);
-    if (!entry) return;
+  return new Promise((resolve) => {
+    let child;
+    let stderr = "";
+    let spawnError = "";
     try {
-      if (code === 0 && fs.existsSync(entry.outPath)) {
-        await completeCanvasImageJob(entry);
-      } else {
-        const failMessage = classifyImageGenError(stderr) || `出图失败（退出码 ${code}）`;
-        // 上游生图瞬时错误(stream_read_error/超时/5xx/网络)自动重试,最多 2 次退避;审核/参数类不重试。
-        if (attempt < 2 && /stream|api_stream_error|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|502|503|504|522|523|524|限流|超时|流/i.test(stderr)) {
-          Object.assign(entry, { status: "running", message: `上游波动，正在自动重试（${attempt + 1}/2）…` });
-          entry.child = null;
-          setTimeout(() => runCanvasImageJob(taskId, args, env, attempt + 1), 4000 * (attempt + 1));
-          return;
+      child = spawn(process.execPath, args, { env });
+    } catch (error) {
+      const entry = canvasImageJobs.get(taskId);
+      if (entry) Object.assign(entry, { status: "failed", message: `无法启动出图进程：${error.message}` });
+      resolve();
+      return;
+    }
+    const job = canvasImageJobs.get(taskId);
+    if (job) job.child = child;
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+      if (stderr.length > 8000) stderr = stderr.slice(-8000);
+    });
+    child.on("error", (error) => {
+      spawnError = error.message || "无法启动出图进程";
+    });
+    child.on("close", async (code) => {
+      const entry = canvasImageJobs.get(taskId);
+      if (!entry) {
+        resolve();
+        return;
+      }
+      let retryScheduled = false;
+      try {
+        if (code === 0 && fs.existsSync(entry.outPath)) {
+          await completeCanvasImageJob(entry);
+        } else {
+          const diagnostics = stderr || spawnError;
+          const failMessage = classifyImageGenError(diagnostics) || `出图失败（退出码 ${code}）`;
+          // 网络、流中断、空结果、限流和 5xx 自动重试,最多 2 次;审核/参数类不重试。
+          if (attempt < 2 && /stream|api_stream_error|no_image_result|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|rate.?limit|429|500|502|503|504|522|523|524|限流|超时|流/i.test(diagnostics)) {
+            Object.assign(entry, { status: "running", message: `上游波动，正在自动重试（${attempt + 1}/2）…` });
+            entry.child = null;
+            retryScheduled = true;
+            setTimeout(() => {
+              runCanvasImageJob(taskId, args, env, attempt + 1).then(resolve, resolve);
+            }, 4000 * (attempt + 1));
+          } else {
+            Object.assign(entry, { status: "failed", message: failMessage });
+          }
         }
+      } catch (error) {
         Object.assign(entry, {
           status: "failed",
-          message: failMessage,
+          message: `出图后处理失败：${compactLine(error?.message || "未知错误")}`,
         });
+      } finally {
+        if (entry.child === child) entry.child = null;
       }
-    } catch (error) {
-      Object.assign(entry, {
-        status: "failed",
-        message: `出图后处理失败：${compactLine(error?.message || "未知错误")}`,
-      });
-    } finally {
-      if (entry.child === child) entry.child = null;
-    }
+      if (!retryScheduled) resolve();
+    });
   });
 }
 
@@ -12147,8 +12194,8 @@ async function createCanvasImageGeneration(body = {}) {
     createdAt: Date.now(),
     child: null,
   });
-  if (modelConfig.provider === "ark") runSeedreamCanvasImageJob(taskId);
-  else runCanvasImageJob(taskId, args, env);
+  if (modelConfig.provider === "ark") enqueueCanvasImageJob(taskId, () => runSeedreamCanvasImageJob(taskId));
+  else enqueueCanvasImageJob(taskId, () => runCanvasImageJob(taskId, args, env));
   // 清理老任务（>30 分钟）避免内存无界增长。
   for (const [id, job] of canvasImageJobs) {
     if (Date.now() - (job.createdAt || 0) > 30 * 60 * 1000 && job.status !== "running") canvasImageJobs.delete(id);

@@ -235,12 +235,15 @@ function collectImages(event, images = []) {
   for (const key of ["b64_json", "base64", "image_base64", "partial_image_b64"]) {
     if (typeof event?.[key] === "string" && event[key]) images.push(event[key]);
   }
-  for (const item of event?.data || []) collectImages(item, images);
-  for (const item of event?.response?.output || []) {
-    if (typeof item?.result === "string" && item.result) images.push(item.result);
-    collectImages(item, images);
+  if (typeof event?.result === "string" && event.result.length > 100) images.push(event.result);
+  for (const key of ["data", "output", "content", "item", "response", "result", "image", "images", "choices", "delta"]) {
+    const nested = event?.[key];
+    if (Array.isArray(nested)) {
+      for (const item of nested) collectImages(item, images);
+    } else if (nested && typeof nested === "object") {
+      collectImages(nested, images);
+    }
   }
-  if (typeof event?.item?.result === "string" && event.item.result) images.push(event.item.result);
   return images;
 }
 
@@ -378,17 +381,25 @@ async function main() {
   const response = await fetchWithTimeout(request.url, request.options, timeout);
   await ensureOkResponse(response, request.url);
 
+  let lastPartialImages = [];
   for await (const event of readSseJson(response)) {
     throwIfErrorEvent(event);
+    const images = collectImages(event);
     if (isPartialImageEvent(event)) {
+      if (images.length) lastPartialImages = images;
       continue;
     }
-    const images = collectImages(event);
     if (images.length) {
       const paths = await saveImages(images.slice(0, n), args.out || request.defaultOut, request.defaultOut);
       process.stdout.write(`${JSON.stringify({ ok: true, mode, paths }, null, 2)}\n`);
       return;
     }
+  }
+  // 某些网关只发送 partial_image_b64 后就关闭 SSE,使用最后一张预览图避免整张图片任务误报失败。
+  if (lastPartialImages.length) {
+    const paths = await saveImages(lastPartialImages.slice(0, n), args.out || request.defaultOut, request.defaultOut);
+    process.stdout.write(`${JSON.stringify({ ok: true, mode, paths, partial: true }, null, 2)}\n`);
+    return;
   }
   throw new UserError("no_image_result", "流结束前没有收到图片结果数据", { mode });
 }

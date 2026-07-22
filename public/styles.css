@@ -12128,3 +12128,159 @@ body.auth-page::after {
 .asset-card.is-dragging {
   opacity: 0.48;
 }
+
+/* Asset manifest refinement: compact confirmation and coordinated classification groups. */
+#confirmAssetManifestBtn {
+  align-self: flex-end;
+  width: auto;
+  min-width: 92px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 15px;
+  border: 1px solid rgba(126, 194, 255, 0.42);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(116, 192, 252, 0.22), rgba(74, 168, 255, 0.08)),
+    rgba(11, 28, 49, 0.84);
+  color: #dff2ff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 5px 14px rgba(0, 16, 42, 0.18);
+}
+
+#confirmAssetManifestBtn:hover {
+  border-color: rgba(139, 209, 255, 0.7);
+  background:
+    linear-gradient(180deg, rgba(139, 209, 255, 0.3), rgba(74, 168, 255, 0.13)),
+    rgba(13, 38, 66, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 8px 18px rgba(0, 40, 90, 0.24);
+  transform: translateY(-1px);
+}
+
+#confirmAssetManifestBtn:disabled {
+  border-color: rgba(170, 205, 238, 0.16);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(210, 225, 242, 0.46);
+  box-shadow: none;
+  transform: none;
+}
+
+#assetManifestOverview .asset-manifest-grid {
+  gap: 10px;
+}
+
+#assetManifestOverview .manifest-group {
+  padding: 10px;
+  border: 1px solid rgba(170, 205, 255, 0.14);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.018)),
+    rgba(7, 16, 29, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 22px rgba(0, 8, 24, 0.12);
+}
+
+#assetManifestOverview .manifest-group h3 {
+  min-height: 28px;
+  margin: 0 0 8px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid rgba(170, 205, 255, 0.1);
+  color: #edf6ff;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+#assetManifestOverview .manifest-add-btn {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+  border-color: rgba(170, 205, 255, 0.2);
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+#assetManifestOverview .manifest-add-btn:hover {
+  border-color: rgba(116, 192, 252, 0.56);
+  background: rgba(74, 168, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 3px rgba(74, 168, 255, 0.08);
+}
+
+#assetManifestOverview .manifest-name-list {
+  gap: 5px;
+  min-height: 32px;
+  border-radius: 8px;
+}
+
+#assetManifestOverview .manifest-name-list > .manifest-name,
+#assetManifestOverview .manifest-name-list > .manifest-empty {
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 1px solid rgba(170, 205, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+#assetManifestOverview .manifest-name-list > .manifest-name {
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+#assetManifestOverview .manifest-name-list > .manifest-name:hover {
+  border-color: rgba(126, 194, 255, 0.24);
+  background: rgba(74, 168, 255, 0.075);
+}
+
+#assetManifestOverview .manifest-generate-toggle {
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(170, 205, 255, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(223, 238, 255, 0.8);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+#assetManifestOverview .manifest-generate-toggle.is-on {
+  border-color: rgba(106, 216, 145, 0.3);
+  background: rgba(62, 178, 104, 0.12);
+  color: #c8f3d5;
+}
+
+#assetManifestOverview .manifest-generate-toggle.is-off {
+  border-color: rgba(170, 184, 205, 0.14);
+  background: rgba(255, 255, 255, 0.026);
+  color: rgba(190, 202, 220, 0.58);
+}
+
+#assetManifestOverview .manifest-generate-toggle:hover,
+#assetManifestOverview .manifest-generate-toggle:focus-visible {
+  border-color: rgba(116, 192, 252, 0.52);
+  background: rgba(74, 168, 255, 0.14);
+  color: #eff8ff;
+}
+
+#assetManifestOverview .manifest-name.is-dragging {
+  opacity: 0.48;
+  border-color: rgba(115, 205, 255, 0.72);
+  box-shadow: 0 0 0 2px rgba(47, 155, 255, 0.14);
+}
+
+#assetManifestOverview .manifest-name-list.is-dragover {
+  border-color: rgba(115, 205, 255, 0.82);
+  background: rgba(45, 152, 255, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(115, 205, 255, 0.08);
+}

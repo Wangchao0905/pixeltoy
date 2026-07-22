@@ -2389,6 +2389,75 @@ async function resumeImageExploreGenerations() {
   }
 }
 
+async function planAndGenerateImageExploreStoryboardBatch({ batchId, items, prompt, boardCount, referenceImages }) {
+  const planData = await api("/api/canvas/image-storyboard-plan", {
+    method: "POST",
+    body: JSON.stringify({ prompt, boardCount, referenceImageCount: referenceImages.length, referenceImages }),
+  });
+  const boards = Array.isArray(planData.result?.boards) ? planData.result.boards : [];
+  if (boards.length !== boardCount) throw new Error("故事板规划返回数量不正确，请重试");
+  const plannedItems = boards.map((board, index) => ({
+    ...items[index],
+    status: "running",
+    prompt: board.imagePrompt,
+    board,
+    index: board.index || index + 1,
+  }));
+  const plannedById = new Map(plannedItems.map((item) => [item.id, item]));
+  state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.map((item) => plannedById.get(item.id) || item);
+  renderImageExploreView();
+  await Promise.all(plannedItems.map((item) => runImageExploreStoryboardGeneration(item)));
+}
+
+async function retryImageExploreStoryboardBatch(failedItem) {
+  const batchId = String(failedItem?.batchId || "").trim();
+  const batchItems = state.imageStudio.storyboardHistory.filter((item) => item.batchId === batchId);
+  const prompt = String(failedItem?.storyPrompt || batchItems[0]?.storyPrompt || "").trim();
+  const boardCount = Math.max(1, Math.min(4, Number(failedItem?.totalBoards || failedItem?.boardCount || batchItems.length) || 1));
+  if (!batchId || !prompt || !batchItems.length) {
+    toast("缺少故事内容，请重新填写故事后生成");
+    return;
+  }
+  if (state.imageStudio.storyboardGenerating) return;
+  const generationReferences = Array.isArray(failedItem.referenceImages) ? failedItem.referenceImages : [];
+  const plannerReferences = state.imageStudio.references
+    .filter((reference) => !reference.uploading)
+    .map((reference) => reference.url || reference.localUrl)
+    .filter(Boolean);
+  const referenceImages = plannerReferences.length ? plannerReferences : generationReferences;
+  const resetItems = batchItems.map((item) => ({
+    ...item,
+    status: "planning",
+    taskId: "",
+    prompt: "",
+    url: "",
+    message: "",
+    board: { index: item.index || item.board?.index || 1 },
+  }));
+  const resetById = new Map(resetItems.map((item) => [item.id, item]));
+  state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.map((item) => resetById.get(item.id) || item);
+  state.imageStudio.storyboardActiveBatchId = batchId;
+  state.imageStudio.storyboardGenerating = true;
+  beginImageExploreGeneration();
+  renderImageExploreView();
+  try {
+    await planAndGenerateImageExploreStoryboardBatch({ batchId, items: resetItems, prompt, boardCount, referenceImages });
+  } catch (error) {
+    state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.map((item) => (
+      item.batchId === batchId && item.status === "planning"
+        ? { ...item, status: "failed", message: error.message || "故事板规划失败" }
+        : item
+    ));
+    toast(error.message || "故事板重新生成失败");
+  } finally {
+    endImageExploreGeneration();
+    state.imageStudio.storyboardGenerating = false;
+    state.imageStudio.storyboardActiveBatchId = "";
+    persistImageExploreStoryboardHistory();
+    renderImageExploreView();
+  }
+}
+
 async function submitImageExploreStoryboard(event) {
   event?.preventDefault();
   const prompt = String(state.imageStudio.prompt || "").trim();
@@ -2434,23 +2503,13 @@ async function submitImageExploreStoryboard(event) {
   beginImageExploreGeneration();
   renderImageExploreView();
   try {
-    const planData = await api("/api/canvas/image-storyboard-plan", {
-      method: "POST",
-      body: JSON.stringify({ prompt, boardCount, referenceImageCount: plannerReferenceImages.length, referenceImages: plannerReferenceImages }),
+    await planAndGenerateImageExploreStoryboardBatch({
+      batchId,
+      items,
+      prompt,
+      boardCount,
+      referenceImages: plannerReferenceImages,
     });
-    const boards = Array.isArray(planData.result?.boards) ? planData.result.boards : [];
-    if (boards.length !== boardCount) throw new Error("故事板规划返回数量不正确，请重试");
-    const plannedItems = boards.map((board, index) => ({
-      ...items[index],
-      status: "running",
-      prompt: board.imagePrompt,
-      board,
-      index: board.index || index + 1,
-    }));
-    const plannedById = new Map(plannedItems.map((item) => [item.id, item]));
-    state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.map((item) => plannedById.get(item.id) || item);
-    renderImageExploreView();
-    await Promise.all(plannedItems.map((item) => runImageExploreStoryboardGeneration(item)));
   } catch (error) {
     state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.map((item) => (
       item.batchId === batchId && item.status === "planning"
@@ -6243,6 +6302,10 @@ function bind() {
       const target = state.imageStudio.history.find((entry) => entry.id === regenerateId);
       const storyboardTarget = state.imageStudio.storyboardHistory.find((entry) => entry.id === regenerateId);
       if (storyboardTarget) {
+        if (!String(storyboardTarget.prompt || "").trim()) {
+          retryImageExploreStoryboardBatch(storyboardTarget);
+          return;
+        }
         beginImageExploreGeneration();
         state.imageStudio.storyboardGenerating = true;
         replaceImageExploreStoryboardHistoryItem(storyboardTarget.id, { status: "running", taskId: "", message: "" });

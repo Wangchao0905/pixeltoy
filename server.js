@@ -17237,6 +17237,184 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
   }
 }
 
+const IMAGE_STORYBOARD_PANEL_COUNT = 9;
+const IMAGE_STORYBOARD_BOARD_COUNT_MAX = 4;
+const IMAGE_STORYBOARD_PANEL_TIMES = [
+  "0-2s", "2-4s", "4-6s",
+  "6-8s", "8-10s", "10-12s",
+  "12-13s", "13-14s", "14-15s",
+];
+
+function imageStoryboardText(value, fallback = "", maxLength = 900) {
+  return compactLine(value || fallback).slice(0, maxLength);
+}
+
+function normalizeImageStoryboardDialogue(value) {
+  if (typeof value === "string") return { speaker: "", text: imageStoryboardText(value, "无对白", 240) };
+  const speaker = imageStoryboardText(value?.speaker || value?.name || "", "", 80);
+  const text = imageStoryboardText(value?.text || value?.dialogue || "", "无对白", 240);
+  return { speaker, text };
+}
+
+function imageStoryboardFallbackPanel(boardIndex, panelIndex, summary) {
+  return {
+    panel: panelIndex + 1,
+    time: IMAGE_STORYBOARD_PANEL_TIMES[panelIndex],
+    plot: panelIndex === 0 ? summary : `承接上一格动作，推进「${summary}」`,
+    shot: panelIndex === 0 ? "中远景建立空间" : panelIndex === 8 ? "近景收束并留下下一板出口" : "中近景跟随动作",
+    cameraMovement: panelIndex === 0 ? "固定机位后缓慢推进" : "平稳跟拍，保持视线方向一致",
+    lighting: "沿用同一主光源方向，人物面部有清晰层次",
+    dialogue: { speaker: "", text: "无对白" },
+    transition: panelIndex === 8 ? "动作或视线留在画面出口，衔接下一板" : "动作连续切入下一格",
+    boardIndex,
+  };
+}
+
+function imageStoryboardImagePrompt(board, totalBoards) {
+  const panels = board.panels.map((panel) => {
+    const dialogue = normalizeImageStoryboardDialogue(panel.dialogue);
+    const dialogueText = dialogue.text === "无对白"
+      ? "无对白"
+      : `${dialogue.speaker ? `${dialogue.speaker}：` : ""}${dialogue.text}`;
+    return `面板${panel.panel}（${panel.time}）：剧情=${panel.plot}；景别/镜头=${panel.shot}；运镜=${panel.cameraMovement}；光影=${panel.lighting}；对白=${dialogueText}；转场=${panel.transition}`;
+  }).join("\n");
+  return [
+    "制作一张完整的 16:9 横向 3×3 九宫格故事板图片。整张图片必须是一张统一画布，包含且只包含 9 个等大的分镜格；面板从左到右、从上到下严格编号 1-9。",
+    "每个面板同时体现对应的剧情动作、景别或镜头语言、运镜方向、光影关系和对白；对白请作为清晰但克制的画面文字出现。保持人物身份、服装、场景、道具状态和视线方向连续。",
+    "不要生成 9 张独立图片，不要把九宫格拆成多张图片，不要裁切或拼贴成画外内容，不要加入与剧情无关的角色、道具或事件。",
+    `这是连续故事板中的第 ${board.index}/${totalBoards} 张，时长 ${board.timeRange || "0-15s"}。`,
+    `前一张的衔接入口：${board.continuityIn || "从故事起始状态进入"}。本张结束出口：${board.continuityOut || "保留动作或视线方向供下一张承接"}。`,
+    `本张剧情摘要：${board.summary}`,
+    panels,
+  ].join("\n\n");
+}
+
+function normalizeImageStoryboardBoard(raw, index, totalBoards) {
+  const summary = imageStoryboardText(raw?.summary || raw?.plot || raw?.story, `第 ${index + 1} 张故事板的连续剧情`);
+  const rawPanels = Array.isArray(raw?.panels) ? raw.panels : [];
+  const panels = Array.from({ length: IMAGE_STORYBOARD_PANEL_COUNT }, (_, panelIndex) => {
+    const fallback = imageStoryboardFallbackPanel(index + 1, panelIndex, summary);
+    const source = rawPanels[panelIndex] || {};
+    return {
+      ...fallback,
+      panel: panelIndex + 1,
+      time: imageStoryboardText(source.time, IMAGE_STORYBOARD_PANEL_TIMES[panelIndex], 30),
+      plot: imageStoryboardText(source.plot || source.story || source.action, fallback.plot),
+      shot: imageStoryboardText(source.shot || source.shotType, fallback.shot, 240),
+      cameraMovement: imageStoryboardText(source.cameraMovement || source.camera || source.camera_language, fallback.cameraMovement, 300),
+      lighting: imageStoryboardText(source.lighting || source.light, fallback.lighting, 260),
+      dialogue: normalizeImageStoryboardDialogue(source.dialogue),
+      transition: imageStoryboardText(source.transition || source.cut, fallback.transition, 240),
+    };
+  });
+  const board = {
+    index: index + 1,
+    timeRange: `${index * 15}-${(index + 1) * 15}s`,
+    summary,
+    continuityIn: imageStoryboardText(raw?.continuityIn || raw?.continuity_in, index === 0 ? "从故事起始状态进入" : "承接上一张故事板的结尾动作、视线和情绪"),
+    continuityOut: imageStoryboardText(raw?.continuityOut || raw?.continuity_out, index === totalBoards - 1 ? "在最后一格完成本段情绪落点" : "保留下一张可以直接接上的动作、视线和道具状态"),
+    panels,
+  };
+  return { ...board, imagePrompt: imageStoryboardImagePrompt(board, totalBoards) };
+}
+
+function imageStoryboardPlannerSystemPrompt() {
+  return `你是广告与短剧视觉导演，负责把用户输入的故事或情节拆成连续的九宫格故事板方案。
+
+必须遵守：
+- 只输出 JSON，不输出 Markdown 或解释。
+- layout 固定为 "3x3"，durationPerBoard 固定为 15，boards 数量必须等于用户要求的 1-4 张。
+- 每张 board 必须有 9 个 panels，按从左到右、从上到下排列；每格都要给出 plot、shot、cameraMovement、lighting、dialogue、transition。
+- 剧情、对白必须根据用户输入展开，不要凭空改变人物关系、目标、地点或结局。
+- 多张故事板必须连续：后一张的 continuityIn 从前一张的 continuityOut 开始；保持人物身份、服装、场景、道具状态、动作方向、视线和情绪连续，只推进用户故事中已经存在或合理隐含的剧情。
+- 每张内部按 0-15 秒推进，9 格可使用 0-2s、2-4s、4-6s、6-8s、8-10s、10-12s、12-13s、13-14s、14-15s 等时间段。
+- cameraMovement 要写具体景别、机位和运镜；lighting 要写光源方向、色温或明暗层次；dialogue 没有对白时必须写 speaker 为空、text 为“无对白”。
+- 画面用于后续生成一张完整 3×3 九宫格，不要输出九张独立图片的描述。`;
+}
+
+function imageStoryboardPlannerUserPrompt({ prompt, boardCount, referenceImageCount }) {
+  return JSON.stringify({
+    task: "根据用户故事或情节生成 Image 页使用的 3x3 九宫格故事板规划",
+    layout: "3x3",
+    boardCount,
+    durationPerBoard: 15,
+    referenceImageCount,
+    continuityRule: boardCount > 1 ? "后一张从前一张 continuityOut 直接开始，保持人物、场景、道具、动作和情绪连续" : "单张内部保持九格动作连续",
+    story: prompt.slice(0, 20000),
+    outputSchema: {
+      layout: "3x3",
+      durationPerBoard: 15,
+      boards: [{
+        index: 1,
+        timeRange: "0-15s",
+        summary: "本张剧情摘要",
+        continuityIn: "进入状态",
+        continuityOut: "离开状态",
+        panels: [{
+          panel: 1,
+          time: "0-2s",
+          plot: "剧情",
+          shot: "景别/镜头",
+          cameraMovement: "运镜",
+          lighting: "光影",
+          dialogue: { speaker: "说话人或空", text: "对白或无对白" },
+          transition: "与下一格衔接",
+        }],
+      }],
+    },
+  }, null, 2);
+}
+
+async function createImageStoryboardPlan(body = {}) {
+  const prompt = String(body.prompt || "").trim();
+  if (!prompt) throw new Error("请先填写故事或情节");
+  const boardCount = Math.max(1, Math.min(IMAGE_STORYBOARD_BOARD_COUNT_MAX, Number(body.boardCount) || 1));
+  const model = normalizeStoryboardModel(body.model);
+  const apiKey = storyboardApiKey();
+  if (!apiKey) throw new Error("未配置故事板规划模型 API Key");
+  const requestBody = (withJsonMode) => ({
+    model,
+    temperature: 0.35,
+    ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
+    messages: [
+      { role: "system", content: imageStoryboardPlannerSystemPrompt() },
+      { role: "user", content: imageStoryboardPlannerUserPrompt({ prompt, boardCount, referenceImageCount: Number(body.referenceImageCount) || 0 }) },
+    ],
+  });
+  const post = (withJsonMode) => fetch(openAiCompatUrl("/v1/chat/completions", "storyboard"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody(withJsonMode)),
+  });
+  let response = await post(true);
+  let raw = await response.text();
+  if (!response.ok && response.status === 400 && /response_format|json_object/i.test(raw)) {
+    response = await post(false);
+    raw = await response.text();
+  }
+  if (!response.ok) throw new Error(`故事板规划模型返回 HTTP ${response.status}: ${raw.slice(0, 600)}`);
+  let parsed;
+  try {
+    const data = JSON.parse(raw);
+    parsed = JSON.parse(stripJsonFence(data.choices?.[0]?.message?.content || ""));
+  } catch (error) {
+    throw new Error(`故事板规划结果不是有效 JSON：${error.message}`);
+  }
+  const rawBoards = Array.isArray(parsed?.boards) ? parsed.boards : [];
+  if (rawBoards.length < boardCount) throw new Error(`故事板规划只返回 ${rawBoards.length} 张，要求 ${boardCount} 张`);
+  const boards = rawBoards.slice(0, boardCount).map((board, index) => normalizeImageStoryboardBoard(board, index, boardCount));
+  return {
+    layout: "3x3",
+    durationPerBoard: 15,
+    boardCount,
+    model,
+    boards,
+  };
+}
+
 function seedancePromptForShot(shot, index, dialogueLanguage) {
   if (shot.modelVideoPrompt) {
     return `## ${shot.id}
@@ -20112,6 +20290,11 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/canvas/video-assets") {
     const result = await createCanvasVideoAsset(await readBody(req));
+    return send(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/canvas/image-storyboard-plan") {
+    const result = await createImageStoryboardPlan(await readBody(req));
     return send(res, 200, { ok: true, result });
   }
 

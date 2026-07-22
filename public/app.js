@@ -16,12 +16,18 @@ const PROJECT_REFRESH_IDLE_MS = 30000;
 const PROJECT_REFRESH_HIDDEN_MS = 15000;
 const PROJECT_REFRESH_RETRY_MS = 5000;
 const IMAGE_EXPLORE_HISTORY_KEY = "pixelToys.imageExploreHistory.v1";
+const IMAGE_EXPLORE_STORYBOARD_HISTORY_KEY = "pixelToys.imageStoryboardHistory.v1";
 let initialProjectHandled = false;
 let teamProgressOpenToken = null;
 
 function imageExploreStorageKey(user = null) {
   const identity = user?.id || user?.username || "anonymous";
   return `${IMAGE_EXPLORE_HISTORY_KEY}.${identity}`;
+}
+
+function imageExploreStoryboardStorageKey(user = null) {
+  const identity = user?.id || user?.username || "anonymous";
+  return `${IMAGE_EXPLORE_STORYBOARD_HISTORY_KEY}.${identity}`;
 }
 
 function layoutStorageKey(key, user = null) {
@@ -44,6 +50,19 @@ function normalizeStoredStudioTab(value) {
 function readImageExploreHistory(user = null) {
   try {
     const value = JSON.parse(localStorage.getItem(imageExploreStorageKey(user)) || "[]");
+    return Array.isArray(value)
+      ? value
+        .filter((item) => (item?.status === "completed" && item?.url) || (item?.status === "failed" && item?.message))
+        .slice(0, 24)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function readImageExploreStoryboardHistory(user = null) {
+  try {
+    const value = JSON.parse(localStorage.getItem(imageExploreStoryboardStorageKey(user)) || "[]");
     return Array.isArray(value)
       ? value
         .filter((item) => (item?.status === "completed" && item?.url) || (item?.status === "failed" && item?.message))
@@ -95,10 +114,14 @@ const state = {
   blankCanvases: [],
   imageStudio: {
     history: readImageExploreHistory(),
+    storyboardHistory: readImageExploreStoryboardHistory(),
     prompt: "",
     ratio: "16:9",
     resolution: "1k",
     count: 1,
+    storyboardMode: false,
+    storyboardCount: 1,
+    storyboardGenerating: false,
     references: [],
     referencesUploading: 0,
     activeGenerations: 0,
@@ -301,6 +324,7 @@ async function syncAuthUser() {
     restoreWorkspacePreferences(state.authUser);
     clearLegacyLayoutPreferences();
     state.imageStudio.history = readImageExploreHistory(state.authUser);
+    state.imageStudio.storyboardHistory = readImageExploreStoryboardHistory(state.authUser);
     renderImageExploreView();
     const authDisplayName = data.user?.role === "admin"
       ? data.user?.username || "superadmin"
@@ -1842,6 +1866,17 @@ function persistImageExploreHistory() {
   );
 }
 
+function persistImageExploreStoryboardHistory() {
+  const trimmed = state.imageStudio.storyboardHistory
+    .filter((item) => item?.status === "running" || (item?.status === "completed" && item.url) || (item?.status === "failed" && item.message))
+    .slice(0, 24);
+  state.imageStudio.storyboardHistory = trimmed;
+  localStorage.setItem(
+    imageExploreStoryboardStorageKey(state.authUser),
+    JSON.stringify(trimmed.filter((item) => (item.status === "completed" && item.url) || (item.status === "failed" && item.message))),
+  );
+}
+
 function beginImageExploreGeneration() {
   state.imageStudio.activeGenerations = Math.max(0, Number(state.imageStudio.activeGenerations) || 0) + 1;
   state.imageStudio.generating = true;
@@ -1850,6 +1885,10 @@ function beginImageExploreGeneration() {
 function endImageExploreGeneration() {
   state.imageStudio.activeGenerations = Math.max(0, (Number(state.imageStudio.activeGenerations) || 0) - 1);
   state.imageStudio.generating = state.imageStudio.activeGenerations > 0;
+}
+
+function imageExploreLine(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function imageExploreHistoryItemHtml(item = {}) {
@@ -1878,6 +1917,60 @@ function imageExploreHistoryItemHtml(item = {}) {
   </article>`;
 }
 
+function imageExploreStoryboardDialogueText(dialogue = {}) {
+  if (typeof dialogue === "string") return imageExploreLine(dialogue) || "无对白";
+  const speaker = imageExploreLine(dialogue.speaker || dialogue.name || "");
+  const text = imageExploreLine(dialogue.text || dialogue.dialogue || "");
+  if (!speaker && !text) return "无对白";
+  return speaker && text ? `${speaker}：${text}` : speaker || text;
+}
+
+function imageExploreStoryboardHistoryItemHtml(item = {}) {
+  const id = escapeAttr(item.id || "");
+  const board = item.board || {};
+  const boardIndex = Number(board.index || item.index || 1);
+  const totalBoards = Number(item.totalBoards || item.boardCount || 1);
+  const boardLabel = `故事板 ${boardIndex}/${totalBoards}`;
+  const prompt = escapeHtml(String(item.prompt || board.summary || boardLabel).slice(0, 160));
+  if (item.status === "running" || item.status === "planning") {
+    return `<article class="image-explore-card image-explore-storyboard-card is-running">
+      <div class="image-explore-card-preview image-explore-storyboard-preview"><span class="image-explore-loader"></span><strong>${item.status === "planning" ? "规划中" : "生成中"}</strong><small>${escapeHtml(boardLabel)}</small></div>
+    </article>`;
+  }
+  if (item.status === "failed") {
+    return `<article class="image-explore-card image-explore-storyboard-card is-failed">
+      <div class="image-explore-card-preview image-explore-storyboard-preview">
+        <strong>${escapeHtml(boardLabel)}失败</strong>
+        <small>${escapeHtml(item.message || "请重试")}</small>
+        <button type="button" data-image-remove="${id}" title="移除" aria-label="移除失败结果">×</button>
+      </div>
+    </article>`;
+  }
+  const panels = Array.isArray(board.panels) ? board.panels : [];
+  const panelDetails = panels.map((panel, index) => `<article class="image-explore-storyboard-panel">
+    <strong>${escapeHtml(String(panel.panel || index + 1).padStart(2, "0"))} · ${escapeHtml(panel.time || "")}</strong>
+    <span>${escapeHtml(panel.plot || "")}</span>
+    <small>镜头：${escapeHtml(panel.cameraMovement || panel.shot || "未指定")}<br />光影：${escapeHtml(panel.lighting || "未指定")}<br />对白：${escapeHtml(imageExploreStoryboardDialogueText(panel.dialogue))}</small>
+  </article>`).join("");
+  return `<article class="image-explore-card image-explore-storyboard-card">
+    <div class="image-explore-card-preview image-explore-storyboard-preview" data-image-preview="${id}" role="button" tabindex="0" aria-label="打开${escapeAttr(boardLabel)}">
+      <img src="${escapeAttr(item.url)}" alt="${prompt}" loading="lazy" decoding="async" />
+      <button type="button" class="image-explore-regen" data-image-regenerate="${id}" title="重新生成" aria-label="重新生成">↻</button>
+      <button type="button" data-image-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
+    </div>
+    <div class="image-explore-storyboard-caption">
+      <strong>${escapeHtml(boardLabel)} · 3×3</strong>
+      <span>${escapeHtml(board.timeRange || "0-15s")} · 每张 15 秒</span>
+      <p>${escapeHtml(board.summary || "")}</p>
+      <details class="image-explore-storyboard-details">
+        <summary>查看 9 格分镜</summary>
+        <div class="image-explore-storyboard-panels">${panelDetails}</div>
+        <small class="image-explore-storyboard-continuity-detail">入：${escapeHtml(board.continuityIn || "起始状态")}<br />出：${escapeHtml(board.continuityOut || "本张结尾状态")}</small>
+      </details>
+    </div>
+  </article>`;
+}
+
 function renderImageExploreReferences() {
   const node = $("#imageExploreReferenceList");
   if (!node) return;
@@ -1896,8 +1989,12 @@ function renderImageExploreGallery() {
   const gallery = $("#imageExploreGallery");
   const empty = $("#imageExploreEmpty");
   if (!gallery || !empty) return;
-  gallery.innerHTML = state.imageStudio.history.map(imageExploreHistoryItemHtml).join("");
-  empty.classList.toggle("hidden", state.imageStudio.history.length > 0);
+  const items = [
+    ...state.imageStudio.history.map((item) => ({ ...item, historyKind: "image" })),
+    ...state.imageStudio.storyboardHistory.map((item) => ({ ...item, historyKind: "storyboard" })),
+  ].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  gallery.innerHTML = items.map((item) => item.historyKind === "storyboard" ? imageExploreStoryboardHistoryItemHtml(item) : imageExploreHistoryItemHtml(item)).join("");
+  empty.classList.toggle("hidden", items.length > 0);
 }
 
 function renderImageExploreView() {
@@ -1907,14 +2004,29 @@ function renderImageExploreView() {
   $("#imageExploreRatio").value = state.imageStudio.ratio;
   $("#imageExploreResolution").value = state.imageStudio.resolution;
   $("#imageExploreCount").textContent = String(state.imageStudio.count);
+  const storyboardToggle = $("#imageExploreStoryboardToggle");
+  const storyboardOptions = $("#imageExploreStoryboardOptions");
+  const storyboardMode = state.imageStudio.storyboardMode === true;
+  const promptInput = $("#imageExplorePrompt");
+  if (promptInput) promptInput.placeholder = storyboardMode ? "输入故事或情节，生成连续九宫格故事板" : "Describe the scene you imagine";
+  if (storyboardToggle) {
+    storyboardToggle.classList.toggle("is-active", storyboardMode);
+    storyboardToggle.setAttribute("aria-expanded", storyboardMode ? "true" : "false");
+  }
+  storyboardOptions?.classList.toggle("hidden", !storyboardMode);
+  if ($("#imageExploreStoryboardCount")) $("#imageExploreStoryboardCount").value = String(state.imageStudio.storyboardCount);
+  $("#imageExploreImageCountControl")?.classList.toggle("hidden", storyboardMode);
   const referencesUploading = Number(state.imageStudio.referencesUploading) || 0;
   const activeGenerations = Number(state.imageStudio.activeGenerations) || 0;
-  $("#imageExploreGenerate").disabled = referencesUploading > 0;
+  $("#imageExploreGenerate").disabled = referencesUploading > 0 || state.imageStudio.storyboardGenerating;
   $("#imageExploreStatus").textContent = referencesUploading
     ? `参考图上传中（${referencesUploading}）`
+    : state.imageStudio.storyboardGenerating
+      ? `故事板生成中（${state.imageStudio.storyboardCount} 张）`
     : activeGenerations > 0
       ? `生成中（${activeGenerations}）`
       : "";
+  $("#imageExploreGenerate").innerHTML = storyboardMode ? '生成故事板 <span aria-hidden="true">↗</span>' : '生成图片 <span aria-hidden="true">↗</span>';
   renderImageExploreReferences();
   renderImageExploreGallery();
 }
@@ -2087,6 +2199,11 @@ function replaceImageExploreHistoryItem(id, patch = {}) {
   renderImageExploreView();
 }
 
+function replaceImageExploreStoryboardHistoryItem(id, patch = {}) {
+  state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.map((item) => (item.id === id ? { ...item, ...patch } : item));
+  renderImageExploreView();
+}
+
 async function pollImageExploreGeneration(taskId) {
   for (let attempt = 0; attempt < 180; attempt += 1) {
     const data = await api(`/api/canvas/image-generations/${encodeURIComponent(taskId)}`);
@@ -2131,8 +2248,96 @@ async function runImageExploreGeneration(item) {
   }
 }
 
+async function runImageExploreStoryboardGeneration(item) {
+  try {
+    const data = await api("/api/canvas/image-generation", {
+      method: "POST",
+      body: JSON.stringify({
+        prompt: item.prompt,
+        ratio: "16:9",
+        resolution: item.resolution,
+        model: item.model || "gpt-image-2",
+        referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
+      }),
+    });
+    const taskId = data.result?.taskId;
+    if (!taskId) throw new Error("故事板图片任务没有返回 ID");
+    const result = await pollImageExploreGeneration(taskId);
+    if (result.status !== "completed" || !result.url) throw new Error(result.message || "故事板图片生成失败");
+    replaceImageExploreStoryboardHistoryItem(item.id, {
+      status: "completed",
+      url: result.url,
+      message: "",
+      source: "image-storyboard",
+      generationMode: "ai-generated",
+      aiGenerated: true,
+      verificationType: "ai-generated",
+      assetStylePreset: "photoreal",
+      assetStyleLabel: "AI 写实",
+      libraryAssetId: result.libraryAssetId || "",
+    });
+    loadAssetLibrary({ silent: true }).catch(() => {});
+  } catch (error) {
+    replaceImageExploreStoryboardHistoryItem(item.id, { status: "failed", message: error.message });
+  }
+}
+
+async function submitImageExploreStoryboard(event) {
+  event?.preventDefault();
+  const prompt = String(state.imageStudio.prompt || "").trim();
+  if (!prompt) {
+    toast("请先填写故事或情节");
+    $("#imageExplorePrompt")?.focus();
+    return;
+  }
+  if (state.imageStudio.referencesUploading > 0) return;
+  const boardCount = Math.max(1, Math.min(4, Number(state.imageStudio.storyboardCount) || 1));
+  const referenceImages = state.imageStudio.references
+    .filter((reference) => !reference.uploading)
+    .map((reference) => reference.localUrl || reference.url)
+    .filter(Boolean);
+  const model = state.imageStudio.model || "gpt-image-2";
+  state.imageStudio.storyboardCount = boardCount;
+  state.imageStudio.storyboardGenerating = true;
+  beginImageExploreGeneration();
+  renderImageExploreView();
+  try {
+    const planData = await api("/api/canvas/image-storyboard-plan", {
+      method: "POST",
+      body: JSON.stringify({ prompt, boardCount, referenceImageCount: referenceImages.length }),
+    });
+    const boards = Array.isArray(planData.result?.boards) ? planData.result.boards : [];
+    if (boards.length !== boardCount) throw new Error("故事板规划返回数量不正确，请重试");
+    const items = boards.map((board, index) => ({
+      id: `storyboard-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+      status: "running",
+      prompt: board.imagePrompt,
+      storyPrompt: prompt,
+      ratio: "16:9",
+      resolution: state.imageStudio.resolution,
+      model,
+      referenceImages,
+      board,
+      boardCount,
+      totalBoards: boardCount,
+      index: board.index || index + 1,
+      url: "",
+      createdAt: new Date().toISOString(),
+    }));
+    state.imageStudio.storyboardHistory = [...items, ...state.imageStudio.storyboardHistory].slice(0, 24);
+    renderImageExploreView();
+    await Promise.all(items.map((item) => runImageExploreStoryboardGeneration(item)));
+  } finally {
+    endImageExploreGeneration();
+    state.imageStudio.storyboardGenerating = false;
+    persistImageExploreStoryboardHistory();
+    renderImageExploreView();
+  }
+}
+
 async function submitImageExploreGeneration(event) {
   event?.preventDefault();
+  if (state.imageStudio.storyboardMode === true) return submitImageExploreStoryboard(event);
   const prompt = String(state.imageStudio.prompt || "").trim();
   if (!prompt) {
     toast("请先填写图片描述");
@@ -2226,7 +2431,9 @@ async function uploadImageExploreReferences(event) {
 
 function clearImageExploreHistory() {
   state.imageStudio.history = [];
+  state.imageStudio.storyboardHistory = [];
   persistImageExploreHistory();
+  persistImageExploreStoryboardHistory();
   renderImageExploreView();
 }
 
@@ -5831,6 +6038,14 @@ function bind() {
   $("#imageExplorePrompt")?.addEventListener("input", (event) => {
     state.imageStudio.prompt = event.currentTarget.value;
   });
+  $("#imageExploreStoryboardToggle")?.addEventListener("click", () => {
+    state.imageStudio.storyboardMode = !state.imageStudio.storyboardMode;
+    renderImageExploreView();
+  });
+  $("#imageExploreStoryboardCount")?.addEventListener("change", (event) => {
+    state.imageStudio.storyboardCount = Math.max(1, Math.min(4, Number(event.currentTarget.value) || 1));
+    renderImageExploreView();
+  });
   $("#imageExploreReference")?.addEventListener("change", (event) => uploadImageExploreReferences(event).catch((error) => toast(error.message)));
   $("#imageExploreClear")?.addEventListener("click", clearImageExploreHistory);
   $("#imageExploreCountDown")?.addEventListener("click", () => {
@@ -5853,7 +6068,9 @@ function bind() {
     const imageId = event.target.closest("[data-image-remove]")?.dataset.imageRemove;
     if (imageId) {
       state.imageStudio.history = state.imageStudio.history.filter((item) => item.id !== imageId);
+      state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.filter((item) => item.id !== imageId);
       persistImageExploreHistory();
+      persistImageExploreStoryboardHistory();
       renderImageExploreView();
       return;
     }
@@ -5861,6 +6078,27 @@ function bind() {
     if (regenerateId) {
       if (state.imageStudio.referencesUploading > 0) { toast("参考图上传中，请稍候"); return; }
       const target = state.imageStudio.history.find((entry) => entry.id === regenerateId);
+      const storyboardTarget = state.imageStudio.storyboardHistory.find((entry) => entry.id === regenerateId);
+      if (storyboardTarget) {
+        beginImageExploreGeneration();
+        state.imageStudio.storyboardGenerating = true;
+        replaceImageExploreStoryboardHistoryItem(storyboardTarget.id, { status: "running", message: "" });
+        const fallbackReferences = state.imageStudio.references
+          .filter((reference) => !reference.uploading)
+          .map((reference) => reference.localUrl || reference.url)
+          .filter(Boolean);
+        runImageExploreStoryboardGeneration({
+          ...storyboardTarget,
+          model: storyboardTarget.model || state.imageStudio.model || "gpt-image-2",
+          referenceImages: Array.isArray(storyboardTarget.referenceImages) ? storyboardTarget.referenceImages : fallbackReferences,
+        }).finally(() => {
+          endImageExploreGeneration();
+          state.imageStudio.storyboardGenerating = false;
+          persistImageExploreStoryboardHistory();
+          renderImageExploreView();
+        });
+        return;
+      }
       if (!target) return;
       beginImageExploreGeneration();
       replaceImageExploreHistoryItem(target.id, { status: "running", message: "" });
@@ -5882,7 +6120,8 @@ function bind() {
     }
     const previewId = event.target.closest("[data-image-preview]")?.dataset.imagePreview;
     if (previewId) {
-      const item = state.imageStudio.history.find((entry) => entry.id === previewId);
+      const item = state.imageStudio.history.find((entry) => entry.id === previewId)
+        || state.imageStudio.storyboardHistory.find((entry) => entry.id === previewId);
       if (item?.status === "completed") openImageExplorePreview(item);
     }
   });
@@ -5890,7 +6129,8 @@ function bind() {
     const preview = event.target.closest?.("[data-image-preview]");
     if (!preview || !["Enter", " "].includes(event.key)) return;
     event.preventDefault();
-    const item = state.imageStudio.history.find((entry) => entry.id === preview.dataset.imagePreview);
+    const item = state.imageStudio.history.find((entry) => entry.id === preview.dataset.imagePreview)
+      || state.imageStudio.storyboardHistory.find((entry) => entry.id === preview.dataset.imagePreview);
     if (item?.status === "completed") openImageExplorePreview(item);
   });
   $("#assetLibraryRefresh")?.addEventListener("click", () => loadAssetLibrary().catch((error) => toast(error.message)));

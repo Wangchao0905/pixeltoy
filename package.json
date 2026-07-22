@@ -7,7 +7,7 @@
     "build": "vite build",
     "start": "node server.js",
     "verify:deploy": "node scripts/verify-deploy.mjs",
-    "test": "npm run verify:deploy && npm run build && node --check server.js && node --check public/app.js && node --check public/canvas.js && node scripts/workspace-shell.test.js && node scripts/explore-workspace-ui.test.mjs && node scripts/self-check.mjs"
+    "test": "npm run verify:deploy && npm run build && node --check server.js && node --check public/app.js && node --check public/canvas.js && node scripts/workspace-shell.test.js && node scripts/explore-workspace-ui.test.mjs && node scripts/image-storyboard.test.mjs && node scripts/self-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -24,7 +24,7 @@ const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_
 const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "900", 10);
 const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRIES || "2", 10);
 const STORYBOARD_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_RETRIES || "1", 10);
-const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v13-annotated-equal-nine-panel-sheet";
+const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v15-structured-production-tab";
 
 function usage() {
   console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--size 1280x720|2048x1152|3840x2160]");
@@ -151,7 +151,7 @@ function typeCounts(assets) {
 function promptFor(asset) {
   const storyboardRule =
     asset.type === "Storyboard"
-      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Inside the lower half of every panel, reserve a clean integrated annotation area for the panel label, time range, complete plot/action description, exact dialogue, and complete camera/movement note. Do not summarize, paraphrase, omit, or truncate supplied plot or dialogue. Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, asset thumbnails, or reference boxes — output ONLY the nine story panels."
+      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Render real cinematic panel imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. Inside the lower half of every panel, reserve a clean integrated PRODUCTION TAB for panel label, time range, Visual / Camera / Shot / Lens / Lighting / Emotion, then complete Dialogue / Action / Continuity. Do not summarize, paraphrase, omit, or truncate supplied plot or dialogue; wrap and reduce type only as needed to keep every word inside its cell. Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, asset thumbnails, or reference boxes — output ONLY the nine story panels."
       : "";
   return [
     "Production-grade reference asset. Follow the selected visual style, layout, identity, and safety constraints exactly.",
@@ -253,7 +253,7 @@ except Exception:
     font_bold = font = small = ImageFont.load_default()
 
 draw.text((30, 22), "PRODUCTION ASSET REFERENCE BOARD", fill=ink, font=font_bold)
-draw.text((30, 54), "Use these official assets only for identity and binding. Convert the story into hand-drawn storyboard panels.", fill=muted, font=font)
+draw.text((30, 54), "Use these official assets as the visible identity source for cinematic storyboard panels.", fill=muted, font=font)
 draw.rectangle((30, 92, 1250, 690), outline=ink, width=2)
 cols = min(4, max(1, len(items)))
 rows = (len(items) + cols - 1) // cols
@@ -336,9 +336,10 @@ function referenceGuidanceFor(asset, referenceImages = [], mode = "generate", op
     );
   } else if (asset.type === "Storyboard") {
     lines.push(
-      "Use the attached production asset references ONLY to keep character, scene, prop, and insert identity consistent inside the hand-drawn story panels. Do NOT draw any ASSET REFERENCES strip, thumbnail boxes, or asset reference area — output only the story panels.",
+      "Use the attached production asset references as the visible identity source inside every cinematic story panel. Each referenced character must retain the same face, hairstyle, wardrobe, body type and recognisable identity; each scene and prop must retain its actual structure, material, palette and lighting logic. Do NOT draw any ASSET REFERENCES strip, thumbnail boxes, or asset reference area — output only the story panels.",
+      "Character turnarounds are hidden identity inputs: their front, side, back, and portrait views lock the same face, hairstyle, wardrobe, body proportions, and recognisable identity across every panel, but never appear as thumbnails, reference strips, or extra board cells.",
       "Every attached reference image must be assigned one clear role based on its filename prefix: C### is a Character, S### is a Scene/location, P### is a Prop, and I### is an Insert/detail. Never treat a Scene reference as a character, and never treat a Character reference as a location.",
-      "The story panels are simplified hand-drawn black storyboard sketches that tell the plot; do not paste or thumbnail the official asset images anywhere on the board.",
+      "The story panels must be true cinematic frames built from those reference identities, not generic sketches. Do not paste or thumbnail the official asset images anywhere on the board.",
     );
   } else {
     lines.push(
@@ -390,7 +391,7 @@ function referenceRoleFor(asset, mode = "generate", options = {}) {
     return "Reference image. Object/material anchor: use it for shape, material, scale, color, wear, and practical construction. Keep the required asset-reference format.";
   }
   if (asset.type === "Storyboard") {
-    return "Production asset reference image. Read the filename prefix before using it: C### means Character, S### means Scene/location, P### means Prop, I### means Insert/detail. Use it ONLY as identity guidance so the hand-drawn story panels keep the correct character/scene/prop identity. Do not render it as a thumbnail or ASSET REFERENCES strip, and do not copy it as a final cinematic panel; storyboard panels remain simplified 9:16 hand-drawn director frames.";
+    return "Production asset reference image. Read the filename prefix before using it: C### means Character, S### means Scene/location, P### means Prop, I### means Insert/detail. Character turnarounds are hidden identity inputs: use their front/side/back/portrait views to lock face, hairstyle, wardrobe, body proportions, and recognisable identity without rendering them as thumbnails or reference strips. Render every asset's actual identity inside the cinematic storyboard panels: preserve character likeness and wardrobe, scene architecture and palette, and prop form and material. Integrate it naturally into each 9:16 narrative camera frame.";
   }
   return "Reference image. Follow the prompt for the exact aspect to borrow; preserve the requested asset type and production-reference format.";
 }
@@ -455,8 +456,13 @@ function storyboardPanelObjects(prompt) {
     .map((line, index) => {
       const match = line.match(/^(P[1-9])\s+([^:：]+)[:：]?\s*(.*)$/i);
       const raw = match ? match[3] : line;
-      const description = raw
-        .replace(/;\s*(No dialogue|Dialogue|对白|无对白)[\s\S]*$/i, "")
+      const field = (name) => {
+        const matchField = raw.match(new RegExp(`(?:^|;)\\s*${name}=([\\s\\S]*?)(?=;\\s*(?:visual|camera|shot|lens|lighting|emotion|dialogue|action|continuity)=|$)`, "i"));
+        return (matchField?.[1] || "").replace(/\s+/g, " ").trim();
+      };
+      const visual = field("visual");
+      const description = visual || raw
+        .replace(/;\s*(?:No dialogue|Dialogue|对白|无对白)[\s\S]*$/i, "")
         .replace(/\s+/g, " ")
         .trim() || line;
       return {
@@ -464,10 +470,15 @@ function storyboardPanelObjects(prompt) {
         timeRange: match?.[2]?.trim() || "",
         raw: line,
         description,
-        dialogue: (raw.match(/;\s*((?:No dialogue|Dialogue|对白|无对白)[^;]*)/i)?.[1] || "").trim(),
-        action: (raw.match(/(?:^|;)\s*action=([^;]+)/i)?.[1] || "").trim(),
-        camera: (raw.match(/(?:^|;)\s*camera=([^;]+)/i)?.[1] || "").trim(),
-        continuity: (raw.match(/(?:^|;)\s*continuity=([^;]+)/i)?.[1] || "").trim(),
+        visual: visual || description,
+        camera: field("camera"),
+        shot: field("shot"),
+        lens: field("lens"),
+        lighting: field("lighting"),
+        emotion: field("emotion"),
+        dialogue: field("dialogue") || (raw.match(/;\s*((?:No dialogue|Dialogue|对白|无对白)[^;]*)/i)?.[1] || "").trim(),
+        action: field("action"),
+        continuity: field("continuity"),
       };
     });
 }
@@ -1001,13 +1012,13 @@ function rescueStoryboardPromptFor(asset, referenceImages = []) {
     ? referenceImages.map((image, index) => `R${index + 1}: ${path.basename(image)} (${referenceTypeFromName(image) || "reference"})`).join("; ")
     : firstPromptLine(prompt, "Asset bindings:", "Asset bindings: use the named official assets from this sequence.");
   return [
-    "Generate one professional hand-drawn commercial Production Board image.",
+    "Generate one professional cinematic Production Board image.",
     "The board is a single 9:16 vertical (portrait) sheet — taller than it is wide — on warm off-white paper, full sheet visible, no cropping.",
-    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells. Inside the lower half of each panel, reserve a clean integrated annotation area for the panel label, time range, complete plot/action description, exact dialogue, and complete camera/movement note. Do not summarize, paraphrase, omit, or truncate supplied plot or dialogue.",
-    "Each panel must be a distinct black pencil/ink storyboard drawing, not repeated panels and not a UI wireframe: use varied shot scales, camera angles, blocking, foreground/background staging, actor poses, eyelines, and cut points.",
-    "Use a clean professional production-storyboard visual language: black linework, expressive character poses, light shading, and concise handwritten-style shot notes. Do not add colored technical diagrams or camera-frame overlays.",
-    "Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, asset thumbnails, or reference boxes. The board contains ONLY the nine equal hand-drawn story panels.",
-    "Do not paste final asset images anywhere on the board. Story panels are hand-drawn story action only.",
+    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells. Inside the lower half of each panel, reserve a clean integrated PRODUCTION TAB for the panel label, time range, Visual / Camera / Shot / Lens / Lighting / Emotion, then the complete Dialogue / Action / Continuity. Do not summarize, paraphrase, omit, or truncate supplied plot or dialogue; wrap and reduce type only as needed to keep every word inside its cell.",
+    "Each panel must be a distinct cinematic story frame, not repeated panels and not a UI wireframe: use the actual attached character, scene and prop identities with varied shot scales, camera angles, blocking, foreground/background staging, actor poses, eyelines, and cut points.",
+    "Use a clean professional production-storyboard visual language with finished cinematic imagery, expressive performance and clear environmental continuity. Do not add colored technical diagrams or camera-frame overlays.",
+    "Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, asset thumbnails, or reference boxes. The board contains ONLY the nine equal cinematic story panels.",
+    "Do not paste source images as thumbnails; integrate their actual identities naturally into the story action in every relevant panel.",
     firstPromptLine(prompt, "Time coverage:", ""),
     firstPromptLine(prompt, "Source shots:", ""),
     firstPromptLine(prompt, "Story beat:", firstPromptLine(prompt, "Story beats to visualize:", "")),
@@ -1024,7 +1035,7 @@ function editPromptFor(asset, instruction, referenceImages = [], styleReferenceI
       : asset.type === "Scene"
         ? "Keep this as one 16:9 wide establishing environment reference image with absolutely no people, no silhouettes, no crowds, and no human figures."
         : asset.type === "Storyboard"
-          ? "Keep this as one 9:16 vertical Production Board made only of exactly 9 equal-size vertical 9:16 storyboard panels in a 3-column grid. P1 must remain an ordinary top-left cell; no panel may span rows or columns. Retain each panel's integrated lower annotation area with its complete plot/action description, exact dialogue, and complete camera note; do not summarize, paraphrase, omit, or truncate supplied plot or dialogue. Do not add headers, footers, captions outside a cell, asset strips, thumbnails, PT labels, arrows, or camera-frame overlays."
+          ? "Keep this as one 9:16 vertical Production Board made only of exactly 9 equal-size vertical 9:16 storyboard panels in a 3-column grid. P1 must remain an ordinary top-left cell; no panel may span rows or columns. Retain each panel's integrated lower PRODUCTION TAB with Visual / Camera / Shot / Lens / Lighting / Emotion plus complete Dialogue / Action / Continuity; do not summarize, paraphrase, omit, or truncate supplied plot or dialogue. Do not add headers, footers, captions outside a cell, asset strips, thumbnails, PT labels, arrows, or camera-frame overlays."
           : asset.type === "Prop"
             ? "Keep this as one 16:9 pure-white-background prop turnaround reference sheet with the same single prop shown in front view, side view, and back view."
             : "Keep this as one 16:9 realistic cinematic insert or evidence-detail reference image with the main subject clear and physically believable.";
@@ -1251,29 +1262,37 @@ grid_w = cell_w * cols + gap * (cols - 1)
 grid_h = cell_h * rows + gap * (rows - 1)
 grid_x = max(0, (w - grid_w) // 2)
 grid_y = max(0, (h - grid_h) // 2)
-heading_font = font(max(12, w // 56), True)
-preferred_note_size = max(11, w // 62)
+heading_font = font(max(10, w // 72), True)
+meta_font = font(max(9, w // 88), True)
+preferred_note_size = max(10, w // 72)
 
 for i in range(9):
     row, col = divmod(i, cols)
     panel = panels[i] if i < len(panels) else {"label": f"P{i+1}", "description": "Storyboard beat."}
     x = grid_x + col * (cell_w + gap)
     y = grid_y + row * (cell_h + gap)
-    note_h = max(160, round(cell_h * 0.48))
+    note_h = max(190, round(cell_h * 0.60))
     note_y = y + cell_h - note_h - 8
     note_bottom = y + cell_h - 8
     draw.rectangle([x + 8, note_y, x + cell_w - 8, note_bottom], fill=(250, 247, 239), outline=(90, 90, 86), width=1)
     label = str(panel.get("label") or f"P{i+1}")
     time_range = str(panel.get("timeRange") or "")
-    draw.text((x + 12, note_y + 5), (label + "  " + time_range).strip(), fill=(24, 24, 22), font=heading_font)
+    header_bottom = note_y + heading_font.size + 8
+    draw.rectangle([x + 8, note_y, x + cell_w - 8, header_bottom], fill=(31, 34, 36))
+    draw.text((x + 12, note_y + 3), "PRODUCTION TAB", fill=(250, 247, 239), font=heading_font)
+    draw.text((x + 12, header_bottom + 3), (label + "  " + time_range).strip(), fill=(24, 24, 22), font=meta_font)
     sections = [
-        ("PLOT: ", panel.get("description") or ""),
-        ("DIALOGUE: ", panel.get("dialogue") or ""),
-        ("ACTION: ", panel.get("action") or ""),
-        ("CAMERA: ", panel.get("camera") or ""),
-        ("CONTINUITY: ", panel.get("continuity") or ""),
+        ("VISUAL", panel.get("visual") or panel.get("description") or ""),
+        ("CAMERA", panel.get("camera") or ""),
+        ("SHOT", panel.get("shot") or ""),
+        ("LENS", panel.get("lens") or ""),
+        ("LIGHTING", panel.get("lighting") or ""),
+        ("EMOTION", panel.get("emotion") or ""),
+        ("DIALOGUE", panel.get("dialogue") or ""),
+        ("ACTION", panel.get("action") or ""),
+        ("CONTINUITY", panel.get("continuity") or ""),
     ]
-    available_h = note_bottom - (note_y + heading_font.size + 9) - 3
+    available_h = note_bottom - (header_bottom + meta_font.size + 8) - 3
     chosen_font = font(preferred_note_size)
     note_lines = []
     for size in range(preferred_note_size, 2, -1):
@@ -1281,12 +1300,12 @@ for i in range(9):
         candidate_lines = []
         for prefix, value in sections:
             if str(value).strip():
-                candidate_lines += wrap_full(prefix + str(value), candidate_font, cell_w - 24)
+                candidate_lines += wrap_full(prefix + ": " + str(value), candidate_font, cell_w - 24)
         line_h = max(1, int(candidate_font.size * 1.18))
         chosen_font, note_lines = candidate_font, candidate_lines
         if len(candidate_lines) * line_h <= available_h:
             break
-    text_y = note_y + heading_font.size + 9
+    text_y = header_bottom + meta_font.size + 8
     for line in note_lines:
         draw.text((x + 12, text_y), line, fill=(48, 48, 45), font=chosen_font)
         text_y += int(chosen_font.size * 1.18)

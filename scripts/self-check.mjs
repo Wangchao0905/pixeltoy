@@ -50,6 +50,12 @@ const storyboardJobRoute = sectionBetween(
   '  throw new Error(`unknown job type: ${type}`);',
 );
 const productionBoardPrompt = sectionBetween(server, "function storyboardPromptForSlot", "function storyboardPromptsMarkdown");
+const projectBoardVideoReferences = sectionBetween(server, "function projectShotAllVideoReferenceAssets", "function videoReferenceAssetPotentialUrls");
+const productionBoardGuidance = sectionBetween(server, "function storyboardGuidancePromptText", "function assetLookupFromAssets");
+const productionBoardReadiness = sectionBetween(server, "function configReadiness", "function isGenericGroupName");
+const productionBoardSeedancePrompt = sectionBetween(server, "function storyboardSeedancePrompt", "function seedancePromptForShotMode");
+const productionBoardSubmissionGuard = sectionBetween(server, "function assertVideoConfigAssetsReady", "function videoFileExtensionFromUrl");
+const productionBoardPanelPlan = sectionBetween(server, "function storyboardProductionTabForPanel", "function defaultStoryboardPanels");
 const buildDraftSection = sectionBetween(server, "async function buildDraft(", "function parsePromptSections");
 const buildVideoConfigSection = sectionBetween(server, "async function buildVideoConfig(", "function clearVideoArtifactsForNewCanvas");
 
@@ -241,6 +247,21 @@ assert(server.includes("Create ONE 9:16 vertical (portrait)"), "Production Board
 assert(productionBoardPrompt.includes("exactly ${panelCount} equal-size storyboard panels"), "Production Board prompt must require nine equal-sized panels");
 assert(productionBoardPrompt.includes("integrated lower annotation area"), "Production Board prompt must require readable per-panel shot descriptions");
 assert(productionBoardPrompt.includes("Do not summarize, paraphrase, omit, or truncate any supplied plot or dialogue"), "Production Board prompt must preserve full plot and dialogue text");
+assert(productionBoardPrompt.includes("actual referenced Character, Scene, Prop, and Insert assets"), "Production Board must render the actual bound assets, not generic sketch placeholders");
+assert(projectBoardVideoReferences.includes("const sourceAssets = isProductionBoardMode(config, shot)"), "Production Board references must branch at the source");
+assert(projectBoardVideoReferences.includes("? projectShotStoryboardAssets(config, shot)"), "Production Board video submission must use only storyboard references");
+assert(!projectBoardVideoReferences.includes("projectShotReferenceAssets(config, shot), ...projectShotStoryboardAssets"), "Production Board video submission must not append official asset images");
+assert(productionBoardGuidance.includes("唯一提交图片参考"), "Production Board video guidance must state that the board is the sole submitted image reference");
+assert(!productionBoardGuidance.includes("仍来自“图片参考”"), "Production Board video guidance must not require extra official asset images");
+assert(productionBoardReadiness.includes('const promptMode = config.settings?.promptMode'), "Production Board readiness must define the active prompt mode locally");
+assert(productionBoardReadiness.includes("if (!storyboardOnlyReferences && !productionAssets.length)"), "Production Board readiness must not require source asset images after boards are ready");
+assert(productionBoardSeedancePrompt.includes("@图片${i + 1} 是 Production Board"), "Production Board prompt must number only submitted storyboard images");
+assert(!productionBoardSeedancePrompt.includes("const refs = Array.isArray(shot.refs)"), "Production Board prompt must not produce official asset-image references");
+assert(productionBoardSubmissionGuard.includes("const boardlessShots = selectedShots.filter"), "Production Board submission must reject shots missing their board");
+assert(productionBoardPanelPlan.includes("production: storyboardProductionTabForPanel"), "Production Board panels must carry a structured production tab");
+assert(productionBoardPrompt.includes("Visual / Camera / Shot / Lens / Lighting / Emotion"), "Production Board prompt must make each panel a production decision document");
+assert(assetRunner.includes('("VISUAL",'), "Production Board renderer must stamp the visual field into the production tab");
+assert(assetRunner.includes("Character turnarounds are hidden identity inputs"), "Production Board must use character turnarounds as hidden identity anchors");
 assert(!productionBoardPrompt.includes("ESTABLISHING SHOT:"), "Production Board must not reserve a separate large establishing-shot panel");
 assert(!productionBoardPrompt.includes("below the establishing shot"), "Production Board grid must start immediately below the header");
 assert(server.includes("竖版 9:16 工作纸"), "Production Board policy must describe the whole board as a 9:16 vertical sheet");
@@ -593,7 +614,7 @@ assert(assetRunner.includes("P1-P9: show chronological story beats"), "storyboar
 assert(!assetRunner.includes("Keep the asset references readable in the ASSET REFERENCES strip"), "storyboard reference fallback must not add an asset strip to the final board");
 assert(!assetRunner.includes("stampStoryboardAssetReferences"), "storyboard renderer must not post-process an asset strip onto the final board");
 assert(!assetRunner.includes("16:9 landscape Production Board"), "storyboard edits must preserve the vertical Production Board contract");
-assert(assetRunner.includes("production-board-imagegen-v13-annotated-equal-nine-panel-sheet"), "storyboard renderer revision must invalidate boards missing panel annotations");
+assert(assetRunner.includes("production-board-imagegen-v15-structured-production-tab"), "storyboard renderer revision must invalidate boards that lack the structured production tab");
 assert(assetRunner.includes("function stampStoryboardPanelNotes"), "storyboard renderer must overlay readable panel annotations after image generation");
 assert(assetRunner.includes("stampStoryboardPanelNotes(asset, out);"), "storyboard renderer must apply panel annotations to every completed board");
 assert(!assetRunner.includes("note_lines[:3]"), "storyboard renderer must not truncate plot or dialogue annotation lines");

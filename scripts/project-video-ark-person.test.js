@@ -9,11 +9,13 @@ process.env.ARK_VIRTUAL_PERSON_GROUP_ID = "group-test";
 process.env.ARK_ASSETS_ENDPOINT = "https://ark-assets.test";
 process.env.VOLC_ARK_API_KEY = "test-video-key";
 process.env.VOLC_ARK_BASE_URL = "https://ark-video.test";
+process.env.PUBLIC_ASSET_BASE_URL = "https://assets.test";
 
 const originalFetch = global.fetch;
 const originalSetTimeout = global.setTimeout;
 let arkMode = "active";
 let videoSubmitCalls = 0;
+let videoStartFrameUrls = [];
 let arkCreateCalls = 0;
 let arkGetCalls = 0;
 
@@ -25,12 +27,16 @@ function response(body, status = 200) {
   };
 }
 
-global.fetch = async (url) => {
+global.fetch = async (url, options = {}) => {
   const parsed = new URL(url);
+  if (options.method === "PUT") return response({}, 200);
   const action = parsed.searchParams.get("Action");
   if (action === "CreateAsset") {
     arkCreateCalls += 1;
     if (arkMode === "failed") return response({ Result: { Id: "ark-failed", Status: "Failed", Message: "verification rejected" } });
+    if (arkMode === "tail-failed" && arkCreateCalls > 1) {
+      return response({ Result: { Id: "ark-tail-failed", Status: "Failed", Message: "full-frame image rejected" } });
+    }
     if (arkMode === "processing") return response({ Result: { Id: "ark-processing", Status: "Processing" } });
     return response({ Result: { Id: "ark-active", Status: "Active" } });
   }
@@ -41,6 +47,9 @@ global.fetch = async (url) => {
   }
   if (parsed.pathname === "/contents/generations/tasks") {
     videoSubmitCalls += 1;
+    const payload = JSON.parse(options.body || "{}");
+    const startFrame = (payload.content || []).find((item) => item.role === "reference_image" && item.image_url?.url);
+    videoStartFrameUrls.push(startFrame?.image_url?.url || "");
     return response({ id: `video-task-${videoSubmitCalls}`, status: "queued" });
   }
   throw new Error(`unexpected mock fetch: ${url}`);
@@ -53,11 +62,11 @@ global.setTimeout = (callback, delay, ...args) => originalSetTimeout(callback, d
 const { __test, prepareBatchVideoReferences } = require("../server.js");
 const generateProjectVideoShot = __test.projectVideo.generateProjectVideoShot;
 
-function createFixture(name) {
+function createFixture(name, options = {}) {
   const episodeRoot = fs.mkdtempSync(path.join(process.cwd(), ".tmp-project-video-ark-"));
   const config = {
     episodeRoot,
-    modelName: "seedance-2-0-fast",
+    modelName: options.modelName || "seedance-2-0-fast",
     runNamespace: `test_${name}`,
     isolationFingerprint: {
       projectRoot: episodeRoot,
@@ -70,10 +79,51 @@ function createFixture(name) {
       aiGenerated: true,
       url: "https://assets.test/c001.png",
     }],
-    shots: [{ name: "E01_V001", refs: ["C001_DYLAN_CHARACTER_SHEET"], prompt: "A character walks forward." }],
+    shots: options.shots || [{ name: "E01_V001", refs: ["C001_DYLAN_CHARACTER_SHEET"], prompt: "A character walks forward." }],
   };
   fs.writeFileSync(path.join(episodeRoot, "pipeline.json"), `${JSON.stringify(config, null, 2)}\n`);
   return { episodeRoot, configPath: path.join(episodeRoot, "pipeline.json") };
+}
+
+function createTailFrameFixture(name) {
+  const fixture = createFixture(name, {
+    modelName: "seedance-2-0-mini",
+    shots: [
+      { name: "E01_V001", refs: ["C001_DYLAN_CHARACTER_SHEET"], prompt: "A character walks forward." },
+      {
+        name: "E01_V002",
+        refs: ["C001_DYLAN_CHARACTER_SHEET"],
+        prompt: "The character keeps walking.",
+        useTailFrame: true,
+        tailFrameSource: "E01_V001",
+      },
+    ],
+  });
+  const tailDir = path.join(fixture.episodeRoot, "09_tail_frames");
+  const tailFile = path.join(tailDir, "E01_V001_tail.png");
+  fs.mkdirSync(tailDir, { recursive: true });
+  fs.writeFileSync(tailFile, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+  const snapshotDir = path.join(fixture.episodeRoot, "08_video_task_nodes");
+  fs.mkdirSync(snapshotDir, { recursive: true });
+  const config = readConfig(fixture.configPath);
+  fs.writeFileSync(
+    path.join(snapshotDir, "E01_V001.json"),
+    JSON.stringify({
+      runNamespace: config.runNamespace,
+      data: {
+        taskInfo: {
+          status: 2,
+          taskId: "source-video-task",
+          provider: "ark",
+          videoUrl: "https://videos.test/source.mp4",
+          tailFrameReady: true,
+          tailFrameLocalFile: path.relative(fixture.episodeRoot, tailFile),
+          tailFrameUrl: `/media?path=${encodeURIComponent(tailFile)}`,
+        },
+      },
+    }),
+  );
+  return { ...fixture, tailFile };
 }
 
 function readConfig(configPath) {
@@ -95,6 +145,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
     {
       arkMode = "active";
       videoSubmitCalls = 0;
+      videoStartFrameUrls = [];
       arkCreateCalls = 0;
       const fixture = createFixture("active");
       try {
@@ -115,6 +166,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
     {
       arkMode = "failed";
       videoSubmitCalls = 0;
+      videoStartFrameUrls = [];
       arkCreateCalls = 0;
       const fixture = createFixture("failed");
       try {
@@ -136,6 +188,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
     {
       arkMode = "processing";
       videoSubmitCalls = 0;
+      videoStartFrameUrls = [];
       arkCreateCalls = 0;
       arkGetCalls = 0;
       const fixture = createFixture("background");
@@ -158,6 +211,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
     {
       arkMode = "active";
       videoSubmitCalls = 0;
+      videoStartFrameUrls = [];
       arkCreateCalls = 0;
       const fixture = createFixture("batch");
       try {
@@ -167,6 +221,84 @@ async function waitFor(predicate, timeoutMs = 1000) {
         assert.equal(arkCreateCalls, 1, "batch preparation must retain Ark certification");
         assert.equal(record.data.assets[0].arkPersonAsset.status, "active");
         assert.equal(videoSubmitCalls, 0, "reference preparation must not submit video");
+      } finally {
+        fs.rmSync(fixture.episodeRoot, { recursive: true, force: true });
+      }
+    }
+
+    // Ark tail frames containing people must use the same private-library asset:// route.
+    {
+      arkMode = "active";
+      videoSubmitCalls = 0;
+      videoStartFrameUrls = [];
+      arkCreateCalls = 0;
+      const fixture = createTailFrameFixture("tail-active");
+      try {
+        const result = await generateProjectVideoShot(fixture.episodeRoot, { shotName: "E01_V002", pollInBackground: false });
+        const saved = readConfig(fixture.configPath);
+        const tailAsset = saved.tailFrameAssets?.E01_V002_START_FRAME;
+        assert.equal(arkCreateCalls, 2, "Ark tail-frame generation must certify the character and local tail frame");
+        assert.equal(tailAsset.status, "active");
+        assert.equal(tailAsset.assetUrl, "asset://ark-active");
+        assert.equal(videoSubmitCalls, 1, "an active Ark tail-frame certification must allow video submission");
+        assert.equal(videoStartFrameUrls[0], "asset://ark-active", "Ark must receive the certified tail frame as asset://");
+        assert.equal(result.result.taskId, "video-task-1");
+      } finally {
+        fs.rmSync(fixture.episodeRoot, { recursive: true, force: true });
+      }
+    }
+
+    // A failed Ark tail-frame certification keeps the shot waiting and preserves the frame file.
+    {
+      arkMode = "tail-failed";
+      videoSubmitCalls = 0;
+      videoStartFrameUrls = [];
+      arkCreateCalls = 0;
+      const fixture = createTailFrameFixture("tail-failed");
+      try {
+        const result = await generateProjectVideoShot(fixture.episodeRoot, { shotName: "E01_V002", pollInBackground: false });
+        const saved = readConfig(fixture.configPath);
+        const tailAsset = saved.tailFrameAssets?.E01_V002_START_FRAME;
+        const snapshot = JSON.parse(fs.readFileSync(path.join(fixture.episodeRoot, "08_video_task_nodes", "E01_V002.json"), "utf8"));
+        assert.equal(arkCreateCalls, 2, "failed Ark tail-frame certification must still be attempted");
+        assert.equal(tailAsset.status, "failed");
+        assert.equal(videoSubmitCalls, 0, "failed Ark tail-frame certification must block video submission");
+        assert.equal(result.waitingForAssets, true);
+        assert.equal(snapshot.data.taskInfo.status, 0, "failed Ark tail-frame certification must leave the shot waiting");
+        assert.ok(fs.existsSync(fixture.tailFile), "failed certification must not delete the local tail frame");
+      } finally {
+        fs.rmSync(fixture.episodeRoot, { recursive: true, force: true });
+      }
+    }
+
+    // When the character is already active, tail-frame certification alone must still run in the background.
+    {
+      arkMode = "processing";
+      videoSubmitCalls = 0;
+      videoStartFrameUrls = [];
+      arkCreateCalls = 0;
+      arkGetCalls = 0;
+      const fixture = createTailFrameFixture("tail-background");
+      try {
+        const config = readConfig(fixture.configPath);
+        config.assets[0].arkPersonAsset = {
+          enabled: true,
+          assetId: "existing-character",
+          assetUrl: "asset://existing-character",
+          groupId: "group-test",
+          status: "active",
+        };
+        fs.writeFileSync(fixture.configPath, `${JSON.stringify(config, null, 2)}\n`);
+        const started = Date.now();
+        const accepted = await generateProjectVideoShot(fixture.episodeRoot, { shotName: "E01_V002" });
+        assert.ok(Date.now() - started < 50, "tail-frame certification must not block the HTTP-style request");
+        assert.equal(accepted.waitingForAssets, true);
+        await waitFor(() => {
+          const saved = readConfig(fixture.configPath);
+          return saved.tailFrameAssets?.E01_V002_START_FRAME?.status === "active" && videoSubmitCalls === 1;
+        });
+        assert.ok(arkGetCalls >= 1, "background tail-frame certification must poll Ark status");
+        assert.equal(videoStartFrameUrls[0], "asset://ark-processing", "background completion must submit the certified Ark asset");
       } finally {
         fs.rmSync(fixture.episodeRoot, { recursive: true, force: true });
       }

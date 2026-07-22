@@ -952,7 +952,7 @@ const ASSET_TYPE_META = {
     folder: "storyboards",
     scanType: "storyboard",
     usage:
-      "Production Board 控制参考：包含 9:16 竖版的 3×3 九格分镜；只读取构图、站位、动作、镜头节奏和剪辑出口，正式资产绑定由后端配置维护，不替代人物、场景或道具身份与画风",
+      "Production Board 唯一视频参考：包含由正式人物、场景和道具资产生成的 9:16 竖版 3×3 九格镜头画面；直接承载身份、场景、动作、镜头节奏和剪辑出口",
   },
 };
 
@@ -4730,8 +4730,71 @@ function panelDialogueForSegment(segment = {}, panelIndex = 0, panelCount = STOR
   };
 }
 
-// 一块 Production Board = 一个完整的 ≤15 秒剧情单元。格数不再固定 9,而是由这段里的实际叙事节拍数
-// 决定(clamp 到 3~6),让"格数体现剧情",而不是硬填格子。首格恒为建立、末格恒为切点/交接。
+function storyboardProductionTabForPanel(roleKey = "", details = {}) {
+  const role = compactLine(roleKey || "action");
+  const presets = {
+    establish: {
+      camera: "locked or very slow push-in; establish the screen axis before movement begins",
+      shot: "extreme wide / wide establishing shot",
+      lens: "24mm wide-angle, deep focus",
+      lighting: "motivated location light with readable foreground, midground, and background",
+      emotion: "anticipation and spatial orientation",
+    },
+    blocking: {
+      camera: "measured dolly or static observation that keeps eyelines and blocking legible",
+      shot: "medium-wide staging shot",
+      lens: "35mm natural perspective",
+      lighting: "motivated key light that separates performers from the environment",
+      emotion: "controlled tension and intent",
+    },
+    action: {
+      camera: "track, pan, or reframe with the primary movement without losing its endpoint",
+      shot: "dynamic medium shot",
+      lens: "40mm contextual action lens",
+      lighting: "directional motivated light that preserves movement and prop detail",
+      emotion: "urgency and forward momentum",
+    },
+    pivot: {
+      camera: "deliberate push-in or pivot around the decisive action",
+      shot: "medium-close turning-point shot",
+      lens: "50mm selective-focus drama lens",
+      lighting: "contrast increases around the decisive visual change",
+      emotion: "revelation and dramatic change",
+    },
+    reaction: {
+      camera: "hold the eyeline, then use a restrained micro push-in",
+      shot: "close-up or detail reaction shot",
+      lens: "85mm intimate portrait lens",
+      lighting: "controlled subject key with readable eye light and background falloff",
+      emotion: "consequence, recognition, or emotional response",
+    },
+    cut: {
+      camera: "settle into a stable held composition that leaves a clean cut handoff",
+      shot: "medium exit or resolved detail shot",
+      lens: "50mm continuity lens",
+      lighting: "preserve the established lighting state for the transition",
+      emotion: "suspense, release, or a held question for the next beat",
+    },
+  };
+  const preset = presets[role] || presets.action;
+  const dialogue = details.dialogue?.text
+    ? `${compactLine(details.dialogue.speaker || "Character")}: \"${details.dialogue.text}\"`
+    : "No spoken dialogue; play the silent reaction, breath, pause, or listening beat.";
+  return {
+    visual: compactLine(details.description || details.title || "Render the scripted story beat with the bound production assets."),
+    camera: compactLine(details.camera || preset.camera),
+    shot: compactLine(details.shot || preset.shot),
+    lens: compactLine(details.lens || preset.lens),
+    lighting: compactLine(details.lighting || preset.lighting),
+    emotion: compactLine(details.emotion || preset.emotion),
+    dialogue,
+    action: compactLine(details.action || "Stage the performed action with a clear direction and endpoint."),
+    continuity: compactLine(details.continuity || "Preserve axis, eyeline, movement direction, and prop state."),
+  };
+}
+
+// 一块 Production Board = 一个完整的 ≤15 秒剧情单元。统一固定为竖版 3×3 九格，
+// 首格恒为建立、末格恒为切点/交接，中间七格推进站位、动作、转折和反应。
 // options.prevBoardTail:上一块板收尾格的描述;若提供,本板首格显式要求"与上一块板的最后一格保持一致"(跨板续接)。
 function storyboardPanelPlanForGroup(group, options = {}) {
   const segments = Array.isArray(group?.segments) ? group.segments : [];
@@ -4762,7 +4825,7 @@ function storyboardPanelPlanForGroup(group, options = {}) {
     const shotNames = [...new Set((segment.sourceShotNames || [segment.key]).map(compactLine).filter(Boolean))];
     const sourceText = storyboardPanelSourceText(segment, localIndex, localCount);
     const dialogue = panelDialogueForSegment(segment, index, panelCount);
-    const description = compactLine(`${role}: ${sourceText}`).slice(0, 260);
+    const description = compactLine(`${role}: ${sourceText}`);
     // 跨板续接:本板首格若有上一块板的收尾状态,必须与之一致(同一画面/朝向/站位),等价于尾帧首帧。
     const continuityExit = isLast
       ? "this exact frame is the opening frame of the next board; keep a clean cut point and preserve screen direction, scene geography, prop state, and eyeline"
@@ -4788,8 +4851,16 @@ function storyboardPanelPlanForGroup(group, options = {}) {
       continuityExit,
       ...(continuityEntry ? { continuityEntry } : {}),
       dialogue,
+      production: storyboardProductionTabForPanel(key, {
+        title: segment.title || segment.key,
+        description,
+        dialogue,
+        action: step.actionArrow,
+        camera: step.cameraFrame,
+        continuity: [continuityEntry, continuityExit].filter(Boolean).join(" "),
+      }),
       assetAnchors: Array.isArray(segment.refs) ? segment.refs.map(compactLine).filter(Boolean) : [],
-      videoUse: `${role}. Use the numbered panel's composition, blocking, camera direction, shot rhythm, and cut point only; final identity and visual style must come from production assets.`,
+      videoUse: `${role}. Use the numbered panel's composition, blocking, camera direction, shot rhythm, and cut point; its bound production-asset identity and visual style are baked into this Production Board.`,
     };
   });
 }
@@ -5107,7 +5178,7 @@ function storyboardSlotNameForGroup(group, index) {
 }
 
 function productionBoardReferenceGuide() {
-  return "视频制作中将此 Production Board 作为 storyboard_reference：读取 9:16 竖版面板的构图、站位、镜头方向、动作节奏和剪辑出口；最终人物、场景、道具、材质和风格仍来自后端绑定的正式资产图。";
+  return "视频制作中将此 Production Board 作为唯一 storyboard_reference：读取其 9:16 竖版面板中已锁定的人物身份、场景、道具、构图、站位、镜头方向、动作节奏和剪辑出口；视频提交不再附带单独资产图。";
 }
 
 function storyboardSlotsForState(episodeRoot, manifest = null, assets = scanAssets(episodeRoot), options = {}) {
@@ -6752,6 +6823,8 @@ function configReadiness(episodeRoot, configData = null) {
     };
   }
   const assets = Array.isArray(config.assets) ? config.assets : [];
+  const promptMode = config.settings?.promptMode || (config.settings?.enableStoryboards === true ? "production_board" : "prompt");
+  const storyboardOnlyReferences = promptMode === "production_board";
   const productionAssets = assets.filter((asset) => asset.manifestType !== "Storyboard");
   const storyboards = Array.isArray(config.storyboardReferences) ? config.storyboardReferences : [];
   const shots = Array.isArray(config.shots) ? config.shots : [];
@@ -6764,35 +6837,42 @@ function configReadiness(episodeRoot, configData = null) {
       if (asset.manifestType === "Storyboard" && asset.assetName) allAssetNames.add(asset.assetName);
     }
   }
-  if (!productionAssets.length) missing.push("缺少资产图");
+  if (!storyboardOnlyReferences && !productionAssets.length) missing.push("缺少资产图");
   if (!shots.length) missing.push("缺少视频片段");
   // 仅当缺失资产被某片段(refs/storyboardRefs)真正引用时才锁定生成;未被引用的死资产不阻塞。
   // 片段引用了未生成资产另有 shotsWithMissingRefs 精准兜底。
   const shotReferencedAssetNames = new Set();
   for (const shot of shots) {
-    for (const r of (Array.isArray(shot.refs) ? shot.refs : [])) { const c = compactLine(r); if (c) shotReferencedAssetNames.add(c); }
-    for (const r of (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])) { const c = compactLine(r); if (c) shotReferencedAssetNames.add(c); }
+    const references = storyboardOnlyReferences
+      ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
+      : (Array.isArray(shot.refs) ? shot.refs : []);
+    for (const reference of references) { const clean = compactLine(reference); if (clean) shotReferencedAssetNames.add(clean); }
   }
   for (const name of Array.isArray(config.missingAssets) ? config.missingAssets : []) {
     const clean = compactLine(name);
     if (clean && shotReferencedAssetNames.has(clean)) missing.push(`缺少资产图：${clean}`);
   }
-  const promptMode = config.settings?.promptMode || (config.settings?.enableStoryboards === true ? "production_board" : "prompt");
   if (promptMode === "production_board" && !storyboards.length) missing.push("缺少 Production Board");
   if (promptMode === "production_board") {
     const storyboardShotsWithoutRefs = shots.filter((shot) => !Array.isArray(shot.storyboardRefs) || !shot.storyboardRefs.length);
     if (storyboardShotsWithoutRefs.length) missing.push(`${storyboardShotsWithoutRefs.length} 个片段缺少 Production Board 绑定`);
   }
-  const shotsWithoutRefs = shots.filter((shot) => !Array.isArray(shot.refs) || !shot.refs.length);
+  const shotsWithoutRefs = shots.filter((shot) => {
+    const references = storyboardOnlyReferences
+      ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
+      : (Array.isArray(shot.refs) ? shot.refs : []);
+    return !references.length;
+  });
   if (shotsWithoutRefs.length) missing.push(`${shotsWithoutRefs.length} 个片段缺少参考图`);
   const shotsWithMissingRefs = shots
     .map((shot) => ({
       name: shot.name,
-      missingRefs: (Array.isArray(shot.refs) ? shot.refs : []).map(compactLine).filter((ref) => ref && !assetNames.has(ref)),
-      missingStoryboardRefs:
-        promptMode === "production_board"
-          ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : []).map(compactLine).filter((ref) => ref && !allAssetNames.has(ref))
-          : [],
+      missingRefs: (storyboardOnlyReferences
+        ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
+        : (Array.isArray(shot.refs) ? shot.refs : []))
+        .map(compactLine)
+        .filter((ref) => ref && !(storyboardOnlyReferences ? allAssetNames : assetNames).has(ref)),
+      missingStoryboardRefs: [],
     }))
     .filter((item) => item.missingRefs.length || item.missingStoryboardRefs.length);
   if (shotsWithMissingRefs.length) missing.push(`${shotsWithMissingRefs.length} 个片段引用了未生成资产`);
@@ -12399,9 +12479,12 @@ function projectShotStoryboardAssets(config = {}, shot = {}) {
 }
 
 function projectShotAllVideoReferenceAssets(config = {}, shot = {}) {
+  const sourceAssets = isProductionBoardMode(config, shot)
+    ? projectShotStoryboardAssets(config, shot)
+    : projectShotReferenceAssets(config, shot);
   const refs = [];
   const seen = new Set();
-  for (const asset of [...projectShotReferenceAssets(config, shot), ...projectShotStoryboardAssets(config, shot)]) {
+  for (const asset of sourceAssets) {
     const key = compactLine(asset?.name || asset?.assetName || asset?.id || "");
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -12434,10 +12517,9 @@ function projectShotUsableVideoReferenceAssets(episodeRoot = "", config = {}, sh
   const configured = new Map(
     projectShotAllVideoReferenceAssets(config, shot).map((asset) => [compactLine(asset?.name || asset?.assetName || asset?.id || ""), asset]),
   );
-  const names = [
-    ...(Array.isArray(shot.refs) ? shot.refs : []),
-    ...(Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : []),
-  ]
+  const names = (isProductionBoardMode(config, shot)
+    ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
+    : (Array.isArray(shot.refs) ? shot.refs : []))
     .map(compactLine)
     .filter(Boolean);
   return [...new Set(names)]
@@ -12445,6 +12527,20 @@ function projectShotUsableVideoReferenceAssets(episodeRoot = "", config = {}, sh
     .filter(Boolean)
     .map((asset) => (episodeRoot ? projectAssetForVideoPayload(episodeRoot, asset) : asset))
     .filter(videoReferenceAssetHasPotentialSource);
+}
+
+function videoSubmissionReferenceNames(config = {}, shots = []) {
+  const names = new Set();
+  for (const shot of Array.isArray(shots) ? shots : []) {
+    const references = isProductionBoardMode(config, shot)
+      ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
+      : (Array.isArray(shot.refs) ? shot.refs : []);
+    for (const reference of references) {
+      const name = compactLine(reference);
+      if (name) names.add(name);
+    }
+  }
+  return [...names];
 }
 
 function tailFrameSnapshotForShot(episodeRoot, shotName, runNamespace = "") {
@@ -12579,7 +12675,7 @@ async function ensureArkPersonAssetsForNames(episodeRoot, configRecord, names, d
 async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, options = {}) {
   const timeoutMs = Number(options.timeoutMs || PREPARE_REFS_TIMEOUT_MS);
   let config = configRecord && configRecord.data ? configRecord.data : {};
-  const names = collectReferencedAssetNames(shots);
+  const names = videoSubmissionReferenceNames(config, shots);
   const classified = classifyReferenceAssets(names);
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   const usesGravitexPersonRef = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference";
@@ -12689,7 +12785,7 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
   const hydrated = hydrateProjectVideoAssets(episodeRoot, (configRecord && configRecord.data) || {});
   let config = hydrated.config;
   if (hydrated.changed) writeVideoConfigRecord(configRecord, config);
-  const names = collectReferencedAssetNames([shot]);
+  const names = videoSubmissionReferenceNames(config, [shot]);
   if (!names.length) return { config, ready: true, summary: { total: 0, active: 0, pending: 0, failed: 0, skipped: 0 } };
   const usesGravitexPersonRef = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference";
   const byName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
@@ -12736,21 +12832,86 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
   };
 }
 
+function projectTailFrameNeedsArkPersonPreparation(episodeRoot, config = {}, shot = {}) {
+  if (normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference") return false;
+  if (isProductionBoardMode(config, shot) || shot?.useTailFrame !== true || !shot.tailFrameSource) return false;
+  const tailFrame = tailFrameSnapshotForShot(episodeRoot, shot.tailFrameSource, currentRunNamespace(episodeRoot, config));
+  if (!tailFrame?.localFile || !fs.existsSync(tailFrame.localFile) || /\.(mp4|mov|webm|m4v)$/i.test(tailFrame.localFile)) return false;
+  const id = `${compactLine(shot.name || "shot")}_START_FRAME`;
+  const asset = config.tailFrameAssets?.[id] || {};
+  return !(compactLine(asset.status || asset.validationStatus || "").toLowerCase() === "active" && /^asset:\/\//i.test(compactLine(asset.assetUrl || "")));
+}
+
 async function ensureTailFrameAssetReference(episodeRoot, config = {}, shot = {}, startFrameUrl = "") {
   const cleanStartFrameUrl = compactLine(startFrameUrl || "");
   if (!cleanStartFrameUrl || /^asset:\/\//i.test(cleanStartFrameUrl)) return { url: cleanStartFrameUrl, config, ready: true, message: "" };
-  // 仅「真人」片段需要把尾帧转成 Gravitex asset:// 引用；普通片段(Ark)
-  // 直接把尾帧当图片发送,跳过 Gravitex 素材库转换。
-  if (normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) !== "seedance-2-0-person-reference") {
-    return { url: cleanStartFrameUrl, config, ready: true, message: "" };
-  }
   if (!shot?.useTailFrame || !shot.tailFrameSource) return { url: cleanStartFrameUrl, config, ready: true, message: "" };
   const localFile = localFilePathFromUrl(cleanStartFrameUrl) || localMediaPathFromUrl(cleanStartFrameUrl) || (cleanStartFrameUrl.startsWith("file:") ? fileURLToPath(cleanStartFrameUrl) : "");
   if (!localFile || !fs.existsSync(localFile)) return { url: cleanStartFrameUrl, config, ready: true, message: "" };
-  const groupId = projectPhotorealGroupId(config);
-  if (!groupId) return { url: cleanStartFrameUrl, config, ready: false, message: "上一段尾帧包含人物时需要先有素材库 group_id，才能转为 asset:// 首帧引用。" };
+  const modelName = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL);
   const id = `${compactLine(shot.name || "shot")}_START_FRAME`;
   const previous = config.tailFrameAssets?.[id] || {};
+
+  // Ark 的 asset:// 必须来自方舟私域虚拟人像素材库,与角色参考图使用同一认证通道。
+  // 整帧图若被方舟审核拒绝,保持 waiting,绝不把原图继续交给视频接口。
+  if (modelName !== "seedance-2-0-person-reference") {
+    const arkGroupId = arkVirtualPersonConfig().groupId;
+    if (!arkGroupId) return { url: cleanStartFrameUrl, config, ready: false, message: "上一段尾帧需要先有方舟私域虚拟人像素材组，才能转为 asset:// 首帧引用。" };
+    if (/^asset:\/\//i.test(compactLine(previous.assetUrl || "")) && compactLine(previous.status || previous.validationStatus || "").toLowerCase() === "active") {
+      return { url: previous.assetUrl, config, ready: true, message: "已复用尾帧 asset:// 引用" };
+    }
+    const result = await ensureBatchArkVirtualPerson(
+      {
+        id,
+        name: id,
+        type: "TailFrame",
+        assetStylePreset: "photoreal",
+        generationMode: "ai-generated",
+        aiGenerated: true,
+        verificationType: "ai-generated",
+        url: `/media?path=${encodeURIComponent(localFile)}`,
+        previewUrl: `/media?path=${encodeURIComponent(localFile)}`,
+        arkPersonAsset: {
+          enabled: true,
+          assetId: compactLine(previous.assetId || ""),
+          assetUrl: compactLine(previous.assetUrl || ""),
+          status: compactLine(previous.status || previous.validationStatus || ""),
+        },
+      },
+      Date.now() + PREPARE_REFS_TIMEOUT_MS,
+    );
+    const nextConfig = {
+      ...config,
+      tailFrameAssets: {
+        ...(config.tailFrameAssets || {}),
+        [id]: {
+          sourceShot: shot.tailFrameSource || "",
+          targetShot: shot.name || "",
+          localFile: path.relative(episodeRoot, localFile),
+          publicUrl: previous.publicUrl || "",
+          assetUrl: result.assetUrl || previous.assetUrl || "",
+          assetId: result.assetId || previous.assetId || "",
+          virtualId: previous.virtualId || "",
+          groupId: arkGroupId,
+          status: result.status || "processing",
+          message: result.error || "",
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    };
+    if (result.status === "active" && /^asset:\/\//i.test(compactLine(result.assetUrl || ""))) {
+      return { url: result.assetUrl, config: nextConfig, ready: true, message: "尾帧已通过方舟虚拟人像认证，转为 asset:// 首帧引用" };
+    }
+    return {
+      url: cleanStartFrameUrl,
+      config: nextConfig,
+      ready: false,
+      message: result.error || "上一段尾帧正在进行方舟虚拟人像认证，待 active 后再提交视频，避免被真实人物/隐私拦截。",
+    };
+  }
+
+  const groupId = projectPhotorealGroupId(config);
+  if (!groupId) return { url: cleanStartFrameUrl, config, ready: false, message: "上一段尾帧包含人物时需要先有素材库 group_id，才能转为 asset:// 首帧引用。" };
   if (/^asset:\/\//i.test(compactLine(previous.assetUrl || "")) && compactLine(previous.status || previous.validationStatus || "").toLowerCase() === "active") {
     return { url: previous.assetUrl, config, ready: true, message: "已复用尾帧 asset:// 引用" };
   }
@@ -12895,10 +13056,9 @@ function canvasNodeFromConfigShot(shot = {}, index = 0, config = {}) {
     projectShotName: shot.name || "",
     x: 120 + (index % 3) * 560,
     y: 120 + Math.floor(index / 3) * 620,
-    assets: [
-      ...(Array.isArray(shot.refs) ? shot.refs.filter(Boolean) : []),
-      ...(storyboardsActive && Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs.filter(Boolean) : []),
-    ],
+    assets: storyboardsActive
+      ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs.filter(Boolean) : [])
+      : (Array.isArray(shot.refs) ? shot.refs.filter(Boolean) : []),
     prompt: String(shot.prompt || shot.videoPrompt || "").trim(),
     settings: {
       model: normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL),
@@ -13121,14 +13281,16 @@ function assertVideoConfigAssetsReady(config = {}, shot = null, episodeRoot = ""
       if (name) assetNames.add(name);
     }
   }
-  const refs = shot
-    ? [...(Array.isArray(shot.refs) ? shot.refs : []), ...(isProductionBoardMode(config, shot) && Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])]
-    : (Array.isArray(config.shots)
-        ? config.shots.flatMap((item) => [
-            ...(Array.isArray(item.refs) ? item.refs : []),
-            ...(isProductionBoardMode(config, item) && Array.isArray(item.storyboardRefs) ? item.storyboardRefs : []),
-          ])
-        : []);
+  const selectedShots = shot ? [shot] : (Array.isArray(config.shots) ? config.shots : []);
+  const boardlessShots = selectedShots.filter(
+    (item) => isProductionBoardMode(config, item) && !(Array.isArray(item.storyboardRefs) && item.storyboardRefs.some((ref) => compactLine(ref))),
+  );
+  if (boardlessShots.length) {
+    const error = new Error(`Production Board 验证失败：${boardlessShots.map((item) => compactLine(item.name || "未命名片段")).join("、")} 缺少故事板引用`);
+    error.statusCode = 409;
+    throw error;
+  }
+  const refs = videoSubmissionReferenceNames(config, selectedShots);
   const missingRefs = [...new Set(refs.map(compactLine).filter((ref) => ref && !assetNames.has(ref)))];
   if (missingRefs.length) {
     const error = new Error(`参考图验证失败：缺少或未生成 ${missingRefs.length} 张引用图：${missingRefs.join("、")}`);
@@ -13813,13 +13975,13 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
       updatedAt: new Date().toISOString(),
     },
   });
-  const shotReferenceNames = collectReferencedAssetNames([shot]);
+  const shotReferenceNames = videoSubmissionReferenceNames(config, [shot]);
   const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, shotReferenceNames);
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   const needsArkPersonPreparation = arkPersonNames.some((name) => {
     const asset = referenceAssetSource(episodeRoot, assetByName, name);
     return asset && !arkPersonAssetReadyUrl(asset);
-  });
+  }) || projectTailFrameNeedsArkPersonPreparation(episodeRoot, config, shot);
   // HTTP 单段请求只排队返回;批量队列显式传 false,在已有后台 worker 中等待认证完成。
   if (pollInBackground && needsArkPersonPreparation) {
     const message = "正在完成方舟私域虚拟人像认证，完成后自动提交视频";
@@ -16399,13 +16561,25 @@ function storyboardGuidancePromptText(guidance, storyboardImageIndex = null) {
     .slice(0, STORYBOARD_MAX_PANELS)
     .map((panel) => {
       const label = panel.label || `P${panel.panel || "?"}`;
+      const production = panel.production || storyboardProductionTabForPanel(panel.role, {
+        title: panel.title,
+        description: panel.description,
+        dialogue: panel.dialogue,
+        action: panel.actionArrow,
+        camera: panel.cameraFrame,
+        continuity: [panel.continuityEntry, panel.continuityExit].filter(Boolean).join(" "),
+      });
       const bits = [
         `${label}${panel.timeRange ? ` ${panel.timeRange}` : ""}`,
-        panel.description || "",
-        panel.dialogue?.text ? `对白绑定：${panel.dialogue.speaker || "角色"}：“${panel.dialogue.text}”；${panel.dialogue.role || "对白必须与本面板动作和表情同步"}` : "",
-        panel.actionArrow ? `动作调度：${panel.actionArrow}` : "",
-        panel.cameraFrame ? `构图计划：${panel.cameraFrame}` : "",
-        panel.continuityExit ? `衔接出口：${panel.continuityExit}` : "",
+        `Visual：${production.visual}`,
+        `Camera：${production.camera}`,
+        `Shot：${production.shot}`,
+        `Lens：${production.lens}`,
+        `Lighting：${production.lighting}`,
+        `Emotion：${production.emotion}`,
+        `Dialogue：${production.dialogue}`,
+        `Action：${production.action}`,
+        `Continuity：${production.continuity}`,
       ]
         .map(compactLine)
         .filter(Boolean);
@@ -16413,12 +16587,12 @@ function storyboardGuidancePromptText(guidance, storyboardImageIndex = null) {
     })
     .join("\n");
   return `Production Board 镜头参考：
-${imageLabel} 是 Production Board / storyboard_reference，用于读取本段实际编号面板中的 9:16 构图、人物/道具站位、运动方向、镜头景别、动作节奏和剪辑出口。
-正式人物、场景、道具、材质和风格仍来自“图片参考”中的 Character/Scene/Prop/Insert 资产；Production Board 只负责构图、走位、动作节奏和与正式资产的绑定关系。
+${imageLabel} 是 Production Board / storyboard_reference，也是本段唯一提交图片参考。读取本段实际编号面板中的 9:16 构图、人物/道具站位、运动方向、镜头景别、动作节奏和剪辑出口。
+这张板已经由绑定的 Character/Scene/Prop/Insert 资产生成，板面中的人物身份、场景结构、道具外观、材质、颜色、光线和风格均为最终视觉依据。不要期待、引用或补充其他资产图。
 ${assetLock ? `${assetLock}\n` : ""}${panelBindings ? `${panelBindings}\n` : ""}
 按本板固定的 9 个编号面板顺序执行镜头：首格建立空间，末格保留干净剪辑出口，中间七格推进站位、动作、转折和反应。
 ${panelText || "- 使用故事版图中的编号面板控制构图、站位、动作节奏与切镜。"}
-Production Board 模式下，相邻片段的空间连贯由同一 Sequence 的竖版面板、正式场景资产、正式道具状态和剪辑出口共同控制。`;
+Production Board 模式下，相邻片段的空间连贯由同一 Sequence 的竖版面板、板面中已锁定的场景与道具状态和剪辑出口共同控制。`;
 }
 
 function assetLookupFromAssets(assets = []) {
@@ -16553,15 +16727,15 @@ function storyboardAssetLockText(binding, imageLabel) {
     if (!Array.isArray(items) || !items.length) return;
     lines.push(`${title}：`);
     items.forEach((item) =>
-      lines.push(`- ${item.matchCode || assetMatchCode(item.type, item.ref)} = ${item.image || item.ref} = ${item.ref}${item.label && item.label !== item.ref ? `（${item.label}）` : ""}，${rule}`),
+      lines.push(`- ${item.matchCode || assetMatchCode(item.type, item.ref)} = ${item.ref}${item.label && item.label !== item.ref ? `（${item.label}）` : ""}，${rule}`),
     );
   };
-  push("资产锁定层/人物", binding.characters, `对应故事版中的人物剪影或角色槽位；${imageLabel} 只给这个人物的站位、朝向、动作方向和构图，不允许改变其脸、肤色、体型、服装或身份`);
-  push("资产锁定层/场景", binding.scenes, `对应故事版中的空间区域；${imageLabel} 只给构图、轴线和镜头角度，不允许替换场景地点、建筑结构、材质或最终光影基准`);
-  push("资产锁定层/道具", [...(binding.props || []), ...(binding.inserts || [])], `对应故事版中的道具/插入细节位置；${imageLabel} 只给摆放位置、手部互动和剪辑点，不允许重新设计道具外观`);
+  push("面板已锁定/人物", binding.characters, `已渲染在 ${imageLabel} 对应面板中；保留其可见的脸、肤色、体型、服装和身份，不期待额外人物图片`);
+  push("面板已锁定/场景", binding.scenes, `已渲染在 ${imageLabel} 对应面板中；保留其可见的地点、建筑结构、材质和光影，不期待额外场景图片`);
+  push("面板已锁定/道具", [...(binding.props || []), ...(binding.inserts || [])], `已渲染在 ${imageLabel} 对应面板中；保留其可见的外观、摆放位置、手部互动和剪辑点，不期待额外道具图片`);
   if (!lines.length) return "";
-  lines.push(`资产绑定：面板位置与正式 Character/Scene/Prop/Insert 资产按本配置中的绑定关系对应，不依赖板面文字标签。`);
-  lines.push(`视觉优先级：当 ${imageLabel} 的手绘内容与正式资产冲突时，以正式 Character/Scene/Prop/Insert 资产为最终视觉身份。`);
+  lines.push("资产绑定：正式 Character/Scene/Prop/Insert 资产只用于生成这张板；视频提交阶段不附带这些资产图片。");
+  lines.push(`视觉优先级：忠实保留 ${imageLabel} 中已经渲染的资产身份和视觉细节，不要用文字或未提交图片重新解释。`);
   return lines.join("\n");
 }
 
@@ -16574,9 +16748,9 @@ function storyboardPanelBindingsText(bindings = []) {
       ? `人物=${binding.characters.map((item) => `${item.roleSlot}/${item.matchCode || assetMatchCode("Character", item.ref)}->${item.ref}`).join("，")}`
       : "人物=无人物或仅作为环境空镜";
     const props = binding.props?.length ? `道具=${binding.props.map((item) => `${item.matchCode || assetMatchCode("Prop", item.ref)}->${item.ref}`).join("，")}` : "道具=无关键道具";
-    lines.push(`- ${binding.label}${binding.timeRange ? ` ${binding.timeRange}` : ""}：${scene}；${characters}；${props}；故事版只控制位置、动作、构图、节奏和剪辑出口。`);
+    lines.push(`- ${binding.label}${binding.timeRange ? ` ${binding.timeRange}` : ""}：${scene}；${characters}；${props}；这些资产已经烘焙进故事板的本面板，视频只读取板面中的位置、动作、构图、节奏、剪辑出口和可见视觉身份。`);
   }
-  lines.push("角色匹配：主角A/角色B/角色C 仅表示面板内的位置，并继承上面绑定的 Character 资产。");
+  lines.push("角色匹配：主角A/角色B/角色C 表示板内位置；对应人物的最终脸、服装和体型以故事板中已渲染的画面为准。");
   return lines.join("\n");
 }
 
@@ -17131,40 +17305,18 @@ function jsonOnlySeedancePrompt(shot, index, dialogueLanguage) {
   return seedanceProsePromptForShot(shot, index, dialogueLanguage);
 }
 
-// 故事板模式的极简提示词:只标注各参考图身份(人物/场景)+ 故事板作为唯一画面依据 + 风格锁 + 对白;
-// 其余镜头设计(动作/运镜/环境/灯光/色调/情绪/承接)一律交给故事板图本身,不写进文字提示词。
-// @图片 编号顺序与提交图片顺序一致:先 refs(人物/场景/道具),后 storyboardRefs(故事板)。
+// Production Board 已把实际资产身份烘焙进每个画面。视频阶段只提交故事板，
+// 文字提示只说明板的画面语义和对白，绝不能引用未上传的正式资产图片。
 function storyboardSeedancePrompt(shot, index, dialogueLanguage) {
-  const refs = Array.isArray(shot.refs) ? shot.refs : [];
   const storyboardRefs = Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [];
-  const lookup = shot.assetLookup || null;
-  const refLines = refs.map((ref, i) => seedanceReferenceLine(ref, i, lookup));
   const sbLines = storyboardRefs.map(
-    (ref, i) => `@图片${refs.length + i + 1} 是 Production Board 故事板,作为画面构图、人物站位、镜头景别、动作方向与节奏的唯一依据。`,
+    (ref, i) => `@图片${i + 1} 是 Production Board 故事板，作为唯一提交图片参考；直接继承其面板中已经渲染的人物身份、场景、道具、材质、色彩、光线、构图、站位、镜头景别、动作方向与节奏。`,
   );
-  // 角色映射:新故事板画的是可区分的真实角色但不再带 PT 码,故在提示词里显式把"故事板中的角色"绑到对应参考图,
-  // 让视频模型按参考图还原每个角色的身份/外观(靠 visual 描述消歧,不足时用角色名)。
-  const isCharacterRef = (ref) => {
-    const t = compactLine(((lookup && lookup.get && lookup.get(ref)) || {}).type || "");
-    return t === "Character" || inferAssetTypeFromName(ref) === "Character";
-  };
-  const roleMapLines = refs
-    .map((ref, i) => ({ ref, i }))
-    .filter(({ ref }) => isCharacterRef(ref))
-    .map(({ ref, i }) => {
-      const asset = (lookup && lookup.get && lookup.get(ref)) || {};
-      const name = seedanceReferenceDisplayName(ref, lookup);
-      const desc = compactLine(asset.visual || asset.label || "").slice(0, 60);
-      const who = desc ? `Production Board 中「${desc}」这一角色即${name}` : `Production Board 中出现的${name}`;
-      return `${who},严格以 @图片${i + 1} 参考图还原其面孔、发型、服装、体型与身份,不要另编长相或与其他角色混淆。`;
-    });
-  const stylePreset = compactLine(shot.videoStylePreset || "") ? normalizeAssetStylePreset(shot.videoStylePreset) : "";
-  // 散文(非 JSON):风格定律 + 故事板权威说明进「剧情动作」块;对白单独成段。@图片/角色映射/故事板行照旧。
-  const storyText = `${seedanceStyleLawForPreset(stylePreset)}；严格按 Production Board 故事板执行画面构图、人物站位、镜头景别、动作与节奏;故事板中各角色的身份按上方「角色映射」绑定到对应 @图片 参考图还原,人物与场景外观一律以参考图为准,不要臆造未出现的人物或物体。`;
+  const storyText = "严格按 Production Board 对应编号面板执行。人物、场景和道具的最终视觉身份已经在板面中锁定，不要期待、引用或补充其他资产图；不要臆造未出现的人物、物体或视觉风格。";
   const blocks = [`剧情动作：${storyText}`];
   const dlg = compactLine(seedanceDialogueText(shot));
   if (dlg) blocks.push(`对白：${dlg}`);
-  return `${[...refLines, ...roleMapLines, ...sbLines].join("\n")}\n\n${blocks.join("\n\n")}`.trim();
+  return `${sbLines.join("\n")}\n\n${blocks.join("\n\n")}`.trim();
 }
 
 // 按生成模式自动选择提示词方案:故事板模式=极简(跟故事板);首尾帧/普通模式=完整电影化提示词。
@@ -17200,9 +17352,9 @@ function storyboardSystemPrompt() {
 - 不要平均分配镜头时长，不要把所有镜头都设为 12 秒。推荐时长必须根据剧情节拍决定，并优先把完整剧情段落设计成接近 15 秒：建立镜头/插入/转场 4-8 秒，普通对白或反应 8-12 秒，同场景连续动作、危机升级、关键表演、需要尾帧承接的剧情 12-15 秒。
 - 一集通常优先规划约 5 个 15 秒级视频片段；剧情复杂、切镜明确、换场较多或对白密集时增加到 6-8 个片段，最高不超过 ${VIDEO_MAX_EPISODE_SECONDS} 秒。
 - 如果相邻镜头发生在同一场景，应保持同一个场景资产引用和空间方向；尾帧续接由后端配置层判断，videoPrompt 中不要写尾帧规则。
-- Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落拆成一张 9:16 竖版、3×3 九个编号面板的 Production Board；最后在 videoPrompt 中按实际面板编号描述动作、构图、运镜和剪辑点。Production Board 只控制动作/构图/节奏/资产绑定，不替代正式资产。
+- Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落渲染成一张 9:16 竖版、3×3 九个编号面板的 Production Board。每个面板必须把实际人物、场景和道具的最终视觉身份烘焙进画面；视频阶段只提交这张 Production Board。
 - 当使用 Production Board 时，videoPrompt 需要明确本段读取哪些实际面板的节奏来源，说明动作方向、演员站位、构图、切换点和同场景衔接；整张制作板与每个面板都服务最终 9:16 成片构图。
-- 使用 Production Board 时，videoPrompt 仍然只写最终执行内容：图片参考、剧情与镜头、对白、摄影与声音。Production Board 的人物、场景和道具位置通过后端面板资产绑定对应正式 Character / Scene / Prop / Insert 资产，不依赖板面标签。
+- 使用 Production Board 时，videoPrompt 只引用已提交的故事板图片、剧情与镜头、对白、摄影与声音。后端面板资产绑定仅用于生成故事板；视频模型不再接收正式 Character / Scene / Prop / Insert 资产图。
 - 每个镜头的画面拆解必须用下方《导演引擎》方法，并输出为结构化的 design 对象（字段值用具体中文，禁用感觉词）。design 字段内容使用中文，英文对白只出现在 dialogueLines。
 - 同一场景只有第一个镜头可以承担短建立镜头；后续镜头必须直接承接上一镜的站位、视线、道具状态、动作方向和情绪，不得重新展示环境，不得用空镜或大全景重启本段。
 - 相邻镜头必须有不同镜头目的，可在 establish / action_continuation / dialogue_reaction / insert / over_shoulder / close_reaction 中选择；不要连续输出同一种中景站立镜头。
@@ -18842,20 +18994,21 @@ function storyboardPanelGuideText(panels = [], dialogueLanguage = "en") {
       const label = panel.label || `P${panel.panel || "?"}`;
       const timeRange = panel.timeRange || storyboardTimeRangeLabel(panel.startSecond || 0, panel.endSecond || (panel.startSecond || 0) + (panel.duration || 1));
       const anchors = Array.isArray(panel.assetAnchors || panel.refs) && (panel.assetAnchors || panel.refs).length ? ` Asset anchors: ${(panel.assetAnchors || panel.refs).join(", ")}.` : "";
-      const speaker = compactLine(panel.dialogue?.speaker || (language === "zh" ? "角色" : "Character"));
+      const production = panel.production || storyboardProductionTabForPanel(panel.role, {
+        title: panel.title,
+        description: panel.description,
+        dialogue: panel.dialogue,
+        action: panel.actionArrow,
+        camera: panel.cameraFrame,
+        continuity: [panel.continuityEntry, panel.continuityExit].filter(Boolean).join(" "),
+      });
       const dialogue = panel.dialogue?.text
         ? language === "zh"
-          ? ` 对白：${speaker}：“${panel.dialogue.text}”。说明：本面板嘴型、表情、眼神和动作必须与这句对白同步。`
-          : ` Dialogue: ${speaker}: "${panel.dialogue.text}". Note: match mouth shape, expression, eyeline, and action to this line.`
-        : language === "zh"
-          ? " 对白：无对白；只表现沉默反应、呼吸、停顿或倾听。"
-          : " Dialogue: no spoken line; show silent reaction, breath, pause, or listening beat.";
+          ? `${compactLine(panel.dialogue.speaker || "角色")}：“${panel.dialogue.text}”。本面板嘴型、表情、眼神和动作必须与这句对白同步。`
+          : production.dialogue
+        : production.dialogue;
       return [
-        `${label} (${timeRange}, ${panel.duration || ""}s): ${panel.description || panel.title || "Storyboard beat."}`,
-        dialogue,
-        `Action staging: ${panel.actionArrow || "show the action direction, breath, pause, and emotional flow in the performance."}`,
-        `Camera plan: ${panel.cameraFrame || "show the composition and shot scale in the framing."}`,
-        `Continuity: ${panel.continuityExit || "preserve axis, eyeline, movement direction, and prop state."}${anchors}`,
+        `${label} (${timeRange}, ${panel.duration || ""}s) PRODUCTION TAB — Visual: ${production.visual}; Camera: ${production.camera}; Shot: ${production.shot}; Lens: ${production.lens}; Lighting: ${production.lighting}; Emotion: ${production.emotion}; Dialogue: ${dialogue}; Action: ${production.action}; Continuity: ${production.continuity}.${anchors}`,
       ].join(" ");
     })
     .join("\n");
@@ -18865,18 +19018,20 @@ function storyboardPanelPromptLine(panel = {}, dialogueLanguage = "en") {
   const language = normalizeDialogueLanguage(dialogueLanguage, "en");
   const label = panel.label || `P${panel.panel || "?"}`;
   const timeRange = panel.timeRange || storyboardTimeRangeLabel(panel.startSecond || 0, panel.endSecond || (panel.startSecond || 0) + (panel.duration || 1));
-  const description = compactLine(panel.description || panel.title || "Storyboard beat.");
-  const action = compactLine(panel.actionArrow || "staged action direction and performance beat");
-  const camera = compactLine(panel.cameraFrame || "9:16 composition and shot scale");
-  const continuity = compactLine(panel.continuityExit || "preserve axis and cut handoff");
+  const production = panel.production || storyboardProductionTabForPanel(panel.role, {
+    title: panel.title,
+    description: panel.description,
+    dialogue: panel.dialogue,
+    action: panel.actionArrow,
+    camera: panel.cameraFrame,
+    continuity: [panel.continuityEntry, panel.continuityExit].filter(Boolean).join(" "),
+  });
   const dialogue = panel.dialogue?.text
     ? language === "zh"
       ? `对白：${compactLine(panel.dialogue.speaker || "角色")}：“${compactLine(panel.dialogue.text)}”`
       : `Dialogue: ${compactLine(panel.dialogue.speaker || "Character")}: "${compactLine(panel.dialogue.text)}"`
-    : language === "zh"
-      ? "无对白"
-      : "No dialogue";
-  return `${label} ${timeRange}: ${description}; ${dialogue}; action=${action}; camera=${camera}; continuity=${continuity}.`;
+    : production.dialogue;
+  return `${label} ${timeRange}: visual=${production.visual}; camera=${production.camera}; shot=${production.shot}; lens=${production.lens}; lighting=${production.lighting}; emotion=${production.emotion}; dialogue=${dialogue}; action=${production.action}; continuity=${production.continuity}.`;
 }
 
 function storyboardPanelPromptText(panels = [], dialogueLanguage = "en") {
@@ -18908,25 +19063,25 @@ function storyboardPromptForSlot(slot) {
       ? "Dialogue language: Chinese only. Every speech bubble and dialogue caption must use the exact Chinese line after 对白 in the panel guide. Do not add English dialogue or English labels for dialogue."
       : "Dialogue language: English only. Every speech bubble and dialogue caption must use the exact English line after Dialogue in the panel guide. Do not add Chinese dialogue.";
   // 整张 Production Board 就是 3×3 网格。P1 承担建立空间，但不能额外占据一条大建立镜头。
-  // 人物一致性交给资产参考图锁定，速写只导构图、表演与镜头。
+  // 角色、场景、道具直接从引用资产生成到面板画面中，视频阶段仅提交这张板。
   return [
     "Create ONE 9:16 vertical (portrait) professional film storyboard sheet — clearly taller than wide, matching the final vertical 9:16 short-drama video. Full sheet visible, no cropping.",
     `The complete sheet is one edge-to-edge ${gridLabel} grid of exactly ${panelCount} equal-size storyboard panels, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Every panel outer boundary has the same portrait 9:16 proportion, with uniform narrow gutters.`,
     "P1 is the establishing composition, but it must occupy exactly one ordinary top-left grid cell. No panel may span multiple rows or columns.",
     "Do not draw a separate establishing strip, full-width image, top header, metadata table, footer, sequence summary band, or any other content outside the nine equal panels.",
-    "Each panel is a self-contained vertical 9:16 camera frame. Reserve an integrated lower annotation area inside each panel, using as much as the lower half when needed: show the P1-P9 label and time range, the complete plot/action description, the exact dialogue line, plus the complete shot-size and camera-movement note. Do not summarize, paraphrase, omit, or truncate any supplied plot or dialogue. The annotation must wrap cleanly, remain readable at full-sheet scale, and never extend outside its own cell.",
-    "Drawing style: detailed, realistic, expressive hand-drawn cinematic storyboard sketches in clean black pencil and ink with light professional shading — real character poses, faces, gestures and full staging. NOT crude silhouettes, NOT stick figures, NOT flat icons.",
+    "Each panel is a self-contained vertical 9:16 camera frame. Reserve an integrated lower annotation area inside each panel, using as much as the lower half when needed. It is an internal PRODUCTION TAB with exactly these decision headings: Visual / Camera / Shot / Lens / Lighting / Emotion, followed by Dialogue / Action / Continuity. Include the P1-P9 label and time range, the complete plot/action description, the exact dialogue line, and every production decision. Do not summarize, paraphrase, omit, or truncate any supplied plot or dialogue. The annotation must wrap cleanly, dynamically reduce type only when necessary, remain readable at full-sheet scale, and never extend outside its own cell.",
+    "Render every panel as a cinematic production still using the actual referenced Character, Scene, Prop, and Insert assets. The same actual character face, hairstyle, wardrobe, body type, scene architecture, prop shape, materials, palette, and lighting identity from those references must visibly appear in the panels. This is a true visual storyboard, NOT hand-drawn sketches, NOT silhouettes, NOT stick figures, NOT flat icons, and NOT a contact sheet of the source images.",
     "Cinematic composition with clear foreground / midground / background and correct vertical 9:16 framing in every panel; each panel is a true standing-phone-screen vertical camera view.",
-    "Keep characters visually consistent across every panel (same identity, face, hairstyle, wardrobe and body type as the referenced character assets). The sketches define composition, staging, performance and camera only; final faces, wardrobe colors, textures and lighting are locked by the official character/scene/prop asset images, not by these sketches.",
-    "Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips, thumbnails or PT-code boxes — the action and continuity notes in the plan are staging guidance, not diagram elements to render. Draw a clean film storyboard, not a technical markup diagram.",
+    "Keep characters and locations visually identical across every panel. The panel image itself must carry the final identity, material, color, texture and lighting information from the official references, so it can later serve as the only submitted video reference.",
+    "Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips, thumbnails or PT-code boxes — the action and continuity notes in the plan are staging guidance, not diagram elements to render. Draw a clean cinematic Production Board, not a technical markup diagram.",
     `Every panel must use a distinct shot scale and camera angle per the plan below — do not repeat the same drawing. Time coverage ${timeRange}; sequence duration ${slot.duration || PRODUCTION_BOARD_MAX_SECONDS}s.`,
     `Source shots: ${shots}.`,
-    `Scene / story beat: ${(beat || "cinematic story progression from the screenplay.").slice(0, 360)}`,
+    `Scene / story beat: ${beat || "cinematic story progression from the screenplay."}`,
     `Characters and assets to keep consistent (do not invent new characters): ${refs}.`,
     dialogueRule,
     "Per-panel plan — follow exactly, one panel each, in order:",
     panelGuide,
-    "Keep every annotation short and legible. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
+    "Use concise production decisions, but preserve every supplied plot/action and dialogue word. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
   ].join("\n");
 }
 
@@ -18941,7 +19096,7 @@ function storyboardPromptsMarkdown(episodeRoot, slots) {
 来源镜头：${(slot.sourceShotNames || []).join(", ") || "未记录"}
 剧情摘要：${slot.beatSummary || "根据剧本和分镜提示词自动拆解。"}
 参考资产：${(slot.refs || []).join(", ") || "无"}
-视频引用方式：${slot.videoReferenceGuide || "仅作为构图、站位、镜头方向、动作节奏和剪辑出口参考。"}
+视频引用方式：${slot.videoReferenceGuide || "作为唯一视频图片参考：直接继承板内已锁定的人物身份、场景、道具、构图、站位、镜头方向、动作节奏和剪辑出口。"}
 
 分镜格说明：
 ${storyboardPanelGuideText(slot.panels || [], slot.dialogueLanguage || dialogueLanguage)
@@ -18958,9 +19113,9 @@ ${storyboardPromptForSlot({ ...slot, dialogueLanguage: slot.dialogueLanguage || 
 
 ## 规则
 
-- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整张只由标准 3×3 九个等大竖格组成,从左到右、从上到下阅读;禁止顶部信息栏、底部总结栏和任何格外文字。每格内部下方保留说明区:序号+时间码+完整剧情动作+完整对白+完整镜头/运动说明,不得摘要、改写、遗漏或截断。
-- 分镜格是**精细写实电影级黑白铅笔/墨线速写**:真实人物姿态、面部、表演与完整调度;禁止粗剪影、火柴人、扁平图标。每格构图/景别/机位各异,按弧线展开(建立→站位→转折/高潮→反应→剪辑点),不得各格重复同一张图。
-- 人物身份靠正式资产参考图锁定;速写只导构图/站位/表演/镜头,最终面孔·妆造·颜色·材质·光线以资产图为准。**不再画蓝红箭头、镜头框、资产参考栏、PT 编号等技术标注**——那些是给画面的调度指引,不作为图元绘制。
+- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整张只由标准 3×3 九个等大竖格组成,从左到右、从上到下阅读;禁止顶部信息栏、底部总结栏和任何格外文字。每格内部下方保留 PRODUCTION TAB:序号+时间码+Visual/Camera/Shot/Lens/Lighting/Emotion+完整剧情动作+完整对白+Action/Continuity,不得摘要、改写、遗漏或截断。
+- 分镜格是**由正式资产图驱动的电影级真实镜头画面**:角色脸、发型、服装、体型、场景结构、道具外观、材质、颜色和光线必须继承引用资产;禁止粗剪影、火柴人、扁平图标和黑白速写。每格构图/景别/机位各异,按弧线展开(建立→站位→转折/高潮→反应→剪辑点),不得各格重复同一张图。
+- 这张 Production Board 是视频阶段的唯一图片参考，正式资产图只在本板生成阶段使用。**不再画蓝红箭头、镜头框、资产参考栏、PT 编号等技术标注**——那些是给画面的调度指引,不作为图元绘制。
 - 每张 Production Board 最多覆盖 ${PRODUCTION_BOARD_MAX_SECONDS} 秒连续场景段落;最终视频片段仍按 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS} 秒拆分。
 - Production Board 对白语言必须跟随剧本解析阶段设置:${dialogueLanguage === "zh" ? "中文对白" : "英文对白"},不得中英混用。
 - 格内说明文字由后处理精确叠加，确保不会被生图模型漏掉或渲染成乱码；不影响画面速写和九格布局。
@@ -19636,7 +19791,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
       storyboardByShot.set(shotName, slot);
     }
   }
-  shots.forEach((shot) => {
+  shots.forEach((shot, index) => {
     const storyboardSlot = storyboardByShot.get(shot.name) || null;
     const storyboardRef = storyboardSlot?.asset?.assetName || "";
     shot.storyboardRefs = storyboardRef ? [storyboardRef] : [];
@@ -19666,6 +19821,14 @@ async function buildVideoConfig(episodeRoot, body = {}) {
           duration: panel.duration,
           description: panel.description,
           dialogue: panel.dialogue || null,
+          production: panel.production || storyboardProductionTabForPanel(panel.role, {
+            title: panel.title,
+            description: panel.description,
+            dialogue: panel.dialogue,
+            action: panel.actionArrow,
+            camera: panel.cameraFrame,
+            continuity: [panel.continuityEntry, panel.continuityExit].filter(Boolean).join(" "),
+          }),
           actionArrow: panel.actionArrow,
           cameraFrame: panel.cameraFrame,
           continuityExit: panel.continuityExit,
@@ -19674,8 +19837,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
         })),
         promptMode: "production_board",
         policy:
-          "Use storyboard guidance only for the actual numbered panels, composition, blocking, camera direction, shot rhythm, and cut structure. Use Character, Scene, Prop, and Insert assets for final identity, materials, colors, lighting, and style.",
+          "Use the Production Board as the sole submitted image reference. Each numbered panel already contains the bound Character, Scene, Prop, and Insert identity, materials, colors, lighting, blocking, camera direction, shot rhythm, and cut structure. Do not expect extra asset images.",
       };
+      shot.prompt = storyboardSeedancePrompt(shot, index, dialogueLanguage);
     }
   });
   const storyboardsAttached = storyboardsActive && storyboardRecords.length > 0;
@@ -19700,7 +19864,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     } else {
       delete shot.tailFrameSource;
       if (usesStoryboardReference) {
-        shot.continuityNote = "已启用 Production Board 参考：使用 9:16 面板节奏、资产绑定与正式资产保持连贯";
+        shot.continuityNote = "已启用 Production Board 唯一参考：使用板面中已锁定的 9:16 画面、人物、场景、道具与剪辑出口保持连贯";
       } else if (!allowTailFrameContinuity && continuityDecision.sharedScene) {
         shot.continuityNote = "尾帧续接已关闭：同场景片段使用正常切镜";
       } else if (continuityDecision.reason) {
@@ -19771,10 +19935,10 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     storyboardPolicy: {
       mode: videoPromptMode === "production_board" ? "production_board_reference" : "prompt_tail_frame",
       instruction: storyboardsAttached
-        ? "Use Production Board images only as a production-control layer: nine vertical 9:16 numbered panels in a 3-column grid inside a 9:16 vertical board. Read composition, blocking, camera direction, shot rhythm, and cut structure. Do not copy sketch texture, character identity, scene identity, prop identity, colors, final lighting, or final visual style from storyboard panels; final visuals must come from Character, Scene, Prop, and Insert assets."
+        ? "Use each Production Board as the sole submitted image reference: nine vertical 9:16 numbered panels in a 3-column grid inside a 9:16 vertical board. Read composition, blocking, camera direction, shot rhythm, cut structure, and the actual character, scene, prop, material, color, lighting, and visual style already rendered into the panels. Do not expect separate Character, Scene, Prop, or Insert images during video generation."
         : "Storyboard files are preserved but inactive for the current production flow. Generate videos from Seedance prompts and use previous-shot tail frames only for true continuous action or state carryover.",
       assetBindingInstruction:
-        "For every storyboard-enabled shot, bind each storyboard panel to the shot's official Scene, Character, Prop, and Insert assets. Character slots such as 主角A/角色B are temporary storyboard positions only; they must inherit identity from the bound Character assets. Storyboard panels control composition, blocking, camera direction, rhythm, and cut points only.",
+        "Before Production Board generation, bind each panel to the shot's official Scene, Character, Prop, and Insert assets and render their actual identity into the panel. Character slots such as 主角A/角色B define panel position only. After the board is generated, submit only the board to video generation; do not attach the source asset images.",
       defaultShotContinuity: storyboardsAttached
         ? "production_board_controls_panel_continuity"
         : allowTailFrameContinuity
@@ -21388,6 +21552,7 @@ module.exports = {
     },
     projectVideo: {
       generateProjectVideoShot,
+      ensureTailFrameAssetReference,
     },
     canvasImageRef: {
       localPublicAssetPathFromUrl,

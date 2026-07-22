@@ -1272,6 +1272,40 @@ body.canvas-page {
   background: rgba(22, 135, 255, 0.82);
 }
 
+.video-media-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 6;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.16s ease, visibility 0.16s ease, transform 0.16s ease;
+}
+
+.video-media-actions .media-download-button,
+.video-media-actions .video-capture-tail-button {
+  position: static;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+}
+
+.video-preview-slot:hover .video-media-actions,
+.video-media-actions:hover,
+.video-media-actions:focus-within,
+.canvas-node:hover .video-media-actions {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
 .video-capture-tail-button:disabled {
   cursor: wait;
   opacity: 0.68;

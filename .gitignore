@@ -24,6 +24,7 @@ work/
 .pixel-toys-image-jobs/
 .pixel-toys-hidden-scene-references/
 .pixel-toys-canvas-tail-frames/
+.pixel-toys-thumbs/
 
 # ===== 日志 / 临时 / PID =====
 *.log

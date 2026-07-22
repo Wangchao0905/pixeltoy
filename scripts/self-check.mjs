@@ -105,7 +105,7 @@ assert(server.includes("变异章鱼怪") && server.includes('pushUnique(charact
 assert(server.includes("function fetchAssetAnalyzer"), "asset analyzer calls must have a dedicated timeout wrapper");
 assert(server.includes("ASSET_ANALYZER_TIMEOUT_MS"), "asset analyzer timeout must be configurable");
 assert(server.includes("function enforceCharacterProfileAssets"), "asset parser must force top-of-script profile headings into Character assets");
-assert(server.includes('asset.type !== "Character") continue;'), "profile-name props/inserts must be removed before manifest write");
+assert(server.includes("const explicitNonCharacterLabels = parseStructuredAssetDescriptions(script)") && server.includes("filter((asset) => asset.type !== \"Character\")"), "profile-name props/inserts must be removed before manifest write");
 assert(server.includes("while (\n      corrected.some("), "profile character insertion must check existing assets before adding a generated profile character");
 assert(server.includes('assetMatchCode(asset.type, asset.name || asset.label) === assetMatchCode("Character", assetName)'), "profile character insertion must not create duplicate match codes");
 assert(server.includes("enforceCharacterProfileAssets(\n    correctAssetRolesFromEvidence(mergeAnalyzerAssets"), "asset extraction must enforce profile characters after model merge");
@@ -229,10 +229,10 @@ assert(storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_9_16"), "Production Bo
 assert(storyboardJobRoute.includes('aspectRatio: "9:16"'), "Production Board generation metadata must describe the full board as 9:16");
 assert(!storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_16_9"), "Production Board job route must not make the whole board 16:9 landscape");
 assert(!storyboardJobRoute.includes('aspectRatio: "16:9"'), "Production Board generation must not mark the whole board as 16:9");
-assert(server.includes("9:16 vertical (portrait) Production Board sheet"), "Production Board prompt must make the whole board a 9:16 vertical sheet");
-assert(server.includes("Production Board 整张是 9:16 竖版工作纸"), "Production Board policy must describe the whole board as a 9:16 vertical sheet");
-assert(server.includes("represents a vertical 9:16 camera view"), "Production Board prompt must require each panel to represent a vertical 9:16 camera view");
-assert(server.includes("ASSET REFERENCES"), "Production Board prompt must require an asset reference strip");
+assert(server.includes("Create ONE 9:16 vertical (portrait)"), "Production Board prompt must make the whole board a 9:16 vertical sheet");
+assert(server.includes("竖版 9:16 工作纸"), "Production Board policy must describe the whole board as a 9:16 vertical sheet");
+assert(server.includes("true standing-phone-screen vertical camera view"), "Production Board prompt must require each panel to represent a vertical 9:16 camera view");
+assert(server.includes("Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips"), "Production Board prompt must keep technical reference markup out of the final board");
 assert(server.includes("PT-C/PT-S/PT-P/PT-I"), "Production Board prompt must require PT asset binding labels");
 assert(server.includes("storyboardDisablesTailFrameContinuity: false"), "Production Board must not globally disable tail-frame continuity");
 assert(styles.includes(".storyboard-card img {\n  display: block;\n  width: 100%;\n  aspect-ratio: 9 / 16;"), "Production Board preview cards must show the 9:16 vertical board");
@@ -301,7 +301,7 @@ assert(canvas.includes("function pollProjectVideoNode"), "project video nodes mu
 assert(canvas.includes("function resumeVideoPolls"), "canvas restore must resume saved video tasks");
 assert(canvas.includes("resumeVideoPolls();"), "canvas load must resume saved video tasks after hydration");
 assert(canvas.includes("pollVideoNode(node.id, node.taskId, node.taskProvider || \"\")"), "saved standalone video tasks must resume with their provider");
-assert(canvasCss.includes(".video-preview-slot .media-download-button") && canvasCss.includes("bottom: auto"), "tail-frame capture control must share the top action row with download");
+assert(canvas.includes('class="video-media-actions"') && canvasCss.includes(".video-media-actions") && canvasCss.includes("bottom: auto"), "tail-frame capture control must share the top action row with download");
 assert(canvas.includes("tailFrameUrl: node.tailFrameUrl || \"\"") && canvas.includes("videoLocalFile: saved.videoLocalFile || node.videoLocalFile || \"\""), "manual tail-frame capture must reuse saved frame and local video paths");
 assert(server.includes("复用已缓存尾帧") && server.includes("const downloadTarget = `${tmp}.download-"), "tail-frame extraction must reuse cached frames and avoid partial source files");
 assert(canvas.includes("function videoDownloadHref") && canvas.includes('url.searchParams.set("download", "1")'), "same-origin canvas video downloads must force /media attachment mode");
@@ -438,7 +438,7 @@ if (fs.existsSync(dragonwakeManifest)) {
 assert(server.includes('if (url.pathname === "/canvas.html" || url.pathname.startsWith("/api/canvas/"))'), "canvas page and API must be gated together in requireAuth");
 assert(server.includes("if (!userCanUseCanvas(user)) {"), "canvas gate must reject users without canvas permission");
 assert(server.includes("未开启画布权限，请联系管理员"), "canvas API must return an explicit 403 message for users without canvas permission");
-assert(server.includes('if (url.pathname === "/" || url.pathname === "/index.html") {'), "home/index login gate must stay separate from the canvas permission gate");
+assert(server.includes('if (url.pathname === "/" || url.pathname === "/index.html") return true;'), "home/index login gate must stay separate from the canvas permission gate");
 assert(!server.includes('url.pathname === "/index.html" || url.pathname === "/canvas.html"'), "canvas.html must not remain in the login-only gate");
 assert(server.includes('if (typeof body.canvasEnabled === "boolean") user.canvasEnabled = body.canvasEnabled;'), "admin user API must let admins toggle per-user canvas permission");
 assert(adminReact.includes("<th>画布</th>"), "admin user table must expose a canvas permission column");
@@ -567,7 +567,7 @@ assert(server.includes("const sameSegmentPanels = panelSegments.reduce"), "panel
 assert(server.includes("const sliceByPart = (arr, i) =>"), "over-length storyboard segments must partition beat/dialogue across parts instead of copying them verbatim");
 
 // Storyboard board format: whole board is a 9:16 vertical sheet with panels in a 2-column grid (4 = 2x2, 6 = 2x3); server and asset runner must agree and never revert to a 16:9 landscape 3x3 nine-panel board.
-assert(server.includes("represents a vertical 9:16 camera view"), "server storyboard prompt must make each panel represent a vertical 9:16 camera view");
+assert(server.includes("true standing-phone-screen vertical camera view"), "server storyboard prompt must make each panel represent a vertical 9:16 camera view");
 assert(!server.includes("3x3 grid of nine") && !assetRunner.includes("3x3 grid (3 columns x 3 rows)"), "storyboard prompts must not use a fixed 3x3 nine-panel grid");
 assert(assetRunner.includes("9:16 vertical (portrait) sheet"), "storyboard generation contract must describe the whole board as a 9:16 vertical sheet");
 assert(!assetRunner.includes("one 16:9 landscape sheet"), "storyboard generation contract must not describe the whole board as a 16:9 landscape sheet");
@@ -605,7 +605,7 @@ assert(app.includes('"pixelToys.assetStylePreset") || "cg_3d"'), "frontend asset
 assert(server.includes("function seedanceStyleLawForPreset"), "seedance prompt must derive a mandatory style law from the asset style preset");
 assert(server.includes('"style",\n  "scene",') || /SEEDANCE_JSON_PROMPT_FIELDS = \[\s*"style"/.test(server), "seedance JSON prompt must include a leading style field");
 assert(server.includes("style: seedanceStyleLawForPreset(stylePreset)"), "seedance shot JSON must inject the style law");
-assert(server.includes("const videoStylePreset = normalizeAssetStylePreset("), "video config must resolve the project video style from the reference assets");
+assert(server.includes("const videoStylePreset = videoStylePresetFromProductionAssets(productionAssets, body);"), "video config must resolve the project video style from the reference assets");
 assert(server.includes("photoreal\n      ? design.lighting") || server.includes("photoreal"), "realistic lighting/skin cues must be gated to photoreal style only");
 assert(server.includes("function sanitizeSeedancePromptForPolicy"), "Seedance prompt submission must sanitize copyright/policy-risk wording before provider submit");
 assert(server.includes("sanitizeSeedancePromptForPolicy(blocks"), "cleanSeedancePromptForSubmission must run the policy sanitizer after assembling prompt blocks");

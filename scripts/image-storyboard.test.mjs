@@ -22,6 +22,8 @@ assert.match(app, /api\("\/api\/canvas\/image-storyboard-plan"/);
 assert.match(app, /status: "planning"/);
 assert.match(app, /storyboardActiveBatchId/);
 assert.match(app, /故事板生成中\（\$\{storyboardProgress\}\）/);
+assert.match(app, /cache: "no-store"/);
+assert.match(app, /const maxAttempts = 750/);
 assert.match(app, /referenceImages: Array\.isArray\(item\.referenceImages\)/);
 assert.match(app, /ratio: "16:9"/);
 assert.match(app, /storyboardHistory/);
@@ -31,6 +33,8 @@ assert.match(server, /durationPerBoard: 15/);
 assert.match(server, /function imageStoryboardImagePrompt/);
 assert.match(server, /image-storyboard-plan/);
 assert.match(server, /openAiCompatUrl\("\/v1\/chat\/completions", "storyboard"\)/);
+assert.match(server, /出图后处理失败：/);
+assert.match(server, /"Cache-Control": "no-store"/);
 assert.match(styles, /\.image-explore-storyboard-options/);
 assert.match(styles, /\.image-explore-storyboard-panels/);
 

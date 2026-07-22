@@ -11979,23 +11979,31 @@ function runCanvasImageJob(taskId, args, env, attempt = 0) {
   child.on("close", async (code) => {
     const entry = canvasImageJobs.get(taskId);
     if (!entry) return;
-    if (code === 0 && fs.existsSync(entry.outPath)) {
-      await completeCanvasImageJob(entry);
-    } else {
-      const failMessage = classifyImageGenError(stderr) || `出图失败（退出码 ${code}）`;
-      // 上游生图瞬时错误(stream_read_error/超时/5xx/网络)自动重试,最多 2 次退避;审核/参数类不重试。
-      if (attempt < 2 && /stream|api_stream_error|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|502|503|504|522|523|524|限流|超时|流/i.test(stderr)) {
-        Object.assign(entry, { status: "running", message: `上游波动，正在自动重试（${attempt + 1}/2）…` });
-        entry.child = null;
-        setTimeout(() => runCanvasImageJob(taskId, args, env, attempt + 1), 4000 * (attempt + 1));
-        return;
+    try {
+      if (code === 0 && fs.existsSync(entry.outPath)) {
+        await completeCanvasImageJob(entry);
+      } else {
+        const failMessage = classifyImageGenError(stderr) || `出图失败（退出码 ${code}）`;
+        // 上游生图瞬时错误(stream_read_error/超时/5xx/网络)自动重试,最多 2 次退避;审核/参数类不重试。
+        if (attempt < 2 && /stream|api_stream_error|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|502|503|504|522|523|524|限流|超时|流/i.test(stderr)) {
+          Object.assign(entry, { status: "running", message: `上游波动，正在自动重试（${attempt + 1}/2）…` });
+          entry.child = null;
+          setTimeout(() => runCanvasImageJob(taskId, args, env, attempt + 1), 4000 * (attempt + 1));
+          return;
+        }
+        Object.assign(entry, {
+          status: "failed",
+          message: failMessage,
+        });
       }
+    } catch (error) {
       Object.assign(entry, {
         status: "failed",
-        message: failMessage,
+        message: `出图后处理失败：${compactLine(error?.message || "未知错误")}`,
       });
+    } finally {
+      if (entry.child === child) entry.child = null;
     }
-    entry.child = null;
   });
 }
 
@@ -20468,7 +20476,12 @@ async function handleApi(req, res, url) {
 
   const canvasImageMatch = url.pathname.match(/^\/api\/canvas\/image-generations\/([^/]+)$/);
   if (req.method === "GET" && canvasImageMatch) {
-    return send(res, 200, { ok: true, result: getCanvasImageGeneration(decodeURIComponent(canvasImageMatch[1])) });
+    return send(
+      res,
+      200,
+      { ok: true, result: getCanvasImageGeneration(decodeURIComponent(canvasImageMatch[1])) },
+      { "Cache-Control": "no-store" },
+    );
   }
 
   const canvasVideoMatch = url.pathname.match(/^\/api\/canvas\/video-generations\/([^/]+)$/);

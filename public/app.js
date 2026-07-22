@@ -2250,11 +2250,13 @@ function replaceImageExploreStoryboardHistoryItem(id, patch = {}) {
 }
 
 async function pollImageExploreGeneration(taskId) {
-  for (let attempt = 0; attempt < 180; attempt += 1) {
-    const data = await api(`/api/canvas/image-generations/${encodeURIComponent(taskId)}`);
+  const pollIntervalMs = 1200;
+  const maxAttempts = 750;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const data = await api(`/api/canvas/image-generations/${encodeURIComponent(taskId)}`, { cache: "no-store" });
     const result = data.result || {};
     if (result.status === "completed" || result.status === "failed") return result;
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
   throw new Error("生成超时，请稍后查看或重试");
 }

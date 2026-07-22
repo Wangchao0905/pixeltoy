@@ -18902,16 +18902,14 @@ function storyboardPromptForSlot(slot) {
     dialogueLanguage === "zh"
       ? "Dialogue language: Chinese only. Every speech bubble and dialogue caption must use the exact Chinese line after 对白 in the panel guide. Do not add English dialogue or English labels for dialogue."
       : "Dialogue language: English only. Every speech bubble and dialogue caption must use the exact English line after Dialogue in the panel guide. Do not add Chinese dialogue.";
-  // 新故事板设计(参考专业影视故事板文档):精细写实电影级速写 + 顶部信息栏 + 建立镜头 + 编号带说明格 + 底部总结栏。
-  // 取代旧的"粗剪影 + 蓝红箭头 + PT码"版式;人物一致性交给资产参考图锁定,速写只导构图/表演/镜头。
-  void gridLabel;
+  // 整张 Production Board 就是 3×3 网格。P1 承担建立空间，但不能额外占据一条大建立镜头。
+  // 人物一致性交给资产参考图锁定，速写只导构图、表演与镜头。
   return [
-    "Create ONE 9:16 vertical (portrait) professional film storyboard sheet — clearly taller than wide, matching the final vertical 9:16 short-drama video. It must read as a clean, high-end commercial storyboard document on warm off-white paper. Full sheet visible, no cropping.",
-    "Sheet layout, top to bottom:",
-    `1) TOP HEADER BAND spanning the full width: left side = the sequence title and its timecode range "${timeRange}" and the core emotion of the sequence; right side = a small boxed metadata list (project, scene setting, sequence duration, lens style, color style). Keep header text minimal and legible.`,
-    "2) ESTABLISHING SHOT: one larger wide establishing frame directly under the header that locks the location, spatial geography and mood, with a short one-line caption strip beneath it.",
-    `3) STORY PANELS: a ${STORYBOARD_BOARD_COLUMNS}-column grid of ${panelCount} numbered panels below the establishing shot, read left-to-right then top-to-bottom (panel 1, 2, 3 …). Each panel carries a small number badge and its own timecode in the top corner, the shot sketch, and a short caption strip beneath it holding a concrete one-line action followed by compact fields for shot size / camera height, duration, camera movement, sound, and transition.`,
-    "4) BOTTOM SUMMARY BAND spanning the full width: a one-line summary of this sequence plus a short row of visual keywords.",
+    "Create ONE 9:16 vertical (portrait) professional film storyboard sheet — clearly taller than wide, matching the final vertical 9:16 short-drama video. Full sheet visible, no cropping.",
+    `The complete sheet is one edge-to-edge ${gridLabel} grid of exactly ${panelCount} equal-size storyboard panels, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Every panel outer boundary has the same portrait 9:16 proportion, with uniform narrow gutters.`,
+    "P1 is the establishing composition, but it must occupy exactly one ordinary top-left grid cell. No panel may span multiple rows or columns.",
+    "Do not draw a separate establishing strip, full-width image, top header, metadata table, footer, sequence summary band, or any other content outside the nine equal panels. Keep only a small P1-P9 number badge inside the top corner of each panel.",
+    "Each panel is a self-contained vertical 9:16 camera frame with its sketch filling the cell. Do not reserve an external caption bar; any note must remain tiny and inside its own cell.",
     "Drawing style: detailed, realistic, expressive hand-drawn cinematic storyboard sketches in clean black pencil and ink with light professional shading — real character poses, faces, gestures and full staging. NOT crude silhouettes, NOT stick figures, NOT flat icons.",
     "Cinematic composition with clear foreground / midground / background and correct vertical 9:16 framing in every panel; each panel is a true standing-phone-screen vertical camera view.",
     "Keep characters visually consistent across every panel (same identity, face, hairstyle, wardrobe and body type as the referenced character assets). The sketches define composition, staging, performance and camera only; final faces, wardrobe colors, textures and lighting are locked by the official character/scene/prop asset images, not by these sketches.",

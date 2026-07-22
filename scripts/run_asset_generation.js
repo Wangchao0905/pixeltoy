@@ -24,7 +24,7 @@ const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_
 const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "900", 10);
 const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRIES || "2", 10);
 const STORYBOARD_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_RETRIES || "1", 10);
-const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v11-portrait-nine-panel-sheet";
+const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v12-strict-equal-nine-panel-sheet";
 
 function usage() {
   console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--size 1280x720|2048x1152|3840x2160]");
@@ -151,7 +151,7 @@ function typeCounts(assets) {
 function promptFor(asset) {
   const storyboardRule =
     asset.type === "Storyboard"
-      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. On this vertical sheet draw exactly 9 panels (3 columns x 3 rows), read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Each panel is a portrait story frame representing a vertical 9:16 camera view; keep even gutters between rows and columns and do NOT overlap or merge panels. The story panels are hand-drawn line sketches. Do NOT add any ASSET REFERENCES strip, asset thumbnails, or reference boxes — output ONLY the story panels."
+      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Do NOT add a header, footer, metadata table, caption band, ASSET REFERENCES strip, asset thumbnails, or reference boxes — output ONLY the nine story panels."
       : "";
   return [
     "Production-grade reference asset. Follow the selected visual style, layout, identity, and safety constraints exactly.",
@@ -565,24 +565,26 @@ small_font = font(max(10, w // 110))
 tiny_font = font(max(8, w // 150))
 micro_font = font(max(7, w // 175))
 
-draw.rectangle([0, 0, w-1, h-1], outline=(34, 34, 34), width=3)
-draw.text((22, 14), payload["title"], fill=(24, 24, 24), font=title_font)
-draw.text((22, 45), payload.get("story", ""), fill=(55, 55, 55), font=small_font)
-if payload.get("source"):
-    draw.text((22, 67), payload["source"], fill=(90, 90, 90), font=tiny_font)
-
-grid_x, grid_y = 22, 92
-# 9:16 竖版板:固定 3×3 九格,每一格都是竖版镜头构图,整幅用满宽且不再有资产参考栏。
-grid_w = w - grid_x - 22
-grid_h = h - grid_y - 38
+# 9:16 竖版板:整张就是固定 3×3 九格。每个外格保持竖版 9:16，禁止页眉、页脚或大建立镜头占用网格空间。
+margin = 22
 gap = 12
 panels = payload.get("panels") or []
 n_panels = len(panels)
 n_panels = 9
 cols = 3
 rows = (n_panels + cols - 1) // cols
-cell_w = (grid_w - gap * (cols - 1)) // cols
-cell_h = (grid_h - gap * (rows - 1)) // rows
+max_grid_w = w - margin * 2
+max_grid_h = h - margin * 2
+cell_w = min(
+    (max_grid_w - gap * (cols - 1)) // cols,
+    int(((max_grid_h - gap * (rows - 1)) / rows) * 9 / 16),
+)
+cell_w = max(40, cell_w)
+cell_h = max(72, round(cell_w * 16 / 9))
+grid_w = cell_w * cols + gap * (cols - 1)
+grid_h = cell_h * rows + gap * (rows - 1)
+grid_x = max(0, (w - grid_w) // 2)
+grid_y = max(0, (h - grid_h) // 2)
 refs = payload.get("refs") or []
 role_codes = [r.get("code", "") for r in refs if isinstance(r, dict) and r.get("type") == "Character"][:3]
 scene_codes = [r.get("code", "") for r in refs if isinstance(r, dict) and r.get("type") == "Scene"][:2]
@@ -921,22 +923,13 @@ for i in range(n_panels):
     draw.rectangle([x, y, x + cell_w, y + cell_h], fill=(255, 255, 250), outline=(68, 68, 64), width=1)
     draw.text((x + 7, y + 5), f"P{i+1}", fill=(24, 24, 24), font=small_font)
     # The visible storyboard camera panel is always a true vertical 9:16 frame.
-    frame_w = min(cell_w - 16, int((cell_h - 50) * 9 / 16))
+    frame_w = min(cell_w - 16, int((cell_h - 16) * 9 / 16))
     frame_h = int(frame_w * 16 / 9)
     frame_x = x + (cell_w - frame_w) // 2
-    frame_y = y + 22
+    frame_y = y + (cell_h - frame_h) // 2
     panel = panels[i] if i < len(panels) else {"description": "chronological story beat"}
     note = panel_text(panel)
     draw_panel_story([frame_x, frame_y, frame_x + frame_w, frame_y + frame_h], note, i)
-    caption_x = x + 8
-    caption_w = max(24, cell_w - 16)
-    caption = panel_caption(note)
-    words = [caption[j:j+max(12, caption_w // 6)] for j in range(0, min(len(caption), 120), max(12, caption_w // 6))]
-    ty = frame_y + frame_h + 4
-    for line in words[:1]:
-        draw.text((caption_x, ty), line, fill=(56, 56, 56), font=micro_font)
-        ty += int(micro_font.size * 1.25)
-
 img.save(out)
 `;
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -953,10 +946,10 @@ function rescueStoryboardPromptFor(asset, referenceImages = []) {
   return [
     "Generate one professional hand-drawn commercial Production Board image.",
     "The board is a single 9:16 vertical (portrait) sheet — taller than it is wide — on warm off-white paper, full sheet visible, no cropping.",
-    "Draw exactly 9 storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Each panel is a portrait story frame representing a vertical 9:16 camera view; keep even gutters between rows and columns and do not overlap or merge panels.",
+    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 camera frame with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells.",
     "Each panel must be a distinct black pencil/ink storyboard drawing, not repeated panels and not a UI wireframe: use varied shot scales, camera angles, blocking, foreground/background staging, actor poses, eyelines, and cut points.",
     "Use a clean professional production-storyboard visual language: black linework, expressive character poses, light shading, and concise handwritten-style shot notes. Do not add colored technical diagrams or camera-frame overlays.",
-    "Do NOT add any ASSET REFERENCES strip, asset thumbnails, or reference boxes. The board contains ONLY the hand-drawn story panels.",
+    "Do NOT add a header, footer, metadata table, caption band, ASSET REFERENCES strip, asset thumbnails, or reference boxes. The board contains ONLY the nine equal hand-drawn story panels.",
     "Do not paste final asset images anywhere on the board. Story panels are hand-drawn story action only.",
     firstPromptLine(prompt, "Time coverage:", ""),
     firstPromptLine(prompt, "Source shots:", ""),
@@ -974,7 +967,7 @@ function editPromptFor(asset, instruction, referenceImages = [], styleReferenceI
       : asset.type === "Scene"
         ? "Keep this as one 16:9 wide establishing environment reference image with absolutely no people, no silhouettes, no crowds, and no human figures."
         : asset.type === "Storyboard"
-          ? "Keep this as one 9:16 vertical Production Board with exactly 9 vertical 9:16 storyboard panels in a 3-column grid. It is for composition, blocking, camera direction, shot rhythm, and cut structure; do not add asset strips, thumbnails, PT labels, arrows, or camera-frame overlays."
+          ? "Keep this as one 9:16 vertical Production Board made only of exactly 9 equal-size vertical 9:16 storyboard panels in a 3-column grid. P1 must remain an ordinary top-left cell; no panel may span rows or columns. Do not add headers, footers, captions outside a cell, asset strips, thumbnails, PT labels, arrows, or camera-frame overlays."
           : asset.type === "Prop"
             ? "Keep this as one 16:9 pure-white-background prop turnaround reference sheet with the same single prop shown in front view, side view, and back view."
             : "Keep this as one 16:9 realistic cinematic insert or evidence-detail reference image with the main subject clear and physically believable.";

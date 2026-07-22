@@ -12526,6 +12526,53 @@ async function ensureBatchArkVirtualPerson(asset, deadlineTs) {
   }
 }
 
+// 项目短剧统一按模型边界筛选 Ark 人物轨;person-reference 继续走 Gravitex。
+function arkPersonReferenceNames(episodeRoot, config = {}, names = []) {
+  const usesGravitexPersonRef = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference";
+  if (usesGravitexPersonRef) return [];
+  const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
+  return [...new Set((Array.isArray(names) ? names : []).map(compactLine).filter(Boolean))].filter((name) => {
+    const asset = referenceAssetSource(episodeRoot, assetByName, name);
+    return asset && isArkPersonReferenceAsset(asset);
+  });
+}
+
+async function ensureArkPersonAssetsForNames(episodeRoot, configRecord, names, deadlineTs) {
+  let config = configRecord && configRecord.data ? configRecord.data : {};
+  const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, names);
+  if (!arkPersonNames.length) return config;
+  const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
+  const arkGroupId = arkVirtualPersonConfig().groupId;
+  for (const name of arkPersonNames) {
+    const asset = referenceAssetSource(episodeRoot, assetByName, name);
+    if (!asset) {
+      mergeConfigAssetPatch(config, name, { arkPersonAsset: { enabled: true, status: "failed", error: "找不到图源" } });
+      writeVideoConfigRecord(configRecord, config);
+      continue;
+    }
+    const existing = asset.arkPersonAsset || {};
+    const existingUrl = compactLine(existing.assetUrl || "");
+    const alreadyActive = existing.enabled === true && compactLine(existing.status || "").toLowerCase() === "active" && /^asset:\/\//i.test(existingUrl);
+    const r = alreadyActive
+      ? { status: "active", assetUrl: existingUrl, assetId: compactLine(existing.assetId || ""), error: "" }
+      : await ensureBatchArkVirtualPerson(asset, deadlineTs);
+    mergeConfigAssetPatch(config, name, {
+      arkPersonAsset: {
+        enabled: true,
+        assetId: r.assetId || existing.assetId || "",
+        assetUrl: r.assetUrl || "",
+        groupId: arkGroupId,
+        status: r.status,
+        boundAt: new Date().toISOString(),
+        error: r.error || "",
+      },
+    });
+    writeVideoConfigRecord(configRecord, config);
+  }
+  if (configRecord) configRecord.data = config;
+  return config;
+}
+
 async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, options = {}) {
   const timeoutMs = Number(options.timeoutMs || PREPARE_REFS_TIMEOUT_MS);
   let config = configRecord && configRecord.data ? configRecord.data : {};
@@ -12537,10 +12584,7 @@ async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, opt
   // 认证成 asset:// 后作为人物参考,绕过视频接口真人/隐私审核;其余素材走公网 HTTPS 直传。
   // 项目资产均为管线 AI 生成,认证阶段强制 aiGenerated;道具/场景非角色不纳入。
   // person-reference 模型保留 Gravitex 人物素材库流程(交接文档边界)。
-  const arkPersonNames = usesGravitexPersonRef ? [] : names.filter((n) => {
-    const a = referenceAssetSource(episodeRoot, assetByName, n);
-    return a && isArkPersonReferenceAsset(a);
-  });
+  const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, names);
   const arkPersonSet = new Set(arkPersonNames);
   const personTrack = usesGravitexPersonRef ? classified.personTrack : [];
   const publicTrack = usesGravitexPersonRef ? classified.publicTrack : names.filter((n) => !arkPersonSet.has(n));
@@ -12567,31 +12611,7 @@ async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, opt
 
   // 超写实素材轨:自动认证进火山虚拟人像库(asset://)并轮询到 active。失败/超时不抛错,
   // 写入 arkPersonAsset.status(failed/processing),由就绪校验停止对应片段(不静默删引用)。
-  if (arkPersonNames.length) {
-    const arkDeadline = Date.now() + timeoutMs;
-    const arkGroupId = arkVirtualPersonConfig().groupId;
-    for (const name of arkPersonNames) {
-      const asset = referenceAssetSource(episodeRoot, assetByName, name);
-      if (!asset) {
-        mergeConfigAssetPatch(config, name, { arkPersonAsset: { enabled: true, status: "failed", error: "找不到图源" } });
-        writeVideoConfigRecord(configRecord, config);
-        continue;
-      }
-      const r = await ensureBatchArkVirtualPerson(asset, arkDeadline);
-      mergeConfigAssetPatch(config, name, {
-        arkPersonAsset: {
-          enabled: true,
-          assetId: r.assetId || (asset.arkPersonAsset && asset.arkPersonAsset.assetId) || "",
-          assetUrl: r.assetUrl || "",
-          groupId: arkGroupId,
-          status: r.status,
-          boundAt: new Date().toISOString(),
-          error: r.error || "",
-        },
-      });
-      writeVideoConfigRecord(configRecord, config);
-    }
-  }
+  if (arkPersonNames.length) config = await ensureArkPersonAssetsForNames(episodeRoot, configRecord, arkPersonNames, Date.now() + timeoutMs);
 
   // 人物轨:先把引用名补种进 config.assets(修 #3:磁盘有、config 无的资产验证结果才回写得进去),再验证 + 轮询 active。
   const personAssets = [];
@@ -13790,7 +13810,35 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
       updatedAt: new Date().toISOString(),
     },
   });
+  const shotReferenceNames = collectReferencedAssetNames([shot]);
+  const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, shotReferenceNames);
+  const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
+  const needsArkPersonPreparation = arkPersonNames.some((name) => {
+    const asset = referenceAssetSource(episodeRoot, assetByName, name);
+    return asset && !arkPersonAssetReadyUrl(asset);
+  });
+  // HTTP 单段请求只排队返回;批量队列显式传 false,在已有后台 worker 中等待认证完成。
+  if (pollInBackground && needsArkPersonPreparation) {
+    const message = "正在完成方舟私域虚拟人像认证，完成后自动提交视频";
+    markProjectVideoShotWaiting(episodeRoot, shotName, message);
+    setImmediate(() => {
+      generateProjectVideoShot(episodeRoot, { ...body, shotName, pollInBackground: false }).catch((error) => {
+        const errorMessage = error.message || "视频生成失败";
+        if (isAssetActivationWaitFailure(errorMessage)) {
+          markProjectVideoShotWaiting(episodeRoot, shotName, errorMessage);
+          return;
+        }
+        writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
+          runNamespace,
+          taskInfo: { status: 3, progressPercent: 100, failedReason: errorMessage, message: errorMessage, updatedAt: new Date().toISOString() },
+        });
+      });
+    });
+    return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
+  }
   try {
+    const deadline = Date.now() + PREPARE_REFS_TIMEOUT_MS;
+    config = await ensureArkPersonAssetsForNames(episodeRoot, configRecord, shotReferenceNames, deadline);
     const readiness = await ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, shot);
     config = readiness.config || config;
     const latestShot = (Array.isArray(config.shots) ? config.shots : []).find((item) => item.name === shotName) || shot;
@@ -20348,6 +20396,7 @@ async function handleApi(req, res, url) {
         ...body,
         shotName: projectRequest.shotName,
         authUser: usageGate.user,
+        pollInBackground: true,
       });
       return send(res, 200, {
         ok: true,
@@ -20379,6 +20428,7 @@ async function handleApi(req, res, url) {
       ...body,
       shotName: body.shotName || body.name || "",
       authUser: usageGate.user,
+      pollInBackground: true,
     });
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
   }
@@ -21258,6 +21308,9 @@ module.exports = {
     videoReferences: {
       assertVideoConfigAssetsReady,
       projectShotUsableVideoReferenceAssets,
+    },
+    projectVideo: {
+      generateProjectVideoShot,
     },
     canvasImageRef: {
       localPublicAssetPathFromUrl,

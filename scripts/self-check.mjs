@@ -625,6 +625,10 @@ assert(canvas.includes("版权限制") && canvas.includes("原创化改写"), "c
 assert(server.includes('require("./scripts/video-ref-prep.js")'), "server 必须复用 video-ref-prep 纯模块");
 assert(server.includes("async function prepareBatchVideoReferences"), "必须有阶段0编排器 prepareBatchVideoReferences");
 assert(server.includes("await prepareBatchVideoReferences(episodeRoot, prepRecord, selected"), "批量入口必须在提交前跑阶段0");
+assert(server.includes("async function ensureArkPersonAssetsForNames"), "短剧单段入口必须复用 Ark 私域虚拟人像认证函数");
+assert(server.includes("const deadline = Date.now() + PREPARE_REFS_TIMEOUT_MS"), "单段认证必须使用阶段0超时窗口");
+assert(server.includes("正在完成方舟私域虚拟人像认证，完成后自动提交视频"), "单段认证轮询必须放入后台并保持 queued 状态");
+assert(server.includes("pollInBackground: true"), "项目视频 HTTP 路由必须强制后台轮询，避免认证阻塞响应");
 assert(server.includes("默认按提示词生成"), "阶段0 未就绪资产必须降级为默认提示词生成而不是整批中止");
 assert(server.includes("async function ensurePublicReferenceUrl"), "非人物轨必须有公网地址确保函数");
 assert(!server.includes('modelMode = usesValidatedRealisticRefs ? "seedance-2-0-person-reference"'), "禁止再引入 person-reference 自动切换(防回归)");

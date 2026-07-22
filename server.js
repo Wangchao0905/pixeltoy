@@ -11884,19 +11884,51 @@ async function completeCanvasImageJob(entry = {}) {
   await normalizeCanvasImageOutput(entry);
   const version = Math.round(fs.statSync(entry.outPath).mtimeMs);
   Object.assign(entry, {
-    status: "finalizing",
-    url: `/public-assets/${encodeURIComponent(entry.fileName)}?v=${version}`,
-    message: "正在保存到素材库",
-  });
-  await finalizeGeneratedCanvasAsset(entry);
-  Object.assign(entry, {
+    // 图片本体已经可读时就结束图片任务。对象存储上传和素材库写入不能阻塞前端拿到结果。
     status: "completed",
-    message: entry.libraryError
-      ? `生成完成，但素材库保存失败：${entry.libraryError}`
-      : entry.outputNormalizationError
-        ? `生成完成，但比例校正失败：${entry.outputNormalizationError}`
-        : "生成完成",
+    url: `/public-assets/${encodeURIComponent(entry.fileName)}?v=${version}`,
+    message: "生成完成",
   });
+  // 入库失败不应把已生成的图片变成失败任务；结果仍通过本地 public-assets 地址可用。
+  void finalizeGeneratedCanvasAsset(entry)
+    .then(() => {
+      entry.message = entry.libraryError
+        ? `生成完成，但素材库保存失败：${entry.libraryError}`
+        : entry.outputNormalizationError
+          ? `生成完成，但比例校正失败：${entry.outputNormalizationError}`
+          : "生成完成";
+    })
+    .catch((error) => {
+      entry.message = `生成完成，但素材库保存失败：${compactLine(error?.message || "未知错误")}`;
+    });
+}
+
+function recoverCanvasImageJobFromOutput(taskId = "") {
+  const cleanTaskId = compactLine(taskId);
+  if (!/^[a-z0-9-]{16,80}$/i.test(cleanTaskId)) return null;
+  const directName = `canvas-image-${cleanTaskId}.png`;
+  let fileName = directName;
+  let outPath = path.join(CANVAS_PUBLIC_ASSET_DIR, directName);
+  if (!fs.existsSync(outPath)) {
+    const suffix = `-canvas-image-${cleanTaskId}.png`;
+    try {
+      fileName = fs.readdirSync(CANVAS_PUBLIC_ASSET_DIR).find((name) => name.endsWith(suffix)) || "";
+    } catch {
+      fileName = "";
+    }
+    outPath = fileName ? path.join(CANVAS_PUBLIC_ASSET_DIR, fileName) : "";
+  }
+  if (!outPath || !fs.existsSync(outPath)) return null;
+  const stat = fs.statSync(outPath);
+  if (!stat.isFile() || stat.size < 1000) return null;
+  const version = Math.round(stat.mtimeMs);
+  return {
+    status: "completed",
+    url: `/public-assets/${encodeURIComponent(fileName)}?v=${version}`,
+    message: "生成完成（已从本地图片恢复）",
+    imageModel: "gpt-image-2",
+    provider: "gpt",
+  };
 }
 
 function seedreamImageResult(raw = {}) {
@@ -12125,8 +12157,9 @@ async function createCanvasImageGeneration(body = {}) {
 }
 
 function getCanvasImageGeneration(taskId) {
-  const job = canvasImageJobs.get(compactLine(taskId));
-  if (!job) return { status: "failed", message: "任务不存在或已过期，请重新生成" };
+  const cleanTaskId = compactLine(taskId);
+  const job = canvasImageJobs.get(cleanTaskId);
+  if (!job) return recoverCanvasImageJobFromOutput(cleanTaskId) || { status: "failed", message: "任务不存在或已过期，请重新生成" };
   return {
     status: job.status,
     url: job.url || "",

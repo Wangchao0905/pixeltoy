@@ -17,6 +17,8 @@ const PROJECT_REFRESH_HIDDEN_MS = 15000;
 const PROJECT_REFRESH_RETRY_MS = 5000;
 const IMAGE_EXPLORE_HISTORY_KEY = "pixelToys.imageExploreHistory.v1";
 const IMAGE_EXPLORE_STORYBOARD_HISTORY_KEY = "pixelToys.imageStoryboardHistory.v1";
+const IMAGE_EXPLORE_POLL_INTERVAL_MS = 1200;
+const IMAGE_EXPLORE_POLL_MAX_ATTEMPTS = 3000;
 let initialProjectHandled = false;
 let teamProgressOpenToken = null;
 
@@ -52,7 +54,7 @@ function readImageExploreHistory(user = null) {
     const value = JSON.parse(localStorage.getItem(imageExploreStorageKey(user)) || "[]");
     return Array.isArray(value)
       ? value
-        .filter((item) => (item?.status === "completed" && item?.url) || (item?.status === "failed" && item?.message))
+        .filter((item) => (item?.status === "running" && item?.taskId) || (item?.status === "completed" && item?.url) || (item?.status === "failed" && item?.message))
         .slice(0, 24)
       : [];
   } catch {
@@ -65,7 +67,7 @@ function readImageExploreStoryboardHistory(user = null) {
     const value = JSON.parse(localStorage.getItem(imageExploreStoryboardStorageKey(user)) || "[]");
     return Array.isArray(value)
       ? value
-        .filter((item) => (item?.status === "completed" && item?.url) || (item?.status === "failed" && item?.message))
+        .filter((item) => (item?.status === "running" && item?.taskId) || (item?.status === "completed" && item?.url) || (item?.status === "failed" && item?.message))
         .slice(0, 24)
       : [];
   } catch {
@@ -328,6 +330,7 @@ async function syncAuthUser() {
     state.imageStudio.history = readImageExploreHistory(state.authUser);
     state.imageStudio.storyboardHistory = readImageExploreStoryboardHistory(state.authUser);
     renderImageExploreView();
+    resumeImageExploreGenerations().catch(() => {});
     const authDisplayName = data.user?.role === "admin"
       ? data.user?.username || "superadmin"
       : data.user?.displayName || data.user?.username || "";
@@ -346,6 +349,7 @@ async function syncAuthUser() {
     restoreWorkspacePreferences(null);
     clearLegacyLayoutPreferences();
     state.imageStudio.history = readImageExploreHistory();
+    state.imageStudio.storyboardHistory = readImageExploreStoryboardHistory();
     renderImageExploreView();
     label.textContent = "";
     if (exploreLabel) exploreLabel.textContent = "";
@@ -1857,14 +1861,14 @@ async function deleteBlankCanvasFromHome(projectId) {
 }
 
 function persistImageExploreHistory() {
-  // 保留“生成中”项在内存状态里(否则重生成/重试期间卡片会凭空消失);只把已完成/失败写入 localStorage。
+  // 运行中的任务必须持久化 taskId,刷新后才能继续轮询而不是重新发起请求。
   const trimmed = state.imageStudio.history
     .filter((item) => item?.status === "running" || (item?.status === "completed" && item.url) || (item?.status === "failed" && item.message))
     .slice(0, 24);
   state.imageStudio.history = trimmed;
   localStorage.setItem(
     imageExploreStorageKey(state.authUser),
-    JSON.stringify(trimmed.filter((item) => (item.status === "completed" && item.url) || (item.status === "failed" && item.message))),
+    JSON.stringify(trimmed.filter((item) => (item.status === "running" && item.taskId) || item.status === "completed" || item.status === "failed")),
   );
 }
 
@@ -1875,7 +1879,7 @@ function persistImageExploreStoryboardHistory() {
   state.imageStudio.storyboardHistory = trimmed;
   localStorage.setItem(
     imageExploreStoryboardStorageKey(state.authUser),
-    JSON.stringify(trimmed.filter((item) => (item.status === "completed" && item.url) || (item.status === "failed" && item.message))),
+    JSON.stringify(trimmed.filter((item) => (item.status === "running" && item.taskId) || item.status === "completed" || item.status === "failed")),
   );
 }
 
@@ -1941,7 +1945,7 @@ function imageExploreStoryboardHistoryItemHtml(item = {}) {
   const prompt = escapeHtml(String(item.prompt || board.summary || boardLabel).slice(0, 160));
   if (item.status === "running" || item.status === "planning") {
     return `<article class="image-explore-card image-explore-storyboard-card is-running">
-      <div class="image-explore-card-preview image-explore-storyboard-preview"><span class="image-explore-loader"></span><strong>${item.status === "planning" ? "规划中" : "生成中"}</strong><small>${escapeHtml(boardLabel)}</small></div>
+      <div class="image-explore-card-preview image-explore-storyboard-preview"><span class="image-explore-loader"></span><strong>${item.status === "planning" ? "规划中" : "生成中"}</strong><small>${escapeHtml(item.message || (item.taskId ? "后台生成中，可刷新查看" : boardLabel))}</small></div>
     </article>`;
   }
   if (item.status === "failed") {
@@ -2250,32 +2254,40 @@ function replaceImageExploreStoryboardHistoryItem(id, patch = {}) {
 }
 
 async function pollImageExploreGeneration(taskId) {
-  const pollIntervalMs = 1200;
-  const maxAttempts = 750;
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+  for (let attempt = 0; attempt < IMAGE_EXPLORE_POLL_MAX_ATTEMPTS; attempt += 1) {
     const data = await api(`/api/canvas/image-generations/${encodeURIComponent(taskId)}`, { cache: "no-store" });
     const result = data.result || {};
     if (result.status === "completed" || result.status === "failed") return result;
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    await new Promise((resolve) => setTimeout(resolve, IMAGE_EXPLORE_POLL_INTERVAL_MS));
   }
-  throw new Error("生成超时，请稍后查看或重试");
+  return { status: "running", taskId, timedOut: true, message: "任务仍在后台生成，请稍后刷新查看" };
 }
 
 async function runImageExploreGeneration(item) {
   try {
-    const data = await api("/api/canvas/image-generation", {
-      method: "POST",
-      body: JSON.stringify({
-        prompt: item.prompt,
-        ratio: item.ratio,
-        resolution: item.resolution,
-        imageModel: item.model || "gpt-image-2",
-        referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
-      }),
-    });
-    const taskId = data.result?.taskId;
+    let taskId = String(item.taskId || "").trim();
+    if (!taskId) {
+      const data = await api("/api/canvas/image-generation", {
+        method: "POST",
+        body: JSON.stringify({
+          prompt: item.prompt,
+          ratio: item.ratio,
+          resolution: item.resolution,
+          imageModel: item.model || "gpt-image-2",
+          referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
+        }),
+      });
+      taskId = data.result?.taskId;
+    }
     if (!taskId) throw new Error("图片任务没有返回 ID");
+    replaceImageExploreHistoryItem(item.id, { taskId, status: "running", message: "生成中" });
+    persistImageExploreHistory();
     const result = await pollImageExploreGeneration(taskId);
+    if (result.timedOut) {
+      replaceImageExploreHistoryItem(item.id, { status: "running", message: result.message });
+      persistImageExploreHistory();
+      return;
+    }
     if (result.status !== "completed" || !result.url) throw new Error(result.message || "图片生成失败");
     replaceImageExploreHistoryItem(item.id, {
       status: "completed",
@@ -2297,19 +2309,29 @@ async function runImageExploreGeneration(item) {
 
 async function runImageExploreStoryboardGeneration(item) {
   try {
-    const data = await api("/api/canvas/image-generation", {
-      method: "POST",
-      body: JSON.stringify({
-        prompt: item.prompt,
-        ratio: "16:9",
-        resolution: item.resolution,
-        imageModel: item.model || "gpt-image-2",
-        referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
-      }),
-    });
-    const taskId = data.result?.taskId;
+    let taskId = String(item.taskId || "").trim();
+    if (!taskId) {
+      const data = await api("/api/canvas/image-generation", {
+        method: "POST",
+        body: JSON.stringify({
+          prompt: item.prompt,
+          ratio: "16:9",
+          resolution: item.resolution,
+          imageModel: item.model || "gpt-image-2",
+          referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
+        }),
+      });
+      taskId = data.result?.taskId;
+    }
     if (!taskId) throw new Error("故事板图片任务没有返回 ID");
+    replaceImageExploreStoryboardHistoryItem(item.id, { taskId, status: "running", message: "生成中" });
+    persistImageExploreStoryboardHistory();
     const result = await pollImageExploreGeneration(taskId);
+    if (result.timedOut) {
+      replaceImageExploreStoryboardHistoryItem(item.id, { status: "running", message: result.message });
+      persistImageExploreStoryboardHistory();
+      return;
+    }
     if (result.status !== "completed" || !result.url) throw new Error(result.message || "故事板图片生成失败");
     replaceImageExploreStoryboardHistoryItem(item.id, {
       status: "completed",
@@ -2326,6 +2348,32 @@ async function runImageExploreStoryboardGeneration(item) {
     loadAssetLibrary({ silent: true }).catch(() => {});
   } catch (error) {
     replaceImageExploreStoryboardHistoryItem(item.id, { status: "failed", message: error.message });
+  }
+}
+
+async function resumeImageExploreGenerations() {
+  const imageItems = state.imageStudio.history.filter((item) => item?.status === "running" && item.taskId);
+  const storyboardItems = state.imageStudio.storyboardHistory.filter((item) => item?.status === "running" && item.taskId);
+  const pending = [...imageItems, ...storyboardItems];
+  if (!pending.length) return;
+  state.imageStudio.activeGenerations = pending.length;
+  state.imageStudio.generating = true;
+  state.imageStudio.storyboardGenerating = storyboardItems.length > 0;
+  state.imageStudio.storyboardActiveBatchId = storyboardItems[0]?.batchId || "";
+  renderImageExploreView();
+  try {
+    await Promise.all([
+      ...imageItems.map((item) => runImageExploreGeneration(item)),
+      ...storyboardItems.map((item) => runImageExploreStoryboardGeneration(item)),
+    ]);
+  } finally {
+    state.imageStudio.activeGenerations = 0;
+    state.imageStudio.generating = false;
+    state.imageStudio.storyboardGenerating = false;
+    state.imageStudio.storyboardActiveBatchId = "";
+    persistImageExploreHistory();
+    persistImageExploreStoryboardHistory();
+    renderImageExploreView();
   }
 }
 
@@ -6181,7 +6229,7 @@ function bind() {
       if (storyboardTarget) {
         beginImageExploreGeneration();
         state.imageStudio.storyboardGenerating = true;
-        replaceImageExploreStoryboardHistoryItem(storyboardTarget.id, { status: "running", message: "" });
+        replaceImageExploreStoryboardHistoryItem(storyboardTarget.id, { status: "running", taskId: "", message: "" });
         const fallbackReferences = state.imageStudio.references
           .filter((reference) => !reference.uploading)
           .map((reference) => reference.localUrl || reference.url)
@@ -6200,7 +6248,7 @@ function bind() {
       }
       if (!target) return;
       beginImageExploreGeneration();
-      replaceImageExploreHistoryItem(target.id, { status: "running", message: "" });
+      replaceImageExploreHistoryItem(target.id, { status: "running", taskId: "", message: "" });
       renderImageExploreView();
       const fallbackReferences = state.imageStudio.references
         .filter((reference) => !reference.uploading)

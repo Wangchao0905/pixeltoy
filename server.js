@@ -172,7 +172,7 @@ const IMAGE_SIZE_BY_QUALITY_16_9 = {
   "4k": "3840x2160",
 };
 const DEFAULT_IMAGE_SIZE_16_9 = IMAGE_SIZE_BY_QUALITY_16_9["1k"];
-// Production Board 整张改为 9:16 竖版(和最终竖屏视频一致),面板 2 列布局天然是竖框。
+// Production Board 整张为 9:16 竖版(和最终竖屏视频一致),九格面板同样是竖版构图。
 const IMAGE_SIZE_BY_QUALITY_9_16 = {
   "1k": "720x1280",
   "2k": "1152x2048",
@@ -952,18 +952,18 @@ const ASSET_TYPE_META = {
     folder: "storyboards",
     scanType: "storyboard",
     usage:
-      "Production Board 控制参考：包含 9:16 竖版分镜格、出场人物/场景/道具资产参考栏和资产编号绑定；只读取构图、动作箭头、镜头框、站位、节奏和剪辑出口，不替代正式资产身份或画风",
+      "Production Board 控制参考：包含 9:16 竖版的 3×3 九格分镜；只读取构图、站位、动作、镜头节奏和剪辑出口，正式资产绑定由后端配置维护，不替代人物、场景或道具身份与画风",
   },
 };
 
 const PRODUCTION_BOARD_MAX_SECONDS = 15;
 const STORYBOARD_MAX_SECONDS = PRODUCTION_BOARD_MAX_SECONDS;
-// 一张 Production Board 讲一个完整的 ≤15 秒剧情单元;整张板是 9:16 竖版,面板走 2 列布局。
-// 格数由这段里的实际叙事节拍数决定,下限 4 格(至少 2×2),上限 6 格(2×3,15 秒甜点区),不再固定 9 格。
-const STORYBOARD_MIN_PANELS = 4;
-const STORYBOARD_MAX_PANELS = 6;
-const STORYBOARD_BOARD_COLUMNS = 2;
-// N 格在 2 列竖版板上的行数(4→2 行, 5→3 行(2+2+1), 6→3 行(2×3))
+// 一张 Production Board 讲一个完整的 ≤15 秒剧情单元;整张板是 9:16 竖版,固定 3×3 九格布局。
+// 每一格都是竖版镜头构图:首格建立空间,末格保留剪辑出口,其余格连续推进人物、动作和反应。
+const STORYBOARD_MIN_PANELS = 9;
+const STORYBOARD_MAX_PANELS = 9;
+const STORYBOARD_BOARD_COLUMNS = 3;
+// 固定九格的 3 行布局;保留计算函数以兼容已持久化的历史面板数据。
 function storyboardBoardRows(panelCount) {
   return Math.ceil(Math.max(STORYBOARD_MIN_PANELS, Math.min(STORYBOARD_MAX_PANELS, panelCount)) / STORYBOARD_BOARD_COLUMNS);
 }
@@ -4314,47 +4314,45 @@ function storyboardTimeRangeLabel(startSecond, endSecond) {
   return `${storyboardSecond(startSecond)}-${storyboardSecond(endSecond)}s`;
 }
 
-// 电影语言弧线的各步骤:role 文本 + 该格的动作箭头/镜头框提示。格数自适应时从中挑选,
+// 电影语言弧线的各步骤:role 文本 + 该格的动作/构图计划。格数自适应时从中挑选,
 // 首格恒为 establish(建立)、末格恒为 cut(切点/交接),中间按格数补齐。
 const STORYBOARD_ARC_STEPS = {
   establish: {
     role: "establishment: lock location geography, axis, major entrances/exits",
-    actionArrow: "blue solid arrows mark entry paths and spatial axis",
-    cameraFrame: "red wide establishing frame, clear horizon/axis",
+    actionArrow: "entry paths and screen direction establish the spatial axis",
+    cameraFrame: "wide establishing composition with a clear horizon and axis",
   },
   blocking: {
     role: "blocking: place characters/props and define eye lines",
-    actionArrow: "blue solid arrows mark actor/action direction; dashed blue arrows mark breath, pause, or emotional flow",
-    cameraFrame: "red camera/framing rectangle showing shot scale, lens direction, and safe action area",
+    actionArrow: "actor direction, breath, pause, and emotional flow are clear in the staging",
+    cameraFrame: "shot scale, lens direction, and safe action area are clear in the composition",
   },
   action: {
     role: "action vector: mark the primary movement direction and camera framing",
-    actionArrow: "blue solid arrows mark actor/action direction; dashed blue arrows mark breath, pause, or emotional flow",
-    cameraFrame: "red camera/framing rectangle showing shot scale, lens direction, and safe action area",
+    actionArrow: "the primary movement direction and its endpoint are clear in the staging",
+    cameraFrame: "shot scale, lens direction, and safe action area are clear in the composition",
   },
   pivot: {
     role: "pivot: show the central action or turning point and the strongest movement arc",
-    actionArrow: "blue solid arrows mark the strongest movement arc of the turning point",
-    cameraFrame: "red camera/framing rectangle showing shot scale, lens direction, and safe action area",
+    actionArrow: "the strongest movement arc of the turning point reads in the performance",
+    cameraFrame: "the turning-point composition makes the shot scale and lens direction clear",
   },
   reaction: {
     role: "reaction: hold the consequence, counter-shot, or emotional response",
-    actionArrow: "dashed blue arrows mark emotional response and eyeline; solid arrows mark any counter-movement",
-    cameraFrame: "red insert/close-up frame around the reaction or controlled detail",
+    actionArrow: "the emotional response, eyeline, and any counter-movement read in the performance",
+    cameraFrame: "an insert or close-up composition isolates the reaction or controlled detail",
   },
   cut: {
     role: "cut point: end on a clean edit point and continuity handoff",
-    actionArrow: "blue solid arrows mark the final exit path or stillness before the cut",
-    cameraFrame: "red transition/cut frame with clean exit composition",
+    actionArrow: "the final exit path or stillness before the cut is clear",
+    cameraFrame: "a clean exit composition supports the transition or cut",
   },
 };
-// 格数 → 弧线步骤序列。只用 2 列竖版板的干净布局:4 格(2×2)或 6 格(2×3),不出现 5 格残行。
-// 首建立、末切点固定,中间随格数补 blocking/action/pivot/reaction。
+// 格数 → 弧线步骤序列。固定 3×3 九格;首建立、末切点固定,中间依次推进调度、动作、转折和反应。
 const STORYBOARD_ARC_TEMPLATES = {
-  4: ["establish", "action", "reaction", "cut"],
-  6: ["establish", "blocking", "action", "pivot", "reaction", "cut"],
+  9: ["establish", "blocking", "action", "pivot", "reaction", "action", "pivot", "reaction", "cut"],
 };
-// 标准 2×3 六格;只有剧情节拍确实很少(≤4)才缩到 2×2 四格。beatCount 由调用方按实际叙事节拍数传入。
+// 标准 3×3 九格。beatCount 只影响每格承载的剧情句子，不改变版式。
 function storyboardArcRoleKeys(beatCount) {
   const n = Number(beatCount) <= STORYBOARD_MIN_PANELS ? STORYBOARD_MIN_PANELS : STORYBOARD_MAX_PANELS;
   return STORYBOARD_ARC_TEMPLATES[n] || STORYBOARD_ARC_TEMPLATES[STORYBOARD_MAX_PANELS];
@@ -4791,7 +4789,7 @@ function storyboardPanelPlanForGroup(group, options = {}) {
       ...(continuityEntry ? { continuityEntry } : {}),
       dialogue,
       assetAnchors: Array.isArray(segment.refs) ? segment.refs.map(compactLine).filter(Boolean) : [],
-      videoUse: `${role}. Use panel number, blue action/flow arrows, red camera frame, blocking, camera direction, shot rhythm, and cut point only; final identity and visual style must come from production assets.`,
+      videoUse: `${role}. Use the numbered panel's composition, blocking, camera direction, shot rhythm, and cut point only; final identity and visual style must come from production assets.`,
     };
   });
 }
@@ -5109,7 +5107,7 @@ function storyboardSlotNameForGroup(group, index) {
 }
 
 function productionBoardReferenceGuide() {
-  return "视频制作中将此 Production Board 作为 storyboard_reference：读取 9:16 竖版面板的构图、站位、镜头方向、动作节奏、剪辑出口，以及右侧/底部资产参考栏中的 C/S/P/I 编号绑定；最终人物、场景、道具、材质和风格仍来自正式资产图。";
+  return "视频制作中将此 Production Board 作为 storyboard_reference：读取 9:16 竖版面板的构图、站位、镜头方向、动作节奏和剪辑出口；最终人物、场景、道具、材质和风格仍来自后端绑定的正式资产图。";
 }
 
 function storyboardSlotsForState(episodeRoot, manifest = null, assets = scanAssets(episodeRoot), options = {}) {
@@ -16393,15 +16391,15 @@ function storyboardGuidancePromptText(guidance, storyboardImageIndex = null) {
   const assetLock = storyboardAssetLockText(guidance.assetBinding, imageLabel);
   const panelBindings = storyboardPanelBindingsText(guidance.panelAssetBindings);
   const panelText = panels
-    .slice(0, 9)
+    .slice(0, STORYBOARD_MAX_PANELS)
     .map((panel) => {
       const label = panel.label || `P${panel.panel || "?"}`;
       const bits = [
         `${label}${panel.timeRange ? ` ${panel.timeRange}` : ""}`,
         panel.description || "",
         panel.dialogue?.text ? `对白绑定：${panel.dialogue.speaker || "角色"}：“${panel.dialogue.text}”；${panel.dialogue.role || "对白必须与本面板动作和表情同步"}` : "",
-        panel.actionArrow ? `动作箭头：${panel.actionArrow}` : "",
-        panel.cameraFrame ? `镜头框：${panel.cameraFrame}` : "",
+        panel.actionArrow ? `动作调度：${panel.actionArrow}` : "",
+        panel.cameraFrame ? `构图计划：${panel.cameraFrame}` : "",
         panel.continuityExit ? `衔接出口：${panel.continuityExit}` : "",
       ]
         .map(compactLine)
@@ -16410,11 +16408,11 @@ function storyboardGuidancePromptText(guidance, storyboardImageIndex = null) {
     })
     .join("\n");
   return `Production Board 镜头参考：
-${imageLabel} 是 Production Board / storyboard_reference，用于读取本段对应的 P 面板、9:16 竖版摄影机框、蓝色实线动作箭头、蓝色虚线呼吸/情绪流箭头、红色摄影机/取景框、人物/道具站位、运动方向、镜头节奏、剪辑出口，以及板面资产参考栏中的 PT-C/PT-S/PT-P/PT-I 匹配编号。
-正式人物、场景、道具、材质和风格仍来自“图片参考”中的 Character/Scene/Prop/Insert 资产；Production Board 只负责构图、走位、动作节奏和资产匹配关系。
+${imageLabel} 是 Production Board / storyboard_reference，用于读取本段实际编号面板中的 9:16 构图、人物/道具站位、运动方向、镜头景别、动作节奏和剪辑出口。
+正式人物、场景、道具、材质和风格仍来自“图片参考”中的 Character/Scene/Prop/Insert 资产；Production Board 只负责构图、走位、动作节奏和与正式资产的绑定关系。
 ${assetLock ? `${assetLock}\n` : ""}${panelBindings ? `${panelBindings}\n` : ""}
-按面板编号执行镜头：P1 建立空间与轴线，P2 锁定人物/道具站位，P3 标明行动方向，P4-P6 承接主动作或转折，P7 使用插入/反应细节，P8 准备出画或转场，P9 留出干净剪辑点。
-${panelText || "- 使用故事版图中的编号面板、动作箭头和镜头框控制构图、站位、动作节奏与切镜。"}
+按本板固定的 9 个编号面板顺序执行镜头：首格建立空间，末格保留干净剪辑出口，中间七格推进站位、动作、转折和反应。
+${panelText || "- 使用故事版图中的编号面板控制构图、站位、动作节奏与切镜。"}
 Production Board 模式下，相邻片段的空间连贯由同一 Sequence 的竖版面板、正式场景资产、正式道具状态和剪辑出口共同控制。`;
 }
 
@@ -16493,7 +16491,7 @@ function storyboardSlotLabelForCharacter(index) {
 function buildStoryboardPanelAssetBindings({ shot, panels, assetLookup }) {
   const shotRefs = Array.isArray(shot?.refs) ? shot.refs : [];
   return (Array.isArray(panels) ? panels : [])
-    .slice(0, 9)
+    .slice(0, STORYBOARD_MAX_PANELS)
     .map((panel, index) => {
       const label = panel.label || `P${panel.panel || index + 1}`;
       const refs = primaryRefsForPanel(panel, shotRefs, assetLookup);
@@ -16528,7 +16526,7 @@ function buildStoryboardPanelAssetBindings({ shot, panels, assetLookup }) {
         characters,
         props,
         storyboardRule:
-          "故事版只决定这些资产在本面板中的画面位置、朝向、动作箭头、镜头框和剪辑点；人物脸、服装、体型、场景材质、道具外观必须从绑定资产继承。",
+          "故事版只决定这些资产在本面板中的画面位置、朝向、动作、构图和剪辑点；人物脸、服装、体型、场景材质、道具外观必须从绑定资产继承。",
       };
     });
 }
@@ -16553,11 +16551,11 @@ function storyboardAssetLockText(binding, imageLabel) {
       lines.push(`- ${item.matchCode || assetMatchCode(item.type, item.ref)} = ${item.image || item.ref} = ${item.ref}${item.label && item.label !== item.ref ? `（${item.label}）` : ""}，${rule}`),
     );
   };
-  push("资产锁定层/人物", binding.characters, `对应故事版中的人物剪影或角色槽位；${imageLabel} 只给这个人物的站位、朝向、动作方向和镜头框，不允许改变其脸、肤色、体型、服装或身份`);
+  push("资产锁定层/人物", binding.characters, `对应故事版中的人物剪影或角色槽位；${imageLabel} 只给这个人物的站位、朝向、动作方向和构图，不允许改变其脸、肤色、体型、服装或身份`);
   push("资产锁定层/场景", binding.scenes, `对应故事版中的空间区域；${imageLabel} 只给构图、轴线和镜头角度，不允许替换场景地点、建筑结构、材质或最终光影基准`);
   push("资产锁定层/道具", [...(binding.props || []), ...(binding.inserts || [])], `对应故事版中的道具/插入细节位置；${imageLabel} 只给摆放位置、手部互动和剪辑点，不允许重新设计道具外观`);
   if (!lines.length) return "";
-  lines.push(`匹配暗号：故事版里的 PT-C/PT-S/PT-P/PT-I 标签用于匹配资产，不属于最终画面内容。`);
+  lines.push(`资产绑定：面板位置与正式 Character/Scene/Prop/Insert 资产按本配置中的绑定关系对应，不依赖板面文字标签。`);
   lines.push(`视觉优先级：当 ${imageLabel} 的手绘内容与正式资产冲突时，以正式 Character/Scene/Prop/Insert 资产为最终视觉身份。`);
   return lines.join("\n");
 }
@@ -16565,15 +16563,15 @@ function storyboardAssetLockText(binding, imageLabel) {
 function storyboardPanelBindingsText(bindings = []) {
   if (!Array.isArray(bindings) || !bindings.length) return "";
   const lines = ["面板资产绑定："];
-  for (const binding of bindings.slice(0, 9)) {
+  for (const binding of bindings.slice(0, STORYBOARD_MAX_PANELS)) {
     const scene = binding.scene?.ref ? `场景=${binding.scene.matchCode || assetMatchCode("Scene", binding.scene.ref)}->${binding.scene.ref}` : "场景=沿用本片段正式场景资产";
     const characters = binding.characters?.length
       ? `人物=${binding.characters.map((item) => `${item.roleSlot}/${item.matchCode || assetMatchCode("Character", item.ref)}->${item.ref}`).join("，")}`
       : "人物=无人物或仅作为环境空镜";
     const props = binding.props?.length ? `道具=${binding.props.map((item) => `${item.matchCode || assetMatchCode("Prop", item.ref)}->${item.ref}`).join("，")}` : "道具=无关键道具";
-    lines.push(`- ${binding.label}${binding.timeRange ? ` ${binding.timeRange}` : ""}：${scene}；${characters}；${props}；故事版只控制位置、动作箭头、镜头框、节奏和剪辑出口。`);
+    lines.push(`- ${binding.label}${binding.timeRange ? ` ${binding.timeRange}` : ""}：${scene}；${characters}；${props}；故事版只控制位置、动作、构图、节奏和剪辑出口。`);
   }
-  lines.push("角色匹配：主角A/角色B/角色C 与 PT-C### 是故事版中的匹配暗号，并继承上面绑定的 Character 资产。");
+  lines.push("角色匹配：主角A/角色B/角色C 仅表示面板内的位置，并继承上面绑定的 Character 资产。");
   return lines.join("\n");
 }
 
@@ -17197,9 +17195,9 @@ function storyboardSystemPrompt() {
 - 不要平均分配镜头时长，不要把所有镜头都设为 12 秒。推荐时长必须根据剧情节拍决定，并优先把完整剧情段落设计成接近 15 秒：建立镜头/插入/转场 4-8 秒，普通对白或反应 8-12 秒，同场景连续动作、危机升级、关键表演、需要尾帧承接的剧情 12-15 秒。
 - 一集通常优先规划约 5 个 15 秒级视频片段；剧情复杂、切镜明确、换场较多或对白密集时增加到 6-8 个片段，最高不超过 ${VIDEO_MAX_EPISODE_SECONDS} 秒。
 - 如果相邻镜头发生在同一场景，应保持同一个场景资产引用和空间方向；尾帧续接由后端配置层判断，videoPrompt 中不要写尾帧规则。
-- Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落拆成带编号面板的 Production Board；最后在 videoPrompt 中按面板编号描述动作、构图、镜头框、运动箭头和剪辑点。Production Board 只控制动作/构图/节奏/资产绑定，不替代正式资产。
-- 当使用 Production Board 时，videoPrompt 需要明确本段读取哪些面板或镜头 A/B/C 的节奏来源，说明动作方向、演员站位、镜头框、切换点和同场景衔接；外层制作板为 16:9 排版，每个被读取的镜头面板必须对应最终 9:16 成片构图。
-- 使用 Production Board 时，videoPrompt 仍然只写最终执行内容：图片参考、剧情与镜头、对白、摄影与声音。Production Board 中的人物槽位、场景区域、道具区域必须通过 PT-C/PT-S/PT-P/PT-I 编号绑定到正式 Character / Scene / Prop / Insert 资产。
+- Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落拆成一张 9:16 竖版、3×3 九个编号面板的 Production Board；最后在 videoPrompt 中按实际面板编号描述动作、构图、运镜和剪辑点。Production Board 只控制动作/构图/节奏/资产绑定，不替代正式资产。
+- 当使用 Production Board 时，videoPrompt 需要明确本段读取哪些实际面板的节奏来源，说明动作方向、演员站位、构图、切换点和同场景衔接；整张制作板与每个面板都服务最终 9:16 成片构图。
+- 使用 Production Board 时，videoPrompt 仍然只写最终执行内容：图片参考、剧情与镜头、对白、摄影与声音。Production Board 的人物、场景和道具位置通过后端面板资产绑定对应正式 Character / Scene / Prop / Insert 资产，不依赖板面标签。
 - 每个镜头的画面拆解必须用下方《导演引擎》方法，并输出为结构化的 design 对象（字段值用具体中文，禁用感觉词）。design 字段内容使用中文，英文对白只出现在 dialogueLines。
 - 同一场景只有第一个镜头可以承担短建立镜头；后续镜头必须直接承接上一镜的站位、视线、道具状态、动作方向和情绪，不得重新展示环境，不得用空镜或大全景重启本段。
 - 相邻镜头必须有不同镜头目的，可在 establish / action_continuation / dialogue_reaction / insert / over_shoulder / close_reaction 中选择；不要连续输出同一种中景站立镜头。
@@ -18850,8 +18848,8 @@ function storyboardPanelGuideText(panels = [], dialogueLanguage = "en") {
       return [
         `${label} (${timeRange}, ${panel.duration || ""}s): ${panel.description || panel.title || "Storyboard beat."}`,
         dialogue,
-        `Action arrows: ${panel.actionArrow || "blue solid arrows show action direction; dashed blue arrows show breath/flow."}`,
-        `Camera marks: ${panel.cameraFrame || "red camera/framing rectangle shows composition and shot scale."}`,
+        `Action staging: ${panel.actionArrow || "show the action direction, breath, pause, and emotional flow in the performance."}`,
+        `Camera plan: ${panel.cameraFrame || "show the composition and shot scale in the framing."}`,
         `Continuity: ${panel.continuityExit || "preserve axis, eyeline, movement direction, and prop state."}${anchors}`,
       ].join(" ");
     })
@@ -18863,14 +18861,9 @@ function storyboardPanelPromptLine(panel = {}, dialogueLanguage = "en") {
   const label = panel.label || `P${panel.panel || "?"}`;
   const timeRange = panel.timeRange || storyboardTimeRangeLabel(panel.startSecond || 0, panel.endSecond || (panel.startSecond || 0) + (panel.duration || 1));
   const description = compactLine(panel.description || panel.title || "Storyboard beat.").slice(0, 180);
-  const action = compactLine(panel.actionArrow || "blue action arrow").slice(0, 90);
-  const camera = compactLine(panel.cameraFrame || "red 9:16 camera frame").slice(0, 90);
+  const action = compactLine(panel.actionArrow || "staged action direction and performance beat").slice(0, 90);
+  const camera = compactLine(panel.cameraFrame || "9:16 composition and shot scale").slice(0, 90);
   const continuity = compactLine(panel.continuityExit || "preserve axis and cut handoff").slice(0, 90);
-  const anchorCodes = (panel.assetAnchors || panel.refs || [])
-    .map((ref) => assetMatchCode(inferAssetTypeFromName(ref) || "Prop", ref))
-    .filter(Boolean)
-    .slice(0, 6)
-    .join(", ");
   const dialogue = panel.dialogue?.text
     ? language === "zh"
       ? `对白：${compactLine(panel.dialogue.speaker || "角色")}：“${compactLine(panel.dialogue.text).slice(0, 120)}”`
@@ -18878,7 +18871,7 @@ function storyboardPanelPromptLine(panel = {}, dialogueLanguage = "en") {
     : language === "zh"
       ? "无对白"
       : "No dialogue";
-  return `${label} ${timeRange}: ${description}; ${dialogue}; action=${action}; camera=${camera}; continuity=${continuity}${anchorCodes ? `; PT=${anchorCodes}` : ""}.`;
+  return `${label} ${timeRange}: ${description}; ${dialogue}; action=${action}; camera=${camera}; continuity=${continuity}.`;
 }
 
 function storyboardPanelPromptText(panels = [], dialogueLanguage = "en") {
@@ -18889,40 +18882,7 @@ function storyboardPanelPromptText(panels = [], dialogueLanguage = "en") {
 function compactStoryboardRefs(refs = []) {
   return [...new Set((Array.isArray(refs) ? refs : []).map(compactLine).filter(Boolean))]
     .slice(0, 8)
-    .map((ref) => {
-      const type = inferAssetTypeFromName(ref) || "Prop";
-      return `${assetMatchCode(type, ref)}=${ref}`;
-    })
     .join("; ");
-}
-
-function storyboardRoleLegendForRefs(refs = []) {
-  const groups = splitRefsByAssetType(refs, null);
-  const lines = [];
-  if (groups.characters.length) {
-    lines.push("Storyboard character-role labels:");
-    groups.characters.slice(0, 4).forEach((ref, index) => {
-      const slot = storyboardSlotLabelForCharacter(index);
-      const code = assetMatchCode("Character", ref);
-      lines.push(`- ${slot} / ${code} = ${ref}. Draw this role as a simple silhouette only, and place the tiny readable label "${code}" beside that silhouette in every panel where the character appears.`);
-    });
-  }
-  if (groups.scenes.length) {
-    const code = assetMatchCode("Scene", groups.scenes[0]);
-    lines.push(`Storyboard scene-zone label: ${code} = ${groups.scenes[0]}. Place this tiny label once in the panel margin or location zone; use it only as the location-zone label, not as a character or prop.`);
-  }
-  if (groups.props.length || groups.inserts.length) {
-    lines.push("Storyboard prop/insert labels:");
-    [...groups.props, ...groups.inserts].slice(0, 4).forEach((ref) => {
-      const type = inferAssetTypeFromName(ref) || "Prop";
-      const code = assetMatchCode(type, ref);
-      lines.push(`- ${code} = ${ref}. Place this tiny label near the prop or insert area when it appears.`);
-    });
-  }
-  if (!lines.length) return "";
-  lines.push("These PT-C/PT-S/PT-P/PT-I labels are internal workflow matching codes for the asset-binding layer. The storyboard board renders ONLY the story panels — do not draw any asset reference strip, reference boxes, or PT codes on the board.");
-  lines.push("Do not draw final faces, costumes, textures, colors, or lighting from the assets.");
-  return lines.join("\n");
 }
 
 function storyboardPromptForSlot(slot) {
@@ -18932,13 +18892,12 @@ function storyboardPromptForSlot(slot) {
   const timeRange = `${slot.startSecond || 0}-${slot.endSecond || slot.duration || PRODUCTION_BOARD_MAX_SECONDS}s`;
   const dialogueLanguage = normalizeDialogueLanguage(slot.dialogueLanguage || "", "en");
   const panelGuide = storyboardPanelPromptText(slot.panels || [], dialogueLanguage);
-  const roleLegend = storyboardRoleLegendForRefs(slot.refs || []);
   const panelCount = Math.max(
     STORYBOARD_MIN_PANELS,
     Math.min(STORYBOARD_MAX_PANELS, (slot.panels || []).length || STORYBOARD_MAX_PANELS),
   );
   const rows = storyboardBoardRows(panelCount);
-  const gridLabel = `${STORYBOARD_BOARD_COLUMNS}x${rows}`; // 2x2 或 2x3
+  const gridLabel = `${STORYBOARD_BOARD_COLUMNS}x${rows}`; // 固定 3x3
   const dialogueRule =
     dialogueLanguage === "zh"
       ? "Dialogue language: Chinese only. Every speech bubble and dialogue caption must use the exact Chinese line after 对白 in the panel guide. Do not add English dialogue or English labels for dialogue."
@@ -18946,7 +18905,6 @@ function storyboardPromptForSlot(slot) {
   // 新故事板设计(参考专业影视故事板文档):精细写实电影级速写 + 顶部信息栏 + 建立镜头 + 编号带说明格 + 底部总结栏。
   // 取代旧的"粗剪影 + 蓝红箭头 + PT码"版式;人物一致性交给资产参考图锁定,速写只导构图/表演/镜头。
   void gridLabel;
-  void roleLegend;
   return [
     "Create ONE 9:16 vertical (portrait) professional film storyboard sheet — clearly taller than wide, matching the final vertical 9:16 short-drama video. It must read as a clean, high-end commercial storyboard document on warm off-white paper. Full sheet visible, no cropping.",
     "Sheet layout, top to bottom:",
@@ -18997,7 +18955,7 @@ ${storyboardPromptForSlot({ ...slot, dialogueLanguage: slot.dialogueLanguage || 
 
 ## 规则
 
-- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整体版式(从上到下):①顶部信息栏(序列标题+时间码区间+核心情绪 / 项目·场景设定·时长·镜头风格·色调风格)②一个较大的 ESTABLISHING SHOT 建立镜头③编号分镜格(2 列,标准 6 格 2×3、剧情少时 4 格 2×2),每格带序号+时间码+速写+下方说明条(具体动作 / 镜头景别·机位 / 时长 / 运动 / 声音 / 转场)④底部本 Sequence 总结 + 视觉关键词。
+- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整体版式(从上到下):①顶部信息栏(序列标题+时间码区间+核心情绪 / 项目·场景设定·时长·镜头风格·色调风格)②标准 3×3 九格编号分镜,从左到右、从上到下阅读;每格带序号+时间码+速写+下方说明条(具体动作 / 镜头景别·机位 / 时长 / 运动 / 声音 / 转场)③底部本 Sequence 总结 + 视觉关键词。
 - 分镜格是**精细写实电影级黑白铅笔/墨线速写**:真实人物姿态、面部、表演与完整调度;禁止粗剪影、火柴人、扁平图标。每格构图/景别/机位各异,按弧线展开(建立→站位→转折/高潮→反应→剪辑点),不得各格重复同一张图。
 - 人物身份靠正式资产参考图锁定;速写只导构图/站位/表演/镜头,最终面孔·妆造·颜色·材质·光线以资产图为准。**不再画蓝红箭头、镜头框、资产参考栏、PT 编号等技术标注**——那些是给画面的调度指引,不作为图元绘制。
 - 每张 Production Board 最多覆盖 ${PRODUCTION_BOARD_MAX_SECONDS} 秒连续场景段落;最终视频片段仍按 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS} 秒拆分。
@@ -19713,7 +19671,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
         })),
         promptMode: "production_board",
         policy:
-          "Use storyboard guidance only for numbered panels, movement/action arrows, breath/flow arrows, red camera/framing boxes, blocking, camera direction, shot rhythm, and cut structure. Use Character, Scene, Prop, and Insert assets for final identity, materials, colors, lighting, and style.",
+          "Use storyboard guidance only for the actual numbered panels, composition, blocking, camera direction, shot rhythm, and cut structure. Use Character, Scene, Prop, and Insert assets for final identity, materials, colors, lighting, and style.",
       };
     }
   });
@@ -19810,10 +19768,10 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     storyboardPolicy: {
       mode: videoPromptMode === "production_board" ? "production_board_reference" : "prompt_tail_frame",
       instruction: storyboardsAttached
-        ? "Use Production Board images only as a production-control layer: vertical 9:16 numbered panels laid out in a 2-column grid inside a 9:16 vertical board, blue movement/action arrows, dashed breath/flow arrows, red camera/framing boxes, composition, blocking, camera direction, shot rhythm, cut structure, and PT-C/PT-S/PT-P/PT-I asset-binding labels. Do not copy sketch texture, character identity, scene identity, prop identity, colors, final lighting, or final visual style from storyboard panels; final visuals must come from Character, Scene, Prop, and Insert assets."
+        ? "Use Production Board images only as a production-control layer: nine vertical 9:16 numbered panels in a 3-column grid inside a 9:16 vertical board. Read composition, blocking, camera direction, shot rhythm, and cut structure. Do not copy sketch texture, character identity, scene identity, prop identity, colors, final lighting, or final visual style from storyboard panels; final visuals must come from Character, Scene, Prop, and Insert assets."
         : "Storyboard files are preserved but inactive for the current production flow. Generate videos from Seedance prompts and use previous-shot tail frames only for true continuous action or state carryover.",
       assetBindingInstruction:
-        "For every storyboard-enabled shot, bind each storyboard panel to the shot's official Scene, Character, Prop, and Insert assets. Character slots such as 主角A/角色B are temporary storyboard positions only; they must inherit identity from the bound Character assets. Storyboard panels control composition, blocking, movement arrows, camera boxes, rhythm, and cut points only.",
+        "For every storyboard-enabled shot, bind each storyboard panel to the shot's official Scene, Character, Prop, and Insert assets. Character slots such as 主角A/角色B are temporary storyboard positions only; they must inherit identity from the bound Character assets. Storyboard panels control composition, blocking, camera direction, rhythm, and cut points only.",
       defaultShotContinuity: storyboardsAttached
         ? "production_board_controls_panel_continuity"
         : allowTailFrameContinuity

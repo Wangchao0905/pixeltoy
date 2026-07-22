@@ -231,7 +231,7 @@ assert(!server.includes("Math.min(12, Math.round(Number(raw.duration"), "storybo
 assert(server.includes('suffix: "PRODUCTION_BOARD"'), "storyboard assets must use Production Board suffix");
 assert(server.includes("const PRODUCTION_BOARD_MAX_SECONDS = 15;"), "Production Board must cap each board at a 15-second story unit");
 assert(server.includes("const VIDEO_MAX_SECONDS = 15;"), "video clips must remain capped at 15 seconds");
-assert(server.includes("const STORYBOARD_MIN_PANELS = 4;") && server.includes("const STORYBOARD_MAX_PANELS = 6;"), "Production Board panels must range 4 (2x2) to 6 (2x3), not a fixed nine");
+assert(server.includes("const STORYBOARD_MIN_PANELS = 9;") && server.includes("const STORYBOARD_MAX_PANELS = 9;") && server.includes("const STORYBOARD_BOARD_COLUMNS = 3;"), "Production Board must use a fixed 3x3 nine-panel grid");
 assert(storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_9_16"), "Production Board job route must render the whole board as a 9:16 vertical sheet");
 assert(storyboardJobRoute.includes('aspectRatio: "9:16"'), "Production Board generation metadata must describe the full board as 9:16");
 assert(!storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_16_9"), "Production Board job route must not make the whole board 16:9 landscape");
@@ -240,7 +240,8 @@ assert(server.includes("Create ONE 9:16 vertical (portrait)"), "Production Board
 assert(server.includes("竖版 9:16 工作纸"), "Production Board policy must describe the whole board as a 9:16 vertical sheet");
 assert(server.includes("true standing-phone-screen vertical camera view"), "Production Board prompt must require each panel to represent a vertical 9:16 camera view");
 assert(server.includes("Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips"), "Production Board prompt must keep technical reference markup out of the final board");
-assert(server.includes("PT-C/PT-S/PT-P/PT-I"), "Production Board prompt must require PT asset binding labels");
+assert(server.includes("function buildStoryboardPanelAssetBindings"), "Production Board must retain backend panel-to-asset binding");
+assert(assetRunner.includes("do not add asset strips, thumbnails, PT labels, arrows, or camera-frame overlays"), "Production Board edits must keep internal bindings off the rendered board");
 assert(server.includes("storyboardDisablesTailFrameContinuity: false"), "Production Board must not globally disable tail-frame continuity");
 assert(styles.includes(".storyboard-card img {\n  display: block;\n  width: 100%;\n  aspect-ratio: 9 / 16;"), "Production Board preview cards must show the 9:16 vertical board");
 assert(styles.includes(".storyboard-missing-preview {\n  aspect-ratio: 9 / 16;"), "Production Board missing previews must show the 9:16 vertical board shape");
@@ -573,12 +574,20 @@ assert(server.includes("Math.floor(((idx + 1) * total) / count)"), "panel text m
 assert(server.includes("const sameSegmentPanels = panelSegments.reduce"), "panel plan must compute each panel's local index within its own segment run");
 assert(server.includes("const sliceByPart = (arr, i) =>"), "over-length storyboard segments must partition beat/dialogue across parts instead of copying them verbatim");
 
-// Storyboard board format: whole board is a 9:16 vertical sheet with panels in a 2-column grid (4 = 2x2, 6 = 2x3); server and asset runner must agree and never revert to a 16:9 landscape 3x3 nine-panel board.
+// Storyboard board format: whole board is a 9:16 vertical sheet with nine portrait panels in a 3x3 grid; server and asset runner must agree and never revert to a 16:9 landscape board.
 assert(server.includes("true standing-phone-screen vertical camera view"), "server storyboard prompt must make each panel represent a vertical 9:16 camera view");
-assert(!server.includes("3x3 grid of nine") && !assetRunner.includes("3x3 grid (3 columns x 3 rows)"), "storyboard prompts must not use a fixed 3x3 nine-panel grid");
 assert(assetRunner.includes("9:16 vertical (portrait) sheet"), "storyboard generation contract must describe the whole board as a 9:16 vertical sheet");
 assert(!assetRunner.includes("one 16:9 landscape sheet"), "storyboard generation contract must not describe the whole board as a 16:9 landscape sheet");
-assert(assetRunner.includes("2-column grid") && assetRunner.includes("4 panels (2 columns x 2 rows) or 6 panels (2 columns x 3 rows)"), "storyboard generation contract must specify a 2-column grid with 4 or 6 panels");
+assert(assetRunner.includes("3-column grid") && assetRunner.includes("9 panels (3 columns x 3 rows)"), "storyboard generation contract must specify a 3-column, nine-panel grid");
+assert(!assetRunner.includes("2-column grid"), "storyboard renderer must not retain the retired 2-column grid");
+assert(!server.includes("外层制作板为 16:9 排版"), "storyboard planner must not retain the legacy 16:9 board contract");
+assert(!server.includes("按面板编号执行镜头：P1 建立空间与轴线"), "storyboard guidance must not retain the legacy fixed P1-P9 sequence");
+assert(!server.includes("右侧/底部资产参考栏"), "storyboard guidance must not retain the legacy rendered asset strip");
+assert(assetRunner.includes("P1-P9: show chronological story beats"), "storyboard renderer must retain the nine-panel fallback for the 3x3 contract");
+assert(!assetRunner.includes("Keep the asset references readable in the ASSET REFERENCES strip"), "storyboard reference fallback must not add an asset strip to the final board");
+assert(!assetRunner.includes("stampStoryboardAssetReferences"), "storyboard renderer must not post-process an asset strip onto the final board");
+assert(!assetRunner.includes("16:9 landscape Production Board"), "storyboard edits must preserve the vertical Production Board contract");
+assert(assetRunner.includes("production-board-imagegen-v11-portrait-nine-panel-sheet"), "storyboard renderer revision must invalidate cached six-panel boards");
 assert(assetRunner.includes("function isMissingPillowError"), "storyboard post-processing must detect missing Pillow separately");
 assert(assetRunner.includes("optionalStoryboardPostprocess"), "missing Pillow must not fail an already generated Production Board image");
 assert(server.includes("server-dependency") && server.includes("Python Pillow"), "Pillow dependency failures must not be reported as unknown");

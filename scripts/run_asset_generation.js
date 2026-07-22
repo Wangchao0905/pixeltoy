@@ -24,7 +24,7 @@ const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_
 const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "900", 10);
 const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRIES || "2", 10);
 const STORYBOARD_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_RETRIES || "1", 10);
-const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v9-real-asset-strip";
+const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v11-portrait-nine-panel-sheet";
 
 function usage() {
   console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--size 1280x720|2048x1152|3840x2160]");
@@ -151,7 +151,7 @@ function typeCounts(assets) {
 function promptFor(asset) {
   const storyboardRule =
     asset.type === "Storyboard"
-      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. On this vertical sheet draw the storyboard panels in a 2-column grid, read left-to-right then top-to-bottom (P1 top-left, P2 top-right, then the next row below): use exactly 4 panels (2 columns x 2 rows) or 6 panels (2 columns x 3 rows) as the panel plan specifies. Each panel is a portrait story frame representing a vertical 9:16 camera view; keep even gutters between rows and columns and do NOT overlap or merge panels. The story panels are hand-drawn line sketches. Do NOT add any ASSET REFERENCES strip, asset thumbnails, or reference boxes — output ONLY the story panels."
+      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. On this vertical sheet draw exactly 9 panels (3 columns x 3 rows), read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Each panel is a portrait story frame representing a vertical 9:16 camera view; keep even gutters between rows and columns and do NOT overlap or merge panels. The story panels are hand-drawn line sketches. Do NOT add any ASSET REFERENCES strip, asset thumbnails, or reference boxes — output ONLY the story panels."
       : "";
   return [
     "Production-grade reference asset. Follow the selected visual style, layout, identity, and safety constraints exactly.",
@@ -572,14 +572,14 @@ if payload.get("source"):
     draw.text((22, 67), payload["source"], fill=(90, 90, 90), font=tiny_font)
 
 grid_x, grid_y = 22, 92
-# 9:16 竖版板:面板走 2 列布局(4 格 2×2 或 6 格 2×3),整幅用满宽,不再有右侧资产参考栏。
+# 9:16 竖版板:固定 3×3 九格,每一格都是竖版镜头构图,整幅用满宽且不再有资产参考栏。
 grid_w = w - grid_x - 22
 grid_h = h - grid_y - 38
 gap = 12
 panels = payload.get("panels") or []
 n_panels = len(panels)
-n_panels = 4 if n_panels <= 4 else 6
-cols = 2
+n_panels = 9
+cols = 3
 rows = (n_panels + cols - 1) // cols
 cell_w = (grid_w - gap * (cols - 1)) // cols
 cell_h = (grid_h - gap * (rows - 1)) // rows
@@ -587,9 +587,6 @@ refs = payload.get("refs") or []
 role_codes = [r.get("code", "") for r in refs if isinstance(r, dict) and r.get("type") == "Character"][:3]
 scene_codes = [r.get("code", "") for r in refs if isinstance(r, dict) and r.get("type") == "Scene"][:2]
 prop_codes = [r.get("code", "") for r in refs if isinstance(r, dict) and r.get("type") not in ("Character", "Scene")][:3]
-scene_refs = [r for r in refs if isinstance(r, dict) and r.get("type") == "Scene" and r.get("path")]
-character_refs = [r for r in refs if isinstance(r, dict) and r.get("type") == "Character" and r.get("path")][:2]
-prop_refs = [r for r in refs if isinstance(r, dict) and r.get("type") not in ("Character", "Scene") and r.get("path")][:2]
 
 def contain_thumb(path, box):
     try:
@@ -671,10 +668,6 @@ def draw_person(cx, cy, scale=1.0, code="", pose="stand", heavy=False):
         draw.line([cx - shoulder, cy - torso + 15, cx - shoulder - 7, cy - torso + 28], fill=ink, width=2)
     draw.line([cx, cy - 4, cx - int(10 * scale), cy + int(16 * scale)], fill=ink, width=2)
     draw.line([cx, cy - 4, cx + int(10 * scale), cy + int(16 * scale)], fill=ink, width=2)
-    if code:
-        tw = max(32, len(code) * 5)
-        draw.rectangle([cx - tw // 2, cy + int(18 * scale), cx + tw // 2, cy + int(18 * scale) + micro_font.size + 3], fill=(255,255,250))
-        draw.text((cx - tw // 2 + 2, cy + int(18 * scale) + 1), code, fill=(20,20,20), font=micro_font)
 
 def draw_guard(cx, cy, scale=1.0, code=""):
     ink = (24,24,24)
@@ -689,8 +682,6 @@ def draw_guard(cx, cy, scale=1.0, code=""):
     draw.line([cx + 25 * scale, cy - 2 * scale, cx + 38 * scale, cy + 12 * scale], fill=ink, width=3)
     draw.line([cx - 5 * scale, cy + 2 * scale, cx - 14 * scale, cy + 26 * scale], fill=ink, width=2)
     draw.line([cx + 5 * scale, cy + 2 * scale, cx + 13 * scale, cy + 26 * scale], fill=ink, width=2)
-    if code:
-        draw.text((cx - 20 * scale, cy + 28 * scale), code, fill=ink, font=micro_font)
 
 def draw_crowd(box):
     x1, y1, x2, y2 = box
@@ -728,31 +719,11 @@ def draw_insert_prop(box):
     draw.line([cx + 28, cy - 12, cx + 45, cy - 24], fill=(24,24,24), width=2)
     draw.arc([cx - 52, cy - 32, cx + 52, cy + 32], 200, 340, fill=(92,92,92), width=1)
 
-def draw_camera_marks(box, shot_kind):
-    x1, y1, x2, y2 = box
-    if shot_kind in ("closeup", "insert"):
-        pad_x, pad_y = 12, 16
-    elif shot_kind in ("wide", "establish"):
-        pad_x, pad_y = 4, 7
-    else:
-        pad_x, pad_y = 8, 11
-    draw.rectangle([x1 + pad_x, y1 + pad_y, x2 - pad_x, y2 - pad_y], outline=(205,32,32), width=1)
-    if shot_kind == "over_shoulder":
-        draw.arc([x1 - 20, y1 + 20, x1 + 45, y2 + 25], 260, 90, fill=(70,70,70), width=4)
-    elif shot_kind == "low_angle":
-        draw.line([x1 + 7, y2 - 18, x2 - 7, y1 + 36], fill=(112,112,112), width=1)
-    elif shot_kind == "insert":
-        draw.ellipse([x1 + 15, y1 + 22, x2 - 15, y2 - 22], outline=(112,112,112), width=1)
-
 def draw_speech_or_breath(box, has_dialogue=False):
     x1, y1, x2, y2 = box
     if has_dialogue:
         draw.rounded_rectangle([x1 + 10, y1 + 12, x2 - 10, y1 + 36], radius=6, outline=(55,55,55), width=1)
         draw.line([x1 + 35, y1 + 36, x1 + 28, y1 + 46], fill=(55,55,55), width=1)
-    else:
-        for k in range(3):
-            yy = y1 + 18 + k * 8
-            draw.arc([x2 - 45 - k*3, yy, x2 - 18 + k*3, yy + 10], 185, 355, fill=(24,96,210), width=1)
 
 def panel_shot_kind(note, panel_index):
     if panel_index == 0:
@@ -806,8 +777,6 @@ def draw_story_closeup(inner, note, panel_index):
     else:
         draw.line([cx - 9, cy - 14, cx + 9, cy - 14], fill=(24,24,24), width=1)
         draw.line([cx - 10, cy - 2, cx + 10, cy - 2], fill=(24,24,24), width=1)
-    if role_codes:
-        draw.text((x1 + 6, y2 - 14), role_codes[min(panel_index % max(1, len(role_codes)), len(role_codes)-1)], fill=(24,24,24), font=micro_font)
 
 def draw_story_insert(inner, note, panel_index):
     x1, y1, x2, y2 = inner
@@ -822,8 +791,6 @@ def draw_story_insert(inner, note, panel_index):
         draw.line([cx - 32, y1 + 38, cx + 32, y1 + 38], fill=(24,24,24), width=1)
     else:
         draw_insert_prop(inner)
-    if prop_codes:
-        draw.text((x1 + 5, y2 - 14), prop_codes[0], fill=(24,24,24), font=micro_font)
 
 def draw_story_over_shoulder(inner, note, panel_index, guard_scene=False):
     x1, y1, x2, y2 = inner
@@ -910,15 +877,12 @@ def draw_guard_sequence(inner, panel_index):
         draw.line([cx - 22, y1 + 36, cx + 22, y1 + 36], fill=(24,24,24), width=1)
         draw.polygon([(cx - 34, y1 + 64), (cx + 34, y1 + 64), (cx + 24, y2 - 8), (cx - 24, y2 - 8)], outline=(24,24,24))
         draw.ellipse([cx - 9, y1 + 82, cx + 9, y1 + 100], outline=(24,24,24), width=3)
-        if prop_codes:
-            draw.text((x1 + 5, y2 - 14), prop_codes[0], fill=(24,24,24), font=micro_font)
     elif panel_index == 6:
         draw_story_insert(inner, "baton weapon insert detail", panel_index)
     elif panel_index == 7:
         draw_floor(inner, dense=False)
         for idx, t in enumerate([0.18, 0.38, 0.58, 0.78]):
             draw_guard(x1 + int((x2 - x1) * t), base_y - idx * 2, 0.55, prop_codes[0] if idx == 0 and prop_codes else "")
-        draw.line([x1 + 8, base_y - 24, x2 - 8, base_y - 24], fill=(24,96,210), width=2)
     else:
         draw_floor(inner, dense=False)
         for idx, t in enumerate([0.28, 0.44, 0.60, 0.76]):
@@ -926,7 +890,7 @@ def draw_guard_sequence(inner, panel_index):
 
 def draw_panel_story(frame_box, note, panel_index):
     x1, y1, x2, y2 = frame_box
-    draw.rectangle(frame_box, fill=(255,255,250), outline=(205,32,32), width=3)
+    draw.rectangle(frame_box, fill=(255,255,250), outline=(34,34,34), width=2)
     inner = [x1 + 5, y1 + 5, x2 - 5, y2 - 5]
     shot = panel_shot_kind(note, panel_index)
     guard_scene = has_any(note, ["安保", "保镖", "security", "guard", "装甲", "armor", "头盔", "helmet"])
@@ -948,57 +912,31 @@ def draw_panel_story(frame_box, note, panel_index):
         draw_story_wide(inner, note, panel_index, guard_scene)
     if has_any(note, ["龙形纹路", "纹路", "暗红", "血液", "地板", "地面", "大理石", "floor", "pattern"]) and shot not in ("insert", "closeup"):
         draw_dragon_floor(inner, emphasis=panel_index >= 3)
-    draw_camera_marks(frame_box, shot)
     draw_speech_or_breath(frame_box, has_dialogue=has_any(note, ["Dialogue:", "对白：", "says", "说"]))
-    if scene_codes:
-        draw.rectangle([x1 + 3, y1 + 3, x1 + 50, y1 + 15], fill=(255,255,250))
-        draw.text((x1 + 4, y1 + 4), scene_codes[0], fill=(92,92,92), font=micro_font)
-    if prop_codes and has_any(note, ["prop", "道具", "短棍", "刀", "武器", "装甲", "armor", "核心"]):
-        draw.text((x2 - 46, y2 - 13), prop_codes[0], fill=(45,45,45), font=micro_font)
 
 for i in range(n_panels):
     r, c = divmod(i, cols)
     x = grid_x + c * (cell_w + gap)
     y = grid_y + r * (cell_h + gap)
-    draw.rectangle([x, y, x + cell_w, y + cell_h], fill=(255, 255, 250), outline=(185, 45, 42), width=2)
+    draw.rectangle([x, y, x + cell_w, y + cell_h], fill=(255, 255, 250), outline=(68, 68, 64), width=1)
     draw.text((x + 7, y + 5), f"P{i+1}", fill=(24, 24, 24), font=small_font)
     # The visible storyboard camera panel is always a true vertical 9:16 frame.
-    frame_h = cell_h - 18
-    frame_w = int(frame_h * 9 / 16)
-    frame_x = x + 8
-    frame_y = y + 24
+    frame_w = min(cell_w - 16, int((cell_h - 50) * 9 / 16))
+    frame_h = int(frame_w * 16 / 9)
+    frame_x = x + (cell_w - frame_w) // 2
+    frame_y = y + 22
     panel = panels[i] if i < len(panels) else {"description": "chronological story beat"}
     note = panel_text(panel)
     draw_panel_story([frame_x, frame_y, frame_x + frame_w, frame_y + frame_h], note, i)
-    # action and breath arrows stay as readable director marks on top of the black sketch.
-    shot_kind = panel_shot_kind(note, i)
-    if shot_kind in ("insert", "closeup"):
-        ax1, ay1 = frame_x + int(frame_w * 0.28), frame_y + int(frame_h * 0.72)
-        ax2, ay2 = frame_x + int(frame_w * 0.72), frame_y + int(frame_h * 0.32)
-    elif shot_kind == "over_shoulder":
-        ax1, ay1 = frame_x + int(frame_w * 0.25), frame_y + int(frame_h * 0.52)
-        ax2, ay2 = frame_x + int(frame_w * 0.82), frame_y + int(frame_h * 0.44)
-    elif shot_kind == "low_angle":
-        ax1, ay1 = frame_x + int(frame_w * 0.18), frame_y + int(frame_h * 0.78)
-        ax2, ay2 = frame_x + int(frame_w * 0.76), frame_y + int(frame_h * 0.28)
-    else:
-        ax1, ay1 = frame_x + 12, frame_y + int(frame_h * (0.45 if i < n_panels - 1 else 0.72))
-        ax2, ay2 = frame_x + frame_w - 12, frame_y + int(frame_h * (0.45 if i < n_panels - 1 else 0.72))
-    draw.line([ax1, ay1, ax2, ay2], fill=(24, 96, 210), width=3)
-    draw.polygon([(ax2, ay2), (ax2 - 9, ay2 - 5), (ax2 - 9, ay2 + 5)], fill=(24, 96, 210))
-    for d in range(0, frame_w - 24, 16):
-        draw.line([frame_x + 12 + d, frame_y + frame_h - 18, frame_x + 20 + d, frame_y + frame_h - 18], fill=(24, 96, 210), width=1)
-    caption_x = frame_x + frame_w + 8
-    caption_w = max(42, x + cell_w - caption_x - 6)
+    caption_x = x + 8
+    caption_w = max(24, cell_w - 16)
     caption = panel_caption(note)
-    words = [caption[j:j+max(16, caption_w // 6)] for j in range(0, min(len(caption), 180), max(16, caption_w // 6))]
-    ty = y + 27
-    for line in words[:8]:
+    words = [caption[j:j+max(12, caption_w // 6)] for j in range(0, min(len(caption), 120), max(12, caption_w // 6))]
+    ty = frame_y + frame_h + 4
+    for line in words[:1]:
         draw.text((caption_x, ty), line, fill=(56, 56, 56), font=micro_font)
         ty += int(micro_font.size * 1.25)
 
-legend_y = h - 24
-draw.text((24, legend_y), "blue solid arrow = action | dashed blue = breath/flow | red rectangle = 9:16 camera frame | PT code = asset binding", fill=(55,55,55), font=tiny_font)
 img.save(out)
 `;
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -1015,9 +953,9 @@ function rescueStoryboardPromptFor(asset, referenceImages = []) {
   return [
     "Generate one professional hand-drawn commercial Production Board image.",
     "The board is a single 9:16 vertical (portrait) sheet — taller than it is wide — on warm off-white paper, full sheet visible, no cropping.",
-    "Draw the storyboard panels in a 2-column grid, read left-to-right then top-to-bottom (P1 top-left, P2 top-right, then the next row below): use exactly 4 panels (2 columns x 2 rows) or 6 panels (2 columns x 3 rows) following the panel plan. Each panel is a portrait story frame representing a vertical 9:16 camera view; keep even gutters between rows and columns and do not overlap or merge panels.",
-    "Each panel must be a distinct black pencil/ink storyboard drawing, not repeated panels and not a UI wireframe: use varied shot scales, camera angles, blocking, foreground/background staging, actor poses, eyelines, movement arrows, and cut points.",
-    "Use a classic production storyboard visual language: black linework, rough expressive character silhouettes, red camera/framing rectangles, blue movement arrows, dashed blue breath/flow arrows, and concise handwritten-style shot notes.",
+    "Draw exactly 9 storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Each panel is a portrait story frame representing a vertical 9:16 camera view; keep even gutters between rows and columns and do not overlap or merge panels.",
+    "Each panel must be a distinct black pencil/ink storyboard drawing, not repeated panels and not a UI wireframe: use varied shot scales, camera angles, blocking, foreground/background staging, actor poses, eyelines, and cut points.",
+    "Use a clean professional production-storyboard visual language: black linework, expressive character poses, light shading, and concise handwritten-style shot notes. Do not add colored technical diagrams or camera-frame overlays.",
     "Do NOT add any ASSET REFERENCES strip, asset thumbnails, or reference boxes. The board contains ONLY the hand-drawn story panels.",
     "Do not paste final asset images anywhere on the board. Story panels are hand-drawn story action only.",
     firstPromptLine(prompt, "Time coverage:", ""),
@@ -1036,7 +974,7 @@ function editPromptFor(asset, instruction, referenceImages = [], styleReferenceI
       : asset.type === "Scene"
         ? "Keep this as one 16:9 wide establishing environment reference image with absolutely no people, no silhouettes, no crowds, and no human figures."
         : asset.type === "Storyboard"
-          ? "Keep this as one 16:9 landscape Production Board with vertical 9:16 storyboard panels and a clear ASSET REFERENCES strip. It is for composition, blocking, camera direction, shot rhythm, and asset identity matching."
+          ? "Keep this as one 9:16 vertical Production Board with exactly 9 vertical 9:16 storyboard panels in a 3-column grid. It is for composition, blocking, camera direction, shot rhythm, and cut structure; do not add asset strips, thumbnails, PT labels, arrows, or camera-frame overlays."
           : asset.type === "Prop"
             ? "Keep this as one 16:9 pure-white-background prop turnaround reference sheet with the same single prop shown in front view, side view, and back view."
             : "Keep this as one 16:9 realistic cinematic insert or evidence-detail reference image with the main subject clear and physically believable.";
@@ -1202,108 +1140,6 @@ with Image.open(path) as source:
   });
 }
 
-function stampStoryboardAssetReferences(asset, outPath, referenceImages = []) {
-  if (asset?.type !== "Storyboard" || !fs.existsSync(outPath) || !referenceImages.length) return;
-  const references = referenceImages
-    .filter((image) => image && fs.existsSync(image) && fs.statSync(image).size > 1000)
-    .map((image, index) => ({
-      path: image,
-      type: referenceTypeFromName(image) || "Reference",
-      code: referenceCodeForImage(image, index),
-      name: referenceAssetName(image),
-    }));
-  if (!references.length) return;
-  const py = String.raw`
-import json, sys, textwrap
-from PIL import Image, ImageDraw, ImageFont
-
-board_path = sys.argv[1]
-refs = json.loads(sys.argv[2])
-
-def font(size, bold=False):
-    candidates = [
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        "/System/Library/Fonts/Hiragino Sans GB.ttc",
-        "/System/Library/Fonts/STHeiti Medium.ttc" if bold else "/System/Library/Fonts/STHeiti Light.ttc",
-    ]
-    for item in candidates:
-        try:
-            return ImageFont.truetype(item, size)
-        except Exception:
-            pass
-    return ImageFont.load_default()
-
-with Image.open(board_path) as source:
-    board = source.convert("RGB")
-
-W, H = board.size
-draw = ImageDraw.Draw(board)
-paper = (246, 242, 232)
-ink = (22, 22, 20)
-muted = (85, 82, 74)
-blue = (34, 92, 175)
-red = (174, 45, 45)
-title_font = font(max(15, W // 74), True)
-label_font = font(max(10, W // 125), True)
-small_font = font(max(8, W // 160))
-micro_font = font(max(7, W // 185))
-
-margin = max(14, round(W * 0.016))
-strip_h = max(92, min(round(H * 0.145), 132))
-y0 = H - margin - strip_h
-x0 = margin
-x1 = W - margin
-y1 = H - margin
-
-# Replace the model-drawn reference strip with a deterministic real-asset strip.
-draw.rectangle([x0, y0, x1, y1], fill=paper, outline=ink, width=max(2, W // 900))
-draw.text((x0 + 10, y0 + 8), "ASSET REFERENCES - OFFICIAL PRODUCTION ASSETS", fill=ink, font=title_font)
-draw.text((x0 + 10, y0 + 28), "Real thumbnails pasted after generation.", fill=muted, font=small_font)
-
-left_label_w = max(110, round(W * 0.11))
-content_x0 = x0 + left_label_w
-draw.line([content_x0 - 8, y0, content_x0 - 8, y1], fill=ink, width=1)
-cols = min(max(1, len(refs)), 4)
-cell_w = max(1, (x1 - content_x0 - 10) / cols)
-thumb_top = y0 + 42
-thumb_bottom = y1 - 10
-
-for index, ref in enumerate(refs[:4]):
-    cx0 = int(content_x0 + index * cell_w)
-    cx1 = int(content_x0 + (index + 1) * cell_w - 8)
-    draw.rectangle([cx0, y0 + 8, cx1, y1 - 8], outline=(105, 105, 98), width=1)
-    thumb_w = max(68, min(round((cx1 - cx0) * 0.42), 160))
-    thumb_box = [cx0 + 8, thumb_top, cx0 + 8 + thumb_w, thumb_bottom]
-    try:
-        with Image.open(ref["path"]) as src:
-            src = src.convert("RGB")
-            bw, bh = thumb_box[2] - thumb_box[0], thumb_box[3] - thumb_box[1]
-            scale = min(bw / src.width, bh / src.height)
-            nw, nh = max(1, round(src.width * scale)), max(1, round(src.height * scale))
-            resample = getattr(Image, "Resampling", Image).LANCZOS
-            src = src.resize((nw, nh), resample)
-            draw.rectangle(thumb_box, fill=(255, 255, 255), outline=(28, 28, 28), width=1)
-            board.paste(src, (thumb_box[0] + (bw - nw) // 2, thumb_box[1] + (bh - nh) // 2))
-    except Exception as exc:
-        draw.rectangle(thumb_box, fill=(235, 235, 230), outline=(120, 120, 112), width=1)
-        draw.text((thumb_box[0] + 4, thumb_box[1] + 4), "missing", fill=red, font=small_font)
-    label_x = thumb_box[2] + 8
-    color = blue if ref.get("type") == "Character" else red if ref.get("type") == "Scene" else ink
-    draw.text((label_x, thumb_top), f'{ref.get("code","")} | {ref.get("type","")}', fill=color, font=label_font)
-    name = ref.get("name", "reference")
-    yy = thumb_top + max(16, label_font.size + 3)
-    for line in textwrap.wrap(name, width=24)[:4]:
-        draw.text((label_x, yy), line, fill=muted, font=micro_font)
-        yy += max(10, round(micro_font.size * 1.22))
-
-board.save(board_path)
-`;
-  optionalStoryboardPostprocess("asset reference strip", () => {
-    execFileSync("python3", ["-c", py, outPath, JSON.stringify(references)], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 });
-  });
-}
-
 async function runImageGenWithRetry(imageArgs, env, label, maxRetries = 0, execTimeoutMs = 1000 * 1000) {
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
@@ -1322,7 +1158,7 @@ async function runImageGenWithRetry(imageArgs, env, label, maxRetries = 0, execT
   throw lastError;
 }
 
-// 故事板/Production Board 走竖版 9:16（3x3 的 9:16 竖格需要整板为竖版；把传入的
+// 故事板/Production Board 走竖版 9:16（3×3 九格需要整板为竖版；把传入的
 // 16:9 尺寸按像素数换成 9:16 竖版，例如 1280x720 -> 720x1280）。
 function storyboardPortraitSize(size) {
   const m = String(size || "1280x720").match(/^(\d+)x(\d+)$/);
@@ -1339,8 +1175,7 @@ async function runStoryboardReferenceBoardRoute(asset, outPath, size, referenceI
     referencePromptFor(asset, referenceImages),
     "",
     "The input image is a PRODUCTION ASSET REFERENCE BOARD, not the final storyboard.",
-    "Transform it into the requested Production Board sheet. Keep the asset references readable in the ASSET REFERENCES strip, and draw the P1-P9 story panels as varied black hand-drawn storyboard sketches.",
-    "Use C/PT-C labels only for characters, S/PT-S labels only for scenes/locations, P/PT-P labels only for props, and I/PT-I labels only for inserts/details.",
+    "Transform it into the requested 9:16 Production Board sheet with exactly 9 story panels in a 3-column grid. Use the input only to retain identity; do not reproduce its asset strip, thumbnails, labels, PT codes, arrows, or camera-frame overlays in the final board.",
   ].join("\n");
   const timeout = timeoutSecondsFor(asset, "rescue");
   const editArgs = [
@@ -1670,7 +1505,6 @@ async function main() {
       const editResult = args.editInstruction ? await runEdit(asset, out, args.size, args.editInstruction, logsDir, assetReferenceImages, args.styleReferenceImage, { hiddenSceneReferences }) : null;
       const raw = editResult ? editResult.raw : await runOne(asset, out, args.size, assetReferenceImages, logsDir, args.styleReferenceImage, { hiddenSceneReferences });
       ensureStoryboardCanvas(asset, out, args.size);
-      stampStoryboardAssetReferences(asset, out, assetReferenceImages);
       fs.writeFileSync(path.join(logsDir, `${asset.name}.json`), raw ? `${raw}\n` : "");
       writePromptMeta(
         logsDir,

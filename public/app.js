@@ -2964,7 +2964,12 @@ function renderAssetManifest(manifest) {
     const shouldGenerate = item.generate !== false;
     const label = item.label || item.id;
     return `
-      <span class="manifest-name ${shouldGenerate ? "" : "is-skipped"}" data-manifest-asset-id="${escapeAttr(item.id)}">
+      <span
+        class="manifest-name ${shouldGenerate ? "" : "is-skipped"}"
+        data-manifest-asset-id="${escapeAttr(item.id)}"
+        data-manifest-asset-type="${escapeAttr(item.type)}"
+        draggable="true"
+      >
         <span class="manifest-name-label">${escapeHtml(label)}</span>
         <button
           class="manifest-generate-toggle ${shouldGenerate ? "is-on" : "is-off"}"
@@ -2983,7 +2988,7 @@ function renderAssetManifest(manifest) {
         <span>${title}</span>
         <button class="manifest-add-btn" type="button" data-manual-asset-type="${escapeAttr(type)}" aria-label="添加${escapeAttr(title)}" title="添加${escapeAttr(title)}"></button>
       </h3>
-      <div class="manifest-name-list">
+      <div class="manifest-name-list" data-manifest-drop-type="${escapeAttr(type)}">
         ${
           list.length
             ? list.map(manifestItemHtml).join("")
@@ -3058,6 +3063,41 @@ function renderAssetManifest(manifest) {
 }
 
 function bindManualAssetControls(root, manifest) {
+  root.querySelectorAll("[data-manifest-asset-id]").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      const assetId = card.dataset.manifestAssetId;
+      if (!assetId || !event.dataTransfer) return;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", assetId);
+      event.dataTransfer.setData("application/x-pixel-toys-asset-type", card.dataset.manifestAssetType || "");
+      card.classList.add("is-dragging");
+    });
+    card.addEventListener("dragend", () => card.classList.remove("is-dragging"));
+  });
+  root.querySelectorAll("[data-manifest-drop-type]").forEach((dropzone) => {
+    dropzone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      dropzone.classList.add("is-dragover");
+    });
+    dropzone.addEventListener("dragleave", (event) => {
+      if (!dropzone.contains(event.relatedTarget)) dropzone.classList.remove("is-dragover");
+    });
+    dropzone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("is-dragover");
+      if (!event.dataTransfer) return;
+      const assetId = event.dataTransfer.getData("text/plain");
+      const sourceCard = [...root.querySelectorAll("[data-manifest-asset-id]")].find(
+        (card) => card.dataset.manifestAssetId === assetId,
+      );
+      const sourceType =
+        event.dataTransfer.getData("application/x-pixel-toys-asset-type") || sourceCard?.dataset.manifestAssetType;
+      const targetType = dropzone.dataset.manifestDropType;
+      if (!assetId || !targetType || sourceType === targetType) return;
+      reclassifyAsset(assetId, targetType).catch((error) => toast(error.message));
+    });
+  });
   root.querySelectorAll("[data-manifest-toggle-generate]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();

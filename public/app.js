@@ -123,6 +123,7 @@ const state = {
     storyboardMode: false,
     storyboardCount: 1,
     storyboardGenerating: false,
+    storyboardActiveBatchId: "",
     references: [],
     referencesUploading: 0,
     activeGenerations: 0,
@@ -2053,13 +2054,22 @@ function renderImageExploreView() {
   $("#imageExploreImageCountControl")?.classList.toggle("hidden", storyboardMode);
   const referencesUploading = Number(state.imageStudio.referencesUploading) || 0;
   const activeGenerations = Number(state.imageStudio.activeGenerations) || 0;
+  const storyboardBatchItems = state.imageStudio.storyboardActiveBatchId
+    ? state.imageStudio.storyboardHistory.filter((item) => item.batchId === state.imageStudio.storyboardActiveBatchId)
+    : [];
+  const storyboardCompletedCount = storyboardBatchItems.filter((item) => item.status === "completed").length;
+  const storyboardFailedCount = storyboardBatchItems.filter((item) => item.status === "failed").length;
+  const storyboardTotal = storyboardBatchItems.length || state.imageStudio.storyboardCount;
+  const storyboardProgress = storyboardFailedCount
+    ? `完成 ${storyboardCompletedCount}/${storyboardTotal}，失败 ${storyboardFailedCount}`
+    : `${storyboardCompletedCount}/${storyboardTotal}`;
   $("#imageExploreGenerate").disabled = referencesUploading > 0 || state.imageStudio.storyboardGenerating;
   $("#imageExploreStatus").textContent = referencesUploading
     ? `参考图上传中（${referencesUploading}）`
     : state.imageStudio.storyboardGenerating
-      ? `故事板生成中（${state.imageStudio.storyboardCount} 张）`
-    : activeGenerations > 0
-      ? `生成中（${activeGenerations}）`
+      ? `故事板生成中（${storyboardProgress}）`
+      : activeGenerations > 0
+        ? `生成中（${activeGenerations}）`
       : "";
   $("#imageExploreGenerate").innerHTML = storyboardMode ? '生成故事板 <span aria-hidden="true">↗</span>' : '生成图片 <span aria-hidden="true">↗</span>';
   renderImageExploreReferences();
@@ -2332,8 +2342,29 @@ async function submitImageExploreStoryboard(event) {
     .map((reference) => reference.localUrl || reference.url)
     .filter(Boolean);
   const model = state.imageStudio.model || "gpt-image-2";
+  const batchId = `storyboard-batch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const createdAt = new Date().toISOString();
+  const items = Array.from({ length: boardCount }, (_, index) => ({
+    id: `storyboard-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+    status: "planning",
+    prompt: "",
+    storyPrompt: prompt,
+    ratio: "16:9",
+    resolution: state.imageStudio.resolution,
+    model,
+    referenceImages,
+    board: { index: index + 1 },
+    boardCount,
+    totalBoards: boardCount,
+    batchId,
+    index: index + 1,
+    url: "",
+    createdAt,
+  }));
   state.imageStudio.storyboardCount = boardCount;
+  state.imageStudio.storyboardActiveBatchId = batchId;
   state.imageStudio.storyboardGenerating = true;
+  state.imageStudio.storyboardHistory = [...items, ...state.imageStudio.storyboardHistory].slice(0, 24);
   beginImageExploreGeneration();
   renderImageExploreView();
   try {
@@ -2343,28 +2374,29 @@ async function submitImageExploreStoryboard(event) {
     });
     const boards = Array.isArray(planData.result?.boards) ? planData.result.boards : [];
     if (boards.length !== boardCount) throw new Error("故事板规划返回数量不正确，请重试");
-    const items = boards.map((board, index) => ({
-      id: `storyboard-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+    const plannedItems = boards.map((board, index) => ({
+      ...items[index],
       status: "running",
       prompt: board.imagePrompt,
-      storyPrompt: prompt,
-      ratio: "16:9",
-      resolution: state.imageStudio.resolution,
-      model,
-      referenceImages,
       board,
-      boardCount,
-      totalBoards: boardCount,
       index: board.index || index + 1,
-      url: "",
-      createdAt: new Date().toISOString(),
     }));
-    state.imageStudio.storyboardHistory = [...items, ...state.imageStudio.storyboardHistory].slice(0, 24);
+    const plannedById = new Map(plannedItems.map((item) => [item.id, item]));
+    state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.map((item) => plannedById.get(item.id) || item);
     renderImageExploreView();
-    await Promise.all(items.map((item) => runImageExploreStoryboardGeneration(item)));
+    await Promise.all(plannedItems.map((item) => runImageExploreStoryboardGeneration(item)));
+  } catch (error) {
+    state.imageStudio.storyboardHistory = state.imageStudio.storyboardHistory.map((item) => (
+      item.batchId === batchId && item.status === "planning"
+        ? { ...item, status: "failed", message: error.message || "故事板规划失败" }
+        : item
+    ));
+    renderImageExploreView();
+    throw error;
   } finally {
     endImageExploreGeneration();
     state.imageStudio.storyboardGenerating = false;
+    state.imageStudio.storyboardActiveBatchId = "";
     persistImageExploreStoryboardHistory();
     renderImageExploreView();
   }

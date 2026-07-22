@@ -8890,13 +8890,15 @@ body.is-explore-ui .explore-canvas-library {
 
 .image-explore-storyboard-bar {
   min-width: 0;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 4px;
+  padding: 0;
 }
 
 .image-explore-storyboard-toggle {
+  width: 92px;
   min-height: 30px;
   display: inline-flex;
   align-items: center;
@@ -8970,10 +8972,10 @@ body.is-explore-ui .explore-canvas-library {
   min-height: 30px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 11px;
-  padding: 0 10px;
+  padding: 0 8px;
   background: rgba(255, 255, 255, 0.04);
   color: #c8d3df;
   font-size: 10px;
@@ -8987,20 +8989,25 @@ body.is-explore-ui .explore-canvas-library {
 }
 
 .image-explore-model {
-  min-width: 156px;
+  width: 134px;
+  min-width: 134px;
 }
 
 .image-explore-resolution {
-  min-width: 104px;
+  width: 92px;
+  min-width: 92px;
 }
 
 .image-explore-ratio {
-  min-width: 214px;
+  width: 150px;
+  min-width: 150px;
 }
 
 .image-explore-control select {
+  width: auto;
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: 128px;
+  max-width: none;
   border: 0;
   outline: 0;
   background: transparent;
@@ -9024,8 +9031,21 @@ body.is-explore-ui .explore-canvas-library {
 }
 
 .image-explore-count {
-  min-width: 104px;
+  width: 92px;
+  min-width: 92px;
   justify-content: space-between;
+}
+
+.image-explore-model select {
+  width: 82px;
+}
+
+.image-explore-ratio select {
+  width: 68px;
+}
+
+.image-explore-resolution select {
+  width: 38px;
 }
 
 .image-explore-status {

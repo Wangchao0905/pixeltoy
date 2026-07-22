@@ -110,28 +110,6 @@
               <div id="imageExploreReferenceList" class="image-explore-reference-list"></div>
               <textarea id="imageExplorePrompt" rows="2" maxlength="4000" placeholder="Describe the scene you imagine"></textarea>
             </div>
-            <div class="image-explore-storyboard-bar">
-              <button id="imageExploreStoryboardToggle" class="image-explore-storyboard-toggle" type="button" aria-expanded="false" aria-controls="imageExploreStoryboardOptions">
-                <span aria-hidden="true">▦</span>
-                <span>故事板</span>
-              </button>
-              <section id="imageExploreStoryboardOptions" class="image-explore-storyboard-options hidden" aria-label="故事板设置">
-                <div class="image-explore-storyboard-format">
-                  <strong>3×3 九宫格</strong>
-                  <span>每张 15 秒</span>
-                </div>
-                <label class="image-explore-control image-explore-storyboard-count">
-                  <span>张数</span>
-                  <select id="imageExploreStoryboardCount" aria-label="故事板张数">
-                    <option value="1" selected>1 张</option>
-                    <option value="2">2 张</option>
-                    <option value="3">3 张</option>
-                    <option value="4">4 张</option>
-                  </select>
-                </label>
-                <span class="image-explore-storyboard-continuity">多张自动保持剧情衔接</span>
-              </section>
-            </div>
             <div class="image-explore-control-row">
               <label class="image-explore-control image-explore-model">
                 <span>模型</span>
@@ -166,6 +144,28 @@
                 <button id="imageExploreCountDown" type="button" aria-label="减少数量">-</button>
                 <output id="imageExploreCount">1</output>
                 <button id="imageExploreCountUp" type="button" aria-label="增加数量">+</button>
+              </div>
+              <div class="image-explore-storyboard-bar">
+                <button id="imageExploreStoryboardToggle" class="image-explore-storyboard-toggle" type="button" aria-expanded="false" aria-controls="imageExploreStoryboardOptions">
+                  <span aria-hidden="true">▦</span>
+                  <span>故事板</span>
+                </button>
+                <section id="imageExploreStoryboardOptions" class="image-explore-storyboard-options hidden" aria-label="故事板设置">
+                  <div class="image-explore-storyboard-format">
+                    <strong>3×3 九宫格</strong>
+                    <span>每张 15 秒</span>
+                  </div>
+                  <label class="image-explore-control image-explore-storyboard-count">
+                    <span>张数</span>
+                    <select id="imageExploreStoryboardCount" aria-label="故事板张数">
+                      <option value="1" selected>1 张</option>
+                      <option value="2">2 张</option>
+                      <option value="3">3 张</option>
+                      <option value="4">4 张</option>
+                    </select>
+                  </label>
+                  <span class="image-explore-storyboard-continuity">多张自动保持剧情衔接</span>
+                </section>
               </div>
               <span id="imageExploreStatus" class="image-explore-status" aria-live="polite"></span>
               <button id="imageExploreGenerate" class="image-explore-generate" type="submit">生成图片 <span aria-hidden="true">↗</span></button>

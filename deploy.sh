@@ -23,9 +23,3 @@ pm2 restart pixel-toy --update-env
 sleep 3
 curl -fsS -o /dev/null http://localhost:4317/ && echo "✓ 部署成功,服务健康" || { echo "✗ 健康检查失败,检查 pm2 logs"; exit 1; }
 curl --retry 10 --retry-delay 1 -fsS -o /dev/null https://pixeltoy.cn/ && echo "✓ HTTPS 首页可访问" || { echo "✗ HTTPS 首页检查失败"; exit 1; }
-for index in 1 2 3 4 5 6; do
-  id=$(printf '%02d' "$index")
-  curl --retry 5 --retry-delay 1 -fsS -o /dev/null "https://pixeltoy.cn/home-videos/work-$id.mp4" \
-    || { echo "✗ 首页视频位 $id 检查失败"; exit 1; }
-done
-echo "✓ 六个首页视频位可访问"

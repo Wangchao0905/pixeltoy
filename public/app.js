@@ -1953,6 +1953,7 @@ function imageExploreStoryboardHistoryItemHtml(item = {}) {
       <div class="image-explore-card-preview image-explore-storyboard-preview">
         <strong>${escapeHtml(boardLabel)}失败</strong>
         <small>${escapeHtml(item.message || "请重试")}</small>
+        <button type="button" class="image-explore-regen" data-image-regenerate="${id}" title="重新生成" aria-label="重新生成">↻</button>
         <button type="button" data-image-remove="${id}" title="移除" aria-label="移除失败结果">×</button>
       </div>
     </article>`;
@@ -2420,7 +2421,7 @@ async function submitImageExploreStoryboard(event) {
   try {
     const planData = await api("/api/canvas/image-storyboard-plan", {
       method: "POST",
-      body: JSON.stringify({ prompt, boardCount, referenceImageCount: referenceImages.length }),
+      body: JSON.stringify({ prompt, boardCount, referenceImageCount: referenceImages.length, referenceImages }),
     });
     const boards = Array.isArray(planData.result?.boards) ? planData.result.boards : [];
     if (boards.length !== boardCount) throw new Error("故事板规划返回数量不正确，请重试");

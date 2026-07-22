@@ -17568,7 +17568,7 @@ function imageStoryboardFallbackPanel(boardIndex, panelIndex, summary) {
   };
 }
 
-function imageStoryboardImagePrompt(board, totalBoards) {
+function imageStoryboardImagePrompt(board, totalBoards, hasReferenceImages = false) {
   const panels = board.panels.map((panel) => {
     const dialogue = normalizeImageStoryboardDialogue(panel.dialogue);
     const dialogueText = dialogue.text === "无对白"
@@ -17579,6 +17579,10 @@ function imageStoryboardImagePrompt(board, totalBoards) {
   return [
     "制作一张完整的 16:9 横向 3×3 九宫格故事板图片。整张图片必须是一张统一画布，包含且只包含 9 个等大的分镜格；面板从左到右、从上到下严格编号 1-9。",
     "每个面板同时体现对应的剧情动作、景别或镜头语言、运镜方向、光影关系和对白；对白请作为清晰但克制的画面文字出现。保持人物身份、服装、场景、道具状态和视线方向连续。",
+    ...(hasReferenceImages ? [
+      "参考图是本项目的唯一视觉身份基准，必须被所有 9 个面板共同遵循；锁定参考图中的人物脸型、发型、体型、服装、服装颜色、道具、场景结构和整体视觉风格。不得重新设计角色，不得换脸、换装、改色、改变年龄或体型，不得用一套新角色和新场景替代参考图。",
+      "如有多张参考图，先识别它们对应的同一角色、场景或道具，并在每个相关面板中保持对应关系；参考图只用于确定视觉身份，剧情动作和镜头按本故事板规划执行。",
+    ] : []),
     "不要生成 9 张独立图片，不要把九宫格拆成多张图片，不要裁切或拼贴成画外内容，不要加入与剧情无关的角色、道具或事件。",
     `这是连续故事板中的第 ${board.index}/${totalBoards} 张，时长 ${board.timeRange || "0-15s"}。`,
     `前一张的衔接入口：${board.continuityIn || "从故事起始状态进入"}。本张结束出口：${board.continuityOut || "保留动作或视线方向供下一张承接"}。`,
@@ -17624,6 +17628,7 @@ function imageStoryboardPlannerSystemPrompt() {
 - layout 固定为 "3x3"，durationPerBoard 固定为 15，boards 数量必须等于用户要求的 1-4 张。
 - 每张 board 必须有 9 个 panels，按从左到右、从上到下排列；每格都要给出 plot、shot、cameraMovement、lighting、dialogue、transition。
 - 剧情、对白必须根据用户输入展开，不要凭空改变人物关系、目标、地点或结局。
+- 如果用户提供参考图，参考图是唯一视觉身份来源；必须先识别参考图中的人物、服装、道具、场景和画面风格，再把它们贯穿到所有 board 和每个 panel。不得重新设计角色、换脸、换装、改色、改变年龄或体型，也不得用全新的角色或场景替代参考图。
 - 多张故事板必须连续：后一张的 continuityIn 从前一张的 continuityOut 开始；保持人物身份、服装、场景、道具状态、动作方向、视线和情绪连续，只推进用户故事中已经存在或合理隐含的剧情。
 - 每张内部按 0-15 秒推进，9 格可使用 0-2s、2-4s、4-6s、6-8s、8-10s、10-12s、12-13s、13-14s、14-15s 等时间段。
 - cameraMovement 要写具体景别、机位和运镜；lighting 要写光源方向、色温或明暗层次；dialogue 没有对白时必须写 speaker 为空、text 为“无对白”。
@@ -17637,6 +17642,9 @@ function imageStoryboardPlannerUserPrompt({ prompt, boardCount, referenceImageCo
     boardCount,
     durationPerBoard: 15,
     referenceImageCount,
+    referenceImageInstruction: referenceImageCount
+      ? "已附上参考图。必须以参考图为视觉身份基准，所有 board 和 9 个 panel 都要保持同一人物/道具/场景的外观，不得重新设计。"
+      : "未提供参考图。根据故事文字设计角色、道具和场景。",
     continuityRule: boardCount > 1 ? "后一张从前一张 continuityOut 直接开始，保持人物、场景、道具、动作和情绪连续" : "单张内部保持九格动作连续",
     story: prompt.slice(0, 20000),
     outputSchema: {
@@ -17663,6 +17671,18 @@ function imageStoryboardPlannerUserPrompt({ prompt, boardCount, referenceImageCo
   }, null, 2);
 }
 
+function imageStoryboardPlannerUserMessage({ prompt, boardCount, referencePaths = [] }) {
+  const content = [{
+    type: "text",
+    text: imageStoryboardPlannerUserPrompt({ prompt, boardCount, referenceImageCount: referencePaths.length }),
+  }];
+  referencePaths.forEach((file, index) => {
+    content.push({ type: "text", text: `参考图 ${index + 1}（必须遵循，不得重新设计）：` });
+    content.push({ type: "image_url", image_url: { url: fileToDataUrl(file), detail: "high" } });
+  });
+  return content;
+}
+
 async function createImageStoryboardPlan(body = {}) {
   const prompt = String(body.prompt || "").trim();
   if (!prompt) throw new Error("请先填写故事或情节");
@@ -17670,13 +17690,21 @@ async function createImageStoryboardPlan(body = {}) {
   const model = normalizeStoryboardModel(body.model);
   const apiKey = storyboardApiKey();
   if (!apiKey) throw new Error("未配置故事板规划模型 API Key");
+  const requestedReferences = (Array.isArray(body.referenceImages) ? body.referenceImages : [])
+    .map(compactLine)
+    .filter(Boolean)
+    .slice(0, 4);
+  const referencePaths = (await Promise.all(requestedReferences.map(resolveCanvasImageReferenceToLocalPath))).filter(Boolean);
+  if (requestedReferences.length && referencePaths.length !== requestedReferences.length) {
+    throw new Error(`故事板参考图解析失败：要求 ${requestedReferences.length} 张，实际解析到 ${referencePaths.length} 张。请重新上传或导入参考图。`);
+  }
   const requestBody = (withJsonMode) => ({
     model,
     temperature: 0.35,
     ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
     messages: [
       { role: "system", content: imageStoryboardPlannerSystemPrompt() },
-      { role: "user", content: imageStoryboardPlannerUserPrompt({ prompt, boardCount, referenceImageCount: Number(body.referenceImageCount) || 0 }) },
+      { role: "user", content: imageStoryboardPlannerUserMessage({ prompt, boardCount, referencePaths }) },
     ],
   });
   const post = (withJsonMode) => fetch(openAiCompatUrl("/v1/chat/completions", "storyboard"), {
@@ -17703,7 +17731,10 @@ async function createImageStoryboardPlan(body = {}) {
   }
   const rawBoards = Array.isArray(parsed?.boards) ? parsed.boards : [];
   if (rawBoards.length < boardCount) throw new Error(`故事板规划只返回 ${rawBoards.length} 张，要求 ${boardCount} 张`);
-  const boards = rawBoards.slice(0, boardCount).map((board, index) => normalizeImageStoryboardBoard(board, index, boardCount));
+  const boards = rawBoards.slice(0, boardCount).map((board, index) => {
+    const normalized = normalizeImageStoryboardBoard(board, index, boardCount);
+    return { ...normalized, imagePrompt: imageStoryboardImagePrompt(normalized, boardCount, referencePaths.length > 0) };
+  });
   return {
     layout: "3x3",
     durationPerBoard: 15,

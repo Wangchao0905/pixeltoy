@@ -49,8 +49,15 @@ const storyboardJobRoute = sectionBetween(
   'if (["storyboards", "storyboards-dry-run", "storyboard-regenerate", "storyboard-regenerate-dry-run"].includes(type))',
   '  throw new Error(`unknown job type: ${type}`);',
 );
+const buildDraftSection = sectionBetween(server, "async function buildDraft(", "function parsePromptSections");
+const buildVideoConfigSection = sectionBetween(server, "async function buildVideoConfig(", "function clearVideoArtifactsForNewCanvas");
 
 assert(server.includes("function clearAssetFailureLogs"), "asset failure cleanup guard is missing");
+assert(app.includes('toast("正在生成分镜草稿")') && !app.includes('toast("正在生成分镜草稿并解析资产")'), "script workflow must describe storyboard-only generation");
+assert(app.includes('toast("分镜和提示词草稿已生成")') && !app.includes('toast("资产解析、分镜和提示词草稿已生成，请先确认解析结果")'), "script workflow completion must not claim asset extraction");
+assert(buildDraftSection.includes("manifestItemsToAssets(confirmedManifest)"), "draft generation must read the confirmed asset manifest");
+assert(!buildDraftSection.includes("extractAssetManifest("), "draft generation must not parse assets");
+assert(!buildVideoConfigSection.includes("ensureAssetCoverage("), "video config generation must not mutate the asset library");
 assert(viteConfig.includes("@vitejs/plugin-react"), "Vite must use the official React plugin");
 assert(viteConfig.includes('entryFileNames: "dist/[name].js"'), "Vite admin build must emit a stable public/dist/admin.js bundle");
 assert(adminHtml.includes('<div id="adminRoot"></div>'), "admin.html must mount the React admin island");

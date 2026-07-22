@@ -19436,34 +19436,6 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     ...shot,
     prompt: seedancePromptForShotMode({ ...shot, index }, index, dialogueLanguage, storyboardsActive),
   }));
-  if (manifest.items?.length && !assetCoverageIsFresh(manifest, script)) {
-    const coverageResult = await ensureAssetCoverage({
-      script,
-      assets: manifestItemsToAssets(manifest),
-      shots,
-      worldProfile: manifest.worldProfile || inferWorldProfile(script),
-      modelName: body.assetAnalyzerModel || manifest.analyzer?.model,
-    });
-    if (coverageResult.coverage.added.length) {
-      manifest = writeAssetManifest(
-        episodeRoot,
-        assetManifestFromAssets({
-          title: manifest.title || titleFromScript(script, slug),
-          script,
-          worldProfile: manifest.worldProfile || inferWorldProfile(script),
-          assets: coverageResult.assets,
-          analyzerResult: manifest.analyzer || { ok: false, model: body.assetAnalyzerModel || "", reason: "" },
-          modelName: body.assetAnalyzerModel || manifest.analyzer?.model,
-          coverage: coverageResult.coverage,
-        }),
-      );
-      throw new Error(
-        `资产覆盖校验自动补充了 ${coverageResult.coverage.added.length} 个缺失资产，请先生成或上传这些资产图后再生成视频配置：${coverageResult.coverage.added
-          .map((item) => item.label || item.id)
-          .join("、")}`,
-      );
-    }
-  }
   const allowTailFrameContinuity =
     videoPromptMode === "production_board"
       ? false

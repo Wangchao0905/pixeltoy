@@ -5869,14 +5869,14 @@ async function generateDraft() {
   await saveFileQuiet("script");
   state.uiBusy.assetExtracting = true;
   renderWorkspace();
-  toast("正在生成分镜草稿并解析资产");
+  toast("正在生成分镜草稿");
   try {
     const data = await api(`/api/project/${state.selectedId}/draft`, {
       method: "POST",
       body: JSON.stringify({ dialogueLanguage, assetAnalyzerModel: state.assetAnalyzerModel }),
     });
     setProjectState(data.state);
-    toast("资产解析、分镜和提示词草稿已生成，请先确认解析结果");
+    toast("分镜和提示词草稿已生成");
   } finally {
     state.uiBusy.assetExtracting = false;
     renderWorkspace();

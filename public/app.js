@@ -116,6 +116,7 @@ const state = {
     history: readImageExploreHistory(),
     storyboardHistory: readImageExploreStoryboardHistory(),
     prompt: "",
+    model: "gpt-image-2",
     ratio: "16:9",
     resolution: "1k",
     count: 1,
@@ -2001,6 +2002,7 @@ function renderImageExploreView() {
   const view = $("#imageExploreView");
   if (!view) return;
   $("#imageExplorePrompt").value = state.imageStudio.prompt;
+  $("#imageExploreModel").value = state.imageStudio.model || "gpt-image-2";
   $("#imageExploreRatio").value = state.imageStudio.ratio;
   $("#imageExploreResolution").value = state.imageStudio.resolution;
   $("#imageExploreCount").textContent = String(state.imageStudio.count);
@@ -2222,7 +2224,7 @@ async function runImageExploreGeneration(item) {
         prompt: item.prompt,
         ratio: item.ratio,
         resolution: item.resolution,
-        model: item.model || "gpt-image-2",
+        imageModel: item.model || "gpt-image-2",
         referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
       }),
     });
@@ -2256,7 +2258,7 @@ async function runImageExploreStoryboardGeneration(item) {
         prompt: item.prompt,
         ratio: "16:9",
         resolution: item.resolution,
-        model: item.model || "gpt-image-2",
+        imageModel: item.model || "gpt-image-2",
         referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
       }),
     });
@@ -6037,6 +6039,9 @@ function bind() {
   $("#imageExploreComposer")?.addEventListener("submit", (event) => submitImageExploreGeneration(event).catch((error) => toast(error.message)));
   $("#imageExplorePrompt")?.addEventListener("input", (event) => {
     state.imageStudio.prompt = event.currentTarget.value;
+  });
+  $("#imageExploreModel")?.addEventListener("change", (event) => {
+    state.imageStudio.model = event.currentTarget.value || "gpt-image-2";
   });
   $("#imageExploreStoryboardToggle")?.addEventListener("click", () => {
     state.imageStudio.storyboardMode = !state.imageStudio.storyboardMode;

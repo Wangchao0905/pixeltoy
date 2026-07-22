@@ -8975,8 +8975,8 @@ body.is-explore-ui .explore-canvas-library {
 }
 
 .image-explore-model {
-  width: 134px;
-  min-width: 134px;
+  width: 172px;
+  min-width: 172px;
 }
 
 .image-explore-resolution {
@@ -9023,7 +9023,7 @@ body.is-explore-ui .explore-canvas-library {
 }
 
 .image-explore-model select {
-  width: 82px;
+  width: 120px;
 }
 
 .image-explore-ratio select {

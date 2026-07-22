@@ -9596,6 +9596,22 @@ function arkVideoUrl(pathname) {
   return `${baseUrl}${clean}`;
 }
 
+function volcArkImageBaseUrl() {
+  return (
+    process.env.VOLC_ARK_IMAGE_BASE_URL ||
+    process.env.VOLC_ARK_BASE_URL ||
+    process.env.ARK_BASE_URL ||
+    DEFAULT_VOLC_ARK_VIDEO_BASE_URL
+  ).replace(/\/+$/, "");
+}
+
+function arkImageUrl(pathname) {
+  const clean = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const baseUrl = volcArkImageBaseUrl();
+  if (baseUrl.endsWith("/v1") && clean.startsWith("/v1/")) return `${baseUrl}${clean.slice(3)}`;
+  return `${baseUrl}${clean}`;
+}
+
 function bytePlusArkVideoUrl(pathname) {
   const clean = pathname.startsWith("/") ? pathname : `/${pathname}`;
   const baseUrl = bytePlusArkVideoBaseUrl();
@@ -11262,6 +11278,18 @@ async function callArkJson(pathname, options = {}) {
   );
 }
 
+async function callArkImageJson(payload = {}) {
+  return callVideoJson(
+    arkImageUrl("/images/generations"),
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    "缺少火山方舟图片 API Key：请在 .env.local 配置 VOLC_ARK_API_KEY 后重启服务。",
+    "ark",
+  );
+}
+
 async function callBytePlusArkJson(pathname, options = {}) {
   return callVideoJson(
     bytePlusArkVideoUrl(pathname),
@@ -11702,7 +11730,7 @@ async function getCanvasVideoGeneration(taskId, provider = canvasVideoProvider()
   return getArkCanvasVideoGeneration(taskId);
 }
 
-// ---- 画布图片生成通道（gpt-image-2，直接 spawn image-gen.js，输出到画布公共资产目录） ----
+// ---- 画布图片生成通道（GPT Image 2 + Seedream 5.0，输出到画布公共资产目录） ----
 const canvasImageJobs = new Map();
 // GPT Image 2 size constraints: each edge is 16px-aligned, <=3840px, and total pixels <=8,294,400.
 const CANVAS_IMAGE_SIZE_TABLE = {
@@ -11716,7 +11744,35 @@ const CANVAS_IMAGE_SIZE_TABLE = {
   "2:3": { "1k": "1024x1536", "2k": "2048x3072", "4k": "2304x3456" },
   "1:1": { "1k": "1024x1024", "2k": "2048x2048", "4k": "2880x2880" },
 };
-const CANVAS_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
+const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
+const DEFAULT_SEEDREAM_5_PRO_MODEL = "doubao-seedream-5-0-260128";
+const DEFAULT_SEEDREAM_5_LITE_MODEL = "doubao-seedream-5-0-lite-260128";
+
+function normalizeCanvasImageModel(value) {
+  const raw = compactLine(value || "gpt-image-2").toLowerCase();
+  if (["seedream-5-0-pro", "seedream-5.0-pro", "seedream-5-pro", "doubao-seedream-5-0-260128"].includes(raw)) return "seedream-5-0-pro";
+  if (["seedream-5-0-lite", "seedream-5.0-lite", "seedream-5-lite", "doubao-seedream-5-0-lite-260128"].includes(raw)) return "seedream-5-0-lite";
+  return "gpt-image-2";
+}
+
+function canvasImageModelConfig(value) {
+  const key = normalizeCanvasImageModel(value);
+  if (key === "seedream-5-0-pro") {
+    return {
+      key,
+      provider: "ark",
+      model: process.env.VOLC_ARK_IMAGE_PRO_MODEL || process.env.SEEDREAM_5_PRO_MODEL || DEFAULT_SEEDREAM_5_PRO_MODEL,
+    };
+  }
+  if (key === "seedream-5-0-lite") {
+    return {
+      key,
+      provider: "ark",
+      model: process.env.VOLC_ARK_IMAGE_LITE_MODEL || process.env.SEEDREAM_5_LITE_MODEL || DEFAULT_SEEDREAM_5_LITE_MODEL,
+    };
+  }
+  return { key, provider: "gpt", model: GPT_IMAGE_MODEL };
+}
 
 function canvasImageSizeFor(ratio, resolution) {
   const r = CANVAS_IMAGE_SIZE_TABLE[ratio] || CANVAS_IMAGE_SIZE_TABLE["16:9"];
@@ -11805,6 +11861,91 @@ async function resolveCanvasImageReferenceToLocalPath(url = "") {
   return "";
 }
 
+async function completeCanvasImageJob(entry = {}) {
+  if (!entry.outPath || !fs.existsSync(entry.outPath)) throw new Error("上游没有返回有效图片文件");
+  await normalizeCanvasImageOutput(entry);
+  const version = Math.round(fs.statSync(entry.outPath).mtimeMs);
+  Object.assign(entry, {
+    status: "finalizing",
+    url: `/public-assets/${encodeURIComponent(entry.fileName)}?v=${version}`,
+    message: "正在保存到素材库",
+  });
+  await finalizeGeneratedCanvasAsset(entry);
+  Object.assign(entry, {
+    status: "completed",
+    message: entry.libraryError
+      ? `生成完成，但素材库保存失败：${entry.libraryError}`
+      : entry.outputNormalizationError
+        ? `生成完成，但比例校正失败：${entry.outputNormalizationError}`
+        : "生成完成",
+  });
+}
+
+function seedreamImageResult(raw = {}) {
+  const candidates = [
+    raw?.data?.[0],
+    raw?.output?.[0],
+    raw?.images?.[0],
+    raw?.result?.data?.[0],
+    raw?.result?.output?.[0],
+  ].filter(Boolean);
+  for (const item of candidates) {
+    if (typeof item === "string") return { url: item };
+    if (item.url || item.image_url || item.b64_json || item.base64 || item.image_base64) {
+      return {
+        url: item.url || item.image_url || "",
+        b64: item.b64_json || item.base64 || item.image_base64 || "",
+      };
+    }
+  }
+  return null;
+}
+
+async function writeSeedreamImageResult(entry, raw) {
+  const result = seedreamImageResult(raw);
+  if (!result) throw new Error("Seedream 图片接口没有返回图片结果");
+  let buffer;
+  if (result.b64) {
+    buffer = Buffer.from(result.b64, "base64");
+  } else if (isDataImageUrl(result.url)) {
+    buffer = decodeDataImageUrl(result.url)?.buffer;
+  } else if (/^https?:\/\//i.test(result.url)) {
+    const response = await fetchWithTimeout(result.url, { headers: { Accept: "image/*" } }, 180_000);
+    if (!response.ok) throw new Error(`Seedream 返回图片下载失败（HTTP ${response.status}）`);
+    buffer = Buffer.from(await response.arrayBuffer());
+  }
+  if (!buffer?.length || buffer.length > 50 * 1024 * 1024) throw new Error("Seedream 返回的图片内容无效");
+  fs.writeFileSync(entry.outPath, buffer);
+}
+
+function seedreamImagePayload(entry = {}) {
+  const payload = {
+    model: entry.providerModel,
+    prompt: entry.prompt,
+    size: entry.size,
+    response_format: "url",
+    watermark: false,
+    stream: false,
+  };
+  if (entry.referencePaths?.length) {
+    const images = entry.referencePaths.map((file) => fileToDataUrl(file));
+    payload.image = images.length === 1 ? images[0] : images;
+  }
+  return payload;
+}
+
+async function runSeedreamCanvasImageJob(taskId) {
+  const entry = canvasImageJobs.get(taskId);
+  if (!entry) return;
+  try {
+    const raw = await callArkImageJson(seedreamImagePayload(entry));
+    await writeSeedreamImageResult(entry, raw);
+    await completeCanvasImageJob(entry);
+  } catch (error) {
+    Object.assign(entry, { status: "failed", message: classifyImageGenError(error?.message || "Seedream 图片生成失败", "ark") });
+  }
+}
+
 function runCanvasImageJob(taskId, args, env, attempt = 0) {
   const child = spawn(process.execPath, args, { env });
   const job = canvasImageJobs.get(taskId);
@@ -11822,22 +11963,7 @@ function runCanvasImageJob(taskId, args, env, attempt = 0) {
     const entry = canvasImageJobs.get(taskId);
     if (!entry) return;
     if (code === 0 && fs.existsSync(entry.outPath)) {
-      await normalizeCanvasImageOutput(entry);
-      const version = Math.round(fs.statSync(entry.outPath).mtimeMs);
-      Object.assign(entry, {
-        status: "finalizing",
-        url: `/public-assets/${encodeURIComponent(entry.fileName)}?v=${version}`,
-        message: "正在保存到素材库",
-      });
-      await finalizeGeneratedCanvasAsset(entry);
-      Object.assign(entry, {
-        status: "completed",
-        message: entry.libraryError
-          ? `生成完成，但素材库保存失败：${entry.libraryError}`
-          : entry.outputNormalizationError
-            ? `生成完成，但比例校正失败：${entry.outputNormalizationError}`
-            : "生成完成",
-      });
+      await completeCanvasImageJob(entry);
     } else {
       const failMessage = classifyImageGenError(stderr) || `出图失败（退出码 ${code}）`;
       // 上游生图瞬时错误(stream_read_error/超时/5xx/网络)自动重试,最多 2 次退避;审核/参数类不重试。
@@ -11889,9 +12015,13 @@ async function finalizeGeneratedCanvasAsset(entry = {}) {
   }
 }
 
-function classifyImageGenError(stderr = "") {
+function classifyImageGenError(stderr = "", provider = "gpt") {
   const text = String(stderr || "");
-  if (/invalid|unauthorized|401|api key|token/i.test(text)) return "出图鉴权失败：请检查 OPENAI_API_KEY（apikey.fun 网关）。";
+  if (/invalid|unauthorized|401|api key|token|鉴权|密钥/i.test(text)) {
+    return provider === "ark"
+      ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
+      : "出图鉴权失败：请检查 OPENAI_API_KEY（apikey.fun 网关）。";
+  }
   if (/timeout|timed out|ETIMEDOUT/i.test(text)) return "出图超时，请重试或降低分辨率。";
   if (/moderation|safety|blocked|rejected/i.test(text)) return "提示词被安全审核拦截，请调整后重试。";
   return text.split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 200) || "";
@@ -11900,8 +12030,13 @@ function classifyImageGenError(stderr = "") {
 async function createCanvasImageGeneration(body = {}) {
   const prompt = compactLine(body.prompt || "");
   if (!prompt) throw new Error("请先填写图片描述（prompt）");
-  if (!imageApiKey()) throw new Error("缺少 OPENAI_API_KEY：画布出图需要 api.apikey.fun 的 gpt-image-2 生图 Key，请在 .env.local 配置后重启服务。");
-  if (!IMAGE_GEN_SKILL_SCRIPT || !fs.existsSync(IMAGE_GEN_SKILL_SCRIPT)) throw new Error("缺少 image-gen 脚本：请先安装 apikey.fun 的 image-gen skill。");
+  const modelConfig = canvasImageModelConfig(body.imageModel || body.model);
+  if (modelConfig.provider === "gpt") {
+    if (!imageApiKey()) throw new Error("缺少 OPENAI_API_KEY：GPT Image 2 出图需要 api.apikey.fun 的生图 Key，请在 .env.local 配置后重启服务。");
+    if (!IMAGE_GEN_SKILL_SCRIPT || !fs.existsSync(IMAGE_GEN_SKILL_SCRIPT)) throw new Error("缺少 image-gen 脚本：请先安装 apikey.fun 的 image-gen skill。");
+  } else if (!videoApiKey("ark")) {
+    throw new Error("缺少 VOLC_ARK_API_KEY：Seedream 5.0 Pro/Lite 出图需要火山方舟 API Key，请在 .env.local 配置后重启服务。");
+  }
   const ratio = CANVAS_IMAGE_SIZE_TABLE[body.ratio] ? body.ratio : "16:9";
   const resolution = ["1k", "2k", "4k"].includes(String(body.resolution || "").toLowerCase()) ? String(body.resolution).toLowerCase() : "1k";
   const size = canvasImageSizeFor(ratio, resolution);
@@ -11918,18 +12053,20 @@ async function createCanvasImageGeneration(body = {}) {
   }
   const timeout = String(Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10));
   let args;
-  if (references.length) {
-    args = [
-      IMAGE_GEN_SKILL_SCRIPT, "--mode", "image",
-      "--image", references[0],
-      "--prompt", prompt, "--size", providerSize,
-      "--model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini",
-      "--image-model", CANVAS_IMAGE_MODEL,
-      "--out", outPath, "--timeout", timeout,
-    ];
-    if (references.length > 1) args.push("--reference-image", references.slice(1).join(path.delimiter));
-  } else {
-    args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", CANVAS_IMAGE_MODEL, "--out", outPath, "--timeout", timeout];
+  if (modelConfig.provider === "gpt") {
+    if (references.length) {
+      args = [
+        IMAGE_GEN_SKILL_SCRIPT, "--mode", "image",
+        "--image", references[0],
+        "--prompt", prompt, "--size", providerSize,
+        "--model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini",
+        "--image-model", modelConfig.model,
+        "--out", outPath, "--timeout", timeout,
+      ];
+      if (references.length > 1) args.push("--reference-image", references.slice(1).join(path.delimiter));
+    } else {
+      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--out", outPath, "--timeout", timeout];
+    }
   }
   const env = { ...process.env, OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "" };
   canvasImageJobs.set(taskId, {
@@ -11943,17 +12080,22 @@ async function createCanvasImageGeneration(body = {}) {
     resolution,
     size,
     providerSize,
+    imageModel: modelConfig.key,
+    provider: modelConfig.provider,
+    providerModel: modelConfig.model,
+    referencePaths: references,
     prompt,
     ownerUserId: compactLine(body.ownerUserId || ""),
     createdAt: Date.now(),
     child: null,
   });
-  runCanvasImageJob(taskId, args, env);
+  if (modelConfig.provider === "ark") runSeedreamCanvasImageJob(taskId);
+  else runCanvasImageJob(taskId, args, env);
   // 清理老任务（>30 分钟）避免内存无界增长。
   for (const [id, job] of canvasImageJobs) {
     if (Date.now() - (job.createdAt || 0) > 30 * 60 * 1000 && job.status !== "running") canvasImageJobs.delete(id);
   }
-  return { taskId, status: "running", size, ratio, resolution };
+  return { taskId, status: "running", size, ratio, resolution, imageModel: modelConfig.key, provider: modelConfig.provider };
 }
 
 function getCanvasImageGeneration(taskId) {
@@ -11966,6 +12108,8 @@ function getCanvasImageGeneration(taskId) {
     size: job.size,
     ratio: job.ratio,
     resolution: job.resolution,
+    imageModel: job.imageModel || "gpt-image-2",
+    provider: job.provider || "gpt",
     libraryAssetId: job.libraryAssetId || "",
     libraryAsset: job.libraryAsset || null,
   };
@@ -21034,6 +21178,12 @@ module.exports = {
     canvasImageRef: {
       localPublicAssetPathFromUrl,
       CANVAS_PUBLIC_ASSET_DIR,
+    },
+    canvasImage: {
+      normalizeCanvasImageModel,
+      canvasImageModelConfig,
+      seedreamImageResult,
+      seedreamImagePayload,
     },
     arkVirtualPerson: {
       buildOpenApiRequest: buildArkAssetOpenApiRequest,

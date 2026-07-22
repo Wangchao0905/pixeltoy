@@ -197,6 +197,7 @@ const CANVAS_NODE_RATIO_DIMENSIONS = Object.freeze({
   adaptive: { width: 9, height: 16, preferredWidth: 520 },
 });
 const IMAGE_NODE_DEFAULTS = {
+  model: "gpt-image-2",
   ratio: "16:9",
   resolution: "1k",
 };
@@ -3324,7 +3325,7 @@ async function generateImageNode(nodeId) {
   try {
     const data = await api("/api/canvas/image-generation", {
       method: "POST",
-      body: JSON.stringify({ prompt, ratio: settings.ratio, resolution: settings.resolution, referenceImages }),
+      body: JSON.stringify({ prompt, imageModel: settings.model, ratio: settings.ratio, resolution: settings.resolution, referenceImages }),
     });
     const taskId = data.result?.taskId || "";
     if (!taskId) throw new Error("提交出图任务失败：未拿到 taskId");

@@ -11747,6 +11747,7 @@ const CANVAS_IMAGE_SIZE_TABLE = {
 const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
 const DEFAULT_SEEDREAM_5_PRO_MODEL = "doubao-seedream-5-0-260128";
 const DEFAULT_SEEDREAM_5_LITE_MODEL = "doubao-seedream-5-0-lite-260128";
+const SEEDREAM_MIN_IMAGE_PIXELS = 3_686_400;
 
 function normalizeCanvasImageModel(value) {
   const raw = compactLine(value || "gpt-image-2").toLowerCase();
@@ -11777,6 +11778,22 @@ function canvasImageModelConfig(value) {
 function canvasImageSizeFor(ratio, resolution) {
   const r = CANVAS_IMAGE_SIZE_TABLE[ratio] || CANVAS_IMAGE_SIZE_TABLE["16:9"];
   return r[String(resolution || "1k").toLowerCase()] || r["1k"];
+}
+
+// Seedream 5.0 rejects requests below 3,686,400 total pixels. Keep the UI's
+// resolution/output size unchanged, but upscale only the provider request to
+// the smallest 16px-aligned size that satisfies the model constraint.
+function seedreamImageSizeFor(ratio, resolution) {
+  const requested = canvasImageSizeFor(ratio, resolution);
+  const match = requested.match(/^(\d+)x(\d+)$/);
+  if (!match) return "2560x1440";
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (width * height >= SEEDREAM_MIN_IMAGE_PIXELS) return requested;
+  const scale = Math.sqrt(SEEDREAM_MIN_IMAGE_PIXELS / (width * height));
+  const alignedWidth = Math.ceil((width * scale) / 16) * 16;
+  const alignedHeight = Math.ceil((height * scale) / 16) * 16;
+  return `${alignedWidth}x${alignedHeight}`;
 }
 
 // GPT Image 的 image_generation 工具只接受方形、横向或纵向三种尺寸。
@@ -11922,7 +11939,7 @@ function seedreamImagePayload(entry = {}) {
   const payload = {
     model: entry.providerModel,
     prompt: entry.prompt,
-    size: entry.size,
+    size: entry.providerSize || entry.size,
     response_format: "url",
     watermark: false,
     stream: false,
@@ -12040,7 +12057,7 @@ async function createCanvasImageGeneration(body = {}) {
   const ratio = CANVAS_IMAGE_SIZE_TABLE[body.ratio] ? body.ratio : "16:9";
   const resolution = ["1k", "2k", "4k"].includes(String(body.resolution || "").toLowerCase()) ? String(body.resolution).toLowerCase() : "1k";
   const size = canvasImageSizeFor(ratio, resolution);
-  const providerSize = canvasImageProviderSizeFor(ratio);
+  const providerSize = modelConfig.provider === "ark" ? seedreamImageSizeFor(ratio, resolution) : canvasImageProviderSizeFor(ratio);
   fs.mkdirSync(CANVAS_PUBLIC_ASSET_DIR, { recursive: true });
   const taskId = crypto.randomUUID();
   const fileName = `canvas-image-${taskId}.png`;
@@ -21182,6 +21199,7 @@ module.exports = {
     canvasImage: {
       normalizeCanvasImageModel,
       canvasImageModelConfig,
+      seedreamImageSizeFor,
       seedreamImageResult,
       seedreamImagePayload,
     },

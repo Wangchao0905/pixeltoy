@@ -31,9 +31,12 @@ assert.equal(image.normalizeCanvasImageModel("seedream-5-0-lite"), "seedream-5-0
 assert.equal(image.canvasImageModelConfig("seedream-5-0-pro").provider, "ark");
 assert.equal(image.canvasImageModelConfig("seedream-5-0-lite").provider, "ark");
 assert.equal(image.canvasImageModelConfig("gpt-image-2").provider, "gpt");
-const payload = image.seedreamImagePayload({ providerModel: "doubao-seedream-5-0-260128", prompt: "test", size: "1280x720" });
+assert.equal(image.seedreamImageSizeFor("16:9", "1k"), "2560x1440");
+assert.equal(image.seedreamImageSizeFor("9:16", "1k"), "1440x2560");
+assert.equal(image.seedreamImageSizeFor("1:1", "1k"), "1920x1920");
+const payload = image.seedreamImagePayload({ providerModel: "doubao-seedream-5-0-260128", prompt: "test", size: "1280x720", providerSize: "2560x1440" });
 assert.equal(payload.model, "doubao-seedream-5-0-260128");
-assert.equal(payload.size, "1280x720");
+assert.equal(payload.size, "2560x1440");
 assert.equal(payload.response_format, "url");
 
 console.log("image model routing tests passed");

@@ -17683,6 +17683,45 @@ function imageStoryboardPlannerUserMessage({ prompt, boardCount, referencePaths 
   return content;
 }
 
+const IMAGE_STORYBOARD_MODEL_TIMEOUT_MS = Math.max(15_000, Number.parseInt(process.env.STORYBOARD_TIMEOUT_MS || "240000", 10));
+const IMAGE_STORYBOARD_MODEL_MAX_ATTEMPTS = 3;
+
+function imageStoryboardModelRetryableStatus(status) {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+}
+
+async function fetchImageStoryboardModel(url, options = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt < IMAGE_STORYBOARD_MODEL_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), IMAGE_STORYBOARD_MODEL_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: options.signal || controller.signal,
+      });
+      if (response.ok || !imageStoryboardModelRetryableStatus(response.status)) return response;
+      lastError = new Error(`HTTP ${response.status}`);
+      try {
+        await response.body?.cancel();
+      } catch {}
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (attempt < IMAGE_STORYBOARD_MODEL_MAX_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+    }
+  }
+  const cause = lastError?.cause?.code || lastError?.code || lastError?.message || "未知网络错误";
+  throw new Error(`故事板规划模型请求失败（已重试 ${IMAGE_STORYBOARD_MODEL_MAX_ATTEMPTS} 次）：${cause}`);
+}
+
+function shouldRetryImageStoryboardWithoutReferences(errorText = "") {
+  return /fetch failed|请求失败|超时|network|timeout|timed out|HTTP (400|408|413|422|429|500|502|503|504)|image_url|vision|multimodal|payload|unsupported/i.test(String(errorText || ""));
+}
+
 async function createImageStoryboardPlan(body = {}) {
   const prompt = String(body.prompt || "").trim();
   if (!prompt) throw new Error("请先填写故事或情节");
@@ -17698,27 +17737,50 @@ async function createImageStoryboardPlan(body = {}) {
   if (requestedReferences.length && referencePaths.length !== requestedReferences.length) {
     throw new Error(`故事板参考图解析失败：要求 ${requestedReferences.length} 张，实际解析到 ${referencePaths.length} 张。请重新上传或导入参考图。`);
   }
-  const requestBody = (withJsonMode) => ({
+  const requestBody = (withJsonMode, includeReferenceImages = referencePaths.length > 0) => ({
     model,
     temperature: 0.35,
     ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
     messages: [
       { role: "system", content: imageStoryboardPlannerSystemPrompt() },
-      { role: "user", content: imageStoryboardPlannerUserMessage({ prompt, boardCount, referencePaths }) },
+      {
+        role: "user",
+        content: includeReferenceImages
+          ? imageStoryboardPlannerUserMessage({ prompt, boardCount, referencePaths })
+          : imageStoryboardPlannerUserPrompt({ prompt, boardCount, referenceImageCount: referencePaths.length }),
+      },
     ],
   });
-  const post = (withJsonMode) => fetch(openAiCompatUrl("/v1/chat/completions", "storyboard"), {
+  const post = (withJsonMode, includeReferenceImages = referencePaths.length > 0) => fetchImageStoryboardModel(openAiCompatUrl("/v1/chat/completions", "storyboard"), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(requestBody(withJsonMode)),
+    body: JSON.stringify(requestBody(withJsonMode, includeReferenceImages)),
   });
-  let response = await post(true);
+  let usedReferenceImages = referencePaths.length > 0;
+  let response;
+  try {
+    response = await post(true, usedReferenceImages);
+  } catch (error) {
+    if (!usedReferenceImages || !shouldRetryImageStoryboardWithoutReferences(error.message)) throw error;
+    console.warn(`[storyboard] 多模态规划失败，降级为文字规划：${error.message}`);
+    usedReferenceImages = false;
+    response = await post(true, false);
+  }
   let raw = await response.text();
+  const shouldFallbackToTextPlanning = usedReferenceImages && (
+    [400, 413, 422].includes(response.status) || shouldRetryImageStoryboardWithoutReferences(`HTTP ${response.status} ${raw}`)
+  );
+  if (!response.ok && shouldFallbackToTextPlanning) {
+    console.warn(`[storyboard] 多模态规划返回 ${response.status}，降级为文字规划`);
+    usedReferenceImages = false;
+    response = await post(true, false);
+    raw = await response.text();
+  }
   if (!response.ok && response.status === 400 && /response_format|json_object/i.test(raw)) {
-    response = await post(false);
+    response = await post(false, usedReferenceImages);
     raw = await response.text();
   }
   if (!response.ok) throw new Error(`故事板规划模型返回 HTTP ${response.status}: ${raw.slice(0, 600)}`);

@@ -279,14 +279,25 @@ function toast(message) {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-  const data = await res.json();
+  let res;
+  try {
+    res = await fetch(path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    const detail = error?.name === "AbortError" ? "请求超时" : error?.message || "网络连接失败";
+    throw new Error(`${path} 请求失败：${detail}`);
+  }
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(`${path} 返回了无效响应（HTTP ${res.status}）`);
+  }
   if (!res.ok || data.ok === false) {
     const error = new Error(data.error || data.message || `HTTP ${res.status}`);
     error.status = res.status;
@@ -2392,6 +2403,10 @@ async function submitImageExploreStoryboard(event) {
     .filter((reference) => !reference.uploading)
     .map((reference) => reference.localUrl || reference.url)
     .filter(Boolean);
+  const plannerReferenceImages = state.imageStudio.references
+    .filter((reference) => !reference.uploading)
+    .map((reference) => reference.url || reference.localUrl)
+    .filter(Boolean);
   const model = state.imageStudio.model || "gpt-image-2";
   const batchId = `storyboard-batch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
@@ -2421,7 +2436,7 @@ async function submitImageExploreStoryboard(event) {
   try {
     const planData = await api("/api/canvas/image-storyboard-plan", {
       method: "POST",
-      body: JSON.stringify({ prompt, boardCount, referenceImageCount: referenceImages.length, referenceImages }),
+      body: JSON.stringify({ prompt, boardCount, referenceImageCount: plannerReferenceImages.length, referenceImages: plannerReferenceImages }),
     });
     const boards = Array.isArray(planData.result?.boards) ? planData.result.boards : [];
     if (boards.length !== boardCount) throw new Error("故事板规划返回数量不正确，请重试");

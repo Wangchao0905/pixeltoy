@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=workflow-assets-20260723" />
+    <link rel="stylesheet" href="/styles.css?v=script-upload-20260723" />
   </head>
   <body>
     <div id="app">
@@ -335,6 +335,11 @@
                       <p id="scriptPath" class="path-line"></p>
                     </div>
                     <div class="actions">
+                      <div class="upload-row script-upload-row">
+                        <input id="workflowScriptUpload" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                        <label class="upload-pill" for="workflowScriptUpload">上传剧本</label>
+                        <span id="workflowScriptUploadName">TXT / DOCX</span>
+                      </div>
                       <div class="segmented" role="radiogroup" aria-label="对白语言">
                         <label>
                           <input type="radio" name="draftDialogueLanguage" value="en" checked />
@@ -829,6 +834,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=workflow-assets-20260723"></script>
+    <script src="/app.js?v=script-upload-20260723"></script>
   </body>
 </html>

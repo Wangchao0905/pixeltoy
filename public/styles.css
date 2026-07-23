@@ -693,6 +693,7 @@ label span {
 }
 
 #scriptUpload,
+#workflowScriptUpload,
 #assetUploadFile,
 #assetStyleReferenceFile,
 #storyboardUploadFile {
@@ -734,6 +735,7 @@ label span {
 }
 
 #scriptUploadName,
+#workflowScriptUploadName,
 #assetUploadName,
 #assetStyleReferenceName,
 #storyboardUploadName {
@@ -743,6 +745,14 @@ label span {
   white-space: nowrap;
   color: var(--muted);
   font-size: 12px;
+}
+
+.script-upload-row {
+  max-width: min(300px, 100%);
+}
+
+.script-upload-row > span {
+  max-width: 132px;
 }
 
 .project-create-status {

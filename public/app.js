@@ -1116,6 +1116,34 @@ function fileBase64(file) {
   });
 }
 
+async function readScriptUpload(file) {
+  if (!file) throw new Error("请选择剧本文件");
+  if (!/\.(md|txt|docx)$/i.test(file.name)) throw new Error("剧本仅支持 MD、TXT 或 DOCX 格式");
+  const isDocx = /\.docx$/i.test(file.name);
+  const text = isDocx
+    ? (
+        await api("/api/extract-script", {
+          method: "POST",
+          body: JSON.stringify({ filename: file.name, contentBase64: await fileBase64(file) }),
+        })
+      ).text
+    : await file.text();
+  if (!String(text || "").trim()) throw new Error("剧本文件没有可读取的正文");
+  return { isDocx, text: String(text) };
+}
+
+async function applyScriptUpload(file, { textareaSelector, nameSelector, titleSelector = "", requireSave = false } = {}) {
+  const textarea = $(textareaSelector);
+  if (!textarea) throw new Error("找不到剧本编辑框");
+  const { isDocx, text } = await readScriptUpload(file);
+  textarea.value = text;
+  const name = $(nameSelector);
+  if (name) name.textContent = file.name;
+  const title = titleSelector ? $(titleSelector) : null;
+  if (title && !title.value) title.value = file.name.replace(/\.(md|txt|docx)$/i, "");
+  toast(isDocx ? `DOCX 剧本已提取${requireSave ? "，请点击保存" : ""}` : `剧本已载入${requireSave ? "，请点击保存" : ""}`);
+}
+
 const referenceUploadConcurrency = 2;
 const referenceMaxDimension = 2048;
 const referenceMaxBytesBeforeCompression = 2 * 1024 * 1024;
@@ -6412,21 +6440,25 @@ function bind() {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
-      const isDocx = /\.docx$/i.test(file.name);
-      const text = isDocx
-        ? (
-            await api("/api/extract-script", {
-              method: "POST",
-              body: JSON.stringify({ filename: file.name, contentBase64: await fileBase64(file) }),
-            })
-          ).text
-        : await file.text();
-      document.querySelector("textarea[name='scriptText']").value = text;
-      $("#scriptUploadName").textContent = file.name;
-      if (!document.querySelector("input[name='title']").value) {
-        document.querySelector("input[name='title']").value = file.name.replace(/\.(md|txt|docx)$/i, "");
-      }
-      toast(isDocx ? "DOCX 剧本已提取" : "剧本已载入");
+      await applyScriptUpload(file, {
+        textareaSelector: "textarea[name='scriptText']",
+        nameSelector: "#scriptUploadName",
+        titleSelector: "input[name='title']",
+      });
+    } catch (error) {
+      toast(error.message);
+      event.target.value = "";
+    }
+  });
+  $("#workflowScriptUpload").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await applyScriptUpload(file, {
+        textareaSelector: "#scriptText",
+        nameSelector: "#workflowScriptUploadName",
+        requireSave: true,
+      });
     } catch (error) {
       toast(error.message);
       event.target.value = "";

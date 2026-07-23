@@ -12043,10 +12043,30 @@ body.auth-page::after {
 }
 
 /* === 资产拖拽重分类样式(补齐:JS 已上线但样式缺失) === */
+#assetGallery:has(.asset-reclassify-groups) {
+  display: block;
+  min-width: 0;
+}
+
+.asset-library-main:has(.asset-reclassify-groups) {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+}
+
 .asset-reclassify-groups {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(216px, 1fr));
+  min-width: 916px;
   gap: 12px;
+  align-items: start;
+  padding: 2px 2px 12px;
+}
+
+.asset-reclassify-group {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
 }
 
 .asset-reclassify-group h3 {
@@ -12057,12 +12077,43 @@ body.auth-page::after {
 
 .asset-reclassify-dropzone {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 8px;
   min-height: 190px;
+  max-height: min(58dvh, 520px);
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 8px;
   border: 1px dashed rgba(141, 194, 255, 0.28);
   border-radius: 12px;
+}
+
+.asset-reclassify-dropzone > .asset-card {
+  min-width: 0;
+  width: 100%;
+}
+
+.asset-library-main:has(.asset-reclassify-groups),
+.asset-reclassify-dropzone {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(126, 194, 255, 0.38) transparent;
+}
+
+.asset-library-main:has(.asset-reclassify-groups)::-webkit-scrollbar,
+.asset-reclassify-dropzone::-webkit-scrollbar {
+  display: block;
+  width: 7px;
+  height: 7px;
+}
+
+.asset-library-main:has(.asset-reclassify-groups)::-webkit-scrollbar-thumb,
+.asset-reclassify-dropzone::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(126, 194, 255, 0.38);
 }
 
 .asset-reclassify-dropzone:empty::before {
@@ -12076,14 +12127,6 @@ body.auth-page::after {
 .asset-reclassify-dropzone.is-dragover {
   border-color: rgba(115, 205, 255, 0.86);
   background: rgba(45, 152, 255, 0.1);
-}
-
-@container (max-width: 820px) {
-  .asset-reclassify-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@container (max-width: 520px) {
-  .asset-reclassify-groups { grid-template-columns: 1fr; }
 }
 
 .asset-card.is-flagged {

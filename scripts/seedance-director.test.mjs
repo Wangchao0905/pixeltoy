@@ -75,9 +75,14 @@ const completeDesign = {
   assert.doesNotMatch(buildVideoConfig, /localizeShotDialoguesWithStoryboardModel\(/);
   assert.doesNotMatch(server, /parseSeedanceDesignFromPrompt/);
   assert.doesNotMatch(server, /seedanceDirectorEnabled/);
+  assert.doesNotMatch(server, /promptTextFromSeedanceBlock/);
+  assert.doesNotMatch(server, /enforceVideoPromptCinematicRules/);
+  assert.doesNotMatch(server, /fencedTextFromSectionBody/);
+  assert.doesNotMatch(server, /modelVideoPrompt/);
   assert.match(server, /模型导演设计缺失或已过期，请重新生成分镜草稿后再生成视频配置。/);
   assert.match(server, /function isSeedanceNaturalLanguageShotPrompt\(/);
   assert.match(server, /if \(isSeedanceNaturalLanguageShotPrompt\(text\)\) return sanitizeSeedancePromptForPolicy\(text\);/);
+  assert.match(server, /绝不能作为 Seedance 视频提示词提交/);
 }
 
 console.log("seedance-director tests passed.");

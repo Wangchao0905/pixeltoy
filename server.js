@@ -17405,8 +17405,8 @@ function storyboardSystemPrompt() {
   return `你是短剧视频分镜和 Seedance 2.0 提示词拆解模型。你的任务是根据剧本和已确认资产解析，输出可直接进入视频生成配置的镜头列表。
 
 必须遵守：
-- 只输出 JSON，不输出 Markdown，不输出解释。
-- JSON 字段内容使用中文，只有 dialogueLines 中的对白根据 dialogueLanguage 决定中文或英文。
+- 只返回服务端可读取的结构化镜头计划，不输出 Markdown、散文提示词或解释；这个返回仅用于校验和保存，绝不能作为 Seedance 视频提示词提交。
+- 结构化字段内容使用中文，只有 dialogueLines 中的对白根据 dialogueLanguage 决定中文或英文。
 - 严格根据剧本拆解，不得添加剧本没有的人物、地点、道具、怪物、武器或事件。
 - 每一集剧情视频总时长允许 ${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS} 秒，由剧本内容复杂度决定；不得为了凑时长增补剧情，镜头数量和秒数必须服务原剧本节拍。
 - 每个镜头必须有明确剧情依据、推荐时长、参考资产 refs、中文标题、中文分镜目的。
@@ -17425,7 +17425,7 @@ function storyboardSystemPrompt() {
 
 ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
 
-输出 JSON 结构：
+返回对象结构（仅供服务端保存模型计划，视频阶段会编译为中文镜头单）：
 {
   "targetDuration": "根据剧本复杂度在 ${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS} 秒内决定",
   "shots": [
@@ -17510,7 +17510,6 @@ function normalizeStoryboardShot(raw, index, context) {
     dialogues: dialogueLines,
     beat,
     videoDesign,
-    modelVideoPrompt: "",
     assetLookup,
   };
 }
@@ -17566,10 +17565,6 @@ function shotOverlapWarnings(shots = []) {
   return [...new Set(warnings)];
 }
 
-function promptTextFromSeedanceBlock(shot, index, dialogueLanguage) {
-  return seedancePromptBlock(shot, index, dialogueLanguage).match(/```text\s*\n([\s\S]*?)\n```/)?.[1]?.trim() || "";
-}
-
 function shouldExpandVideoConfigShots({ sectionCount = 0, targetShotCount = 0, beats = [] } = {}) {
   if (!sectionCount || !targetShotCount) return false;
   if (sectionCount >= targetShotCount) return false;
@@ -17578,81 +17573,10 @@ function shouldExpandVideoConfigShots({ sectionCount = 0, targetShotCount = 0, b
   return targetShotCount - sectionCount >= 2 && (beats.length >= 1 || beatTextLength > 500);
 }
 
-function generatedTimeAxisForShot(shot) {
-  const duration = clampShotDuration(shot.duration || 8);
-  const plan = cameraPlanForShot(shot, Number(shot.index || 0));
-  return `时间轴：
-${plan.shots[0]}
-${plan.shots[1]}
-${plan.shots[2]}`;
-}
-
-function normalizeVideoPromptDuration(prompt, shot) {
-  const text = String(prompt || "").trim();
-  if (!text) return "";
-  const timeAxis = generatedTimeAxisForShot(shot);
-  const timeAxisRe = /时间轴[:：]\s*[\s\S]*?(?=\n\n(?:动作\/表演|动作|对白|声音)[:：]|$)/m;
-  if (timeAxisRe.test(text)) return text.replace(timeAxisRe, timeAxis);
-  const actionRe = /\n\n(?:动作\/表演|动作)[:：]/m;
-  if (actionRe.test(text)) return text.replace(actionRe, `\n\n${timeAxis}$&`);
-  return `${text}\n\n${timeAxis}`;
-}
-
-function cinematicPromptDesignBlock(design) {
-  if (!design) return "";
-  return `导演设计：镜头目的=${design.shotPurpose}；景别=${design.shotSize}；运镜=${design.cameraMove}；构图=${design.composition}；光影=${design.lighting}；表演=${design.performance}。
-
-连续性开场：${design.opening}。`;
-}
-
-function applyCinematicPromptDesign(prompt, shot) {
-  let text = String(prompt || "").trim();
-  if (!text) return "";
-  const design = shot.cinematicDesign || cinematicShotDesignForShot(shot, Number(shot.index || 0));
-  const designBlock = cinematicPromptDesignBlock(design);
-  const cameraText = `镜头语言：${design.cameraLanguage}。${design.lensPlan}。构图、景深、焦点转移和运镜都服务当前剧情动作；除场景首次进入外，不重新展示环境，不用空镜或大全景重启本段。`;
-  const performanceText = `动作/表演：${design.performance}；动作少而准，用眼神、停顿、手部细节、身体重心和空间压力推进剧情。`;
-  text = text
-    .replace(/导演设计[:：][\s\S]*?(?=\n\n(?:连续性开场|镜头语言|镜头切换|IMAX|光影|时间轴|动作\/表演|动作|对白|声音)[:：]|$)/m, "")
-    .replace(/连续性开场[:：][\s\S]*?(?=\n\n(?:镜头语言|镜头切换|IMAX|光影|时间轴|动作\/表演|动作|对白|声音)[:：]|$)/m, "")
-    .replace(/先用[^。；\n]*(?:建立镜头|建立空间)[^。；\n]*；?/g, "");
-  const cameraRe = /镜头语言[:：]\s*[\s\S]*?(?=\n\n(?:镜头切换|IMAX|光影|时间轴|动作\/表演|动作|对白|声音)[:：]|$)/m;
-  if (cameraRe.test(text)) {
-    text = text.replace(cameraRe, `${designBlock}\n\n${cameraText}`);
-  } else {
-    text = `${text}\n\n${designBlock}\n\n${cameraText}`;
-  }
-  const actionRe = /(?:动作\/表演|动作)[:：]\s*[\s\S]*?(?=\n\n(?:对白|声音)[:：]|$)/m;
-  if (actionRe.test(text)) text = text.replace(actionRe, performanceText);
-  return text.replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function enforceVideoPromptCinematicRules(prompt, shot) {
-  const text = String(prompt || "").trim();
-  if (!text) return "";
-  return seedanceNaturalLanguagePromptForShot(shot, Number(shot.index || 0), shot.dialogueLanguage || "en");
-}
-
-function fencedTextFromSectionBody(body) {
-  const fenced = String(body || "").match(/```(?:text|txt|markdown|md)?\s*\n([\s\S]*?)\n```/i);
-  return (fenced?.[1] || "").trim();
-}
-
 function verifiedRefsTextForPrompt(refs = [], lookup = null) {
   return refs.length
     ? refs.map((ref, index) => seedanceReferenceLine(ref, index, lookup)).join("\n")
     : "使用当前镜头已配置参考资产。";
-}
-
-function replaceMaterialUsageSection(prompt, refsText) {
-  const text = String(prompt || "").trim();
-  if (!text) return "";
-  const materialBlock = `图片参考：\n${refsText}`;
-  const materialRe = /(?:素材使用|图片参考|画面参考)[:：]\s*[\s\S]*?(?=\n\n(?:剧情动作|核心画面|镜头语言|镜头切换|IMAX|光影|时间轴|动作\/表演|动作|对白|声音|负面约束)[:：])/m;
-  if (materialRe.test(text)) return text.replace(materialRe, materialBlock);
-  const coreRe = /((?:剧情动作|核心画面)[:：][\s\S]*?)(?=\n\n(?:镜头语言|镜头切换|IMAX|光影|时间轴|动作\/表演|动作|对白|声音|负面约束)[:：]|$)/m;
-  if (coreRe.test(text)) return text.replace(coreRe, `$1\n\n${materialBlock}`);
-  return `${materialBlock}\n\n${text}`;
 }
 
 function removeTailFrameContinuityFromStoryboardPrompt(prompt) {
@@ -17680,12 +17604,6 @@ function normalizeStoryboardPlan(data, context) {
       durationPlan: context.durationPlan,
       targetDuration: Number(data?.targetDuration || 0),
     });
-    shots = shots.map((shot, index) => ({
-      ...shot,
-      modelVideoPrompt: shot.modelVideoPrompt
-        ? normalizeVideoPromptDuration(shot.modelVideoPrompt, { ...shot, index })
-        : shot.modelVideoPrompt,
-    }));
   }
   const total = shots.reduce((sum, shot) => sum + shot.duration, 0);
   const maxAllowed = Math.min(VIDEO_MAX_EPISODE_SECONDS, shots.length * VIDEO_MAX_SECONDS);

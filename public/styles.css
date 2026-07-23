@@ -13508,3 +13508,364 @@ body.is-studio .studio-queue-summary {
     text-align: left;
   }
 }
+
+
+/* Studio workflow correction v20260723-3.
+   Turn the old form stack into a focused production desk without touching handlers. */
+body.is-studio {
+  --studio-bg: #050b13;
+  --studio-panel: rgba(12, 24, 42, 0.62);
+  --studio-panel-strong: rgba(15, 32, 56, 0.78);
+  --studio-line: rgba(147, 191, 248, 0.12);
+  --studio-line-strong: rgba(129, 203, 255, 0.36);
+  --studio-ink: #f4f8ff;
+  --studio-muted: rgba(199, 214, 237, 0.62);
+  --studio-dim: rgba(129, 150, 178, 0.46);
+  --studio-signal: #baff5f;
+  background:
+    radial-gradient(circle at 18% -10%, rgba(73, 151, 255, 0.28), transparent 30rem),
+    radial-gradient(circle at 90% 0%, rgba(111, 216, 255, 0.1), transparent 24rem),
+    linear-gradient(180deg, #061423 0%, #050b13 62%, #03070d 100%);
+}
+
+body.is-studio .studio-shell {
+  grid-template-columns: 78px minmax(0, 1fr);
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+body.is-studio .studio-sidebar {
+  padding: 10px 8px;
+  border-right-color: rgba(147, 191, 248, 0.1);
+  background: rgba(3, 8, 15, 0.78);
+  box-shadow: 12px 0 46px rgba(0, 0, 0, 0.26);
+}
+
+body.is-studio .studio-sidebar-brand {
+  gap: 6px;
+  padding-bottom: 14px;
+  font-size: 7px;
+  color: rgba(198, 215, 240, 0.42);
+}
+
+body.is-studio .studio-sidebar-brand .mark {
+  width: 54px;
+}
+
+body.is-studio .studio-mode-rail {
+  gap: 7px;
+}
+
+body.is-studio .studio-mode-rail button {
+  min-height: 52px;
+  border-radius: 16px;
+  background: rgba(9, 20, 35, 0.58);
+  color: rgba(209, 224, 247, 0.56);
+}
+
+body.is-studio .studio-mode-rail button:hover,
+body.is-studio .studio-mode-rail button.is-active {
+  border-color: rgba(187, 255, 95, 0.5);
+  background:
+    linear-gradient(180deg, rgba(186, 255, 95, 0.13), rgba(98, 183, 255, 0.08)),
+    rgba(10, 23, 41, 0.76);
+  color: var(--studio-ink);
+  box-shadow:
+    inset 0 0 0 1px rgba(186, 255, 95, 0.12),
+    0 14px 34px rgba(0, 0, 0, 0.22);
+  transform: translateX(0) scale(1.015);
+}
+
+body.is-studio .main.studio-stage {
+  grid-template-rows: 72px minmax(0, 1fr) 42px;
+  gap: 10px;
+  padding: 12px 18px 10px;
+}
+
+body.is-studio .studio-topbar {
+  height: 72px;
+  padding: 0 4px 8px;
+  border: 0;
+  border-bottom: 1px solid rgba(147, 191, 248, 0.12);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.is-studio .studio-topbar .kicker {
+  margin-bottom: 4px;
+  color: var(--studio-signal);
+  font-size: 9px;
+}
+
+body.is-studio .studio-topbar h1 {
+  max-width: min(52vw, 760px);
+  font-size: clamp(22px, 2.15vw, 34px);
+  letter-spacing: 0;
+}
+
+body.is-studio .topbar-right {
+  gap: 7px;
+}
+
+body.is-studio #backToProjects,
+body.is-studio .status-pills .pill {
+  min-height: 34px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+body.is-studio .studio-workspace-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 330px);
+  gap: 14px;
+  min-height: 0;
+}
+
+body.is-studio .workspace-viewport {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body.is-studio .workspace.studio-board {
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  min-height: 0;
+  height: 100% !important;
+}
+
+body.is-studio .studio-console {
+  display: grid;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.is-studio .studio-console-head {
+  display: none !important;
+}
+
+body.is-studio .studio-console .script-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid var(--studio-line-strong);
+  background:
+    linear-gradient(180deg, rgba(18, 37, 64, 0.9), rgba(5, 13, 24, 0.78)),
+    rgba(7, 16, 29, 0.84);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+body.is-studio .script-panel .section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(147, 191, 248, 0.12);
+}
+
+body.is-studio .script-panel .section-head h2 {
+  font-size: 16px;
+}
+
+body.is-studio .script-panel .section-head .actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 640px;
+  gap: 8px;
+}
+
+body.is-studio .script-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.is-studio .script-upload-row #workflowScriptUploadName {
+  color: var(--studio-muted);
+  font-size: 11px;
+}
+
+body.is-studio .dual-input-hint {
+  margin: 14px 0 10px;
+  color: rgba(229, 238, 251, 0.74);
+  font-size: 13px;
+}
+
+body.is-studio .script-panel .editor {
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+  border: 1px solid rgba(147, 191, 248, 0.13);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(2, 7, 14, 0.9), rgba(2, 8, 15, 0.74));
+  color: rgba(236, 244, 255, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+  line-height: 1.72;
+}
+
+body.is-studio .studio-flow-strip {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.is-studio .studio-flow-status {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body.is-studio .studio-flow-step {
+  min-height: 46px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  background: rgba(9, 20, 35, 0.58);
+}
+
+body.is-studio .studio-flow-step strong {
+  font-size: 11px;
+}
+
+body.is-studio .studio-content-shell:has(.studio-tab-panel.is-active[hidden]) {
+  display: none;
+}
+
+body.is-studio .studio-content-shell {
+  padding: 10px;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(17, 35, 61, 0.74), rgba(5, 13, 24, 0.64)),
+    rgba(7, 16, 29, 0.68);
+}
+
+body.is-studio .studio-tabbar {
+  min-height: 40px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(2, 7, 14, 0.58);
+}
+
+body.is-studio .studio-tab-button {
+  border-radius: 999px;
+}
+
+body.is-studio .studio-tab-button:hover,
+body.is-studio .studio-tab-button.is-active {
+  background: var(--studio-signal);
+}
+
+body.is-studio .studio-context-panel {
+  align-self: start;
+  height: auto;
+  min-height: 0;
+  max-height: calc(100dvh - 138px);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(18, 37, 64, 0.84), rgba(5, 13, 24, 0.72)),
+    rgba(7, 16, 29, 0.74);
+}
+
+body.is-studio .studio-context-head {
+  padding: 18px 18px 14px;
+}
+
+body.is-studio .studio-context-body {
+  padding: 16px 18px;
+}
+
+body.is-studio .studio-context-body p {
+  margin: 0;
+}
+
+body.is-studio .studio-context-list {
+  margin-top: 16px;
+}
+
+body.is-studio .studio-context-row {
+  padding: 11px 0;
+}
+
+body.is-studio .studio-context-actions {
+  padding: 14px 18px 18px;
+}
+
+body.is-studio .studio-context-actions button {
+  min-height: 38px;
+  border-radius: 13px;
+}
+
+body.is-studio .studio-queue-bar {
+  min-height: 42px;
+  border-radius: 18px;
+  background: rgba(7, 16, 29, 0.72);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body.is-studio .studio-console .script-panel,
+  body.is-studio .studio-context-panel,
+  body.is-studio .studio-flow-step,
+  body.is-studio .studio-queue-bar {
+    animation: studioSurfaceIn 240ms ease both !important;
+  }
+
+  body.is-studio .script-panel .editor:focus {
+    box-shadow:
+      inset 0 0 0 1px rgba(97, 183, 255, 0.38),
+      0 0 0 4px rgba(97, 183, 255, 0.09);
+  }
+}
+
+@media (max-width: 1240px) {
+  body.is-studio .studio-workspace-layout {
+    grid-template-columns: minmax(0, 1fr) 270px;
+  }
+
+  body.is-studio .script-panel .section-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.is-studio .script-panel .section-head .actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  body.is-studio .main.studio-stage {
+    grid-template-rows: auto auto auto;
+  }
+
+  body.is-studio .studio-workspace-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.is-studio .studio-context-panel {
+    max-height: none;
+  }
+
+  body.is-studio .studio-flow-status {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

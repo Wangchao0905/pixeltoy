@@ -447,6 +447,8 @@ assert(styles.includes("body.is-studio .workspace-controls") && styles.includes(
 assert(styles.includes("Final Production OS workflow surface v20260723"), "studio workflow must keep the final Production OS visual override at the end of styles.css");
 assert(styles.includes("body.is-studio .studio-workspace-layout {\n  display: grid !important;") && styles.includes("grid-template-columns: minmax(0, 1fr) minmax(260px, 310px);"), "studio workflow must use the final two-column production layout");
 assert(styles.includes("@keyframes studioSurfaceIn") && styles.includes("@keyframes studioSoftSweep"), "studio workflow must keep the approved lightweight motion layer");
+assert(styles.includes("Studio workflow correction v20260723-3"), "studio workflow must include the corrected production desk layer");
+assert(styles.includes("body.is-studio .studio-console-head {\n  display: none !important;") && styles.includes("body.is-studio .studio-content-shell:has(.studio-tab-panel.is-active[hidden])"), "studio workflow must remove the old form-stack feel in script mode");
 assert(html.includes('class="studio-sidebar"'), "studio must expose the new left production toolbar");
 assert(html.includes('class="studio-console"'), "studio must expose the central generation console");
 assert(html.includes('id="studioFlowStatus"'), "studio must expose the flow status strip");

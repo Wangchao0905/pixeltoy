@@ -13,6 +13,11 @@ assert.match(
 );
 assert.match(
   canvas,
+  /function syncAssetNodeElement\(element, node\)/,
+  "asset node media should update in place when its upload URL changes",
+);
+assert.match(
+  canvas,
   /const existingElements = preserveExisting[\s\S]*new Map\(qsa\("#canvasNodes > \.canvas-node"\)/,
   "incremental canvas rendering should reuse existing node elements",
 );
@@ -20,6 +25,11 @@ assert.match(
   canvas,
   /function addAssetNodeAt\([\s\S]*?renderNodes\(\{ preserveExisting: true \}\)/,
   "asset drops should append the new node without rebuilding existing nodes",
+);
+assert.match(
+  canvas,
+  /addAssets\(\[asset\]\);[\s\S]*?renderNodes\(\{ preserveExisting: true \}\)/,
+  "completed local asset uploads should keep existing canvas nodes mounted",
 );
 
 console.log("canvas asset-drop UI tests passed");

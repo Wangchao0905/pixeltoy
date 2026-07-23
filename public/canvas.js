@@ -3685,6 +3685,80 @@ function upstreamSummary(node) {
   return `已连接 ${sources.length} 张图片，自动引用 ${assetCount} 张参考图。`;
 }
 
+function syncAssetNodeElement(element, node) {
+  if (!element || node?.kind !== "asset") return false;
+  const size = assetNodeSize(node);
+  node.width = size.width;
+  node.height = size.height;
+  element.style.setProperty("--asset-node-width", `${size.width}px`);
+  element.style.setProperty("--asset-node-height", `${size.height}px`);
+  const asset = primaryAssetForNode(node);
+  const certificationBadge = element.querySelector(".ark-virtual-person-badge");
+  const certificationStatus = String(asset?.arkPersonAsset?.status || "").toLowerCase();
+  const certificationActive = isArkVirtualPersonCertified(asset);
+  if (certificationBadge) {
+    certificationBadge.hidden = !certificationActive && certificationStatus !== "processing";
+    certificationBadge.dataset.certificationState = certificationActive ? "active" : certificationStatus;
+    certificationBadge.textContent = certificationActive ? "✓" : "…";
+    certificationBadge.title = certificationActive ? "方舟私域虚拟人像已认证" : "方舟私域虚拟人像认证中";
+    certificationBadge.setAttribute("aria-label", certificationBadge.title);
+  }
+  element.classList.toggle("is-ark-virtual-person-certified", certificationActive);
+  const visual = element.querySelector(".asset-node-image, .asset-node-file");
+  const previewUrl = assetPreviewUrl(asset || {});
+  const videoUrl = asset ? assetVideoUrl(asset) : "";
+  if (asset && isVideoAsset(asset) && videoUrl) {
+    const video = visual?.tagName === "VIDEO" ? visual : document.createElement("video");
+    if (video !== visual) {
+      if (visual) visual.replaceWith(video);
+      else element.insertBefore(video, element.querySelector(".asset-node-caption"));
+    }
+    video.className = "asset-node-image";
+    video.controls = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.setAttribute("draggable", "false");
+    if (video.getAttribute("src") !== videoUrl) {
+      video.setAttribute("src", videoUrl);
+      video.addEventListener("loadeddata", renderLinks, { once: true });
+    }
+    element.classList.remove("asset-node-without-preview");
+  } else if (asset && previewUrl) {
+    const img = visual?.tagName === "IMG" ? visual : document.createElement("img");
+    if (img !== visual) {
+      if (visual) visual.replaceWith(img);
+      else element.insertBefore(img, element.querySelector(".asset-node-caption"));
+    }
+    const nextSrc = thumbUrl(previewUrl, 640);
+    img.setAttribute("draggable", "false");
+    img.alt = asset.name || "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    if (img.getAttribute("src") !== nextSrc) {
+      img.setAttribute("src", nextSrc);
+      img.addEventListener("load", renderLinks, { once: true });
+    }
+    if (img.complete) queueMicrotask(renderLinks);
+    element.classList.remove("asset-node-without-preview");
+  } else {
+    if (visual?.classList.contains("asset-node-file")) {
+      visual.querySelector("strong").textContent = "引用素材";
+      visual.querySelector("span").textContent = "无预览图";
+    } else {
+      visual?.remove();
+      const placeholder = document.createElement("div");
+      placeholder.className = "asset-node-file";
+      placeholder.innerHTML = `<strong>引用素材</strong><span>无预览图</span>`;
+      element.insertBefore(placeholder, element.querySelector(".asset-node-caption"));
+    }
+    element.classList.add("asset-node-without-preview");
+  }
+  const caption = element.querySelector(".asset-node-caption");
+  if (caption) caption.textContent = asset?.name || "图片资产";
+  return true;
+}
+
 function renderNodes({ preserveExisting = false } = {}) {
   const wrap = qs("#canvasNodes");
   qs("#canvasHint").classList.toggle("hidden", canvasState.nodes.length > 0);
@@ -3734,6 +3808,7 @@ function renderNodes({ preserveExisting = false } = {}) {
     const existingElement = existingElements.get(node.id);
     if (existingElement) {
       positionNodeElement(existingElement, node);
+      if (node.kind === "asset") syncAssetNodeElement(existingElement, node);
       refreshNodeConnectionClasses(node.id);
       nodeResizeObserver?.observe(existingElement);
       continue;
@@ -3751,56 +3826,7 @@ function renderNodes({ preserveExisting = false } = {}) {
     positionNodeElement(element, node);
     if (node.kind === "image" && node.width && canvasState.activeVideoNodeId === node.id) element.style.width = `${node.width}px`;
     if (node.kind === "asset") {
-      const size = assetNodeSize(node);
-      node.width = size.width;
-      node.height = size.height;
-      element.style.setProperty("--asset-node-width", `${size.width}px`);
-      element.style.setProperty("--asset-node-height", `${size.height}px`);
-      const asset = primaryAssetForNode(node);
-      const certificationBadge = element.querySelector(".ark-virtual-person-badge");
-      const certificationStatus = String(asset?.arkPersonAsset?.status || "").toLowerCase();
-      const certificationActive = isArkVirtualPersonCertified(asset);
-      if (certificationBadge) {
-        certificationBadge.hidden = !certificationActive && certificationStatus !== "processing";
-        certificationBadge.dataset.certificationState = certificationActive ? "active" : certificationStatus;
-        certificationBadge.textContent = certificationActive ? "✓" : "…";
-        certificationBadge.title = certificationActive ? "方舟私域虚拟人像已认证" : "方舟私域虚拟人像认证中";
-        certificationBadge.setAttribute("aria-label", certificationBadge.title);
-      }
-      element.classList.toggle("is-ark-virtual-person-certified", certificationActive);
-      const img = element.querySelector(".asset-node-image");
-      const previewUrl = assetPreviewUrl(asset || {});
-      const videoUrl = asset ? assetVideoUrl(asset) : "";
-      if (img && asset && isVideoAsset(asset) && videoUrl) {
-        // 视频素材:用 <video> 替换模板里的 <img>,否则 mp4 塞进 img.src 会显示破图。
-        const video = document.createElement("video");
-        video.className = "asset-node-image";
-        video.src = videoUrl;
-        video.controls = true;
-        video.muted = true;
-        video.playsInline = true;
-        video.preload = "metadata";
-        video.setAttribute("draggable", "false");
-        video.addEventListener("loadeddata", renderLinks, { once: true });
-        img.replaceWith(video);
-      } else if (img && asset && previewUrl) {
-        img.setAttribute("draggable", "false");
-        img.src = thumbUrl(previewUrl, 640);
-        img.alt = asset.name || "";
-        img.loading = "lazy";
-        img.decoding = "async";
-        img.addEventListener("load", renderLinks, { once: true });
-        if (img.complete) queueMicrotask(renderLinks);
-      } else if (img) {
-        img.remove();
-        element.classList.add("asset-node-without-preview");
-        const placeholder = document.createElement("div");
-        placeholder.className = "asset-node-file";
-        placeholder.innerHTML = `<strong>引用素材</strong><span>无预览图</span>`;
-        element.insertBefore(placeholder, element.querySelector(".asset-node-caption"));
-      }
-      const caption = element.querySelector(".asset-node-caption");
-      if (caption) caption.textContent = asset?.name || "图片资产";
+      syncAssetNodeElement(element, node);
       element.addEventListener("contextmenu", (event) => showAssetContextMenu(event, node.id));
     } else {
       element.querySelector(".node-flow-summary").textContent = upstreamSummary(node);
@@ -4772,7 +4798,7 @@ async function createNodesForFiles(files, point) {
         : await uploadLocalImageAsset(job.file, job.index, job.id);
       if (asset) {
         addAssets([asset]); // 同 id 原地合并,换成公网地址、清 uploading 标记
-        renderNodes();      // 刷新节点里已引用该素材的缩略图
+        renderNodes({ preserveExisting: true }); // 原地更新节点里的素材地址,不重建其他节点
       } else {
         markAssetUploadFailed(job.id, "上传返回为空");
       }

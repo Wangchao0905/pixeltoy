@@ -175,6 +175,83 @@ for (const expected of ["Character:洛伊", "Scene:高空货运机驾驶舱", "P
   assert(groupedAssetLabels.includes(expected), `grouped asset description must retain ${expected}\nActual assets:\n${groupedAssetLabels.join("\n")}`);
 }
 
+// 用户直接粘贴“人物卡 / 道具卡 / 场景卡”时，标题不一定带 ◆。
+// 字段标题常独占一行，道具则使用 ⒜ 编号；这些字段必须归属上一张卡，不能被拆成伪资产。
+const cardAssetDescription = `
+全局画风锚
+竖屏都市悬疑，冷青色夜景，写实电影光。
+
+人物卡 CHARACTERS
+① 林夏
+身份标签
+夜班法医。
+中文提示词
+短银发，黑色风衣，左耳银色耳钉。
+EN prompt
+cinematic forensic doctor, silver bob hair, black trench coat.
+一致性锚点
+短银发、左耳银色耳钉。
+
+② 顾沉
+身份标签
+刑警。
+中文提示词
+卷发，深蓝夹克，眉骨旧伤。
+
+道具卡 PROPS
+⒜ 钛合金毛衣针
+中文提示词
+细长钛合金针，柄部有磨损刻痕。
+⒝ 密封证物袋
+中文提示词
+透明证物袋，内有黑色羽毛。
+
+场景卡 SCENES
+㊀ 安全屋 SAFEHOUSE
+定位
+旧公寓顶层的临时安全屋。
+关键元素
+百叶窗光影、金属文件柜、桌面证物袋。
+光线氛围
+冷白顶灯与窗外蓝色夜光。
+使用备注
+人物对峙与证物展示场景。
+
+屋顶停车场
+定位
+安全屋所在公寓的天台停车层。
+`;
+const cardAssetPlan = parser.buildRuleAssets(
+  cardAssetDescription,
+  parser.inferWorldProfile(cardAssetDescription),
+).assets;
+const cardAssetLabels = cardAssetPlan.map((asset) => `${asset.type}:${asset.label}`);
+for (const expected of [
+  "Character:林夏",
+  "Character:顾沉",
+  "Prop:钛合金毛衣针",
+  "Prop:密封证物袋",
+  "Scene:安全屋 SAFEHOUSE",
+  "Scene:屋顶停车场",
+]) {
+  assert(cardAssetLabels.includes(expected), `卡片资产描述必须保留 ${expected}\nActual assets:\n${cardAssetLabels.join("\n")}`);
+}
+assert.equal(
+  cardAssetPlan.length,
+  6,
+  `完整卡片资产描述只能保留用户列出的六项\nActual assets:\n${cardAssetLabels.join("\n")}`,
+);
+for (const metadataLabel of ["身份标签", "中文提示词", "EN prompt", "一致性锚点", "定位", "关键元素", "光线氛围", "使用备注"]) {
+  assert(
+    !cardAssetPlan.some((asset) => asset.label === metadataLabel),
+    `卡片字段 ${metadataLabel} 不得被解析为资产\nActual assets:\n${cardAssetLabels.join("\n")}`,
+  );
+}
+assert(
+  cardAssetPlan.every((asset) => asset.lockedStructured),
+  `完整卡片资产描述必须全部锁定分类，避免模型补漏污染\nActual assets:\n${cardAssetLabels.join("\n")}`,
+);
+
 // 《囚日》项目使用编号分段和“名称（身份）”条目，不是“人物：名称”的简写格式。
 // 这些资产必须在模型超时的本地兜底中仍被稳定分类，不能让单字角色掉进道具/插入镜头。
 const qiuRiAssetDescription = `

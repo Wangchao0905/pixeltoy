@@ -9245,9 +9245,16 @@ function structuredAssetType(value = "") {
   return "";
 }
 
+function isStructuredAssetCardHeading(value = "") {
+  const heading = compactLine(value)
+    .replace(/[【】\[\]]/g, "")
+    .replace(/^[◆◇]\s*/u, "");
+  return !!structuredAssetType(heading) && /(?:卡|card)(?=\s|$)/i.test(heading);
+}
+
 function structuredAssetLabel(type, description = "") {
   let label = compactLine(description)
-    .replace(/^[①②③④⑤⑥⑦⑧⑨⑩㊀㊁㊂㊃㊄㊅㊆㊇㊈㊉]\s*/u, "")
+    .replace(/^[①②③④⑤⑥⑦⑧⑨⑩㊀㊁㊂㊃㊄㊅㊆㊇㊈㊉⒜-⒵]\s*/u, "")
     .replace(/^\d+\s*[.)、]\s*/, "")
     .replace(/^(?:名称|名字|资产名|描述|设定)\s*[：:]\s*/i, "")
     .replace(/^[-•*]\s*/, "");
@@ -9265,6 +9272,13 @@ function structuredAssetLabel(type, description = "") {
   return label;
 }
 
+function isStructuredAssetMetadataLine(rawLine = "") {
+  const line = compactLine(rawLine)
+    .replace(/^[-•*]\s*/, "")
+    .replace(/^[①-⑳㊀-㊉⒜-⒵]\s*/u, "");
+  return /^(?:描述|视觉|外观|身份|身份标签|设定|造型|年龄|体型|脸部|发型|服装|气质|空间|氛围|灯光|材质|纹理|结构|用途|特征|构图|时间|天气|色彩|标志物|生理线|配色|一致性锚点|全局画风锚|一句话|中文提示词|EN prompt|English prompt|关键变体|关键元素|光线氛围|定位|核心美学|调色板逻辑|使用备注|备注)\s*(?:[：:]|$)/i.test(line);
+}
+
 function structuredSectionAssetEntry(type, rawLine = "") {
   if (/^·\s*/.test(rawLine)) return null;
   const isBullet = /^[-•*]\s*/.test(rawLine);
@@ -9272,7 +9286,7 @@ function structuredSectionAssetEntry(type, rawLine = "") {
   if (!line) return null;
   if (/^[═━─—]{3,}$/.test(line)) return null;
   // 描述字段不是新的资产条目，例如“外观：…”、“灯光：…”应归入前一资产的 visual。
-  if (/^(?:描述|视觉|外观|身份|设定|造型|年龄|体型|脸部|发型|服装|气质|空间|氛围|灯光|材质|纹理|结构|用途|特征|构图|时间|天气|色彩|标志物|生理线|配色|一致性锚点|一句话|中文提示词|EN prompt|关键变体|关键元素|光线氛围|定位|核心美学|调色板逻辑)\s*[：:]/i.test(line)) return null;
+  if (isStructuredAssetMetadataLine(line)) return null;
 
   const label = structuredAssetLabel(type, line);
   if (!label) return null;
@@ -9312,7 +9326,7 @@ function structuredSectionAssetEntry(type, rawLine = "") {
 }
 
 function isStructuredAssetMarkerLine(line = "") {
-  return /^(?:[①-⑳㊀-㊉]|\d+\s*[.)、．）])(?:\s|$)/u.test(compactLine(line));
+  return /^(?:[①-⑳㊀-㊉⒜-⒵])(?=\s|[\p{L}\p{N}]|$)|\d+\s*[.)、．）](?:\s|$)/u.test(compactLine(line));
 }
 
 // “资产描述”与剧情剧本的语法不同：除了“人物：姓名，外观”，还常用
@@ -9323,6 +9337,7 @@ function parseStructuredAssetDescriptions(script = "") {
   let activeType = "";
   let structuredCardMode = false;
   let pending = null;
+  let cardEntryBoundary = false;
   const push = (type, description, labelHint = "") => {
     const visual = compactLine(description);
     const label = labelHint || structuredAssetLabel(type, visual);
@@ -9343,18 +9358,26 @@ function parseStructuredAssetDescriptions(script = "") {
 
   for (const rawLine of String(script || "").split(/\r?\n/)) {
     const line = compactLine(rawLine);
-    if (!line) continue;
+    if (!line) {
+      if (structuredCardMode) {
+        // 无编号的卡以段落为边界；字段值在同一段内继续归属上一张卡。
+        cardEntryBoundary = true;
+      }
+      continue;
+    }
     const sectionType = structuredAssetType(line);
     if (sectionType) {
       flushPending();
       activeType = sectionType;
-      structuredCardMode = /^◆.*(?:卡|card)/i.test(line);
+      structuredCardMode = isStructuredAssetCardHeading(line);
+      cardEntryBoundary = structuredCardMode;
       continue;
     }
     if (/^◆/.test(line)) {
       flushPending();
       activeType = "";
       structuredCardMode = false;
+      cardEntryBoundary = false;
       continue;
     }
     if (/^[═━─—]{3,}$/.test(line)) continue;
@@ -9370,14 +9393,23 @@ function parseStructuredAssetDescriptions(script = "") {
       continue;
     }
     if (!activeType) continue;
-    const entry = structuredCardMode && !isStructuredAssetMarkerLine(line)
-      ? null
-      : structuredSectionAssetEntry(activeType, line);
+    const isCardMarker = structuredCardMode && isStructuredAssetMarkerLine(line);
+    const isCardMetadata = structuredCardMode && isStructuredAssetMetadataLine(line);
+    // 卡片分区已经显式给出类型。编号和段落开头都可以开始新卡；字段内容则继续归属上一张卡。
+    let entry = null;
+    if (!isCardMetadata && (isCardMarker || (structuredCardMode && (!pending || cardEntryBoundary)))) {
+      const label = structuredAssetLabel(activeType, line);
+      entry = label ? { label, visual: line } : null;
+    } else if (!structuredCardMode) {
+      entry = structuredSectionAssetEntry(activeType, line);
+    }
     if (entry) {
       flushPending();
       pending = { type: activeType, label: entry.label, lines: [entry.visual] };
+      cardEntryBoundary = false;
     } else if (pending) {
       pending.lines.push(line);
+      cardEntryBoundary = false;
     }
   }
   flushPending();
@@ -14553,8 +14585,17 @@ function withAssetMatchRule(prompt, asset) {
 function buildRuleAssets(script, worldProfile) {
   const manualBlocks = extractManualAssetPromptBlocks(script);
   const structuredDescriptions = parseStructuredAssetDescriptions(script);
-  const locations = parseLocations(script);
-  const characters = parseCharacters(script).filter((name) => !shouldSuppressRuleCharacter(name, manualBlocks));
+  const structuredTypes = new Set(structuredDescriptions.map((asset) => asset.type));
+  // 三类资产都由用户逐卡提供时，字段和画风锚不是剧本实体。
+  // 只保留明确的卡片，避免通用剧本规则把“中文提示词 / 使用备注”等元信息再加回清单。
+  const hasCompleteStructuredAssetPlan =
+    structuredTypes.has("Character") &&
+    structuredTypes.has("Scene") &&
+    (structuredTypes.has("Prop") || structuredTypes.has("Insert"));
+  const locations = hasCompleteStructuredAssetPlan ? [] : parseLocations(script);
+  const characters = hasCompleteStructuredAssetPlan
+    ? []
+    : parseCharacters(script).filter((name) => !shouldSuppressRuleCharacter(name, manualBlocks));
   const hasPhone = /phone|手机|电话|未知号码|calls?|VOSS/i.test(script);
   const hasPhoto = /photo|照片|photograph|2005/i.test(script);
   const hasMercyJerichoPhoto = /Mercy and Jericho\. Before the fire|两个孩子站在烧毁前的农场前/i.test(script);
@@ -14650,15 +14691,17 @@ function buildRuleAssets(script, worldProfile) {
       worldProfile,
     });
   });
-  propCandidates.forEach((asset, index) => {
-    pushAsset({
-      type: asset.type,
-      name: typedAssetName(asset.type, assets.filter((item) => item.type === asset.type).length + 1, asset.slug || asset.label),
-      label: asset.label,
-      evidence: evidenceForTerm(script, asset.slug || asset.label, asset.label),
-      worldProfile,
+  if (!hasCompleteStructuredAssetPlan) {
+    propCandidates.forEach((asset, index) => {
+      pushAsset({
+        type: asset.type,
+        name: typedAssetName(asset.type, assets.filter((item) => item.type === asset.type).length + 1, asset.slug || asset.label),
+        label: asset.label,
+        evidence: evidenceForTerm(script, asset.slug || asset.label, asset.label),
+        worldProfile,
+      });
     });
-  });
+  }
   return { assets, characters, locations, propCandidates };
 }
 

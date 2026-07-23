@@ -118,11 +118,6 @@ assert(server.includes("黑色重型装甲押运车") && server.includes("重型
 assert(server.includes("变异章鱼怪") && server.includes('pushUnique(characters, "变异章鱼怪")'), "asset parser must preserve Black Harbor monster characters");
 assert(server.includes("function fetchAssetAnalyzer"), "asset analyzer calls must have a dedicated timeout wrapper");
 assert(server.includes("ASSET_ANALYZER_TIMEOUT_MS"), "asset analyzer timeout must be configurable");
-assert(server.includes("function enforceCharacterProfileAssets"), "asset parser must force top-of-script profile headings into Character assets");
-assert(server.includes("const explicitNonCharacterLabels = parseStructuredAssetDescriptions(script)") && server.includes("filter((asset) => asset.type !== \"Character\")"), "profile-name props/inserts must be removed before manifest write");
-assert(server.includes("while (\n      corrected.some("), "profile character insertion must check existing assets before adding a generated profile character");
-assert(server.includes('assetMatchCode(asset.type, asset.name || asset.label) === assetMatchCode("Character", assetName)'), "profile character insertion must not create duplicate match codes");
-assert(server.includes("enforceCharacterProfileAssets(\n    correctAssetRolesFromEvidence(mergeAnalyzerAssets"), "asset extraction must enforce profile characters after model merge");
 assert(server.includes("includeReusableAssets") && server.includes("projectReusableAssetsForManifest(episodeRoot, manifest, options) : []"), "current project asset state must not reuse other-episode assets unless explicitly requested");
 assert(app.includes("function stylePayloadForAsset"), "single-asset generation must prefer the asset's bound original style");
 assert(app.includes("function applyAssetBoundStyle"), "selecting a generated asset must restore its bound style controls");
@@ -221,8 +216,10 @@ assert(intentAudit.includes("Intent: Video Duration Planning") && intentAudit.in
 assert(longFormPremortem.includes("Video credits are wasted") && longFormPremortem.includes("Expiring URLs"), "pre-mortem must cover paid generation and provider URL risks");
 assert(server.includes("不要把所有镜头都设为 12 秒"), "storyboard model prompt must forbid uniform 12s durations");
 assert(server.includes("function cinematicShotDesignForShot"), "video prompts must use structured cinematic shot design");
-assert(server.includes("function seedanceJsonPromptForShot"), "Seedance prompts must use the @image-reference plus JSON template");
-assert(server.includes("function jsonOnlySeedancePrompt"), "final video prompt submission must be normalized to @ references plus JSON only");
+assert(server.includes("function seedanceNaturalLanguagePromptForShot"), "Seedance prompts must use the natural-language director template");
+assert(server.includes("function isSeedanceNaturalLanguageShotPrompt"), "final video prompt submission must preserve the natural-language director template");
+assert(!server.includes("function seedanceJsonPromptForShot"), "final video prompt must not fall back to the abandoned JSON template");
+assert(!server.includes("function jsonOnlySeedancePrompt"), "final video prompt must not be normalized into JSON");
 assert(server.includes("function seedanceReferenceDisplayName"), "Seedance @ references must use asset display labels, not ref filenames or story text");
 assert(server.includes("function seedanceReferenceLine"), "Seedance @ reference lines must be built through a single strict formatter");
 assert(server.includes("function cleanSeedanceReferenceDisplayName"), "Seedance @ reference names must be cleaned as asset identity names before formatting");
@@ -232,9 +229,9 @@ assert(server.includes("asset.characterName || asset.sceneName || asset.propName
 assert(!server.includes("asset.evidence || asset.visual"), "Seedance @ reference names must not fall back to evidence or visual story descriptions");
 assert(!server.includes("asset.beat || asset.purpose || asset.title"), "Seedance @ reference names must not fall back to shot/story fields");
 assert(!server.includes('@图片${refIndex + 1} 是「${ref}」'), "Seedance @ references must not expose raw ref IDs as the object name");
-assert(server.includes('"camera_movement"') && server.includes('"motion_intensity"') && server.includes('"color_palette"'), "Seedance JSON prompt must expose camera, motion, and palette fields");
+assert(server.includes('"shot_size"') && server.includes('"camera_lens"') && server.includes('"camera_movement"') && server.includes('"voice_over"') && server.includes('"sound"'), "Seedance natural-language template must receive a complete director design");
 assert(!server.includes("图片参考：\\n${refs}"), "Seedance prompt code blocks must not include the old 图片参考 heading");
-assert(!server.includes("剧情动作：${visualBeat}"), "Seedance prompt code blocks must not include old section headings before JSON");
+assert(!server.includes("剧情动作：${visualBeat}"), "Seedance prompt code blocks must not include obsolete section headings before the natural-language template");
 assert(server.includes("同一场景只有第一个镜头可以承担短建立镜头"), "storyboard prompt must forbid repeated establishing shots in the same scene");
 assert(!server.includes("先用明确空间关系的建立镜头，再切人物中近景或过肩视角"), "video prompt template must not force every segment to start with an establishing shot");
 assert(!server.includes("先用大全景或中远景建立空间，再切中近景捕捉人物反应"), "video prompt fallback must not force every segment to re-establish the environment");
@@ -654,8 +651,9 @@ assert(app.includes('"pixelToys.assetStylePreset") || "cg_3d"'), "frontend asset
 
 // Video (Seedance) prompt must carry a mandatory style law from the asset style, and realistic light/skin cues must be photoreal-only.
 assert(server.includes("function seedanceStyleLawForPreset"), "seedance prompt must derive a mandatory style law from the asset style preset");
-assert(server.includes('"style",\n  "scene",') || /SEEDANCE_JSON_PROMPT_FIELDS = \[\s*"style"/.test(server), "seedance JSON prompt must include a leading style field");
-assert(server.includes("style: seedanceStyleLawForPreset(stylePreset)"), "seedance shot JSON must inject the style law");
+assert(server.includes("镜号 ${index + 1}（${duration} 秒）"), "seedance prompt must begin with the natural-language shot number and duration");
+assert(server.includes("人声 OS：${d.voice_over}") && server.includes("人物台词：${dialogue}") && server.includes("音效：${d.sound}"), "seedance prompt must retain voice-over, dialogue, and sound fields");
+assert(server.includes("style: seedanceStyleLawForPreset(stylePreset)"), "seedance natural-language prompt must inject the style law");
 assert(server.includes("const videoStylePreset = videoStylePresetFromProductionAssets(productionAssets, body);"), "video config must resolve the project video style from the reference assets");
 assert(server.includes("photoreal\n      ? design.lighting") || server.includes("photoreal"), "realistic lighting/skin cues must be gated to photoreal style only");
 assert(server.includes("function sanitizeSeedancePromptForPolicy"), "Seedance prompt submission must sanitize copyright/policy-risk wording before provider submit");
@@ -689,13 +687,12 @@ assert(canvas.includes('PERSON_REFERENCE_MODEL'), "canvas must keep the explicit
 assert(server.includes("referencedStoryboardNodeIds") && server.includes("剪除") , "画布同步必须剪除未被当前镜头引用的故事板孤儿节点");
 
 assert(server.includes("function storyboardSeedancePrompt") && server.includes("function seedancePromptForShotMode"), "故事板/首尾帧必须是两套提示词,按模式选择器注入");
-assert(server.includes("seedancePromptForShotMode({ ...shot, index }, index, dialogueLanguage, storyboardsActive)"), "视频配置生成必须按 storyboardsActive 自动选提示词方案");
+assert(server.includes("seedancePromptForShotMode(shot, index, dialogueLanguage, storyboardsActive)"), "视频配置生成必须按 storyboardsActive 自动选提示词方案");
 const shotPromptSectionGuard = sectionBetween(server, "function isShotPromptSection(section)", "function defaultGroupName");
 assert(shotPromptSectionGuard.includes("/^V\\d+/i.test(name)"), "Seedance prompt parser must accept short V01/V001 section headings");
 assert(shotPromptSectionGuard.includes("参考资产"), "Seedance prompt parser must accept current 参考资产 sections, not only old 参考映射 sections");
 assert(server.includes("matchAll(/^#{2,3}"), "Seedance prompt parser must accept ## and ### shot headings");
-assert(!server.includes('throw new Error("no Seedance prompt sections found")'), "video config must fall back to script beats when Seedance prompt sections are missing");
-assert(server.includes("Seedance 提示词没有可识别分段，已回退剧本节拍生成视频配置"), "video config must record a warning when falling back from missing Seedance sections");
+assert(server.includes("模型导演设计缺失或已过期，请重新生成分镜草稿后再生成视频配置。"), "video config must reject a missing or stale model shot plan instead of falling back to prompt parsing");
 assert(server.includes("function seedancePromptMarkdownFromConfig"), "project state must be able to reconstruct Seedance prompt markdown from video config shots");
 assert(server.includes("seedancePromptsTextForState(episodeRoot, files.seedancePrompts, config?.data)"), "project state must hydrate empty Seedance prompt files from config shots");
 assert(server.includes("skipEmptySeedancePromptOverwrite"), "file save API must refuse empty Seedance prompt overwrites when config already has prompts");

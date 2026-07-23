@@ -23,7 +23,7 @@ const { createAssetLibrary } = require("./server/asset-library.js");
 const { CHATCUT_STATUS, createChatcutAdapter } = require("./server/chatcut-adapter.js");
 const { createChatcutQueue } = require("./server/chatcut-queue.js");
 const { createChatcutAgent } = require("./server/chatcut-agent.js");
-const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, parseSeedanceDesignFromPrompt, seedanceDirectorEnabled } = require("./server/seedance-director.js");
+const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
 const { ensureThumbnail } = require("./server/thumbnailer.js");
 
 // Keep outbound provider requests reliable on hosts with broken IPv6 routing.
@@ -2249,6 +2249,8 @@ function parseDocxDocumentXml(xml) {
   const paragraphRe = /<w:p\b[\s\S]*?<\/w:p>/g;
   const tokenRe = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:tab\b[^>]*\/>|<w:br\b[^>]*\/>/g;
   for (const [paragraph] of xml.matchAll(paragraphRe)) {
+    const style = paragraph.match(/<w:pStyle\b[^>]*\b(?:w:val|val)\s*=\s*["']([^"']+)["']/i)?.[1] || "";
+    const headingLevel = style.match(/^(?:heading|标题)\s*([1-3])$/i)?.[1] || "";
     let text = "";
     for (const token of paragraph.matchAll(tokenRe)) {
       if (token[0].startsWith("<w:tab")) {
@@ -2259,7 +2261,12 @@ function parseDocxDocumentXml(xml) {
         text += decodeXmlText(token[1]);
       }
     }
-    paragraphs.push(text.trimEnd());
+    const paragraphText = text.trimEnd();
+    paragraphs.push(
+      headingLevel && paragraphText.trim()
+        ? "#".repeat(Number(headingLevel)) + " " + paragraphText.trim()
+        : paragraphText,
+    );
   }
   return paragraphs.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -2674,11 +2681,97 @@ function defaultPaths(episodeRoot) {
   return {
     script: path.join(episodeRoot, "01_script", `${slug}_script.md`),
     storyboard: path.join(episodeRoot, "02_storyboard", `${slug}_storyboard.md`),
+    modelShotPlan: path.join(episodeRoot, "02_storyboard", `${slug}_model_shot_plan.json`),
     assetManifest: path.join(episodeRoot, "03_asset_prompts", `${slug}_asset_manifest.json`),
     assetPrompts: path.join(episodeRoot, "03_asset_prompts", `${slug}_asset_prompts.md`),
     seedancePrompts: path.join(episodeRoot, VIDEO_PROMPTS_DIR, `${slug}_seedance_prompts.md`),
     config: path.join(projectDirForEpisode(episodeRoot), "work", `${slug}_video_generation`, `${slug}_skill_config.json`),
   };
+}
+
+const MODEL_SHOT_PLAN_VERSION = 1;
+
+function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage, shots } = {}) {
+  const path = defaultPaths(episodeRoot).modelShotPlan;
+  const plannedShots = (Array.isArray(shots) ? shots : []).map((shot) => ({
+    id: compactLine(shot?.id),
+    title: compactLine(shot?.title),
+    beat: compactLine(shot?.beat),
+    duration: clampShotDuration(shot?.duration || 8),
+    refs: [...new Set((Array.isArray(shot?.refs) ? shot.refs : []).map(compactLine).filter(Boolean))],
+    dialogues: Array.isArray(shot?.dialogues) ? shot.dialogues : [],
+    design: sanitizeSeedanceDesign(shot?.videoDesign),
+  }));
+  if (!plannedShots.length || plannedShots.some((shot) => !shot.id || !shot.beat || !shot.refs.length || !hasCompleteSeedanceDesign(shot.design))) {
+    throw new Error("视频分镜模型返回的导演设计不完整，未写入草稿，请重新生成分镜草稿。");
+  }
+  writeText(
+    path,
+    `${JSON.stringify(
+      {
+        version: MODEL_SHOT_PLAN_VERSION,
+        source: "storyboard_model",
+        model: compactLine(model),
+        scriptFingerprint: sha1Text(script),
+        dialogueLanguage: dialogueLanguage === "zh" ? "zh" : "en",
+        createdAt: new Date().toISOString(),
+        shots: plannedShots,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return path;
+}
+
+function readStoryboardModelPlan(episodeRoot) {
+  const path = defaultPaths(episodeRoot).modelShotPlan;
+  try {
+    const plan = JSON.parse(readText(path));
+    if (plan?.version !== MODEL_SHOT_PLAN_VERSION || plan?.source !== "storyboard_model" || !Array.isArray(plan?.shots)) return null;
+    return plan;
+  } catch {
+    return null;
+  }
+}
+
+function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPlan(episodeRoot), script, dialogueLanguage, assets, videoStylePreset } = {}) {
+  const plan = modelPlan;
+  const currentScriptFingerprint = sha1Text(script);
+  if (!plan || plan.scriptFingerprint !== currentScriptFingerprint || plan.dialogueLanguage !== dialogueLanguage) {
+    throw new Error("模型导演设计缺失或已过期，请重新生成分镜草稿后再生成视频配置。");
+  }
+  const assetLookup = assetLookupFromAssets(assets);
+  const invalidShots = [];
+  const shots = plan.shots.map((plannedShot, index) => {
+    const videoDesign = sanitizeSeedanceDesign(plannedShot?.design);
+    const refs = (Array.isArray(plannedShot?.refs) ? plannedShot.refs : []).map(compactLine).filter(Boolean);
+    const missingRefs = refs.filter((ref) => !assetLookup.has(ref));
+    if (!plannedShot?.id || !plannedShot?.beat || !refs.length || missingRefs.length || !hasCompleteSeedanceDesign(videoDesign)) {
+      invalidShots.push(plannedShot?.id || `镜头${index + 1}`);
+      return null;
+    }
+    return {
+      name: compactLine(plannedShot.id),
+      promptSection: compactLine(plannedShot.id),
+      duration: clampShotDuration(plannedShot.duration || 8),
+      videoStylePreset,
+      refs,
+      sceneRef: sceneRefForShotRefs(refs, assetLookup),
+      beat: compactLine(plannedShot.beat),
+      title: compactLine(plannedShot.title || plannedShot.beat),
+      dialogues: Array.isArray(plannedShot.dialogues) ? plannedShot.dialogues : [],
+      dialogueLanguage,
+      videoDesign,
+      assetLookup,
+      x: 120 + (index % 3) * 460,
+      y: 620 + Math.floor(index / 3) * 320,
+    };
+  });
+  if (invalidShots.length || shots.some((shot) => !shot)) {
+    throw new Error(`模型导演设计引用的资产或镜头无效：${invalidShots.join("、")}。请重新生成分镜草稿。`);
+  }
+  return { model: compactLine(plan.model), shots };
 }
 
 function workDirForEpisode(episodeRoot) {
@@ -9227,8 +9320,12 @@ function extractManualAssetPromptBlocks(script) {
   return blocks;
 }
 
+function stripStructuredMarkdownHeading(value = "") {
+  return compactLine(value).replace(/^#{1,6}\s+/, "");
+}
+
 function structuredAssetType(value = "") {
-  const heading = compactLine(value)
+  const heading = stripStructuredMarkdownHeading(value)
     .replace(/[【】\[\]]/g, "")
     .replace(/^[◆◇]\s*/u, "")
     .replace(/^(?:第\s*)?(?:[一二三四五六七八九十百]+|\d+)\s*[、.．)）]\s*/, "")
@@ -9246,14 +9343,14 @@ function structuredAssetType(value = "") {
 }
 
 function isStructuredAssetCardHeading(value = "") {
-  const heading = compactLine(value)
+  const heading = stripStructuredMarkdownHeading(value)
     .replace(/[【】\[\]]/g, "")
     .replace(/^[◆◇]\s*/u, "");
   return !!structuredAssetType(heading) && /(?:卡|card)(?=\s|$)/i.test(heading);
 }
 
 function structuredAssetLabel(type, description = "") {
-  let label = compactLine(description)
+  let label = stripStructuredMarkdownHeading(description)
     .replace(/^[①②③④⑤⑥⑦⑧⑨⑩㊀㊁㊂㊃㊄㊅㊆㊇㊈㊉⒜-⒵]\s*/u, "")
     .replace(/^\d+\s*[.)、]\s*/, "")
     .replace(/^(?:名称|名字|资产名|描述|设定)\s*[：:]\s*/i, "")
@@ -9279,6 +9376,33 @@ function isStructuredAssetMetadataLine(rawLine = "") {
   return /^(?:描述|视觉|外观|身份|身份标签|设定|造型|年龄|体型|脸部|发型|服装|气质|空间|氛围|灯光|材质|纹理|结构|用途|特征|构图|时间|天气|色彩|标志物|生理线|配色|一致性锚点|全局画风锚|一句话|中文提示词|EN prompt|English prompt|关键变体|关键元素|光线氛围|定位|核心美学|调色板逻辑|使用备注|备注)\s*(?:[：:]|$)/i.test(line);
 }
 
+function isStructuredAssetFieldLine(rawLine = "") {
+  const source = String(rawLine || "");
+  const sourceLine = compactLine(source);
+  const line = sourceLine.replace(/^[-•*]\s*/, "");
+  const match = line.match(/^([^：:]{1,80})\s*[：:]\s*(.+)$/);
+  if (!match) return false;
+  // 现有中文资产档用“- 名称：描述”表示条目；“•字段：值”仍是字段快路径。
+  if (/^[-*]\s*/.test(sourceLine)) return false;
+  const fieldName = compactLine(match[1]);
+  const baseFieldName = fieldName.replace(/^(.*?)\s*(?:\([\s\S]*\)|（[\s\S]*）)$/u, "$1").trim();
+  const fieldWords = baseFieldName.split(/\s+/).filter(Boolean);
+  if (
+    /^#{1,6}\s+/.test(sourceLine) ||
+    isStructuredAssetMarkerLine(line) ||
+    /^[A-Za-z]{1,4}\d{1,4}\s*(?=[：:]|$)/u.test(fieldName) ||
+    /^[\d]+\s*[.)、．）:：]\s*$/u.test(fieldName)
+  ) {
+    return false;
+  }
+  return (
+    [...baseFieldName].length <= 30 &&
+    fieldWords.length <= 4 &&
+    !/[.!?。！？,，、;；]/.test(baseFieldName) &&
+    /^[\p{L}\p{Script=Han}][\p{L}\p{Script=Han}· _-]*$/u.test(baseFieldName)
+  );
+}
+
 function structuredSectionAssetEntry(type, rawLine = "") {
   if (/^·\s*/.test(rawLine)) return null;
   const isBullet = /^[-•*]\s*/.test(rawLine);
@@ -9287,9 +9411,12 @@ function structuredSectionAssetEntry(type, rawLine = "") {
   if (/^[═━─—]{3,}$/.test(line)) return null;
   // 描述字段不是新的资产条目，例如“外观：…”、“灯光：…”应归入前一资产的 visual。
   if (isStructuredAssetMetadataLine(line)) return null;
+  // 冒号结构的短标签是字段，不因语言或是否使用项目符号而成为新资产。
+  if (isStructuredAssetFieldLine(rawLine)) return null;
 
   const label = structuredAssetLabel(type, line);
   if (!label) return null;
+  const hasExplicitAssetMarker = /^(?:[A-Z]{1,4}\d{1,4})(?:\s|$)/i.test(label) || isStructuredAssetMarkerLine(line);
   const hasDescriptorPunctuation = /[，,。；;]/.test(line);
   const hasParentheticalIdentity = /^[^：:，,。；;]{1,42}[（(][^（）()]{1,80}[）)](?:\s*[：:—-].*)?$/.test(line);
   // 冒号前出现逗号/句号时通常是上一条资产的描述内部字段（如“封存白昼的祭刀，……半柄残刃：……”），
@@ -9298,6 +9425,14 @@ function structuredSectionAssetEntry(type, rawLine = "") {
   const characterName = /^[\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z0-9·.' /-]{0,24}$/u.test(label);
   const sceneName = /[·・]|(?:场|厅|殿|楼|塔|城|市|街|巷|区|域|站|口|谷|渊|窟|室|庄|院|寺|府|地|台|营|阁|海|山|河|桥|船|车|港|原|林|房|顶)$/.test(label);
   const propName = /[\/／]|(?:刀|剑|刃|印|环|纹|符|器|物|具|石|玉|链|钥匙|枪|书|卷|镜|盒|灯|冠|甲|鼎|图|牌|令|血|尸|衣|管|道|源|柱|锁|针|鞘|旗|匣|徽)$/.test(label);
+  const isMarkdownAssetHeading = /^#{2,6}\s+\S/.test(compactLine(rawLine));
+  const isShortBareAssetName =
+    !hasNameDescription &&
+    !hasDescriptorPunctuation &&
+    [...label].length <= 42 &&
+    label.split(/\s+/).filter(Boolean).length <= 4 &&
+    !/[.!?。！？]/.test(label);
+  if (hasExplicitAssetMarker || isMarkdownAssetHeading) return { label, visual: line };
   if (isBullet || hasParentheticalIdentity) return { label, visual: line };
   if (hasNameDescription) {
     if (type === "Character" && characterName && !/[、，,]/.test(label)) return { label, visual: line };
@@ -9307,26 +9442,19 @@ function structuredSectionAssetEntry(type, rawLine = "") {
   }
   if (hasDescriptorPunctuation) return null;
 
-  if (type === "Character") {
-    return characterName
-      ? { label, visual: line }
-      : null;
-  }
-  if (type === "Scene") {
-    return sceneName
-      ? { label, visual: line }
-      : null;
-  }
-  if (type === "Prop" || type === "Insert") {
-    return propName
-      ? { label, visual: line }
-      : null;
-  }
+  if (type === "Character") return characterName || isShortBareAssetName ? { label, visual: line } : null;
+  if (type === "Scene") return sceneName || isShortBareAssetName ? { label, visual: line } : null;
+  if (type === "Prop" || type === "Insert") return propName || isShortBareAssetName ? { label, visual: line } : null;
   return null;
 }
 
 function isStructuredAssetMarkerLine(line = "") {
-  return /^(?:[①-⑳㊀-㊉⒜-⒵])(?=\s|[\p{L}\p{N}]|$)|\d+\s*[.)、．）](?:\s|$)/u.test(compactLine(line));
+  const normalized = stripStructuredMarkdownHeading(line);
+  return (
+    /^(?:(?:[①-⑳㊀-㊉⒜-⒵])(?=\s|[\p{L}\p{N}]|$)|\d+\s*[.)、．）](?:\s|$)|[A-Za-z]{1,4}\d{1,4}(?=\s|$))/u.test(
+      normalized,
+    )
+  );
 }
 
 // “资产描述”与剧情剧本的语法不同：除了“人物：姓名，外观”，还常用
@@ -9373,6 +9501,14 @@ function parseStructuredAssetDescriptions(script = "") {
       cardEntryBoundary = structuredCardMode;
       continue;
     }
+    const markdownHeading = line.match(/^(#{1,6})\s+\S/);
+    if (markdownHeading && markdownHeading[1].length <= 2 && !isStructuredAssetMarkerLine(line)) {
+      flushPending();
+      activeType = "";
+      structuredCardMode = false;
+      cardEntryBoundary = false;
+      continue;
+    }
     if (/^◆/.test(line)) {
       flushPending();
       activeType = "";
@@ -9394,7 +9530,7 @@ function parseStructuredAssetDescriptions(script = "") {
     }
     if (!activeType) continue;
     const isCardMarker = structuredCardMode && isStructuredAssetMarkerLine(line);
-    const isCardMetadata = structuredCardMode && isStructuredAssetMetadataLine(line);
+    const isCardMetadata = structuredCardMode && (isStructuredAssetMetadataLine(line) || isStructuredAssetFieldLine(line));
     // 卡片分区已经显式给出类型。编号和段落开头都可以开始新卡；字段内容则继续归属上一张卡。
     let entry = null;
     if (!isCardMetadata && (isCardMarker || (structuredCardMode && (!pending || cardEntryBoundary)))) {
@@ -9479,7 +9615,12 @@ function parseCharacters(script) {
       candidates.add(line);
     }
   }
-  return applyCharacterAliases(preferredCharacterNames(candidates), script).filter((name) => !isVoiceOnlyCharacterName(name, script));
+  return applyCharacterAliases(preferredCharacterNames(candidates), script).filter(
+    (name) =>
+      !isVoiceOnlyCharacterName(name, script) &&
+      !structuredAssetType(name) &&
+      !isStructuredAssetFieldLine("•" + name + "：值"),
+  );
 }
 
 function assetLabelConflict(a, b) {
@@ -9628,67 +9769,6 @@ function correctAssetRolesFromEvidence(assets = []) {
       typeIndexes.set(finalType, Number(typeIndexes.get(finalType) || 0) + 1);
     }
     corrected.push(item);
-  }
-  return corrected;
-}
-
-function scriptCharacterNamesForRoleEnforcement(script = "") {
-  const names = [];
-  const add = (value, force = false) => {
-    const name = cleanCharacterName(value).replace(/\s+/g, "");
-    if (!name || isNonVisualAudioCueLabel(name)) return;
-    if (force || isValidCharacterLabel(name) || /^[一-龥·]$/.test(name) || /^杀手[A-Z0-9一二三四五六七八九十]+$/i.test(name)) {
-      if (!names.some((item) => sameAssetLabel(item, name))) names.push(name);
-    }
-  };
-  for (const name of parseCharacters(script)) add(name);
-  for (const asset of parseStructuredAssetDescriptions(script).filter((item) => item.type === "Character")) {
-    const primary = compactLine(asset.label).match(/^[A-Z][A-Z0-9_-]*/i)?.[0] || compactLine(asset.label).split(/\s*\/\s*/)[0];
-    add(primary, true);
-  }
-  for (const item of inlineColonDialogues(script, "zh", { limit: Infinity })) add(item.speaker);
-  for (const match of String(script).matchAll(/杀手\s*[A-Z0-9一二三四五六七八九十]+/gi)) add(match[0]);
-  for (const match of String(script).matchAll(/(?:^|\n)\s*([一-龥·]{1,8}|[A-Za-z][A-Za-z0-9 .'-]{1,32})\s*[（(][^）)]{1,32}[）)]\s*[：:]/g)) add(match[1]);
-  return names;
-}
-
-function enforceCharacterProfileAssets(assets = [], script = "", worldProfile = {}) {
-  const profileNames = scriptCharacterNamesForRoleEnforcement(script);
-  if (!profileNames.length) return assets;
-  const explicitNonCharacterLabels = parseStructuredAssetDescriptions(script)
-    .filter((asset) => asset.type !== "Character")
-    .map((asset) => asset.label);
-  const isExplicitNonCharacter = (value) => explicitNonCharacterLabels.some((label) => sameAssetLabel(label, value));
-  const profileNameMatches = (value) => profileNames.some((name) => sameAssetLabel(name, value) || sameAssetLabel(name, cleanCharacterName(value)) || assetLabelConflict(name, value));
-  const corrected = [];
-  for (const asset of assets) {
-    if (profileNameMatches(asset?.label || asset?.name) && asset.type !== "Character" && !asset.lockedStructured) continue;
-    corrected.push(asset);
-  }
-  for (const name of profileNames) {
-    if (isExplicitNonCharacter(name)) continue;
-    if (corrected.some((asset) => asset.type === "Character" && (sameAssetLabel(asset.label, name) || assetLabelConflict(asset.label, name)))) continue;
-    let typeIndex = corrected.filter((asset) => asset.type === "Character").length + 1;
-    let assetName = typedAssetName("Character", typeIndex, name);
-    while (
-      corrected.some(
-        (asset) =>
-          asset.name === assetName ||
-          assetMatchCode(asset.type, asset.name || asset.label) === assetMatchCode("Character", assetName),
-      )
-    ) {
-      typeIndex += 1;
-      assetName = typedAssetName("Character", typeIndex, name);
-    }
-    corrected.push({
-      type: "Character",
-      name: assetName,
-      label: name,
-      evidence: evidenceForTerm(script, name),
-      worldProfile,
-      analyzerSource: "rules",
-      analyzerNote: "顶部人物设定块强制识别为 Character",
-    });
   }
   return corrected;
 }
@@ -10847,6 +10927,7 @@ function sanitizeSeedancePromptForPolicy(prompt = "") {
 function cleanSeedancePromptForSubmission(prompt = "") {
   const text = String(prompt || "").replace(/\r\n/g, "\n").trim();
   if (!text) return "";
+  if (isSeedanceNaturalLanguageShotPrompt(text)) return sanitizeSeedancePromptForPolicy(text);
   const keepOrder = [
     "剧情动作",
     "镜头语言",
@@ -10890,7 +10971,8 @@ function cleanSeedancePromptForSubmission(prompt = "") {
 }
 
 function promptHasStoryContent(prompt = "") {
-  return /(?:剧情动作|核心画面|剧情与镜头|剧情)[：:]/.test(String(prompt || ""));
+  const text = String(prompt || "");
+  return isSeedanceNaturalLanguageShotPrompt(text) || /(?:剧情动作|核心画面|剧情与镜头|剧情)[：:]/.test(text);
 }
 
 function promptWithStoryboardGuidance(prompt = "", guidanceText = "") {
@@ -14843,7 +14925,8 @@ function validateAnalyzerPrompt(asset, prompt) {
   return prompt.trim();
 }
 
-// 分批解析:整份文档一次性解析要吐 ~1万 tokens、200-300秒常超时,超时即回退本地傻规则(把单字名昼/绯乱塞进道具)。
+// 分批解析:整份文档一次性解析要吐 ~1万 tokens、200-300秒常超时;超时由资产提取流程硬失败,
+// 不再静默写入本地傻规则结果(把单字名昼/绯乱塞进道具)。
 // 拆成按类型的小请求(人物/场景/道具各一个,实测人物专项仅 65秒/2851 tokens),每个远低于超时线。
 // FOCUS_SPEC:每个焦点对应输出数组名 + 追加到系统 prompt 的"本次只输出该类"约束。
 const ANALYZER_FOCUSES = [
@@ -14961,10 +15044,7 @@ async function callAssetAnalyzerModel({ script, fallbackAssets, worldProfile, mo
 
 const ASSET_TYPES = new Set(["Character", "Scene", "Prop", "Insert"]);
 
-async function auditAssetRoles({ assets = [], script = "", modelName, hasCompleteStructuredAssetPlan = false }) {
-  if (hasCompleteStructuredAssetPlan) {
-    return { ok: true, model: "skip", checkedCount: assets.length, flippedCount: 0, flips: [], flagged: [], reason: "完整结构化分段，全部锁定，跳过复核", assets };
-  }
+async function auditAssetRoles({ assets = [], script = "", modelName }) {
   const apiKey = assetAnalyzerApiKey();
   if (!apiKey) {
     return { ok: false, model: "", checkedCount: 0, flippedCount: 0, flips: [], flagged: [], reason: "未配置资产审核模型 API Key", assets };
@@ -16556,11 +16636,18 @@ function dialoguesForText(text, dialogueLanguage) {
 
 function dialogueBlockForShot(shot) {
   if (!shot.dialogues?.length) return "对白：无对白；保留呼吸、停顿、远处人声和环境反应。";
-  return `对白：\n${shot.dialogues.map((item) => `- ${item.speaker}："${item.text}"`).join("\n")}`;
+  return `对白：\n${shot.dialogues.map((item) => `- ${item.speaker}：“${item.text}”`).join("\n")}`;
+}
+
+function isSeedanceNaturalLanguageShotPrompt(prompt = "") {
+  const text = String(prompt || "").trim();
+  if (!/(?:^|\n)镜号\s+\d+（\d+\s*秒）/.test(text)) return false;
+  return ["景别：", "摄像机 / 镜头：", "运镜：", "机位视角：", "画面：", "人声 OS：", "人物台词：", "音效："].every((field) => text.includes(field));
 }
 
 function cleanVideoPromptForSubmission(prompt) {
   let text = String(prompt || "").trim();
+  if (isSeedanceNaturalLanguageShotPrompt(text)) return text;
   const blockHeadings = [
     "参考映射",
     "素材身份约束",
@@ -17214,27 +17301,6 @@ function refsForBeat(beat, assets, context = {}) {
   return refs.slice(0, 8);
 }
 
-function seedanceJsonValue(value, fallback = "") {
-  return compactLine(value || fallback).replace(/"/g, '\\"');
-}
-
-const SEEDANCE_JSON_PROMPT_FIELDS = [
-  "style",
-  "scene",
-  "subject",
-  "action",
-  "camera_movement",
-  "duration",
-  "motion_intensity",
-  "environment",
-  "lighting",
-  "effects",
-  "color_palette",
-  "mood",
-  "dialogue",
-  "sound",
-];
-
 function seedanceDialogueText(shot) {
   const dialogues = Array.isArray(shot.dialogues) ? shot.dialogues : Array.isArray(shot.dialogueLines) ? shot.dialogueLines : [];
   if (!dialogues.length) return "无对白；保留呼吸、停顿和环境声";
@@ -17265,91 +17331,41 @@ function seedanceStyleLawForPreset(preset = "") {
   return `全片强制保持「${label}」风格：所有镜头、人物、场景、材质、光影与调色都必须是该风格的渲染，人物必须是该风格下的角色形象；严禁真人实拍或写实照片质感、真实皮肤毛孔细节。`;
 }
 
-function seedanceJsonObjectForShot(shot, index, dialogueLanguage) {
-  const design = shot.cinematicDesign || cinematicShotDesignForShot(shot, index);
-  const plan = cameraPlanForShot(shot, index);
-  const story = videoSafeBeatText(shot.beat || shot.purpose || shot.title);
-  const duration = `${clampShotDuration(shot.duration || 8)}s`;
-  const stylePreset = compactLine(shot.videoStylePreset || "") ? normalizeAssetStylePreset(shot.videoStylePreset) : "";
-  const styleLocked = !!stylePreset;
-  const photoreal = stylePreset === "photoreal";
-  const motionIntensity =
-    /action|continuation|危机|追|冲|扑|逃|战|爆|震|跑|摔|attack|run|fight/i.test(`${design.shotPurpose || ""} ${story}`)
-      ? "high"
-      : /insert|reaction|close|特写|停顿|凝视|呼吸|whisper/i.test(`${design.shotPurpose || ""} ${story}`)
-        ? "low"
-        : "medium";
-  // 启发式基线(回退)。style 由资产风格锁定、duration 由后端计算、dialogue 由对白行生成——这三项不交给模型。
-  const base = {
-    style: seedanceStyleLawForPreset(stylePreset),
-    scene: story,
-    subject: design.composition || "当前镜头中的主要人物、场景和关键道具",
-    action: `${design.opening || story}；${design.performance || "动作少而准确，情绪通过眼神、呼吸和身体重心推进"}`,
-    camera_movement: `${design.cameraMove || plan.camera}；${design.cameraLanguage || plan.lens}`,
-    duration,
-    motion_intensity: motionIntensity,
-    environment: design.composition || "空间方向、站位、道具状态和场景纵深保持连续",
-    lighting: photoreal
-      ? design.lighting || "真实物理光，明确光源方向、色温和阴影层次"
-      : styleLocked
-        ? "光源方向、色温和阴影层次清晰，严格符合所选风格的灯光语言，不使用真人实拍写实光效"
-        : design.lighting || "明确光源方向、色温和阴影层次；最终渲染质感由正式资产图确定",
-    effects: "仅呈现剧本中明确出现的能量、烟雾、震动、粒子、光晕或环境变化",
-    color_palette: photoreal
-      ? "克制电影调色，场景主色保持一致，肤色自然，黑位干净"
-      : styleLocked
-        ? "克制电影调色，严格保持所选风格的色彩语言，主色一致，黑位干净"
-        : "克制电影调色、主色一致；最终色彩语言由正式资产图确定",
-    mood: design.shotPurpose || "电影化、克制、叙事明确",
-    dialogue: seedanceDialogueText(shot),
-    sound: "环境底噪、空间混响、脚步、衣料摩擦、道具声和对白同步，音乐克制",
-  };
-  // seedance 导演引擎:模型逐镜产出的 design 字段优先(缺失字段回退到上面的启发式基线)。
-  // style/duration/dialogue 始终保持基线,不被模型覆盖(锁风格、锁时长、对白单独本地化)。
-  const videoDesign = shot.videoDesign;
-  if (seedanceDirectorEnabled() && videoDesign && typeof videoDesign === "object") {
-    for (const key of Object.keys(videoDesign)) {
-      if (key === "style" || key === "duration" || key === "dialogue") continue;
-      if (videoDesign[key]) base[key] = videoDesign[key];
-    }
+function seedancePromptDesignForShot(shot, index) {
+  const design = sanitizeSeedanceDesign(shot?.videoDesign);
+  if (!hasCompleteSeedanceDesign(design)) {
+    throw new Error(`模型导演设计缺失：${shot?.name || shot?.id || `镜头 ${Number(index || 0) + 1}`}。请重新生成分镜草稿。`);
   }
-  return base;
+  const stylePreset = compactLine(shot.videoStylePreset || "") ? normalizeAssetStylePreset(shot.videoStylePreset) : "";
+  return {
+    style: seedanceStyleLawForPreset(stylePreset),
+    shot_size: design.shot_size,
+    camera_lens: design.camera_lens,
+    camera_movement: design.camera_movement,
+    camera_angle: design.camera_angle,
+    visual: design.visual,
+    voice_over: design.voice_over,
+    sound: design.sound,
+  };
 }
 
-function seedanceJsonPromptForShot(shot, index, dialogueLanguage) {
-  const data = seedanceJsonObjectForShot(shot, index, dialogueLanguage);
-  const lines = SEEDANCE_JSON_PROMPT_FIELDS.map((key) => `  "${key}": "${seedanceJsonValue(data[key])}"`);
-  return `{\n${lines.join(",\n")}\n}`;
-}
-
-// Seedance skill 全权:输出自然语言散文提示词(非 JSON,遵循 prompt-compiler.md)。
-// 复用导演字段(seedanceJsonObjectForShot 含 skill videoDesign),拼成提交端消费的段落格式:
-// 叙事全进「剧情动作」块(内部用行内小标签,不触发 section 拆分),对白/声音各自成段。
-function seedanceProsePromptForShot(shot, index, dialogueLanguage) {
+function seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage) {
   const refs = (shot.refs || []).map((ref, refIndex) => seedanceReferenceLine(ref, refIndex, shot.assetLookup)).join("\n");
-  const d = seedanceJsonObjectForShot(shot, index, dialogueLanguage);
-  const story = [];
-  const add = (v) => { const s = compactLine(v || ""); if (s) story.push(s); };
-  add(d.style);
-  add(d.scene);
-  if (compactLine(d.subject)) add(`画面主体：${compactLine(d.subject)}`);
-  add(d.action);
-  if (compactLine(d.camera_movement)) add(`镜头：${compactLine(d.camera_movement)}`);
-  if (compactLine(d.environment)) add(`环境：${compactLine(d.environment)}`);
-  if (compactLine(d.lighting)) add(`光线：${compactLine(d.lighting)}`);
-  if (compactLine(d.effects)) add(`特效：${compactLine(d.effects)}`);
-  if (compactLine(d.color_palette)) add(`调色：${compactLine(d.color_palette)}`);
-  if (compactLine(d.mood)) add(`氛围：${compactLine(d.mood)}`);
-  const blocks = [`剧情动作：${story.join("；")}`];
-  const dlg = compactLine(d.dialogue);
-  if (dlg) blocks.push(`对白：${dlg}`);
-  const snd = compactLine(d.sound);
-  if (snd) blocks.push(`声音：${snd}`);
-  return `${refs ? refs + "\n\n" : ""}${blocks.join("\n\n")}`.trim();
-}
-
-function jsonOnlySeedancePrompt(shot, index, dialogueLanguage) {
-  return seedanceProsePromptForShot(shot, index, dialogueLanguage);
+  const d = seedancePromptDesignForShot(shot, index);
+  const dialogue = Array.isArray(shot?.dialogues) && shot.dialogues.length ? seedanceDialogueText(shot) : "无";
+  const duration = clampShotDuration(shot.duration || 8);
+  const prompt = [
+    `镜号 ${index + 1}（${duration} 秒）`,
+    `景别：${d.shot_size}`,
+    `摄像机 / 镜头：${d.camera_lens}`,
+    `运镜：${d.camera_movement}`,
+    `机位视角：${d.camera_angle}`,
+    `画面：${d.style} ${d.visual}`,
+    `人声 OS：${d.voice_over}`,
+    `人物台词：${dialogue}`,
+    `音效：${d.sound}`,
+  ].join("\n");
+  return `${refs ? `${refs}\n\n` : ""}${prompt}`.trim();
 }
 
 // Production Board 已把实际资产身份烘焙进每个画面。视频阶段只提交故事板，
@@ -17370,7 +17386,7 @@ function storyboardSeedancePrompt(shot, index, dialogueLanguage) {
 function seedancePromptForShotMode(shot, index, dialogueLanguage, storyboardsActive) {
   return storyboardsActive
     ? storyboardSeedancePrompt(shot, index, dialogueLanguage)
-    : jsonOnlySeedancePrompt(shot, index, dialogueLanguage);
+    : seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage);
 }
 
 function seedancePromptBlock(shot, index, dialogueLanguage) {
@@ -17381,7 +17397,7 @@ function seedancePromptBlock(shot, index, dialogueLanguage) {
 参考资产：${shot.refs.join(", ")}
 
 \`\`\`text
-${jsonOnlySeedancePrompt(shot, index, dialogueLanguage)}
+${seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage)}
 \`\`\``;
 }
 
@@ -17421,17 +17437,13 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
       "refs": ["S001_example", "C001_example"],
       "dialogueLines": ["英文或中文对白"],
       "design": {
-        "scene": "本镜剧情与所在空间",
-        "subject": "主体人物 + 关键道具 + 构图/站位",
-        "action": "一个明确的可见动作与其终点",
-        "camera_movement": "景别 + 焦段 + 机位/高度 + 运镜",
-        "motion_intensity": "low 或 medium 或 high",
-        "environment": "空间方向、站位、道具状态与场景纵深如何连续",
-        "lighting": "光源方向 + 色温 + 光比 + 阴影层次（有可信来源）",
-        "effects": "仅剧本明确出现的能量/烟雾/粒子/环境变化，否则写 无特效",
-        "color_palette": "克制电影调色、主色一致、符合所选风格的色彩语言",
-        "mood": "本镜的镜头目的与情绪，写成具体画面读法",
-        "sound": "环境声、动效、道具声与对白同步，音乐克制"
+        "shot_size": "双人侧面半身中近景",
+        "camera_lens": "50mm 标准定焦",
+        "camera_movement": "小幅前后缓慢推动，写明速度、幅度和持续时间",
+        "camera_angle": "侧前方微仰 15° 视角",
+        "visual": "空间、站位、一个可见动作及终点、构图裁切、可信光源与连续性",
+        "voice_over": "人声 OS；没有时写 无",
+        "sound": "具体音效、环境底噪与声音延续"
       }
     }
   ]
@@ -17475,8 +17487,7 @@ function normalizeStoryboardShot(raw, index, context) {
   const allowedRefs = new Set(context.assets.map((asset) => asset.name));
   const assetLookup = assetLookupFromAssets(context.assets);
   const refs = Array.isArray(raw.refs) ? raw.refs.map(compactLine).filter((ref) => allowedRefs.has(ref)) : [];
-  const fallbackRefs = refsForBeat(beat || title, context.assets, { beats: context.beats, index });
-  const finalRefs = [...new Set([...(refs.length ? refs : fallbackRefs)])].slice(0, 8);
+  const finalRefs = [...new Set(refs)].slice(0, 8);
   // 对白说话人:剧本是「谁说的」的地面真相。分镜模型返回的 dialogueLines 常是无归属的纯台词字符串,
   // 直接用会丢说话人(渲染成 seedanceDialogueText 的字符串分支 → 「台词／台词」无名字)。这里统一规范成
   // {speaker,text}:模型行先按「名字：台词」解析,speaker 缺失时用本镜剧本节拍(原始 script beat)提取回填。
@@ -17486,18 +17497,10 @@ function normalizeStoryboardShot(raw, index, context) {
     ? normalizeDialogueItems(raw.dialogueLines.slice(0, 4), context.dialogueLanguage)
     : [];
   const dialogueLines = backfillDialogueSpeakers(modelItems, beatDialogues);
-  // 模型按导演引擎输出的每镜画面拆解;上层 seedanceJsonObjectForShot 优先用它填 JSON 字段,缺失回退启发式。
   const videoDesign = sanitizeSeedanceDesign(raw.design);
-  const videoPrompt = enforceVideoPromptCinematicRules(compactLine(raw.videoPrompt || raw.prompt || ""), {
-    title,
-    duration,
-    refs: finalRefs,
-    beat,
-    dialogueLines,
-    videoDesign,
-    index,
-  });
-  if (!title || !beat || !finalRefs.length) return null;
+  if (!title || !beat || !finalRefs.length || !hasCompleteSeedanceDesign(videoDesign)) {
+    throw new Error(`视频分镜模型第 ${index + 1} 镜缺少有效资产引用或完整导演设计`);
+  }
   return {
     id: `${context.code}_V${String(index + 1).padStart(3, "0")}_${safeAssetSlug(title, "BEAT").slice(0, 28)}`,
     duration,
@@ -17507,7 +17510,7 @@ function normalizeStoryboardShot(raw, index, context) {
     dialogues: dialogueLines,
     beat,
     videoDesign,
-    modelVideoPrompt: videoPrompt.length > 120 ? videoPrompt : "",
+    modelVideoPrompt: "",
     assetLookup,
   };
 }
@@ -17627,7 +17630,7 @@ function applyCinematicPromptDesign(prompt, shot) {
 function enforceVideoPromptCinematicRules(prompt, shot) {
   const text = String(prompt || "").trim();
   if (!text) return "";
-  return jsonOnlySeedancePrompt(shot, Number(shot.index || 0), shot.dialogueLanguage || "en");
+  return seedanceNaturalLanguagePromptForShot(shot, Number(shot.index || 0), shot.dialogueLanguage || "en");
 }
 
 function fencedTextFromSectionBody(body) {
@@ -18009,17 +18012,6 @@ async function createImageStoryboardPlan(body = {}) {
 }
 
 function seedancePromptForShot(shot, index, dialogueLanguage) {
-  if (shot.modelVideoPrompt) {
-    return `## ${shot.id}
-
-推荐时长：${shot.duration}s
-画幅：9:16 vertical
-参考资产：${shot.refs.join(", ")}
-
-\`\`\`text
-${jsonOnlySeedancePrompt(shot, index, dialogueLanguage)}
-\`\`\``;
-  }
   return seedancePromptBlock(shot, index, dialogueLanguage);
 }
 
@@ -18548,12 +18540,12 @@ function writeAssetManifest(episodeRoot, manifest) {
 
 async function runAssetAuditInBackground(
   episodeRoot,
-  { assets = [], script = "", modelName, hasCompleteStructuredAssetPlan = false } = {},
+  { assets = [], script = "", modelName } = {},
 ) {
   try {
     let audit;
     try {
-      audit = await auditAssetRoles({ assets, script, modelName, hasCompleteStructuredAssetPlan });
+      audit = await auditAssetRoles({ assets, script, modelName });
     } catch (error) {
       audit = { ok: false, model: "", checkedCount: 0, flippedCount: 0, flips: [], flagged: [], reason: error?.message || String(error) };
       console.error(`[assetAudit] 后台审核异常: ${audit.reason}`);
@@ -18604,60 +18596,25 @@ async function extractAssetManifest(episodeRoot, options = {}) {
   const title = titleFromScript(plotScript || assetSourceScript || script, slug, options.title);
   const worldProfile = inferWorldProfile(assetAnalysisSource);
   const rulePlan = buildRuleAssets(assetAnalysisSource, worldProfile);
-  // 用户已把人物 / 场景 / 道具逐项明确分段时，本地解析就是权威来源。
-  // 跳过模型复核，既避免长请求超时，也避免模型遗漏后污染完整的资产表。
-  const structuredTypes = new Set(rulePlan.assets.filter((asset) => asset.lockedManual || asset.lockedStructured).map((asset) => asset.type));
-  const hasCompleteStructuredAssetPlan =
-    rulePlan.assets.length > 0 &&
-    structuredTypes.has("Character") &&
-    structuredTypes.has("Scene") &&
-    ["Prop", "Insert"].some((type) => structuredTypes.has(type)) &&
-    rulePlan.assets.every((asset) => asset.lockedManual || asset.lockedStructured);
-  const analyzerResult = hasCompleteStructuredAssetPlan
-    ? { ok: false, model: "rules", reason: "用户提供完整结构化资产描述，直接保留明确分类" }
-    : await callAssetAnalyzerModel({
-        script: assetAnalysisSource,
-        fallbackAssets: rulePlan.assets,
-        worldProfile,
-        modelName: options.assetAnalyzerModel,
-      });
-  let assets = enforceCharacterProfileAssets(
-    correctAssetRolesFromEvidence(mergeAnalyzerAssets(rulePlan.assets, analyzerResult, worldProfile, assetAnalysisSource)),
-    assetAnalysisSource,
+  const analyzerResult = await callAssetAnalyzerModel({
+    script: assetAnalysisSource,
+    fallbackAssets: rulePlan.assets,
     worldProfile,
-  );
-  const coverageResult = hasCompleteStructuredAssetPlan
-    ? {
-        assets,
-        coverage: {
-          checkedAt: new Date().toISOString(),
-          model: "rules",
-          ok: true,
-          reason: "",
-          summary: "已按用户明确分段建立人物、场景和道具资产清单。",
-          added: [],
-        },
-      }
-    : await ensureAssetCoverage({
-        script: assetAnalysisSource,
-        assets,
-        shots: [],
-        worldProfile,
-        modelName: options.assetAnalyzerModel,
+    modelName: options.assetAnalyzerModel,
   });
-  assets = enforceCharacterProfileAssets(correctAssetRolesFromEvidence(coverageResult.assets), assetAnalysisSource, worldProfile);
-  const audit = hasCompleteStructuredAssetPlan
-    ? {
-        ok: true,
-        model: "skip",
-        checkedCount: assets.length,
-        flippedCount: 0,
-        flips: [],
-        flagged: [],
-        reason: "完整结构化分段，全部锁定，跳过复核",
-        pending: false,
-      }
-    : { ok: false, model: "", checkedCount: 0, flippedCount: 0, flips: [], flagged: [], reason: "审核进行中", pending: true };
+  if (!analyzerResult?.ok) {
+    throw new Error(`资产解析模型不可用或超时，请重试或检查 API Key。${analyzerResult?.reason || "未知失败原因"}`);
+  }
+  let assets = correctAssetRolesFromEvidence(mergeAnalyzerAssets(rulePlan.assets, analyzerResult, worldProfile, assetAnalysisSource));
+  const coverageResult = await ensureAssetCoverage({
+    script: assetAnalysisSource,
+    assets,
+    shots: [],
+    worldProfile,
+    modelName: options.assetAnalyzerModel,
+  });
+  assets = correctAssetRolesFromEvidence(coverageResult.assets);
+  const audit = { ok: false, model: "", checkedCount: 0, flippedCount: 0, flips: [], flagged: [], reason: "审核进行中", pending: true };
   const previous = readAssetManifest(episodeRoot)?.data || {};
   const manifest = assetManifestFromAssets({
     title,
@@ -18683,14 +18640,11 @@ async function extractAssetManifest(episodeRoot, options = {}) {
     confirmed: false,
     confirmedAt: "",
   });
-  if (!hasCompleteStructuredAssetPlan) {
-    runAssetAuditInBackground(episodeRoot, {
-      assets,
-      script: assetAnalysisSource,
-      modelName: options.assetAuditModel,
-      hasCompleteStructuredAssetPlan,
-    }).catch((error) => console.error(`[assetAudit] 后台写回异常: ${error?.message || String(error)}`));
-  }
+  runAssetAuditInBackground(episodeRoot, {
+    assets,
+    script: assetAnalysisSource,
+    modelName: options.assetAuditModel,
+  }).catch((error) => console.error(`[assetAudit] 后台写回异常: ${error?.message || String(error)}`));
   return {
     assetManifest: findProjectFile(episodeRoot, "assetManifest"),
     assetPrompts: findProjectFile(episodeRoot, "assetPrompts"),
@@ -18737,19 +18691,6 @@ async function buildDraft(episodeRoot, options = {}) {
   const targetShotCount = preferredShotCount(videoScript, continuityBeats);
   const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, { dialogueLanguage });
   const durationPlan = planEpisodeDuration({ shotCount: beats.length || targetShotCount, beats });
-  const ruleShots = beats.map((beat, index) => {
-    const n = index + 1;
-    const refs = refsForBeat(beat, assets, { beats, index });
-    return {
-      id: `${code}_V${String(n).padStart(3, "0")}_${safeAssetSlug(beatTitle(beat, index), "BEAT").slice(0, 28)}`,
-      duration: durationPlan.durations[index] || 10,
-      title: beatTitle(beat, index),
-      purpose: `还原剧本节拍：${beat || "推进当前剧情"}`,
-      refs,
-      dialogues: dialoguesForText(beat, dialogueLanguage),
-      beat,
-    };
-  });
   const storyboardModelResult = await callStoryboardModel({
     script: videoScript,
     assets,
@@ -18760,12 +18701,18 @@ async function buildDraft(episodeRoot, options = {}) {
     beats,
     durationPlan,
   });
-  let shots = storyboardModelResult.ok ? storyboardModelResult.shots : ruleShots;
-  if (!shots.length) throw new Error("unable to derive video shots from script");
-  // 不再做资产覆盖校验(那会新增/改动资产);直接用已确认资产
+  if (!storyboardModelResult.ok) {
+    throw new Error(`视频分镜模型不可用或返回不完整设计，请重试。${storyboardModelResult.reason || "未知失败"}`);
+  }
+  const shots = storyboardModelResult.shots;
+  if (!shots.length) throw new Error("视频分镜模型没有返回可用镜头");
   const coverageResult = { assets, coverage: confirmedManifest.coverage || {} };
-  shots = refreshShotRefsWithAssets(shots, assets, beats);
-  shots = applyCinematicDesignToShots(shots, assetLookupFromAssets(assets));
+  const modelShotPlanPayload = {
+    model: storyboardModelResult.model,
+    script: videoScript,
+    dialogueLanguage,
+    shots,
+  };
   const characterAssets = assets.filter((asset) => asset.type === "Character");
   const sceneAssets = assets.filter((asset) => asset.type === "Scene");
   const propAssets = assets.filter((asset) => asset.type === "Prop" || asset.type === "Insert");
@@ -18785,7 +18732,7 @@ async function buildDraft(episodeRoot, options = {}) {
 - 当前阶段：资产图、分镜提示词、视频配置。视频生成统一在独立画布节点中提交。
 - 提示词主体全部使用中文。对白语言模式：${dialogueLanguage === "zh" ? "中文对白" : "英文对白保留"}。
 - 默认视频目标：Seedance 2.0 Fast，480p，9:16，image2video，开启声音。
-- 视频分镜来源：${storyboardModelResult.ok ? "已使用后端指定视频分镜模型" : `已回退本地规则拆解；原因：${storyboardModelResult.reason || "未知"}`}。
+- 视频分镜来源：${storyboardModelResult.model}。每镜导演设计由该模型生成，视频配置只会引用该设计。
 - 素材身份必须严格区分：人物图只作人物身份参考，场景图只作环境/空间参考，道具/插入图只作物件或证据细节参考。
 - 人物参考图必须是 16:9、纯白背景、全身三视图加半身特写；最终画风由资产图实际选择的风格决定。
 - 场景参考图必须是 16:9 无人物全景/大全景环境图；最终画风由资产图实际选择的风格决定。
@@ -18822,9 +18769,14 @@ ${shots.map((shot, index) => `### ${shot.id}
 - 时长：${shot.duration}s
 - 剧本依据：${shot.beat || "当前剧情节拍"}
 - 参考资产：${shot.refs.join(", ") || "无"}
-- 分镜目标：用电影化镜头准确还原这一段剧本，不添加剧本之外的新人物、新地点或新事件。
-- 导演设计：${shot.cinematicDesign?.shotPurpose || "reaction"}；${shot.cinematicDesign?.shotSize || "中近景"}；${shot.cinematicDesign?.cameraMove || "运镜克制"}。
-- 摄影策略：${cameraPlanForShot(shot, index).camera}；${shot.cinematicDesign?.composition || "构图服务当前剧情"}；${shot.cinematicDesign?.performance || "强调眼神、停顿、手部细节和空间压力"}。`).join("\n\n")}
+- 景别：${shot.videoDesign.shot_size}
+- 摄像机 / 镜头：${shot.videoDesign.camera_lens}
+- 运镜：${shot.videoDesign.camera_movement}
+- 机位视角：${shot.videoDesign.camera_angle}
+- 画面：${shot.videoDesign.visual}
+- 人声 OS：${shot.videoDesign.voice_over}
+- 人物台词：${shot.dialogues?.length ? seedanceDialogueText(shot) : "无"}
+- 音效：${shot.videoDesign.sound}`).join("\n\n")}
 `;
 
   const characterList = characterAssets.length
@@ -18926,7 +18878,7 @@ ${textToImagePrompt(asset)}
 
 ## 生成来源
 
-- 视频分镜来源：${storyboardModelResult.ok ? "已使用后端指定视频分镜模型" : `已回退本地规则拆解；原因：${storyboardModelResult.reason || "未知"}`}。
+- 视频分镜来源：${storyboardModelResult.model}；视频配置将使用草稿中持久化的模型导演设计。
 - 提示词主体使用中文；对白语言模式：${dialogueLanguage === "zh" ? "中文对白" : "英文对白保留"}。
 
 ${shots.map((shot, index) => seedancePromptForShot(shot, index, dialogueLanguage)).join("\n\n")}
@@ -18949,11 +18901,12 @@ ${shots.map((shot, index) => seedancePromptForShot(shot, index, dialogueLanguage
   const finalAssetPrompts = assetPromptsFromManifest(assetManifest);
 
   assertNoBlockingWorkflowJobs(episodeRoot, "写入新草稿");
+  const modelShotPlan = writeStoryboardModelPlan(episodeRoot, modelShotPlanPayload);
   writeText(paths.storyboard, storyboard);
   // 生成视频配置不再写 assetManifest / assetPrompts,避免覆盖「资产提取」的成果
   writeText(paths.seedancePrompts, seedancePrompts);
   resetVideoCanvasBindingForNewDraft(episodeRoot);
-  return { storyboard: paths.storyboard, assetManifest: paths.assetManifest, assetPrompts: paths.assetPrompts, seedancePrompts: paths.seedancePrompts };
+  return { storyboard: paths.storyboard, modelShotPlan, assetManifest: paths.assetManifest, assetPrompts: paths.assetPrompts, seedancePrompts: paths.seedancePrompts };
 }
 
 function parsePromptSections(markdown) {
@@ -19635,7 +19588,6 @@ function tailFrameContinuityDecision(currentShot, previousShot, assetLookup) {
 
 async function buildVideoConfig(episodeRoot, body = {}) {
   const slug = episodeSlug(episodeRoot);
-  const code = episodeCode(slug);
   const configPath = findProjectFile(episodeRoot, "config");
   const workflow = ensureWorkflowNamespace(episodeRoot, "build video config");
   const runNamespace = normalizeRunNamespace(body.runNamespace || workflow.currentNamespace) || createRunNamespace("pt");
@@ -19701,124 +19653,27 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   // 视频风格只能继承已生成并实际绑定的正式资产。素材缺失时保留为空，避免把规划阶段
   // 误锁为超写实；只有显式 manual 模式才允许在未绑定资产时由请求指定风格。
   const videoStylePreset = videoStylePresetFromProductionAssets(productionAssets, body);
-  const refAssets = productionAssets.map((asset) => assetModelForRefs(asset, manifest));
-  const referenceNames = assetNames.length ? assetNames : plannedAssetNames;
-  const promptPath = findProjectFile(episodeRoot, "seedancePrompts");
-  const promptMarkdown = stripSeedancePromptRules(readText(promptPath));
-  const sections = parsePromptSections(promptMarkdown).filter(isShotPromptSection);
-  const script = scriptForVideoBeats(readText(findProjectFile(episodeRoot, "script")));
-  const rawBeats = scriptBeatCandidates(script);
-  const continuityBeats = consolidateContinuousBeats(rawBeats);
+  const rawScript = readText(findProjectFile(episodeRoot, "script"));
+  const script = scriptForVideoBeats(cleanStoryScriptForDraft(rawScript));
+  if (!script.trim()) throw new Error("剧本为空，无法生成视频配置。");
   const dialogueLanguage = normalizeDialogueLanguage(
     body.dialogueLanguage || previous.dialogueLanguage || previous.settings?.dialogueLanguage || manifest.dialogueLanguage || manifest.production?.dialogueLanguage || "",
-    /英文对白保留/.test(promptMarkdown) ? "en" : /中文对白/.test(promptMarkdown) ? "zh" : projectDialogueLanguage(episodeRoot, "en"),
+    projectDialogueLanguage(episodeRoot, "en"),
   );
   persistProjectDialogueLanguage(episodeRoot, dialogueLanguage);
-  // 全剧本 speaker 地图:模型对白常无归属,config 阶段据此为每个 shot 的对白补正确说话人。
-  const scriptSpeakerMap = buildScriptSpeakerMap(script, dialogueLanguage);
-  const naturalBeatCount = continuityBeats.flatMap((beat) => splitScriptBeatIntoNaturalUnits(beat, dialogueLanguage)).length || continuityBeats.length;
-  const preferredCount = Math.max(naturalBeatCount || 0, preferredShotCount(script, continuityBeats));
-  if (!sections.length && !preferredCount) throw new Error("未找到可用的视频分镜：Seedance 提示词没有可识别分段，剧本也无法拆解。");
-  const targetShotCount = shouldExpandVideoConfigShots({ sectionCount: sections.length, targetShotCount: preferredCount, beats: continuityBeats })
-    ? preferredCount
-    : sections.length || preferredCount;
-  const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, { dialogueLanguage });
-  const rawSectionDurations = sections.map((section) => {
-    const match = section.body.match(/(?:推荐时长|duration|时长)[:：]?\s*(\d+)/i);
-    const value = Number(match?.[1] || 0);
-    return Number.isFinite(value) && value > 0 ? value : 0;
+  const modelPlan = readStoryboardModelPlan(episodeRoot);
+  const { shots: modelShots } = modelShotPlanForConfig({
+    episodeRoot,
+    modelPlan,
+    script,
+    dialogueLanguage,
+    assets: productionAssets,
+    videoStylePreset,
   });
-  const durationPlan = planEpisodeDuration({
-    shotCount: beats.length || targetShotCount,
-    beats,
-    rawDurations: rawSectionDurations,
-  });
-  const referenceWarnings = sections.length ? [] : ["Seedance 提示词没有可识别分段，已回退剧本节拍生成视频配置。"];
-  const shotInputs = Array.from({ length: Math.max(sections.length, beats.length || targetShotCount) }, (_, index) => ({
-    section: sections[index] || null,
-    beat: beats[index] || sections[index]?.body || sections[index]?.name || "",
-  }));
-  let shots = shotInputs.map(({ section, beat: inputBeat }, index) => {
-    const sectionName = section?.name || "";
-    const sectionBody = section?.body || "";
-    const sectionRefs = section ? refsFromPromptSection(section, referenceNames, assetLookup) : [];
-    const validation = validateShotRefs(sectionRefs, assetLookup);
-    let refs = validation.refs;
-    if (validation.warnings.length) referenceWarnings.push(`${sectionName || `分镜 ${index + 1}`}: ${validation.warnings.join("；")}`);
-    const beat = inputBeat || sectionBody || sectionName;
-    const fallbackRefs = refsForBeat(beat, refAssets, { beats, index });
-    refs = refineShotRefsForBeat({
-      refs,
-      fallbackRefs,
-      beat,
-      assetLookup,
-      context: { beats, index },
-    });
-    const originalPrompt = fencedTextFromSectionBody(sectionBody);
-    const shouldReusePrompt = originalPrompt && promptMatchesBeat(originalPrompt, beat, sectionName);
-    // 从 Stage 1 序列化的 JSON 块反解出 seedance 导演拆解字段(仅当该块匹配本节拍时复用),
-    // 使模型拆解跨两阶段不丢失;后续所有提示词重合成都会优先用它,缺失字段回退启发式。
-    const videoDesign = shouldReusePrompt ? parseSeedanceDesignFromPrompt(originalPrompt) : {};
-    const duration = clampShotDuration((shouldReusePrompt ? rawSectionDurations[index] : 0) || durationPlan.durations[index] || 10, durationPlan.durations[index] || 10);
-    const sourceName = shouldReusePrompt && sectionName ? sectionName : beatTitle(beat, index);
-    const name = shouldReusePrompt && /^[A-Z]\d+_V\d+/i.test(sourceName) ? sourceName : `${code}_V${String(index + 1).padStart(3, "0")}_${safeSlug(sourceName)}`;
-    const promptShot = {
-      id: name,
-      duration,
-      title: beatTitle(beat, index),
-      purpose: `还原剧本节拍：${beat || section.name}`,
-      refs,
-      dialogues: dialoguesForShotWithSpeakers(beat, sectionBody, scriptSpeakerMap, dialogueLanguage),
-      dialogueLanguage,
-      beat,
-      videoDesign,
-      assetLookup: new Map(refAssets.map((asset) => [asset.name, asset])),
-    };
-    if (originalPrompt && !shouldReusePrompt) {
-      referenceWarnings.push(`${name}: 已丢弃与当前分段不匹配的旧视频提示词，按当前剧本节拍重新生成。`);
-    }
-    const prompt =
-      (shouldReusePrompt
-        ? enforceVideoPromptCinematicRules(originalPrompt, {
-            ...promptShot,
-            dialogueLines: promptShot.dialogues.map((item) => `${item.speaker}："${item.text}"`),
-          })
-        : "") ||
-      promptTextFromSeedanceBlock(promptShot, index, dialogueLanguage) ||
-      "";
-    return {
-      name,
-      promptSection: sectionName || name,
-      duration,
-      videoStylePreset,
-      refs: refs.slice(0, 8),
-      sceneRef: sceneRefForShotRefs(refs, assetLookup),
-      beat,
-      title: beatTitle(beat, index),
-      dialogues: promptShot.dialogues,
-      dialogueLanguage,
-      videoDesign,
-      prompt: cleanVideoPromptForSubmission(prompt),
-      x: 120 + (index % 3) * 460,
-      y: 620 + Math.floor(index / 3) * 320,
-    };
-  });
-  // 用 gpt-5.6-sol 把镜头对白改写成所选语言,再据此(重)生成视频提示词;失败原样返回不阻断。
-  shots = await localizeShotDialoguesWithStoryboardModel(shots, dialogueLanguage);
-  if (shouldRebalanceShotDurations(shots)) {
-    shots = rebalanceShotDurations(shots, { durationPlan }).map((shot, index) => ({
-      ...shot,
-      prompt: seedancePromptForShotMode({ ...shot, index }, index, dialogueLanguage, storyboardsActive),
-    }));
-  } else {
-    shots = shots.map((shot, index) => ({
-      ...shot,
-      prompt: seedancePromptForShotMode({ ...shot, index }, index, dialogueLanguage, storyboardsActive),
-    }));
-  }
-  shots = applyCinematicDesignToShots(shots, assetLookup).map((shot, index) => ({
+  const referenceWarnings = [];
+  const shots = modelShots.map((shot, index) => ({
     ...shot,
-    prompt: seedancePromptForShotMode({ ...shot, index }, index, dialogueLanguage, storyboardsActive),
+    prompt: cleanVideoPromptForSubmission(seedancePromptForShotMode(shot, index, dialogueLanguage, storyboardsActive)),
   }));
   const allowTailFrameContinuity =
     videoPromptMode === "production_board"
@@ -21582,8 +21437,9 @@ module.exports = {
     assetParser: {
       assetManifestFromAssets,
       buildRuleAssets,
+      parseDocxDocumentXml,
+      parseStructuredAssetDescriptions,
       correctAssetRolesFromEvidence,
-      enforceCharacterProfileAssets,
       inferWorldProfile,
       mergeAnalyzerAssets,
       buildModelDiscoveredAssets,

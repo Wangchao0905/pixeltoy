@@ -8,91 +8,76 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const director = require(path.join(root, "server", "seedance-director.js"));
 
-// --- 模块函数 ---
+const completeDesign = {
+  shot_size: "双人侧面半身中近景",
+  camera_lens: "50mm 标准定焦",
+  camera_movement: "小幅前后缓慢推动，全程匀速 3 秒",
+  camera_angle: "侧前方微仰 15° 视角",
+  visual: "马车旁的草丛环绕两人，Cassian 护住 Vivienne，侧平行自然光勾勒轮廓。",
+  voice_over: "I force myself to stay silent.",
+  sound: "布料摩擦声延续，叠加野外底噪。",
+};
 
-// sanitizeSeedanceDesign: 只保留白名单键、压平空白、motion_intensity 约束、空值丢弃、非对象→{}
+// 模型返回只保留自然语言镜头单所需的七项；未知键和空值必须被清掉。
 {
   const clean = director.sanitizeSeedanceDesign({
-    scene: "  雨夜  天台  ",
-    camera_movement: "低角度仰拍，缓慢推镜",
-    motion_intensity: "HIGH",
-    mood: "",
-    bogus_key: "should be dropped",
+    ...completeDesign,
+    shot_size: "  双人侧面半身中近景  ",
+    obsolete_json_field: "discard",
+    sound: "",
   });
-  assert.equal(clean.scene, "雨夜 天台", "应压平多余空白");
-  assert.equal(clean.camera_movement, "低角度仰拍，缓慢推镜");
-  assert.equal(clean.motion_intensity, "high", "motion_intensity 应小写归一");
-  assert.ok(!("mood" in clean), "空值字段应丢弃");
-  assert.ok(!("bogus_key" in clean), "白名单外字段应丢弃");
-  assert.deepEqual(director.sanitizeSeedanceDesign(null), {}, "非对象应返回空对象");
-  assert.deepEqual(director.sanitizeSeedanceDesign(["x"]), {}, "数组应返回空对象");
-  assert.deepEqual(
-    director.sanitizeSeedanceDesign({ motion_intensity: "insane" }),
-    {},
-    "非法 motion_intensity 应丢弃(让上层回退)",
-  );
+  assert.equal(clean.shot_size, "双人侧面半身中近景");
+  assert.ok(!("obsolete_json_field" in clean));
+  assert.ok(!("sound" in clean));
+  assert.equal(director.hasCompleteSeedanceDesign(clean), false, "缺少任一字段都不能进入视频配置");
+  assert.equal(director.hasCompleteSeedanceDesign(completeDesign), true, "完整导演设计才可进入视频配置");
+  assert.deepEqual(director.sanitizeSeedanceDesign(null), {});
+  assert.deepEqual(director.sanitizeSeedanceDesign(["x"]), {});
 }
 
-// parseSeedanceDesignFromPrompt: 从 Stage 1 序列化的 (@图片行 + {json}) 块反解 design
 {
-  const promptBlock = [
-    "@图片1 是「主角」，锁定主体身份。",
-    "{",
-    '  "style": "全片保持像素风",',
-    '  "scene": "深夜便利店",',
-    '  "camera_movement": "过肩镜头，长焦压缩",',
-    '  "motion_intensity": "low",',
-    '  "duration": "8s",',
-    '  "dialogue": "无对白"',
-    "}",
-  ].join("\n");
-  const design = director.parseSeedanceDesignFromPrompt(promptBlock);
-  assert.equal(design.scene, "深夜便利店", "应解析出 scene");
-  assert.equal(design.camera_movement, "过肩镜头，长焦压缩");
-  assert.equal(design.motion_intensity, "low");
-  assert.ok(!("style" in design), "style 不属于模型驱动字段,应被 sanitize 丢弃");
-  assert.ok(!("duration" in design), "duration 应被丢弃(后端计算)");
-  assert.ok(!("dialogue" in design), "dialogue 应被丢弃(单独本地化)");
-  assert.deepEqual(director.parseSeedanceDesignFromPrompt("没有 JSON 的纯文本"), {}, "无 JSON 应返回空对象");
-  assert.deepEqual(director.parseSeedanceDesignFromPrompt("{坏的 json,,,}"), {}, "坏 JSON 应返回空对象不抛错");
-  assert.deepEqual(director.parseSeedanceDesignFromPrompt(""), {}, "空串应返回空对象");
-}
-
-// seedanceDirectorEnabled: 默认开;显式关闭值→false
-{
-  const saved = process.env.PIXEL_TOYS_SEEDANCE_DIRECTOR;
-  delete process.env.PIXEL_TOYS_SEEDANCE_DIRECTOR;
-  assert.equal(director.seedanceDirectorEnabled(), true, "未设应默认开启");
-  for (const off of ["0", "false", "off", "no", "OFF"]) {
-    process.env.PIXEL_TOYS_SEEDANCE_DIRECTOR = off;
-    assert.equal(director.seedanceDirectorEnabled(), false, `${off} 应关闭`);
+  assert.deepEqual(director.SEEDANCE_DESIGN_FIELDS, [
+    "shot_size",
+    "camera_lens",
+    "camera_movement",
+    "camera_angle",
+    "visual",
+    "voice_over",
+    "sound",
+  ]);
+  assert.match(director.SEEDANCE_DIRECTOR_SYSTEM_ZH, /以下 7 项必须全部存在/);
+  for (const field of director.SEEDANCE_DESIGN_FIELDS) {
+    assert.match(director.SEEDANCE_DIRECTOR_SYSTEM_ZH, new RegExp(`- ${field}：`));
   }
-  process.env.PIXEL_TOYS_SEEDANCE_DIRECTOR = "1";
-  assert.equal(director.seedanceDirectorEnabled(), true, "1 应开启");
-  if (saved === undefined) delete process.env.PIXEL_TOYS_SEEDANCE_DIRECTOR;
-  else process.env.PIXEL_TOYS_SEEDANCE_DIRECTOR = saved;
 }
 
-// 导出的方法/常量齐全
-{
-  assert.ok(Array.isArray(director.SEEDANCE_DESIGN_FIELDS) && director.SEEDANCE_DESIGN_FIELDS.includes("camera_movement"));
-  assert.ok(typeof director.SEEDANCE_DIRECTOR_SYSTEM_ZH === "string" && director.SEEDANCE_DIRECTOR_SYSTEM_ZH.includes("导演引擎"));
-  assert.ok(!director.SEEDANCE_DESIGN_FIELDS.includes("style"), "style 不应在模型驱动字段里");
-  assert.ok(!director.SEEDANCE_DESIGN_FIELDS.includes("duration"));
-  assert.ok(!director.SEEDANCE_DESIGN_FIELDS.includes("dialogue"));
-}
-
-// --- server.js 静态接线断言 ---
+// server.js 接线：草稿保存模型计划，配置只读取它，最终提交保留中文镜头单。
 {
   const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
-  assert.match(server, /require\("\.\/server\/seedance-director\.js"\)/, "server.js 必须 require seedance-director 模块");
-  assert.match(server, /SEEDANCE_DIRECTOR_SYSTEM_ZH/, "storyboardSystemPrompt 必须注入导演引擎方法");
-  assert.match(server, /"design":\s*\{/, "storyboard 输出 schema 必须包含 design 对象");
-  assert.match(server, /const videoDesign = sanitizeSeedanceDesign\(raw\.design\)/, "normalizeStoryboardShot 必须捕获模型 design");
-  assert.match(server, /const videoDesign = shouldReusePrompt \? parseSeedanceDesignFromPrompt\(originalPrompt\)/, "buildVideoConfig 必须从序列化块反解 design 并 thread");
-  assert.match(server, /if \(seedanceDirectorEnabled\(\) && videoDesign && typeof videoDesign === "object"\)/, "seedanceJsonObjectForShot 必须在开关开启时优先用模型 design");
-  // style/duration/dialogue 不被模型覆盖
-  assert.match(server, /if \(key === "style" \|\| key === "duration" \|\| key === "dialogue"\) continue;/, "style/duration/dialogue 必须锁定不被模型覆盖");
+  const buildVideoConfig = server.slice(server.indexOf("async function buildVideoConfig("), server.indexOf("function clearVideoArtifactsForNewCanvas"));
+
+  assert.match(server, /function writeStoryboardModelPlan\(/);
+  assert.match(server, /function readStoryboardModelPlan\(/);
+  assert.match(server, /function modelShotPlanForConfig\(/);
+  assert.match(server, /function seedanceNaturalLanguagePromptForShot\(/);
+  assert.match(server, /镜号 \$\{index \+ 1\}（\$\{duration\} 秒）/);
+  for (const field of ["景别：", "摄像机 / 镜头：", "运镜：", "机位视角：", "画面：", "人声 OS：", "人物台词：", "音效："]) {
+    assert.ok(server.includes(field), `自然语言模板必须包含 ${field}`);
+  }
+  assert.match(server, /const modelPlan = readStoryboardModelPlan\(episodeRoot\)/);
+  assert.match(buildVideoConfig, /modelShotPlanForConfig\(\{/);
+  assert.match(buildVideoConfig, /assets: productionAssets/);
+  assert.match(buildVideoConfig, /seedancePromptForShotMode\(shot, index, dialogueLanguage, storyboardsActive\)/);
+  assert.doesNotMatch(buildVideoConfig, /applyCinematicDesignToShots\(/);
+  assert.doesNotMatch(buildVideoConfig, /refsForBeat\(/);
+  assert.doesNotMatch(buildVideoConfig, /refineShotRefsForBeat\(/);
+  assert.doesNotMatch(buildVideoConfig, /parsePromptSections\(/);
+  assert.doesNotMatch(buildVideoConfig, /localizeShotDialoguesWithStoryboardModel\(/);
+  assert.doesNotMatch(server, /parseSeedanceDesignFromPrompt/);
+  assert.doesNotMatch(server, /seedanceDirectorEnabled/);
+  assert.match(server, /模型导演设计缺失或已过期，请重新生成分镜草稿后再生成视频配置。/);
+  assert.match(server, /function isSeedanceNaturalLanguageShotPrompt\(/);
+  assert.match(server, /if \(isSeedanceNaturalLanguageShotPrompt\(text\)\) return sanitizeSeedancePromptForPolicy\(text\);/);
 }
 
 console.log("seedance-director tests passed.");

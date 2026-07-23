@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const server = require("../server.js");
 
 const parser = server.__test?.assetParser;
 assert.equal(typeof parser?.buildRuleAssets, "function", "asset parser test hook must expose buildRuleAssets");
+assert.equal(typeof parser?.parseDocxDocumentXml, "function", "asset parser test hook must expose parseDocxDocumentXml");
+assert.equal(typeof parser?.parseStructuredAssetDescriptions, "function", "asset parser test hook must expose parseStructuredAssetDescriptions");
 assert.equal(typeof parser?.inferWorldProfile, "function", "asset parser test hook must expose inferWorldProfile");
 assert.equal(typeof parser?.assetManifestFromAssets, "function", "asset parser test hook must expose assetManifestFromAssets");
 assert.equal(typeof parser?.correctAssetRolesFromEvidence, "function", "asset parser test hook must expose correctAssetRolesFromEvidence");
-assert.equal(typeof parser?.enforceCharacterProfileAssets, "function", "asset parser test hook must expose enforceCharacterProfileAssets");
 assert.equal(typeof parser?.mergeAnalyzerAssets, "function", "asset parser test hook must expose mergeAnalyzerAssets");
 assert.equal(typeof parser?.isModelAssetLabelUsable, "function", "asset parser test hook must expose isModelAssetLabelUsable");
 assert.equal(typeof parser?.mergeTypedAnalyzerResults, "function", "asset parser test hook must expose mergeTypedAnalyzerResults");
@@ -50,7 +54,7 @@ const blackHarborScript = `
 
 const worldProfile = parser.inferWorldProfile(blackHarborScript);
 const result = parser.buildRuleAssets(blackHarborScript, worldProfile);
-const correctedAssets = parser.enforceCharacterProfileAssets(parser.correctAssetRolesFromEvidence(result.assets), blackHarborScript, worldProfile);
+const correctedAssets = parser.correctAssetRolesFromEvidence(result.assets);
 const labels = correctedAssets.map((asset) => `${asset.type}:${asset.label}`);
 const manifestLabels = parser
   .assetManifestFromAssets({
@@ -330,11 +334,7 @@ assert(
   "《囚日》场景描述行不得误拆成独立场景",
 );
 const qiuRiCorrectedLabels = parser
-  .enforceCharacterProfileAssets(
-    parser.correctAssetRolesFromEvidence(qiuRiRuleAssets),
-    qiuRiAssetDescription,
-    parser.inferWorldProfile(qiuRiAssetDescription),
-  )
+  .correctAssetRolesFromEvidence(qiuRiRuleAssets)
   .map((asset) => `${asset.type}:${asset.label}`);
 for (const expected of [
   "Character:昼",
@@ -455,6 +455,262 @@ assert.equal(parser.isModelAssetLabelUsable("灯光"), false, "纯字段名'灯�
 assert.equal(parser.isModelAssetLabelUsable(""), false, "空 label 应被挡");
 assert.equal(parser.isModelAssetLabelUsable("昼"), true, "单字名'昼'应通过");
 
+// 生产回归:纯“人物/场景/道具”分区中的编号资产名，下面跟着“•字段：值”行。
+// 字段行必须归入当前资产的 visual，不能变成独立资产；编号也不能依赖中文名称末字白名单。
+const numberedStructuredAssetDescription = `
+人物
+P01 卡伦 Caelen
+•类型：人物
+•别名：灰塔的信使
+•性别：男
+•发型发色：黑色短发
+•妆容：左眼下有细小疤痕
+P02 伊莱 Eli
+•类型：人物
+•别名：北门守卫
+•性别：男
+•发型发色：棕色卷发
+P03 诺拉 Nora
+•类型：人物
+•别名：记录员
+•性别：女
+•发型发色：银色长发
+P04 赛恩 Sian
+•类型：人物
+•别名：旧港医生
+•性别：男
+•发型发色：灰白寸头
+P05 维克 Vick
+•类型：人物
+•别名：钟楼看守
+•性别：男
+•发型发色：黑色背头
+
+场景
+S01 白塔宫
+•类型：场景
+•别名：王城核心
+•空间：高耸的白石宫殿
+S02 沉雾池
+•类型：场景
+•别名：雾中水域
+•空间：被浓雾包围的黑色池水
+S03 地下牢
+•类型：场景
+•别名：旧囚室
+•空间：潮湿的地下石牢
+S04 寂静庭
+•类型：场景
+•别名：内庭
+•空间：月光下空旷的石板庭院
+S05 黑曜冕
+•类型：场景
+•别名：王座厅
+•空间：黑曜石王座与高窗
+
+道具
+PR01 铜制罗盘
+•类型：道具
+•别名：失灵的罗盘
+•材质：磨损铜壳与裂纹玻璃
+PR02 王室钥匙
+•类型：道具
+•别名：旧王印钥匙
+•材质：暗金色长柄钥匙
+`;
+const numberedStructuredAssets = parser.parseStructuredAssetDescriptions(numberedStructuredAssetDescription);
+assert.equal(
+  numberedStructuredAssets.length,
+  12,
+  `编号结构化资产必须稳定解析为12项\nActual assets:\n${numberedStructuredAssets.map((asset) => `${asset.type}:${asset.label}`).join("\n")}`,
+);
+assert.equal(numberedStructuredAssets.filter((asset) => asset.type === "Character").length, 5, "编号结构化人物必须解析为5项");
+assert.equal(numberedStructuredAssets.filter((asset) => asset.type === "Scene").length, 5, "编号结构化场景必须解析为5项");
+assert.equal(numberedStructuredAssets.filter((asset) => asset.type === "Prop").length, 2, "编号结构化道具必须解析为2项");
+for (const fieldLabel of ["类型", "别名", "性别", "发型发色", "妆容", "空间", "材质"]) {
+  assert(
+    !numberedStructuredAssets.some((asset) => asset.label === fieldLabel),
+    `字段名 ${fieldLabel} 不得出现在资产 label 中\nActual assets:\n${numberedStructuredAssets.map((asset) => `${asset.type}:${asset.label}`).join("\n")}`,
+  );
+}
+for (const expected of ["S02 沉雾池", "S03 地下牢", "S04 寂静庭", "PR01 铜制罗盘"]) {
+  assert(numberedStructuredAssets.some((asset) => asset.label === expected), `结构化资产不得漏掉 ${expected}`);
+}
+assert(
+  numberedStructuredAssets.find((asset) => asset.label === "P01 卡伦 Caelen")?.visual.includes("•类型：人物"),
+  "字段行必须归属当前资产 visual",
+);
+
+// 英文结构化视觉资产档回归:Heading2/Heading3 与英文字段不能被压扁成伪资产。
+const grandmaStructuredAssetDescription = [
+  "## CHARACTERS",
+  "### 1. NANA / Agnes (codename PURL)",
+  "Identity: warm grandmother with a sturdy build.",
+  "Signature items: knitted cardigan and old kitchen gloves.",
+  "Trait: patient, observant, quietly formidable.",
+  "Prompt（contrast）：alternate portrait with stronger window light.",
+  "Palette: faded coral, cream, and smoke blue.",
+  "Prompt (cozy): elderly grandmother character reference sheet.",
+  "Consistency anchor: same face, cardigan, and silver hair.",
+  "Key variant (hijacked by voice command): blue raincoat for exterior scenes.",
+  "### 2. UNCLE RAY / Raymond",
+  "Identity: retired rail worker with broad shoulders.",
+  "Palette: rust, charcoal, and denim blue.",
+  "### C003 MRS. BELL",
+  "Identity: neighborhood baker with flour-dusted hands.",
+  "Prompt: warm bakery character reference.",
+  "### 4. LUCY",
+  "Identity: teenage granddaughter with a red scarf.",
+  "### C005 TOM",
+  "Identity: young mechanic with grease-stained overalls.",
+  "### 6. ELI",
+  "Identity: quiet neighbor carrying a canvas satchel.",
+  "### C007 MAY",
+  "Identity: school teacher with round glasses.",
+  "### 8. OZZY",
+  "Identity: family friend in a navy work jacket.",
+  "### C009 DOT",
+  "Identity: little sister with a yellow raincoat.",
+  "",
+  "## SCENES",
+  "### S01 GRANDMA'S KITCHEN",
+  "Identity: warm kitchen at dusk with worn wooden cabinets.",
+  "Palette: amber light and faded teal.",
+  "### S02 RAILWAY PLATFORM",
+  "Prompt (killer mode): empty platform under morning mist.",
+  "### S03 OLD HOUSE FRONT",
+  "Prompt (contrast): weathered porch and climbing roses.",
+  "### S04 COMMUNITY BAKERY",
+  "Prompt: narrow bakery interior with flour haze.",
+  "### S05 BACK GARDEN",
+  "Prompt: vegetable garden after rain.",
+  "### S06 ATTIC ROOM",
+  "Prompt: small attic room with boxes and window light.",
+  "",
+  "## PROPS",
+  "### PR01 KNITTED CARDIGAN",
+  "Prompt: hand-knit cardigan with worn cuffs.",
+  "### PR02 KITCHEN GLOVES",
+  "Prompt: faded oven gloves with stitched repairs.",
+  "### PR03 RAILWAY LANTERN",
+  "Prompt: old brass railway lantern.",
+  "### PR04 CANVAS SATCHEL",
+  "Prompt: sturdy canvas satchel with leather strap.",
+  "### PR05 RED SCARF",
+  "Prompt: bright red wool scarf.",
+  "### PR06 FAMILY PHOTO",
+  "Prompt: framed black-and-white family photograph.",
+  "",
+  "## GLOBAL STYLE ANCHOR",
+  "Warm naturalistic period drama, soft film grain, muted colors.",
+].join("\n");
+const grandmaStructuredAssets = parser.parseStructuredAssetDescriptions(grandmaStructuredAssetDescription);
+assert.equal(
+  grandmaStructuredAssets.length,
+  21,
+  "英文结构化资产档必须解析为21项\nActual assets:\n" +
+    grandmaStructuredAssets.map((asset) => asset.type + ":" + asset.label).join("\n"),
+);
+assert.equal(grandmaStructuredAssets.filter((asset) => asset.type === "Character").length, 9, "英文结构化人物必须解析为9项");
+assert.equal(grandmaStructuredAssets.filter((asset) => asset.type === "Scene").length, 6, "英文结构化场景必须解析为6项");
+assert.equal(grandmaStructuredAssets.filter((asset) => asset.type === "Prop").length, 6, "英文结构化道具必须解析为6项");
+for (const fieldLabel of ["Identity", "Palette", "Prompt", "Signature items", "Trait", "Consistency anchor", "Key variant", "GLOBAL STYLE ANCHOR"]) {
+  assert(
+    !grandmaStructuredAssets.some((asset) => asset.label === fieldLabel),
+    "英文字段/未知标题 " + fieldLabel + " 不得出现在资产 label 中\nActual assets:\n" +
+      grandmaStructuredAssets.map((asset) => asset.type + ":" + asset.label).join("\n"),
+  );
+}
+assert(
+  grandmaStructuredAssets.find((asset) => asset.label.includes("NANA / Agnes"))?.visual.includes("Identity:"),
+  "英文字段必须归属当前资产 visual",
+);
+
+// 未知 Heading1/Heading2 是结构边界，其说明不能继续污染上一个资产。
+const unknownHeadingBoundaryAssets = parser.parseStructuredAssetDescriptions(
+  [
+    "## CHARACTERS",
+    "### C001 NANA",
+    "Identity: grandmother.",
+    "## GLOBAL STYLE ANCHOR",
+    "Warm naturalistic style.",
+    "## PROPS",
+    "### PR01 LANTERN",
+    "Prompt: brass lantern.",
+  ].join("\n"),
+);
+assert.deepEqual(
+  unknownHeadingBoundaryAssets.map((asset) => asset.type + ":" + asset.label),
+  ["Character:C001 NANA", "Prop:PR01 LANTERN"],
+  "未知结构化标题必须清空 activeType 且不能产出说明资产",
+);
+
+// DOCX 解包路径必须保留 Heading2/Heading3 作为 Markdown 层级信号。
+const docxDocumentXml = [
+  '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>',
+  '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>CHARACTERS</w:t></w:r></w:p>',
+  '<w:p><w:pPr><w:pStyle w:val="heading 3"/></w:pPr><w:r><w:t>1. NANA / Agnes</w:t></w:r></w:p>',
+  '<w:p><w:r><w:t>Identity: warm grandmother.</w:t></w:r></w:p>',
+  "</w:body></w:document>",
+].join("");
+const parsedDocxDocument = parser.parseDocxDocumentXml(docxDocumentXml);
+assert(parsedDocxDocument.includes("## CHARACTERS"), "DOCX Heading2 必须输出 ## 前缀");
+assert(parsedDocxDocument.includes("### 1. NANA / Agnes"), "DOCX Heading3 必须输出 ### 前缀");
+
+// 完整结构化计划也必须调用模型。mock 三类 analyzer 返回空数组，用户明确列出的锁定资产仍不能被漏删。
+const mockedModelRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixel-toys-asset-parser-model-"));
+const previousAnalyzerKey = process.env.ASSET_ANALYZER_API_KEY;
+const previousFetch = globalThis.fetch;
+let analyzerRequestCount = 0;
+let coverageRequestCount = 0;
+let auditRequestCount = 0;
+const mockJsonResponse = (payload) =>
+  new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) } }] }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+process.env.ASSET_ANALYZER_API_KEY = "test-asset-parser-key";
+globalThis.fetch = async (_url, options = {}) => {
+  const body = JSON.parse(options.body || "{}");
+  const system = body.messages?.[0]?.content || "";
+  if (/资产视觉解析模型/.test(system)) {
+    analyzerRequestCount += 1;
+    return mockJsonResponse({ world: "测试世界", characters: [], scenes: [], props: [] });
+  }
+  if (/资产覆盖校验模型/.test(system)) {
+    coverageRequestCount += 1;
+    return mockJsonResponse({ coverageSummary: "无缺失", missingCharacters: [], missingScenes: [], missingProps: [] });
+  }
+  if (/资产分类审核员/.test(system)) {
+    auditRequestCount += 1;
+    const listedMatch = (body.messages?.[1]?.content || "").match(/结果清单：\n([\s\S]*?)\n\n请逐条审核/);
+    const listed = listedMatch ? JSON.parse(listedMatch[1]) : [];
+    return mockJsonResponse({ reviews: listed.map((asset) => ({ label: asset.label, currentType: asset.type, shouldBeType: asset.type, confidence: 1 })) });
+  }
+  throw new Error(`unexpected mocked asset model request: ${system.slice(0, 80)}`);
+};
+try {
+  const mockedResult = await parser.extractAssetManifest(mockedModelRoot, {
+    scriptText: numberedStructuredAssetDescription,
+    assetDescriptionText: numberedStructuredAssetDescription,
+    assetAnalyzerModel: "claude-sonnet-5",
+    assetAuditModel: "claude-haiku-4-5",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(analyzerRequestCount, 3, "完整结构化计划必须调用人物/场景/道具三类 analyzer");
+  assert.equal(coverageRequestCount, 1, "完整结构化计划必须调用 coverage 模型");
+  assert.equal(auditRequestCount, 1, "完整结构化计划必须后台调用 audit 模型");
+  assert.equal(mockedResult.analyzer.ok, true, "mock analyzer 应成功");
+  assert.notEqual(mockedResult.analyzer.model, "rules", "完整结构化计划不得把 analyzer 标成 rules");
+  assert.equal(mockedResult.extracted.characters.length, 5, "模型成功时用户列出的人物不能因漏项被删除");
+  assert.equal(mockedResult.extracted.scenes.length, 5, "模型成功时用户列出的场景不能因漏项被删除");
+} finally {
+  globalThis.fetch = previousFetch;
+  if (previousAnalyzerKey === undefined) delete process.env.ASSET_ANALYZER_API_KEY;
+  else process.env.ASSET_ANALYZER_API_KEY = previousAnalyzerKey;
+  fs.rmSync(mockedModelRoot, { recursive: true, force: true });
+}
+
 // 分批解析合并回归:整份文档一次解析常超时(200-300s)→ 回退傻规则把单字名乱塞进道具。
 // 拆成人物/场景/道具三个小请求并行,mergeTypedAnalyzerResults 合并,部分成功也可用(人物最关键)。
 {
@@ -478,6 +734,23 @@ assert.equal(parser.isModelAssetLabelUsable("昼"), true, "单字名'昼'应通�
     { focus: "道具/插入 props", ok: false, reason: "超时" },
   ]);
   assert(none.succeeded.length === 0 && none.failed.length === 3, "三类全失败应无成功项");
+}
+
+// 硬失败回归:资产提取不允许在模型不可用时静默写入本地 rules 结果。
+const unavailableModelRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixel-toys-asset-parser-"));
+try {
+  await assert.rejects(
+    () =>
+      parser.extractAssetManifest(unavailableModelRoot, {
+        scriptText: "人物\nP01 卡伦 Caelen",
+        assetDescriptionText: "人物\nP01 卡伦 Caelen",
+        assetAnalyzerModel: "rules",
+      }),
+    (error) => /资产解析模型不可用或超时/.test(error?.message) && /未调用外部资产解析模型/.test(error?.message),
+    "模型不可用时必须抛错，不能用 rules 结果写 manifest",
+  );
+} finally {
+  fs.rmSync(unavailableModelRoot, { recursive: true, force: true });
 }
 
 console.log("asset parser regression tests passed.");

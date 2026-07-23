@@ -333,6 +333,7 @@ function restoreWorkspacePreferences(user = null) {
 async function syncAuthUser() {
   const label = $("#authUserLabel");
   const exploreLabel = $("#exploreAuthUserLabel");
+  const exploreLoginLink = $("#exploreLoginLink");
   const adminLink = $("#adminLink");
   const exploreAdminLink = $("#exploreAdminLink");
   const exploreTeamButton = $("#exploreTeamButton");
@@ -356,6 +357,7 @@ async function syncAuthUser() {
     label.textContent = authDisplayName;
     if (exploreLabel) exploreLabel.textContent = authDisplayName;
     adminLink?.classList.toggle("hidden", data.user?.role !== "admin");
+    exploreLoginLink?.classList.toggle("hidden", !!data.user);
     exploreAdminLink?.classList.toggle("hidden", data.user?.role !== "admin");
     exploreTeamButton?.classList.toggle("hidden", !data.user);
     exploreRefresh?.classList.toggle("hidden", !data.user);
@@ -372,6 +374,7 @@ async function syncAuthUser() {
     renderImageExploreView();
     label.textContent = "";
     if (exploreLabel) exploreLabel.textContent = "";
+    exploreLoginLink?.classList.remove("hidden");
     adminLink?.classList.add("hidden");
     exploreAdminLink?.classList.add("hidden");
     exploreTeamButton?.classList.add("hidden");

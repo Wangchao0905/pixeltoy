@@ -73,14 +73,17 @@ body.canvas-page {
 }
 
 .canvas-topbar {
-  position: relative;
-  z-index: 12;
+  position: sticky;
+  top: 0;
+  z-index: 80;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   min-height: 44px;
   padding: 5px 10px;
+  box-sizing: border-box;
+  isolation: isolate;
   pointer-events: none;
 }
 
@@ -176,6 +179,14 @@ body.canvas-page {
 
 .canvas-button.danger {
   color: #ff9aa6;
+}
+
+#canvasStudioBack {
+  order: -1;
+  display: inline-grid;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .upload-button {

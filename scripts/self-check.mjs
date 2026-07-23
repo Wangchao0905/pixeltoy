@@ -444,6 +444,9 @@ assert(!html.includes("节点地图"), "node map copy must stay removed from the
 assert(app.includes("const FIXED_WORKSPACE_LAYOUT = true;"), "studio modules must use fixed adaptive layout, not draggable-only layout");
 assert(styles.includes("Fixed adaptive studio layout"), "fixed adaptive studio layout styles are missing");
 assert(styles.includes("body.is-studio .workspace-controls") && styles.includes("display: none"), "workspace drag/zoom controls must be hidden in fixed layout");
+assert(styles.includes("Final Production OS workflow surface v20260723"), "studio workflow must keep the final Production OS visual override at the end of styles.css");
+assert(styles.includes("body.is-studio .studio-workspace-layout {\n  display: grid !important;") && styles.includes("grid-template-columns: minmax(0, 1fr) minmax(260px, 310px);"), "studio workflow must use the final two-column production layout");
+assert(styles.includes("@keyframes studioSurfaceIn") && styles.includes("@keyframes studioSoftSweep"), "studio workflow must keep the approved lightweight motion layer");
 assert(html.includes('class="studio-sidebar"'), "studio must expose the new left production toolbar");
 assert(html.includes('class="studio-console"'), "studio must expose the central generation console");
 assert(html.includes('id="studioFlowStatus"'), "studio must expose the flow status strip");
@@ -492,6 +495,8 @@ assert(!canvas.includes('"空白画布"'), "canvas runtime must not restore the 
 assert(canvasCss.includes(".canvas-brand-title"), "canvas brand title wrapper must exist for centerline alignment");
 assert(canvasCss.includes(".canvas-brand-title {\n  display: flex;") && canvasCss.includes("align-items: center;"), "canvas text must align to the logo centerline");
 assert(canvasCss.includes(".canvas-topbar {\n  min-height: 44px;") && canvasCss.includes("background: transparent;"), "canvas topbar must use a compact transparent layout");
+assert(canvasCss.includes(".canvas-topbar {\n  position: sticky;") && canvasCss.includes("top: 0;") && canvasCss.includes("z-index: 80;"), "canvas topbar must remain visible above the canvas while scrolling");
+assert(canvasCss.includes("#canvasStudioBack {\n  order: -1;") && canvasCss.includes("pointer-events: auto;"), "canvas return-to-project action must stay visible and clickable in compact layouts");
 const assetNodeTemplateHtml = sectionBetween(canvasHtml, 'id="assetNodeTemplate"', "</template>");
 assert(assetNodeTemplateHtml.includes("data-resize-handle"), "canvas asset node must expose a drag-resize handle");
 const imageNodeTemplateHtml = sectionBetween(canvasHtml, 'id="imageNodeTemplate"', "</template>");

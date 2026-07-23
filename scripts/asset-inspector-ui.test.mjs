@@ -6,7 +6,7 @@ const root = path.resolve(new URL("..", import.meta.url).pathname);
 const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 
-assert.match(html, /href="\/styles\.css\?v=script-upload-20260723"/);
+assert.match(html, /href="\/styles\.css\?v=production-os-20260723-2"/);
 assert.match(html, /src="\/app\.js\?v=script-upload-20260723"/);
 assert.match(html, /id="assetInspector"/);
 assert.match(html, /id="assetInspectorPrompt"/);

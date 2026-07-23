@@ -1393,7 +1393,7 @@ function addAssetNodeAt(assetId, point, options = {}) {
   }
   const node = createNode("asset", point, { render: false, silent: true });
   if (!node.assets.includes(assetId)) node.assets.push(assetId);
-  renderNodes();
+  renderNodes({ preserveExisting: true });
   scheduleCanvasSave();
   if (options.autoCertify === true) autoCertifyCanvasGeneratedAsset(asset);
   if (!options.silent) toast("图片已添加到画布");
@@ -3685,7 +3685,7 @@ function upstreamSummary(node) {
   return `已连接 ${sources.length} 张图片，自动引用 ${assetCount} 张参考图。`;
 }
 
-function renderNodes() {
+function renderNodes({ preserveExisting = false } = {}) {
   const wrap = qs("#canvasNodes");
   qs("#canvasHint").classList.toggle("hidden", canvasState.nodes.length > 0);
   // 结构签名：节点(含位置、资产节点的预览)、连接、选中、激活态。结构未变时不做
@@ -3723,9 +3723,21 @@ function renderNodes() {
     return;
   }
   wrap._structSig = structSig;
-  wrap.innerHTML = "";
-  nodeResizeObserver?.disconnect();
+  const existingElements = preserveExisting
+    ? new Map(qsa("#canvasNodes > .canvas-node").map((element) => [element.dataset.nodeId, element]))
+    : new Map();
+  if (!preserveExisting) {
+    wrap.innerHTML = "";
+    nodeResizeObserver?.disconnect();
+  }
   for (const node of canvasState.nodes) {
+    const existingElement = existingElements.get(node.id);
+    if (existingElement) {
+      positionNodeElement(existingElement, node);
+      refreshNodeConnectionClasses(node.id);
+      nodeResizeObserver?.observe(existingElement);
+      continue;
+    }
     if (node.kind === "video") syncVideoModelForReferences(node);
     const template = qs(node.kind === "video" ? "#videoNodeTemplate" : node.kind === "asset" ? "#assetNodeTemplate" : "#imageNodeTemplate");
     const element = template.content.firstElementChild.cloneNode(true);

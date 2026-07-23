@@ -960,7 +960,6 @@ function addAssets(assets) {
     byId.set(asset.id, stripDataUrlFromAsset({ ...(byId.get(asset.id) || {}), ...asset }));
   }
   canvasState.assets = [...byId.values()];
-  renderAssetTray();
   scheduleCanvasSave();
 }
 
@@ -994,7 +993,6 @@ function assetVideoUrl(asset = {}) {
 }
 
 // 视频素材缩略图:用 <video preload="metadata"> 让浏览器渲染首帧,无需服务端抽帧。
-// tray 里不加 controls(不干扰拖拽);节点内加 controls 以便播放。
 function assetThumbnailHtml(asset, { controls = false } = {}) {
   if (isVideoAsset(asset)) {
     const vurl = assetVideoUrl(asset);
@@ -1003,59 +1001,7 @@ function assetThumbnailHtml(asset, { controls = false } = {}) {
   const previewUrl = assetPreviewUrl(asset);
   return previewUrl
     ? `<img src="${escapeHtml(thumbUrl(previewUrl, 240))}" alt="${escapeHtml(asset.name || "")}" loading="lazy" decoding="async" />`
-    : `<div class="tray-asset-placeholder">asset</div>`;
-}
-
-function assetCard(asset) {
-  const validationLabel = assetValidationLabel(asset);
-  const certificationStatus = String(asset.arkPersonAsset?.status || "").toLowerCase();
-  const certificationBadge = isArkVirtualPersonCertified(asset)
-    ? `<span class="ark-virtual-person-badge asset-tray-badge" data-certification-state="active" title="方舟私域虚拟人像已认证" aria-label="方舟私域虚拟人像已认证">✓</span>`
-    : certificationStatus === "processing"
-      ? `<span class="ark-virtual-person-badge asset-tray-badge is-processing" data-certification-state="processing" title="方舟私域虚拟人像认证中" aria-label="方舟私域虚拟人像认证中">…</span>`
-      : "";
-  const uploadBadge = asset.uploading
-    ? `<span class="asset-upload-badge">上传中…</span>`
-    : asset.uploadFailed
-      ? `<span class="asset-upload-badge is-failed">上传失败</span>`
-      : "";
-  return `
-    <article class="tray-asset ${isPhotorealAsset(asset) ? "is-photoreal" : ""} ${isVideoAsset(asset) ? "is-video" : ""} ${asset.uploading ? "is-uploading" : ""}" draggable="true" data-asset-id="${escapeHtml(asset.id)}" data-validation="${escapeHtml(asset.validationStatus || "")}">
-      ${certificationBadge}
-      ${assetThumbnailHtml(asset)}
-      ${uploadBadge}
-      <strong>${escapeHtml(asset.name)}</strong>
-      <span>${escapeHtml([typeLabel(asset.type), asset.assetStyleLabel, validationLabel].filter(Boolean).join(" · "))}</span>
-    </article>
-  `;
-}
-
-function renderAssetTray() {
-  const count = canvasState.assets.length;
-  const tray = qs("#assetTray");
-  if (tray) tray.hidden = count === 0;
-  qs("#assetTrayCount").textContent = String(count);
-  const list = qs("#assetTrayList");
-  const html = count
-    ? canvasState.assets.map(assetCard).join("")
-    : `<div class="tray-empty">上传或导入资产后显示在这里</div>`;
-  // Skip rebuild when unchanged so poll-driven refreshes don't keep recreating
-  // the tray <img> thumbnails (which never finish loading otherwise).
-  if (list._trayHtml === html) return;
-  list._trayHtml = html;
-  list.innerHTML = html;
-  qsa(".tray-asset").forEach((card) => {
-    card.addEventListener("dragstart", (event) => {
-      const assetId = card.dataset.assetId || "";
-      const asset = canvasState.assets.find((item) => item.id === assetId);
-      event.dataTransfer.setData("application/x-pixel-toys-asset-id", assetId);
-      event.dataTransfer.setData("application/json", JSON.stringify({ type: "pixel-toys-asset", assetId }));
-      event.dataTransfer.setData("text/plain", assetId);
-      if (asset?.url) event.dataTransfer.setData("text/uri-list", asset.url);
-      event.dataTransfer.effectAllowed = "copy";
-    });
-    card.addEventListener("dblclick", () => addAssetNode(card.dataset.assetId));
-  });
+    : `<div class="node-asset-placeholder">asset</div>`;
 }
 
 function nodeTitle(kind) {
@@ -1393,11 +1339,28 @@ function addAssetNodeAt(assetId, point, options = {}) {
   }
   const node = createNode("asset", point, { render: false, silent: true });
   if (!node.assets.includes(assetId)) node.assets.push(assetId);
-  renderNodes({ preserveExisting: true });
+  if (options.render !== false) renderNodes({ preserveExisting: true });
   scheduleCanvasSave();
   if (options.autoCertify === true) autoCertifyCanvasGeneratedAsset(asset);
   if (!options.silent) toast("图片已添加到画布");
   return node;
+}
+
+function addAssetNodesToCanvas(assets = []) {
+  const existingAssetIds = new Set(
+    canvasState.nodes.flatMap((node) => node.kind === "asset" ? node.assets || [] : []),
+  );
+  let added = 0;
+  for (const asset of assets) {
+    if (!asset?.id || existingAssetIds.has(asset.id)) continue;
+    const node = addAssetNodeAt(asset.id, nextAvailableAssetNodePoint(), { silent: true, render: false });
+    if (node) {
+      existingAssetIds.add(asset.id);
+      added += 1;
+    }
+  }
+  if (added) renderNodes({ preserveExisting: true });
+  return added;
 }
 
 function renderNodeAssets(node) {
@@ -2503,8 +2466,8 @@ function addLivenessAssetToCanvas(asset) {
       source: "gravitex",
     },
   ]);
-  qs("#assetTray")?.classList.remove("collapsed");
-  toast("已加入画布资产，可连接到视频模块");
+  addAssetNodesToCanvas([canvasState.assets.find((item) => item.id === id)]);
+  toast("已加入画布，可连接到视频模块");
   return id;
 }
 
@@ -2873,11 +2836,6 @@ async function captureVideoTailFrame(nodeId, button) {
       const width = element?.offsetWidth || node.width || VIDEO_NODE_DEFAULT_WIDTH;
       addAssetNodeAt(existing.id, { x: node.x + width + 88, y: node.y }, { silent: true });
     }
-    const tray = qs("#assetTray");
-    if (tray) {
-      tray.hidden = false;
-      tray.classList.remove("collapsed");
-    }
     toast("该视频尾帧已在画布素材中");
     return existing;
   }
@@ -2931,11 +2889,6 @@ async function captureVideoTailFrame(nodeId, button) {
     const element = qs(`[data-node-id="${node.id}"]`);
     const width = element?.offsetWidth || node.width || VIDEO_NODE_DEFAULT_WIDTH;
     addAssetNodeAt(asset.id, { x: node.x + width + 88, y: node.y }, { silent: true });
-    const tray = qs("#assetTray");
-    if (tray) {
-      tray.hidden = false;
-      tray.classList.remove("collapsed");
-    }
     toast("已截取尾帧并添加到画布");
     return asset;
   } catch (error) {
@@ -3874,12 +3827,6 @@ function renderNodes({ preserveExisting = false } = {}) {
         dropzone.classList.remove("is-over");
         addAssetToNode(node.id, assetIdFromDataTransfer(event.dataTransfer));
       });
-      if (node.kind === "video" && dropzone.classList.contains("video-add-reference")) {
-        dropzone.addEventListener("click", () => {
-          qs("#assetTray")?.classList.remove("collapsed");
-          toast("从 Assets 拖入参考素材");
-        });
-      }
     }
     wrap.appendChild(element);
     nodeResizeObserver?.observe(element);
@@ -4162,7 +4109,7 @@ function updateMarqueeSelection() {
 
 function startSelectionMarquee(event) {
   if (event.button !== 0) return;
-  if (event.target.closest(".canvas-node, #assetTray, #contextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu, #sharedAssetLibraryPanel, button, input, select, textarea")) return;
+  if (event.target.closest(".canvas-node, #contextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu, #sharedAssetLibraryPanel, button, input, select, textarea")) return;
   event.preventDefault();
   hideContextMenu();
   hideAssetContextMenu();
@@ -4567,7 +4514,6 @@ function markAssetAsAiPhotoreal() {
     validationStatus: "ai-generated",
     validationError: "",
   });
-  renderAssetTray();
   renderNodes();
   scheduleCanvasSave();
   toast("已标记为 AI 生成写实图，可直接作为所有视频模型的参考图");
@@ -4588,7 +4534,6 @@ function applyArkVirtualPersonResult(asset, result = {}) {
     error: String(result.error || ""),
   };
   if (result.publicUrl) asset.publicUrl = result.publicUrl;
-  renderAssetTray();
   renderNodes();
   scheduleCanvasSave();
 }
@@ -4719,12 +4664,11 @@ function saveAssetFromContextMenu() {
   hideAssetContextMenu();
   if (!asset) return;
   addAssets([asset]);
-  qs("#assetTray")?.classList.remove("collapsed");
   toast("已保存到画布资产");
 }
 
 function handleCanvasWheel(event) {
-  if (event.target.closest("select, input, textarea, button, #contextMenu, #assetTray, #sharedAssetLibraryPanel")) return;
+  if (event.target.closest("select, input, textarea, button, #contextMenu, #sharedAssetLibraryPanel")) return;
   event.preventDefault();
   if ((event.ctrlKey || event.metaKey) && Date.now() < canvasState.gestureWheelBlockUntil) return;
   if (!event.ctrlKey && !event.metaKey) {
@@ -4745,14 +4689,14 @@ function canvasGesturePoint(event) {
 }
 
 function handleCanvasGestureStart(event) {
-  if (event.target.closest("select, input, textarea, button, #contextMenu, #assetTray, #sharedAssetLibraryPanel")) return;
+  if (event.target.closest("select, input, textarea, button, #contextMenu, #sharedAssetLibraryPanel")) return;
   event.preventDefault();
   canvasState.gestureScaleStart = canvasState.viewport.scale;
   canvasState.gestureLastScale = 1;
 }
 
 function handleCanvasGestureChange(event) {
-  if (event.target.closest("select, input, textarea, button, #contextMenu, #assetTray, #sharedAssetLibraryPanel")) return;
+  if (event.target.closest("select, input, textarea, button, #contextMenu, #sharedAssetLibraryPanel")) return;
   event.preventDefault();
   const point = canvasGesturePoint(event);
   const rawScale = Math.max(0.05, Number(event.scale || 1));
@@ -4788,7 +4732,6 @@ async function createNodesForFiles(files, point) {
   // 一次性把占位素材+节点画出来(0 延迟)
   addAssets(jobs.map((job) => job.placeholder));
   jobs.forEach((job, i) => addAssetNodeAt(job.id, { x: point.x + i * 34, y: point.y + i * 34 }, { silent: true }));
-  qs("#assetTray").classList.remove("collapsed");
   toast(`已添加 ${jobs.length} 个素材,上传中…`);
   // 后台并行上传,完成一个换一个的地址
   await Promise.all(jobs.map(async (job) => {
@@ -4817,12 +4760,11 @@ function markAssetUploadFailed(id, message = "") {
   asset.uploading = false;
   asset.uploadFailed = true;
   asset.uploadMessage = message;
-  renderAssetTray();
   renderNodes();
 }
 
 function handleCanvasDragOver(event) {
-  if (event.target.closest(".canvas-node, #assetTray, #contextMenu, #sharedAssetLibraryPanel")) return;
+  if (event.target.closest(".canvas-node, #contextMenu, #sharedAssetLibraryPanel")) return;
   if (!canvasDragHasPayload(event.dataTransfer)) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "copy";
@@ -4835,7 +4777,7 @@ function handleCanvasDragLeave(event) {
 }
 
 function handleCanvasDrop(event) {
-  if (event.target.closest(".canvas-node, #assetTray, #contextMenu, #sharedAssetLibraryPanel")) return;
+  if (event.target.closest(".canvas-node, #contextMenu, #sharedAssetLibraryPanel")) return;
   const sharedAssetId = sharedAssetIdFromDataTransfer(event.dataTransfer);
   const assetId = assetIdFromDataTransfer(event.dataTransfer);
   const point = stagePoint(event.clientX, event.clientY);
@@ -4867,9 +4809,9 @@ function importProjectAssets() {
   const assets = projectAssets();
   if (!assets.length) return toast("当前项目还没有可导入资产");
   addAssets(assets);
-  qs("#assetTray").classList.remove("collapsed");
+  const added = addAssetNodesToCanvas(assets);
   scheduleCanvasSave();
-  toast(`已导入 ${assets.length} 个项目资产`);
+  toast(`已导入 ${assets.length} 个项目资产，新增 ${added} 个素材节点`);
 }
 
 function fileToDataUrl(file) {
@@ -4903,8 +4845,8 @@ async function uploadLocalAssets(files, options = {}) {
     return toast(skipped ? "不支持的文件类型:仅 PNG / JPG / WEBP / MP4 / MOV / WEBM" : "请选择要上传的素材");
   }
   addAssets(assets);
-  qs("#assetTray").classList.remove("collapsed");
-  if (!options.silent) toast(`已上传 ${assets.length} 个资产到画布`);
+  const added = addAssetNodesToCanvas(assets);
+  if (!options.silent) toast(`已上传 ${assets.length} 个资产到画布，新增 ${added} 个素材节点`);
 }
 
 async function uploadLocalImageAsset(file, index, presetId = "") {
@@ -4984,7 +4926,6 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
       canvasState.livenessLibrary = defaultLivenessLibraryState();
     }
     renderProjectTitle();
-    renderAssetTray();
     syncLivenessLibraryPanel();
     applyCanvasViewport();
     renderNodes();
@@ -5013,7 +4954,6 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
     canvasState.viewport = { x: 0, y: 0, scale: 1 };
     canvasState.livenessLibrary = defaultLivenessLibraryState();
   }
-  renderAssetTray();
   syncLivenessLibraryPanel();
   applyCanvasViewport();
   renderNodes();
@@ -5068,7 +5008,7 @@ document.addEventListener("pointermove", updateCanvasPan);
 document.addEventListener("pointerup", endCanvasPan);
 document.addEventListener("pointercancel", endCanvasPan);
 document.addEventListener("click", (event) => {
-  const clickedCanvasChrome = event.target.closest?.("#assetTray, #contextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu, #sharedAssetLibraryPanel, #assetLibraryToggle");
+  const clickedCanvasChrome = event.target.closest?.("#contextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu, #sharedAssetLibraryPanel, #assetLibraryToggle");
   const clickedBlankCanvas = !clickedCanvasChrome && (event.target === qs("#blankCanvas") || (event.target.closest?.("#blankCanvas") && !event.target.closest?.(".canvas-node")));
   if (clickedBlankCanvas) {
     if (canvasState.ignoreNextBlankClick) {
@@ -5129,10 +5069,6 @@ qs("#canvasAssetUpload").addEventListener("change", (event) => {
   event.target.value = "";
 });
 
-qs("#assetTrayToggle")?.addEventListener("click", () => {
-  qs("#assetTray").classList.toggle("collapsed");
-});
-
 qs("#livenessLibraryToggle")?.addEventListener("click", () => toggleLivenessLibraryPanel());
 qs("#livenessLibraryClose")?.addEventListener("click", () => toggleLivenessLibraryPanel(false));
 qs("#livenessLibraryFileUpload")?.addEventListener("change", (event) => {
@@ -5182,7 +5118,6 @@ qs("#canvasClear").addEventListener("click", () => {
   canvasState.assets = [];
   canvasState.selectedNodeIds.clear();
   canvasState.viewport = { x: 0, y: 0, scale: 1 };
-  renderAssetTray();
   applyCanvasViewport();
   renderNodes();
   scheduleCanvasSave();

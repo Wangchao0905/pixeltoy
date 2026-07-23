@@ -52,8 +52,11 @@ assert.match(html, /data-connection-create="image"/, "image output connection me
 assert.match(html, /data-connection-create="video"/, "image output connection menu must retain a video generation target");
 assert.match(html, /class="image-prompt-field"/, "image node must expose a dedicated prompt field");
 assert.match(html, /class="image-field-heading"/, "image node prompt must expose a clear field heading");
-assert.match(html, /<aside id="assetTray"[^>]*hidden>/, "canvas asset tray should be hidden from the visible canvas");
-const modelOptions = html.match(/<select data-node-field="model"(?:\s[^>]*)?>([\s\S]*?)<\/select>/)?.[1] || "";
+assert.doesNotMatch(html, /assetTray|asset-tray/, "canvas asset tray UI should be removed");
+assert.doesNotMatch(js, /assetTray|asset-tray|tray-asset|renderAssetTray/, "canvas asset tray logic should be removed");
+const modelOptions = [...html.matchAll(/<select(?:\s[^>]*)?>[\s\S]*?<\/select>/g)]
+  .map(([block]) => block)
+  .find((block) => block.includes('value="seedance-2-0"')) || "";
 assert.doesNotMatch(modelOptions, /文生视频/, "video model options must not use the generic text-to-video prefix");
 assert.match(modelOptions, /<option value="seedance-2-0">Seedance 2\.0<\/option>/, "base Seedance option must use its short display name");
 assert.match(modelOptions, /<option value="seedance-2-0-person-reference">Seedance 2\.0 · 人物参考<\/option>/, "person-reference option must place the label after Seedance");
@@ -121,7 +124,7 @@ assert.match(css, /\.video-preview-slot:hover \.video-capture-tail-button[\s\S]*
 assert.match(css, /\.video-node\[data-video-status="completed"\] \.video-preview-slot\s*\{[^}]*background:\s*transparent/s, "completed video previews must not render a dark slot background");
 assert.match(css, /\/\* Keep the compact node frameless on the sides[\s\S]*?border-left:\s*0;[\s\S]*?border-right:\s*0;/, "video nodes should not render left and right frame borders");
 assert.match(css, /\.canvas-node\.video-node\[data-video-ratio="9:16"\][\s\S]*?--video-preview-max-width:\s*232px;/, "vertical video previews should stay compact inside the node");
-assert.match(css, /\.asset-tray\[hidden\]\s*\{[^}]*display:\s*none\s*!important;/, "hidden asset tray must not render in the canvas");
+assert.doesNotMatch(css, /asset-tray|tray-asset|asset-upload-badge|assetUploadPulse/, "canvas asset tray styles should be removed");
 assert.match(css, /\.canvas-node\.video-node\.is-composer-open\s*\{[^}]*min-width:\s*420px;[^}]*min-height:\s*420px;/s, "expanded video nodes must keep a minimum size while resizing");
 assert.match(css, /\.canvas-node\.video-node:not\(\.is-composer-open\)\s*\{[^}]*min-width:\s*260px;[^}]*min-height:\s*0;/s, "collapsed video nodes must not reserve the hidden composer height");
 assert.match(css, /\.canvas-node\.video-node\.is-composer-open:not\(\.is-manually-sized\)\s*\{[^}]*height:\s*auto;/s, "automatic video layouts must size to their content instead of reserving a tall empty prompt area");

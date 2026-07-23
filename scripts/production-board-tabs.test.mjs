@@ -39,7 +39,7 @@ try {
       "python3",
       [
         "-c",
-        "from PIL import Image; import json, sys; im=Image.open(sys.argv[1]).convert('RGB'); print(json.dumps({'size': im.size, 'tab': im.getpixel((120, 334)), 'header': im.getpixel((120, 275)), 'thumb': im.getpixel((80, 420))}))",
+        "from PIL import Image; import json, sys; im=Image.open(sys.argv[1]).convert('RGB'); print(json.dumps({'size': im.size, 'tab': im.getpixel((120, 334)), 'header': im.getpixel((120, 290)), 'thumb': im.getpixel((80, 420))}))",
         board,
       ],
       { encoding: "utf8" },

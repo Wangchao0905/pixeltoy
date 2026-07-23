@@ -151,7 +151,7 @@ function typeCounts(assets) {
 function promptFor(asset) {
   const storyboardRule =
     asset.type === "Storyboard"
-      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel outer boundary is a portrait 9:16 cell with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Render real cinematic panel imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. Reserve the lower 44 percent of every panel as clean off-white paper; a deterministic post-process will typeset the Production Tab there with P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion / Continuity, and visible reference thumbnails. Use the upper 56 percent as the cinematic vertical frame. Do not render your own dialogue, production fields, tables, or technical notes. Do NOT add a header, footer, metadata table, caption band outside a panel, or any content outside the nine story panels."
+      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel outer boundary is a portrait 9:16 cell with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Render real cinematic panel imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. Reserve the lower 40 percent of every panel as clean off-white paper; a deterministic post-process will typeset the Production Tab there with P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion, and visible reference thumbnails. Use the upper 60 percent as the cinematic vertical frame. Do not render your own dialogue, production fields, tables, or technical notes. Do NOT add a header, footer, metadata table, caption band outside a panel, or any content outside the nine story panels."
       : "";
   return [
     "Production-grade reference asset. Follow the selected visual style, layout, identity, and safety constraints exactly.",
@@ -946,7 +946,7 @@ function rescueStoryboardPromptFor(asset, referenceImages = []) {
   return [
     "Generate one professional cinematic Production Board image.",
     "The board is a single 9:16 vertical (portrait) sheet — taller than it is wide — on warm off-white paper, full sheet visible, no cropping.",
-    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 outer cell with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells. Reserve the lower 44 percent of each cell as clean off-white paper for the deterministic Production Tab. The upper 56 percent is the cinematic vertical frame. The post-process will typeset P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion / Continuity, and visible reference thumbnails, so do not render your own letters, dialogue, tables, or technical notes.",
+    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 outer cell with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells. Reserve the lower 40 percent of each cell as clean off-white paper for the deterministic Production Tab. The upper 60 percent is the cinematic vertical frame. The post-process will typeset P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion, and visible reference thumbnails, so do not render your own letters, dialogue, tables, or technical notes.",
     "Each panel must be a distinct cinematic story frame, not repeated panels and not a UI wireframe: use the actual attached character, scene and prop identities with varied shot scales, camera angles, blocking, foreground/background staging, actor poses, eyelines, and cut points.",
     "Use a clean professional production-storyboard visual language with finished cinematic imagery, expressive performance and clear environmental continuity. Do not add colored technical diagrams or camera-frame overlays.",
     "Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, or reference boxes. The board contains ONLY the nine equal cinematic story panels with their reserved lower tab areas.",
@@ -967,7 +967,7 @@ function editPromptFor(asset, instruction, referenceImages = [], styleReferenceI
       : asset.type === "Scene"
         ? "Keep this as one 16:9 wide establishing environment reference image with absolutely no people, no silhouettes, no crowds, and no human figures."
         : asset.type === "Storyboard"
-        ? "Keep this as one 9:16 vertical Production Board made only of exactly 9 equal-size vertical 9:16 storyboard panels in a 3-column grid. P1 must remain an ordinary top-left cell; no panel may span rows or columns. Preserve the production-tab and visible-reference layout: the upper 56 percent of every cell is the cinematic frame and the lower 44 percent remains clean paper for deterministic typesetting of plot, dialogue, production fields and visible reference thumbnails. Do not render handwritten dialogue, technical glyphs, arrows, camera-frame overlays, or an extra asset strip."
+        ? "Keep this as one 9:16 vertical Production Board made only of exactly 9 equal-size vertical 9:16 storyboard panels in a 3-column grid. P1 must remain an ordinary top-left cell; no panel may span rows or columns. Preserve the production-tab and visible-reference layout: the upper 60 percent of every cell is the cinematic frame and the lower 40 percent remains clean paper for deterministic typesetting of plot, dialogue, production fields and visible reference thumbnails. Do not render handwritten dialogue, technical glyphs, arrows, camera-frame overlays, or an extra asset strip."
           : asset.type === "Prop"
             ? "Keep this as one 16:9 pure-white-background prop turnaround reference sheet with the same single prop shown in front view, side view, and back view."
             : "Keep this as one 16:9 realistic cinematic insert or evidence-detail reference image with the main subject clear and physically believable.";
@@ -1210,14 +1210,57 @@ def text_lines(value, active_font, width):
         lines.append(current)
     return lines or ["-"]
 
+def brief_visual(value):
+    text = str(value or "-").strip()
+    if ": " in text:
+        text = text.rsplit(": ", 1)[-1]
+    return text or "-"
+
+def brief_dialogue(value):
+    text = str(value or "-").strip()
+    if text.lower().startswith("dialogue:"):
+        text = text.split(":", 1)[1].strip()
+    return text or "-"
+
+def compact_camera(value):
+    text = str(value or "").lower()
+    if "track" in text: return "TRACK"
+    if "dolly" in text: return "DOLLY"
+    if "push" in text: return "PUSH-IN"
+    if "hold" in text: return "HOLD"
+    if "lock" in text or "static" in text: return "LOCKED"
+    return "COMPOSED"
+
+def compact_shot(value):
+    text = str(value or "").lower()
+    if "extreme wide" in text: return "XWS"
+    if "medium-wide" in text: return "MWS"
+    if "medium-close" in text: return "MCU"
+    if "close" in text: return "CU"
+    if "wide" in text: return "WS"
+    if "detail" in text: return "DETAIL"
+    if "medium" in text: return "MS"
+    return "FRAME"
+
+def compact_lens(value):
+    import re
+    match = re.search(r"\d+mm", str(value or ""), re.I)
+    return match.group(0).upper() if match else "LENS"
+
+def compact_light(value):
+    text = str(value or "").lower()
+    if "contrast" in text: return "CONTRAST"
+    if "direction" in text: return "DIRECTIONAL"
+    if "key" in text: return "KEY LIGHT"
+    if "preserve" in text: return "CONTINUITY"
+    return "MOTIVATED"
+
 def production_sections(panel):
     return [
-        ("VISUAL", panel.get("visual") or panel.get("description") or "-"),
-        ("ACTION", panel.get("action") or "-"),
-        ("DIALOGUE", panel.get("dialogue") or "-"),
-        ("CAMERA / SHOT", "%s / %s" % (panel.get("camera") or "-", panel.get("shot") or "-")),
-        ("LENS / LIGHTING", "%s / %s" % (panel.get("lens") or "-", panel.get("lighting") or "-")),
-        ("EMOTION / CONTINUITY", "%s / %s" % (panel.get("emotion") or "-", panel.get("continuity") or "-")),
+        ("VISUAL / ACTION", brief_visual(panel.get("visual") or panel.get("description"))),
+        ("DIALOGUE", brief_dialogue(panel.get("dialogue"))),
+        ("CAMERA / SHOT", "%s / %s" % (compact_camera(panel.get("camera")), compact_shot(panel.get("shot")))),
+        ("LENS / LIGHT / EMOTION", "%s / %s / %s" % (compact_lens(panel.get("lens")), compact_light(panel.get("lighting")), str(panel.get("emotion") or "-").split("/")[0].strip())),
     ]
 
 def fit_production_copy(sections, max_width, max_height, preferred):
@@ -1271,7 +1314,7 @@ for i in range(9):
     y = grid_y + row * (cell_h + gap)
     label = str(panel.get("label") or f"P{i+1}")
     time_range = compact_time_range(panel.get("timeRange") or "")
-    tab_h = max(96, round(cell_h * 0.44))
+    tab_h = max(86, round(cell_h * 0.40))
     tab_y = y + cell_h - tab_h
     header_h = max(20, round(tab_h * 0.16))
     pad = max(5, round(cell_w * 0.04))

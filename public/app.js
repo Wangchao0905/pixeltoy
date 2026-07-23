@@ -149,8 +149,6 @@ const state = {
   assetAnalyzerModel: normalizeAssetAnalyzerModel(localStorage.getItem("pixelToys.assetAnalyzerModel")),
   assetStylePreset: localStorage.getItem("pixelToys.assetStylePreset") || "cg_3d",
   assetStyleCustom: localStorage.getItem("pixelToys.assetStyleCustom") || "",
-  assetEditDrafts: new Map(),
-  activeAssetEditName: "",
   selectedAssetId: "",
   assetPromptDrafts: new Map(),
   assetInspectorOpen: false,
@@ -1569,8 +1567,6 @@ function resetProjectScopedUiState() {
   state.activeJobId = "";
   state.referenceKitEditingId = "";
   state.referenceKitDraft = null;
-  state.assetEditDrafts.clear();
-  state.activeAssetEditName = "";
   state.selectedAssetId = "";
   state.assetPromptDrafts.clear();
   state.assetInspectorOpen = false;
@@ -3084,10 +3080,6 @@ function hydrateConfigInputs(configText) {
   }
 }
 
-function assetDraft(assetName) {
-  return state.assetEditDrafts.get(assetName) || { open: false, value: "", references: [] };
-}
-
 function assetPromptItem(assetName = "") {
   return (state.project?.assetManifest?.items || []).find((item) => item.id === assetName) || null;
 }
@@ -3165,13 +3157,6 @@ async function regenerateSelectedAssetFromInspector() {
   await regenerateAsset(assetName, { force: true });
 }
 
-function setAssetDraft(assetName, patch) {
-  const draft = { ...assetDraft(assetName), ...patch };
-  draft.references = [...new Set(draft.references || [])].filter(Boolean);
-  state.assetEditDrafts.set(assetName, draft);
-  return draft;
-}
-
 function referenceOptionsHtml(assets, currentName) {
   return assets
     .filter((asset) => asset.assetName !== currentName)
@@ -3182,11 +3167,6 @@ function referenceOptionsHtml(assets, currentName) {
 function referenceChipsHtml(references) {
   if (!references?.length) return `<span class="muted">未选择参考图</span>`;
   return references.map((name) => `<span class="ref-chip">@${escapeHtml(name)}</span>`).join("");
-}
-
-function refreshReferencePreview(form, references) {
-  const node = form.querySelector(".asset-reference-list");
-  if (node) node.innerHTML = referenceChipsHtml(references);
 }
 
 function mergeSelectedReference(select, references = []) {
@@ -3764,19 +3744,6 @@ async function addManualAsset(event) {
   }
 }
 
-function addReferenceToActiveEdit(referenceName) {
-  if (addReferenceToManualAsset(referenceName)) return;
-  if (!state.activeAssetEditName) return toast("先打开一张资产图的修改框");
-  if (state.activeAssetEditName === referenceName) return toast("不能把当前正在修改的图作为自己的参考图");
-  const draft = setAssetDraft(state.activeAssetEditName, {
-    open: true,
-    references: [...(assetDraft(state.activeAssetEditName).references || []), referenceName],
-  });
-  const activeForm = document.querySelector(`.asset-edit-form[data-asset-name="${CSS.escape(state.activeAssetEditName)}"]`);
-  if (activeForm) refreshReferencePreview(activeForm, draft.references);
-  toast(`已加入参考图：${referenceName}`);
-}
-
 function buildAssetSlots(manifest, assets) {
   const byName = new Map((assets || []).map((asset) => [asset.assetName, asset]));
   return (manifest?.items || []).map((item) => {
@@ -3999,11 +3966,6 @@ function reconcileKeyedCards(container, specs, build) {
 
 function assetRenderSignature(slotList, activeTargets) {
   const sel = [...state.selectedAssetIds].sort().join(",");
-  const openDrafts = [...state.assetEditDrafts.entries()]
-    .filter(([, draft]) => draft && draft.open)
-    .map(([name]) => name)
-    .sort()
-    .join(",");
   const parts = slotList.map((slot) => {
     const asset = slot.asset;
     const gen = isActiveJobTarget(activeTargets, slot.id || asset?.assetName, asset?.assetName, asset?.name) ? 1 : 0;
@@ -4019,7 +3981,7 @@ function assetRenderSignature(slotList, activeTargets) {
       gen,
     ].join("|");
   });
-  return `${state.project?.loading ? "L" : ""}#${sel}#${openDrafts}#${parts.join(";")}`;
+  return `${state.project?.loading ? "L" : ""}#${sel}#${parts.join(";")}`;
 }
 
 function projectHasAssetSurface(slots = [], assets = []) {
@@ -4291,7 +4253,6 @@ function renderAssets(slots, assets = [], jobs = null) {
     return;
   }
 
-  const referenceAssets = assets || [];
   const buildAssetCard = (slot) => {
     const asset = slot.asset;
     const assetName = slot.id || asset?.assetName || "";
@@ -4301,10 +4262,9 @@ function renderAssets(slots, assets = [], jobs = null) {
     const isReused = !!slot.reused || !!asset?.reused;
     const isSelected = state.selectedAssetIds.has(assetName);
     const canGenerateAsset = !(slot.skipped || slot.status === "skipped");
-    const editDraft = asset ? assetDraft(asset.assetName) : { open: false, value: "", references: [] };
     const flagged = flaggedByLabel.get(slot.label || assetName) || flaggedByLabel.get(assetName);
     const card = document.createElement("article");
-    card.className = `asset-card asset-slot ${asset ? "has-asset" : "is-missing"} ${slot.skipped || slot.status === "skipped" ? "is-skipped" : ""} ${slot.failed && !asset ? "is-failed" : ""} ${isStaleAfterFailure ? "has-stale-asset" : ""} ${isGenerating ? "is-node-running" : ""} ${isSelected ? "is-selected" : ""} ${editDraft.open ? "is-editing" : ""} ${flagged ? "is-flagged" : ""}`;
+    card.className = `asset-card asset-slot ${asset ? "has-asset" : "is-missing"} ${slot.skipped || slot.status === "skipped" ? "is-skipped" : ""} ${slot.failed && !asset ? "is-failed" : ""} ${isStaleAfterFailure ? "has-stale-asset" : ""} ${isGenerating ? "is-node-running" : ""} ${isSelected ? "is-selected" : ""} ${flagged ? "is-flagged" : ""}`;
     card.draggable = pendingClassification;
     card.tabIndex = 0;
     card.setAttribute("role", "button");
@@ -4326,32 +4286,22 @@ function renderAssets(slots, assets = [], jobs = null) {
             </div>`
       }
       <div class="asset-tools" aria-label="资产图操作">
-        ${
-          asset
-            ? `<a class="asset-tool asset-download" href="${downloadUrl}" download="${escapeAttr(asset.name || `${asset.assetName}.png`)}" aria-label="下载 ${escapeAttr(asset.assetName)}" title="下载">
+        ${asset
+          ? `<a class="asset-tool asset-download" href="${downloadUrl}" download="${escapeAttr(asset.name || `${asset.assetName}.png`)}" aria-label="下载 ${escapeAttr(asset.assetName)}" title="下载">
           <span aria-hidden="true">↓</span>
-        </a>`
-            : ""
-        }
-        <button class="asset-tool asset-regenerate" type="button" ${canGenerateAsset ? "" : "disabled"} aria-label="${asset ? "重新生成" : "生成"} ${escapeAttr(assetName)}" title="${canGenerateAsset ? (asset ? "重新生成" : "生成") : "已设为不生成，点击右侧开关可恢复生成"}">
-          <span aria-hidden="true">${asset ? "↻" : "+"}</span>
+        </a>
+        <button class="asset-tool asset-regenerate" type="button" aria-label="重新生成 ${escapeAttr(assetName)}" title="重新生成">
+          <span aria-hidden="true">↻</span>
+        </button>
+        <button class="asset-tool asset-delete" type="button" aria-label="删除 ${escapeAttr(asset.assetName)}" title="删除">
+          <span aria-hidden="true">×</span>
+        </button>`
+          : `<button class="asset-tool asset-regenerate" type="button" ${canGenerateAsset ? "" : "disabled"} aria-label="${canGenerateAsset ? "生成" : "已设为不生成"} ${escapeAttr(assetName)}" title="${canGenerateAsset ? "生成" : "已设为不生成，点击右侧开关可恢复生成"}">
+          <span aria-hidden="true">+</span>
         </button>
         <button class="asset-tool asset-skip-toggle ${canGenerateAsset ? "is-on" : "is-off"}" type="button" data-asset-skip="${escapeAttr(assetName)}" aria-label="${canGenerateAsset ? "设为不生成" : "设为生成"} ${escapeAttr(assetName)}" title="${canGenerateAsset ? "点击排除：不生成这个资产" : "已排除，点击重新加入生成"}">
           <span aria-hidden="true">${canGenerateAsset ? "−" : "+"}</span>
-        </button>
-        ${
-          asset
-            ? `${isReused ? "" : `<button class="asset-tool asset-edit-toggle" type="button" aria-label="修改 ${escapeAttr(asset.assetName)}" title="修改">
-          <span aria-hidden="true">✎</span>
         </button>`}
-        <button class="asset-tool asset-reference" type="button" aria-label="将 ${escapeAttr(asset.assetName)} 设为当前修改参考图" title="设为参考">
-          <span aria-hidden="true">@</span>
-        </button>
-        ${isReused ? "" : `<button class="asset-tool asset-delete" type="button" aria-label="删除 ${escapeAttr(asset.assetName)}" title="删除">
-          <span aria-hidden="true">×</span>
-        </button>`}`
-            : ""
-        }
       </div>
       <div class="caption">
         <strong>${renderNodeBeacon(isGenerating, `正在生成 ${assetName}`)}${escapeHtml(slot.label || assetName)}</strong>
@@ -4359,25 +4309,6 @@ function renderAssets(slots, assets = [], jobs = null) {
         ${isStaleAfterFailure ? `<span class="asset-slot-status warn">上次修改失败，可重新生成</span>` : ""}
         ${isReused ? `<span class="asset-slot-status ok">${escapeHtml(assetReuseLabel(slot, asset))}</span>` : ""}
       </div>
-      ${
-        asset && !isReused
-          ? `<form class="asset-edit-form${editDraft.open ? "" : " hidden"}" data-asset-name="${escapeAttr(asset.assetName)}">
-        <label class="asset-reference-picker">
-          <span>参考图</span>
-          <select>
-            <option value="">选择已有资产图</option>
-            ${referenceOptionsHtml(referenceAssets, asset.assetName)}
-          </select>
-        </label>
-        <div class="asset-reference-list">${referenceChipsHtml(editDraft.references || [])}</div>
-        <textarea rows="3" placeholder="输入修改要求，例如：把警长制服改成深棕色夹克，保留白底四视图和同一人物身份">${escapeHtml(editDraft.value)}</textarea>
-        <div class="asset-edit-actions">
-          <button class="ghost small asset-edit-cancel" type="button">取消</button>
-          <button class="primary small" type="submit">修改</button>
-        </div>
-      </form>`
-          : ""
-      }
     `;
     if (pendingClassification) {
       card.addEventListener("dragstart", (event) => {
@@ -4399,34 +4330,6 @@ function renderAssets(slots, assets = [], jobs = null) {
       toggleManifestAssetGeneration(assetName).catch((error) => toast(error.message));
     });
     if (asset) {
-      const editToggle = card.querySelector(".asset-edit-toggle");
-      if (editToggle) editToggle.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const form = card.querySelector(".asset-edit-form");
-        if (!form) return;
-        const shouldOpen = form.classList.contains("hidden");
-        $$(".asset-edit-form:not(.hidden)").forEach((openForm) => {
-          if (openForm === form) return;
-          openForm.classList.add("hidden");
-          openForm.closest(".asset-card")?.classList.remove("is-editing");
-          const otherAssetName = openForm.dataset.assetName || "";
-          if (otherAssetName) setAssetDraft(otherAssetName, { open: false });
-        });
-        form.classList.toggle("hidden", !shouldOpen);
-        const draft = setAssetDraft(asset.assetName, { open: shouldOpen });
-        card.classList.toggle("is-editing", shouldOpen);
-        if (shouldOpen) {
-          state.activeAssetEditName = asset.assetName;
-          applyAssetBoundStyle(asset);
-        }
-        else if (state.activeAssetEditName === asset.assetName) state.activeAssetEditName = "";
-        if (draft.open) form.querySelector("textarea").focus();
-        requestAnimationFrame(updateWorkspaceSize);
-      });
-      card.querySelector(".asset-reference").addEventListener("click", (event) => {
-        event.stopPropagation();
-        addReferenceToActiveEdit(asset.assetName);
-      });
       const deleteButton = card.querySelector(".asset-delete");
       if (deleteButton) {
         deleteButton.addEventListener("click", (event) => {
@@ -4434,46 +4337,6 @@ function renderAssets(slots, assets = [], jobs = null) {
           deleteAsset(asset.assetName).catch((error) => toast(error.message));
         });
       }
-      const editCancel = card.querySelector(".asset-edit-cancel");
-      if (editCancel) editCancel.addEventListener("click", (event) => {
-        event.stopPropagation();
-        state.assetEditDrafts.delete(asset.assetName);
-        if (state.activeAssetEditName === asset.assetName) state.activeAssetEditName = "";
-        card.querySelector(".asset-edit-form textarea").value = "";
-        card.querySelector(".asset-edit-form").classList.add("hidden");
-        card.classList.remove("is-editing");
-      });
-      const editForm = card.querySelector(".asset-edit-form");
-      if (editForm) editForm.addEventListener("click", (event) => event.stopPropagation());
-      const editSelect = card.querySelector(".asset-edit-form select");
-      if (editSelect) editSelect.addEventListener("change", (event) => {
-        event.stopPropagation();
-        const form = card.querySelector(".asset-edit-form");
-        const draft = setAssetDraft(asset.assetName, {
-          open: true,
-          references: mergeSelectedReference(form.querySelector("select"), assetDraft(asset.assetName).references || []),
-        });
-        refreshReferencePreview(form, draft.references);
-        form.querySelector("select").value = "";
-      });
-      const editTextarea = card.querySelector(".asset-edit-form textarea");
-      if (editTextarea) editTextarea.addEventListener("input", (event) => {
-        setAssetDraft(asset.assetName, { open: true, value: event.currentTarget.value });
-      });
-      if (editForm) editForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const form = event.currentTarget;
-        const instruction = form.querySelector("textarea").value.trim();
-        const references = mergeSelectedReference(form.querySelector("select"), assetDraft(asset.assetName).references || []);
-        setAssetDraft(asset.assetName, { open: false, references });
-        refreshReferencePreview(form, references);
-        form.classList.add("hidden");
-        card.classList.remove("is-editing");
-        if (state.activeAssetEditName === asset.assetName) state.activeAssetEditName = "";
-        requestAnimationFrame(updateWorkspaceSize);
-        editAsset(asset.assetName, instruction, references).catch((error) => toast(error.message));
-      });
       card.addEventListener("dblclick", (event) => {
         event.preventDefault();
         openLightbox(asset);
@@ -4487,7 +4350,7 @@ function renderAssets(slots, assets = [], jobs = null) {
       });
     }
     card.addEventListener("click", (event) => {
-      if (event.target.closest(".asset-tools, .asset-edit-form, a, button, select, textarea, input, label")) return;
+      if (event.target.closest(".asset-tools, a, button, select, textarea, input, label")) return;
       applyAssetBoundStyle(assetForName(assetName));
       if (asset && state.activeWorkspaceMode === "assets") selectAssetForInspector(assetName);
       else toggleAssetSelection(assetName);
@@ -4495,9 +4358,8 @@ function renderAssets(slots, assets = [], jobs = null) {
     return card;
   };
 
-  // Per-card signature mirrors assetRenderSignature's per-slot fields plus this
-  // card's own selected/edit-open state, so a single change (e.g. clicking
-  // generate) only rebuilds that one card and leaves sibling <img> untouched.
+  // Per-card signature mirrors assetRenderSignature's per-slot fields, so a
+  // single change (e.g. clicking generate) only rebuilds that card.
   const specs = slotList.map((slot) => {
     const asset = slot.asset;
     const name = slot.id || asset?.assetName || "";
@@ -4515,7 +4377,6 @@ function renderAssets(slots, assets = [], jobs = null) {
       gen,
       flagged ? `${flagged.currentType || flagged.type}:${flagged.suspectType || flagged.to}` : "",
       state.selectedAssetIds.has(name) ? 1 : 0,
-      asset ? (assetDraft(asset.assetName).open ? 1 : 0) : 0,
     ].join("|");
     return { key: name, sig, slot };
   });
@@ -4891,8 +4752,11 @@ async function deleteAsset(assetName) {
   });
   setProjectState(data.state);
   state.selectedAssetIds.delete(assetName);
-  state.assetEditDrafts.delete(assetName);
-  if (state.activeAssetEditName === assetName) state.activeAssetEditName = "";
+  state.assetPromptDrafts.delete(assetName);
+  if (state.selectedAssetId === assetName) {
+    state.selectedAssetId = "";
+    state.assetInspectorOpen = false;
+  }
   renderWorkspace();
   toast(`已删除资产：${assetName}`);
 }
@@ -4934,27 +4798,6 @@ async function regenerateAsset(assetName, options = {}) {
   state.activeJobId = data.job.id;
   toast(`${options.force ? "已提交重新生成" : "已提交生成"}：${assetName}`);
   scheduleProjectRefresh({ immediate: true });
-}
-
-async function editAsset(assetName, editInstruction, referenceAssetNames = []) {
-  if (!state.selectedId) return;
-  if (!editInstruction) return toast("请先输入修改要求");
-  if (assetName) state.optimisticAssetJobs.set(assetName, { startedAt: Date.now(), type: "asset-edit" });
-  renderWorkspace();
-  const data = await api(`/api/project/${state.selectedId}/job`, {
-    method: "POST",
-    body: JSON.stringify({
-      type: "asset-edit",
-      assetName,
-      editInstruction,
-      referenceAssetNames,
-      quality: $("#assetQuality")?.value || "1k",
-      ...stylePayloadForAsset(assetName),
-    }),
-  });
-  state.activeJobId = data.job.id;
-  toast(`已提交修改：${assetName}`);
-  await loadProject(state.selectedId, { openStudio: false });
 }
 
 async function regenerateStoryboard(storyboardName, { force = false } = {}) {
@@ -5253,10 +5096,6 @@ function closeLightbox() {
   video.load();
   setLightboxPrompt("");
   setLightboxDownload();
-}
-
-function hasOpenAssetEditDraft() {
-  return [...state.assetEditDrafts.values()].some((draft) => draft.open);
 }
 
 function hasOpenManualAssetDraft() {
@@ -6726,7 +6565,7 @@ async function refreshSelectedProjectStatus() {
   if (window._pixelToysRefreshInFlight) return false;
   if (document.hidden) return false;
   if (!state.selectedId || $("#studioShell").classList.contains("hidden")) return false;
-  if (hasOpenAssetEditDraft() || hasOpenManualAssetDraft()) return false;
+  if (hasOpenManualAssetDraft()) return false;
   window._pixelToysRefreshInFlight = true;
   try {
     const status = await api(`/api/project/${state.selectedId}/status`);

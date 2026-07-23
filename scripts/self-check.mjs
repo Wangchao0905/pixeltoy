@@ -126,9 +126,9 @@ assert(server.includes("enforceCharacterProfileAssets(\n    correctAssetRolesFro
 assert(server.includes("includeReusableAssets") && server.includes("projectReusableAssetsForManifest(episodeRoot, manifest, options) : []"), "current project asset state must not reuse other-episode assets unless explicitly requested");
 assert(app.includes("function stylePayloadForAsset"), "single-asset generation must prefer the asset's bound original style");
 assert(app.includes("function applyAssetBoundStyle"), "selecting a generated asset must restore its bound style controls");
-assert(app.includes("applyAssetBoundStyle(asset)") && app.includes("if (shouldOpen)"), "opening an asset edit form must restore the asset's original style");
+assert(app.includes("function selectAssetForInspector") && app.includes("state.assetInspectorOpen = true") && app.includes("ensureAssetPromptDraft(assetName);"), "selecting an asset must open its dedicated prompt inspector");
 assert(app.includes("applyAssetBoundStyle(assetForName(assetName))"), "clicking a generated asset must restore the asset's original style after refresh");
-assert(app.includes("...stylePayloadForAsset(assetName),"), "single-asset regenerate/edit requests must send the bound style payload");
+assert(app.includes("...stylePayloadForAsset(assetName),"), "single-asset regenerate requests must send the bound style payload");
 for (const [name, pageHtml] of [
   ["index", html],
   ["auth", authHtml],

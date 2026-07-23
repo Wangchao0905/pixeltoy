@@ -1141,6 +1141,7 @@ function sanitizeCanvasState(body = {}) {
         id: compactLine(asset.id).slice(0, 260),
         name: compactLine(asset.name).slice(0, 260),
         type: compactLine(asset.type).slice(0, 80),
+        mediaType: compactLine(asset.mediaType).slice(0, 40),
         url: isDataImageUrl(asset.url) ? "" : String(asset.url || "").slice(0, 12000),
         previewUrl: isDataImageUrl(asset.previewUrl || asset.preview_url) ? "" : String(asset.previewUrl || asset.preview_url || "").slice(0, 12000),
         localUrl: compactLine(asset.localUrl || asset.local_url || "").slice(0, 12000),
@@ -1157,6 +1158,9 @@ function sanitizeCanvasState(body = {}) {
         aiGenerated: asset.aiGenerated === true,
         verificationType: compactLine(asset.verificationType || asset.verification_type || "").slice(0, 40),
         source: compactLine(asset.source).slice(0, 40),
+        sourceVideoNodeId: compactLine(asset.sourceVideoNodeId || "").slice(0, 120),
+        sourceVideoTaskId: compactLine(asset.sourceVideoTaskId || "").slice(0, 260),
+        generatedAt: compactLine(asset.generatedAt || "").slice(0, 80),
         arkPersonAsset: asset.arkPersonAsset && typeof asset.arkPersonAsset === "object"
           ? {
               enabled: asset.arkPersonAsset.enabled === true,

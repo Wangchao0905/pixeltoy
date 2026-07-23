@@ -1239,10 +1239,6 @@ body.canvas-page {
 }
 
 .video-capture-tail-button {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  z-index: 5;
   display: grid;
   place-items: center;
   width: 34px;
@@ -1304,6 +1300,30 @@ body.canvas-page {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
+}
+
+.video-tail-frame-status {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 6;
+  max-width: calc(100% - 132px);
+  padding: 7px 10px;
+  border: 1px solid rgba(151, 210, 255, 0.42);
+  border-radius: 999px;
+  background: rgba(5, 11, 18, 0.82);
+  color: rgba(239, 247, 255, 0.96);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.video-tail-frame-status.is-failed {
+  border-color: rgba(255, 136, 127, 0.58);
+  color: #ffd1cd;
 }
 
 .video-capture-tail-button:disabled {

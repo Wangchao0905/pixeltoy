@@ -1032,6 +1032,8 @@ function assetCard(asset) {
 
 function renderAssetTray() {
   const count = canvasState.assets.length;
+  const tray = qs("#assetTray");
+  if (tray) tray.hidden = count === 0;
   qs("#assetTrayCount").textContent = String(count);
   const list = qs("#assetTrayList");
   const html = count
@@ -1740,15 +1742,22 @@ function renderVideoPreview(node) {
   if (node.kind !== "video") return "生成结果预览";
   if (node.videoUrl) {
     const downloadHref = videoDownloadHref(node);
+    const captureBusy = node.tailFrameCaptureStatus === "capturing";
     const captureTailFrame = node.status === "completed"
-      ? `<button class="video-capture-tail-button" type="button" data-capture-tail-frame aria-label="截取当前视频尾帧" title="截取当前视频尾帧">${CAMERA_ICON_SVG}</button>`
+      ? `<button class="video-capture-tail-button" type="button" data-capture-tail-frame aria-label="截取当前视频尾帧" title="${captureBusy ? "正在截取尾帧" : "截取当前视频尾帧"}"${captureBusy ? " disabled aria-busy=\"true\"" : ""}>${CAMERA_ICON_SVG}</button>`
       : "";
+    const tailFrameStatus = captureBusy
+      ? `<span class="video-tail-frame-status is-capturing" role="status">正在截取尾帧…</span>`
+      : node.tailFrameCaptureStatus === "failed" && node.tailFrameCaptureMessage
+        ? `<span class="video-tail-frame-status is-failed" role="status">${escapeHtml(node.tailFrameCaptureMessage)}</span>`
+        : "";
     return `
       <video src="${escapeHtml(node.videoUrl)}" controls playsinline preload="metadata"${node.tailFrameUrl ? ` poster="${escapeHtml(node.tailFrameUrl)}"` : ""}></video>
       <div class="video-media-actions" aria-label="视频操作">
         <a class="media-download-button" href="${escapeHtml(downloadHref)}" download="${escapeHtml(videoDownloadName(node))}" aria-label="下载生成视频">${DOWNLOAD_ICON_SVG}<span>下载</span></a>
         ${captureTailFrame}
       </div>
+      ${tailFrameStatus}
     `;
   }
   if (node.status === "running") {
@@ -2864,6 +2873,11 @@ async function captureVideoTailFrame(nodeId, button) {
       const width = element?.offsetWidth || node.width || VIDEO_NODE_DEFAULT_WIDTH;
       addAssetNodeAt(existing.id, { x: node.x + width + 88, y: node.y }, { silent: true });
     }
+    const tray = qs("#assetTray");
+    if (tray) {
+      tray.hidden = false;
+      tray.classList.remove("collapsed");
+    }
     toast("该视频尾帧已在画布素材中");
     return existing;
   }
@@ -2871,6 +2885,10 @@ async function captureVideoTailFrame(nodeId, button) {
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
   }
+  updateVideoNodeStatus(node.id, {
+    tailFrameCaptureStatus: "capturing",
+    tailFrameCaptureMessage: "",
+  }, { persist: false });
   try {
     const data = await api("/api/canvas/tail-frame", {
       method: "POST",
@@ -2886,13 +2904,15 @@ async function captureVideoTailFrame(nodeId, button) {
     const frameUrl = String(saved.tailFrameUrl || saved.tail_frame_url || node.tailFrameUrl || "").trim();
     if (!frameUrl) throw new Error(saved.message || "尾帧截取失败，视频未返回可用画面");
     updateVideoNodeStatus(node.id, {
-      tailFrameReady: saved.ready === true || node.tailFrameReady === true,
+      tailFrameReady: saved.ready === true || !!frameUrl || node.tailFrameReady === true,
       videoUrl: saved.videoUrl || node.videoUrl || "",
       videoLocalFile: saved.videoLocalFile || node.videoLocalFile || "",
       tailFrameUrl: frameUrl,
       tailFrameLocalFile: saved.tailFrameLocalFile || node.tailFrameLocalFile || "",
       tailFrameFileUrl: saved.tailFrameFileUrl || node.tailFrameFileUrl || "",
       tailFrameMessage: saved.message || "",
+      tailFrameCaptureStatus: "ready",
+      tailFrameCaptureMessage: "",
     }, { persist: false });
     const asset = {
       id: `video_tail_${node.id}_${node.taskId || Date.now()}`,
@@ -2911,8 +2931,19 @@ async function captureVideoTailFrame(nodeId, button) {
     const element = qs(`[data-node-id="${node.id}"]`);
     const width = element?.offsetWidth || node.width || VIDEO_NODE_DEFAULT_WIDTH;
     addAssetNodeAt(asset.id, { x: node.x + width + 88, y: node.y }, { silent: true });
+    const tray = qs("#assetTray");
+    if (tray) {
+      tray.hidden = false;
+      tray.classList.remove("collapsed");
+    }
     toast("已截取尾帧并添加到画布");
     return asset;
+  } catch (error) {
+    updateVideoNodeStatus(node.id, {
+      tailFrameCaptureStatus: "failed",
+      tailFrameCaptureMessage: error.message || "尾帧截取失败",
+    }, { persist: false });
+    throw error;
   } finally {
     if (button) {
       button.disabled = false;
@@ -2945,6 +2976,8 @@ function refreshVideoNodeElement(nodeId) {
       videoUrl: node.videoUrl || "",
       status: node.status || "",
       tailFrameUrl: node.tailFrameUrl || "",
+      tailFrameCaptureStatus: node.tailFrameCaptureStatus || "",
+      tailFrameCaptureMessage: node.tailFrameCaptureMessage || "",
     });
     const runningPreviewSynced = syncRunningVideoPreview(preview, node);
     if (!runningPreviewSynced && preview.dataset.previewSig !== previewSig) {

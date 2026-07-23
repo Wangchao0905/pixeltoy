@@ -9,9 +9,12 @@ const app = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 assert.match(html, /id="assetInspector"/);
 assert.match(html, /id="assetInspectorPrompt"/);
 assert.match(html, /id="regenerateAssetFromInspector"/);
+assert.doesNotMatch(html, /id="assetInspector" class="[^"]*asset-library-only/);
 
 assert.match(app, /function selectAssetForInspector\(assetName\)[\s\S]*?state\.selectedAssetId = assetName;[\s\S]*?ensureAssetPromptDraft\(assetName\);/);
-assert.match(app, /if \(asset && state\.activeWorkspaceMode === "assets"\) selectAssetForInspector\(assetName\);/);
+assert.match(app, /function assetPromptInspectorWorkspace\(\)[\s\S]*?state\.activeWorkspaceMode === "assets"[\s\S]*?state\.activeWorkspaceMode === "image"/);
+assert.match(app, /const visible = assetPromptInspectorWorkspace\(\) && !!assetName && !!item && state\.assetInspectorOpen;/);
+assert.match(app, /if \(asset && assetPromptInspectorWorkspace\(\)\) selectAssetForInspector\(assetName\);/);
 
 const cardRenderer = app.slice(app.indexOf("const buildAssetCard = (slot) => {"), app.indexOf("function renderStoryboards("));
 assert.match(cardRenderer, /class="asset-tool asset-download"/);

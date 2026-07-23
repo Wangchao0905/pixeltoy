@@ -3111,13 +3111,18 @@ function selectAssetForInspector(assetName) {
   renderAssetInspector();
 }
 
+function assetPromptInspectorWorkspace() {
+  // 工作流的“资产图”模块内部状态是 image；assets 则是资产库视图。
+  return state.activeWorkspaceMode === "assets" || state.activeWorkspaceMode === "image";
+}
+
 function renderAssetInspector() {
   const inspector = $("#assetInspector");
   if (!inspector) return;
   const assetName = state.selectedAssetId;
   const item = assetPromptItem(assetName);
   const asset = assetForName(assetName);
-  const visible = state.activeWorkspaceMode === "assets" && !!assetName && !!item && state.assetInspectorOpen;
+  const visible = assetPromptInspectorWorkspace() && !!assetName && !!item && state.assetInspectorOpen;
   inspector.classList.toggle("hidden", !visible);
   if (!visible) return;
   const draft = ensureAssetPromptDraft(assetName);
@@ -4344,7 +4349,7 @@ function renderAssets(slots, assets = [], jobs = null) {
       card.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
-          if (state.activeWorkspaceMode === "assets") selectAssetForInspector(assetName);
+          if (assetPromptInspectorWorkspace()) selectAssetForInspector(assetName);
           else toggleAssetSelection(assetName);
         }
       });
@@ -4352,7 +4357,7 @@ function renderAssets(slots, assets = [], jobs = null) {
     card.addEventListener("click", (event) => {
       if (event.target.closest(".asset-tools, a, button, select, textarea, input, label")) return;
       applyAssetBoundStyle(assetForName(assetName));
-      if (asset && state.activeWorkspaceMode === "assets") selectAssetForInspector(assetName);
+      if (asset && assetPromptInspectorWorkspace()) selectAssetForInspector(assetName);
       else toggleAssetSelection(assetName);
     });
     return card;

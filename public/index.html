@@ -277,6 +277,10 @@
 
       <section id="studioShell" class="studio-shell hidden">
         <aside class="studio-sidebar" aria-label="制作工具栏">
+          <div class="studio-sidebar-brand" aria-label="Pixel Toys Production OS">
+            <div class="mark pixel-toys-wordmark" aria-hidden="true"></div>
+            <span>PRODUCTION OS</span>
+          </div>
           <nav class="studio-mode-rail" aria-label="功能模式">
             <button type="button" data-workspace-mode-button="script" data-nav-index="01" aria-label="剧本" title="剧本（剧情→生成分镜草稿）">剧本</button>
             <button type="button" data-workspace-mode-button="image" data-nav-index="02" aria-label="资产图" title="资产图（资产描述→资产提取）">资产图</button>
@@ -314,8 +318,9 @@
             <p>资产图、分镜提示词、Seedance 配置和生成状态都会在这里集中显示。</p>
           </div>
 
-          <div id="workspaceViewport" class="workspace-viewport hidden">
-            <div id="workspace" class="workspace studio-board">
+          <div class="studio-workspace-layout">
+            <div id="workspaceViewport" class="workspace-viewport hidden">
+              <div id="workspace" class="workspace studio-board">
               <section class="studio-console" data-workspace-mode="script" aria-label="生成控制台">
                 <div class="studio-console-head">
                   <div>
@@ -763,7 +768,30 @@
                 <textarea id="assetPromptsText"></textarea>
               </div>
 
+              </div>
             </div>
+            <aside id="studioContextPanel" class="studio-context-panel" aria-label="当前工作区状态">
+              <header class="studio-context-head">
+                <span class="studio-eyebrow">LIVE CONTEXT</span>
+                <h2 id="studioContextTitle">当前工作区</h2>
+              </header>
+              <div class="studio-context-body">
+                <p id="studioContextCopy">加载项目后显示当前流程状态。</p>
+                <div class="studio-context-list">
+                  <div class="studio-context-row"><span>阶段</span><strong id="studioContextStage">等待项目</strong></div>
+                  <div class="studio-context-row"><span>状态</span><strong id="studioContextStatus">未开始</strong></div>
+                  <div class="studio-context-row"><span>下游</span><strong id="studioContextDownstream">等待输入</strong></div>
+                </div>
+              </div>
+              <div class="studio-context-actions">
+                <button id="studioContextOpen" class="primary small" type="button">打开当前面板</button>
+              </div>
+            </aside>
+          </div>
+          <footer id="studioQueueBar" class="studio-queue-bar" aria-label="任务队列">
+            <span class="studio-queue-title">QUEUE</span>
+            <div id="studioQueueItems" class="studio-queue-items"></div>
+            <span id="studioQueueSummary" class="studio-queue-summary">空闲</span>
           </div>
         </main>
       </section>

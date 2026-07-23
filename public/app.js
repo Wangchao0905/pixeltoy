@@ -2807,6 +2807,7 @@ function setWorkspaceMode(mode, { persist = true } = {}) {
     loadAssetLibrary({ silent: true }).catch((error) => toast(error.message));
   }
   if (nextMode === "shots") renderShotsTable();
+  if (state.project?.project) renderStudioFlowStatus(state.project);
   requestAnimationFrame(updateWorkspaceSize);
 }
 
@@ -2839,6 +2840,8 @@ function renderStudioFlowStatus(data = state.project) {
   if (!node) return;
   if (!data?.project) {
     node.innerHTML = "";
+    renderStudioContext(null, []);
+    renderStudioQueue(null);
     return;
   }
   const scriptReady = !!String(data.contents?.script || "").trim();
@@ -2911,6 +2914,88 @@ function renderStudioFlowStatus(data = state.project) {
   node.querySelectorAll("[data-flow-tab]").forEach((button) => {
     button.addEventListener("click", () => setStudioTab(button.dataset.flowTab || "assets"));
   });
+  renderStudioContext(data, steps);
+  renderStudioQueue(data);
+}
+
+function studioContextMode() {
+  const mode = state.activeWorkspaceMode || "assets";
+  return mode === "image" ? "assets" : mode;
+}
+
+function renderStudioContext(data, steps) {
+  const title = $("#studioContextTitle");
+  const copy = $("#studioContextCopy");
+  const stage = $("#studioContextStage");
+  const status = $("#studioContextStatus");
+  const downstream = $("#studioContextDownstream");
+  const action = $("#studioContextOpen");
+  if (!title || !copy || !stage || !status || !downstream || !action) return;
+  if (!data?.project) {
+    title.textContent = "当前工作区";
+    copy.textContent = "加载项目后显示当前流程状态。";
+    stage.textContent = "等待项目";
+    status.textContent = "未开始";
+    downstream.textContent = "等待输入";
+    action.disabled = true;
+    return;
+  }
+  const mode = studioContextMode();
+  const labels = {
+    script: ["剧本", "剧本输入与分镜草稿准备"],
+    assets: ["资产图", "资产解析与参考图"],
+    storyboard: ["故事板", "Production Board 连续性"],
+    shots: ["分镜", "镜头提示词与视频配置"],
+    video: ["视频", "视频片段队列"],
+  };
+  const [label, description] = labels[mode] || labels.assets;
+  const stepLabel = { script: "剧本", assets: "资产图", storyboard: "故事板", shots: "视频配置", video: "视频片段" }[mode] || "资产图";
+  const step = steps.find((item) => item.label === stepLabel || (mode === "assets" && item.label === "资产解析")) || steps[0];
+  const project = data.project;
+  const counts = project.counts || {};
+  const nextMap = {
+    script: `资产解析 · ${counts.parsedAssets || 0} 项`,
+    assets: `故事板 · ${(data.storyboardSlots || []).length || 0} 张`,
+    storyboard: `视频配置 · ${data.videoConfigStatus?.ready ? "可提交" : "待生成"}`,
+    shots: `视频片段 · ${data.videoProgress?.total || 0} 个`,
+    video: `成片 · ${data.finalCut ? "可查看" : "等待片段"}`,
+  };
+  title.textContent = `CONTEXT / ${label.toUpperCase()}`;
+  copy.textContent = description;
+  stage.textContent = label;
+  status.textContent = step?.value || "待开始";
+  downstream.textContent = nextMap[mode] || "等待输入";
+  action.disabled = false;
+  action.textContent = `查看${label}`;
+}
+
+function renderStudioQueue(data) {
+  const list = $("#studioQueueItems");
+  const summary = $("#studioQueueSummary");
+  if (!list || !summary) return;
+  if (!data?.project) {
+    list.innerHTML = "";
+    summary.textContent = "空闲";
+    return;
+  }
+  const items = [];
+  const addJob = (label, job) => {
+    if (!job || !["running", "queued", "failed"].includes(String(job.status || "").toLowerCase())) return;
+    const status = String(job.status).toLowerCase();
+    const statusLabel = status === "running" ? "进行中" : status === "queued" ? "排队" : "失败 / 重试";
+    items.push(`<span class="studio-queue-item ${status === "failed" ? "is-error" : ""}"><strong>${escapeHtml(label)}</strong><span>${statusLabel}</span></span>`);
+  };
+  addJob("资产图", data.assetJob);
+  addJob("故事板", data.storyboardJob);
+  addJob("视频", data.videoJob || data.videoProgress?.job);
+  const progress = data.videoProgress || {};
+  if (videoProgressHasActiveWork(progress)) {
+    const total = progress.total || progress.items?.length || 0;
+    const completed = progress.completed || 0;
+    items.push(`<span class="studio-queue-item"><strong>片段 ${completed}/${total}</strong><span>生成中</span></span>`);
+  }
+  list.innerHTML = items.length ? items.join("") : `<span class="studio-queue-empty">暂无进行中任务</span>`;
+  summary.textContent = items.length ? `${items.length} 项任务` : "空闲";
 }
 
 function compactJobLog(job) {
@@ -6436,6 +6521,7 @@ function bind() {
     resetWindowLayout();
     toast("工作台布局已重置");
   });
+  $("#studioContextOpen")?.addEventListener("click", () => setStudioTab(state.activeStudioTab || "assets"));
   $("#scriptUpload").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;

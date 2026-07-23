@@ -19060,8 +19060,8 @@ function storyboardPromptForSlot(slot) {
   const gridLabel = `${STORYBOARD_BOARD_COLUMNS}x${rows}`; // 固定 3x3
   const dialogueRule =
     dialogueLanguage === "zh"
-      ? "Dialogue language: Chinese only. Every speech bubble and dialogue caption must use the exact Chinese line after 对白 in the panel guide. Do not add English dialogue or English labels for dialogue."
-      : "Dialogue language: English only. Every speech bubble and dialogue caption must use the exact English line after Dialogue in the panel guide. Do not add Chinese dialogue.";
+      ? "Dialogue language: Chinese only. Treat every dialogue line in the panel plan as performance direction for the characters; do not render speech bubbles, dialogue captions, or any written dialogue on the board."
+      : "Dialogue language: English only. Treat every dialogue line in the panel plan as performance direction for the characters; do not render speech bubbles, dialogue captions, or any written dialogue on the board.";
   // 整张 Production Board 就是 3×3 网格。P1 承担建立空间，但不能额外占据一条大建立镜头。
   // 角色、场景、道具直接从引用资产生成到面板画面中，视频阶段仅提交这张板。
   return [
@@ -19069,7 +19069,7 @@ function storyboardPromptForSlot(slot) {
     `The complete sheet is one edge-to-edge ${gridLabel} grid of exactly ${panelCount} equal-size storyboard panels, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Every panel outer boundary has the same portrait 9:16 proportion, with uniform narrow gutters.`,
     "P1 is the establishing composition, but it must occupy exactly one ordinary top-left grid cell. No panel may span multiple rows or columns.",
     "Do not draw a separate establishing strip, full-width image, top header, metadata table, footer, sequence summary band, or any other content outside the nine equal panels.",
-    "Each panel is a self-contained vertical 9:16 camera frame. Reserve an integrated lower annotation area inside each panel, using as much as the lower half when needed. It is an internal PRODUCTION TAB with exactly these decision headings: Visual / Camera / Shot / Lens / Lighting / Emotion, followed by Dialogue / Action / Continuity. Include the P1-P9 label and time range, the complete plot/action description, the exact dialogue line, and every production decision. Do not summarize, paraphrase, omit, or truncate any supplied plot or dialogue. The annotation must wrap cleanly, dynamically reduce type only when necessary, remain readable at full-sheet scale, and never extend outside its own cell.",
+    "Each panel is a self-contained vertical 9:16 camera frame. Visual / Camera / Shot / Lens / Lighting / Emotion plus Dialogue / Action / Continuity are off-canvas production direction: use every detail to compose the frame, performance, lighting, and cut, but do not render those fields as text. Do not render dialogue, production fields, tables, or technical notes inside a panel. Keep the visual frame clean; post-processing adds only the compact P1-P9 label and time code.",
     "Render every panel as a cinematic production still using the actual referenced Character, Scene, Prop, and Insert assets. The same actual character face, hairstyle, wardrobe, body type, scene architecture, prop shape, materials, palette, and lighting identity from those references must visibly appear in the panels. This is a true visual storyboard, NOT hand-drawn sketches, NOT silhouettes, NOT stick figures, NOT flat icons, and NOT a contact sheet of the source images.",
     "Cinematic composition with clear foreground / midground / background and correct vertical 9:16 framing in every panel; each panel is a true standing-phone-screen vertical camera view.",
     "Keep characters and locations visually identical across every panel. The panel image itself must carry the final identity, material, color, texture and lighting information from the official references, so it can later serve as the only submitted video reference.",
@@ -19081,7 +19081,7 @@ function storyboardPromptForSlot(slot) {
     dialogueRule,
     "Per-panel plan — follow exactly, one panel each, in order:",
     panelGuide,
-    "Use concise production decisions, but preserve every supplied plot/action and dialogue word. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
+    "Preserve every supplied plot/action and dialogue word as off-canvas direction. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
   ].join("\n");
 }
 
@@ -19113,12 +19113,12 @@ ${storyboardPromptForSlot({ ...slot, dialogueLanguage: slot.dialogueLanguage || 
 
 ## 规则
 
-- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整张只由标准 3×3 九个等大竖格组成,从左到右、从上到下阅读;禁止顶部信息栏、底部总结栏和任何格外文字。每格内部下方保留 PRODUCTION TAB:序号+时间码+Visual/Camera/Shot/Lens/Lighting/Emotion+完整剧情动作+完整对白+Action/Continuity,不得摘要、改写、遗漏或截断。
+- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整张只由标准 3×3 九个等大竖格组成,从左到右、从上到下阅读;禁止顶部信息栏、底部总结栏和格内大段文字。Visual/Camera/Shot/Lens/Lighting/Emotion、完整剧情动作、完整对白和 Action/Continuity 保留在结构化生产指引中，用于生成和视频执行，不作为图中文字渲染；板面仅保留后处理写入的镜号和时间码。
 - 分镜格是**由正式资产图驱动的电影级真实镜头画面**:角色脸、发型、服装、体型、场景结构、道具外观、材质、颜色和光线必须继承引用资产;禁止粗剪影、火柴人、扁平图标和黑白速写。每格构图/景别/机位各异,按弧线展开(建立→站位→转折/高潮→反应→剪辑点),不得各格重复同一张图。
 - 这张 Production Board 是视频阶段的唯一图片参考，正式资产图只在本板生成阶段使用。**不再画蓝红箭头、镜头框、资产参考栏、PT 编号等技术标注**——那些是给画面的调度指引,不作为图元绘制。
 - 每张 Production Board 最多覆盖 ${PRODUCTION_BOARD_MAX_SECONDS} 秒连续场景段落;最终视频片段仍按 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS} 秒拆分。
 - Production Board 对白语言必须跟随剧本解析阶段设置:${dialogueLanguage === "zh" ? "中文对白" : "英文对白"},不得中英混用。
-- 格内说明文字由后处理精确叠加，确保不会被生图模型漏掉或渲染成乱码；不影响画面速写和九格布局。
+- 后处理只叠加镜号和时间码，完整制作指引由结构化数据保留并传递给视频生成，避免遮挡画面或产生乱码。
 
 ${body}
 `;

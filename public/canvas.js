@@ -5,12 +5,21 @@ const qsa = (selector) => [...document.querySelectorAll(selector)];
 // remember the last-used channel id and fall back to a sane default.
 const LAST_CHANNEL_ID_KEY = "pixelToys.lastChannelId";
 const DEFAULT_CHANNEL_ID = "81";
+const LAST_PROJECT_ID_KEY = "pixelToys.canvasProjectId";
 
 function rememberedChannelId() {
   try {
     return (localStorage.getItem(LAST_CHANNEL_ID_KEY) || "").trim() || DEFAULT_CHANNEL_ID;
   } catch {
     return DEFAULT_CHANNEL_ID;
+  }
+}
+
+function rememberedProjectId() {
+  try {
+    return (localStorage.getItem(LAST_PROJECT_ID_KEY) || "").trim();
+  } catch {
+    return "";
   }
 }
 
@@ -925,8 +934,12 @@ function endCanvasPan(event = {}) {
 }
 
 function setStudioBackLink() {
+  const hrefProjectId = canvasState.selectedId || initialProjectId || rememberedProjectId();
+  const href = hrefProjectId ? `/?project=${encodeURIComponent(hrefProjectId)}` : "/";
   const link = qs("#canvasStudioBack");
-  link.href = canvasState.selectedId ? `/?project=${encodeURIComponent(canvasState.selectedId)}` : "/";
+  const brand = qs(".canvas-brand");
+  if (link) link.href = href;
+  if (brand) brand.href = href;
 }
 
 function renderProjectTitle() {

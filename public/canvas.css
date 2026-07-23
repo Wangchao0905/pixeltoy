@@ -66,28 +66,35 @@ body.canvas-page {
 .generation-canvas-shell {
   position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   width: 100vw;
   min-height: 100dvh;
+  padding-top: 48px;
+  box-sizing: border-box;
   color: var(--canvas-text);
 }
 
 .canvas-topbar {
-  position: sticky;
+  position: fixed;
   top: 0;
-  z-index: 80;
+  left: 0;
+  right: 0;
+  z-index: 1200;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 44px;
-  padding: 5px 10px;
+  min-height: 48px;
+  padding: 7px 10px;
   box-sizing: border-box;
   isolation: isolate;
+  background:
+    linear-gradient(180deg, rgba(5, 9, 18, 0.82), rgba(5, 9, 18, 0.48) 72%, rgba(5, 9, 18, 0));
   pointer-events: none;
 }
 
 .canvas-brand,
+#canvasStudioBack,
 .canvas-top-actions {
   pointer-events: auto;
 }
@@ -149,8 +156,13 @@ body.canvas-page {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: nowrap;
   gap: 8px;
   min-width: 0;
+  max-width: min(72vw, 820px);
+  margin-left: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .canvas-button {
@@ -182,11 +194,20 @@ body.canvas-page {
 }
 
 #canvasStudioBack {
-  order: -1;
+  flex: 0 0 auto;
+  order: 0;
   display: inline-grid;
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
+}
+
+.canvas-back-button {
+  color: #f8fff2;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.035)),
+    rgba(45, 132, 215, 0.52);
+  border-color: rgba(174, 221, 255, 0.34);
 }
 
 .upload-button {
@@ -4043,8 +4064,8 @@ body.canvas-page {
 
 @media (max-width: 980px) {
   .canvas-topbar {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
   }
 
   .canvas-brand {
@@ -4052,9 +4073,9 @@ body.canvas-page {
   }
 
   .canvas-top-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
+    display: flex;
+    width: auto;
+    max-width: 58vw;
   }
 
   .canvas-top-actions > * {
@@ -4073,7 +4094,7 @@ body.canvas-page {
   }
 
   .canvas-top-actions {
-    grid-template-columns: 1fr;
+    max-width: 44vw;
   }
 
   .canvas-node,

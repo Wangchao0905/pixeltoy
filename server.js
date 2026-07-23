@@ -4738,46 +4738,46 @@ function storyboardProductionTabForPanel(roleKey = "", details = {}) {
   const role = compactLine(roleKey || "action");
   const presets = {
     establish: {
-      camera: "locked or very slow push-in; establish the screen axis before movement begins",
-      shot: "extreme wide / wide establishing shot",
-      lens: "24mm wide-angle, deep focus",
-      lighting: "motivated location light with readable foreground, midground, and background",
-      emotion: "anticipation and spatial orientation",
+      camera: "locked / slow push-in; establish screen axis",
+      shot: "extreme wide establish",
+      lens: "24mm, deep focus",
+      lighting: "motivated location depth",
+      emotion: "anticipation / orientation",
     },
     blocking: {
-      camera: "measured dolly or static observation that keeps eyelines and blocking legible",
-      shot: "medium-wide staging shot",
+      camera: "measured dolly / static; keep eyelines",
+      shot: "medium-wide staging",
       lens: "35mm natural perspective",
-      lighting: "motivated key light that separates performers from the environment",
-      emotion: "controlled tension and intent",
+      lighting: "motivated key separation",
+      emotion: "controlled tension / intent",
     },
     action: {
-      camera: "track, pan, or reframe with the primary movement without losing its endpoint",
-      shot: "dynamic medium shot",
-      lens: "40mm contextual action lens",
-      lighting: "directional motivated light that preserves movement and prop detail",
-      emotion: "urgency and forward momentum",
+      camera: "track / pan with movement to endpoint",
+      shot: "dynamic medium",
+      lens: "40mm action lens",
+      lighting: "directional light; retain prop detail",
+      emotion: "urgency / momentum",
     },
     pivot: {
-      camera: "deliberate push-in or pivot around the decisive action",
-      shot: "medium-close turning-point shot",
-      lens: "50mm selective-focus drama lens",
-      lighting: "contrast increases around the decisive visual change",
-      emotion: "revelation and dramatic change",
+      camera: "deliberate push-in / pivot on change",
+      shot: "medium-close turning point",
+      lens: "50mm selective focus",
+      lighting: "contrast rises on change",
+      emotion: "revelation / change",
     },
     reaction: {
-      camera: "hold the eyeline, then use a restrained micro push-in",
-      shot: "close-up or detail reaction shot",
-      lens: "85mm intimate portrait lens",
-      lighting: "controlled subject key with readable eye light and background falloff",
-      emotion: "consequence, recognition, or emotional response",
+      camera: "hold eyeline; restrained micro push-in",
+      shot: "close-up / detail reaction",
+      lens: "85mm portrait",
+      lighting: "controlled key / eye light / falloff",
+      emotion: "consequence / recognition",
     },
     cut: {
-      camera: "settle into a stable held composition that leaves a clean cut handoff",
-      shot: "medium exit or resolved detail shot",
-      lens: "50mm continuity lens",
-      lighting: "preserve the established lighting state for the transition",
-      emotion: "suspense, release, or a held question for the next beat",
+      camera: "stable hold for a clean cut handoff",
+      shot: "medium exit / resolved detail",
+      lens: "50mm continuity",
+      lighting: "preserve established light",
+      emotion: "suspense / release / question",
     },
   };
   const preset = presets[role] || presets.action;
@@ -19064,20 +19064,20 @@ function storyboardPromptForSlot(slot) {
   const gridLabel = `${STORYBOARD_BOARD_COLUMNS}x${rows}`; // 固定 3x3
   const dialogueRule =
     dialogueLanguage === "zh"
-      ? "Dialogue language: Chinese only. Treat every dialogue line in the panel plan as performance direction for the characters; do not render speech bubbles, dialogue captions, or any written dialogue on the board."
-      : "Dialogue language: English only. Treat every dialogue line in the panel plan as performance direction for the characters; do not render speech bubbles, dialogue captions, or any written dialogue on the board.";
+      ? "Dialogue language: Chinese only. The final deterministic Production Tab must typeset every dialogue line in Chinese; do not make the image model invent speech bubbles or handwritten dialogue."
+      : "Dialogue language: English only. The final deterministic Production Tab must typeset every dialogue line in English; do not make the image model invent speech bubbles or handwritten dialogue.";
   // 整张 Production Board 就是 3×3 网格。P1 承担建立空间，但不能额外占据一条大建立镜头。
   // 角色、场景、道具直接从引用资产生成到面板画面中，视频阶段仅提交这张板。
   return [
     "Create ONE 9:16 vertical (portrait) professional film storyboard sheet — clearly taller than wide, matching the final vertical 9:16 short-drama video. Full sheet visible, no cropping.",
     `The complete sheet is one edge-to-edge ${gridLabel} grid of exactly ${panelCount} equal-size storyboard panels, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Every panel outer boundary has the same portrait 9:16 proportion, with uniform narrow gutters.`,
     "P1 is the establishing composition, but it must occupy exactly one ordinary top-left grid cell. No panel may span multiple rows or columns.",
-    "Do not draw a separate establishing strip, full-width image, top header, metadata table, footer, sequence summary band, or any other content outside the nine equal panels.",
-    "Each panel is a self-contained vertical 9:16 camera frame. Visual / Camera / Shot / Lens / Lighting / Emotion plus Dialogue / Action / Continuity are off-canvas production direction: use every detail to compose the frame, performance, lighting, and cut, but do not render those fields as text. Do not render dialogue, production fields, tables, or technical notes inside a panel. Keep the visual frame clean; post-processing adds only the compact P1-P9 label and time code.",
+    "Do not draw a separate establishing strip, full-width image, top header, footer, sequence summary band, or any other content outside the nine equal panels.",
+    "Every panel has an integrated lower Production Tab. Reserve its lower 44 percent as clean off-white paper with no generated lettering: a deterministic post-process will typeset P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion / Continuity, and visible identity anchors there. Use the upper 56 percent as the cinematic frame, with a portrait vertical 9:16 composition, leaving no important face, product, action, or location detail in the lower reserved area. Do not make the image model render its own production copy, speech bubbles, tables, or technical notes; this prevents glyph errors while preserving the full readable document.",
     "Render every panel as a cinematic production still using the actual referenced Character, Scene, Prop, and Insert assets. The same actual character face, hairstyle, wardrobe, body type, scene architecture, prop shape, materials, palette, and lighting identity from those references must visibly appear in the panels. This is a true visual storyboard, NOT hand-drawn sketches, NOT silhouettes, NOT stick figures, NOT flat icons, and NOT a contact sheet of the source images.",
-    "Cinematic composition with clear foreground / midground / background and correct vertical 9:16 framing in every panel; each panel is a true standing-phone-screen vertical camera view.",
+    "Cinematic composition with clear foreground / midground / background and correct vertical 9:16 framing in every panel; each upper frame is a true standing-phone-screen vertical camera view.",
     "Keep characters and locations visually identical across every panel. The panel image itself must carry the final identity, material, color, texture and lighting information from the official references, so it can later serve as the only submitted video reference.",
-    "Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips, thumbnails or PT-code boxes — the action and continuity notes in the plan are staging guidance, not diagram elements to render. Draw a clean cinematic Production Board, not a technical markup diagram.",
+    "Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips, thumbnails or PT-code boxes in the generated artwork — the deterministic Production Tab adds the visible identity references and readable production information after generation. Draw a clean cinematic Production Board, not a technical markup diagram.",
     `Every panel must use a distinct shot scale and camera angle per the plan below — do not repeat the same drawing. Time coverage ${timeRange}; sequence duration ${slot.duration || PRODUCTION_BOARD_MAX_SECONDS}s.`,
     `Source shots: ${shots}.`,
     `Scene / story beat: ${beat || "cinematic story progression from the screenplay."}`,
@@ -19085,7 +19085,7 @@ function storyboardPromptForSlot(slot) {
     dialogueRule,
     "Per-panel plan — follow exactly, one panel each, in order:",
     panelGuide,
-    "Preserve every supplied plot/action and dialogue word as off-canvas direction. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
+    "Preserve every supplied full plot/action and dialogue word for the deterministic Production Tab. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
   ].join("\n");
 }
 
@@ -19117,12 +19117,12 @@ ${storyboardPromptForSlot({ ...slot, dialogueLanguage: slot.dialogueLanguage || 
 
 ## 规则
 
-- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整张只由标准 3×3 九个等大竖格组成,从左到右、从上到下阅读;禁止顶部信息栏、底部总结栏和格内大段文字。Visual/Camera/Shot/Lens/Lighting/Emotion、完整剧情动作、完整对白和 Action/Continuity 保留在结构化生产指引中，用于生成和视频执行，不作为图中文字渲染；板面仅保留后处理写入的镜号和时间码。
+- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整张只由标准 3×3 九个等大竖格组成,从左到右、从上到下阅读;禁止顶部信息栏、底部总结栏。每格上半部是电影级竖版画面，下半部是后处理写入的可读 Production Tab：镜号、时长、完整剧情动作、完整对白、Visual/Camera/Shot/Lens/Lighting/Emotion/Continuity 必须保留；由确定性排版输出，避免模型文字乱码。
 - 分镜格是**由正式资产图驱动的电影级真实镜头画面**:角色脸、发型、服装、体型、场景结构、道具外观、材质、颜色和光线必须继承引用资产;禁止粗剪影、火柴人、扁平图标和黑白速写。每格构图/景别/机位各异,按弧线展开(建立→站位→转折/高潮→反应→剪辑点),不得各格重复同一张图。
-- 这张 Production Board 是视频阶段的唯一图片参考，正式资产图只在本板生成阶段使用。**不再画蓝红箭头、镜头框、资产参考栏、PT 编号等技术标注**——那些是给画面的调度指引,不作为图元绘制。
+- 这张 Production Board 是视频阶段的唯一图片参考，正式资产图只在本板生成阶段使用。每格 Production Tab 显示该镜头的**可见身份参考**（人物三视图、产品、场景缩略图），作为角色、产品和布景连续性的可见锚点；不要让模型自行画蓝红箭头、镜头框或乱码技术标注。
 - 每张 Production Board 最多覆盖 ${PRODUCTION_BOARD_MAX_SECONDS} 秒连续场景段落;最终视频片段仍按 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS} 秒拆分。
 - Production Board 对白语言必须跟随剧本解析阶段设置:${dialogueLanguage === "zh" ? "中文对白" : "英文对白"},不得中英混用。
-- 后处理只叠加镜号和时间码，完整制作指引由结构化数据保留并传递给视频生成，避免遮挡画面或产生乱码。
+- 后处理把结构化制作指引完整排版进每格 Production Tab 并传递给视频生成；画面区与文字区分层，既不遮挡关键构图，也不会产生乱码。
 
 ${body}
 `;

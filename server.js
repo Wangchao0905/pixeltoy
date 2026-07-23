@@ -20016,6 +20016,19 @@ function appendJobLog(job, chunk) {
   persistJob(job);
 }
 
+const AUTO_RETRYABLE_ASSET_FAILURE_CATEGORIES = new Set(["gateway", "gateway-timeout", "gateway-network", "stream", "ratelimit"]);
+const AUTO_RETRYABLE_ASSET_JOB_TYPES = new Set(["assets", "asset-regenerate", "asset-edit", "storyboards", "storyboard-regenerate"]);
+const AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS = 2;
+
+function shouldAutoRetryTransientAssetJob(job) {
+  if (!AUTO_RETRYABLE_ASSET_JOB_TYPES.has(job?.type)) return false;
+  const targetAssetNames = Array.isArray(job?.targetAssetNames) ? job.targetAssetNames.filter(Boolean) : [];
+  if (targetAssetNames.length !== 1) return false;
+  if (Number(job?.autoRetryAttempt || 0) >= AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS) return false;
+  const failures = Array.isArray(job?.failureDetails) ? job.failureDetails : [];
+  return failures.length > 0 && failures.every((failure) => AUTO_RETRYABLE_ASSET_FAILURE_CATEGORIES.has(failure.category));
+}
+
 function startProcessJob({ episodeRoot, type, command, args, cwd, meta = {} }) {
   const id = crypto.randomUUID();
   const jobDir = jobsDirForEpisode(episodeRoot);
@@ -20057,34 +20070,56 @@ function startProcessJob({ episodeRoot, type, command, args, cwd, meta = {} }) {
     PIXEL_TOYS_ASSET_STYLE_PRESET: compactLine(meta.assetStylePreset || ""),
     PIXEL_TOYS_ASSET_STYLE_LABEL: compactLine(meta.assetStyleLabel || ""),
   };
-  const child = spawn(command, args, { cwd: cwd || episodeRoot, env: childEnv });
-  jobChildren.set(id, child);
-  child.stdout.on("data", (chunk) => appendJobLog(job, chunk.toString()));
-  child.stderr.on("data", (chunk) => appendJobLog(job, chunk.toString()));
-  child.on("error", (error) => {
-    job.status = "failed";
-    job.exitCode = job.exitCode == null ? -1 : job.exitCode;
-    job.finishedAt = new Date().toISOString();
-    job.failureReason = job.failureReason || `进程无法启动：${compactLine(error.message)}`;
-    appendJobLog(job, `\n进程启动失败：${error.message}\n`);
-    persistJob(job);
-  });
-  child.on("close", (code) => {
-    jobChildren.delete(id);
-    job.exitCode = code;
-    job.status = job.status === "canceled" ? "canceled" : code === 0 ? "complete" : "failed";
-    job.finishedAt = new Date().toISOString();
-    if (job.status === "failed" && !job.failureReason) {
-      job.failureReason = jobFailureReason(job);
-    }
-    // 失败（或部分成功但有资产失败）时，从磁盘 .failed.json 回填真实原因，避免"只记到 generating 就断"的静默失败。
-    try {
-      enrichJobWithAssetFailures(job);
-    } catch (err) {
-      appendJobLog(job, `\n（回填失败原因时出错：${compactLine(err.message)}）\n`);
-    }
-    persistJob(job);
-  });
+  const launch = () => {
+    const child = spawn(command, args, { cwd: cwd || episodeRoot, env: childEnv });
+    jobChildren.set(id, child);
+    child.stdout.on("data", (chunk) => appendJobLog(job, chunk.toString()));
+    child.stderr.on("data", (chunk) => appendJobLog(job, chunk.toString()));
+    child.on("error", (error) => {
+      job.status = "failed";
+      job.exitCode = job.exitCode == null ? -1 : job.exitCode;
+      job.finishedAt = new Date().toISOString();
+      job.failureReason = job.failureReason || `进程无法启动：${compactLine(error.message)}`;
+      appendJobLog(job, `\n进程启动失败：${error.message}\n`);
+      persistJob(job);
+    });
+    child.on("close", (code) => {
+      jobChildren.delete(id);
+      job.exitCode = code;
+      job.status = job.status === "canceled" ? "canceled" : code === 0 ? "complete" : "failed";
+      job.finishedAt = new Date().toISOString();
+      if (job.status === "failed" && !job.failureReason) {
+        job.failureReason = jobFailureReason(job);
+      }
+      // 失败（或部分成功但有资产失败）时，从磁盘 .failed.json 回填真实原因，避免"只记到 generating 就断"的静默失败。
+      try {
+        enrichJobWithAssetFailures(job);
+      } catch (err) {
+        appendJobLog(job, `\n（回填失败原因时出错：${compactLine(err.message)}）\n`);
+      }
+      if (job.status === "failed" && shouldAutoRetryTransientAssetJob(job)) {
+        const attempt = Number(job.autoRetryAttempt || 0) + 1;
+        const delayMs = 15_000 * attempt;
+        const retryAt = new Date(Date.now() + delayMs).toISOString();
+        job.autoRetryAttempt = attempt;
+        job.autoRetryAt = retryAt;
+        job.failureReason = `上游临时故障，正在自动重试（${attempt}/${AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS}）`;
+        job.status = "running";
+        appendJobLog(job, `\n上游临时故障，正在自动重试（${attempt}/${AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS}），将在 ${Math.round(delayMs / 1000)} 秒后继续。\n`);
+        setTimeout(() => {
+          if (job.status !== "running" || job.autoRetryAt !== retryAt) return;
+          job.autoRetryAt = "";
+          job.failureReason = "";
+          job.failureDetails = [];
+          appendJobLog(job, `\n开始第 ${attempt} 次自动重试。\n`);
+          launch();
+        }, delayMs);
+        return;
+      }
+      persistJob(job);
+    });
+  };
+  launch();
   return job;
 }
 
@@ -21524,6 +21559,10 @@ module.exports = {
     },
     assetPrompt: {
       updateAssetPromptInManifest,
+    },
+    assetJobRetry: {
+      shouldAutoRetryTransientAssetJob,
+      AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS,
     },
     assetUpload: {
       uploadLocalAsset,

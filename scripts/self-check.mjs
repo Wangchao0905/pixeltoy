@@ -178,6 +178,10 @@ assert(server.includes("failedRunNamespace") && server.includes("failedRunNamesp
 assert(server.includes("targetAssetNames: job.targetAssetNames || []"), "job failure backfill must be limited to current job targets");
 assert(server.includes("PIXEL_TOYS_RUN_NAMESPACE: runNamespace"), "asset generation subprocesses must receive the current run namespace");
 assert(assetRunner.includes('runNamespace: process.env.PIXEL_TOYS_RUN_NAMESPACE || ""'), "image generation failure logs must persist the run namespace");
+assert(server.includes("function shouldAutoRetryTransientAssetJob"), "single-asset transient gateway failures must be eligible for job-level retry");
+assert(server.includes("AUTO_RETRYABLE_ASSET_FAILURE_CATEGORIES"), "job-level retry must be limited to known transient upstream failure categories");
+assert(server.includes("targetAssetNames.length !== 1"), "job-level retry must never replay a batch after one transient failure");
+assert(server.includes("上游临时故障，正在自动重试"), "asset jobs must expose delayed automatic retry progress instead of a terminal failure");
 assert(server.includes("storyboardAssets = currentStoryboardAssetsForWorkflow(scanAssets(episodeRoot)"), "storyboard jobs must not scan stale board files");
 assert(server.includes("const actualStoryboards = storyboardsActive") && server.includes("currentStoryboardAssetsForWorkflow(scannedAssets"), "video config must use isolated storyboard assets");
 assert(server.includes('selectedAssetNames = slots.filter((slot) => !slot.skipped).map((slot) => slot.id).filter(Boolean);'), "assetRange=all must target every non-skipped asset explicitly");

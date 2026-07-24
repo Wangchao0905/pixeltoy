@@ -222,11 +222,20 @@ function isPartialImageEvent(event) {
 }
 
 function throwIfErrorEvent(event) {
-  if (event?.type !== "error" && event?.type !== "response.failed" && !event?.error && !event?.response?.error) return;
-  const message = event.response?.error?.message || event.error?.message || event.message || "";
+  const response = event?.response && typeof event.response === "object" ? event.response : {};
+  const item = event?.item && typeof event.item === "object" ? event.item : {};
+  const status = String(response.status || item.status || event?.status || "").toLowerCase();
+  const failureStatus = ["failed", "incomplete", "cancelled", "canceled", "refused", "rejected"].includes(status);
+  const failureType = ["error", "response.failed", "response.incomplete", "response.cancelled"].includes(event?.type);
+  const error = response.error || item.error || event?.error;
+  if (!failureType && !failureStatus && !error) return;
+  const incomplete = response.incomplete_details || item.incomplete_details || event?.incomplete_details || {};
+  const message = error?.message || incomplete.message || incomplete.reason || event?.message || "";
   throw new UserError("api_stream_error", message ? `上游生图错误：${message}` : "生图接口在流式事件中返回错误", {
     type: event.type,
     message,
+    status,
+    incomplete,
     event,
   });
 }

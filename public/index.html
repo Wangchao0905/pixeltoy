@@ -364,6 +364,10 @@
                           <span>中文对白</span>
                         </label>
                       </div>
+                      <label class="dialogue-skip-toggle" title="剧本本身就是英文对白时勾选，切到英文对白不再调用翻译模型">
+                        <input id="draftAssumeEnglishDialogue" type="checkbox" />
+                        <span>剧本已是英文对白（跳过翻译）</span>
+                      </label>
                       <button data-save="script" class="ghost" type="button">保存</button>
                     </div>
                   </div>
@@ -718,6 +722,27 @@
                         </div>
                         <div id="videoProgressSummary" class="progress-summary"></div>
                         <div id="videoProgressList" class="segment-progress"></div>
+                        <aside id="videoPromptInspector" class="video-prompt-inspector hidden" aria-label="视频提示词检查器">
+                          <header>
+                            <div>
+                              <strong id="videoPromptInspectorName"></strong>
+                              <span id="videoPromptInspectorMeta"></span>
+                            </div>
+                            <button id="closeVideoPromptInspector" type="button" aria-label="关闭提示词编辑器" title="关闭">×</button>
+                          </header>
+                          <label for="videoPromptInspectorPrompt">视频提示词</label>
+                          <textarea id="videoPromptInspectorPrompt" maxlength="8000" rows="12"></textarea>
+                          <div class="video-prompt-inspector-draft">
+                            <span id="videoPromptInspectorDraftStatus"></span>
+                            <span id="videoPromptInspectorPromptCount">0 / 8000</span>
+                          </div>
+                          <p id="videoPromptInspectorFailure" class="video-prompt-inspector-failure"></p>
+                          <div class="video-prompt-inspector-actions">
+                            <button id="restoreVideoPrompt" type="button">还原</button>
+                            <button id="saveVideoPrompt" type="button">保存提示词</button>
+                            <button id="regenerateVideoFromInspector" class="primary" type="button">重新提交生成</button>
+                          </div>
+                        </aside>
                       </section>
                     </div>
                     <section class="panel final-cut-panel">

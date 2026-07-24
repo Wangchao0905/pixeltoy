@@ -153,12 +153,16 @@ const state = {
   selectedAssetId: "",
   assetPromptDrafts: new Map(),
   assetInspectorOpen: false,
+  selectedVideoShotName: "",
+  videoPromptDrafts: new Map(),
+  videoPromptInspectorOpen: false,
   manualAssetType: "",
   manualAssetDraft: { label: "", description: "", evidence: "", quality: "1k", references: [] },
   shouldFocusManualAsset: false,
   selectedAssetIds: new Set(),
   optimisticAssetJobs: new Map(),
   dialogueLanguage: localStorage.getItem("pixelToys.dialogueLanguage") || "en",
+  assumeEnglishDialogue: localStorage.getItem("pixelToys.assumeEnglishDialogue") === "1",
   workspaceScale: initialWorkspaceScale(),
   assetUploadTargetId: "",
   referenceKitEditingId: "",
@@ -1714,6 +1718,9 @@ function resetProjectScopedUiState() {
   state.selectedAssetId = "";
   state.assetPromptDrafts.clear();
   state.assetInspectorOpen = false;
+  state.selectedVideoShotName = "";
+  state.videoPromptDrafts.clear();
+  state.videoPromptInspectorOpen = false;
   state.manualAssetType = "";
   state.manualAssetDraft = { label: "", description: "", evidence: "", quality: "1k", references: [] };
   state.shouldFocusManualAsset = false;
@@ -3400,6 +3407,8 @@ function renderWorkspace() {
   }
   const dialogueInput = document.querySelector(`input[name='draftDialogueLanguage'][value='${CSS.escape(state.dialogueLanguage)}']`);
   if (dialogueInput) dialogueInput.checked = true;
+  const assumeEnglishInput = $("#draftAssumeEnglishDialogue");
+  if (assumeEnglishInput) assumeEnglishInput.checked = state.assumeEnglishDialogue === true;
   hydrateConfigInputs(data.contents.config || "");
   renderAssetStyleControls();
   renderAssetManifest(data.assetManifest || null);
@@ -3528,6 +3537,77 @@ async function regenerateSelectedAssetFromInspector() {
   const confirmed = window.confirm(`重新生成“${assetName}”？这会使用额度。`);
   if (!confirmed) return;
   await regenerateAsset(assetName, { force: true });
+}
+
+function videoPromptShot(shotName = "") {
+  return (videoConfigDataFromProject()?.shots || []).find((shot) => shot.name === shotName) || null;
+}
+
+function videoPromptDraft(shotName = "") {
+  return state.videoPromptDrafts.get(shotName) || null;
+}
+
+function ensureVideoPromptDraft(shotName = "") {
+  const existing = videoPromptDraft(shotName);
+  if (existing) return existing;
+  const original = shotPromptText(videoPromptShot(shotName) || {});
+  const draft = { original, value: original, dirty: false };
+  state.videoPromptDrafts.set(shotName, draft);
+  return draft;
+}
+
+function selectVideoForInspector(shotName = "") {
+  if (!videoPromptShot(shotName)) return;
+  state.selectedVideoShotName = shotName;
+  state.videoPromptInspectorOpen = true;
+  ensureVideoPromptDraft(shotName);
+  renderVideoPromptInspector();
+}
+
+function renderVideoPromptInspector() {
+  const inspector = $("#videoPromptInspector");
+  if (!inspector) return;
+  const shotName = state.selectedVideoShotName;
+  const shot = videoPromptShot(shotName);
+  const progressItem = (state.project?.videoProgress?.items || []).find((item) => item.name === shotName) || {};
+  const visible = state.activeWorkspaceMode === "video" && state.videoPromptInspectorOpen && !!shot;
+  inspector.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  const draft = ensureVideoPromptDraft(shotName);
+  $("#videoPromptInspectorName").textContent = shotName;
+  $("#videoPromptInspectorMeta").textContent = `${shot.duration || "-"}s · ${videoModelLabel(videoConfigDataFromProject()?.modelName || "")}`;
+  const input = $("#videoPromptInspectorPrompt");
+  if (document.activeElement !== input) input.value = draft.value;
+  $("#videoPromptInspectorDraftStatus").textContent = draft.dirty ? "未保存修改" : "已保存";
+  $("#videoPromptInspectorPromptCount").textContent = `${draft.value.length} / 8000`;
+  $("#videoPromptInspectorFailure").textContent = progressItem.failedReason || "修改后会只重新提交当前片段。";
+}
+
+async function saveVideoPrompt() {
+  const shotName = state.selectedVideoShotName;
+  const draft = videoPromptDraft(shotName);
+  if (!state.selectedId || !shotName || !draft) return;
+  const prompt = draft.value.trim();
+  if (!prompt) return toast("提示词不能为空");
+  const data = await api(`/api/project/${state.selectedId}/video-prompt`, {
+    method: "POST",
+    body: JSON.stringify({ shotName, prompt }),
+  });
+  setProjectState(data.state);
+  state.videoPromptDrafts.set(shotName, { original: prompt, value: prompt, dirty: false });
+  renderWorkspace();
+  renderVideoPromptInspector();
+  toast("视频提示词已保存，未提交生成");
+}
+
+async function regenerateSelectedVideoFromInspector() {
+  const shotName = state.selectedVideoShotName;
+  const draft = videoPromptDraft(shotName);
+  if (!shotName || !draft) return;
+  if (draft.dirty) await saveVideoPrompt();
+  const confirmed = window.confirm(`重新提交“${shotName}”？这会消耗额度。`);
+  if (!confirmed) return;
+  await generateVideoSegment(shotName, { forceRegenerate: true });
 }
 
 function referenceOptionsHtml(assets, currentName) {
@@ -5750,7 +5830,7 @@ async function sendSegmentsToCanvas({ shotName = "", openCanvas = false, silent 
   if (openCanvas) window.location.href = canvasProjectHref();
 }
 
-async function generateVideoSegment(shotName = "") {
+async function generateVideoSegment(shotName = "", { forceRegenerate = false } = {}) {
   if (!state.selectedId) return toast("请先打开一个项目");
   const cleanShotName = String(shotName || "").trim();
   if (!cleanShotName) return toast("缺少视频片段");
@@ -5760,7 +5840,7 @@ async function generateVideoSegment(shotName = "") {
   toast(userHasCanvasPermission() ? "已发送到画布并提交视频生成，留在操作台等待结果" : "已提交视频生成，留在操作台等待结果");
   const data = await api(`/api/project/${state.selectedId}/video-generate`, {
     method: "POST",
-    body: JSON.stringify({ shotName: cleanShotName }),
+    body: JSON.stringify({ shotName: cleanShotName, forceRegenerate }),
   });
   setProjectState(data.state);
   renderWorkspace();
@@ -5994,6 +6074,8 @@ function renderVideoProgress(progress) {
       ? `<button class="segment-state-button" type="button" disabled aria-label="${escapeAttr(stateLabel)}"><span aria-hidden="true"></span></button>`
       : segmentIsComplete
         ? `<button class="primary small" type="button" data-segment-preview="${escapeAttr(item.name)}">预览</button>`
+        : item.status === "failed"
+          ? `<button class="ghost small" type="button" data-segment-edit-prompt="${escapeAttr(item.name)}">修改提示词</button>`
         : `<button class="primary small" type="button" data-segment-generate="${escapeAttr(item.name)}">生成</button>`;
     card.innerHTML = `
       <div class="segment-top">
@@ -6021,8 +6103,10 @@ function renderVideoProgress(progress) {
       });
     });
     card.querySelector("[data-segment-preview]")?.addEventListener("click", () => openVideoPreview(item));
+    card.querySelector("[data-segment-edit-prompt]")?.addEventListener("click", () => selectVideoForInspector(item.name));
     node.appendChild(card);
   }
+  renderVideoPromptInspector();
   if (scroller && prevScroll) {
     scroller.scrollTop = prevScroll;
     requestAnimationFrame(() => {
@@ -6323,12 +6407,17 @@ async function changeDialogueLanguage(targetLanguage) {
         targetLanguage: state.dialogueLanguage,
         scriptText,
         assetAnalyzerModel: state.assetAnalyzerModel,
+        assumeEnglish: state.assumeEnglishDialogue === true,
       }),
     });
     setProjectState(data.state);
     $("#scriptText").value = data.state?.contents?.script || scriptText;
     renderWorkspace();
-    toast(`已转换 ${data.result?.count || 0} 段对白`);
+    if (data.result?.skipped) {
+      toast(data.result.skipReason === "manual" ? "剧本已标记为英文对白,跳过翻译" : "检测到剧本已是英文对白,跳过翻译");
+    } else {
+      toast(`已转换 ${data.result?.count || 0} 段对白`);
+    }
   } catch (error) {
     state.dialogueLanguage = previous;
     localStorage.setItem("pixelToys.dialogueLanguage", previous);
@@ -6759,6 +6848,33 @@ function bind() {
     const button = event.currentTarget;
     withStudioButtonFeedback(button, () => regenerateSelectedAssetFromInspector()).catch((error) => toast(error.message));
   });
+  $("#videoPromptInspectorPrompt")?.addEventListener("input", (event) => {
+    const shotName = state.selectedVideoShotName;
+    if (!shotName) return;
+    const draft = ensureVideoPromptDraft(shotName);
+    draft.value = event.currentTarget.value;
+    draft.dirty = draft.value !== draft.original;
+    renderVideoPromptInspector();
+  });
+  $("#closeVideoPromptInspector")?.addEventListener("click", () => {
+    state.videoPromptInspectorOpen = false;
+    renderVideoPromptInspector();
+  });
+  $("#restoreVideoPrompt")?.addEventListener("click", () => {
+    const draft = videoPromptDraft(state.selectedVideoShotName);
+    if (!draft) return;
+    draft.value = draft.original;
+    draft.dirty = false;
+    renderVideoPromptInspector();
+  });
+  $("#saveVideoPrompt")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => saveVideoPrompt()).catch((error) => toast(error.message));
+  });
+  $("#regenerateVideoFromInspector")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => regenerateSelectedVideoFromInspector()).catch((error) => toast(error.message));
+  });
   $("#refreshState").addEventListener("click", () => {
     if (!state.selectedId) return toast("请先打开一个项目");
     loadProject(state.selectedId, { openStudio: false }).catch((error) => toast(error.message));
@@ -6934,6 +7050,14 @@ function bind() {
   $("#assetStyleCustom")?.addEventListener("input", persistAssetStyleFromControls);
   $$("input[name='draftDialogueLanguage']").forEach((input) => {
     input.addEventListener("change", () => changeDialogueLanguage(input.value).catch((error) => toast(error.message)));
+  });
+  $("#draftAssumeEnglishDialogue")?.addEventListener("change", (event) => {
+    state.assumeEnglishDialogue = event.currentTarget.checked === true;
+    localStorage.setItem("pixelToys.assumeEnglishDialogue", state.assumeEnglishDialogue ? "1" : "0");
+    // 勾选后若当前正是英文对白,立即用跳过逻辑重跑一次(不调用模型),把状态坐实。
+    if (state.assumeEnglishDialogue && state.dialogueLanguage === "en" && state.selectedId && !state.hydrating) {
+      changeDialogueLanguage("en").catch((error) => toast(error.message));
+    }
   });
   $("#draftBtn")?.addEventListener("click", (event) => {
     const button = event.currentTarget;

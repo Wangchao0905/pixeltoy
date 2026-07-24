@@ -8807,7 +8807,15 @@ function dialogueBlocksLookSafe(script, blocks) {
   return { safe: true, reason: "" };
 }
 
-async function convertScriptDialogueLanguage(script, targetLanguage, modelName) {
+// 对白块是否已全部为英文(不含 CJK 汉字)。用于 target=en 时跳过翻译:
+// 剧本本来就是英文对白,再喂给模型只会浪费调用且可能把好台词改坏。
+function dialogueBlocksAreAllEnglish(blocks) {
+  const list = Array.isArray(blocks) ? blocks : [];
+  if (!list.length) return false; // 没提取到对白 → 不做"已英文"判断,交给正常流程。
+  return list.every((block) => !/[一-鿿]/.test(String(block?.text || "")));
+}
+
+async function convertScriptDialogueLanguage(script, targetLanguage, modelName, options = {}) {
   const blocks = extractDialogueBlocks(script);
   const guard = dialogueBlocksLookSafe(script, blocks);
   if (!guard.safe) {
@@ -8818,6 +8826,20 @@ async function convertScriptDialogueLanguage(script, targetLanguage, modelName) 
     ...block,
     id: blocks.length + index,
   }));
+  // 开关:target=英文 且(用户手动声明已是英文 或 自动检测对白已全英文)→ 跳过模型,原样返回。
+  if (targetLanguage === "en") {
+    const allBlocks = [...blocks, ...blockquoteBlocks];
+    const assumeEnglish = options.assumeEnglish === true;
+    if ((assumeEnglish || dialogueBlocksAreAllEnglish(allBlocks)) && allBlocks.length) {
+      return {
+        model: null,
+        count: allBlocks.length,
+        script,
+        skipped: true,
+        skipReason: assumeEnglish ? "manual" : "detected-english",
+      };
+    }
+  }
   const result = await translateDialogueBlocks([...blocks, ...blockquoteBlocks], targetLanguage, modelName);
   return {
     model: result.model,
@@ -13323,7 +13345,7 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
   return null;
 }
 
-function syncProjectShotsToCanvasState(episodeRoot, config = {}, shots = []) {
+function syncProjectShotsToCanvasState(episodeRoot, config = {}, shots = [], options = {}) {
   const projectId = videoCanvasIdForConfig(episodeRoot, config);
   const previous = readCanvasState(projectId) || {};
   const previousAssets = Array.isArray(previous.assets) ? previous.assets.filter((asset) => asset?.id) : [];
@@ -13368,7 +13390,7 @@ function syncProjectShotsToCanvasState(episodeRoot, config = {}, shots = []) {
       ...previousNode,
       ...node,
       ...snapshotFields,
-      prompt: promptHasStoryContent(previousNode.prompt) ? previousNode.prompt : node.prompt,
+      prompt: options.forcePrompt === true ? node.prompt : (promptHasStoryContent(previousNode.prompt) ? previousNode.prompt : node.prompt),
       status: snapshotFields.status || previousNode.status || node.status,
       statusMessage: snapshotFields.statusMessage || previousNode.statusMessage || node.statusMessage,
       videoUrl: snapshotFields.videoUrl || previousNode.videoUrl || node.videoUrl,
@@ -18367,6 +18389,26 @@ function updateAssetPromptInManifest(rawManifest, assetName, prompt) {
   return { ...manifest, items };
 }
 
+function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
+  const name = compactLine(shotName || "");
+  const nextPrompt = String(prompt || "").trim();
+  if (!name) throw new Error("缺少视频片段");
+  if (!nextPrompt) throw new Error("提示词不能为空");
+  if (nextPrompt.length > 8000) throw new Error("提示词不能超过 8000 字符");
+  const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];
+  const index = shots.findIndex((shot) => compactLine(shot?.name || "") === name);
+  if (index < 0) throw new Error("视频片段不存在");
+  const nextShots = [...shots];
+  nextShots[index] = {
+    ...nextShots[index],
+    prompt: nextPrompt,
+    videoPrompt: nextPrompt,
+    promptSource: "manual",
+    promptUpdatedAt: new Date().toISOString(),
+  };
+  return { ...rawConfig, shots: nextShots };
+}
+
 function manifestItemsToAssets(manifest) {
   return (manifest?.items || []).map((item) => ({
     type: item.type,
@@ -21035,6 +21077,17 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, assetManifest: written, state: fullProjectState(episodeRoot) });
   }
 
+  if (req.method === "POST" && action === "video-prompt") {
+    const body = await readBody(req);
+    const configRecord = ensureVideoConfigIsolation(episodeRoot);
+    if (!configRecord?.data || !Array.isArray(configRecord.data.shots)) throw new Error("请先生成视频配置");
+    const config = updateVideoPromptInConfig(configRecord.data, body.shotName || body.name, body.prompt);
+    const shot = config.shots.find((item) => item.name === compactLine(body.shotName || body.name));
+    writeVideoConfigRecord(configRecord, config);
+    if (shot) syncProjectShotsToCanvasState(episodeRoot, config, [shot], { forcePrompt: true });
+    return send(res, 200, { ok: true, state: fullProjectState(episodeRoot) });
+  }
+
   if (req.method === "POST" && action === "asset-extract") {
     const result = await extractAssetManifest(episodeRoot, await readBody(req));
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
@@ -21093,11 +21146,17 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && action === "dialogue-language") {
     const body = await readBody(req);
     const targetLanguage = body.targetLanguage === "zh" ? "zh" : "en";
+    const assumeEnglish = body.assumeEnglish === true;
     const script = typeof body.scriptText === "string" ? body.scriptText : readText(findProjectFile(episodeRoot, "script"));
-    const result = await convertScriptDialogueLanguage(script, targetLanguage, body.assetAnalyzerModel);
+    const result = await convertScriptDialogueLanguage(script, targetLanguage, body.assetAnalyzerModel, { assumeEnglish });
     // 熔断:提取到疑似误吞(对白块含场景卡/镜头/过半正文)→ 不写回,原样保留剧本,返回明确错误。
     if (result.aborted) {
       return send(res, 422, { ok: false, error: `对白语言切换已中止,未改动剧本:${result.abortReason}。请检查剧本格式或联系维护者。` });
+    }
+    // 已是英文对白(手动声明或自动检测):不调用模型、不改动剧本内容,仅记录对白语言。
+    if (result.skipped) {
+      persistProjectDialogueLanguage(episodeRoot, targetLanguage);
+      return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
     }
     // 写回前先备份原剧本到 .script_history,任何意外都可回滚(此前事故正因无备份且直接覆写)。
     backupScriptBeforeOverwrite(episodeRoot, script, `dialogue-language-${targetLanguage}`);
@@ -21412,6 +21471,9 @@ module.exports = {
       buildScriptSpeakerMap,
       parseSectionDialogueTexts,
       dialoguesForShotWithSpeakers,
+      dialogueBlocksAreAllEnglish,
+      convertScriptDialogueLanguage,
+      extractDialogueBlocks,
     },
     assetParser: {
       assetManifestFromAssets,
@@ -21438,6 +21500,9 @@ module.exports = {
     assetPrompt: {
       updateAssetPromptInManifest,
     },
+    videoPrompt: {
+      updateVideoPromptInConfig,
+    },
     assetJobRetry: {
       shouldAutoRetryTransientAssetJob,
       AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS,
@@ -21453,6 +21518,7 @@ module.exports = {
       dialogueBlocksLookSafe,
       blockquoteDialogues,
       convertScriptDialogueLanguage,
+      dialogueBlocksAreAllEnglish,
       dialoguesForText,
       inlineColonDialogues,
       backfillDialogueSpeakers,

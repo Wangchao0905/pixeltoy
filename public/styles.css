@@ -1025,6 +1025,23 @@ label span {
   box-shadow: inset 0 0 0 1px var(--soft-line);
 }
 
+.dialogue-skip-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted, rgba(255, 255, 255, 0.66));
+  user-select: none;
+}
+
+.dialogue-skip-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent, #6ea8fe);
+  cursor: pointer;
+}
+
 .segmented label {
   display: block;
   cursor: pointer;
@@ -9891,6 +9908,75 @@ body.is-explore-ui .studio-sidebar-nav .studio-rail-button {
   background: var(--explore-action);
   color: #101820;
   font-weight: 800;
+}
+
+.video-prompt-inspector {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 99, 117, 0.42);
+  border-radius: 8px;
+  background: rgba(41, 12, 22, 0.52);
+}
+
+.video-prompt-inspector.hidden {
+  display: none;
+}
+
+.video-prompt-inspector header,
+.video-prompt-inspector header > div,
+.video-prompt-inspector-draft,
+.video-prompt-inspector-actions {
+  display: flex;
+  align-items: center;
+}
+
+.video-prompt-inspector header {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.video-prompt-inspector header > div {
+  min-width: 0;
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.video-prompt-inspector header span,
+.video-prompt-inspector-draft {
+  color: var(--explore-muted);
+  font-size: 10px;
+}
+
+.video-prompt-inspector textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  border: 1px solid rgba(255, 132, 146, 0.7);
+  border-radius: 5px;
+  padding: 10px;
+  background: #150a10;
+  color: var(--explore-text);
+  line-height: 1.5;
+}
+
+.video-prompt-inspector-draft {
+  justify-content: space-between;
+}
+
+.video-prompt-inspector-failure {
+  margin: 0;
+  color: #ff9aa7;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.video-prompt-inspector-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 body.is-explore-ui .studio-tabbar {

@@ -62,7 +62,7 @@ const buildVideoConfigSection = sectionBetween(server, "async function buildVide
 assert(server.includes("function clearAssetFailureLogs"), "asset failure cleanup guard is missing");
 assert(app.includes('toast("正在生成分镜草稿")') && !app.includes('toast("正在生成分镜草稿并解析资产")'), "script workflow must describe storyboard-only generation");
 assert(app.includes('toast("分镜和提示词草稿已生成")') && !app.includes('toast("资产解析、分镜和提示词草稿已生成，请先确认解析结果")'), "script workflow completion must not claim asset extraction");
-assert(buildDraftSection.includes("manifestItemsToAssets(confirmedManifest)"), "draft generation must read the confirmed asset manifest");
+assert(buildDraftSection.includes("manifestItemsToAssets(sourceAssetManifest)"), "draft generation must read the extracted asset manifest");
 assert(!buildDraftSection.includes("extractAssetManifest("), "draft generation must not parse assets");
 assert(!buildVideoConfigSection.includes("ensureAssetCoverage("), "video config generation must not mutate the asset library");
 assert(viteConfig.includes("@vitejs/plugin-react"), "Vite must use the official React plugin");

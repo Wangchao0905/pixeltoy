@@ -7550,7 +7550,6 @@ body:not(.show-advanced-ui) .studio-console-actions,
 body:not(.show-advanced-ui) #scriptPath,
 body:not(.show-advanced-ui) .analyzer-segmented,
 body:not(.show-advanced-ui) [data-save],
-body:not(.show-advanced-ui) .studio-flow-strip,
 body:not(.show-advanced-ui) #assetManifestText,
 body:not(.show-advanced-ui) #storyboardUploadForm,
 body:not(.show-advanced-ui) #refreshState,
@@ -14846,6 +14845,57 @@ body.is-studio .asset-parse-panel #confirmAssetManifestBtn {
   justify-self: center !important;
 }
 
+body.is-studio .asset-parse-panel .asset-description-editor-shell {
+  width: min(760px, calc(100% - 56px));
+  min-height: 178px;
+  margin: 18px auto 20px;
+  justify-self: center;
+  overflow: hidden;
+  border: 1px solid rgba(143, 216, 255, 0.2);
+  border-radius: 14px;
+  background: rgba(8, 17, 31, 0.68);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 12px 28px rgba(0, 0, 0, 0.12);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+body.is-studio .asset-parse-panel .asset-description-editor-shell #assetDescriptionText {
+  width: 100%;
+  height: 178px !important;
+  min-height: 178px !important;
+  margin: 0 !important;
+  padding: 16px 18px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #d8e5f6 !important;
+  box-shadow: none !important;
+  caret-color: var(--studio-accent);
+  font-family: var(--ui-font);
+  font-size: 14px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+body.is-studio .asset-parse-panel .asset-description-editor-shell:focus-within {
+  border-color: rgba(143, 216, 255, 0.66);
+  background: rgba(10, 23, 40, 0.82);
+  box-shadow:
+    inset 0 0 0 1px rgba(143, 216, 255, 0.15),
+    0 0 0 4px rgba(85, 169, 255, 0.09);
+}
+
+@media (max-width: 900px) {
+  body.is-studio .asset-parse-panel .asset-description-editor-shell {
+    width: calc(100% - 32px);
+    margin: 16px auto;
+  }
+}
+
 /* Flow bars encode state: completion, active work, and blocked/failed states. */
 body.is-studio .studio-flow-step.ok::after {
   background: var(--studio-signal);
@@ -15270,5 +15320,66 @@ body.is-studio button.is-error {
   body.is-studio button.is-working::after {
     animation: none;
     border-top-color: rgba(231, 246, 255, 0.92);
+  }
+}
+
+/* Stable runtime feedback: task state persists across polling without resetting the motion. */
+body.is-studio .studio-flow-step.is-focused:not(.is-running) {
+  background: rgba(94, 162, 255, 0.08) !important;
+}
+
+body.is-studio .studio-flow-step.is-running {
+  background: rgba(69, 145, 255, 0.14) !important;
+}
+
+body.is-studio .studio-flow-step.is-running::after {
+  background: var(--studio-accent) !important;
+  box-shadow: 0 0 14px rgba(143, 216, 255, 0.42);
+}
+
+body.is-studio .studio-flow-step.is-running .studio-flow-dot {
+  background: var(--studio-accent) !important;
+  box-shadow: 0 0 12px rgba(143, 216, 255, 0.72);
+}
+
+body.is-studio .studio-flow-progress.is-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--studio-ink);
+}
+
+body.is-studio .studio-flow-progress.is-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--studio-accent);
+  box-shadow: 0 0 12px rgba(143, 216, 255, 0.78);
+}
+
+body.is-studio button.is-task-running {
+  cursor: wait;
+  border-color: rgba(126, 208, 255, 0.92);
+  background: rgba(58, 135, 226, 0.22);
+  box-shadow: 0 0 0 1px rgba(87, 184, 255, 0.26), 0 0 16px rgba(39, 151, 231, 0.16);
+}
+
+body.is-studio button.is-task-running::after {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 7px;
+  border: 1.5px solid rgba(231, 246, 255, 0.38);
+  border-top-color: #eaf8ff;
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: studioButtonSpin 680ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.is-studio button.is-task-running::after {
+    animation: none;
   }
 }

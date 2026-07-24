@@ -736,10 +736,11 @@ function assetReferenceUrl(asset = {}) {
   const arkPersonUrl = arkPersonAssetReadyUrl(asset);
   if (arkPersonUrl) return arkPersonUrl;
   const publicUrl = asset.publicUrl || asset.public_url || "";
+  const localUrl = asset.localUrl || asset.local_url || "";
   const rawUrl = asset.url || "";
-  if (isPhotorealAsset(asset)) return publicUrl || rawUrl || asset.previewUrl || asset.localUrl || "";
-  if (/^asset:\/\//i.test(rawUrl)) return publicUrl || asset.previewUrl || "";
-  return publicUrl || rawUrl || asset.previewUrl || "";
+  if (isPhotorealAsset(asset)) return publicUrl || localUrl || rawUrl || asset.previewUrl || "";
+  if (/^asset:\/\//i.test(rawUrl)) return publicUrl || localUrl || asset.previewUrl || "";
+  return publicUrl || localUrl || rawUrl || asset.previewUrl || "";
 }
 
 function videoSubmitCapableAsset(asset = {}) {
@@ -997,6 +998,44 @@ function thumbUrl(url, width = 480) {
   }
 }
 
+function thumbnailFallbackUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw || /^(data:|blob:|asset:\/\/)/i.test(raw)) return raw;
+  try {
+    const u = new URL(raw, window.location.origin);
+    if (u.origin !== window.location.origin) return raw;
+    if (u.pathname !== "/media" && !u.pathname.startsWith("/public-assets/")) return raw;
+    u.searchParams.delete("thumb");
+    return `${u.pathname}${u.search}${u.hash}`;
+  } catch {
+    return raw;
+  }
+}
+
+function setThumbnailImageSource(image, sourceUrl, width = 480) {
+  const source = String(sourceUrl || "").trim();
+  if (image.dataset.thumbnailSource === source) return image.getAttribute("src") || "";
+  const src = thumbUrl(source, width);
+  const fallback = thumbnailFallbackUrl(source);
+  image.dataset.thumbnailSource = source;
+  if (fallback && fallback !== src) image.dataset.thumbnailFallback = fallback;
+  else delete image.dataset.thumbnailFallback;
+  delete image.dataset.thumbnailFallbackApplied;
+  image.src = src;
+  return src;
+}
+
+function handleThumbnailImageError(event) {
+  const image = event.target;
+  if (!image || image.tagName !== "IMG") return;
+  const fallback = image.dataset.thumbnailFallback || "";
+  if (!fallback || image.dataset.thumbnailFallbackApplied === "true") return;
+  image.dataset.thumbnailFallbackApplied = "true";
+  image.src = fallback;
+}
+
+document.addEventListener("error", handleThumbnailImageError, true);
+
 function isVideoAsset(asset = {}) {
   return asset.mediaType === "video" || !!asset.videoUrl || CANVAS_VIDEO_FILE_RE.test(String(asset.url || asset.name || ""));
 }
@@ -1012,8 +1051,13 @@ function assetThumbnailHtml(asset, { controls = false } = {}) {
     if (vurl) return `<video src="${escapeHtml(vurl)}" preload="metadata" muted playsinline${controls ? " controls" : ""}></video>`;
   }
   const previewUrl = assetPreviewUrl(asset);
+  const thumbnailUrl = thumbUrl(previewUrl, 240);
+  const fallbackUrl = thumbnailFallbackUrl(previewUrl);
+  const fallbackAttr = fallbackUrl && fallbackUrl !== thumbnailUrl
+    ? ` data-thumbnail-fallback="${escapeHtml(fallbackUrl)}"`
+    : "";
   return previewUrl
-    ? `<img src="${escapeHtml(thumbUrl(previewUrl, 240))}" alt="${escapeHtml(asset.name || "")}" loading="lazy" decoding="async" />`
+    ? `<img src="${escapeHtml(thumbnailUrl)}" data-thumbnail-source="${escapeHtml(previewUrl)}"${fallbackAttr} alt="${escapeHtml(asset.name || "")}" loading="lazy" decoding="async" />`
     : `<div class="node-asset-placeholder">asset</div>`;
 }
 
@@ -3696,13 +3740,13 @@ function syncAssetNodeElement(element, node) {
       if (visual) visual.replaceWith(img);
       else element.insertBefore(img, element.querySelector(".asset-node-caption"));
     }
-    const nextSrc = thumbUrl(previewUrl, 640);
     img.setAttribute("draggable", "false");
     img.alt = asset.name || "";
     img.loading = "lazy";
     img.decoding = "async";
-    if (img.getAttribute("src") !== nextSrc) {
-      img.setAttribute("src", nextSrc);
+    const previousSrc = img.getAttribute("src");
+    const nextSrc = setThumbnailImageSource(img, previewUrl, 640);
+    if (previousSrc !== nextSrc) {
       img.addEventListener("load", renderLinks, { once: true });
     }
     if (img.complete) queueMicrotask(renderLinks);
@@ -4755,14 +4799,13 @@ async function createNodesForFiles(files, point) {
       if (asset) {
         addAssets([asset]); // 同 id 原地合并,换成公网地址、清 uploading 标记
         renderNodes({ preserveExisting: true }); // 原地更新节点里的素材地址,不重建其他节点
+        URL.revokeObjectURL(job.blobUrl);
       } else {
         markAssetUploadFailed(job.id, "上传返回为空");
       }
     } catch (error) {
       markAssetUploadFailed(job.id, error.message);
       toast(`「${job.file.name}」上传失败:${error.message}`);
-    } finally {
-      URL.revokeObjectURL(job.blobUrl);
     }
   }));
 }

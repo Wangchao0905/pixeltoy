@@ -4726,6 +4726,10 @@ function resetVideoCanvasBindingForNewDraft(episodeRoot) {
       assets: [],
       storyboardReferences: [],
       storyboardPlans: [],
+      workflowGuide: {
+        phase: "draft_ready",
+        updatedAt: new Date().toISOString(),
+      },
     };
     writeText(configRecord.file, `${JSON.stringify(next, null, 2)}\n`);
   }
@@ -6954,6 +6958,7 @@ function configReadiness(episodeRoot, configData = null) {
       enableStoryboards: false,
       promptMode: "prompt",
       tailFrameContinuity: true,
+      workflowGuide: "",
     };
   }
   const assets = Array.isArray(config.assets) ? config.assets : [];
@@ -7029,6 +7034,7 @@ function configReadiness(episodeRoot, configData = null) {
     enableStoryboards: config.settings?.enableStoryboards === true,
     promptMode,
     tailFrameContinuity: config.settings?.tailFrameContinuity !== false,
+    workflowGuide: compactLine(config.workflowGuide?.phase || ""),
   };
 }
 
@@ -9911,6 +9917,10 @@ function normalizeVideoConfigModelName(value = "") {
   if (/mini|迷你/.test(lower)) return "seedance-2-0-mini";
   if (/fast|快速/.test(lower)) return "seedance-2-0-fast";
   return "seedance-2-0";
+}
+
+function projectVideoModelForShot(config = {}, shot = {}) {
+  return normalizeVideoConfigModelName(shot.modelOverride || shot.modelName || config.modelName || DEFAULT_VIDEO_CONFIG_MODEL);
 }
 
 function normalizeVideoRatio(value) {
@@ -12815,8 +12825,8 @@ async function ensureBatchArkVirtualPerson(asset, deadlineTs) {
 }
 
 // 项目短剧统一按模型边界筛选 Ark 人物轨;person-reference 继续走 Gravitex。
-function arkPersonReferenceNames(episodeRoot, config = {}, names = []) {
-  const usesGravitexPersonRef = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference";
+function arkPersonReferenceNames(episodeRoot, config = {}, names = [], shot = {}) {
+  const usesGravitexPersonRef = projectVideoModelForShot(config, shot) === "seedance-2-0-person-reference";
   if (usesGravitexPersonRef) return [];
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   return [...new Set((Array.isArray(names) ? names : []).map(compactLine).filter(Boolean))].filter((name) => {
@@ -12825,9 +12835,9 @@ function arkPersonReferenceNames(episodeRoot, config = {}, names = []) {
   });
 }
 
-async function ensureArkPersonAssetsForNames(episodeRoot, configRecord, names, deadlineTs) {
+async function ensureArkPersonAssetsForNames(episodeRoot, configRecord, names, deadlineTs, shot = {}) {
   let config = configRecord && configRecord.data ? configRecord.data : {};
-  const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, names);
+  const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, names, shot);
   if (!arkPersonNames.length) return config;
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   const arkGroupId = arkVirtualPersonConfig().groupId;
@@ -12976,7 +12986,7 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
   if (hydrated.changed) writeVideoConfigRecord(configRecord, config);
   const names = videoSubmissionReferenceNames(config, [shot]);
   if (!names.length) return { config, ready: true, summary: { total: 0, active: 0, pending: 0, failed: 0, skipped: 0 } };
-  const usesGravitexPersonRef = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference";
+  const usesGravitexPersonRef = projectVideoModelForShot(config, shot) === "seedance-2-0-person-reference";
   const byName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   // 超写实素材走火山虚拟人像轨(读 arkPersonAsset);person-reference 模型走 Gravitex 人物轨;其余公网轨。
   const arkPersonSet = new Set(usesGravitexPersonRef ? [] : names.filter((n) => {
@@ -13022,7 +13032,7 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
 }
 
 function projectTailFrameNeedsArkPersonPreparation(episodeRoot, config = {}, shot = {}) {
-  if (normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference") return false;
+  if (projectVideoModelForShot(config, shot) === "seedance-2-0-person-reference") return false;
   if (isProductionBoardMode(config, shot) || shot?.useTailFrame !== true || !shot.tailFrameSource) return false;
   const tailFrame = tailFrameSnapshotForShot(episodeRoot, shot.tailFrameSource, currentRunNamespace(episodeRoot, config));
   if (!tailFrame?.localFile || !fs.existsSync(tailFrame.localFile) || /\.(mp4|mov|webm|m4v)$/i.test(tailFrame.localFile)) return false;
@@ -13037,7 +13047,7 @@ async function ensureTailFrameAssetReference(episodeRoot, config = {}, shot = {}
   if (!shot?.useTailFrame || !shot.tailFrameSource) return { url: cleanStartFrameUrl, config, ready: true, message: "" };
   const localFile = localFilePathFromUrl(cleanStartFrameUrl) || localMediaPathFromUrl(cleanStartFrameUrl) || (cleanStartFrameUrl.startsWith("file:") ? fileURLToPath(cleanStartFrameUrl) : "");
   if (!localFile || !fs.existsSync(localFile)) return { url: cleanStartFrameUrl, config, ready: true, message: "" };
-  const modelName = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL);
+  const modelName = projectVideoModelForShot(config, shot);
   const id = `${compactLine(shot.name || "shot")}_START_FRAME`;
   const previous = config.tailFrameAssets?.[id] || {};
 
@@ -13170,8 +13180,8 @@ function projectVideoPayloadForShot(episodeRoot, shot, config = {}) {
   const storyboardGuidanceText = storyboardsActive ? storyboardGuidancePromptText(shot.storyboardGuidance, refs.length) : "";
   return {
     prompt: compactLine(shot.prompt || shot.videoPrompt || ""),
-    model: normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL),
-    modelMode: normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL),
+    model: projectVideoModelForShot(config, shot),
+    modelMode: projectVideoModelForShot(config, shot),
     ratio: config.settings?.ratio || "9:16",
     duration: normalizeSeedanceDuration(shot.duration || 5),
     resolution: config.settings?.resolution || "480p",
@@ -13250,7 +13260,7 @@ function canvasNodeFromConfigShot(shot = {}, index = 0, config = {}) {
       : (Array.isArray(shot.refs) ? shot.refs.filter(Boolean) : []),
     prompt: String(shot.prompt || shot.videoPrompt || "").trim(),
     settings: {
-      model: normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL),
+      model: projectVideoModelForShot(config, shot),
       ratio: config.settings?.ratio || "9:16",
       duration: String(duration),
       resolution: config.settings?.resolution || "720p",
@@ -14165,7 +14175,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     },
   });
   const shotReferenceNames = videoSubmissionReferenceNames(config, [shot]);
-  const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, shotReferenceNames);
+  const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, shotReferenceNames, shot);
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   const needsArkPersonPreparation = arkPersonNames.some((name) => {
     const asset = referenceAssetSource(episodeRoot, assetByName, name);
@@ -14192,7 +14202,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
   }
   try {
     const deadline = Date.now() + PREPARE_REFS_TIMEOUT_MS;
-    config = await ensureArkPersonAssetsForNames(episodeRoot, configRecord, shotReferenceNames, deadline);
+    config = await ensureArkPersonAssetsForNames(episodeRoot, configRecord, shotReferenceNames, deadline, shot);
     const readiness = await ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, shot);
     config = readiness.config || config;
     const latestShot = (Array.isArray(config.shots) ? config.shots : []).find((item) => item.name === shotName) || shot;
@@ -18409,6 +18419,24 @@ function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
   return { ...rawConfig, shots: nextShots };
 }
 
+function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
+  const name = compactLine(shotName || "");
+  const requestedModel = compactLine(modelName || "");
+  const supportedModels = new Set(["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus"]);
+  if (!name) throw new Error("缺少视频片段");
+  if (!supportedModels.has(requestedModel)) throw new Error("不支持的视频模型");
+  const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];
+  const index = shots.findIndex((shot) => compactLine(shot?.name || "") === name);
+  if (index < 0) throw new Error("视频片段不存在");
+  const nextShots = [...shots];
+  nextShots[index] = {
+    ...nextShots[index],
+    modelOverride: requestedModel,
+    modelOverrideUpdatedAt: new Date().toISOString(),
+  };
+  return { ...rawConfig, shots: nextShots };
+}
+
 function manifestItemsToAssets(manifest) {
   return (manifest?.items || []).map((item) => ({
     type: item.type,
@@ -18691,13 +18719,14 @@ async function buildDraft(episodeRoot, options = {}) {
   const title = titleFromScript(assetSourceScript || script, slug, options.title);
   const worldProfile = inferWorldProfile(assetSourceScript || script);
   const dialogues = parseSpeakerDialogues(videoScript);
-  // 生成视频配置只用「资产提取」已确认的资产,绝不重新解析或覆盖资产(解析是「资产提取」按钮的事)
-  const confirmedManifest = readAssetManifest(episodeRoot)?.data || {};
-  if (!(Array.isArray(confirmedManifest.items) && confirmedManifest.items.length)) {
-    throw new Error("请先完成「资产提取」并确认资产，再生成视频配置");
+  // 分镜草稿只使用「资产提取」的资产，绝不重新解析或覆盖它。资产提取结果可直接进入
+  // 分镜模型；确认按钮只是人工校对入口，不能成为草稿生成的隐藏前置条件。
+  const sourceAssetManifest = readAssetManifest(episodeRoot)?.data || {};
+  if (!(Array.isArray(sourceAssetManifest.items) && sourceAssetManifest.items.length)) {
+    throw new Error("请先完成「资产提取」，再生成分镜草稿");
   }
-  let assets = manifestItemsToAssets(confirmedManifest);
-  const analyzerResult = { ok: true, model: confirmedManifest.analyzer?.model || "已确认资产" };
+  let assets = manifestItemsToAssets(sourceAssetManifest);
+  const analyzerResult = { ok: true, model: sourceAssetManifest.analyzer?.model || "资产提取结果" };
   const rawBeats = scriptBeatCandidates(videoScript);
   const continuityBeats = consolidateContinuousBeats(rawBeats);
   const targetShotCount = preferredShotCount(videoScript, continuityBeats);
@@ -18718,7 +18747,7 @@ async function buildDraft(episodeRoot, options = {}) {
   }
   const shots = storyboardModelResult.shots;
   if (!shots.length) throw new Error("视频分镜模型没有返回可用镜头");
-  const coverageResult = { assets, coverage: confirmedManifest.coverage || {} };
+  const coverageResult = { assets, coverage: sourceAssetManifest.coverage || {} };
   const modelShotPlanPayload = {
     model: storyboardModelResult.model,
     script: videoScript,
@@ -19617,6 +19646,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   });
   const slug = episodeSlug(episodeRoot);
   const configPath = findProjectFile(episodeRoot, "config");
+  const promptPath = findProjectFile(episodeRoot, "seedancePrompts");
   const workflow = ensureWorkflowNamespace(episodeRoot, "build video config");
   const runNamespace = normalizeRunNamespace(body.runNamespace || workflow.currentNamespace) || createRunNamespace("pt");
   if (runNamespace !== workflow.currentNamespace) {
@@ -19873,6 +19903,10 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     rejectedAssets: rejectedAssets.map((asset) => ({ name: asset.assetName, rel: asset.rel, conflicts: asset.conflicts || [] })),
     referenceWarnings,
     configReady: assets.length > 0,
+    workflowGuide: {
+      phase: "next_story",
+      completedAt: new Date().toISOString(),
+    },
   };
   const resetVideoState = resetVideoGenerationStateForNewConfig(episodeRoot, config);
   config.resetVideoState = resetVideoState;
@@ -21088,6 +21122,21 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, state: fullProjectState(episodeRoot) });
   }
 
+  if (req.method === "POST" && action === "video-model") {
+    const body = await readBody(req);
+    const configRecord = ensureVideoConfigIsolation(episodeRoot);
+    if (!configRecord?.data || !Array.isArray(configRecord.data.shots)) throw new Error("请先生成视频配置");
+    const shotName = compactLine(body.shotName || body.name);
+    const runNamespace = currentRunNamespace(episodeRoot, configRecord.data);
+    const snapshot = snapshotStatusForShot(episodeRoot, shotName, { runNamespace });
+    if (!snapshot?.failed && Number(snapshot?.statusCode) !== 3) throw new Error("仅生成失败的片段可以切换模型重试");
+    const config = updateVideoModelForShotInConfig(configRecord.data, shotName, body.modelName || body.model);
+    const shot = config.shots.find((item) => item.name === shotName);
+    writeVideoConfigRecord(configRecord, config);
+    if (shot) syncProjectShotsToCanvasState(episodeRoot, config, [shot]);
+    return send(res, 200, { ok: true, state: fullProjectState(episodeRoot) });
+  }
+
   if (req.method === "POST" && action === "asset-extract") {
     const result = await extractAssetManifest(episodeRoot, await readBody(req));
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
@@ -21502,6 +21551,12 @@ module.exports = {
     },
     videoPrompt: {
       updateVideoPromptInConfig,
+    },
+    videoRetry: {
+      updateVideoModelForShotInConfig,
+      projectVideoModelForShot,
+      projectVideoPayloadForShot,
+      archiveShotVideoArtifactsForRegeneration,
     },
     assetJobRetry: {
       shouldAutoRetryTransientAssetJob,

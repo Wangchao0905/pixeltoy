@@ -42,6 +42,7 @@ const elements = new Map(
 );
 const requestLog = [];
 const toastLog = [];
+const workflowFocusLog = [];
 const localStorage = {
   values: new Map(),
   getItem(key) {
@@ -84,6 +85,9 @@ const context = {
   normalizeVideoModelName: (value) => value || "seedance-2-0-fast",
   setProjectState() {},
   renderWorkspace() {},
+  setWorkflowFocus(mode) {
+    workflowFocusLog.push(mode);
+  },
   toast(message) {
     toastLog.push(message);
   },
@@ -133,13 +137,16 @@ assert.equal(requestLog[1]?.body.promptMode, "prompt", "normal storyboard prompt
 assert.equal(requestLog[1]?.body.enableStoryboards, false, "normal storyboard prompt flow must not require a Production Board");
 assert.equal(requestLog[1]?.body.tailFrameContinuity, true, "normal storyboard prompt flow must keep tail-frame continuity enabled");
 assert.deepEqual(toastLog, ["视频配置已生成，可提交"], "a successful click must report completion");
+assert.deepEqual(workflowFocusLog, ["script"], "a completed video config must return the workflow guide to the next script");
 
 elements.get("configPromptMode").value = "production_board";
 requestLog.length = 0;
 toastLog.length = 0;
+workflowFocusLog.length = 0;
 await vm.runInContext("buildConfig()", context);
 assert.equal(requestLog[1]?.body.promptMode, "production_board", "explicit Production Board mode must remain available");
 assert.equal(requestLog[1]?.body.enableStoryboards, true, "explicit Production Board mode must enable storyboard references");
 assert.equal(requestLog[1]?.body.tailFrameContinuity, false, "explicit Production Board mode must disable tail-frame continuity");
+assert.deepEqual(workflowFocusLog, ["script"], "every completed config build must reset the guide to the script step");
 
 console.log("video config button tests passed");

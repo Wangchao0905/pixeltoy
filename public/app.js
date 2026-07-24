@@ -170,6 +170,7 @@ const state = {
   hydrating: false,
   uiBusy: {
     assetExtracting: false,
+    draftGenerating: false,
     projectCreating: false,
   },
   loadProjectToken: null,
@@ -2984,16 +2985,70 @@ function isAssetExtracting() {
   return !!state.uiBusy.assetExtracting || !!state.uiBusy.projectCreating;
 }
 
-function flowStepClass(done, active, blocked = false) {
+function isDraftGenerating() {
+  return !!state.uiBusy.draftGenerating;
+}
+
+function flowStepClass(done, active, blocked = false, running = false, focused = false) {
   const classes = [];
   if (blocked) classes.push("warn");
   else if (done) classes.push("ok");
   if (active) classes.push("active");
+  if (running) classes.push("is-running");
+  if (focused) classes.push("is-focused");
   return classes.join(" ");
 }
 
 function finalCutOutputReady(finalCut) {
   return !!finalCut?.output?.url;
+}
+
+function activeStudioRun(data = state.project, steps = []) {
+  const runningSteps = steps.filter((step) => step.running);
+  if (!runningSteps.length) return null;
+  const focusedKey = studioWorkflowFocusFromMode();
+  const step = runningSteps.find((item) => item.key === focusedKey) || runningSteps[0];
+  const progress = data?.videoProgress || {};
+  const runningVideo = (progress.items || []).find((item) => item.status === "running") || (progress.items || []).find((item) => item.status === "queued");
+  const detailByStep = {
+    script: isDraftGenerating()
+      ? "模型正在编排镜头、对白和视频提示词"
+      : `${step.value || "生成中"}`,
+    assets: isAssetExtracting()
+      ? "正在读取剧本并识别资产"
+      : `${step.value || "生成中"}`,
+    board: `${step.value || "生成中"}`,
+    video: runningVideo
+      ? `${runningVideo.name || "视频片段"}${Number.isFinite(Number(runningVideo.progress)) ? ` · ${Math.round(Number(runningVideo.progress))}%` : " · 已提交"}`
+      : `${progress.completed || 0}/${progress.total || 0} 个片段`,
+    cut: data?.finalCut?.message || "正在组装成片",
+  };
+  const labelByStep = { script: "分镜草稿", assets: "资产", board: "故事板", video: "视频", cut: "成片" };
+  return {
+    key: step.key,
+    label: labelByStep[step.key] || step.label,
+    detail: detailByStep[step.key] || step.value || "运行中",
+    count: runningSteps.length,
+  };
+}
+
+function isReadyForNextStoryGuidance(data = state.project) {
+  const config = data?.videoConfigStatus || {};
+  const progress = data?.videoProgress || {};
+  return (
+    config.workflowGuide === "next_story" &&
+    config.ready === true &&
+    !isDraftGenerating() &&
+    !videoProgressHasActiveWork(progress) &&
+    !(Number(progress.total || 0) > 0)
+  );
+}
+
+function studioFlowSignature(steps = [], activeRun = null) {
+  return JSON.stringify({
+    active: activeRun ? [activeRun.key, activeRun.detail, activeRun.count] : null,
+    steps: steps.map((step) => [step.key, step.value, step.done ? 1 : 0, step.active ? 1 : 0, step.blocked ? 1 : 0, step.running ? 1 : 0, step.focused ? 1 : 0, Number(step.ratio || 0).toFixed(3)]),
+  });
 }
 
 function renderStudioFlowStatus(data = state.project) {
@@ -3016,37 +3071,40 @@ function renderStudioFlowStatus(data = state.project) {
   const assetSlots = mergeSlotsWithScannedAssets(data.assetSlots || buildAssetSlots(manifest, data.assets || []), data.assets || []);
   const assetTotal = assetSlots.filter((slot) => !slot.skipped && slot.status !== "skipped").length;
   const assetReady = assetSlots.filter((slot) => !slot.skipped && slot.status !== "skipped" && slot.status === "ready").length;
-  const assetRunning = data.assetJob?.status === "running" || (data.jobs || []).some((job) => job?.status === "running" && /asset|image/i.test(job.type || job.command || ""));
+  const assetRunning = ["running", "queued"].includes(String(data.assetJob?.status || "").toLowerCase()) || (data.jobs || []).some((job) => ["running", "queued"].includes(String(job?.status || "").toLowerCase()) && /asset|image/i.test(job.type || job.command || ""));
   const storyboardSlots = data.storyboardSlots || [];
   const boardReady = storyboardSlots.filter((slot) => slot.status === "ready").length;
-  const boardRunning = data.storyboardJob?.status === "running";
+  const boardRunning = ["running", "queued"].includes(String(data.storyboardJob?.status || "").toLowerCase());
   const config = data.videoConfigStatus || {};
   const videoProgress = data.videoProgress || {};
   const videoTotal = videoProgress.total || videoProgress.items?.length || 0;
   const videoDone = videoProgress.completed || 0;
-  const videoRunning = !!videoProgress.running;
+  const videoRunning = videoProgressHasActiveWork(videoProgress);
   const cutReady = finalCutOutputReady(data.finalCut);
   const cutRunning = !!data.finalCut?.running;
   const cutFailed = !!data.finalCut?.error;
-  const focus = studioWorkflowFocusFromMode();
+  const readyForNextStory = isReadyForNextStoryGuidance(data);
+  const focus = readyForNextStory ? "script" : studioWorkflowFocusFromMode();
   // 进度比例(0..1)——状态栏动效按真实进度走;busy=正在干活但份数未知→用不定量流动条。
   const frac = (ready, total) => (total > 0 ? Math.max(0, Math.min(1, ready / total)) : 0);
   const steps = [
     {
       key: "script",
       label: "SCRIPT",
-      value: scriptReady ? "ready" : "empty",
+      value: isDraftGenerating() ? "drafting" : scriptReady ? "ready" : "empty",
       done: scriptReady,
-      active: focus === "script" || !scriptReady,
+      focused: focus === "script",
+      running: isDraftGenerating(),
       ratio: scriptReady ? 1 : 0,
-      busy: false,
+      busy: isDraftGenerating(),
     },
     {
       key: "assets",
       label: "ASSETS",
       value: extracting ? "parsing" : manifestConfirmed ? `${assetReady}/${assetTotal || "0"} ready` : manifestReady ? "confirm" : "missing",
       done: manifestConfirmed && (!assetTotal || assetReady >= assetTotal),
-      active: focus === "assets" || extracting,
+      focused: focus === "assets",
+      running: extracting || assetRunning,
       blocked: !extracting && manifestReady && !manifestConfirmed,
       // 解析阶段份数未知→流动;出图阶段按 已生成/总数 真实进度。
       ratio: extracting ? null : manifestReady ? (assetTotal ? frac(assetReady, assetTotal) : manifestConfirmed ? 1 : 0) : 0,
@@ -3057,7 +3115,8 @@ function renderStudioFlowStatus(data = state.project) {
       label: "BOARD",
       value: storyboardSlots.length ? `${boardReady}/${storyboardSlots.length}` : "optional",
       done: !!storyboardSlots.length && boardReady >= storyboardSlots.length,
-      active: focus === "board" || boardRunning,
+      focused: focus === "board",
+      running: boardRunning,
       ratio: storyboardSlots.length ? frac(boardReady, storyboardSlots.length) : 0,
       busy: boardRunning && !storyboardSlots.length,
     },
@@ -3066,7 +3125,8 @@ function renderStudioFlowStatus(data = state.project) {
       label: "SHOTS",
       value: config.ready ? "ready" : config.exists ? "draft" : "draft",
       done: !!config.ready,
-      active: focus === "shots",
+      focused: focus === "shots",
+      running: false,
       blocked: !!config.exists && !config.ready,
       ratio: config.ready ? 1 : 0,
       busy: false,
@@ -3076,7 +3136,8 @@ function renderStudioFlowStatus(data = state.project) {
       label: "VIDEO",
       value: videoTotal ? `${videoDone}/${videoTotal}` : "queued",
       done: !!videoTotal && videoDone >= videoTotal,
-      active: focus === "video" || videoRunning,
+      focused: focus === "video",
+      running: videoRunning,
       // 视频片段按 完成/总数 真实进度推进。
       ratio: videoTotal ? frac(videoDone, videoTotal) : 0,
       busy: videoRunning && !videoTotal,
@@ -3086,46 +3147,74 @@ function renderStudioFlowStatus(data = state.project) {
       label: "CUT",
       value: cutReady ? "ready" : cutRunning ? "assembling" : cutFailed ? "failed" : "locked",
       done: cutReady,
-      active: focus === "cut" || cutRunning,
+      focused: focus === "cut",
+      running: cutRunning,
       blocked: cutFailed,
       // 剪辑合成无份数→流动动效。
       ratio: cutReady ? 1 : 0,
       busy: cutRunning,
     },
   ];
-  node.innerHTML = steps
-    .map(
-      (step) => {
+  if (readyForNextStory) {
+    steps.forEach((step) => {
+      step.value = "未启动";
+      step.done = false;
+      step.running = false;
+      step.blocked = false;
+      step.ratio = 0;
+      step.busy = false;
+      step.focused = step.key === "script";
+    });
+  }
+  const hasRunningStep = steps.some((step) => step.running);
+  steps.forEach((step) => {
+    step.active = step.running || (!hasRunningStep && step.focused);
+  });
+  const activeRun = activeStudioRun(data, steps);
+  const signature = studioFlowSignature(steps, activeRun);
+  if (node.dataset.flowSig !== signature) {
+    node.dataset.flowSig = signature;
+    node.innerHTML = steps
+      .map(
+        (step) => {
         // 状态栏进度条状态:done=满绿静止;determinate=按真实比例填充(平滑推进);
         // indeterminate=正在干活但份数未知,用流动条;idle=空。
         const progressState = step.done
           ? "done"
-          : step.busy
-            ? "indeterminate"
+          : step.running && step.ratio > 0
+            ? "determinate"
+            : step.running || step.busy
+              ? "indeterminate"
             : step.ratio > 0
               ? "determinate"
               : "idle";
         const ratio = Math.max(0, Math.min(1, step.done ? 1 : step.ratio || 0));
         return [
-          '<button class="studio-flow-step ' + flowStepClass(step.done, step.active, step.blocked) + '" type="button" data-workflow-focus="' + step.key + '" data-progress-state="' + progressState + '" style="--flow-ratio:' + ratio.toFixed(3) + '">',
+          '<button class="studio-flow-step ' + flowStepClass(step.done, step.active, step.blocked, step.running, step.focused) + '" type="button" data-workflow-focus="' + step.key + '" data-progress-state="' + progressState + '" style="--flow-ratio:' + ratio.toFixed(3) + '">',
           '<i class="studio-flow-dot" aria-hidden="true"></i>',
           '<span>' + escapeHtml(step.label) + '</span>',
           '<strong>' + escapeHtml(step.value) + '</strong>',
           '<i class="studio-flow-fill" aria-hidden="true"></i>',
           '</button>',
         ].join("");
-      },
-    )
-    .join("");
-  node.querySelectorAll("[data-workflow-focus]").forEach((button) => {
-    button.addEventListener("click", () => setWorkflowFocus(button.dataset.workflowFocus || "script"));
-  });
+        },
+      )
+      .join("");
+    node.querySelectorAll("[data-workflow-focus]").forEach((button) => {
+      button.addEventListener("click", () => setWorkflowFocus(button.dataset.workflowFocus || "script"));
+    });
+  }
   if (progress) {
     const activeIndex = Math.max(0, steps.findIndex((step) => step.active));
-    progress.textContent = `${String(activeIndex + 1).padStart(2, "0")} / 06`;
+    progress.textContent = activeRun
+      ? `LIVE · ${activeRun.label} · ${activeRun.detail}${activeRun.count > 1 ? ` · +${activeRun.count - 1}` : ""}`
+      : `${String(activeIndex + 1).padStart(2, "0")} / 06`;
+    progress.classList.toggle("is-live", !!activeRun);
+    progress.setAttribute("aria-live", activeRun ? "polite" : "off");
   }
-  renderStudioContext(data, steps);
+  renderStudioContext(data, steps, activeRun);
   renderStudioQueue(data);
+  renderStudioActionStates(data, activeRun);
 }
 
 function studioContextMode() {
@@ -3133,7 +3222,7 @@ function studioContextMode() {
   return mode === "image" ? "assets" : mode;
 }
 
-function renderStudioContext(data, steps) {
+function renderStudioContext(data, steps, activeRun = null) {
   const title = $("#studioContextTitle");
   const copy = $("#studioContextCopy");
   const stage = $("#studioContextStage");
@@ -3148,6 +3237,30 @@ function renderStudioContext(data, steps) {
     status.textContent = "未开始";
     downstream.textContent = "等待输入";
     action.disabled = true;
+    return;
+  }
+  if (activeRun) {
+    title.textContent = `LIVE / ${activeRun.label}`;
+    copy.textContent = activeRun.detail;
+    stage.textContent = activeRun.label;
+    status.textContent = "进行中";
+    downstream.textContent = activeRun.count > 1 ? `另有 ${activeRun.count - 1} 项任务` : "完成后自动刷新";
+    action.disabled = WORKFLOW_PREVIEW_MODE;
+    action.textContent = `查看 ${activeRun.label}`;
+    action.dataset.workflowFocus = activeRun.key;
+    updateStudioPrimaryRun(data);
+    return;
+  }
+  if (isReadyForNextStoryGuidance(data)) {
+    title.textContent = "CONTEXT / NEW STORY";
+    copy.textContent = "本轮视频配置已保留，工作流已归位，等待下一段剧情。";
+    stage.textContent = "SCRIPT";
+    status.textContent = "未启动";
+    downstream.textContent = "输入新的剧情";
+    action.disabled = WORKFLOW_PREVIEW_MODE;
+    action.textContent = "查看 SCRIPT";
+    action.dataset.workflowFocus = "script";
+    updateStudioPrimaryRun(data);
     return;
   }
   const mode = studioContextMode();
@@ -3177,6 +3290,7 @@ function renderStudioContext(data, steps) {
   downstream.textContent = nextMap[mode] || "等待输入";
   action.disabled = WORKFLOW_PREVIEW_MODE;
   action.textContent = `查看 ${label}`;
+  action.dataset.workflowFocus = stepKey;
   updateStudioPrimaryRun(data);
 }
 
@@ -3209,6 +3323,42 @@ function updateStudioPrimaryRun(data = state.project) {
   button.dataset.workflowFocus = action.focus || "script";
   button.dataset.targetSelector = action.selector || "";
   button.disabled = WORKFLOW_PREVIEW_MODE || !data?.project;
+}
+
+function setStudioTaskButtonState(button, running, label) {
+  if (!button || button.dataset.studioFeedbackBusy === "true") return;
+  if (running) {
+    if (button.dataset.studioTaskRunning !== "true") {
+      button.dataset.studioTaskLabel = button.textContent || "";
+      button.dataset.studioTaskDisabled = button.disabled ? "true" : "false";
+    }
+    button.dataset.studioTaskRunning = "true";
+    button.textContent = label;
+    button.disabled = true;
+    button.classList.add("is-task-running");
+    button.setAttribute("aria-busy", "true");
+    return;
+  }
+  if (button.dataset.studioTaskRunning !== "true") return;
+  button.textContent = button.dataset.studioTaskLabel || button.textContent;
+  button.disabled = button.dataset.studioTaskDisabled === "true";
+  button.classList.remove("is-task-running");
+  button.removeAttribute("aria-busy");
+  delete button.dataset.studioTaskRunning;
+  delete button.dataset.studioTaskLabel;
+  delete button.dataset.studioTaskDisabled;
+}
+
+function renderStudioActionStates(data = state.project, activeRun = null) {
+  const assetRunning = isAssetExtracting() || ["running", "queued"].includes(String(data?.assetJob?.status || "").toLowerCase());
+  const boardRunning = ["running", "queued"].includes(String(data?.storyboardJob?.status || "").toLowerCase());
+  const videoProgress = data?.videoProgress || {};
+  const videoRunning = videoProgressHasActiveWork(videoProgress);
+  const videoLabel = `视频生成中 ${videoProgress.completed || 0}/${videoProgress.total || 0}`;
+  setStudioTaskButtonState(document.querySelector("[data-job='assets']"), assetRunning, isAssetExtracting() ? "资产解析中" : "资产生成中");
+  setStudioTaskButtonState(document.querySelector("[data-job='storyboards']"), boardRunning, "故事板生成中");
+  setStudioTaskButtonState($("#generateAllSegments"), videoRunning, videoLabel);
+  setStudioTaskButtonState($("#studioPrimaryRun"), !!activeRun, activeRun ? `运行中 · ${activeRun.label}` : "");
 }
 
 async function runStudioPrimaryAction() {
@@ -3543,6 +3693,10 @@ function videoPromptShot(shotName = "") {
   return (videoConfigDataFromProject()?.shots || []).find((shot) => shot.name === shotName) || null;
 }
 
+function videoModelForShot(shot = {}, config = videoConfigDataFromProject()) {
+  return normalizeVideoModelName(shot.modelOverride || shot.modelName || config?.modelName || "");
+}
+
 function videoPromptDraft(shotName = "") {
   return state.videoPromptDrafts.get(shotName) || null;
 }
@@ -3574,13 +3728,18 @@ function renderVideoPromptInspector() {
   inspector.classList.toggle("hidden", !visible);
   if (!visible) return;
   const draft = ensureVideoPromptDraft(shotName);
+  const failed = progressItem.status === "failed";
   $("#videoPromptInspectorName").textContent = shotName;
-  $("#videoPromptInspectorMeta").textContent = `${shot.duration || "-"}s · ${videoModelLabel(videoConfigDataFromProject()?.modelName || "")}`;
+  $("#videoPromptInspectorMeta").textContent = `${shot.duration || "-"}s · ${videoModelLabel(videoModelForShot(shot))}`;
+  const modelInput = $("#videoPromptInspectorModel");
+  modelInput.value = videoModelForShot(shot);
+  modelInput.disabled = !failed;
   const input = $("#videoPromptInspectorPrompt");
   if (document.activeElement !== input) input.value = draft.value;
   $("#videoPromptInspectorDraftStatus").textContent = draft.dirty ? "未保存修改" : "已保存";
   $("#videoPromptInspectorPromptCount").textContent = `${draft.value.length} / 8000`;
-  $("#videoPromptInspectorFailure").textContent = progressItem.failedReason || "修改后会只重新提交当前片段。";
+  $("#videoPromptInspectorFailure").textContent = progressItem.failedReason || "仅会重试当前失败片段，已完成的片段不会被改动。";
+  $("#regenerateVideoFromInspector").disabled = !failed;
 }
 
 async function saveVideoPrompt() {
@@ -3600,13 +3759,33 @@ async function saveVideoPrompt() {
   toast("视频提示词已保存，未提交生成");
 }
 
+async function saveVideoRetryModel() {
+  const shotName = state.selectedVideoShotName;
+  const shot = videoPromptShot(shotName);
+  const input = $("#videoPromptInspectorModel");
+  if (!state.selectedId || !shotName || !shot || !input) return false;
+  const modelName = normalizeVideoModelName(input.value);
+  if (modelName === videoModelForShot(shot)) return false;
+  const data = await api(`/api/project/${state.selectedId}/video-model`, {
+    method: "POST",
+    body: JSON.stringify({ shotName, modelName }),
+  });
+  setProjectState(data.state);
+  renderWorkspace();
+  renderVideoPromptInspector();
+  return true;
+}
+
 async function regenerateSelectedVideoFromInspector() {
   const shotName = state.selectedVideoShotName;
   const draft = videoPromptDraft(shotName);
   if (!shotName || !draft) return;
-  if (draft.dirty) await saveVideoPrompt();
+  const progressItem = (state.project?.videoProgress?.items || []).find((item) => item.name === shotName);
+  if (progressItem?.status !== "failed") throw new Error("仅生成失败的片段可以切换模型重试");
   const confirmed = window.confirm(`重新提交“${shotName}”？这会消耗额度。`);
   if (!confirmed) return;
+  if (draft.dirty) await saveVideoPrompt();
+  await saveVideoRetryModel();
   await generateVideoSegment(shotName, { forceRegenerate: true });
 }
 
@@ -3859,6 +4038,19 @@ function renderStoryboardUploadTargets(slots, storyboards) {
   button.disabled = !select.value;
 }
 
+function assetManifestRenderSignature(manifest, { extracting = false } = {}) {
+  return JSON.stringify({
+    extracting,
+    confirmed: !!manifest?.confirmed,
+    coverage: manifest?.coverage
+      ? [manifest.coverage.checkedAt || "", manifest.coverage.ok ? 1 : 0, ...(manifest.coverage.added || []).map((item) => item.id || item.label || "")]
+      : [],
+    flagged: (manifest?.audit?.flagged || []).map((item) => [item.id || "", item.label || "", item.suspectType || item.to || ""]),
+    items: (manifest?.items || []).map((item) => [item.id || "", item.label || "", item.type || "", item.generate === false ? 0 : 1]),
+    manualType: state.manualAssetType || "",
+  });
+}
+
 function renderAssetManifest(manifest) {
   const overview = $("#assetManifestOverview");
   const status = $("#assetManifestStatus");
@@ -3892,6 +4084,9 @@ function renderAssetManifest(manifest) {
     generateAssetBtn.disabled = extracting || !canGenerate;
     generateAssetBtn.title = extracting ? "资产解析运行中" : canGenerate ? "生成资产图" : "请先提取资产";
   }
+  const signature = assetManifestRenderSignature(manifest, { extracting });
+  if (overview.dataset.manifestSig === signature && overview.childElementCount > 0) return;
+  overview.dataset.manifestSig = signature;
 
   const manifestItemHtml = (item) => {
     const shouldGenerate = item.generate !== false;
@@ -5674,7 +5869,7 @@ function videoNodeFromShot(shot = {}, index = 0, config = {}) {
     ],
     prompt: shotPromptText(shot),
     settings: {
-      model: normalizeVideoModelName(config.modelName),
+      model: videoModelForShot(shot, config),
       ratio: config.ratio || "9:16",
       duration: String(duration),
       resolution: config.resolution || "720p",
@@ -6369,15 +6564,17 @@ async function startJob(type) {
 }
 
 async function generateDraft() {
+  if (!state.selectedId) throw new Error("请先打开一个项目");
+  if (isDraftGenerating()) return;
   const dialogueLanguage = document.querySelector("input[name='draftDialogueLanguage']:checked")?.value || "en";
   const assetAnalyzerModel = document.querySelector("input[name='assetAnalyzerModel']:checked")?.value || "claude-opus-4-8";
   state.assetAnalyzerModel = normalizeAssetAnalyzerModel(assetAnalyzerModel);
   localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
-  await saveFileQuiet("script");
-  state.uiBusy.assetExtracting = true;
+  state.uiBusy.draftGenerating = true;
   renderWorkspace();
   toast("正在生成分镜草稿");
   try {
+    await saveFileQuiet("script");
     const data = await api(`/api/project/${state.selectedId}/draft`, {
       method: "POST",
       body: JSON.stringify({ dialogueLanguage, assetAnalyzerModel: state.assetAnalyzerModel }),
@@ -6385,7 +6582,7 @@ async function generateDraft() {
     setProjectState(data.state);
     toast("分镜和提示词草稿已生成");
   } finally {
-    state.uiBusy.assetExtracting = false;
+    state.uiBusy.draftGenerating = false;
     renderWorkspace();
   }
 }
@@ -6440,6 +6637,7 @@ async function buildConfig() {
   }
   try {
     await refreshVideoConfig({ silent: false });
+    setWorkflowFocus("script");
   } finally {
     if (button) {
       button.disabled = false;
@@ -6898,7 +7096,7 @@ function bind() {
     resetWindowLayout();
     toast("工作台布局已重置");
   });
-  $("#studioContextOpen")?.addEventListener("click", () => setStudioTab(state.activeStudioTab || "assets"));
+  $("#studioContextOpen")?.addEventListener("click", (event) => setWorkflowFocus(event.currentTarget.dataset.workflowFocus || studioWorkflowFocusFromMode()));
   $("#scriptUpload").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -7111,7 +7309,6 @@ async function refreshSelectedProjectStatus() {
     renderVideoConfigStatus(state.project?.videoConfigStatus || {});
     renderVideoProgress(state.project?.videoProgress || { total: 0, completed: 0, items: [] });
     renderFinalCut(state.project?.finalCut || null);
-    renderStudioFlowStatus(state.project);
     renderStudioLogs(state.project);
     // 轮询里也刷新资产图库(renderAssets 有签名守卫,内容没变不会重建),让生成好的资产图不必手动刷新就显示。
     // /status 现在也返回 assetManifest/assets/assetSlots,故可轻量重绘。
@@ -7131,6 +7328,7 @@ async function refreshSelectedProjectStatus() {
       state.project?.jobs || state.project?.storyboardJob,
     );
     renderStoryboardJob(state.project?.storyboardJob);
+    renderStudioFlowStatus(state.project);
     return true;
   } catch (error) {
     console.warn("Project refresh failed:", error);

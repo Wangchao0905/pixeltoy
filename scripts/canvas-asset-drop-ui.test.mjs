@@ -31,5 +31,25 @@ assert.match(
   /addAssets\(\[asset\]\);[\s\S]*?renderNodes\(\{ preserveExisting: true \}\)/,
   "completed local asset uploads should keep existing canvas nodes mounted",
 );
+assert.match(
+  canvas,
+  /function thumbnailFallbackUrl\(url\)/,
+  "canvas thumbnails should retain a non-thumbnail fallback URL",
+);
+assert.match(
+  canvas,
+  /data-thumbnail-fallback=/,
+  "reference thumbnails should expose their original image as a fallback",
+);
+assert.match(
+  canvas,
+  /image\.dataset\.thumbnailFallbackApplied = "true"[\s\S]*?image\.src = fallback/,
+  "a failed thumbnail should fall back to the original image once",
+);
+assert.match(
+  canvas,
+  /setThumbnailImageSource\(img, previewUrl, 640\)/,
+  "asset nodes should use the same thumbnail fallback path as reference chips",
+);
 
 console.log("canvas asset-drop UI tests passed");

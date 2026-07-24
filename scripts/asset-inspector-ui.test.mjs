@@ -23,7 +23,7 @@ assert.match(css, /body\.is-studio \.asset-parse-panel #confirmAssetManifestBtn\
 assert.match(app, /if \(mode === "image" \|\| mode === "assets"\) \{\s*return \{ label: "Run: 生成资产", selector: "\[data-job='assets'\]", focus: "assets" \};/);
 assert.match(app, /function finalCutOutputReady\(finalCut\)[\s\S]*?return !!finalCut\?\.output\?\.url;/, "CUT must use the real final output instead of object presence");
 assert.match(app, /const cutReady = finalCutOutputReady\(data\.finalCut\);[\s\S]*?value: cutReady \? "ready" : cutRunning \? "assembling" : cutFailed \? "failed" : "locked"/);
-assert.match(app, /function flowStepClass\(done, active, blocked = false\)[\s\S]*?if \(active\) classes\.push\("active"\);/);
+assert.match(app, /function flowStepClass\(done, active, blocked = false[\s\S]*?if \(active\) classes\.push\("active"\);/);
 assert.match(css, /body\.is-studio \.studio-flow-step\.active:not\(\.ok\):not\(\.warn\)::after\s*\{[\s\S]*?background:\s*var\(--studio-accent\);/);
 assert.doesNotMatch(app, /label: "Run: 资产提取", selector: "#draftBtn"/);
 

@@ -1057,6 +1057,34 @@ function isTransientImageGenFailure(message) {
   );
 }
 
+function isPolicyImageGenFailure(message) {
+  const payload = parseImageGenFailurePayload(message);
+  const body = typeof payload?.detail?.body === "string" ? payload.detail.body : "";
+  const detailMessage = payload?.detail?.message || payload?.detail?.event?.error?.message || "";
+  const haystack = `${payload?.code || ""} ${payload?.message || ""} ${detailMessage} ${body} ${message}`.toLowerCase();
+  return /safety|content[_\s-]?(?:policy|filter)|moderation|blocked|rejected|安全政策|安全策略|审核|敏感|违规|违禁/.test(haystack);
+}
+
+function policySafeImagePrompt(prompt = "") {
+  const replacements = [
+    [/尸潮|丧尸|僵尸|亡灵|尸体|死尸/gi, "混乱人群的阴影"],
+    [/鲜血|血液|血迹|血泊|血污|流血|血腥/gi, "非具象深色痕迹"],
+    [/伤口|断肢|肢体残骸|内脏/gi, "衣物破损与散落物件"],
+    [/杀戮|屠杀|砍杀|刺杀|打斗|搏斗|战斗/gi, "紧张对峙与快速躲避"],
+    [/武器|匕首|刀剑|枪械|枪支/gi, "手持金属道具"],
+    [/\bzombies?\b|\bundead\b|\bcorpses?\b|\bdead bod(?:y|ies)\b/gi, "shadowy crowd"],
+    [/\bblood(?:y)?\b|\bgore\b|\bwounds?\b|\bsevered\b|\bdismembered\b/gi, "non-graphic dark trace"],
+    [/\bmurder(?:ing)?\b|\bkill(?:ing)?\b|\bslaughter\b|\bstabb?(?:ing)?\b|\bfight(?:ing)?\b|\bcombat\b/gi, "tense evasion"],
+    [/\bweapons?\b|\bguns?\b|\brifles?\b|\bknives?\b|\bswords?\b/gi, "handheld metal prop"],
+  ];
+  let safe = String(prompt || "");
+  for (const [pattern, replacement] of replacements) safe = safe.replace(pattern, replacement);
+  return [
+    "Safety rendering adjustment: depict an age-appropriate, non-graphic dramatic situation. Keep all action implied and convey tension only through composition, lighting, movement, and environmental storytelling.",
+    safe,
+  ].filter(Boolean).join("\n\n");
+}
+
 function imageGenErrorDetail(error) {
   const stdout = error.stdout ? String(error.stdout).trim() : "";
   const stderr = error.stderr ? String(error.stderr).trim() : "";
@@ -1724,7 +1752,21 @@ async function main() {
     }
     try {
       const editResult = args.editInstruction ? await runEdit(asset, out, args.size, args.editInstruction, logsDir, assetReferenceImages, args.styleReferenceImage, { hiddenSceneReferences }) : null;
-      const raw = editResult ? editResult.raw : await runOne(asset, out, args.size, assetReferenceImages, logsDir, args.styleReferenceImage, { hiddenSceneReferences });
+      let policyRetry = false;
+      let policyRetryPrompt = "";
+      let raw = editResult?.raw || "";
+      if (!editResult) {
+        try {
+          raw = await runOne(asset, out, args.size, assetReferenceImages, logsDir, args.styleReferenceImage, { hiddenSceneReferences });
+        } catch (error) {
+          const detail = imageGenErrorDetail(error);
+          if (!isPolicyImageGenFailure(detail)) throw error;
+          policyRetry = true;
+          policyRetryPrompt = policySafeImagePrompt(asset.prompt);
+          console.error(`${new Date().toISOString()} ${asset.name}: safety policy rejected the original prompt; retrying once with non-graphic wording`);
+          raw = await runOne({ ...asset, prompt: policyRetryPrompt }, out, args.size, assetReferenceImages, logsDir, args.styleReferenceImage, { hiddenSceneReferences });
+        }
+      }
       ensureStoryboardCanvas(asset, out, args.size);
       stampStoryboardProductionTabs(asset, out, assetReferenceImages);
       fs.writeFileSync(path.join(logsDir, `${asset.name}.json`), raw ? `${raw}\n` : "");
@@ -1741,12 +1783,14 @@ async function main() {
               hiddenSceneReference: asset.type === "Scene" && mappedReferenceImagesForAsset(asset, assetReferenceMap).length > 0,
               hiddenSceneReferenceMode: hiddenSceneReferences.size ? "color-grade-only" : "",
               styleReferenceImage: args.styleReferenceImage ? path.basename(args.styleReferenceImage) : "",
+              policyRetry,
+              policyRetryPromptHash: policyRetryPrompt ? promptHash(policyRetryPrompt) : "",
             },
       );
       const failedLog = path.join(logsDir, `${asset.name}.failed.json`);
       if (fs.existsSync(failedLog)) fs.rmSync(failedLog, { force: true });
       console.log(`${new Date().toISOString()} ${args.editInstruction ? "edited" : "generated"} ${asset.name} -> ${out}`);
-      results.push({ name: asset.name, generated: true, edited: !!args.editInstruction, out });
+      results.push({ name: asset.name, generated: true, edited: !!args.editInstruction, policyRetry, out });
     } catch (error) {
       const message = error?.message || String(error);
       fs.writeFileSync(

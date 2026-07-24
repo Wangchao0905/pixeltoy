@@ -694,6 +694,7 @@ label span {
 
 #scriptUpload,
 #workflowScriptUpload,
+#assetDescriptionUpload,
 #assetUploadFile,
 #assetStyleReferenceFile,
 #storyboardUploadFile {
@@ -6270,7 +6271,6 @@ body.is-studio .workflow-storage {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  body.is-studio .studio-flow-step.active,
   body.is-studio .studio-rail-button.is-active,
   body.is-studio .studio-tab-button.is-active {
     animation: studioSoftPulse 2.4s ease-in-out infinite;
@@ -13386,7 +13386,6 @@ body.is-studio .studio-queue-summary {
     transform: translateY(-1px);
   }
 
-  body.is-studio .studio-flow-step.active::before,
   body.is-studio .studio-tab-button.is-active::before {
     content: "";
     position: absolute;
@@ -13696,9 +13695,98 @@ body.is-studio .script-upload-row {
   gap: 8px;
 }
 
+body.is-studio .script-upload-row .upload-pill,
+body.is-studio .asset-document-upload .upload-pill {
+  position: relative;
+}
+
+body.is-studio .script-upload-row .upload-pill::after,
+body.is-studio .asset-document-upload .upload-pill::after {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 3;
+  padding: 7px 10px;
+  border: 1px solid var(--studio-line-strong);
+  border-radius: 9px;
+  background: rgba(8, 17, 31, 0.94);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.26);
+  color: var(--studio-ink);
+  content: attr(data-upload-tooltip);
+  font-size: 11px;
+  line-height: 1.2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+
+body.is-studio .script-upload-row .upload-pill:hover::after,
+body.is-studio .script-upload-row .upload-pill:focus-visible::after,
+body.is-studio .script-upload-row #workflowScriptUpload:focus-visible + .upload-pill::after,
+body.is-studio .asset-document-upload .upload-pill:hover::after,
+body.is-studio .asset-document-upload .upload-pill:focus-visible::after,
+body.is-studio .asset-document-upload #assetDescriptionUpload:focus-visible + .upload-pill::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+body.is-studio .script-upload-row #workflowScriptUploadName:empty {
+  display: none;
+}
+
 body.is-studio .script-upload-row #workflowScriptUploadName {
   color: var(--studio-muted);
   font-size: 11px;
+}
+
+body.is-studio .asset-document-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 14px 28px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--studio-line);
+  border-radius: 13px;
+  background: rgba(17, 31, 54, 0.32);
+}
+
+body.is-studio .asset-document-source-label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+body.is-studio .asset-document-source-label strong {
+  color: var(--studio-ink);
+  font-size: 12px;
+}
+
+body.is-studio .asset-document-source-label span {
+  color: var(--studio-muted);
+  font-size: 11px;
+}
+
+body.is-studio .asset-document-upload {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+body.is-studio .asset-document-upload #assetDescriptionUploadName:empty {
+  display: none;
+}
+
+body.is-studio .asset-document-upload #assetDescriptionUploadName {
+  max-width: 180px;
+  color: var(--studio-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 body.is-studio .dual-input-hint {
@@ -13867,5 +13955,1234 @@ body.is-studio .studio-queue-bar {
 
   body.is-studio .studio-flow-status {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Production OS reference match v20260723-4.
+   Align the workflow with the approved one-screen production desk reference. */
+body.is-studio {
+  --studio-bg: #07101d;
+  --studio-panel: rgba(15, 28, 49, 0.72);
+  --studio-panel-2: rgba(28, 50, 82, 0.52);
+  --studio-line: rgba(161, 199, 246, 0.14);
+  --studio-line-strong: rgba(166, 207, 255, 0.34);
+  --studio-ink: #f4f8ff;
+  --studio-muted: #91a1ba;
+  --studio-dim: #53647e;
+  --studio-signal: #9ff06b;
+  --studio-accent: #8fd8ff;
+  --studio-danger: #ff7b86;
+  --studio-warning: #f7d176;
+  min-width: 1180px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 22% -8%, rgba(53, 126, 255, 0.36), transparent 34rem),
+    radial-gradient(circle at 89% 14%, rgba(76, 198, 255, 0.1), transparent 28rem),
+    radial-gradient(circle, rgba(142, 190, 246, 0.2) 1px, transparent 1.4px),
+    linear-gradient(180deg, #0a1628 0%, #07101d 52%, #050b15 100%) !important;
+  background-size: auto, auto, 12px 12px, auto !important;
+  color: var(--studio-ink);
+}
+
+body.is-studio #app,
+body.is-studio .studio-shell {
+  width: 100vw;
+  height: 100dvh;
+  max-height: none;
+  overflow: hidden;
+}
+
+body.is-studio .studio-shell {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  padding: 16px 22px 14px !important;
+  background: transparent !important;
+}
+
+body.is-studio .studio-sidebar {
+  display: none !important;
+}
+
+body.is-studio .main.studio-stage {
+  display: grid !important;
+  grid-template-rows: 64px 68px minmax(0, 1fr) 54px !important;
+  gap: 12px !important;
+  width: 100%;
+  height: calc(100dvh - 30px);
+  max-height: none !important;
+  min-width: 0;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+body.is-studio .studio-topbar,
+body.is-studio .studio-flow-strip,
+body.is-studio .studio-queue-bar,
+body.is-studio .workspace-viewport,
+body.is-studio .studio-context-panel {
+  border: 1px solid var(--studio-line) !important;
+  background:
+    linear-gradient(180deg, rgba(25, 45, 76, 0.72), rgba(9, 19, 34, 0.64)),
+    rgba(9, 19, 34, 0.52) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 22px 70px rgba(0, 0, 0, 0.2) !important;
+  backdrop-filter: blur(24px) saturate(1.25) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.25) !important;
+}
+
+body.is-studio .studio-topbar {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px !important;
+  min-height: 64px !important;
+  padding: 0 20px !important;
+  border-radius: 18px !important;
+}
+
+body.is-studio .studio-title-block {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+
+body.is-studio .studio-topbar .kicker {
+  margin: 0 !important;
+  color: var(--studio-ink) !important;
+  font-size: 17px !important;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1;
+}
+
+body.is-studio .studio-topbar h1 {
+  min-width: 0;
+  max-width: min(46vw, 760px) !important;
+  margin: 0 !important;
+  color: var(--studio-muted);
+  font-size: 12px !important;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+body.is-studio .studio-topbar h1::before {
+  content: "/";
+  margin-right: 12px;
+  color: rgba(145, 161, 186, 0.7);
+}
+
+body.is-studio .topbar-right {
+  display: flex !important;
+  align-items: center;
+  gap: 9px !important;
+  min-width: max-content;
+}
+
+body.is-studio .workspace-controls,
+body.is-studio .status-pills {
+  display: none !important;
+}
+
+body.is-studio .studio-command-button,
+body.is-studio #backToProjects {
+  min-height: 38px !important;
+  padding: 0 11px !important;
+  border-radius: 10px !important;
+  border: 1px solid var(--studio-line) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: #cfdef2 !important;
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: none !important;
+}
+
+body.is-studio .studio-command-button kbd {
+  margin-left: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--studio-ink);
+  font-size: 11px;
+  font-family: inherit;
+}
+
+body.is-studio .studio-save-state {
+  padding-right: 12px;
+  border-right: 1px solid var(--studio-line);
+  color: var(--studio-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+body.is-studio .studio-primary-run,
+body.is-studio .studio-context-actions .primary {
+  min-height: 42px !important;
+  border: 0 !important;
+  border-radius: 11px !important;
+  padding: 0 15px !important;
+  background: linear-gradient(180deg, #a9e9ff, #62bfff) !important;
+  color: #092034 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 12px 28px rgba(61, 170, 255, 0.24) !important;
+}
+
+body.is-studio .studio-primary-run:disabled {
+  opacity: 0.56;
+}
+
+body.is-studio .project-display-name-form {
+  position: absolute;
+  left: 210px;
+  top: 13px;
+  z-index: 2;
+  width: min(440px, 42vw);
+}
+
+body.is-studio .studio-flow-strip {
+  display: flex !important;
+  align-items: center;
+  gap: 18px;
+  height: 68px !important;
+  min-height: 68px !important;
+  padding: 0 14px !important;
+  border-radius: 18px !important;
+}
+
+body.is-studio .studio-flow-status {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(130px, 1fr)) !important;
+  flex: 1 1 auto;
+  align-self: stretch;
+  gap: 0 !important;
+  min-width: 0;
+  border-radius: 13px;
+  overflow: hidden;
+}
+
+body.is-studio .studio-flow-step {
+  position: relative;
+  display: flex !important;
+  align-items: center;
+  gap: 9px;
+  min-height: 0 !important;
+  height: 100%;
+  border: 0 !important;
+  border-right: 1px solid var(--studio-line) !important;
+  border-radius: 0 !important;
+  padding: 0 16px !important;
+  background: transparent !important;
+  color: var(--studio-muted) !important;
+  text-align: left;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+
+body.is-studio .studio-flow-step:first-child {
+  border-left: 1px solid var(--studio-line) !important;
+}
+
+body.is-studio .studio-flow-step::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  bottom: 0;
+  left: 16px;
+  height: 2px;
+  background: rgba(161, 199, 246, 0.16);
+}
+
+body.is-studio .studio-flow-step.ok::after,
+body.is-studio .studio-flow-step.active::after {
+  background: var(--studio-signal);
+}
+
+body.is-studio .studio-flow-step.warn::after {
+  background: var(--studio-warning);
+}
+
+body.is-studio .studio-flow-step.active {
+  background: rgba(94, 162, 255, 0.14) !important;
+  color: var(--studio-ink) !important;
+}
+
+body.is-studio .studio-flow-step:hover {
+  transform: none !important;
+  background: rgba(94, 162, 255, 0.1) !important;
+}
+
+body.is-studio .studio-flow-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--studio-dim);
+}
+
+body.is-studio .studio-flow-step.ok .studio-flow-dot,
+body.is-studio .studio-flow-step.active .studio-flow-dot {
+  background: var(--studio-accent);
+  box-shadow: 0 0 12px rgba(143, 216, 255, 0.68);
+}
+
+body.is-studio .studio-flow-step.warn .studio-flow-dot {
+  background: var(--studio-warning);
+}
+
+body.is-studio .studio-flow-step span,
+body.is-studio .studio-flow-step strong {
+  display: block;
+  position: relative;
+  z-index: 1;
+  line-height: 1.25;
+}
+
+body.is-studio .studio-flow-step span {
+  color: inherit;
+  font-size: 11px;
+  font-weight: 780;
+  letter-spacing: 0.08em;
+}
+
+body.is-studio .studio-flow-step strong {
+  margin-top: 2px;
+  color: inherit;
+  font-size: 10px !important;
+  font-weight: 560;
+  text-transform: none;
+}
+
+body.is-studio .studio-flow-progress {
+  flex: 0 0 auto;
+  color: var(--studio-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+body.is-studio .empty {
+  display: none !important;
+}
+
+body.is-studio .studio-workspace-layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 320px !important;
+  gap: 12px !important;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body.is-studio .workspace-viewport {
+  min-width: 0;
+  height: 100% !important;
+  min-height: 0;
+  border-radius: 24px !important;
+  overflow: hidden !important;
+}
+
+body.is-studio .workspace.studio-board {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+body.is-studio .studio-console,
+body.is-studio .studio-content-shell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+body.is-studio .studio-console {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.is-studio .studio-console .script-panel,
+body.is-studio .studio-content-shell {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.is-studio .studio-console .script-panel {
+  display: grid !important;
+  grid-template-rows: 86px auto minmax(0, 1fr) !important;
+  height: 100%;
+  padding: 0 !important;
+}
+
+body.is-studio .script-panel .section-head,
+body.is-studio .studio-tab-panel.is-active > .panel > .section-head,
+body.is-studio .video-workflow .section-head {
+  display: flex !important;
+  align-items: end;
+  justify-content: space-between;
+  min-height: 86px;
+  margin: 0 !important;
+  padding: 0 28px 18px !important;
+  border-bottom: 1px solid var(--studio-line) !important;
+  background: rgba(17, 31, 54, 0.34);
+}
+
+body.is-studio .script-panel .section-head h2,
+body.is-studio .studio-tab-panel.is-active > .panel > .section-head h2,
+body.is-studio .video-workflow .section-head h2 {
+  margin: 7px 0 0 !important;
+  color: var(--studio-ink);
+  font-size: clamp(22px, 2.2vw, 34px) !important;
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+body.is-studio .script-panel .section-head p,
+body.is-studio .studio-tab-panel.is-active > .panel > .section-head p,
+body.is-studio .video-workflow .section-head p {
+  color: var(--studio-muted) !important;
+  font-size: 11px !important;
+}
+
+body.is-studio .section-label {
+  color: var(--studio-signal) !important;
+  font-size: 10px !important;
+  letter-spacing: 0.16em;
+}
+
+body.is-studio .script-panel .section-head .actions {
+  align-items: center;
+  max-width: 680px;
+  gap: 8px;
+}
+
+body.is-studio .script-panel .dual-input-hint {
+  max-width: 720px;
+  margin: 0 !important;
+  padding: 28px 28px 14px;
+  color: #b2b7bf !important;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+body.is-studio .script-panel .editor {
+  width: min(880px, calc(100% - 56px));
+  height: calc(100% - 28px) !important;
+  min-height: 220px;
+  margin: 0 28px 28px !important;
+  border: 1px solid var(--studio-line) !important;
+  border-radius: 15px !important;
+  background:
+    linear-gradient(180deg, rgba(10, 18, 32, 0.72), rgba(5, 10, 18, 0.82)),
+    rgba(8, 17, 31, 0.56) !important;
+  color: #d8e5f6 !important;
+  font-size: 14px;
+  line-height: 1.75;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+body.is-studio .studio-content-shell {
+  display: grid !important;
+  grid-template-rows: 0 minmax(0, 1fr);
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+body.is-studio[data-studio-focus="script"] .studio-content-shell {
+  display: none !important;
+}
+
+body.is-studio .studio-tabbar {
+  display: none !important;
+}
+
+body.is-studio .studio-content-shell {
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+
+body.is-studio .studio-tab-panels,
+body.is-studio .studio-tab-panel.is-active,
+body.is-studio .studio-tab-panel.is-active > .panel,
+body.is-studio .video-workflow,
+body.is-studio .video-workflow > .panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.is-studio .studio-tab-panel.is-active > .panel,
+body.is-studio .video-workflow > .panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.is-studio .asset-parse-panel .editor,
+body.is-studio .asset-preview-panel .gallery,
+body.is-studio .storyboard-gallery,
+body.is-studio .shots-table,
+body.is-studio .segment-progress,
+body.is-studio .video-grid,
+body.is-studio .studio-log-content {
+  margin: 22px 28px 28px;
+  min-height: 0;
+  overflow: auto;
+}
+
+body.is-studio .asset-preview-panel .asset-style-console,
+body.is-studio .asset-preview-panel .reference-kit-panel,
+body.is-studio .asset-preview-panel .asset-upload-form,
+body.is-studio .asset-preview-panel .workflow-asset-library,
+body.is-studio .storyboard-upload-form {
+  margin-right: 28px;
+  margin-left: 28px;
+}
+
+body.is-studio .gallery,
+body.is-studio .storyboard-gallery {
+  gap: 10px !important;
+}
+
+body.is-studio .asset-card,
+body.is-studio .storyboard-card,
+body.is-studio .segment-card,
+body.is-studio .studio-log-card {
+  border: 1px solid var(--studio-line) !important;
+  border-radius: 15px !important;
+  background: rgba(27, 45, 73, 0.5) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+body.is-studio .asset-card:hover,
+body.is-studio .storyboard-card:hover,
+body.is-studio .segment-card:hover,
+body.is-studio .asset-card.is-selected {
+  border-color: rgba(143, 216, 255, 0.64) !important;
+  background: rgba(42, 88, 145, 0.38) !important;
+}
+
+body.is-studio .studio-context-panel {
+  display: grid !important;
+  grid-template-rows: 86px auto 1fr auto;
+  align-self: stretch !important;
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0;
+  border-radius: 24px !important;
+  overflow: hidden;
+}
+
+body.is-studio .studio-context-head {
+  display: flex;
+  align-items: end;
+  min-height: 86px;
+  padding: 0 20px 18px !important;
+  border-bottom: 1px solid var(--studio-line);
+  background: rgba(17, 31, 54, 0.34);
+}
+
+body.is-studio .studio-eyebrow {
+  display: none;
+}
+
+body.is-studio .studio-context-head h2 {
+  color: var(--studio-ink);
+  font-size: 14px !important;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+body.is-studio .studio-context-body {
+  padding: 20px !important;
+}
+
+body.is-studio .studio-context-body p {
+  color: var(--studio-muted) !important;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+body.is-studio .studio-context-list {
+  display: grid;
+  gap: 0;
+  margin-top: 18px !important;
+  border-top: 1px solid var(--studio-line);
+}
+
+body.is-studio .studio-context-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0 !important;
+  border-bottom: 1px solid var(--studio-line) !important;
+  color: var(--studio-muted);
+  font-size: 11px;
+}
+
+body.is-studio .studio-context-row:hover {
+  transform: none !important;
+}
+
+body.is-studio .studio-context-row strong {
+  color: var(--studio-ink) !important;
+  font-weight: 650;
+  text-align: right;
+}
+
+body.is-studio .studio-context-actions {
+  padding: 20px !important;
+  border-top: 1px solid var(--studio-line);
+  background: rgba(8, 17, 31, 0.25);
+}
+
+body.is-studio .studio-context-actions .primary {
+  width: 100%;
+}
+
+body.is-studio .studio-queue-bar {
+  display: flex !important;
+  align-items: center;
+  gap: 18px;
+  min-height: 54px !important;
+  padding: 0 20px !important;
+  border-radius: 18px !important;
+}
+
+body.is-studio .studio-queue-title {
+  color: var(--studio-signal) !important;
+  font-size: 10px !important;
+  letter-spacing: 0.16em;
+}
+
+body.is-studio .studio-queue-items {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 22px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--studio-muted);
+  font-size: 11px;
+}
+
+body.is-studio .studio-queue-item {
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+body.is-studio .studio-queue-item strong {
+  color: var(--studio-ink);
+  font-weight: 650;
+}
+
+body.is-studio .studio-queue-item.is-error strong {
+  color: var(--studio-danger);
+}
+
+body.is-studio .studio-queue-summary {
+  color: var(--studio-muted);
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body.is-studio .studio-topbar,
+  body.is-studio .studio-flow-strip,
+  body.is-studio .workspace-viewport,
+  body.is-studio .studio-context-panel,
+  body.is-studio .studio-queue-bar {
+    animation: studioSurfaceIn 220ms ease both !important;
+  }
+
+  body.is-studio .studio-flow-step.active::before {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1250px) {
+  body.is-studio {
+    min-width: 0;
+    overflow: auto;
+  }
+
+  body.is-studio #app,
+  body.is-studio .studio-shell {
+    min-height: 900px;
+    height: auto;
+    overflow: visible;
+  }
+
+  body.is-studio .main.studio-stage {
+    height: auto;
+    min-height: 900px;
+    grid-template-rows: 64px 68px minmax(620px, 1fr) 54px !important;
+  }
+
+  body.is-studio .studio-flow-status {
+    grid-template-columns: repeat(6, minmax(110px, 1fr)) !important;
+    overflow-x: auto;
+  }
+
+  body.is-studio .studio-workspace-layout {
+    grid-template-columns: minmax(0, 1fr) 280px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  body.is-studio .studio-shell {
+    padding: 12px !important;
+  }
+
+  body.is-studio .main.studio-stage {
+    grid-template-rows: auto auto auto auto !important;
+  }
+
+  body.is-studio .studio-topbar {
+    height: auto !important;
+    min-height: 64px !important;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px !important;
+  }
+
+  body.is-studio .studio-title-block {
+    width: 100%;
+  }
+
+  body.is-studio .topbar-right {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  body.is-studio .studio-workspace-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  body.is-studio .studio-context-panel {
+    min-height: 360px;
+  }
+}
+
+/* Studio scroll boundary: keep the production chrome fixed while allowing
+   long asset and storyboard panels to reveal their complete contents. */
+body.is-studio .studio-tab-panels {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+body.is-studio .studio-tab-panel.is-active {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-width: auto;
+}
+
+body.is-studio .studio-tab-panel.is-active > .panel {
+  height: auto !important;
+  min-height: 100% !important;
+  overflow: visible !important;
+}
+
+body.is-studio .studio-tab-panel.is-active .asset-preview-panel .gallery,
+body.is-studio .studio-tab-panel.is-active .storyboard-gallery {
+  min-height: 0;
+  overflow: visible !important;
+}
+
+/* Keep manual asset upload compact: two input rows, with the action row below. */
+body.is-studio .asset-preview-panel .asset-upload-form {
+  width: min(100%, 920px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  align-items: end;
+}
+
+body.is-studio .asset-preview-panel .asset-upload-fields {
+  display: contents;
+}
+
+body.is-studio .asset-preview-panel .asset-upload-form .asset-file-row {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+body.is-studio .asset-preview-panel .asset-upload-hint {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+body.is-studio .asset-preview-panel .asset-upload-form #assetUploadButton {
+  grid-column: 2;
+  grid-row: 3;
+  width: auto;
+  justify-self: end;
+}
+
+@media (max-width: 900px) {
+  body.is-studio .asset-preview-panel .asset-upload-form {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  body.is-studio .asset-preview-panel .asset-upload-fields {
+    display: grid;
+    grid-column: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.is-studio .asset-preview-panel .asset-upload-form .asset-file-row,
+  body.is-studio .asset-preview-panel .asset-upload-hint,
+  body.is-studio .asset-preview-panel .asset-upload-form #assetUploadButton {
+    grid-column: auto;
+    grid-row: auto;
+    width: 100%;
+    justify-self: stretch;
+  }
+}
+
+body.is-studio .asset-parse-panel #confirmAssetManifestBtn {
+  width: max-content !important;
+  justify-self: center !important;
+}
+
+/* Flow bars encode state: completion, active work, and blocked/failed states. */
+body.is-studio .studio-flow-step.ok::after {
+  background: var(--studio-signal);
+  box-shadow: 0 0 14px rgba(185, 239, 116, 0.38);
+}
+
+body.is-studio .studio-flow-step.active:not(.ok):not(.warn)::after {
+  background: var(--studio-accent);
+  box-shadow: 0 0 14px rgba(143, 216, 255, 0.38);
+}
+
+body.is-studio .studio-flow-step.warn::after {
+  background: var(--studio-warning);
+  box-shadow: 0 0 14px rgba(247, 209, 118, 0.28);
+}
+
+body.is-studio .studio-flow-step.ok .studio-flow-dot {
+  background: var(--studio-signal);
+  box-shadow: 0 0 12px rgba(185, 239, 116, 0.5);
+}
+
+body.is-studio .studio-flow-step.active:not(.ok):not(.warn) .studio-flow-dot {
+  background: var(--studio-accent);
+  box-shadow: 0 0 12px rgba(143, 216, 255, 0.68);
+}
+/* Asset workspace: one continuous board instead of stacked glass cards. */
+body.is-studio .asset-preview-panel .reference-kit-panel,
+body.is-studio .asset-preview-panel .asset-upload-form {
+  border: 0 !important;
+  border-top: 1px solid rgba(143, 216, 255, 0.14) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.is-studio .asset-preview-panel .reference-kit-panel {
+  padding: 18px 0 16px !important;
+}
+
+body.is-studio .asset-preview-panel .reference-kit-panel-head {
+  align-items: center;
+}
+
+body.is-studio .asset-preview-panel .reference-kit-panel-head > div:first-child {
+  position: relative;
+  padding-left: 13px;
+}
+
+body.is-studio .asset-preview-panel .reference-kit-panel-head > div:first-child::before {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--studio-accent);
+  content: "";
+}
+
+body.is-studio .asset-preview-panel .reference-kit-panel-head h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+
+body.is-studio .asset-preview-panel .reference-kit-panel-head p {
+  max-width: 520px;
+  margin-top: 5px;
+  color: rgba(209, 224, 247, 0.56);
+}
+
+body.is-studio .asset-preview-panel .reference-kit-list {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+body.is-studio .asset-preview-panel .reference-kit-empty-state {
+  padding: 12px 0 0;
+  color: rgba(209, 224, 247, 0.42);
+}
+
+body.is-studio .asset-preview-panel .reference-kit-card {
+  border: 1px solid rgba(143, 216, 255, 0.13) !important;
+  border-radius: 8px !important;
+  background: rgba(8, 18, 33, 0.34) !important;
+  box-shadow: none !important;
+}
+
+body.is-studio .asset-preview-panel .asset-upload-form {
+  padding: 17px 0 15px !important;
+}
+
+body.is-studio .asset-preview-panel .asset-upload-form > .asset-upload-fields label > span,
+body.is-studio .asset-preview-panel .asset-upload-form .asset-upload-hint {
+  color: rgba(209, 224, 247, 0.56);
+}
+
+/* Pending classification is an indexed rail: headings carry hierarchy and
+   the dropzones stay visually open so the cards do not nest inside cards. */
+body.is-studio #assetGallery:has(.asset-reclassify-groups) {
+  overflow: visible !important;
+  padding: 6px 0 24px !important;
+}
+
+body.is-studio .asset-reclassify-groups {
+  --asset-rail-line: rgba(143, 216, 255, 0.16);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(216px, 1fr));
+  min-width: 916px;
+  gap: 18px;
+  align-items: start;
+  padding: 10px 0 16px;
+  counter-reset: asset-group;
+}
+
+body.is-studio .asset-reclassify-group {
+  position: relative;
+  display: block;
+  min-width: 0;
+  border-top: 1px solid var(--asset-rail-line);
+  counter-increment: asset-group;
+}
+
+body.is-studio .asset-reclassify-group h3 {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  margin: 0;
+  padding: 0 0 0 10px;
+  border-bottom: 1px solid rgba(143, 216, 255, 0.1);
+  color: rgba(239, 247, 255, 0.9);
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.02em;
+}
+
+body.is-studio .asset-reclassify-group h3::before {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  margin-right: 9px;
+  border: 1px solid rgba(143, 216, 255, 0.3);
+  border-radius: 6px;
+  color: var(--studio-accent);
+  content: counter(asset-group, decimal-leading-zero);
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0;
+}
+
+body.is-studio .asset-reclassify-dropzone {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  min-height: 188px;
+  max-height: min(58dvh, 520px);
+  padding: 10px 0 12px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+body.is-studio .asset-reclassify-dropzone:empty {
+  min-height: 178px;
+  border: 1px dashed rgba(143, 216, 255, 0.24) !important;
+  border-radius: 8px !important;
+  background:
+    linear-gradient(135deg, rgba(143, 216, 255, 0.045), transparent 55%),
+    rgba(7, 17, 31, 0.2) !important;
+}
+
+body.is-studio .asset-reclassify-dropzone:empty::before {
+  color: rgba(209, 224, 247, 0.48);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+body.is-studio .asset-reclassify-dropzone.is-dragover,
+body.is-studio .asset-reclassify-dropzone:empty.is-dragover {
+  border-color: rgba(143, 216, 255, 0.82) !important;
+  background: rgba(74, 168, 255, 0.1) !important;
+}
+
+body.is-studio .asset-reclassify-dropzone > .asset-card {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(143, 216, 255, 0.16) !important;
+  border-radius: 8px !important;
+  background: rgba(8, 18, 33, 0.54) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+body.is-studio .asset-reclassify-dropzone > .asset-card:hover,
+body.is-studio .asset-reclassify-dropzone > .asset-card:focus-visible {
+  border-color: rgba(143, 216, 255, 0.56) !important;
+  background: rgba(14, 34, 58, 0.74) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2) !important;
+}
+
+body.is-studio .asset-reclassify-dropzone > .asset-card.is-missing {
+  border-color: rgba(247, 209, 118, 0.2) !important;
+  background: rgba(21, 24, 30, 0.44) !important;
+}
+
+body.is-studio .asset-reclassify-dropzone > .asset-card.is-failed {
+  border-color: rgba(255, 115, 115, 0.48) !important;
+}
+
+body.is-studio .asset-reclassify-dropzone .asset-card-media,
+body.is-studio .asset-reclassify-dropzone .asset-missing-preview {
+  aspect-ratio: 1.65 / 1;
+}
+
+body.is-studio .asset-reclassify-dropzone .asset-missing-preview {
+  display: grid;
+  place-content: end start;
+  gap: 5px;
+  padding: 17px 14px 13px;
+  background:
+    linear-gradient(135deg, rgba(247, 209, 118, 0.09), transparent 58%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    #101923;
+  background-size: auto, 28px 28px, 28px 28px, auto;
+  text-align: left;
+}
+
+body.is-studio .asset-reclassify-dropzone .asset-missing-preview::before {
+  margin-bottom: auto;
+  color: rgba(247, 209, 118, 0.72);
+  content: "MISSING ASSET";
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+}
+
+body.is-studio .asset-reclassify-dropzone .asset-missing-preview strong {
+  color: rgba(239, 247, 255, 0.94);
+  font-size: 12px;
+}
+
+body.is-studio .asset-reclassify-dropzone .asset-missing-preview span {
+  margin: 0;
+  color: rgba(209, 224, 247, 0.56);
+  font-size: 10px;
+}
+
+body.is-studio .asset-reclassify-dropzone > .asset-card .caption {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  min-height: 42px;
+  padding: 9px 12px 10px;
+  border-top-color: rgba(143, 216, 255, 0.1);
+}
+
+body.is-studio .asset-reclassify-dropzone > .asset-card .caption strong {
+  flex: 1 1 100%;
+  min-width: 0;
+  color: rgba(239, 247, 255, 0.88);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+body.is-studio .asset-reclassify-dropzone > .asset-card .caption > span {
+  margin: 0;
+  font-size: 10px;
+}
+
+body.is-studio .asset-reclassify-dropzone .asset-tools {
+  top: 8px;
+  right: 8px;
+  gap: 4px;
+}
+
+body.is-studio .asset-reclassify-dropzone .asset-tool {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  border-radius: 6px;
+  background: rgba(5, 13, 24, 0.72);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+body.is-studio .asset-reclassify-dropzone .asset-tool span {
+  font-size: 15px;
+}
+
+@media (max-width: 720px) {
+  body.is-studio .asset-reclassify-groups {
+    grid-template-columns: repeat(4, minmax(176px, 1fr));
+    min-width: 730px;
+    gap: 12px;
+  }
+}
+
+/* =========================================================================
+   流程状态栏:绿色进度条改为「按真实进度」的动效,取代此前的频闪。
+   - ::after 仍作暗色底轨(常驻);.studio-flow-fill 为绿色进度层。
+   - determinate:宽度=真实比例(assets 出图数/总数、video 完成/总数),width 平滑过渡。
+   - indeterminate:正在干活但份数未知(资产解析中、剪辑合成中)→ 一段绿条平滑左右流动。
+   - done:满绿静止;idle:空。
+   ========================================================================= */
+body.is-studio .studio-flow-step::after {
+  background: rgba(161, 199, 246, 0.16) !important; /* 底轨恒定暗色,绿色只由 fill 表达 */
+}
+body.is-studio .studio-flow-fill {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 16px;
+  height: 2px;
+  width: 0;
+  border-radius: 2px;
+  background: var(--studio-signal);
+  box-shadow: 0 0 8px rgba(185, 239, 116, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: width 420ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 240ms ease;
+}
+/* 真实比例填充:width 跟随 --flow-ratio,进度推进时平滑增长 */
+body.is-studio .studio-flow-step[data-progress-state="determinate"] .studio-flow-fill {
+  opacity: 1;
+  width: calc((100% - 32px) * var(--flow-ratio, 0));
+}
+body.is-studio .studio-flow-step[data-progress-state="done"] .studio-flow-fill {
+  opacity: 1;
+  width: calc(100% - 32px);
+}
+/* 份数未知但在运行:一段绿条平滑扫过(取代频闪) */
+body.is-studio .studio-flow-step[data-progress-state="indeterminate"] .studio-flow-fill {
+  opacity: 1;
+  width: 34%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* !important 以越过 .is-studio 的 thermal-guard 全局 animation:none;仅作用于运行中步骤的 2px 细条,GPU 负担极小。 */
+  body.is-studio .studio-flow-step[data-progress-state="indeterminate"] .studio-flow-fill {
+    animation: studioFlowSweep 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite !important;
+  }
+}
+@keyframes studioFlowSweep {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+/* 降低动效偏好:不流动,给一条居中的静态提示条 */
+@media (prefers-reduced-motion: reduce) {
+  body.is-studio .studio-flow-step[data-progress-state="indeterminate"] .studio-flow-fill {
+    left: calc(50% - 17%);
+    transform: none;
+  }
+}
+
+/* 制作台按钮：点击、运行、结果三个阶段都留在控件本身，避免只靠远处提示条。 */
+body.is-studio button,
+body.is-studio [role="button"],
+body.is-studio .upload-pill {
+  transition: transform 90ms ease, border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+body.is-studio button:not(:disabled):hover,
+body.is-studio [role="button"]:not([aria-disabled="true"]):hover,
+body.is-studio .upload-pill:hover {
+  border-color: rgba(139, 213, 255, 0.78);
+  box-shadow: 0 0 0 1px rgba(83, 184, 255, 0.18), 0 0 14px rgba(51, 147, 228, 0.12);
+}
+
+body.is-studio button:active,
+body.is-studio button.is-pressed,
+body.is-studio [role="button"].is-pressed,
+body.is-studio .upload-pill.is-pressed {
+  transform: translateY(1px) scale(0.985);
+}
+
+body.is-studio button.is-working {
+  position: relative;
+  cursor: wait;
+  border-color: rgba(126, 208, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(87, 184, 255, 0.26), 0 0 16px rgba(39, 151, 231, 0.16);
+}
+
+body.is-studio button.is-working::after {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 7px;
+  border: 1.5px solid rgba(231, 246, 255, 0.38);
+  border-top-color: #eaf8ff;
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: studioButtonSpin 680ms linear infinite;
+}
+
+body.is-studio button.is-complete {
+  border-color: rgba(162, 235, 122, 0.95);
+  box-shadow: 0 0 0 1px rgba(162, 235, 122, 0.32), 0 0 16px rgba(146, 231, 104, 0.18);
+}
+
+body.is-studio button.is-error {
+  border-color: rgba(255, 132, 132, 0.95);
+  box-shadow: 0 0 0 1px rgba(255, 132, 132, 0.28), 0 0 14px rgba(237, 88, 88, 0.15);
+}
+
+@keyframes studioButtonSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.is-studio button,
+  body.is-studio [role="button"],
+  body.is-studio .upload-pill {
+    transition: none;
+  }
+
+  body.is-studio button.is-working::after {
+    animation: none;
+    border-top-color: rgba(231, 246, 255, 0.92);
   }
 }

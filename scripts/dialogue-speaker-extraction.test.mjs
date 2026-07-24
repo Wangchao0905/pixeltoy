@@ -51,6 +51,70 @@ assert.ok(!/角色：/.test(rendered), "不应出现占位符「角色：」");
 const withSpeaker = backfillDialogueSpeakers(normalizeDialogueItems(["沈一航：饭好了没有？"], "zh"), beatD);
 assert.equal(withSpeaker[0].speaker, "沈一航", "模型自带 speaker 应保留");
 
+// 英文分镜回填:纯中文剧本没有英文台词时,英文模型行仍须只保留英文,不得追加中文。
+const bilingualFallbackBeat = "NANA：睡不着，亲爱的？DYLAN：我也是。NANA：那我们聊聊。";
+const englishBeat = dialoguesForText(bilingualFallbackBeat, "en");
+const englishWithSpeakers = backfillDialogueSpeakers(
+  normalizeDialogueItems(["NANA：Can't sleep either, sweetheart?", "DYLAN：Me neither."], "en"),
+  englishBeat,
+  { positional: true, dialogueLanguage: "en" },
+);
+assert.deepEqual(
+  englishWithSpeakers,
+  [
+    { speaker: "NANA", text: "Can't sleep either, sweetheart?" },
+    { speaker: "DYLAN", text: "Me neither." },
+  ],
+  "英文模型带 speaker 时应只输出目标语言对白",
+);
+
+// 英文模型未带 speaker 时,调用点 A 按本镜节拍同下标回填,仍不得追加中文剧本行。
+const englishWithoutSpeakers = backfillDialogueSpeakers(
+  normalizeDialogueItems(["Can't sleep either, sweetheart?", "Me neither."], "en"),
+  englishBeat,
+  { positional: true, dialogueLanguage: "en" },
+);
+assert.deepEqual(
+  englishWithoutSpeakers,
+  [
+    { speaker: "NANA", text: "Can't sleep either, sweetheart?" },
+    { speaker: "DYLAN", text: "Me neither." },
+  ],
+  "英文模型无 speaker 时应按位置回填且不混入中文",
+);
+const englishRendered = seedanceDialogueText({ dialogues: englishWithoutSpeakers });
+assert.equal(englishRendered, "NANA：Can't sleep either, sweetheart? / DYLAN：Me neither.", "英文 Seedance 台词应带 speaker 且纯英文");
+assert.ok(!/[\u4e00-\u9fff]/.test(englishRendered), "英文 Seedance 台词不得出现中文");
+
+// 中文模式仍可把模型漏掉的中文剧本对白追加回来。
+const chineseWithMissing = backfillDialogueSpeakers(
+  normalizeDialogueItems(["NANA：睡不着，亲爱的？"], "zh"),
+  dialoguesForText(bilingualFallbackBeat, "zh"),
+  { dialogueLanguage: "zh" },
+);
+assert.equal(chineseWithMissing.length, 3, "中文模式仍应追加本镜缺失对白");
+assert.ok(chineseWithMissing.every((item) => item.speaker && /[\u4e00-\u9fff]/.test(item.text)), "中文模式应保持说话人和中文台词");
+
+// 调用点 B 使用全剧本 speakerMap,即使 map 顺序与 shot 不同也只能按文本匹配,不能按位置错配。
+const unorderedSpeakerMap = [
+  { speaker: "NANA", text: "睡不着，亲爱的？" },
+  { speaker: "DYLAN", text: "我也是。" },
+];
+const unorderedShot = dialoguesForShotWithSpeakers(
+  "设计块无台词",
+  "对白：DYLAN：我也是。 / NANA：睡不着，亲爱的？",
+  unorderedSpeakerMap,
+  "zh",
+);
+assert.deepEqual(
+  unorderedShot.map(({ speaker, text }) => ({ speaker, text })),
+  [
+    { speaker: "DYLAN", text: "我也是。" },
+    { speaker: "NANA", text: "睡不着，亲爱的？" },
+  ],
+  "全剧本 speakerMap 调用点不得按位置错配 speaker",
+);
+
 // seedance 分镜设计块(剧情动作/光线/调色…字段)不得被当成对白说话人。
 const designBlock =
   "推荐时长：15s画幅：9:16 vertical剧情动作：全片强制超写实真人电影实拍质感。" +

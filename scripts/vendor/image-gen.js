@@ -247,6 +247,41 @@ function collectImages(event, images = []) {
   return images;
 }
 
+async function readImageResponse(response) {
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  if (contentType.includes("json")) {
+    const payload = await response.json().catch((error) => {
+      throw new UserError("json_parse_error", "图片接口返回的 JSON 无法解析", { reason: error.message });
+    });
+    throwIfErrorEvent(payload);
+    const images = collectImages(payload);
+    if (images.length) return { images, partial: false };
+    throw new UserError("no_image_result", "接口返回成功，但没有收到图片结果数据", { payload });
+  }
+
+  const images = [];
+  let lastPartialImages = [];
+  for await (const event of readSseJson(response)) {
+    throwIfErrorEvent(event);
+    const eventImages = collectImages(event);
+    if (isPartialImageEvent(event)) {
+      if (eventImages.length) lastPartialImages = eventImages;
+      continue;
+    }
+    if (eventImages.length) images.push(...eventImages);
+  }
+  if (images.length) return { images, partial: false };
+  if (lastPartialImages.length) return { images: lastPartialImages, partial: true };
+  throw new UserError("no_image_result", "流结束前没有收到图片结果数据");
+}
+
+function shouldFallbackToResponses(error) {
+  const status = Number(error?.detail?.status || 0);
+  if (![400, 404, 405, 422, 501].includes(status)) return false;
+  const text = `${error?.message || ""} ${error?.detail?.body || ""}`.toLowerCase();
+  return /image|model|stream|response_format|parameter|unsupported|not found|method/.test(text);
+}
+
 function outputPathFor(out, index, total, defaultName) {
   const target = out || defaultName;
   const ext = path.extname(target);
@@ -284,7 +319,7 @@ async function buildRequest(args, mode) {
         headers: {
           Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
           "Content-Type": "application/json",
-          Accept: "text/event-stream",
+          Accept: "application/json",
         },
         body: JSON.stringify({
           model: args.model || "gpt-image-2",
@@ -292,7 +327,7 @@ async function buildRequest(args, mode) {
           n,
           size: args.size || "1024x1024",
           quality: args.quality || "auto",
-          stream: true,
+          stream: false,
           response_format: "b64_json",
         }),
       },
@@ -368,6 +403,34 @@ async function buildRequest(args, mode) {
   };
 }
 
+function buildTextResponsesRequest(args) {
+  const prompt = requireArg(args, "prompt");
+  return {
+    url: buildApiUrl(args["base-url"], "/v1/responses"),
+    options: {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({
+        model: args["orchestration-model"] || "gpt-5.4-mini",
+        stream: true,
+        input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+        tools: [{
+          type: "image_generation",
+          model: args.model || "gpt-image-2",
+          size: args.size || "1024x1024",
+          quality: args.quality || "auto",
+          output_format: args["output-format"] || "png",
+        }],
+        tool_choice: { type: "image_generation" },
+      }),
+    },
+  };
+}
+
 async function main() {
   const args = parseArgs();
   if (args.help) {
@@ -378,30 +441,22 @@ async function main() {
   const n = intArg(args, "n", 1);
   const timeout = intArg(args, "timeout", 900);
   const request = await buildRequest(args, mode);
-  const response = await fetchWithTimeout(request.url, request.options, timeout);
-  await ensureOkResponse(response, request.url);
+  let response;
+  let usedResponsesFallback = false;
+  try {
+    response = await fetchWithTimeout(request.url, request.options, timeout);
+    await ensureOkResponse(response, request.url);
+  } catch (error) {
+    if (mode !== "text" || !shouldFallbackToResponses(error)) throw error;
+    const fallback = buildTextResponsesRequest(args);
+    response = await fetchWithTimeout(fallback.url, fallback.options, timeout);
+    await ensureOkResponse(response, fallback.url);
+    usedResponsesFallback = true;
+  }
 
-  let lastPartialImages = [];
-  for await (const event of readSseJson(response)) {
-    throwIfErrorEvent(event);
-    const images = collectImages(event);
-    if (isPartialImageEvent(event)) {
-      if (images.length) lastPartialImages = images;
-      continue;
-    }
-    if (images.length) {
-      const paths = await saveImages(images.slice(0, n), args.out || request.defaultOut, request.defaultOut);
-      process.stdout.write(`${JSON.stringify({ ok: true, mode, paths }, null, 2)}\n`);
-      return;
-    }
-  }
-  // 某些网关只发送 partial_image_b64 后就关闭 SSE,使用最后一张预览图避免整张图片任务误报失败。
-  if (lastPartialImages.length) {
-    const paths = await saveImages(lastPartialImages.slice(0, n), args.out || request.defaultOut, request.defaultOut);
-    process.stdout.write(`${JSON.stringify({ ok: true, mode, paths, partial: true }, null, 2)}\n`);
-    return;
-  }
-  throw new UserError("no_image_result", "流结束前没有收到图片结果数据", { mode });
+  const result = await readImageResponse(response);
+  const paths = await saveImages(result.images.slice(0, n), args.out || request.defaultOut, request.defaultOut);
+  process.stdout.write(`${JSON.stringify({ ok: true, mode, paths, responsesFallback: usedResponsesFallback, ...(result.partial ? { partial: true } : {}) }, null, 2)}\n`);
 }
 
 main().catch((error) => {

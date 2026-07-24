@@ -20,5 +20,14 @@ if (!server.includes('require("node:dns")') || !server.includes('dns.setDefaultR
 if (!server.includes('PIXEL_TOYS_IMAGE_CONCURRENCY || "4"') || !server.includes("enqueueCanvasImageJob")) {
   throw new Error("canvas image jobs must preserve four-way concurrency behind a bounded queue");
 }
+if (!imageGen.includes('Accept: "application/json"') || !imageGen.includes("stream: false")) {
+  throw new Error("text image generation must support the standard non-streaming JSON response");
+}
+if (!imageGen.includes("function buildTextResponsesRequest") || !imageGen.includes("function shouldFallbackToResponses")) {
+  throw new Error("text image generation must fall back to the Responses image tool when the direct route is rejected");
+}
+if (!server.includes('--orchestration-model') || !server.includes("const detail = parseImageGenFailure(text)")) {
+  throw new Error("image generation failures must retain the orchestration model and upstream HTTP details");
+}
 
 console.log("image generation network routing test passed");

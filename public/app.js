@@ -3,6 +3,7 @@ const WORKSPACE_LAYOUT_VERSION = "green-flow-v5-no-map";
 const WORKSPACE_SCALE_KEY = `pixelToys.workspaceScale.${WORKSPACE_LAYOUT_VERSION}`;
 const STUDIO_TAB_KEY = `pixelToys.activeStudioTab.${WORKSPACE_LAYOUT_VERSION}`;
 const INITIAL_PROJECT_ID = new URLSearchParams(window.location.search).get("project") || "";
+const WORKFLOW_PREVIEW_MODE = new URLSearchParams(window.location.search).get("preview") === "workflow";
 const WORKSPACE_MODE_KEY = "pixelToys.workspaceMode";
 const WORKSPACE_MODE_MIGRATION_KEY = "pixelToys.workspaceModeMigration.v2";
 const WINDOW_Z_KEY = "pixelToys.windowZ";
@@ -53,7 +54,7 @@ function normalizeStoredWorkspaceMode(value) {
 
 function normalizeStoredStudioTab(value) {
   const tab = String(value || "").trim();
-  return ["assets", "storyboards", "video", "logs"].includes(tab) ? tab : "assets";
+  return ["assets", "storyboards", "shots", "video", "logs"].includes(tab) ? tab : "assets";
 }
 
 function readImageExploreHistory(user = null) {
@@ -1174,7 +1175,7 @@ async function readScriptUpload(file) {
   return { isDocx, text: String(text) };
 }
 
-async function applyScriptUpload(file, { textareaSelector, nameSelector, titleSelector = "", requireSave = false } = {}) {
+async function applyScriptUpload(file, { textareaSelector, nameSelector, titleSelector = "", requireSave = false, label = "剧本" } = {}) {
   const textarea = $(textareaSelector);
   if (!textarea) throw new Error("找不到剧本编辑框");
   const { isDocx, text } = await readScriptUpload(file);
@@ -1183,7 +1184,7 @@ async function applyScriptUpload(file, { textareaSelector, nameSelector, titleSe
   if (name) name.textContent = file.name;
   const title = titleSelector ? $(titleSelector) : null;
   if (title && !title.value) title.value = file.name.replace(/\.(md|txt|docx)$/i, "");
-  toast(isDocx ? `DOCX 剧本已提取${requireSave ? "，请点击保存" : ""}` : `剧本已载入${requireSave ? "，请点击保存" : ""}`);
+  toast(isDocx ? `DOCX ${label}已提取${requireSave ? "，请点击保存" : ""}` : `${label}已载入${requireSave ? "，请点击保存" : ""}`);
 }
 
 const referenceUploadConcurrency = 2;
@@ -1447,6 +1448,79 @@ function showStudio() {
   $("#studioShell").classList.remove("hidden");
   document.body.classList.add("is-studio");
   document.body.classList.toggle("is-explore-ui", state.exploreEnabled);
+}
+
+function workflowPreviewState() {
+  const assetManifest = {
+    confirmed: true,
+    dialogueLanguage: "en",
+    items: [
+      { id: "LIN_XIA", type: "Character", label: "林夏", usage: "主角，站台入口" },
+      { id: "RED_CASE", type: "Prop", label: "红色手提箱", usage: "SC 02" },
+      { id: "NIGHT_PLATFORM", type: "Scene", label: "夜间站台", usage: "SC 01 - 06" },
+      { id: "TRAIN_LIGHTS", type: "Insert", label: "列车灯光", usage: "SC 03" },
+    ],
+  };
+  const assetSlots = [
+    { id: "LIN_XIA", type: "Character", label: "林夏", status: "ready", statusLabel: "已就绪", generated: true, missing: false, failed: false },
+    { id: "RED_CASE", type: "Prop", label: "红色手提箱", status: "missing", statusLabel: "缺失", generated: false, missing: true, failed: false },
+    { id: "NIGHT_PLATFORM", type: "Scene", label: "夜间站台", status: "ready", statusLabel: "已就绪", generated: true, missing: false, failed: false },
+    { id: "TRAIN_LIGHTS", type: "Insert", label: "列车灯光", status: "missing", statusLabel: "缺失", generated: false, missing: true, failed: false },
+  ];
+  const project = {
+    id: "preview-workflow",
+    title: "两夜车站",
+    episodeSlug: "e01",
+    model: "Seedance 2.0",
+    counts: { parsedAssets: 4, assets: 2, rawClips: 2 },
+  };
+  return {
+    ok: true,
+    loading: false,
+    runtime: {},
+    project,
+    contents: {
+      script: "夜班站台即将关闭。林夏握着一把红色手提箱，站在雨幕中。远处的末班车亮起尾灯，另一个人从站台另一端奔来。",
+      storyboard: "",
+      assetManifest: JSON.stringify(assetManifest),
+      assetPrompts: "",
+      seedancePrompts: "",
+      config: "",
+    },
+    assetManifest,
+    assets: [],
+    assetSlots,
+    storyboards: [],
+    storyboardSlots: [
+      { id: "SC_01", label: "SC 01 / 车站入口", status: "ready", statusLabel: "ready" },
+      { id: "SC_02", label: "SC 02 / 红色手提箱", status: "missing", statusLabel: "missing prop" },
+      { id: "SC_03", label: "SC 03 / 列车灯光", status: "queued", statusLabel: "queued" },
+      { id: "SC_04", label: "SC 04 / 追逐开始", status: "draft", statusLabel: "draft" },
+      { id: "SC_05", label: "SC 05 / 月台对峙", status: "ready", statusLabel: "asset locked" },
+      { id: "SC_06", label: "SC 06 / 远景收束", status: "ready", statusLabel: "ready" },
+    ],
+    referenceKits: [],
+    referenceKitShots: [],
+    teamReferences: [],
+    videos: [],
+    videoProgress: { total: 6, completed: 2, running: true, items: [] },
+    videoConfigStatus: { exists: true, ready: false },
+    finalCut: null,
+    chatcut: null,
+    jobs: [],
+    summary: null,
+  };
+}
+
+function showWorkflowPreview() {
+  state.exploreEnabled = false;
+  state.selectedId = "";
+  state.activeWorkspaceMode = "script";
+  state.activeStudioTab = "assets";
+  state.project = workflowPreviewState();
+  showStudio();
+  renderWorkspace();
+  setWorkflowFocus("script", { persist: false });
 }
 
 function openProjectModal() {
@@ -2830,6 +2904,7 @@ function studioTabExists(tab) {
 function setWorkspaceMode(mode, { persist = true } = {}) {
   const nextMode = PixelToysWorkspaceShell.normalizeWorkspaceMode(mode);
   state.activeWorkspaceMode = nextMode;
+  document.body.dataset.studioFocus = studioWorkflowFocusFromMode(nextMode);
   if (persist) localStorage.setItem(layoutStorageKey(WORKSPACE_MODE_KEY, state.authUser), nextMode);
   $$("[data-workspace-mode-button]").forEach((button) => {
     const active = button.dataset.workspaceModeButton === nextMode;
@@ -2850,12 +2925,13 @@ function setWorkspaceMode(mode, { persist = true } = {}) {
   }
   if (nextMode === "shots") renderShotsTable();
   if (state.project?.project) renderStudioFlowStatus(state.project);
+  updateStudioPrimaryRun();
   requestAnimationFrame(updateWorkspaceSize);
 }
 
 function setStudioTab(tab, { persist = true } = {}) {
   const nextTab = studioTabExists(tab) ? tab : "assets";
-  const modeMap = { storyboards: "storyboard", assets: "assets", video: "video", logs: "assets" };
+  const modeMap = { storyboards: "storyboard", assets: "assets", shots: "shots", video: "video", logs: "assets" };
   state.activeStudioTab = nextTab;
   if (persist) localStorage.setItem(layoutStorageKey(STUDIO_TAB_KEY, state.authUser), nextTab);
   $$("[data-studio-tab]").forEach((button) => {
@@ -2866,22 +2942,61 @@ function setStudioTab(tab, { persist = true } = {}) {
   setWorkspaceMode(modeMap[nextTab] || nextTab, { persist });
 }
 
+function studioWorkflowFocusFromMode(mode = state.activeWorkspaceMode) {
+  if (mode === "image" || mode === "assets") return "assets";
+  if (mode === "storyboard") return "board";
+  if (mode === "shots") return "shots";
+  if (mode === "video") return "video";
+  return "script";
+}
+
+function setWorkflowFocus(focus, { persist = true } = {}) {
+  const key = String(focus || "").trim();
+  const modeMap = {
+    script: "script",
+    assets: "assets",
+    board: "storyboard",
+    storyboard: "storyboard",
+    shots: "shots",
+    video: "video",
+    cut: "video",
+  };
+  const tabMap = {
+    assets: "assets",
+    board: "storyboards",
+    storyboard: "storyboards",
+    shots: "shots",
+    video: "video",
+    cut: "video",
+  };
+  if (tabMap[key]) state.activeStudioTab = tabMap[key];
+  setWorkspaceMode(modeMap[key] || "script", { persist });
+}
+
 function isAssetExtracting() {
   return !!state.uiBusy.assetExtracting || !!state.uiBusy.projectCreating;
 }
 
 function flowStepClass(done, active, blocked = false) {
-  if (blocked) return "warn";
-  if (active) return "active";
-  if (done) return "ok";
-  return "";
+  const classes = [];
+  if (blocked) classes.push("warn");
+  else if (done) classes.push("ok");
+  if (active) classes.push("active");
+  return classes.join(" ");
+}
+
+function finalCutOutputReady(finalCut) {
+  return !!finalCut?.output?.url;
 }
 
 function renderStudioFlowStatus(data = state.project) {
   const node = $("#studioFlowStatus");
   if (!node) return;
+  const progress = $("#studioFlowProgress");
   if (!data?.project) {
     node.innerHTML = "";
+    if (progress) progress.textContent = "00 / 06";
+    updateStudioPrimaryRun(null);
     renderStudioContext(null, []);
     renderStudioQueue(null);
     return;
@@ -2903,59 +3018,105 @@ function renderStudioFlowStatus(data = state.project) {
   const videoTotal = videoProgress.total || videoProgress.items?.length || 0;
   const videoDone = videoProgress.completed || 0;
   const videoRunning = !!videoProgress.running;
+  const cutReady = finalCutOutputReady(data.finalCut);
+  const cutRunning = !!data.finalCut?.running;
+  const cutFailed = !!data.finalCut?.error;
+  const focus = studioWorkflowFocusFromMode();
+  // 进度比例(0..1)——状态栏动效按真实进度走;busy=正在干活但份数未知→用不定量流动条。
+  const frac = (ready, total) => (total > 0 ? Math.max(0, Math.min(1, ready / total)) : 0);
   const steps = [
     {
-      label: "剧本",
-      value: scriptReady ? "已载入" : "待输入",
+      key: "script",
+      label: "SCRIPT",
+      value: scriptReady ? "ready" : "empty",
       done: scriptReady,
-      active: !scriptReady,
+      active: focus === "script" || !scriptReady,
+      ratio: scriptReady ? 1 : 0,
+      busy: false,
     },
     {
-      label: "资产解析",
-      value: extracting ? "解析中" : manifestConfirmed ? "已确认" : manifestReady ? "待确认" : "待提取",
-      done: manifestConfirmed,
-      active: extracting || (scriptReady && !manifestConfirmed),
+      key: "assets",
+      label: "ASSETS",
+      value: extracting ? "parsing" : manifestConfirmed ? `${assetReady}/${assetTotal || "0"} ready` : manifestReady ? "confirm" : "missing",
+      done: manifestConfirmed && (!assetTotal || assetReady >= assetTotal),
+      active: focus === "assets" || extracting,
       blocked: !extracting && manifestReady && !manifestConfirmed,
+      // 解析阶段份数未知→流动;出图阶段按 已生成/总数 真实进度。
+      ratio: extracting ? null : manifestReady ? (assetTotal ? frac(assetReady, assetTotal) : manifestConfirmed ? 1 : 0) : 0,
+      busy: extracting || (assetRunning && !assetTotal),
     },
     {
-      label: "资产图",
-      value: assetTotal ? `${assetReady}/${assetTotal}` : "待生成",
-      done: !!assetTotal && assetReady >= assetTotal,
-      active: assetRunning,
-    },
-    {
-      label: "故事板",
-      value: storyboardSlots.length ? `${boardReady}/${storyboardSlots.length}` : "可选",
+      key: "board",
+      label: "BOARD",
+      value: storyboardSlots.length ? `${boardReady}/${storyboardSlots.length}` : "optional",
       done: !!storyboardSlots.length && boardReady >= storyboardSlots.length,
-      active: boardRunning,
+      active: focus === "board" || boardRunning,
+      ratio: storyboardSlots.length ? frac(boardReady, storyboardSlots.length) : 0,
+      busy: boardRunning && !storyboardSlots.length,
     },
     {
-      label: "视频配置",
-      value: config.ready ? "可提交" : config.exists ? "需补齐" : "待生成",
+      key: "shots",
+      label: "SHOTS",
+      value: config.ready ? "ready" : config.exists ? "draft" : "draft",
       done: !!config.ready,
-      active: manifestConfirmed && !config.ready,
+      active: focus === "shots",
       blocked: !!config.exists && !config.ready,
+      ratio: config.ready ? 1 : 0,
+      busy: false,
     },
     {
-      label: "视频片段",
-      value: videoTotal ? `${videoDone}/${videoTotal}` : "待开始",
+      key: "video",
+      label: "VIDEO",
+      value: videoTotal ? `${videoDone}/${videoTotal}` : "queued",
       done: !!videoTotal && videoDone >= videoTotal,
-      active: videoRunning,
+      active: focus === "video" || videoRunning,
+      // 视频片段按 完成/总数 真实进度推进。
+      ratio: videoTotal ? frac(videoDone, videoTotal) : 0,
+      busy: videoRunning && !videoTotal,
+    },
+    {
+      key: "cut",
+      label: "CUT",
+      value: cutReady ? "ready" : cutRunning ? "assembling" : cutFailed ? "failed" : "locked",
+      done: cutReady,
+      active: focus === "cut" || cutRunning,
+      blocked: cutFailed,
+      // 剪辑合成无份数→流动动效。
+      ratio: cutReady ? 1 : 0,
+      busy: cutRunning,
     },
   ];
   node.innerHTML = steps
     .map(
-      (step) => `
-        <button class="studio-flow-step ${flowStepClass(step.done, step.active, step.blocked)}" type="button" data-flow-tab="${step.label === "故事板" ? "storyboards" : step.label === "视频片段" || step.label === "视频配置" ? "video" : "assets"}">
-          <span>${escapeHtml(step.label)}</span>
-          <strong>${escapeHtml(step.value)}</strong>
-        </button>
-      `,
+      (step) => {
+        // 状态栏进度条状态:done=满绿静止;determinate=按真实比例填充(平滑推进);
+        // indeterminate=正在干活但份数未知,用流动条;idle=空。
+        const progressState = step.done
+          ? "done"
+          : step.busy
+            ? "indeterminate"
+            : step.ratio > 0
+              ? "determinate"
+              : "idle";
+        const ratio = Math.max(0, Math.min(1, step.done ? 1 : step.ratio || 0));
+        return [
+          '<button class="studio-flow-step ' + flowStepClass(step.done, step.active, step.blocked) + '" type="button" data-workflow-focus="' + step.key + '" data-progress-state="' + progressState + '" style="--flow-ratio:' + ratio.toFixed(3) + '">',
+          '<i class="studio-flow-dot" aria-hidden="true"></i>',
+          '<span>' + escapeHtml(step.label) + '</span>',
+          '<strong>' + escapeHtml(step.value) + '</strong>',
+          '<i class="studio-flow-fill" aria-hidden="true"></i>',
+          '</button>',
+        ].join("");
+      },
     )
     .join("");
-  node.querySelectorAll("[data-flow-tab]").forEach((button) => {
-    button.addEventListener("click", () => setStudioTab(button.dataset.flowTab || "assets"));
+  node.querySelectorAll("[data-workflow-focus]").forEach((button) => {
+    button.addEventListener("click", () => setWorkflowFocus(button.dataset.workflowFocus || "script"));
   });
+  if (progress) {
+    const activeIndex = Math.max(0, steps.findIndex((step) => step.active));
+    progress.textContent = `${String(activeIndex + 1).padStart(2, "0")} / 06`;
+  }
   renderStudioContext(data, steps);
   renderStudioQueue(data);
 }
@@ -2984,15 +3145,15 @@ function renderStudioContext(data, steps) {
   }
   const mode = studioContextMode();
   const labels = {
-    script: ["剧本", "剧本输入与分镜草稿准备"],
-    assets: ["资产图", "资产解析与参考图"],
-    storyboard: ["故事板", "Production Board 连续性"],
-    shots: ["分镜", "镜头提示词与视频配置"],
-    video: ["视频", "视频片段队列"],
+    script: ["SCRIPT", "剧本输入与分镜草稿准备"],
+    assets: ["ASSETS", "资产解析与参考图"],
+    storyboard: ["BOARD", "Production Board 连续性"],
+    shots: ["SHOTS", "镜头提示词与视频配置"],
+    video: ["VIDEO", "视频片段队列"],
   };
   const [label, description] = labels[mode] || labels.assets;
-  const stepLabel = { script: "剧本", assets: "资产图", storyboard: "故事板", shots: "视频配置", video: "视频片段" }[mode] || "资产图";
-  const step = steps.find((item) => item.label === stepLabel || (mode === "assets" && item.label === "资产解析")) || steps[0];
+  const stepKey = { script: "script", assets: "assets", image: "assets", storyboard: "board", shots: "shots", video: "video" }[mode] || "assets";
+  const step = steps.find((item) => item.key === stepKey) || steps[0];
   const project = data.project;
   const counts = project.counts || {};
   const nextMap = {
@@ -3000,15 +3161,67 @@ function renderStudioContext(data, steps) {
     assets: `故事板 · ${(data.storyboardSlots || []).length || 0} 张`,
     storyboard: `视频配置 · ${data.videoConfigStatus?.ready ? "可提交" : "待生成"}`,
     shots: `视频片段 · ${data.videoProgress?.total || 0} 个`,
-    video: `成片 · ${data.finalCut ? "可查看" : "等待片段"}`,
+    video: `成片 · ${finalCutOutputReady(data.finalCut) ? "可查看" : "等待片段"}`,
   };
-  title.textContent = `CONTEXT / ${label.toUpperCase()}`;
+  title.textContent = `CONTEXT / ${label}`;
   copy.textContent = description;
   stage.textContent = label;
   status.textContent = step?.value || "待开始";
   downstream.textContent = nextMap[mode] || "等待输入";
-  action.disabled = false;
-  action.textContent = `查看${label}`;
+  action.disabled = WORKFLOW_PREVIEW_MODE;
+  action.textContent = `查看 ${label}`;
+  updateStudioPrimaryRun(data);
+}
+
+function studioPrimaryActionForMode(mode = state.activeWorkspaceMode, data = state.project) {
+  if (mode === "script") {
+    return { label: "Run: 生成分镜草稿", selector: "", focus: "script" };
+  }
+  if (mode === "image" || mode === "assets") {
+    return { label: "Run: 生成资产", selector: "[data-job='assets']", focus: "assets" };
+  }
+  if (mode === "storyboard") {
+    return { label: "Run: 生成故事板", selector: "[data-job='storyboards']", focus: "board" };
+  }
+  if (mode === "shots") {
+    return { label: "Run: 生成视频配置", selector: "#buildConfigBtn", focus: "shots" };
+  }
+  if (mode === "video") {
+    return finalCutOutputReady(data?.finalCut)
+      ? { label: "Run: 组装成片", selector: "#assembleFinalCutBtn", focus: "video" }
+      : { label: "Run: 视频生成", selector: "#generateAllSegments", focus: "video" };
+  }
+  return { label: "Run: 当前步骤", selector: "", focus: studioWorkflowFocusFromMode(mode) };
+}
+
+function updateStudioPrimaryRun(data = state.project) {
+  const button = $("#studioPrimaryRun");
+  if (!button) return;
+  const action = studioPrimaryActionForMode(state.activeWorkspaceMode, data);
+  button.textContent = action.label;
+  button.dataset.workflowFocus = action.focus || "script";
+  button.dataset.targetSelector = action.selector || "";
+  button.disabled = WORKFLOW_PREVIEW_MODE || !data?.project;
+}
+
+async function runStudioPrimaryAction() {
+  const button = $("#studioPrimaryRun");
+  if (!button || button.disabled) return;
+  const focus = button.dataset.workflowFocus || studioWorkflowFocusFromMode();
+  const selector = button.dataset.targetSelector || "";
+  setWorkflowFocus(focus);
+  if (focus === "script") {
+    return generateDraft();
+  }
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  const target = selector ? document.querySelector(selector) : null;
+  if (!target || target.disabled) throw new Error("当前步骤还没有可执行动作");
+  if (selector === "[data-job='assets']") return startJob("assets");
+  if (selector === "[data-job='storyboards']") return startJob("storyboards");
+  if (selector === "#buildConfigBtn") return buildConfig();
+  if (selector === "#generateAllSegments") return generateAllVideoSegments();
+  if (selector === "#assembleFinalCutBtn") return assembleFinalCut();
+  throw new Error("当前步骤还没有可执行动作");
 }
 
 function renderStudioQueue(data) {
@@ -3569,7 +3782,6 @@ function renderStoryboardUploadTargets(slots, storyboards) {
 function renderAssetManifest(manifest) {
   const overview = $("#assetManifestOverview");
   const status = $("#assetManifestStatus");
-  const extractBtn = $("#extractAssetsBtn");
   const confirmBtn = $("#confirmAssetManifestBtn");
   const draftBtn = $("#draftBtn");
   const generateAssetBtn = document.querySelector("[data-job='assets']");
@@ -3589,10 +3801,6 @@ function renderAssetManifest(manifest) {
       : "覆盖校验未完成"
     : "待覆盖校验";
 
-  if (extractBtn) {
-    extractBtn.disabled = extracting;
-    extractBtn.textContent = extracting ? "生成中..." : "生成分镜草稿";
-  }
   if (draftBtn) {
     draftBtn.disabled = extracting;
     draftBtn.textContent = extracting ? "解析中..." : "资产提取";
@@ -6511,6 +6719,11 @@ function bind() {
     loadProjects(false).catch((error) => toast(error.message));
   };
   $("#backToProjects").addEventListener("click", goBackToProjects);
+  $("#studioCommandButton")?.addEventListener("click", () => toast("命令面板会在下一阶段接入；当前可直接点击流程节点聚焦步骤"));
+  $("#studioPrimaryRun")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => runStudioPrimaryAction()).catch((error) => toast(error.message));
+  });
   $("#studioProjectsButton")?.addEventListener("click", goBackToProjects);
   $("#projectDisplayNameForm")?.addEventListener("submit", (event) => saveProjectDisplayName(event).catch((error) => toast(error.message)));
   $$("[data-studio-tab]").forEach((button) => {
@@ -6592,6 +6805,21 @@ function bind() {
         textareaSelector: "#scriptText",
         nameSelector: "#workflowScriptUploadName",
         requireSave: true,
+      });
+    } catch (error) {
+      toast(error.message);
+      event.target.value = "";
+    }
+  });
+  $("#assetDescriptionUpload")?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await applyScriptUpload(file, {
+        textareaSelector: "#assetDescriptionText",
+        nameSelector: "#assetDescriptionUploadName",
+        requireSave: true,
+        label: "资产文档",
       });
     } catch (error) {
       toast(error.message);
@@ -6711,10 +6939,6 @@ function bind() {
     const button = event.currentTarget;
     withStudioButtonFeedback(button, () => extractAssets()).catch((error) => toast(error.message));
   });
-  $("#extractAssetsBtn")?.addEventListener("click", (event) => {
-    const button = event.currentTarget;
-    withStudioButtonFeedback(button, () => generateDraft()).catch((error) => toast(error.message));
-  });
   $("#confirmAssetManifestBtn")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
     withStudioButtonFeedback(button, () => saveAssetManifest({ confirm: true })).catch((error) => toast(error.message));
@@ -6729,16 +6953,20 @@ function bind() {
 }
 
 bind();
-if (!INITIAL_PROJECT_ID && PixelToysWorkspaceShell.shouldEnableExplore({ serverEnabled: true, search: window.location.search })) {
-  state.exploreEnabled = true;
-  showProjectHome();
+if (WORKFLOW_PREVIEW_MODE) {
+  showWorkflowPreview();
+} else {
+  if (!INITIAL_PROJECT_ID && PixelToysWorkspaceShell.shouldEnableExplore({ serverEnabled: true, search: window.location.search })) {
+    state.exploreEnabled = true;
+    showProjectHome();
+  }
+  syncAuthUser();
+  // 若 URL 指定了项目(从画布"制作台"进来),同步直接进控制台外壳,避免异步加载期间
+  // 先闪一下项目列表首页。项目数据稍后由 loadProjects→loadProject 填充;若该项目不存在,
+  // loadProjects 内会回退到首页。
+  if (INITIAL_PROJECT_ID) showStudio();
+  loadProjects().catch((error) => toast(error.message));
 }
-syncAuthUser();
-// 若 URL 指定了项目(从画布"制作台"进来),同步直接进控制台外壳,避免异步加载期间
-// 先闪一下项目列表首页。项目数据稍后由 loadProjects→loadProject 填充;若该项目不存在,
-// loadProjects 内会回退到首页。
-if (INITIAL_PROJECT_ID) showStudio();
-loadProjects().catch((error) => toast(error.message));
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && state.exploreEnabled) setupExploreVideoPlayback();
 });

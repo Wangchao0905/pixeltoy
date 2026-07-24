@@ -64,7 +64,7 @@ const completeDesign = {
   for (const field of ["景别：", "摄像机 / 镜头：", "运镜：", "机位视角：", "画面：", "人声 OS：", "人物台词：", "音效："]) {
     assert.ok(server.includes(field), `自然语言模板必须包含 ${field}`);
   }
-  assert.match(server, /const modelPlan = readStoryboardModelPlan\(episodeRoot\)/);
+  assert.match(server, /const modelPlan = await ensureModelShotPlanForConfig\(episodeRoot, \{/);
   assert.match(buildVideoConfig, /modelShotPlanForConfig\(\{/);
   assert.match(buildVideoConfig, /assets: productionAssets/);
   assert.match(buildVideoConfig, /seedancePromptForShotMode\(shot, index, dialogueLanguage, storyboardsActive\)/);

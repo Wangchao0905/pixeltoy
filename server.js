@@ -4567,25 +4567,39 @@ function normalizeDialogueItems(value, dialogueLanguage = "en") {
 
 // 合并模型对白与剧本对白:优先保留模型台词内容,但说话人以剧本(带 speaker)为准回填。
 // - 模型行已带 speaker 的,保留;
-// - 模型行缺 speaker 的,按台词包含关系匹配剧本对白拿 speaker;匹配不到再退回剧本对白本身。
-function backfillDialogueSpeakers(modelItems = [], beatDialogues = [], { appendMissing = true } = {}) {
+// - 模型行缺 speaker 的,先按台词包含关系匹配,必要时由同序本镜对白兜底;
+// - appendMissing 只补入目标语言的剧本对白。
+function backfillDialogueSpeakers(
+  modelItems = [],
+  beatDialogues = [],
+  { appendMissing = true, positional = false, dialogueLanguage = "en" } = {},
+) {
   const model = Array.isArray(modelItems) ? modelItems.filter((item) => item?.text) : [];
   const script = Array.isArray(beatDialogues) ? beatDialogues.filter((item) => item?.text) : [];
-  if (!model.length) return script.slice(0, 4);
-  const filled = model.map((item) => {
+  if (!model.length) {
+    return script
+      .map((item) => ({ ...item, text: normalizeDialogueForLanguage(item.text, dialogueLanguage) }))
+      .filter((item) => item.text)
+      .slice(0, 4);
+  }
+  const filled = model.map((item, index) => {
     if (item.speaker) return item;
     const hit = script.find(
       (s) => s.speaker && (s.text.includes(item.text) || item.text.includes(s.text)),
     );
-    return hit ? { speaker: hit.speaker, text: item.text } : item;
+    if (hit) return { speaker: hit.speaker, text: item.text };
+    const positionalHit = positional && script[index]?.speaker ? script[index] : null;
+    return positionalHit ? { speaker: positionalHit.speaker, text: item.text } : item;
   });
   // 模型完全没提到、但剧本里有的对白(且带 speaker)补进来,避免漏台词。
   // appendMissing=false 时只补 speaker、不追加(用于全剧本 map:否则会把别的 shot 台词灌进来)。
   if (appendMissing) {
     for (const s of script) {
       if (!s.speaker) continue;
-      if (filled.some((d) => d.text.includes(s.text) || s.text.includes(d.text))) continue;
-      filled.push(s);
+      const text = normalizeDialogueForLanguage(s.text, dialogueLanguage);
+      if (!text) continue;
+      if (filled.some((d) => d.text.includes(text) || text.includes(d.text))) continue;
+      filled.push({ speaker: s.speaker, text });
     }
   }
   return filled.slice(0, 4);
@@ -4639,7 +4653,7 @@ function dialoguesForShotWithSpeakers(beat, sectionBody, speakerMap, dialogueLan
   if (texts.length) {
     const items = texts.slice(0, 4).map((text) => ({ speaker: "", text }));
     // appendMissing=false:只给本 shot 的模型台词补 speaker,不把全剧本其他台词灌进来。
-    return backfillDialogueSpeakers(items, speakerMap, { appendMissing: false });
+    return backfillDialogueSpeakers(items, speakerMap, { appendMissing: false, positional: false, dialogueLanguage });
   }
   // fallback:直接从剧本 beat 提取(beat 可能是真实剧本节拍)
   return dialoguesForText(beat, dialogueLanguage);
@@ -12346,6 +12360,18 @@ async function finalizeGeneratedCanvasAsset(entry = {}) {
 
 function classifyImageGenError(stderr = "", provider = "gpt") {
   const text = String(stderr || "");
+  const detail = parseImageGenFailure(text);
+  const status = Number(detail.status || 0);
+  const upstreamMessage = detail.upstreamMessage || detail.message || "";
+  if (status === 401 || status === 403) {
+    return provider === "ark"
+      ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
+      : "出图鉴权失败：请检查 OPENAI_API_KEY（apikey.fun 网关）。";
+  }
+  if (status === 429) return "生图接口限流（HTTP 429），请稍后重试。";
+  if (status === 400 && upstreamMessage) return `生图请求参数错误（HTTP 400）：${upstreamMessage}`;
+  if (status >= 500 && upstreamMessage) return `生图上游服务异常（HTTP ${status}）：${upstreamMessage}`;
+  if (status && upstreamMessage) return `生图接口失败（HTTP ${status}）：${upstreamMessage}`;
   if (/invalid|unauthorized|401|api key|token|鉴权|密钥/i.test(text)) {
     return provider === "ark"
       ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
@@ -12394,7 +12420,7 @@ async function createCanvasImageGeneration(body = {}) {
       ];
       if (references.length > 1) args.push("--reference-image", references.slice(1).join(path.delimiter));
     } else {
-      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--out", outPath, "--timeout", timeout];
+      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--out", outPath, "--timeout", timeout];
     }
   }
   const env = { ...process.env, OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "" };
@@ -17429,7 +17455,7 @@ function storyboardSystemPrompt() {
 
 必须遵守：
 - 只返回服务端可读取的结构化镜头计划，不输出 Markdown、散文提示词或解释；这个返回仅用于校验和保存，绝不能作为 Seedance 视频提示词提交。
-- 结构化字段内容使用中文，只有 dialogueLines 中的对白根据 dialogueLanguage 决定中文或英文。
+- 结构化字段内容使用中文；dialogueLines 每条必须严格按「说话人：目标语言台词」格式返回，说话人必须使用剧本中的角色名或代号，不得省略；英文模式台词用英文，中文模式台词用中文。
 - 严格根据剧本拆解，不得添加剧本没有的人物、地点、道具、怪物、武器或事件。
 - 每一集剧情视频总时长允许 ${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS} 秒，由剧本内容复杂度决定；不得为了凑时长增补剧情，镜头数量和秒数必须服务原剧本节拍。
 - 每个镜头必须有明确剧情依据、推荐时长、参考资产 refs、中文标题、中文分镜目的。
@@ -17458,7 +17484,7 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
       "beat": "对应剧本依据",
       "purpose": "分镜目标",
       "refs": ["S001_example", "C001_example"],
-      "dialogueLines": ["英文或中文对白"],
+      "dialogueLines": ["SPEAKER：目标语言台词（每条必须带说话人前缀；英文模式用英文，中文模式用中文）"],
       "design": {
         "shot_size": "双人侧面半身中近景",
         "camera_lens": "50mm 标准定焦",
@@ -17519,7 +17545,10 @@ function normalizeStoryboardShot(raw, index, context) {
   const modelItems = Array.isArray(raw.dialogueLines)
     ? normalizeDialogueItems(raw.dialogueLines.slice(0, 4), context.dialogueLanguage)
     : [];
-  const dialogueLines = backfillDialogueSpeakers(modelItems, beatDialogues);
+  const dialogueLines = backfillDialogueSpeakers(modelItems, beatDialogues, {
+    positional: true,
+    dialogueLanguage: context.dialogueLanguage,
+  });
   const videoDesign = sanitizeSeedanceDesign(raw.design);
   if (!title || !beat || !finalRefs.length || !hasCompleteSeedanceDesign(videoDesign)) {
     throw new Error(`视频分镜模型第 ${index + 1} 镜缺少有效资产引用或完整导演设计`);

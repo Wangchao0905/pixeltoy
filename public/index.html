@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=production-os-20260724-1" />
+    <link rel="stylesheet" href="/styles.css?v=production-os-20260724-release" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -293,16 +293,19 @@
 
         <main class="main studio-stage">
           <header class="topbar studio-topbar">
-            <div>
-              <p class="kicker">short drama pipeline</p>
-              <h1 id="projectTitle">选择或新建项目</h1>
+            <div class="studio-title-block">
+              <p class="kicker">PIXEL TOYS</p>
+              <h1><span id="projectTitle">选择或新建项目</span></h1>
               <form id="projectDisplayNameForm" class="project-display-name-form hidden">
                 <input id="projectDisplayNameInput" type="text" placeholder="输入项目名称，例如《镜界》" autocomplete="off" />
                 <button class="primary small" type="submit">保存名称</button>
               </form>
             </div>
             <div class="topbar-right">
-              <button id="backToProjects" class="ghost small" type="button">返回项目页</button>
+              <button id="backToProjects" class="ghost small studio-command-button" type="button">项目页</button>
+              <button id="studioCommandButton" class="ghost small studio-command-button" type="button">命令 <kbd>⌘ K</kbd></button>
+              <span class="studio-save-state">已保存</span>
+              <button id="studioPrimaryRun" class="primary small studio-primary-run" type="button">Run: 当前步骤</button>
               <div class="workspace-controls" aria-label="工作台缩放">
                 <button id="zoomOut" class="ghost small" type="button">-</button>
                 <span id="zoomLabel">100%</span>
@@ -318,6 +321,11 @@
             <h2>把剧本放进来，剩下交给流程。</h2>
             <p>资产图、分镜提示词、Seedance 配置和生成状态都会在这里集中显示。</p>
           </div>
+
+          <section class="studio-flow-strip" aria-label="流程状态">
+            <div id="studioFlowStatus" class="studio-flow-status"></div>
+            <span id="studioFlowProgress" class="studio-flow-progress">00 / 06</span>
+          </section>
 
           <div class="studio-workspace-layout">
             <div id="workspaceViewport" class="workspace-viewport hidden">
@@ -343,8 +351,8 @@
                     <div class="actions">
                       <div class="upload-row script-upload-row">
                         <input id="workflowScriptUpload" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-                        <label class="upload-pill" for="workflowScriptUpload">上传剧本</label>
-                        <span id="workflowScriptUploadName">TXT / DOCX</span>
+                        <label class="upload-pill" for="workflowScriptUpload" data-upload-tooltip="支持 TXT 和 DOCX">上传剧本</label>
+                        <span id="workflowScriptUploadName" aria-live="polite"></span>
                       </div>
                       <div class="segmented" role="radiogroup" aria-label="对白语言">
                         <label>
@@ -357,16 +365,11 @@
                         </label>
                       </div>
                       <button data-save="script" class="ghost" type="button">保存</button>
-                      <button id="extractAssetsBtn" class="primary" type="button">生成分镜草稿</button>
                     </div>
                   </div>
                   <p class="dual-input-hint">只写剧情，用于分镜/节拍。生成分镜草稿前请先到「资产图」完成资产提取。</p>
                   <textarea id="scriptText" class="editor tall"></textarea>
                 </section>
-              </section>
-
-              <section class="studio-flow-strip" aria-label="流程状态">
-                <div id="studioFlowStatus" class="studio-flow-status"></div>
               </section>
 
               <section class="studio-content-shell" aria-label="项目内容">
@@ -400,7 +403,18 @@
                           <button id="draftBtn" class="primary" type="button">资产提取</button>
                         </div>
                       </div>
-                      <p class="dual-input-hint">资产描述：只写人物/场景/道具的外观描述；资产名与剧情中的称呼保持一致以便严格匹配。留空则回退用剧情提取。</p>
+                      <div class="asset-document-source">
+                        <div class="asset-document-source-label">
+                          <strong>资产文档</strong>
+                          <span>可直接粘贴，或上传 TXT / DOCX</span>
+                        </div>
+                        <div class="asset-document-upload">
+                          <input id="assetDescriptionUpload" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                          <label class="upload-pill" for="assetDescriptionUpload" data-upload-tooltip="支持 TXT 和 DOCX">上传资产文档</label>
+                          <span id="assetDescriptionUploadName" aria-live="polite"></span>
+                        </div>
+                      </div>
+                      <p class="dual-input-hint">只写人物、场景和道具的外观描述；资产名与剧情中的称呼保持一致以便严格匹配。留空则回退用剧本提取资产。</p>
                       <textarea id="assetDescriptionText" class="editor" rows="6" placeholder="粘贴人物 / 场景 / 道具的外观描述。"></textarea>
                       <div id="assetManifestOverview" class="asset-manifest-overview"></div>
                       <button id="confirmAssetManifestBtn" class="primary" type="button">确认分类</button>
@@ -863,6 +877,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=script-upload-20260723"></script>
+    <script src="/app.js?v=studio-workflow-20260724-release"></script>
   </body>
 </html>

@@ -12339,15 +12339,56 @@ function seedreamImagePayload(entry = {}) {
   return payload;
 }
 
-async function runSeedreamCanvasImageJob(taskId) {
+function isCanvasImagePolicyFailure(rawError = "") {
+  return /moderation|safety|content[_\s-]?(?:policy|filter)|content_policy_violation|blocked|rejected|审核|敏感|违规|违禁|内容策略/i.test(String(rawError || ""));
+}
+
+function policySafeCanvasImagePrompt(prompt = "") {
+  const replacements = [
+    [/尸潮|丧尸|僵尸|亡灵|尸体|死尸/gi, "混乱人群的阴影"],
+    [/鲜血|血液|血迹|血泊|血污|流血|血腥/gi, "非具象深色痕迹"],
+    [/伤口|断肢|肢体残骸|内脏/gi, "衣物破损与散落物件"],
+    [/杀戮|屠杀|砍杀|刺杀|打斗|搏斗|战斗/gi, "紧张对峙与快速躲避"],
+    [/武器|匕首|刀剑|枪械|枪支/gi, "手持金属道具"],
+    [/\bzombies?\b|\bundead\b|\bcorpses?\b|\bdead bod(?:y|ies)\b/gi, "shadowy crowd"],
+    [/\bblood(?:y)?\b|\bgore\b|\bwounds?\b|\bsevered\b|\bdismembered\b/gi, "non-graphic dark trace"],
+    [/\bmurder(?:ing)?\b|\bkill(?:ing)?\b|\bslaughter\b|\bstabb?(?:ing)?\b|\bfight(?:ing)?\b|\bcombat\b/gi, "tense evasion"],
+    [/\bweapons?\b|\bguns?\b|\brifles?\b|\bknives?\b|\bswords?\b/gi, "handheld metal prop"],
+  ];
+  let safe = String(prompt || "");
+  for (const [pattern, replacement] of replacements) safe = safe.replace(pattern, replacement);
+  return [
+    "Safety rendering adjustment: depict an age-appropriate, non-graphic dramatic situation. Keep all action implied and convey tension only through composition, lighting, movement, and environmental storytelling.",
+    safe,
+  ].filter(Boolean).join("\n\n");
+}
+
+function withCanvasImagePrompt(args = [], prompt = "") {
+  const promptIndex = args.findIndex((value) => value === "--prompt");
+  if (promptIndex < 0 || promptIndex + 1 >= args.length) return args;
+  const next = [...args];
+  next[promptIndex + 1] = prompt;
+  return next;
+}
+
+async function runSeedreamCanvasImageJob(taskId, policyRetried = false, requestPrompt = "") {
   const entry = canvasImageJobs.get(taskId);
   if (!entry) return;
   try {
-    const raw = await callArkImageJson(seedreamImagePayload(entry));
+    const raw = await callArkImageJson(seedreamImagePayload({ ...entry, prompt: requestPrompt || entry.prompt }));
     await writeSeedreamImageResult(entry, raw);
     await completeCanvasImageJob(entry);
   } catch (error) {
-    Object.assign(entry, { status: "failed", message: classifyImageGenError(error?.message || "Seedream 图片生成失败", "ark") });
+    const detail = error?.message || "Seedream 图片生成失败";
+    if (!policyRetried && isCanvasImagePolicyFailure(detail)) {
+      Object.assign(entry, {
+        status: "running",
+        message: "提示词触发审核，正在按安全表达自动重试…",
+        policyRetry: true,
+      });
+      return runSeedreamCanvasImageJob(taskId, true, policySafeCanvasImagePrompt(entry.prompt));
+    }
+    Object.assign(entry, { status: "failed", message: classifyImageGenError(detail, "ark") });
   }
 }
 
@@ -12379,7 +12420,7 @@ function enqueueCanvasImageJob(taskId, run) {
   drainCanvasImageQueue();
 }
 
-function runCanvasImageJob(taskId, args, env, attempt = 0) {
+function runCanvasImageJob(taskId, args, env, attempt = 0, policyRetried = false) {
   return new Promise((resolve) => {
     let child;
     let stderr = "";
@@ -12414,13 +12455,24 @@ function runCanvasImageJob(taskId, args, env, attempt = 0) {
         } else {
           const diagnostics = stderr || spawnError;
           const failMessage = classifyImageGenError(diagnostics) || `出图失败（退出码 ${code}）`;
+          if (!policyRetried && isCanvasImagePolicyFailure(diagnostics)) {
+            Object.assign(entry, {
+              status: "running",
+              message: "提示词触发审核，正在按安全表达自动重试…",
+              policyRetry: true,
+            });
+            entry.child = null;
+            retryScheduled = true;
+            setTimeout(() => {
+              runCanvasImageJob(taskId, withCanvasImagePrompt(args, policySafeCanvasImagePrompt(entry.prompt)), env, attempt, true).then(resolve, resolve);
+            }, 0);
           // 网络、流中断、空结果、限流和 5xx 自动重试,最多 2 次;审核/参数类不重试。
-          if (attempt < 2 && /stream|api_stream_error|no_image_result|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|rate.?limit|429|500|502|503|504|522|523|524|限流|超时|流/i.test(diagnostics)) {
+          } else if (attempt < 2 && /stream|api_stream_error|no_image_result|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|rate.?limit|429|500|502|503|504|522|523|524|限流|超时|流/i.test(diagnostics)) {
             Object.assign(entry, { status: "running", message: `上游波动，正在自动重试（${attempt + 1}/2）…` });
             entry.child = null;
             retryScheduled = true;
             setTimeout(() => {
-              runCanvasImageJob(taskId, args, env, attempt + 1).then(resolve, resolve);
+              runCanvasImageJob(taskId, args, env, attempt + 1, policyRetried).then(resolve, resolve);
             }, 4000 * (attempt + 1));
           } else {
             Object.assign(entry, { status: "failed", message: failMessage });
@@ -12483,6 +12535,7 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
       : "出图鉴权失败：请检查 OPENAI_API_KEY（apikey.fun 网关）。";
   }
   if (status === 429) return "生图接口限流（HTTP 429），请稍后重试。";
+  if (isCanvasImagePolicyFailure(`${upstreamMessage} ${text}`)) return "提示词被安全审核拦截，请调整后重试。";
   if (status === 400 && upstreamMessage) return `生图请求参数错误（HTTP 400）：${upstreamMessage}`;
   if (status >= 500 && upstreamMessage) return `生图上游服务异常（HTTP ${status}）：${upstreamMessage}`;
   if (status && upstreamMessage) return `生图接口失败（HTTP ${status}）：${upstreamMessage}`;
@@ -12492,7 +12545,7 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
       : "出图鉴权失败：请检查 OPENAI_API_KEY（apikey.fun 网关）。";
   }
   if (/timeout|timed out|ETIMEDOUT/i.test(text)) return "出图超时，请重试或降低分辨率。";
-  if (/moderation|safety|blocked|rejected/i.test(text)) return "提示词被安全审核拦截，请调整后重试。";
+  if (isCanvasImagePolicyFailure(text)) return "提示词被安全审核拦截，请调整后重试。";
   return text.split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 200) || "";
 }
 

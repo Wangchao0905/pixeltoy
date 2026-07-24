@@ -18536,6 +18536,33 @@ function manifestItemsToAssets(manifest) {
   }));
 }
 
+function draftAssetManifestForEpisode(episodeRoot) {
+  const localManifest = readAssetManifest(episodeRoot)?.data || {};
+  if (Array.isArray(localManifest.items) && localManifest.items.length) return localManifest;
+
+  const projectItems = [];
+  const seenKeys = new Set();
+  let firstProjectManifest = null;
+  for (const projectEpisodeRoot of projectEpisodeRoots(episodeRoot)) {
+    const projectManifest = readAssetManifest(projectEpisodeRoot)?.data || {};
+    const items = Array.isArray(projectManifest.items) ? projectManifest.items : [];
+    if (!items.length) continue;
+    if (!firstProjectManifest) firstProjectManifest = projectManifest;
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const keys = [
+        compactLine(item.id) ? `id:${normalizeAssetMatchText(item.id)}` : "",
+        compactLine(item.label) ? `label:${normalizeAssetMatchText(item.label)}` : "",
+      ].filter(Boolean);
+      if (!keys.length || keys.some((key) => seenKeys.has(key))) continue;
+      keys.forEach((key) => seenKeys.add(key));
+      projectItems.push(item);
+    }
+  }
+  if (!projectItems.length) return localManifest;
+  return { ...(firstProjectManifest || localManifest), items: projectItems };
+}
+
 function assetPromptsFromManifest(manifest) {
   const title = manifest.title || "Asset Prompts";
   const assets = manifestItemsToAssets(manifest);
@@ -18803,9 +18830,9 @@ async function buildDraft(episodeRoot, options = {}) {
   const dialogues = parseSpeakerDialogues(videoScript);
   // 分镜草稿只使用「资产提取」的资产，绝不重新解析或覆盖它。资产提取结果可直接进入
   // 分镜模型；确认按钮只是人工校对入口，不能成为草稿生成的隐藏前置条件。
-  const sourceAssetManifest = readAssetManifest(episodeRoot)?.data || {};
+  const sourceAssetManifest = draftAssetManifestForEpisode(episodeRoot);
   if (!(Array.isArray(sourceAssetManifest.items) && sourceAssetManifest.items.length)) {
-    throw new Error("请先完成「资产提取」，再生成分镜草稿");
+    throw new Error("本项目还没有可用资产，请先在资产图完成首集资产生成");
   }
   let assets = manifestItemsToAssets(sourceAssetManifest);
   const analyzerResult = { ok: true, model: sourceAssetManifest.analyzer?.model || "资产提取结果" };
@@ -18814,7 +18841,8 @@ async function buildDraft(episodeRoot, options = {}) {
   const targetShotCount = preferredShotCount(videoScript, continuityBeats);
   const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, { dialogueLanguage });
   const durationPlan = planEpisodeDuration({ shotCount: beats.length || targetShotCount, beats });
-  const storyboardModelResult = await callStoryboardModel({
+  const storyboardModelCaller = typeof options.callStoryboardModel === "function" ? options.callStoryboardModel : callStoryboardModel;
+  const storyboardModelResult = await storyboardModelCaller({
     script: videoScript,
     assets,
     dialogueLanguage,
@@ -21593,6 +21621,10 @@ module.exports = {
   prepareBatchVideoReferences,
   readVideoConfig,
   __test: {
+    draft: {
+      buildDraft,
+      draftAssetManifestForEpisode,
+    },
     dialogue: {
       dialoguesForText,
       inlineColonDialogues,

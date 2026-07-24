@@ -13686,6 +13686,37 @@ function imageFileExtensionFromUrl(url = "") {
   return String(url || "").match(/\.(webp|png|jpe?g)(?:[?#]|$)/i)?.[1]?.toLowerCase().replace("jpeg", "jpg") || "png";
 }
 
+const CANVAS_TAIL_FRAME_REQUEST_TIMEOUT_MS = 110_000;
+const CANVAS_VIDEO_DOWNLOAD_TIMEOUT_MS = 60_000;
+const CANVAS_TAIL_FRAME_DOWNLOAD_TIMEOUT_MS = 25_000;
+const CANVAS_FFMPEG_ATTEMPT_TIMEOUT_MS = 30_000;
+
+function positiveTimeout(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function canvasTailFrameTimeoutMs(deadline, fallback, label) {
+  if (!Number.isFinite(deadline)) return fallback;
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error(`${label}超时（尾帧处理总时限已到）`);
+  return Math.min(fallback, remaining);
+}
+
+async function consumeCanvasTailFrameResponse(url, timeoutMs, label, consume) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    return await consume(response, controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`${label}超时（超过 ${Math.ceil(timeoutMs / 1000)} 秒）`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function downloadProjectVideoResult(episodeRoot, shotName, videoUrl) {
   const cleanUrl = compactLine(videoUrl);
   if (!/^https?:\/\//i.test(cleanUrl)) return "";
@@ -13918,7 +13949,7 @@ async function persistProjectTailFrame(episodeRoot, shotName, result = {}, local
   };
 }
 
-async function extractCanvasTailFrameFromVideo(tailDir, nodeId, localVideoFile) {
+async function extractCanvasTailFrameFromVideo(tailDir, nodeId, localVideoFile, options = {}) {
   const videoFile = path.resolve(localVideoFile || "");
   if (!videoFile || !fs.existsSync(videoFile) || !fs.statSync(videoFile).isFile()) return { file: "", message: "" };
   if (!executableExists("ffmpeg")) {
@@ -13933,32 +13964,49 @@ async function extractCanvasTailFrameFromVideo(tailDir, nodeId, localVideoFile) 
     ["-y", "-sseof", "-1.0", "-i", videoFile, "-frames:v", "1", "-q:v", "2", "-update", "1", target],
     ["-y", "-i", videoFile, "-frames:v", "1", "-q:v", "2", "-update", "1", target],
   ];
+  const attemptTimeoutMs = positiveTimeout(options.ffmpegAttemptTimeoutMs, CANVAS_FFMPEG_ATTEMPT_TIMEOUT_MS);
   let lastError = "";
   for (const args of attempts) {
     if (fs.existsSync(target)) fs.rmSync(target, { force: true });
     try {
+      const timeoutMs = canvasTailFrameTimeoutMs(options.deadline, attemptTimeoutMs, "ffmpeg 抽帧");
       await new Promise((resolve, reject) => {
         const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
         let stderr = "";
+        let settled = false;
+        let timer;
+        const finish = (handler, value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          handler(value);
+        };
+        timer = setTimeout(() => {
+          try {
+            child.kill("SIGKILL");
+          } catch {}
+          finish(reject, new Error(`ffmpeg 超时（超过 ${Math.ceil(timeoutMs / 1000)} 秒）`));
+        }, timeoutMs);
         child.stderr.on("data", (chunk) => {
           stderr += chunk.toString();
         });
-        child.on("error", reject);
+        child.on("error", (error) => finish(reject, error));
         child.on("close", (code) => {
           const ready = code === 0 && fs.existsSync(target) && fs.statSync(target).size > 0;
-          if (ready) resolve();
-          else reject(new Error(compactLine(stderr) || `ffmpeg 抽帧失败：${code}`));
+          if (ready) finish(resolve);
+          else finish(reject, new Error(compactLine(stderr) || `ffmpeg 抽帧失败：${code}`));
         });
       });
       return { file: target, message: "已从本地视频抽取尾帧" };
     } catch (error) {
+      if (fs.existsSync(target)) fs.rmSync(target, { force: true });
       lastError = error.message || "ffmpeg 抽帧失败";
     }
   }
   throw new Error(lastError || "ffmpeg 抽帧失败");
 }
 
-async function resolveCanvasVideoLocalFile(tailDir, nodeId, videoUrl) {
+async function resolveCanvasVideoLocalFile(tailDir, nodeId, videoUrl, options = {}) {
   const clean = compactLine(videoUrl);
   if (!clean) return "";
   const localMedia = localMediaPathFromUrl(clean);
@@ -13975,11 +14023,17 @@ async function resolveCanvasVideoLocalFile(tailDir, nodeId, videoUrl) {
     }
     const downloadTarget = `${tmp}.download-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
     try {
-      const response = await fetch(clean);
-      if (!response.ok || !response.body) throw new Error(`视频下载失败：HTTP ${response.status || 502}`);
-      await pipeline(response.body, fs.createWriteStream(downloadTarget));
-      assertValidDownloadedVideo(downloadTarget);
-      fs.renameSync(downloadTarget, tmp);
+      const timeoutMs = canvasTailFrameTimeoutMs(
+        options.deadline,
+        positiveTimeout(options.videoDownloadTimeoutMs, CANVAS_VIDEO_DOWNLOAD_TIMEOUT_MS),
+        "视频下载",
+      );
+      await consumeCanvasTailFrameResponse(clean, timeoutMs, "视频下载", async (response, signal) => {
+        if (!response.ok || !response.body) throw new Error(`视频下载失败：HTTP ${response.status || 502}`);
+        await pipeline(response.body, fs.createWriteStream(downloadTarget), { signal });
+        assertValidDownloadedVideo(downloadTarget);
+        fs.renameSync(downloadTarget, tmp);
+      });
       return tmp;
     } finally {
       if (fs.existsSync(downloadTarget)) fs.rmSync(downloadTarget, { force: true });
@@ -13988,7 +14042,7 @@ async function resolveCanvasVideoLocalFile(tailDir, nodeId, videoUrl) {
   return "";
 }
 
-async function persistCanvasTailFrame(body = {}) {
+async function persistCanvasTailFrame(body = {}, options = {}) {
   const projectId = compactLine(body.projectId || "standalone") || "standalone";
   const nodeId = safeSlug(body.nodeId || "video-node", "video-node");
   const result = {
@@ -13999,6 +14053,13 @@ async function persistCanvasTailFrame(body = {}) {
   const baseRoot = allowedPath(rawRoot) && fs.existsSync(rawRoot) ? rawRoot : APP_ROOT;
   const tailDir = path.join(baseRoot, projectId === "standalone" ? ".pixel-toys-canvas-tail-frames" : "09_tail_frames");
   fs.mkdirSync(tailDir, { recursive: true });
+  const deadline = Date.now() + positiveTimeout(options.requestTimeoutMs, CANVAS_TAIL_FRAME_REQUEST_TIMEOUT_MS);
+  const timeoutOptions = {
+    deadline,
+    videoDownloadTimeoutMs: positiveTimeout(options.videoDownloadTimeoutMs, CANVAS_VIDEO_DOWNLOAD_TIMEOUT_MS),
+    tailFrameDownloadTimeoutMs: positiveTimeout(options.tailFrameDownloadTimeoutMs, CANVAS_TAIL_FRAME_DOWNLOAD_TIMEOUT_MS),
+    ffmpegAttemptTimeoutMs: positiveTimeout(options.ffmpegAttemptTimeoutMs, CANVAS_FFMPEG_ATTEMPT_TIMEOUT_MS),
+  };
   // 海外(BytePlus/新加坡 TOS)视频:国内服务器跨境下载 ~8KB/s,整段视频下载 + 抽帧物理上做不了(会卡到超时)。
   // 若视频托管在 ap-southeast 且没有可直接下载的尾帧图,直接跳过,返回明确信息,不阻塞、不超时。
   const isOverseasVideoUrl = /(?:^|[.\/])ap-southeast|bytepluses\.com/i.test(result.videoUrl);
@@ -14023,24 +14084,34 @@ async function persistCanvasTailFrame(body = {}) {
       file = cachedFrame;
       message = "复用已缓存尾帧";
     } else if (/^https?:\/\//i.test(remoteTailFrameUrl)) {
+      const target = path.join(tailDir, `${nodeId}_tail.${imageFileExtensionFromUrl(remoteTailFrameUrl)}`);
+      const downloadTarget = `${target}.download-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
       try {
-        const response = await fetch(remoteTailFrameUrl);
-        if (!response.ok || !response.body) throw new Error(`尾帧下载失败：HTTP ${response.status || 502}`);
-        const target = path.join(tailDir, `${nodeId}_tail.${imageFileExtensionFromUrl(remoteTailFrameUrl)}`);
-        await pipeline(response.body, fs.createWriteStream(target));
+        const timeoutMs = canvasTailFrameTimeoutMs(
+          deadline,
+          timeoutOptions.tailFrameDownloadTimeoutMs,
+          "尾帧下载",
+        );
+        await consumeCanvasTailFrameResponse(remoteTailFrameUrl, timeoutMs, "尾帧下载", async (response, signal) => {
+          if (!response.ok || !response.body) throw new Error(`尾帧下载失败：HTTP ${response.status || 502}`);
+          await pipeline(response.body, fs.createWriteStream(downloadTarget), { signal });
+          fs.renameSync(downloadTarget, target);
+        });
         file = target;
         message = "已保存接口返回尾帧";
       } catch (error) {
         message = `接口尾帧保存失败：${compactLine(error.message)}`;
+      } finally {
+        if (fs.existsSync(downloadTarget)) fs.rmSync(downloadTarget, { force: true });
       }
     }
   }
   // ffmpeg 本地兜底:provider 没返回尾帧URL(或下载失败)时,用 videoUrl 从视频抽最后一帧
   if (!file && result.videoUrl) {
     try {
-      localVideoFile = await resolveCanvasVideoLocalFile(tailDir, nodeId, result.videoUrl);
+      localVideoFile = await resolveCanvasVideoLocalFile(tailDir, nodeId, result.videoUrl, timeoutOptions);
       if (localVideoFile) {
-        const extracted = await extractCanvasTailFrameFromVideo(tailDir, nodeId, localVideoFile);
+        const extracted = await extractCanvasTailFrameFromVideo(tailDir, nodeId, localVideoFile, timeoutOptions);
         file = extracted.file || "";
         message = extracted.message || message;
       } else {
@@ -21802,6 +21873,11 @@ module.exports = {
     projectVideo: {
       generateProjectVideoShot,
       ensureTailFrameAssetReference,
+    },
+    canvasTailFrame: {
+      persistCanvasTailFrame,
+      resolveCanvasVideoLocalFile,
+      extractCanvasTailFrameFromVideo,
     },
     canvasImageRef: {
       localPublicAssetPathFromUrl,

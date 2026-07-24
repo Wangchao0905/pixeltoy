@@ -1874,6 +1874,43 @@ function mergeCanvasStateForWrite(previous, incoming, options = {}) {
   }
   const previousNodes = new Map((previous.nodes || []).map((node) => [node.id, node]));
   const mergeCanvasVideoNodeState = (existing = {}, node = {}) => {
+    const existingTaskId = compactLine(existing.taskId || "");
+    const nodeTaskId = compactLine(node.taskId || "");
+    const existingSubmittedAt = Date.parse(existing.submittedAt || "") || 0;
+    const nodeSubmittedAt = Date.parse(node.submittedAt || "") || 0;
+    const submittedGenerationChanged = !!(existingSubmittedAt && nodeSubmittedAt && existingSubmittedAt !== nodeSubmittedAt);
+    const taskGenerationChanged = !!(existingTaskId && nodeTaskId && existingTaskId !== nodeTaskId);
+    let generationSource = null;
+    if (submittedGenerationChanged) {
+      generationSource = nodeSubmittedAt > existingSubmittedAt ? node : existing;
+    } else if (taskGenerationChanged) {
+      generationSource = preserveMissingNodes ? existing : node;
+    } else if (nodeSubmittedAt && !existingSubmittedAt) {
+      generationSource = node;
+    } else if (existingSubmittedAt && !nodeSubmittedAt && preserveMissingNodes) {
+      generationSource = existing;
+    }
+    if (generationSource) {
+      const generationHasTail = generationSource.tailFrameReady === true && (generationSource.tailFrameUrl || generationSource.tailFrameLocalFile || generationSource.tailFrameFileUrl);
+      return {
+        status: generationSource.status || "idle",
+        statusMessage: generationHasTail ? generationSource.statusMessage || "视频已生成，尾帧已就绪" : generationSource.statusMessage || "",
+        taskId: generationSource.taskId || "",
+        taskProvider: generationSource.taskProvider || "",
+        submittedAt: generationSource.submittedAt || "",
+        progress: generationSource.progress ?? null,
+        videoUrl: generationSource.videoUrl || "",
+        videoLocalFile: generationSource.videoLocalFile || "",
+        startFrameUrl: generationSource.startFrameUrl || "",
+        tailFrameSourceNodeId: generationSource.tailFrameSourceNodeId || "",
+        tailFrameSourceName: generationSource.tailFrameSourceName || "",
+        tailFrameReady: generationHasTail === true,
+        tailFrameUrl: generationHasTail ? generationSource.tailFrameUrl || "" : "",
+        tailFrameLocalFile: generationHasTail ? generationSource.tailFrameLocalFile || "" : "",
+        tailFrameFileUrl: generationHasTail ? generationSource.tailFrameFileUrl || "" : "",
+        tailFrameMessage: generationHasTail ? "" : generationSource.tailFrameMessage || "",
+      };
+    }
     const existingHasTail = existing.tailFrameReady === true && (existing.tailFrameUrl || existing.tailFrameLocalFile || existing.tailFrameFileUrl);
     const nodeHasTail = node.tailFrameReady === true && (node.tailFrameUrl || node.tailFrameLocalFile || node.tailFrameFileUrl);
     const tailSource = existingHasTail ? existing : nodeHasTail ? node : {};
@@ -1888,6 +1925,7 @@ function mergeCanvasStateForWrite(previous, incoming, options = {}) {
           : completedSource.statusMessage || node.statusMessage || existing.statusMessage || "",
       taskId: completedSource.taskId || node.taskId || existing.taskId || "",
       taskProvider: completedSource.taskProvider || node.taskProvider || existing.taskProvider || "",
+      submittedAt: completedSource.submittedAt || node.submittedAt || existing.submittedAt || "",
       progress: completedSource.progress ?? node.progress ?? existing.progress ?? null,
       videoUrl: completedSource.videoUrl || node.videoUrl || existing.videoUrl || "",
       videoLocalFile: completedSource.videoLocalFile || node.videoLocalFile || existing.videoLocalFile || "",
@@ -1910,7 +1948,9 @@ function mergeCanvasStateForWrite(previous, incoming, options = {}) {
       !compactLine(node.videoUrl || "") &&
       /提交\s*Seedance|正在提交/i.test(compactLine(node.statusMessage || ""));
     if (!existing) return node;
-    if (incomingFakeSubmitting && existing.status === "failed" && existing.statusMessage) {
+    const incomingSubmissionIsNewer =
+      (Date.parse(node.submittedAt || "") || 0) > (Date.parse(existing.submittedAt || "") || 0);
+    if (incomingFakeSubmitting && !incomingSubmissionIsNewer && existing.status === "failed" && existing.statusMessage) {
       return existing;
     }
     const incomingStaleFailure = node.status === "failed" && isStaleVideoFailureMessage(node.statusMessage);

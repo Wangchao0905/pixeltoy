@@ -58,6 +58,33 @@ assert.equal(
   "a plan from an older script must be regenerated before configuration",
 );
 
+const ensureModelShotPlanForConfig = extractFunction(server, "async function ensureModelShotPlanForConfig(");
+assert.match(
+  ensureModelShotPlanForConfig,
+  /await buildModelShotPlanForConfig\(episodeRoot, \{[\s\S]*?script,[\s\S]*?dialogueLanguage/,
+  "a stale director plan must be rebuilt by the narrow model-plan builder",
+);
+assert.doesNotMatch(
+  ensureModelShotPlanForConfig,
+  /buildDraft\(/,
+  "video config repair must not rebuild the whole draft workflow",
+);
+
+let recoveredPlan = null;
+let modelPlanBuilds = 0;
+context.readStoryboardModelPlan = () => recoveredPlan;
+context.buildModelShotPlanForConfig = async (_episodeRoot, options) => {
+  modelPlanBuilds += 1;
+  recoveredPlan = { scriptFingerprint: `sha:${options.script}`, dialogueLanguage: options.dialogueLanguage };
+};
+context.buildDraft = async () => {
+  throw new Error("whole draft rebuild must not run for video config repair");
+};
+vm.runInContext(ensureModelShotPlanForConfig, context, { filename: "server.js" });
+const recovered = await context.ensureModelShotPlanForConfig("/project/e01", { script, dialogueLanguage: "en" });
+assert.equal(modelPlanBuilds, 1, "a missing plan must invoke only the model-plan builder");
+assert.equal(recovered, recoveredPlan, "the newly persisted model plan must be returned to config generation");
+
 assert.match(
   server,
   /const dialogueLanguage = modelPlanDialogueLanguageForConfig\(modelPlan, script, requestedDialogueLanguage\);/,

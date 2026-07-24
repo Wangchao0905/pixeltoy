@@ -1353,6 +1353,38 @@ function repairCanvasAssetReferences(state = {}) {
   return changed ? { state: { ...state, nodes }, changed: true } : { state, changed: false };
 }
 
+function validLocalCanvasVideoFile(value = "") {
+  const file = path.resolve(compactLine(value));
+  if (!file || !allowedPath(file) || !/\.(mp4|mov|webm)$/i.test(file)) return "";
+  try {
+    return fs.existsSync(file) && fs.statSync(file).isFile() && fs.statSync(file).size > 1024 ? file : "";
+  } catch {
+    return "";
+  }
+}
+
+function localCanvasVideoFileForNode(node = {}) {
+  const candidates = [];
+  for (const value of [node.videoLocalFile, node.videoUrl]) {
+    const raw = compactLine(value);
+    if (!raw) continue;
+    candidates.push(localMediaPathFromUrl(raw), localFilePathFromUrl(raw));
+    if (path.isAbsolute(raw)) candidates.push(raw);
+  }
+  const nodeId = safeSlug(node.id || "", "");
+  if (nodeId) candidates.push(path.join(APP_ROOT, "09_tail_frames", `${nodeId}_src.mp4`));
+  for (const candidate of candidates) {
+    const file = validLocalCanvasVideoFile(candidate);
+    if (file) return file;
+  }
+  return "";
+}
+
+function localCanvasVideoUrlForNode(node = {}) {
+  const file = localCanvasVideoFileForNode(node);
+  return file ? `/media?path=${encodeURIComponent(file)}` : "";
+}
+
 function persistMigratedCanvasDataUrl(dataUrl = "", asset = {}, index = 0) {
   const decoded = decodeDataImageUrl(dataUrl);
   if (!decoded) return "";
@@ -1401,6 +1433,16 @@ function migrateCanvasStateDataUrls(state = {}) {
     nextState.nodes = state.nodes.map((node) => {
       if (!node || typeof node !== "object" || node.kind !== "video") return node;
       const next = { ...node };
+      const recoveredVideoFile = localCanvasVideoFileForNode(next);
+      const recoveredVideoUrl = localCanvasVideoUrlForNode(next);
+      if (recoveredVideoUrl && next.videoUrl !== recoveredVideoUrl) {
+        next.videoUrl = recoveredVideoUrl;
+        next.videoLocalFile = recoveredVideoFile;
+        next.status = "completed";
+        next.progress = 100;
+        next.statusMessage = "已恢复本地归档视频";
+        changed = true;
+      }
       if (next.videoUrl && next.status === "running") {
         next.status = "completed";
         next.statusMessage = next.statusMessage || "生成完成";
@@ -2747,10 +2789,50 @@ function modelShotPlanNeedsRefresh(plan, script) {
   return !plan || plan.scriptFingerprint !== sha1Text(script);
 }
 
-async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, assetAnalyzerModel } = {}) {
+// 视频配置修复只需要补齐模型导演计划。重建完整草稿会重置后续流程状态，
+// 也会让一次临时失败错误地阻断配置保存。
+async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage } = {}) {
+  const videoScript = compactLine(script);
+  if (!videoScript) throw new Error("剧本为空，无法生成模型导演设计。");
+  const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const assets = manifestItemsToAssets(manifest);
+  if (!assets.length) throw new Error("请先完成「资产提取」，再生成视频配置");
+
+  const rawBeats = scriptBeatCandidates(videoScript);
+  const continuityBeats = consolidateContinuousBeats(rawBeats);
+  const targetShotCount = preferredShotCount(videoScript, continuityBeats);
+  const normalizedDialogueLanguage = dialogueLanguage === "zh" ? "zh" : "en";
+  const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, {
+    dialogueLanguage: normalizedDialogueLanguage,
+  });
+  const durationPlan = planEpisodeDuration({ shotCount: beats.length || targetShotCount, beats });
+  const result = await callStoryboardModel({
+    script: videoScript,
+    assets,
+    dialogueLanguage: normalizedDialogueLanguage,
+    modelName: undefined,
+    targetShotCount,
+    code: episodeCode(episodeSlug(episodeRoot)),
+    beats,
+    durationPlan,
+  });
+  if (!result.ok) {
+    throw new Error(`视频分镜模型不可用或返回不完整设计，请重试。${result.reason || "未知失败"}`);
+  }
+  if (!result.shots?.length) throw new Error("视频分镜模型没有返回可用镜头");
+  writeStoryboardModelPlan(episodeRoot, {
+    model: result.model,
+    script: videoScript,
+    dialogueLanguage: normalizedDialogueLanguage,
+    shots: result.shots,
+  });
+  return readStoryboardModelPlan(episodeRoot);
+}
+
+async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage } = {}) {
   let plan = readStoryboardModelPlan(episodeRoot);
   if (!modelShotPlanNeedsRefresh(plan, script)) return plan;
-  await buildDraft(episodeRoot, { dialogueLanguage, assetAnalyzerModel });
+  await buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage });
   plan = readStoryboardModelPlan(episodeRoot);
   if (modelShotPlanNeedsRefresh(plan, script)) {
     throw new Error("模型导演设计生成失败，请稍后重新提交视频配置。");

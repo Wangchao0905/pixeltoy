@@ -2735,6 +2735,29 @@ function readStoryboardModelPlan(episodeRoot) {
   }
 }
 
+// 视频配置只能使用生成分镜草稿时模型确定的对白语言。前端状态可能来自另一项目或
+// 上一次会话；只要剧本指纹仍匹配，就不能让它把有效的导演设计误判为过期。
+function modelPlanDialogueLanguageForConfig(modelPlan, script, requestedLanguage) {
+  const requested = normalizeDialogueLanguage(requestedLanguage, "en");
+  if (!modelPlan || modelPlan.scriptFingerprint !== sha1Text(script)) return requested;
+  return normalizeDialogueLanguage(modelPlan.dialogueLanguage, requested);
+}
+
+function modelShotPlanNeedsRefresh(plan, script) {
+  return !plan || plan.scriptFingerprint !== sha1Text(script);
+}
+
+async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, assetAnalyzerModel } = {}) {
+  let plan = readStoryboardModelPlan(episodeRoot);
+  if (!modelShotPlanNeedsRefresh(plan, script)) return plan;
+  await buildDraft(episodeRoot, { dialogueLanguage, assetAnalyzerModel });
+  plan = readStoryboardModelPlan(episodeRoot);
+  if (modelShotPlanNeedsRefresh(plan, script)) {
+    throw new Error("模型导演设计生成失败，请稍后重新提交视频配置。");
+  }
+  return plan;
+}
+
 function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPlan(episodeRoot), script, dialogueLanguage, assets, videoStylePreset } = {}) {
   const plan = modelPlan;
   const currentScriptFingerprint = sha1Text(script);
@@ -19505,6 +19528,22 @@ function tailFrameContinuityDecision(currentShot, previousShot, assetLookup) {
 }
 
 async function buildVideoConfig(episodeRoot, body = {}) {
+  const rawScript = readText(findProjectFile(episodeRoot, "script"));
+  const script = scriptForVideoBeats(cleanStoryScriptForDraft(rawScript));
+  if (!script.trim()) throw new Error("剧本为空，无法生成视频配置。");
+  const currentConfig = readVideoConfig(episodeRoot)?.data || {};
+  const currentManifest = readAssetManifest(episodeRoot)?.data || {};
+  const requestedDialogueLanguage = normalizeDialogueLanguage(
+    body.dialogueLanguage || currentConfig.dialogueLanguage || currentConfig.settings?.dialogueLanguage || currentManifest.dialogueLanguage || currentManifest.production?.dialogueLanguage || "",
+    projectDialogueLanguage(episodeRoot, "en"),
+  );
+  // 7 月 23 日前创建的项目没有持久化模型导演计划。这里按当前剧本补建，
+  // 仍由相同的大模型输出完整设计，不会从旧 Markdown 或手写提示词反推。
+  const modelPlan = await ensureModelShotPlanForConfig(episodeRoot, {
+    script,
+    dialogueLanguage: requestedDialogueLanguage,
+    assetAnalyzerModel: body.assetAnalyzerModel,
+  });
   const slug = episodeSlug(episodeRoot);
   const configPath = findProjectFile(episodeRoot, "config");
   const workflow = ensureWorkflowNamespace(episodeRoot, "build video config");
@@ -19571,15 +19610,8 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   // 视频风格只能继承已生成并实际绑定的正式资产。素材缺失时保留为空，避免把规划阶段
   // 误锁为超写实；只有显式 manual 模式才允许在未绑定资产时由请求指定风格。
   const videoStylePreset = videoStylePresetFromProductionAssets(productionAssets, body);
-  const rawScript = readText(findProjectFile(episodeRoot, "script"));
-  const script = scriptForVideoBeats(cleanStoryScriptForDraft(rawScript));
-  if (!script.trim()) throw new Error("剧本为空，无法生成视频配置。");
-  const dialogueLanguage = normalizeDialogueLanguage(
-    body.dialogueLanguage || previous.dialogueLanguage || previous.settings?.dialogueLanguage || manifest.dialogueLanguage || manifest.production?.dialogueLanguage || "",
-    projectDialogueLanguage(episodeRoot, "en"),
-  );
+  const dialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, requestedDialogueLanguage);
   persistProjectDialogueLanguage(episodeRoot, dialogueLanguage);
-  const modelPlan = readStoryboardModelPlan(episodeRoot);
   const { shots: modelShots } = modelShotPlanForConfig({
     episodeRoot,
     modelPlan,

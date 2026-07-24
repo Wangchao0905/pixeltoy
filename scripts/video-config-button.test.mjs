@@ -100,8 +100,11 @@ for (const signature of [
   vm.runInContext(extractFunction(app, signature), context, { filename: "public/app.js" });
 }
 
-const buildConfigBinding = app.match(/^\s*\$\("#buildConfigBtn"\)\?\.addEventListener\("click", \(\) => buildConfig\(\)\.catch\(\(error\) => toast\(error\.message\)\)\);$/m)?.[0];
-assert.ok(buildConfigBinding, "buildConfig button binding must remain wired");
+assert.match(
+  app,
+  /\$\("#buildConfigBtn"\)\?\.addEventListener\("click", \(event\) => \{[\s\S]*?withStudioButtonFeedback\(button, \(\) => buildConfig\(\)\)/,
+  "buildConfig button must remain wired through the shared studio feedback layer",
+);
 
 function resetInputs() {
   elements.get("seedanceText").value = "draft prompt";
@@ -122,8 +125,7 @@ assert.equal(elements.get("configPromptMode").value, "prompt", "a legacy default
 vm.runInContext('hydrateConfigInputs(JSON.stringify({ settings: { storyboardWorkflowExplicit: true, promptMode: "production_board" }, storyboardPlans: [] }))', context);
 assert.equal(elements.get("configPromptMode").value, "production_board", "an explicitly selected Production Board flow must remain available");
 resetInputs();
-vm.runInContext(buildConfigBinding, context);
-await elements.get("buildConfigBtn").listeners.get("click")();
+await vm.runInContext("buildConfig()", context);
 
 assert.equal(requestLog[0]?.path, "/api/project/p1/file", "click must save the edited Seedance prompt first");
 assert.equal(requestLog[1]?.path, "/api/project/p1/config", "click must submit the video config");
@@ -135,7 +137,7 @@ assert.deepEqual(toastLog, ["视频配置已生成，可提交"], "a successful 
 elements.get("configPromptMode").value = "production_board";
 requestLog.length = 0;
 toastLog.length = 0;
-await elements.get("buildConfigBtn").listeners.get("click")();
+await vm.runInContext("buildConfig()", context);
 assert.equal(requestLog[1]?.body.promptMode, "production_board", "explicit Production Board mode must remain available");
 assert.equal(requestLog[1]?.body.enableStoryboards, true, "explicit Production Board mode must enable storyboard references");
 assert.equal(requestLog[1]?.body.tailFrameContinuity, false, "explicit Production Board mode must disable tail-frame continuity");

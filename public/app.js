@@ -283,6 +283,48 @@ function toast(message) {
   node._timer = setTimeout(() => node.classList.add("hidden"), 3200);
 }
 
+async function withStudioButtonFeedback(button, action) {
+  if (!(button instanceof HTMLElement) || !document.body.classList.contains("is-studio")) return action();
+  if (button.dataset.studioFeedbackBusy === "true") return undefined;
+  const wasDisabled = button.disabled;
+  button.dataset.studioFeedbackBusy = "true";
+  button.classList.remove("is-complete", "is-error");
+  button.classList.add("is-working");
+  button.setAttribute("aria-busy", "true");
+  button.disabled = true;
+  try {
+    const result = await action();
+    button.classList.add("is-complete");
+    clearTimeout(button._studioFeedbackTimer);
+    button._studioFeedbackTimer = setTimeout(() => button.classList.remove("is-complete"), 720);
+    return result;
+  } catch (error) {
+    button.classList.add("is-error");
+    clearTimeout(button._studioFeedbackTimer);
+    button._studioFeedbackTimer = setTimeout(() => button.classList.remove("is-error"), 1200);
+    throw error;
+  } finally {
+    button.disabled = wasDisabled;
+    button.removeAttribute("aria-busy");
+    button.classList.remove("is-working");
+    delete button.dataset.studioFeedbackBusy;
+  }
+}
+
+function bindStudioButtonFeedback() {
+  const press = (target) => {
+    const button = target?.closest?.("button, [role='button'], .upload-pill");
+    if (!button || !document.body.classList.contains("is-studio") || button.matches(":disabled, [aria-disabled='true']")) return;
+    button.classList.add("is-pressed");
+    clearTimeout(button._studioPressTimer);
+    button._studioPressTimer = setTimeout(() => button.classList.remove("is-pressed"), 150);
+  };
+  document.addEventListener("pointerdown", (event) => press(event.target), true);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") press(event.target);
+  }, true);
+}
+
 async function api(path, options = {}) {
   let res;
   try {
@@ -5103,8 +5145,9 @@ function renderVideoConfigStatus(config) {
     </div>
     <div class="status-row">${missing}</div>
   `;
-  node.querySelector("[data-generate-all-segments-inline]")?.addEventListener("click", () => {
-    generateAllVideoSegments().catch((error) => toast(error.message));
+  node.querySelector("[data-generate-all-segments-inline]")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => generateAllVideoSegments()).catch((error) => toast(error.message));
   });
 }
 
@@ -5576,16 +5619,12 @@ function renderFinalCut(finalCut = null) {
 }
 
 async function assembleFinalCut() {
-  if (!state.selectedId) return toast("请先打开一个项目");
-  try {
-    const data = await api(`/api/project/${state.selectedId}/assemble-final-cut`, { method: "POST", body: JSON.stringify({}) });
-    toast(data.result?.message || "已开始组装成片");
-    if (data.state) setProjectState(data.state);
-    renderWorkspace();
-    scheduleProjectRefresh();
-  } catch (error) {
-    toast(error.message);
-  }
+  if (!state.selectedId) throw new Error("请先打开一个项目");
+  const data = await api(`/api/project/${state.selectedId}/assemble-final-cut`, { method: "POST", body: JSON.stringify({}) });
+  toast(data.result?.message || "已开始组装成片");
+  if (data.state) setProjectState(data.state);
+  renderWorkspace();
+  scheduleProjectRefresh();
 }
 
 function renderChatcut(chatcut = null) {
@@ -5647,15 +5686,11 @@ function renderChatcut(chatcut = null) {
 }
 
 async function startChatcutEditing() {
-  if (!state.selectedId) return toast("请先打开一个项目");
-  try {
-    const data = await api(`/api/project/${state.selectedId}/chatcut/automate`, { method: "POST", body: JSON.stringify({}) });
-    if (data.state) setProjectState(data.state);
-    renderWorkspace();
-    toast(data.result?.reason || "已开始 ChatCut 剪辑");
-  } catch (error) {
-    toast(error.message);
-  }
+  if (!state.selectedId) throw new Error("请先打开一个项目");
+  const data = await api(`/api/project/${state.selectedId}/chatcut/automate`, { method: "POST", body: JSON.stringify({}) });
+  if (data.state) setProjectState(data.state);
+  renderWorkspace();
+  toast(data.result?.reason || "已开始 ChatCut 剪辑");
 }
 
 function renderVideoProgress(progress) {
@@ -5770,8 +5805,9 @@ function renderVideoProgress(progress) {
         ${action}
       </div>
     `;
-    card.querySelector("[data-segment-generate]")?.addEventListener("click", () => {
-      generateVideoSegment(item.name).catch((error) => {
+    card.querySelector("[data-segment-generate]")?.addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      withStudioButtonFeedback(button, () => generateVideoSegment(item.name)).catch((error) => {
         toast(error.message);
         if (state.selectedId) loadProject(state.selectedId, { openStudio: false }).catch(() => {});
       });
@@ -6197,6 +6233,7 @@ async function runSeriesPreflight() {
 }
 
 function bind() {
+  bindStudioButtonFeedback();
   $("#refreshProjects").addEventListener("click", () => loadProjects(false).catch((error) => toast(error.message)));
   $("#logoutButton")?.addEventListener("click", () => logout().catch((error) => toast(error.message)));
   $("#changePasswordButton")?.addEventListener("click", openChangePasswordDialog);
@@ -6501,19 +6538,30 @@ function bind() {
     draft.dirty = false;
     renderAssetInspector();
   });
-  $("#saveAssetPrompt")?.addEventListener("click", () => saveAssetPrompt().catch((error) => toast(error.message)));
-  $("#regenerateAssetFromInspector")?.addEventListener("click", () => regenerateSelectedAssetFromInspector().catch((error) => toast(error.message)));
+  $("#saveAssetPrompt")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => saveAssetPrompt()).catch((error) => toast(error.message));
+  });
+  $("#regenerateAssetFromInspector")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => regenerateSelectedAssetFromInspector()).catch((error) => toast(error.message));
+  });
   $("#refreshState").addEventListener("click", () => {
     if (!state.selectedId) return toast("请先打开一个项目");
     loadProject(state.selectedId, { openStudio: false }).catch((error) => toast(error.message));
   });
-  $("#generateAllSegments")?.addEventListener("click", () => {
-    generateAllVideoSegments().catch((error) => toast(error.message));
+  $("#generateAllSegments")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => generateAllVideoSegments()).catch((error) => toast(error.message));
   });
-  $("#assembleFinalCutBtn")?.addEventListener("click", () => {
-    assembleFinalCut();
+  $("#assembleFinalCutBtn")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => assembleFinalCut()).catch((error) => toast(error.message));
   });
-  $("#chatcutEditBtn")?.addEventListener("click", () => startChatcutEditing());
+  $("#chatcutEditBtn")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => startChatcutEditing()).catch((error) => toast(error.message));
+  });
   $("#zoomOut").addEventListener("click", () => setWorkspaceScale(state.workspaceScale - 0.08));
   $("#zoomIn").addEventListener("click", () => setWorkspaceScale(state.workspaceScale + 0.08));
   $("#zoomFit").addEventListener("click", fitWorkspaceScale);
@@ -6636,11 +6684,13 @@ function bind() {
     }
   });
   $$("[data-save]").forEach((button) => {
-    button.addEventListener("click", () => saveFile(button.dataset.save).catch((error) => toast(error.message)));
+    button.addEventListener("click", () => {
+      withStudioButtonFeedback(button, () => saveFile(button.dataset.save)).catch((error) => toast(error.message));
+    });
   });
   $$("[data-job]").forEach((button) => {
     button.addEventListener("click", () =>
-      startJob(button.dataset.job).catch(async (error) => {
+      withStudioButtonFeedback(button, () => startJob(button.dataset.job)).catch(async (error) => {
         toast(error.message);
         if (state.selectedId) await loadProject(state.selectedId, { openStudio: false }).catch(() => {});
       }),
@@ -6657,10 +6707,22 @@ function bind() {
   $$("input[name='draftDialogueLanguage']").forEach((input) => {
     input.addEventListener("change", () => changeDialogueLanguage(input.value).catch((error) => toast(error.message)));
   });
-  $("#draftBtn")?.addEventListener("click", () => extractAssets().catch((error) => toast(error.message)));
-  $("#extractAssetsBtn")?.addEventListener("click", () => generateDraft().catch((error) => toast(error.message)));
-  $("#confirmAssetManifestBtn")?.addEventListener("click", () => saveAssetManifest({ confirm: true }).catch((error) => toast(error.message)));
-  $("#buildConfigBtn")?.addEventListener("click", () => buildConfig().catch((error) => toast(error.message)));
+  $("#draftBtn")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => extractAssets()).catch((error) => toast(error.message));
+  });
+  $("#extractAssetsBtn")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => generateDraft()).catch((error) => toast(error.message));
+  });
+  $("#confirmAssetManifestBtn")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => saveAssetManifest({ confirm: true })).catch((error) => toast(error.message));
+  });
+  $("#buildConfigBtn")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => buildConfig()).catch((error) => toast(error.message));
+  });
   ["configPromptMode", "configRatio", "configResolution", "configModel"].forEach((id) => {
     $(`#${id}`).addEventListener("change", () => refreshVideoConfig({ silent: true }).catch((error) => toast(error.message)));
   });

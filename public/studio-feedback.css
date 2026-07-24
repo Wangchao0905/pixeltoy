@@ -1,0 +1,67 @@
+/* Immediate, local feedback for actions in the production studio. */
+body.is-studio button,
+body.is-studio [role="button"],
+body.is-studio .upload-pill {
+  transition: transform 90ms ease, border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+body.is-studio button:not(:disabled):hover,
+body.is-studio [role="button"]:not([aria-disabled="true"]):hover,
+body.is-studio .upload-pill:hover {
+  border-color: rgba(139, 213, 255, 0.78);
+  box-shadow: 0 0 0 1px rgba(83, 184, 255, 0.18), 0 0 14px rgba(51, 147, 228, 0.12);
+}
+
+body.is-studio button:active,
+body.is-studio button.is-pressed,
+body.is-studio [role="button"].is-pressed,
+body.is-studio .upload-pill.is-pressed {
+  transform: translateY(1px) scale(0.985);
+}
+
+body.is-studio button.is-working {
+  position: relative;
+  cursor: wait;
+  border-color: rgba(126, 208, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(87, 184, 255, 0.26), 0 0 16px rgba(39, 151, 231, 0.16);
+}
+
+body.is-studio button.is-working::after {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 7px;
+  border: 1.5px solid rgba(231, 246, 255, 0.38);
+  border-top-color: #eaf8ff;
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: studioButtonSpin 680ms linear infinite;
+}
+
+body.is-studio button.is-complete {
+  border-color: rgba(162, 235, 122, 0.95);
+  box-shadow: 0 0 0 1px rgba(162, 235, 122, 0.32), 0 0 16px rgba(146, 231, 104, 0.18);
+}
+
+body.is-studio button.is-error {
+  border-color: rgba(255, 132, 132, 0.95);
+  box-shadow: 0 0 0 1px rgba(255, 132, 132, 0.28), 0 0 14px rgba(237, 88, 88, 0.15);
+}
+
+@keyframes studioButtonSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.is-studio button,
+  body.is-studio [role="button"],
+  body.is-studio .upload-pill {
+    transition: none;
+  }
+
+  body.is-studio button.is-working::after {
+    animation: none;
+    border-top-color: rgba(231, 246, 255, 0.92);
+  }
+}

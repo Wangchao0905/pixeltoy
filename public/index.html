@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=production-os-20260724-release" />
+    <link rel="stylesheet" href="/styles.css?v=production-os-20260725-final-cut-flow" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -755,30 +755,47 @@
                         </aside>
                       </section>
                     </div>
-                    <section class="panel final-cut-panel">
-                      <div class="section-head">
-                        <div>
-                          <h2>成片</h2>
-                          <p id="finalCutLabel">把已完成片段按顺序硬切拼成完整成片（1080×1920 / 24fps，保留音频）。</p>
-                        </div>
-                        <div class="actions">
-                          <button id="assembleFinalCutBtn" class="primary" type="button">组装成片</button>
-                        </div>
-                      </div>
-                      <div id="finalCutStatus" class="inline-status"></div>
-                      <div id="finalCutPreview" class="final-cut-preview"></div>
-                      <div class="chatcut-workflow" aria-labelledby="chatcutTitle">
+                    <section class="panel final-cut-panel" aria-labelledby="finalCutTitle">
+                      <div class="final-cut-step final-cut-assembly-step">
                         <div class="section-head">
-                          <div>
-                            <h3 id="chatcutTitle">ChatCut 剪辑</h3>
-                            <div id="chatcutStatus" class="chatcut-status chatcut-status-idle" aria-live="polite">
-                              <span class="chatcut-status-dot" aria-hidden="true"></span>
-                              <span class="chatcut-status-label">等待素材准备</span>
-                              <span class="chatcut-status-detail">生成全部视频片段后即可开始剪辑</span>
+                          <div class="final-cut-step-heading">
+                            <span class="final-cut-step-marker" aria-hidden="true">1</span>
+                            <div>
+                              <h2 id="finalCutTitle">成片</h2>
+                              <p id="finalCutLabel">把已完成片段按顺序硬切拼成完整成片（1080×1920 / 24fps，保留音频）。</p>
                             </div>
                           </div>
                           <div class="actions">
-                            <button id="chatcutEditBtn" class="primary" type="button">剪辑</button>
+                            <button id="assembleFinalCutBtn" class="primary" type="button">组装成片</button>
+                          </div>
+                        </div>
+                        <div id="finalCutStatus" class="inline-status"></div>
+                        <div id="finalCutPreview" class="final-cut-preview">
+                          <div class="final-cut-placeholder" role="img" aria-label="尚未生成成片，先生成全部视频片段，再组装成片">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                              <rect x="5" y="3" width="14" height="18" rx="2"></rect>
+                              <path d="m10 9 5 3-5 3V9Z"></path>
+                            </svg>
+                            <span>先生成全部视频片段，再组装成片</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="final-cut-step-connector" aria-hidden="true"></div>
+                      <div class="final-cut-step final-cut-chatcut-step chatcut-workflow" aria-labelledby="chatcutTitle">
+                        <div class="section-head">
+                          <div class="final-cut-step-heading">
+                            <span class="final-cut-step-marker" aria-hidden="true">2</span>
+                            <div>
+                              <h3 id="chatcutTitle">ChatCut 剪辑</h3>
+                              <div id="chatcutStatus" class="chatcut-status chatcut-status-idle" aria-live="polite">
+                                <span class="chatcut-status-dot" aria-hidden="true"></span>
+                                <span class="chatcut-status-label">等待素材准备</span>
+                                <span class="chatcut-status-detail">生成全部视频片段后即可开始剪辑</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="actions">
+                            <button id="chatcutEditBtn" class="ghost" type="button">剪辑</button>
                             <a id="openChatcutFileBtn" class="ghost chatcut-open-button hidden" href="" target="_blank" rel="noopener" aria-label="打开剪辑好的成片">打开成片</a>
                           </div>
                         </div>

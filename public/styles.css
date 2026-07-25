@@ -10830,24 +10830,131 @@ body {
   }
 }
 
-/* 成片模块(阶段 D):最小预览 + 下载 */
+/* 成片模块(阶段 D):两步流水线、预览 + 下载 */
+.final-cut-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: auto;
+  min-height: 0;
+}
+.final-cut-panel .final-cut-step {
+  position: relative;
+  min-width: 0;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--studio-line, var(--line));
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(28, 53, 86, 0.32), rgba(7, 16, 29, 0.48)),
+    rgba(8, 17, 31, 0.48);
+}
+.final-cut-panel .final-cut-step .section-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.final-cut-panel .final-cut-step-heading {
+  display: flex;
+  flex: 1 1 260px;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 12px;
+}
+.final-cut-panel .final-cut-step-heading > div {
+  min-width: 0;
+}
+.final-cut-panel .final-cut-step-marker {
+  display: grid;
+  flex: 0 0 28px;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(159, 240, 107, 0.7);
+  border-radius: 50%;
+  background: rgba(159, 240, 107, 0.14);
+  color: var(--studio-signal, var(--accent));
+  font-size: 13px;
+  font-weight: 800;
+}
+.final-cut-panel .final-cut-step h2,
+.final-cut-panel .final-cut-step h3 {
+  margin: 0;
+  color: var(--studio-ink, var(--ink));
+  line-height: 1.2;
+}
+.final-cut-panel .final-cut-step h2 {
+  font-size: 18px;
+}
+.final-cut-panel .final-cut-step h3 {
+  font-size: 16px;
+}
+.final-cut-panel .final-cut-step p {
+  max-width: 620px;
+}
+.final-cut-panel .final-cut-step .actions {
+  align-items: center;
+}
+.final-cut-panel .final-cut-step-connector {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  margin-left: 18px;
+  border-left: 1px solid var(--studio-line-strong, var(--line));
+}
+.final-cut-panel .final-cut-step-connector::after {
+  position: absolute;
+  bottom: 2px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  border-right: 1px solid var(--studio-line-strong, var(--line));
+  border-bottom: 1px solid var(--studio-line-strong, var(--line));
+  content: "";
+  transform: rotate(45deg);
+}
 .final-cut-panel .final-cut-preview {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3, 12px);
 }
-.final-cut-panel .final-cut-preview:empty {
-  display: none;
-}
-.final-cut-panel .final-cut-preview video {
+.final-cut-panel .final-cut-preview video,
+.final-cut-panel .final-cut-placeholder {
   width: 216px;
   max-width: 40vw;
   aspect-ratio: 9 / 16;
   border-radius: var(--control-radius, 10px);
+}
+.final-cut-panel .final-cut-preview video {
   background: #000;
   border: 1px solid var(--line);
   display: block;
+}
+.final-cut-panel .final-cut-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px 16px;
+  border: 1px dashed rgba(159, 201, 239, 0.34);
+  background: rgba(7, 16, 29, 0.38);
+  color: var(--studio-muted, var(--muted));
+  text-align: center;
+}
+.final-cut-panel .final-cut-placeholder svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: var(--studio-accent, var(--accent));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+.final-cut-panel .final-cut-placeholder span {
+  max-width: 13em;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .final-cut-panel .final-cut-video {
   position: relative;
@@ -10886,9 +10993,13 @@ body {
 }
 
 .chatcut-workflow {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+  margin: 0;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--studio-line, var(--line));
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(24, 48, 72, 0.28), rgba(7, 16, 29, 0.5)),
+    rgba(8, 17, 31, 0.48);
 }
 .chatcut-workflow h3 {
   margin: 0;
@@ -10904,6 +11015,7 @@ body {
 
 .chatcut-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   min-width: 0;
   gap: 8px;
@@ -10925,10 +11037,10 @@ body {
   font-weight: 650;
 }
 .chatcut-status-detail {
+  flex: 1 1 180px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .chatcut-status-queued .chatcut-status-dot,
 .chatcut-status-running .chatcut-status-dot {
@@ -15382,4 +15494,16 @@ body.is-studio button.is-task-running::after {
   body.is-studio button.is-task-running::after {
     animation: none;
   }
+}
+
+/* Final cut workflow: this panel owns its content height; other studio panels
+   keep the shared full-height layout above. */
+body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
+  display: flex !important;
+  flex-direction: column !important;
+  height: auto !important;
+  min-height: 0 !important;
+  gap: 0 !important;
+  padding: 22px 28px 28px !important;
+  overflow: visible !important;
 }

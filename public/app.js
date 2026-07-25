@@ -6072,8 +6072,11 @@ function renderFinalCut(finalCut = null) {
   const btn = $("#assembleFinalCutBtn");
   if (!statusEl || !previewEl) return;
   const running = !!fc.running;
+  const finalCutReady = finalCutOutputReady(fc) && !running && !fc.error;
   if (btn) {
     btn.disabled = running;
+    btn.classList.toggle("primary", !finalCutReady);
+    btn.classList.toggle("ghost", finalCutReady);
     btn.textContent = running ? "组装中…" : fc.output ? "重新组装" : "组装成片";
   }
   if (fc.error) {
@@ -6096,7 +6099,13 @@ function renderFinalCut(finalCut = null) {
              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
            </a>
          </div>`
-      : "";
+      : `<div class="final-cut-placeholder" role="img" aria-label="尚未生成成片，先生成全部视频片段，再组装成片">
+           <svg viewBox="0 0 24 24" aria-hidden="true">
+             <rect x="5" y="3" width="14" height="18" rx="2"></rect>
+             <path d="m10 9 5 3-5 3V9Z"></path>
+           </svg>
+           <span>先生成全部视频片段，再组装成片</span>
+         </div>`;
   }
   renderChatcut(state.project?.chatcut || null);
 }
@@ -6154,6 +6163,10 @@ function renderChatcut(chatcut = null) {
   }
   if (editButton) {
     editButton.disabled = queueActive;
+    const currentFinalCut = state.project?.finalCut || {};
+    const finalCutReady = finalCutOutputReady(currentFinalCut) && !currentFinalCut.running && !currentFinalCut.error;
+    editButton.classList.toggle("primary", finalCutReady);
+    editButton.classList.toggle("ghost", !finalCutReady);
     editButton.textContent = queueStatus === "running" ? "剪辑中" : "剪辑";
   }
   if (openButton) {

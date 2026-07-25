@@ -73,11 +73,6 @@ assert.doesNotMatch(
   /catch\s*\(/,
   "final cut failures must reach the shared button feedback state",
 );
-assert.doesNotMatch(
-  extractFunction(app, "async function startChatcutEditing("),
-  /catch\s*\(/,
-  "ChatCut failures must reach the shared button feedback state",
-);
 assert.match(styles, /body\.is-studio button\.is-working/, "working button styles must be scoped to the studio");
 assert.match(styles, /body\.is-studio button\.is-complete/, "completed button styles must be present");
 assert.match(styles, /body\.is-studio button:active/, "all studio buttons need an immediate press state");

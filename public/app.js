@@ -1511,7 +1511,6 @@ function workflowPreviewState() {
     videoProgress: { total: 6, completed: 2, running: true, items: [] },
     videoConfigStatus: { exists: true, ready: false },
     finalCut: null,
-    chatcut: null,
     jobs: [],
     summary: null,
   };
@@ -1589,7 +1588,6 @@ function projectShellStateFromSummary(summary = {}) {
     videoProgress: { total: 0, completed: 0, items: [] },
     videoConfigStatus: {},
     finalCut: null,
-    chatcut: null,
     jobs: [],
     summary: null,
   };
@@ -1613,7 +1611,6 @@ function mergeProjectStatus(status = {}) {
     storyboardJob: status.storyboardJob || state.project.storyboardJob,
     videoJob: status.videoJob || state.project.videoJob,
     finalCut: status.finalCut || state.project.finalCut,
-    chatcut: status.chatcut || state.project.chatcut,
     jobs: Array.isArray(status.jobs) ? status.jobs : state.project.jobs,
     assetManifest: status.assetManifest !== undefined ? status.assetManifest : state.project.assetManifest,
     assets: status.assets !== undefined ? status.assets : state.project.assets,
@@ -6072,11 +6069,10 @@ function renderFinalCut(finalCut = null) {
   const btn = $("#assembleFinalCutBtn");
   if (!statusEl || !previewEl) return;
   const running = !!fc.running;
-  const finalCutReady = finalCutOutputReady(fc) && !running && !fc.error;
   if (btn) {
     btn.disabled = running;
-    btn.classList.toggle("primary", !finalCutReady);
-    btn.classList.toggle("ghost", finalCutReady);
+    btn.classList.add("primary");
+    btn.classList.remove("ghost");
     btn.textContent = running ? "组装中…" : fc.output ? "重新组装" : "组装成片";
   }
   if (fc.error) {
@@ -6107,7 +6103,6 @@ function renderFinalCut(finalCut = null) {
            <span>先生成全部视频片段，再组装成片</span>
          </div>`;
   }
-  renderChatcut(state.project?.chatcut || null);
 }
 
 async function assembleFinalCut() {
@@ -6117,76 +6112,6 @@ async function assembleFinalCut() {
   if (data.state) setProjectState(data.state);
   renderWorkspace();
   scheduleProjectRefresh();
-}
-
-function renderChatcut(chatcut = null) {
-  const data = chatcut || {};
-  const statusEl = $("#chatcutStatus");
-  const progressEl = $("#chatcutProgress");
-  const editButton = $("#chatcutEditBtn");
-  const openButton = $("#openChatcutFileBtn");
-  if (!statusEl) return;
-  const diagnosis = data.diagnosis || {};
-  const queue = data.queue || {};
-  const queueStatus = queue.status || "";
-  const queueActive = ["queued", "running"].includes(queueStatus);
-  const queueFailed = queueStatus === "failed";
-  const outputReady = !!data.export?.url;
-  const stateKey = queueFailed ? "failed" : queueActive ? queueStatus : outputReady ? "complete" : "idle";
-  const statusLabel = queueActive
-    ? queue.label || (queueStatus === "running" ? "剪辑中" : "排队中")
-    : queueFailed
-      ? "剪辑失败"
-      : outputReady
-        ? "剪辑完成"
-        : data.packageExists
-          ? data.label || "制作包已准备"
-          : "等待素材准备";
-  const statusDetail = queueActive
-    ? queueStatus === "running"
-      ? "服务器进程运行中"
-      : "等待服务器进程"
-    : queueFailed
-      ? queue.error || data.error || "服务器剪辑失败"
-      : outputReady
-        ? "本地成片已就绪"
-        : data.packageExists
-          ? "制作包已就绪"
-          : diagnosis.reason || "生成全部视频片段后即可开始剪辑";
-  statusEl.className = `chatcut-status chatcut-status-${stateKey}`;
-  statusEl.innerHTML = `<span class="chatcut-status-dot" aria-hidden="true"></span><span class="chatcut-status-label">${escapeHtml(statusLabel)}</span><span class="chatcut-status-detail">${escapeHtml(statusDetail)}</span>`;
-  if (progressEl) {
-    progressEl.hidden = !queueActive;
-    progressEl.className = `chatcut-progress${queueActive ? " is-active" : ""}`;
-    progressEl.setAttribute("aria-label", queueActive ? statusDetail : "");
-    progressEl.innerHTML = queueActive ? '<span class="chatcut-progress-track"><span class="chatcut-progress-bar"></span></span>' : "";
-  }
-  if (editButton) {
-    editButton.disabled = queueActive;
-    const currentFinalCut = state.project?.finalCut || {};
-    const finalCutReady = finalCutOutputReady(currentFinalCut) && !currentFinalCut.running && !currentFinalCut.error;
-    editButton.classList.toggle("primary", finalCutReady);
-    editButton.classList.toggle("ghost", !finalCutReady);
-    editButton.textContent = queueStatus === "running" ? "剪辑中" : "剪辑";
-  }
-  if (openButton) {
-    openButton.classList.toggle("hidden", !outputReady);
-    if (outputReady) {
-      openButton.href = data.export.url;
-      openButton.removeAttribute("aria-disabled");
-    } else {
-      openButton.removeAttribute("href");
-      openButton.setAttribute("aria-disabled", "true");
-    }
-  }
-}
-
-async function startChatcutEditing() {
-  if (!state.selectedId) throw new Error("请先打开一个项目");
-  const data = await api(`/api/project/${state.selectedId}/chatcut/automate`, { method: "POST", body: JSON.stringify({}) });
-  if (data.state) setProjectState(data.state);
-  renderWorkspace();
-  toast(data.result?.reason || "已开始 ChatCut 剪辑");
 }
 
 function renderVideoProgress(progress) {
@@ -7097,10 +7022,6 @@ function bind() {
   $("#assembleFinalCutBtn")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
     withStudioButtonFeedback(button, () => assembleFinalCut()).catch((error) => toast(error.message));
-  });
-  $("#chatcutEditBtn")?.addEventListener("click", (event) => {
-    const button = event.currentTarget;
-    withStudioButtonFeedback(button, () => startChatcutEditing()).catch((error) => toast(error.message));
   });
   $("#zoomOut").addEventListener("click", () => setWorkspaceScale(state.workspaceScale - 0.08));
   $("#zoomIn").addEventListener("click", () => setWorkspaceScale(state.workspaceScale + 0.08));

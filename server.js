@@ -20,9 +20,6 @@ const {
 } = require("./server/reference-kits.js");
 const { buildTeamProjectProgressFacts, calculateTeamProjectProgress, selectVideoConfigRecord } = require("./server/team-progress.js");
 const { createAssetLibrary } = require("./server/asset-library.js");
-const { CHATCUT_STATUS, createChatcutAdapter } = require("./server/chatcut-adapter.js");
-const { createChatcutQueue } = require("./server/chatcut-queue.js");
-const { createChatcutAgent } = require("./server/chatcut-agent.js");
 const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
 const { ensureThumbnail } = require("./server/thumbnailer.js");
 
@@ -8083,15 +8080,6 @@ function ffprobeReadable(file) {
     return false;
   }
 }
-function ffprobeDurationSeconds(file) {
-  try {
-    const out = execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file], { encoding: "utf8", timeout: 20000 });
-    const duration = Number(String(out || "").trim());
-    return Number.isFinite(duration) && duration > 0 ? Math.round(duration * 1000) / 1000 : 0;
-  } catch {
-    return 0;
-  }
-}
 function runFfmpegAssembly(args, timeoutMs = 20 * 60 * 1000) {
   return new Promise((resolve, reject) => {
     const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
@@ -8262,122 +8250,6 @@ function maybeAutoAssembleFinalCut(episodeRoot) {
   }
 }
 
-const chatcutAdapter = createChatcutAdapter();
-const chatcutQueue = createChatcutQueue();
-const chatcutAgent = createChatcutAgent();
-const CHATCUT_AGENT_POLL_MS = Math.max(5_000, Number(process.env.CHATCUT_AGENT_POLL_MS || 10_000));
-let chatcutWorkerRunning = false;
-
-function chatcutStatus(episodeRoot) {
-  const current = chatcutAdapter.status(episodeRoot);
-  current.diagnosis = chatcutAgent.diagnose();
-  current.queue = chatcutQueue.read(episodeRoot);
-  const exported = current.export?.path;
-  if (exported && fs.existsSync(exported) && fs.statSync(exported).isFile() && allowedPath(exported)) {
-    current.export = {
-      ...current.export,
-      url: `/media?path=${encodeURIComponent(exported)}&v=${Math.round(fs.statSync(exported).mtimeMs)}`,
-      downloadUrl: `/media?path=${encodeURIComponent(exported)}&v=${Math.round(fs.statSync(exported).mtimeMs)}&download=1`,
-    };
-  }
-  return current;
-}
-
-function chatcutPackageInput(episodeRoot) {
-  const config = readVideoConfig(episodeRoot)?.data || {};
-  const { clips, missing } = collectFinalCutClips(episodeRoot, config);
-  if (!clips.length) throw new Error("没有可导出的已完成片段，请先生成视频片段");
-  if (missing.length) throw new Error(`以下片段尚未完成，无法准备 ChatCut 制作包：${missing.join("、")}`);
-  const clipByName = new Map(clips.map((clip) => [clip.name, clip.file]));
-  const shots = (Array.isArray(config.shots) ? config.shots : []).map((shot) => {
-    const filePath = clipByName.get(compactLine(shot?.name || ""));
-    if (!filePath) return null;
-    const configuredDuration = Number(shot?.durationSeconds ?? shot?.duration ?? shot?.durationSec ?? 0);
-    return {
-      ...shot,
-      filePath,
-      durationSeconds: Number.isFinite(configuredDuration) && configuredDuration > 0 ? configuredDuration : ffprobeDurationSeconds(filePath),
-    };
-  }).filter(Boolean);
-  return {
-    episodeRoot,
-    project: projectSummary(episodeRoot),
-    roughCutPath: finalCutOutputFile(episodeRoot),
-    shots,
-  };
-}
-
-function chatcutAgentContext(episodeRoot, job) {
-  const root = path.resolve(episodeRoot);
-  const packagePath = path.resolve(root, job.packageDir || "12_chatcut");
-  const manifestPath = path.resolve(root, job.manifestFile || "12_chatcut/assembly_manifest.json");
-  const editBriefPath = path.resolve(root, job.editBriefFile || "12_chatcut/edit_brief.md");
-  const outputDir = path.join(packagePath, "exports");
-  for (const file of [packagePath, manifestPath, editBriefPath, outputDir]) {
-    if (!allowedPath(file) || !isInside(root, file)) throw new Error("ChatCut Agent 路径必须位于当前项目内");
-  }
-  if (!fs.existsSync(manifestPath) || !fs.statSync(manifestPath).isFile()) throw new Error("ChatCut 制作包缺少 assembly_manifest.json");
-  if (!fs.existsSync(editBriefPath) || !fs.statSync(editBriefPath).isFile()) throw new Error("ChatCut 制作包缺少 edit_brief.md");
-  fs.mkdirSync(outputDir, { recursive: true });
-  return {
-    packagePath,
-    manifestPath,
-    editBriefPath,
-    outputDir,
-    jobFile: chatcutQueue.queueFile(root),
-  };
-}
-
-function resolveChatcutExportPath(episodeRoot, exportPath) {
-  const root = path.resolve(episodeRoot);
-  const candidate = path.resolve(root, String(exportPath || ""));
-  if (!allowedPath(candidate) || !isInside(root, candidate) || !fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) {
-    throw new Error("ChatCut Agent 返回的导出文件必须存在于当前项目目录内");
-  }
-  return candidate;
-}
-
-async function processChatcutQueueOnce() {
-  if (chatcutWorkerRunning || !chatcutAgent.diagnose().enabled) return null;
-  chatcutWorkerRunning = true;
-  try {
-    for (const episodeRoot of scanEpisodeRoots()) {
-      chatcutQueue.recover(episodeRoot);
-      const job = chatcutQueue.claim(episodeRoot, { workerId: `pixel-toys-${process.pid}` });
-      if (!job) continue;
-      try {
-        const context = chatcutAgentContext(episodeRoot, job);
-        chatcutQueue.heartbeat(episodeRoot, { workerId: job.workerId });
-        const result = await chatcutAgent.run(job, context);
-        if (result.dryRun === true) {
-          chatcutQueue.complete(episodeRoot, { ...result, verifiedAt: new Date().toISOString() });
-          return job.id;
-        }
-        const sourceFile = resolveChatcutExportPath(episodeRoot, result.exportPath);
-        const imported = chatcutAdapter.importExport(episodeRoot, sourceFile, { fileName: result.fileName || "chatcut_export" });
-        chatcutQueue.complete(episodeRoot, {
-          ...result,
-          exportPath: imported.export.path,
-          importedAt: new Date().toISOString(),
-        });
-      } catch (error) {
-        chatcutQueue.fail(episodeRoot, error);
-      }
-      return job.id;
-    }
-  } finally {
-    chatcutWorkerRunning = false;
-  }
-  return null;
-}
-
-function startChatcutAgentWorker() {
-  if (!chatcutAgent.diagnose().enabled) return null;
-  const tick = () => processChatcutQueueOnce().catch(() => {});
-  tick();
-  return setInterval(tick, CHATCUT_AGENT_POLL_MS);
-}
-
 function fullProjectState(episodeRoot) {
   if (!allowedPath(episodeRoot) || !fs.existsSync(episodeRoot)) throw new Error("project not found");
   const workflow = readWorkflowState(episodeRoot);
@@ -8491,7 +8363,6 @@ function fullProjectState(episodeRoot) {
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     tailFrames: scanTailFrames(episodeRoot),
     finalCut: finalCutStatus(episodeRoot),
-    chatcut: chatcutStatus(episodeRoot),
     summary: readSummary(episodeRoot, { runNamespace }),
     jobs: localJobs.map(jobSummary),
   };
@@ -8558,7 +8429,6 @@ function projectStatusSnapshot(episodeRoot) {
     storyboardJob: jobSummary(latestJobForTypes(localJobs, ["storyboards", "storyboard-regenerate"])),
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     finalCut: finalCutStatus(episodeRoot),
-    chatcut: chatcutStatus(episodeRoot),
     jobs: localJobs.map(jobSummary),
     assetManifest: normalizedAssetManifest,
     assets: productionAssets,
@@ -21530,69 +21400,6 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
   }
 
-  if (req.method === "GET" && action === "chatcut/status") {
-    return send(res, 200, { ok: true, chatcut: chatcutStatus(episodeRoot) });
-  }
-
-  if (req.method === "POST" && action === "chatcut/package") {
-    const result = chatcutAdapter.buildPackage(chatcutPackageInput(episodeRoot));
-    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
-  }
-
-  if (req.method === "POST" && action === "chatcut/state") {
-    const body = await readBody(req);
-    const result = chatcutAdapter.setState(episodeRoot, body.status, { note: body.note || "" });
-    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
-  }
-
-  if (req.method === "POST" && action === "chatcut/import") {
-    const body = await readBody(req);
-    const rawPath = compactLine(body.filePath || body.path || body.exportPath || "");
-    const sourceFile = path.resolve(path.isAbsolute(rawPath) ? rawPath : path.join(episodeRoot, rawPath));
-    if (!rawPath || !allowedPath(sourceFile) || !fs.existsSync(sourceFile) || !fs.statSync(sourceFile).isFile()) {
-      throw new Error("请提供本地 ChatCut 导出视频路径");
-    }
-    const result = chatcutAdapter.importExport(episodeRoot, sourceFile, { fileName: body.fileName || "" });
-    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
-  }
-
-  if (req.method === "POST" && action === "chatcut/approve") {
-    const result = chatcutAdapter.setState(episodeRoot, CHATCUT_STATUS.APPROVED, { note: "人工确认本集" });
-    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
-  }
-
-  if (req.method === "POST" && action === "chatcut/automate") {
-    const body = await readBody(req);
-    let packageStatus = chatcutAdapter.status(episodeRoot);
-    if (!packageStatus.packageExists) {
-      const packageResult = chatcutAdapter.buildPackage(chatcutPackageInput(episodeRoot));
-      packageStatus = chatcutAdapter.status(episodeRoot);
-      packageStatus.packageResult = packageResult;
-    }
-    const user = currentUserFromRequest(req);
-    const queued = chatcutQueue.enqueue(episodeRoot, {
-      project: projectSummary(episodeRoot),
-      sourceDigest: packageStatus.sourceDigest,
-      packageDir: "12_chatcut",
-      manifestFile: "12_chatcut/assembly_manifest.json",
-      editBriefFile: "12_chatcut/edit_brief.md",
-      requestedBy: user?.id || body.requestedBy || "",
-    });
-    if (queued.created || queued.job.status === "queued" || queued.job.status === "running") {
-      chatcutAdapter.setState(episodeRoot, CHATCUT_STATUS.EDITING, { note: "已提交服务器 ChatCut Agent 队列" });
-    }
-    const result = {
-      enabled: chatcutAgent.diagnose().enabled,
-      queued: queued.created,
-      job: queued.job,
-      diagnosis: chatcutAgent.diagnose(),
-      reason: chatcutAgent.diagnose().enabled
-        ? "已进入服务器 ChatCut Agent 队列"
-        : "已写入服务器队列，但尚未配置独立 ChatCut Agent",
-    };
-    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
-  }
-
   if (req.method === "POST" && action === "job") {
     const body = await readBody(req);
     const job = await startToolJob(episodeRoot, body.type, body);
@@ -21776,7 +21583,6 @@ if (require.main === module) {
   server.listen(PORT, () => {
     console.log(`Pixel Toys running at http://localhost:${PORT}`);
     console.log(`Workspace: ${APP_ROOT}`);
-    if (startChatcutAgentWorker()) console.log(`ChatCut Agent worker enabled (poll ${CHATCUT_AGENT_POLL_MS} ms)`);
   });
 }
 

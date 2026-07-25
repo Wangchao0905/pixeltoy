@@ -18,10 +18,6 @@ const requiredFiles = [
 const syntaxFiles = [
   "server.js",
   "server/asset-library.js",
-  "server/chatcut-adapter.js",
-  "server/chatcut-agent-runner.js",
-  "server/chatcut-agent.js",
-  "server/chatcut-queue.js",
   "server/reference-kits.js",
   "server/seedance-director.js",
   "server/team-access.js",

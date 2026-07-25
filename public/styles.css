@@ -10830,7 +10830,7 @@ body {
   }
 }
 
-/* 成片模块(阶段 D):两步流水线、预览 + 下载 */
+/* 成片模块(阶段 D):预览 + 下载 */
 .final-cut-panel {
   display: flex;
   flex-direction: column;
@@ -10863,21 +10863,7 @@ body {
 .final-cut-panel .final-cut-step-heading > div {
   min-width: 0;
 }
-.final-cut-panel .final-cut-step-marker {
-  display: grid;
-  flex: 0 0 28px;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid rgba(159, 240, 107, 0.7);
-  border-radius: 50%;
-  background: rgba(159, 240, 107, 0.14);
-  color: var(--studio-signal, var(--accent));
-  font-size: 13px;
-  font-weight: 800;
-}
-.final-cut-panel .final-cut-step h2,
-.final-cut-panel .final-cut-step h3 {
+.final-cut-panel .final-cut-step h2 {
   margin: 0;
   color: var(--studio-ink, var(--ink));
   line-height: 1.2;
@@ -10885,32 +10871,11 @@ body {
 .final-cut-panel .final-cut-step h2 {
   font-size: 18px;
 }
-.final-cut-panel .final-cut-step h3 {
-  font-size: 16px;
-}
 .final-cut-panel .final-cut-step p {
   max-width: 620px;
 }
 .final-cut-panel .final-cut-step .actions {
   align-items: center;
-}
-.final-cut-panel .final-cut-step-connector {
-  position: relative;
-  width: 28px;
-  height: 28px;
-  margin-left: 18px;
-  border-left: 1px solid var(--studio-line-strong, var(--line));
-}
-.final-cut-panel .final-cut-step-connector::after {
-  position: absolute;
-  bottom: 2px;
-  left: -4px;
-  width: 7px;
-  height: 7px;
-  border-right: 1px solid var(--studio-line-strong, var(--line));
-  border-bottom: 1px solid var(--studio-line-strong, var(--line));
-  content: "";
-  transform: rotate(45deg);
 }
 .final-cut-panel .final-cut-preview {
   display: flex;
@@ -10990,132 +10955,6 @@ body {
   display: block;
   width: 16px;
   height: 16px;
-}
-
-.chatcut-workflow {
-  margin: 0;
-  padding: 16px 18px 18px;
-  border: 1px solid var(--studio-line, var(--line));
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, rgba(24, 48, 72, 0.28), rgba(7, 16, 29, 0.5)),
-    rgba(8, 17, 31, 0.48);
-}
-.chatcut-workflow h3 {
-  margin: 0;
-  font-size: 16px;
-}
-.chatcut-workflow .section-head {
-  align-items: center;
-}
-.chatcut-workflow .actions {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.chatcut-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  min-width: 0;
-  gap: 8px;
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
-.chatcut-status-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: rgba(181, 196, 219, 0.56);
-}
-.chatcut-status-label {
-  flex: 0 0 auto;
-  color: var(--ink);
-  font-weight: 650;
-}
-.chatcut-status-detail {
-  flex: 1 1 180px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-.chatcut-status-queued .chatcut-status-dot,
-.chatcut-status-running .chatcut-status-dot {
-  background: var(--accent, #2f9bff);
-  box-shadow: 0 0 0 4px rgba(47, 155, 255, 0.12);
-  animation: chatcutStatusPulse 1.6s ease-in-out infinite;
-}
-.chatcut-status-complete .chatcut-status-dot {
-  background: #63e6be;
-  box-shadow: 0 0 0 4px rgba(99, 230, 190, 0.12);
-}
-.chatcut-status-failed .chatcut-status-dot {
-  background: #ff7d88;
-  box-shadow: 0 0 0 4px rgba(255, 125, 136, 0.12);
-}
-
-.chatcut-progress {
-  width: 100%;
-  margin-top: 14px;
-}
-.chatcut-progress[hidden] {
-  display: none;
-}
-.chatcut-progress-track {
-  display: block;
-  position: relative;
-  width: 100%;
-  height: 3px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(148, 174, 206, 0.14);
-}
-.chatcut-progress-bar {
-  display: block;
-  width: 34%;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, transparent, var(--accent, #2f9bff), #75c8ff, transparent);
-  box-shadow: 0 0 12px rgba(47, 155, 255, 0.72);
-  animation: chatcutProgressSweep 1.8s ease-in-out infinite;
-}
-.chatcut-open-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  text-decoration: none;
-}
-
-@keyframes chatcutStatusPulse {
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: scale(0.82);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes chatcutProgressSweep {
-  0% {
-    transform: translateX(-125%);
-  }
-  100% {
-    transform: translateX(320%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chatcut-status-dot,
-  .chatcut-progress-bar {
-    animation: none;
-  }
 }
 
 /* Admin console polish: dense production table, not oversized dashboard chips. */

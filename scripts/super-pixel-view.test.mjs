@@ -20,7 +20,10 @@ assert.match(html, /id="superPixelInput"/, "输入框必须存在");
 assert.match(html, /id="superPixelModel"/, "模型选择器必须存在");
 assert.match(html, /id="superPixelMode"/, "模式选择器必须存在");
 assert.match(html, /id="superPixelSend"/, "提交按钮必须存在");
-assert.match(html, /id="superPixelAssetRail"[^>]*aria-label="资产库"/, "Super Pixel 必须常驻资产侧栏");
+assert.match(html, /<div class="super-pixel-layout">\s*<button id="superPixelAssetRailToggle"[^>]*type="button"[^>]*aria-controls="superPixelAssetRail"[^>]*aria-expanded="false"[^>]*aria-label="素材库"[^>]*title="素材库"/, "Super Pixel 必须提供默认收起的资产抽屉开关");
+assert.match(html, /id="superPixelAssetRailToggle"[\s\S]{0,220}<span aria-hidden="true">[^<]+<\/span>/, "资产抽屉开关必须有隐藏的网格图标");
+assert.match(html, /id="superPixelAssetRail"[^>]*aria-label="资产库"/, "Super Pixel 资产侧栏必须保留为可收起抽屉");
+assert.match(html, /id="superPixelAssetRailClose"[^>]*type="button"[^>]*aria-label="收起素材库"/, "资产抽屉必须提供关闭按钮");
 assert.match(html, /id="superPixelAssetRailList"/, "资产侧栏必须有独立列表容器");
 
 // 模型选项：Claude 与 ChatGPT 各三档，分组呈现。
@@ -57,8 +60,11 @@ assert.match(app, /classList\.toggle\("is-chatting", chatting\)/, "有消息时�
 assert.match(css, /\.super-pixel-stage\.is-chatting\s*\{/, "必须有对话态布局");
 assert.match(css, /\.super-pixel-stage\.is-chatting[\s\S]{0,400}?\.super-pixel-title,?[\s\S]{0,120}?display:\s*none/, "对话态必须收掉首屏引导物");
 
-// 聊天字体：衬线，且消息与输入框同源（输入时所见即发出后所得）
-assert.match(css, /--sp-chat-font:[^;]*serif/, "聊天字体栈必须以 serif 收尾");
+// 聊天字体：几何黑体，且消息与输入框同源（输入时所见即发出后所得）。
+// 注意断言别写成 /serif/——"sans-serif" 含该子串，会把黑体栈也判过（曾假绿）。
+assert.match(css, /--sp-chat-font:[^;]*sans-serif\s*;/, "聊天字体栈必须以 sans-serif 收尾");
+assert.match(css, /--sp-chat-font:[^;]*"PingFang SC"/, "中文必须落 PingFang SC");
+assert.doesNotMatch(css, /--sp-chat-font:[^;]*"Songti SC"/, "聊天字体不应再回落宋体衬线");
 assert.match(css, /\.super-pixel-message\s*\{[\s\S]*?font-family:\s*var\(--sp-chat-font\)/, "消息气泡必须用聊天字体");
 assert.match(css, /\.super-pixel-input\s*\{[\s\S]*?font-family:\s*var\(--sp-chat-font\)/, "输入框必须与气泡同字体");
 
@@ -84,7 +90,19 @@ assert.match(app, /data-manifest-asset-id=/, "侧栏资产卡片必须复用现�
 assert.match(app, /application\/x-pixel-toys-asset-type/, "composer 必须识别现有资产拖拽 MIME");
 assert.match(app, /state\.assetLibrary\.assets\.find\(\(asset\) => asset\.id === assetId\)/, "drop 后必须按 assetId 反查素材库图片");
 assert.match(app, /renderSuperPixelAssetRail\(\);/, "资产库更新后必须刷新侧栏");
+// dropEffect 必须跟源端 effectAllowed 匹配：资产卡片声明 "move"，写死 "copy" 会让
+// 浏览器回落 none、drop 不触发（真机拖拽弹回原位，合成事件测不出来）。
+assert.match(
+  app,
+  /dropEffect\s*=\s*isAssetDrag\(event\)\s*\?\s*"move"\s*:\s*"copy"/,
+  "composer 的 dropEffect 必须按拖拽类型分派，资产拖拽用 move 以匹配卡片的 effectAllowed",
+);
+assert.match(app, /effectAllowed = "move"/, "资产卡片 dragstart 必须声明 move");
 assert.match(app, /state\.exploreView === "superpixel"/, "进入 Super Pixel 时必须加载资产库");
+assert.match(app, /superPixelAssetRailToggle/, "必须接入资产抽屉开关");
+assert.match(app, /superPixelAssetRailClose/, "必须接入资产抽屉关闭按钮");
+assert.match(app, /SUPER_PIXEL_RAIL_OPEN_KEY\s*=\s*"pixelToys\.superPixelRailOpen"/, "资产抽屉状态必须使用指定的 localStorage key");
+assert.match(app, /localStorage\.setItem\(SUPER_PIXEL_RAIL_OPEN_KEY/, "资产抽屉开关必须持久化状态");
 
 // 蜂窝背景必须真的落在 CSS 里（内联 style 会被引号撕断，见 CLAUDE.md 经验）
 assert.match(css, /\.super-pixel-hex\s*\{[\s\S]*?url\("data:image\/svg\+xml,/, "蜂窝 data URI 必须写在 CSS 中");
@@ -92,6 +110,8 @@ assert.match(css, /\.super-pixel-view\s*\{[\s\S]*?--sp-acc:/, "配色变量必�
 assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?super-pixel/, "必须有 reduced-motion 降级");
 assert.match(css, /\.super-pixel-asset-rail\s*\{/, "必须有资产侧栏样式");
 assert.match(css, /\.super-pixel-asset-card\s*\{/, "必须有可拖拽资产卡片样式");
+assert.match(css, /\.super-pixel-layout\s*\{[\s\S]*?grid-template-columns:\s*0\s+minmax\(0,\s*1fr\)/, "资产抽屉默认必须收起为零宽度");
+assert.match(css, /\.super-pixel-layout\.is-rail-open\s*\{[\s\S]*?grid-template-columns:\s*minmax\(210px,\s*252px\)\s+minmax\(0,\s*1fr\)/, "打开资产抽屉必须把聊天内容向右推开");
 
 // —— 以下四条锁住本轮 Playwright 实测发现并修复的缺陷 ——
 

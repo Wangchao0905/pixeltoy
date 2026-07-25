@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=chat-dock-asset-controls-20260726" />
+    <link rel="stylesheet" href="/styles.css?v=rail-drawer-dropeffect-20260726" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -193,6 +193,9 @@
           <div class="super-pixel-hex" aria-hidden="true"></div>
           <div class="super-pixel-glow" aria-hidden="true"></div>
           <div class="super-pixel-layout">
+            <button id="superPixelAssetRailToggle" class="super-pixel-asset-rail-toggle" type="button" aria-controls="superPixelAssetRail" aria-expanded="false" aria-label="素材库" title="素材库">
+              <span aria-hidden="true">▦</span>
+            </button>
             <aside id="superPixelAssetRail" class="super-pixel-asset-rail" aria-label="资产库">
               <header class="super-pixel-asset-rail-head">
                 <div>
@@ -200,6 +203,7 @@
                   <strong>素材库</strong>
                 </div>
                 <button id="superPixelAssetRailRefresh" class="super-pixel-asset-rail-refresh" type="button" aria-label="刷新资产库" title="刷新资产库">↻</button>
+                <button id="superPixelAssetRailClose" class="super-pixel-asset-rail-close" type="button" aria-label="收起素材库" title="收起素材库">✕</button>
               </header>
               <div id="superPixelAssetRailList" class="super-pixel-asset-rail-list" aria-live="polite"></div>
               <div id="superPixelAssetRailEmpty" class="super-pixel-asset-rail-empty hidden">暂无资产</div>
@@ -1173,6 +1177,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=chat-dock-asset-controls-20260726"></script>
+    <script src="/app.js?v=rail-drawer-dropeffect-20260726"></script>
   </body>
 </html>

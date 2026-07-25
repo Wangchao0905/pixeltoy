@@ -19,6 +19,7 @@ const PROJECT_REFRESH_RETRY_MS = 5000;
 const IMAGE_EXPLORE_HISTORY_KEY = "pixelToys.imageExploreHistory.v1";
 const IMAGE_EXPLORE_STORYBOARD_HISTORY_KEY = "pixelToys.imageStoryboardHistory.v1";
 const IMAGE_EXPLORE_STORYBOARD_RECOVERY_KEY = "pixelToys.imageStoryboardRecovery.v1";
+const SUPER_PIXEL_RAIL_OPEN_KEY = "pixelToys.superPixelRailOpen";
 const IMAGE_EXPLORE_POLL_INTERVAL_MS = 1200;
 const IMAGE_EXPLORE_POLL_MAX_ATTEMPTS = 3000;
 const IMAGE_EXPLORE_STORYBOARD_RECOVERY_LOOKBACK_MS = 36 * 60 * 60 * 1000;
@@ -2421,6 +2422,16 @@ function renderSuperPixelAssetRail() {
   empty.classList.toggle("hidden", assets.length > 0);
 }
 
+function setSuperPixelAssetRailOpen(open, { persist = true } = {}) {
+  const layout = $(".super-pixel-layout");
+  const toggle = $("#superPixelAssetRailToggle");
+  if (!layout || !toggle) return;
+  const isOpen = open === true;
+  layout.classList.toggle("is-rail-open", isOpen);
+  toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  if (persist) localStorage.setItem(SUPER_PIXEL_RAIL_OPEN_KEY, isOpen ? "1" : "0");
+}
+
 function renderAssetLibraryView() {
   const gallery = $("#assetLibraryGallery");
   const empty = $("#assetLibraryEmpty");
@@ -2759,6 +2770,12 @@ async function submitSuperPixelChat(prompt) {
 }
 
 function bindSuperPixel() {
+  setSuperPixelAssetRailOpen(localStorage.getItem(SUPER_PIXEL_RAIL_OPEN_KEY) === "1", { persist: false });
+  $("#superPixelAssetRailToggle")?.addEventListener("click", () => {
+    const layout = $(".super-pixel-layout");
+    setSuperPixelAssetRailOpen(!layout?.classList.contains("is-rail-open"));
+  });
+  $("#superPixelAssetRailClose")?.addEventListener("click", () => setSuperPixelAssetRailOpen(false));
   const input = $("#superPixelInput");
   const form = $("#superPixelComposer");
   if (input) {
@@ -2821,7 +2838,11 @@ function bindSuperPixel() {
     composer.addEventListener("dragover", (event) => {
       if (!isSupportedDrag(event)) return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
+      // dropEffect 必须落在源端 effectAllowed 的允许集合内，否则浏览器丢弃赋值、
+      // 回落 none，drop 根本不触发（真机拖拽弹回原位；程序化 DataTransfer 不走
+      // 这套协商，所以合成事件测不出来）。资产卡片 dragstart 声明的是 "move"
+      // （见 bindManualAssetControls，与资产重分类共用），文件拖拽才是 "copy"。
+      event.dataTransfer.dropEffect = isAssetDrag(event) ? "move" : "copy";
       composer.classList.add("is-dragover");
     });
     composer.addEventListener("dragleave", (event) => {

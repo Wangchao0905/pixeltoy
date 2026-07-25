@@ -15355,12 +15355,12 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   --sp-acc-ink: #fff;
   --sp-panel: rgba(20, 7, 11, 0.8);
   --sp-line: rgba(255, 110, 130, 0.14);
-  /* 聊天字体：衬线。剧集创作是文字活儿，衬线比系统无衬线更有编辑感。
-     西文用 Iowan/Palatino（macOS 自带，字重稳、小字号可读），中文落到
-     Songti/宋体-简。不加载 webfont——本地部署无外网字体依赖，且中文字库
-     动辄几 MB，首屏代价太大。Windows 上西文回落 Georgia、中文回落宋体。 */
-  --sp-chat-font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
-    "Songti SC", "Source Han Serif SC", "Noto Serif CJK SC", SimSun, serif;
+  /* 聊天字体：几何黑体，与站内其它 UI 同源。中文落 PingFang SC（macOS 自带），
+     Windows 回落微软雅黑，Linux 回落 Noto Sans CJK。不加载 webfont——本地部署
+     无外网字体依赖，且中文字库动辄几 MB，首屏代价太大。 */
+  --sp-chat-font: "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   position: relative;
   overflow: hidden;
   /* 与 .image-explore-view / .asset-library-view 一致：44px 为顶栏高度。
@@ -15394,7 +15394,37 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   z-index: 1;
   min-height: calc(100vh - 44px);
   display: grid;
+  grid-template-columns: 0 minmax(0, 1fr);
+  transition: grid-template-columns 180ms ease;
+}
+
+.super-pixel-layout.is-rail-open {
   grid-template-columns: minmax(210px, 252px) minmax(0, 1fr);
+}
+
+.super-pixel-asset-rail-toggle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--sp-line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--sp-dim);
+  cursor: pointer;
+  line-height: 1;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.super-pixel-asset-rail-toggle:hover {
+  border-color: rgba(255, 110, 130, 0.3);
+  color: var(--sp-ink);
 }
 
 .super-pixel-asset-rail {
@@ -15403,6 +15433,22 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   border-right: 1px solid var(--sp-line);
   background: rgba(11, 3, 7, 0.58);
   overflow: hidden;
+}
+
+.super-pixel-layout.is-rail-open .super-pixel-asset-rail {
+  padding-top: 58px;
+}
+
+.super-pixel-layout:not(.is-rail-open) .super-pixel-asset-rail > * {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.super-pixel-layout.is-rail-open .super-pixel-asset-rail > * {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
 }
 
 .super-pixel-asset-rail-head {
@@ -15436,7 +15482,8 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   white-space: nowrap;
 }
 
-.super-pixel-asset-rail-refresh {
+.super-pixel-asset-rail-refresh,
+.super-pixel-asset-rail-close {
   flex: none;
   width: 26px;
   height: 26px;
@@ -15450,7 +15497,8 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   line-height: 1;
 }
 
-.super-pixel-asset-rail-refresh:hover {
+.super-pixel-asset-rail-refresh:hover,
+.super-pixel-asset-rail-close:hover {
   border-color: rgba(255, 110, 130, 0.3);
   color: var(--sp-ink);
 }
@@ -15845,6 +15893,9 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 
 @media (max-width: 600px) {
   .super-pixel-layout { display: block; }
+  .super-pixel-layout:not(.is-rail-open) .super-pixel-asset-rail { display: none; }
+  .super-pixel-layout:not(.is-rail-open) .super-pixel-stage { padding-top: 52px; }
+  .super-pixel-layout.is-rail-open .super-pixel-asset-rail { display: block; }
   .super-pixel-asset-rail {
     margin: 12px 14px 0;
     padding: 10px;

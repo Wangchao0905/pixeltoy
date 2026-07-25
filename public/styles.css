@@ -15741,14 +15741,9 @@ body.is-studio-modern {
 }
 
 body.is-studio-modern #app { min-height: 100vh; }
-body.is-studio-modern #studioShell {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-body.is-studio-modern #studioShell.hidden { display: none !important; }
 body.is-studio-modern #studioModernShell.hidden { display: none !important; }
-.studio-modern-shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100vh; background: var(--modern-bg); color: var(--modern-text); }
+.workflow-data-bridge { display: none !important; }
+.studio-modern-shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); height: 100vh; min-height: 100vh; overflow: hidden; background: var(--modern-bg); color: var(--modern-text); }
 .modern-series-nav { position: sticky; top: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border-right: 1px solid var(--modern-line); background: var(--modern-rail); }
 .modern-brand { padding: 20px 16px 16px; border-bottom: 1px solid var(--modern-line); }
 .modern-brand button { display: block; width: 146px; min-height: 0; padding: 0; border: 0; background: transparent; }
@@ -15802,20 +15797,35 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-bible-swatch i { flex: 1; }.modern-bible-swatch i:nth-child(1) { background: #263640; }.modern-bible-swatch i:nth-child(2) { background: #8d403c; }.modern-bible-swatch i:nth-child(3) { background: #c9a65c; }
 .modern-bible-entry > span:nth-child(2) { display: grid; gap: 3px; }.modern-bible-entry b { font-size: 10px; }.modern-bible-entry small { color: var(--modern-quiet); font-size: 8px; }.modern-bible-entry em { color: var(--modern-signal); font-style: normal; }
 
-.modern-main { min-width: 0; background: var(--modern-bg); }
+.modern-main { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; background: var(--modern-bg); }
 .modern-topbar { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 22px; border-bottom: 1px solid var(--modern-line); background: rgba(15,17,18,.96); }
 .modern-breadcrumb { display: flex; gap: 9px; align-items: center; font-size: 10px; }.modern-breadcrumb span, .modern-breadcrumb i { color: var(--modern-quiet); font-style: normal; }.modern-breadcrumb strong { color: var(--modern-signal); font-family: var(--mono); }
 .modern-top-actions { display: flex; align-items: center; gap: 7px; }.modern-quiet-button, .modern-queue-button { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 10px; }.modern-quiet-button:hover, .modern-queue-button:hover { border-color: var(--modern-line-strong); color: var(--modern-text); }.modern-queue-button { display: inline-flex; gap: 7px; align-items: center; }.modern-queue-button i { width: 6px; height: 6px; border-radius: 50%; background: var(--modern-signal); }
 .modern-episode-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 24px; align-items: end; padding: 30px 26px 24px; border-bottom: 1px solid var(--modern-line); }.modern-kicker { display: flex; gap: 10px; align-items: center; color: var(--modern-quiet); font-family: var(--mono); font-size: 9px; }.modern-kicker b { padding: 4px 7px; border: 1px solid rgba(200,255,46,.3); border-radius: 3px; color: var(--modern-signal); font-size: 8px; font-weight: 500; }.modern-episode-hero h1 { margin: 8px 0 0; font-size: clamp(26px, 3vw, 40px); line-height: 1.05; letter-spacing: 0; }.modern-episode-hero p { max-width: 560px; margin: 10px 0 0; color: var(--modern-muted); font-size: 12px; line-height: 1.6; }.modern-episode-stats { display: flex; gap: 22px; margin: 0; }.modern-episode-stats div { min-width: 58px; }.modern-episode-stats dt { color: var(--modern-quiet); font-size: 9px; }.modern-episode-stats dd { margin: 4px 0 0; color: var(--modern-text); font-family: var(--mono); font-size: 17px; }.modern-episode-action { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; align-items: center; min-width: 190px; padding: 11px 13px; border: 1px solid var(--modern-signal); border-radius: 4px; background: rgba(200,255,46,.08); color: var(--modern-text); text-align: left; }.modern-episode-action:hover { background: rgba(200,255,46,.14); }.modern-episode-action span { display: grid; gap: 4px; }.modern-episode-action b { font-size: 11px; }.modern-episode-action small { color: var(--modern-muted); font-size: 9px; }.modern-episode-action i { color: var(--modern-signal); font-style: normal; }
 
 .modern-pipeline { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); border-bottom: 1px solid var(--modern-line); }.modern-pipeline button { position: relative; display: grid; grid-template-columns: 25px minmax(0,1fr) 8px; grid-template-rows: auto auto; column-gap: 9px; align-items: center; min-height: 67px; padding: 11px 15px; border: 0; border-right: 1px solid var(--modern-line); background: transparent; color: var(--modern-muted); text-align: left; }.modern-pipeline button:last-child { border-right: 0; }.modern-pipeline button:hover { background: var(--modern-surface); color: var(--modern-text); }.modern-pipeline button.is-active { background: var(--modern-surface-2); color: var(--modern-text); }.modern-pipeline span { grid-row: 1 / span 2; align-self: start; color: var(--modern-signal); font-family: var(--mono); font-size: 10px; }.modern-pipeline b { font-size: 11px; font-weight: 600; }.modern-pipeline small { color: var(--modern-quiet); font-size: 9px; }.modern-pipeline i { grid-column: 3; grid-row: 1 / span 2; width: 6px; height: 6px; border-radius: 50%; background: var(--modern-line-strong); }.modern-pipeline button.is-complete i { background: #9fcf58; }.modern-pipeline button.is-current i { background: var(--modern-signal); box-shadow: 0 0 0 4px rgba(200,255,46,.1); }
-.modern-source-panel { margin: 18px 26px 0; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }
-.modern-source-head { display: flex; justify-content: space-between; gap: 16px; align-items: end; padding: 12px 14px; border-bottom: 1px solid var(--modern-line); }
+.modern-main[data-modern-view="assets"] .modern-sequence,
+.modern-main[data-modern-view="assets"] .modern-workbench { display: none; }
+.modern-main[data-modern-view="storyboard"] .modern-source-panel,
+.modern-main[data-modern-view="storyboard"] .modern-kit-bar,
+.modern-main[data-modern-view="storyboard"] .modern-stage-pane:first-child,
+.modern-main[data-modern-view="storyboard"] .modern-stage-pane:last-child { display: none; }
+.modern-main[data-modern-view="video"] .modern-source-panel,
+.modern-main[data-modern-view="video"] .modern-kit-bar,
+.modern-main[data-modern-view="video"] .modern-stage-pane:first-child,
+.modern-main[data-modern-view="video"] .modern-stage-pane:nth-child(2) { display: none; }
+.modern-core { min-height: 0; flex: 1 1 auto; overflow: auto; scrollbar-width: thin; }
+.modern-core > .modern-source-panel,
+.modern-core > .modern-kit-bar,
+.modern-core > .modern-sequence,
+.modern-core > .modern-workbench { flex-shrink: 0; }
+.modern-source-panel { display: grid; grid-template-columns: minmax(0, 1fr) 292px; margin: 18px 26px 0; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }
+.modern-source-head { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 16px; align-items: end; padding: 12px 14px; border-bottom: 1px solid var(--modern-line); }
 .modern-source-head > div { display: grid; gap: 4px; }
 .modern-source-head strong { font-size: 13px; }
 .modern-source-head small { color: var(--modern-muted); font-size: 9px; }
 .modern-source-order { color: var(--modern-signal); font-family: var(--mono); font-size: 9px; }
-.modern-source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.modern-source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; }
 .modern-source-field { min-width: 0; padding: 13px 14px 12px; }
 .modern-source-field + .modern-source-field { border-left: 1px solid var(--modern-line); }
 .modern-source-field > header { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-bottom: 9px; }
@@ -15833,6 +15843,28 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-upload-button:hover, .modern-source-actions button:hover { border-color: var(--modern-signal); color: var(--modern-text); }
 .modern-source-actions button.is-primary { border-color: var(--modern-signal); background: rgba(200,255,46,.08); color: var(--modern-signal); }
 .modern-source-actions > span { min-width: 0; flex: 1; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-asset-results { min-width: 0; grid-column: 2; grid-row: 2; padding: 13px 14px 14px; border-left: 1px solid var(--modern-line); }
+.modern-asset-results-head { display: flex; gap: 10px; align-items: start; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid var(--modern-line); }
+.modern-asset-results-head > div { min-width: 0; display: grid; gap: 4px; }
+.modern-asset-results-head strong { font-size: 12px; }
+.modern-asset-results-head small { color: var(--modern-muted); font-size: 9px; line-height: 1.45; }
+.modern-asset-results-head button { flex: 0 0 auto; min-height: 27px; padding: 0 8px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 9px; }
+.modern-asset-results-head button:not(:disabled) { border-color: var(--modern-signal); color: var(--modern-signal); }
+.modern-asset-results-head button:disabled { opacity: .5; }
+.modern-asset-manifest-overview { display: grid; gap: 8px; padding: 10px 0; }
+.modern-asset-manifest-empty { color: var(--modern-quiet); font-size: 9px; line-height: 1.5; }
+.modern-asset-group { display: grid; gap: 5px; }
+.modern-asset-group > header { display: flex; justify-content: space-between; gap: 8px; color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }
+.modern-asset-group > header strong { color: var(--modern-muted); font-family: inherit; font-size: 8px; font-weight: 500; }
+.modern-asset-chip-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.modern-asset-chip { display: inline-flex; max-width: 100%; padding: 4px 6px; overflow: hidden; border: 1px solid var(--modern-line); border-radius: 3px; color: var(--modern-text); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-asset-chip.is-skipped { color: var(--modern-quiet); text-decoration: line-through; }
+.modern-asset-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding-top: 9px; border-top: 1px solid var(--modern-line); }
+.modern-asset-card { min-width: 0; overflow: hidden; border: 1px solid var(--modern-line); border-radius: 3px; background: #111314; }
+.modern-asset-card-media { aspect-ratio: 1 / 1; display: grid; place-items: center; overflow: hidden; background: #0c0e0f; }
+.modern-asset-card-media img { width: 100%; height: 100%; object-fit: cover; }
+.modern-asset-card-media span { padding: 7px; color: var(--modern-quiet); font-size: 8px; text-align: center; }
+.modern-asset-card > strong { display: block; padding: 5px 6px 6px; overflow: hidden; color: var(--modern-muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .modern-kit-bar { display: grid; grid-template-columns: minmax(230px,1.2fr) minmax(170px,1fr) minmax(120px,.7fr) auto; gap: 18px; align-items: center; margin: 18px 26px 0; padding: 12px 14px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }.modern-kit-bar > div { min-width: 0; display: flex; gap: 10px; align-items: center; }.modern-kit-bar > div > span:not(.modern-kit-mark) { color: var(--modern-quiet); font-size: 9px; }.modern-kit-bar strong, .modern-kit-bar b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }.modern-kit-mark { display: grid; place-items: center; width: 33px; height: 28px; border: 1px solid var(--modern-signal); color: var(--modern-signal); font-family: var(--mono); font-size: 9px; }.modern-kit-bar button { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line-strong); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 10px; }.modern-kit-bar button:hover { border-color: var(--modern-signal); color: var(--modern-text); }
 .modern-sequence { margin: 18px 26px 0; }.modern-sequence > header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 10px; }.modern-sequence > header > div { display: grid; gap: 4px; }.modern-sequence > header strong { font-size: 13px; }.modern-sequence > header > span { color: var(--modern-quiet); font-family: var(--mono); font-size: 9px; }.modern-shot-rail { display: flex; gap: 7px; min-height: 76px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }.modern-shot-card { flex: 0 0 92px; display: grid; grid-template-rows: 49px auto; gap: 6px; padding: 5px; border: 1px solid var(--modern-line); border-radius: 4px; background: var(--modern-surface); color: var(--modern-muted); text-align: left; }.modern-shot-card:hover { border-color: var(--modern-line-strong); }.modern-shot-card.is-active { border-color: var(--modern-signal); background: var(--modern-surface-2); color: var(--modern-text); }.modern-shot-card > span:first-child { display: grid; place-items: center; background: #222526; color: var(--modern-quiet); font-family: var(--mono); font-size: 11px; }.modern-shot-card.is-complete > span:first-child { background: linear-gradient(145deg,#26362e,#1a2421); color: #bde768; }.modern-shot-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 550; }.modern-shot-card small { display: block; margin-top: 3px; color: var(--modern-quiet); font-size: 8px; }.modern-shot-card.is-running > span:first-child { box-shadow: inset 0 -2px 0 var(--modern-signal); }.modern-shot-card.is-failed > span:first-child { box-shadow: inset 0 -2px 0 var(--modern-accent); }
 .modern-workbench { margin: 22px 26px 28px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }.modern-shot-commandbar { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 18px; align-items: center; padding: 13px 15px; border-bottom: 1px solid var(--modern-line); }.modern-selected-shot { display: flex; gap: 11px; align-items: center; min-width: 0; }.modern-selected-shot > span { color: var(--modern-signal); font-family: var(--mono); font-size: 13px; }.modern-selected-shot h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }.modern-selected-shot p { margin: 4px 0 0; color: var(--modern-quiet); font-size: 9px; }.modern-shot-lineage { display: flex; gap: 7px; align-items: center; color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }.modern-shot-lineage span.is-done { color: #a8d65c; }.modern-shot-lineage i { width: 16px; height: 1px; background: var(--modern-line-strong); }.modern-shot-action { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line-strong); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 10px; }.modern-shot-action:hover { border-color: var(--modern-signal); color: var(--modern-text); }
@@ -15850,6 +15882,6 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
   100% { outline: 0 solid rgba(200,255,46,0); outline-offset: 7px; }
 }
 @media (max-width: 1180px) { .studio-modern-shell { grid-template-columns: 190px minmax(0,1fr); }.modern-episode-hero { grid-template-columns: minmax(0,1fr) auto; }.modern-episode-action { grid-column: 1 / -1; justify-self: start; }.modern-kit-bar { grid-template-columns: minmax(200px,1fr) minmax(140px,1fr) auto; }.modern-kit-bar > div:nth-child(3) { display: none; } }
-@media (max-width: 980px) { .modern-source-panel { margin: 14px 14px 0; }.modern-source-grid { grid-template-columns: 1fr; }.modern-source-field + .modern-source-field { border-top: 1px solid var(--modern-line); border-left: 0; } }
-@media (max-width: 980px) { body.is-studio-modern { min-width: 0; }.studio-modern-shell { display: block; }.modern-series-nav { position: relative; height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-brand { display: flex; align-items: center; justify-content: space-between; }.modern-series-context, .modern-series-footer { display: none; }.modern-episode-list { display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; }.modern-episode-row { flex: 0 0 150px; }.modern-stage-grid { grid-template-columns: 1fr; }.modern-stage-pane { border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-stage-pane:last-child { border-bottom: 0; }.modern-kit-bar { margin: 14px 14px 0; }.modern-sequence { margin: 14px; }.modern-workbench { margin: 18px 14px 24px; } }
+@media (max-width: 980px) { .modern-source-panel { display: block; margin: 14px 14px 0; }.modern-source-grid { grid-template-columns: 1fr; }.modern-source-field + .modern-source-field { border-top: 1px solid var(--modern-line); border-left: 0; }.modern-asset-results { border-top: 1px solid var(--modern-line); border-left: 0; } }
+@media (max-width: 980px) { body.is-studio-modern { min-width: 0; }.studio-modern-shell { display: block; height: auto; min-height: 100vh; overflow: visible; }.modern-main { min-height: 0; overflow: visible; }.modern-series-nav { position: relative; height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-brand { display: flex; align-items: center; justify-content: space-between; }.modern-series-context, .modern-series-footer { display: none; }.modern-episode-list { display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; }.modern-episode-row { flex: 0 0 150px; }.modern-stage-grid { grid-template-columns: 1fr; }.modern-stage-pane { border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-stage-pane:last-child { border-bottom: 0; }.modern-kit-bar { margin: 14px 14px 0; }.modern-sequence { margin: 14px; }.modern-workbench { margin: 18px 14px 24px; }.modern-core { overflow: visible; } }
 @media (prefers-reduced-motion: reduce) { .modern-progress-track span, .modern-video-progress span { transition: none; } }

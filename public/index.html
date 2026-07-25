@@ -342,7 +342,7 @@
         </section>
       </div>
 
-      <section id="studioShell" class="studio-shell hidden">
+      <template id="legacyEditorTemplate" data-legacy-editor="true">
         <aside class="studio-sidebar" aria-label="制作工具栏">
           <div class="studio-sidebar-brand" aria-label="Pixel Toys Production OS">
             <div class="mark pixel-toys-wordmark" aria-hidden="true"></div>
@@ -908,7 +908,7 @@
             </div>
           </footer>
         </main>
-      </section>
+      </template>
 
       <section id="studioModernShell" class="studio-modern-shell hidden" aria-label="新版制作台">
         <aside class="modern-series-nav" aria-label="项目与剧集">
@@ -959,6 +959,7 @@
             <button type="button" data-modern-focus="video"><span>04</span><b>组装成片</b><small id="modernCutStep">等待片段</small><i></i></button>
           </section>
 
+          <section id="modernCore" class="modern-core" aria-label="当前流程核心工作区">
           <section id="modernSourcePanel" class="modern-source-panel" aria-label="剧本与资产文档">
             <header class="modern-source-head">
               <div><span class="modern-eyebrow">INPUT SOURCES</span><strong>剧本与资产描述</strong><small>先提供剧情，再用独立资产文档锁定人物、场景和道具。</small></div>
@@ -987,6 +988,18 @@
                 </div>
               </section>
             </div>
+            <section class="modern-asset-results" aria-label="解析后的资产">
+              <header class="modern-asset-results-head">
+                <div>
+                  <span class="modern-eyebrow">PARSED ASSETS</span>
+                  <strong>解析结果</strong>
+                  <small id="modernAssetManifestStatus">提交资产文档后，解析结果会显示在这里。</small>
+                </div>
+                <button id="modernConfirmAssetManifest" type="button">确认分类</button>
+              </header>
+              <div id="modernAssetManifestOverview" class="modern-asset-manifest-overview"></div>
+              <div id="modernAssetGallery" class="modern-asset-gallery" aria-live="polite"></div>
+            </section>
           </section>
 
           <section id="modernKitBar" class="modern-kit-bar" aria-label="Reference Kit 连续性控制">
@@ -1029,8 +1042,28 @@
               </section>
             </div>
           </section>
+          </section>
         </main>
       </section>
+      <div id="workflowDataBridge" class="workflow-data-bridge" hidden aria-hidden="true">
+        <div id="emptyState"></div><div id="workspaceViewport"><div id="workspace"></div></div>
+        <span id="projectTitle"></span><form id="projectDisplayNameForm"><input id="projectDisplayNameInput" /></form><div id="statusPills"></div>
+        <span id="scriptPath"></span><span id="storyboardPath"></span><span id="assetPromptsPath"></span><span id="seedancePath"></span><span id="configPath"></span>
+        <textarea id="scriptText"></textarea><textarea id="assetDescriptionText"></textarea><textarea id="storyboardText"></textarea><textarea id="assetManifestText"></textarea><textarea id="assetPromptsText"></textarea><textarea id="seedanceText"></textarea><textarea id="configText"></textarea>
+        <input id="scriptUpload" type="file" /><span id="scriptUploadName"></span><input id="workflowScriptUpload" type="file" /><span id="workflowScriptUploadName"></span><input id="assetDescriptionUpload" type="file" /><span id="assetDescriptionUploadName"></span>
+        <input type="radio" name="draftDialogueLanguage" value="en" checked /><input type="radio" name="draftDialogueLanguage" value="zh" /><input id="draftAssumeEnglishDialogue" type="checkbox" /><input type="radio" name="assetAnalyzerModel" value="claude-opus-4-8" checked /><input type="radio" name="assetAnalyzerModel" value="gpt-5.5-thinking" />
+        <div id="assetManifestOverview"></div><span id="assetManifestStatus"></span><button id="confirmAssetManifestBtn" type="button"></button><button id="draftBtn" type="button"></button><div id="assetGallery"></div><span id="assetCount"></span><div id="assetJobStatus"></div>
+        <select id="assetQuality"><option value="1k">1K</option></select><select id="assetGenerateRange"><option value="missing">缺失</option></select><button data-job="assets" type="button"></button><select id="assetStylePreset"><option value="cg_3d">3D</option></select><input id="assetStyleCustom" /><div id="assetStylePreview"></div><input id="assetStyleReferenceFile" type="file" /><span id="assetStyleReferenceName"></span><input id="assetStyleReferenceEnabled" type="checkbox" checked /><button id="assetStyleReferenceRemove" type="button"></button>
+        <div id="assetInspector"><span id="assetInspectorName"></span><span id="assetInspectorMeta"></span><textarea id="assetInspectorPrompt"></textarea><span id="assetInspectorDraftStatus"></span><span id="assetInspectorPromptCount"></span><span id="assetInspectorPolicy"></span><button id="closeAssetInspector" type="button"></button><button id="restoreAssetPrompt" type="button"></button><button id="saveAssetPrompt" type="button"></button><button id="regenerateAssetFromInspector" type="button"></button></div>
+        <div id="referenceKitPanel"><form id="referenceKitForm"></form><button id="newReferenceKit" type="button"></button><button id="referenceKitCancel" type="button"></button><div id="referenceKitList"></div></div>
+        <div id="storyboardGridGallery"></div><span id="storyboardGridCount"></span><div id="storyboardJobStatus"></div><select id="storyboardGenerateRange"><option value="missing">缺失</option></select><button data-job="storyboards" type="button"></button>
+        <div id="videoConfigStatus"></div><span id="videoConfigLabel"></span><button id="buildConfigBtn" type="button"></button><input id="configGroup" /><select id="configModel"><option value="seedance-2-0">Seedance 2.0</option></select><select id="configResolution"><option value="480p">480p</option></select><select id="configRatio"><option value="9:16">9:16</option></select><select id="configPromptMode"><option value="prompt">提示词</option><option value="production_board">Production Board</option></select>
+        <div id="videoProgressSummary"></div><div id="videoProgressList"></div><button id="generateAllSegments" type="button"></button><div id="finalCutStatus"></div><div id="finalCutPreview"></div><button id="assembleFinalCutBtn" type="button"></button>
+        <div id="studioFlowStatus"></div><span id="studioFlowProgress"></span><div id="studioLogContent"></div><div id="studioContextTitle"></div><div id="studioContextCopy"></div><div id="studioContextStage"></div><div id="studioContextStatus"></div><div id="studioContextDownstream"></div><button id="studioContextOpen" type="button"></button><div id="studioQueueBar"><div id="studioQueueItems"></div><span id="studioQueueSummary"></span><div id="studioQueueProgress"><span id="studioQueueProgressFill"></span></div></div>
+        <button id="backToProjects" type="button"></button><button id="studioModernOverviewButton" type="button"></button><button id="studioCommandButton" type="button"></button><button id="studioPrimaryRun" type="button"></button><button id="studioProjectsButton" type="button"></button><button id="refreshState" type="button"></button><button id="zoomOut" type="button"></button><button id="zoomIn" type="button"></button><button id="zoomFit" type="button"></button><button id="resetLayout" type="button"></button>
+        <input id="assetUploadFile" type="file" /><input id="assetUploadLabel" /><select id="assetUploadTarget"></select><select id="assetUploadMode"><option value="bind">绑定</option></select><span id="assetUploadName"></span><span id="assetUploadHint"></span><button id="assetUploadButton" type="button"></button><form id="assetUploadForm"></form><input id="storyboardUploadFile" type="file" /><span id="storyboardUploadName"></span><select id="storyboardUploadTarget"></select><button id="storyboardUploadButton" type="button"></button><form id="storyboardUploadForm"></form><button id="refreshStoryboards" type="button"></button>
+        <aside id="videoPromptInspector"><span id="videoPromptInspectorName"></span><span id="videoPromptInspectorMeta"></span><select id="videoPromptInspectorModel"><option value="seedance-2-0">Seedance 2.0</option></select><textarea id="videoPromptInspectorPrompt"></textarea><span id="videoPromptInspectorDraftStatus"></span><span id="videoPromptInspectorPromptCount"></span><p id="videoPromptInspectorFailure"></p><button id="closeVideoPromptInspector" type="button"></button><button id="restoreVideoPrompt" type="button"></button><button id="saveVideoPrompt" type="button"></button><button id="regenerateVideoFromInspector" type="button"></button></aside>
+      </div>
     </div>
 
     <div id="imageLightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-label="资产图预览">

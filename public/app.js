@@ -178,7 +178,7 @@ const state = {
   loadProjectToken: null,
   activeWindowZ: Number(localStorage.getItem(layoutStorageKey(WINDOW_Z_KEY)) || 20),
   activeStudioTab: "assets",
-  modernStudio: { shotIndex: 0, copyTab: "story", detailsOpen: false },
+  modernStudio: { shotIndex: 0, copyTab: "story", focus: "assets", detailsOpen: false },
 };
 localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
 
@@ -1270,7 +1270,6 @@ function showProjectHome() {
   state.modernStudio.detailsOpen = false;
   $("#exploreHome")?.classList.toggle("hidden", !state.exploreEnabled);
   $("#projectHome").classList.toggle("hidden", state.exploreEnabled);
-  $("#studioShell").classList.add("hidden");
   $("#studioModernShell")?.classList.add("hidden");
   document.body.classList.remove("is-studio");
   document.body.classList.remove("is-studio-modern");
@@ -1461,9 +1460,6 @@ function showStudio() {
   $("#exploreHome")?.classList.add("hidden");
   $("#projectHome").classList.add("hidden");
   state.modernStudio.detailsOpen = false;
-  // The legacy shell remains mounted as a compatibility layer for its API
-  // handlers, but it is never a user-facing workspace anymore.
-  $("#studioShell").classList.add("hidden");
   $("#studioModernShell")?.classList.remove("hidden");
   document.body.classList.add("is-studio");
   document.body.classList.add("is-studio-modern");
@@ -3980,6 +3976,15 @@ function modernMediaForShot(data, shot, index, kind) {
 function renderModernStudio(data = state.project) {
   const root = $("#studioModernShell");
   if (!root || !data?.project) return;
+  const modernFocus = ["assets", "storyboard", "video"].includes(state.modernStudio.focus)
+    ? state.modernStudio.focus
+    : "assets";
+  state.modernStudio.focus = modernFocus;
+  root.querySelector(".modern-main")?.setAttribute("data-modern-view", modernFocus);
+  root.querySelectorAll("[data-modern-focus]").forEach((button) => {
+    const buttonFocus = button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus;
+    button.classList.toggle("is-active", buttonFocus === modernFocus);
+  });
   const scriptSource = workflowEditorValue("script");
   const assetSource = workflowEditorValue("assetDescription");
   const scriptStatus = $("#modernScriptSourceStatus");
@@ -4028,8 +4033,61 @@ function renderModernStudio(data = state.project) {
   $("#modernKitNames").textContent = selected?.assets?.length ? selected.assets.join(" · ") : "等待故事板分配";
   $("#modernKitStatus").textContent = selected?.assets?.length ? "已引用" : "待确认";
   renderModernEpisodes(project, pct, total, completed);
+  renderModernAssetResults(data);
   renderModernShotRail(shots, selectedIndex);
   renderModernSelectedShot(data, selected, selectedIndex);
+}
+
+function renderModernAssetResults(data = state.project) {
+  const overview = $("#modernAssetManifestOverview");
+  const gallery = $("#modernAssetGallery");
+  const status = $("#modernAssetManifestStatus");
+  const confirmButton = $("#modernConfirmAssetManifest");
+  if (!overview || !gallery || !status || !confirmButton) return;
+
+  const manifest = data?.assetManifest || {};
+  const items = Array.isArray(manifest.items) ? manifest.items : [];
+  const confirmed = manifest.confirmed === true;
+  const extracting = isAssetExtracting();
+  const slots = data?.assetSlots || buildAssetSlots(manifest, data?.assets || []);
+  const assetsByName = new Map((data?.assets || []).map((asset) => [asset.assetName || asset.name, asset]));
+  const groups = [
+    ["人物", items.filter((item) => item.type === "Character")],
+    ["场景", items.filter((item) => item.type === "Scene")],
+    ["道具", items.filter((item) => ["Prop", "Insert"].includes(item.type))],
+  ];
+
+  status.textContent = extracting
+    ? "模型正在分析资产文档…"
+    : confirmed
+      ? `${items.length} 项已确认，可继续生成资产图`
+      : items.length
+        ? `${items.length} 项待确认分类`
+        : "提交资产文档后，解析结果会显示在这里。";
+  confirmButton.disabled = extracting || !items.length || confirmed;
+  confirmButton.textContent = confirmed ? "已确认" : extracting ? "解析中…" : "确认分类";
+  overview.innerHTML = groups
+    .filter(([, list]) => list.length)
+    .map(([label, list]) => `
+      <section class="modern-asset-group">
+        <header><span>${label}</span><strong>${list.length}</strong></header>
+        <div class="modern-asset-chip-list">
+          ${list.map((item) => `<span class="modern-asset-chip ${item.generate === false ? "is-skipped" : ""}" title="${escapeAttr(item.usage || item.note || "")}">${escapeHtml(item.label || item.id || "未命名资产")}</span>`).join("")}
+        </div>
+      </section>`)
+    .join("") || `<div class="modern-asset-manifest-empty">尚未解析资产。请在左侧输入或上传独立资产描述文档，然后点击“解析资产”。</div>`;
+
+  gallery.innerHTML = slots.length
+    ? slots.map((slot) => {
+      const name = slot.id || slot.label || "";
+      const asset = slot.asset || assetsByName.get(name);
+      const image = asset?.url || asset?.file || "";
+      return `<button class="modern-asset-card" type="button" data-modern-asset-preview="${escapeAttr(name)}" aria-label="查看资产 ${escapeAttr(name)}">
+        <span class="modern-asset-card-media">${image ? `<img src="${escapeAttr(image)}" alt="${escapeAttr(slot.label || name)}" loading="lazy" />` : `<span>${escapeHtml(assetSlotStatusLabel(slot))}</span>`}</span>
+        <strong>${escapeHtml(slot.label || name)}</strong>
+      </button>`;
+    }).join("")
+    : "";
 }
 
 function renderModernEpisodes(project, percent, total, completed) {
@@ -7490,24 +7548,16 @@ function bind() {
   });
   $("#modernBrandButton")?.addEventListener("click", goBackToProjects);
   const focusModernPane = (focus) => {
-    const target = focus === "assets"
+    const nextFocus = focus === "kit" ? "assets" : focus === "storyboard" ? "storyboard" : focus === "video" ? "video" : "assets";
+    state.modernStudio.focus = nextFocus;
+    renderModernStudio(state.project);
+    const target = nextFocus === "assets"
       ? $("#modernSourcePanel")
-      : focus === "kit"
-        ? $("#modernKitBar")
-      : focus === "storyboard"
+      : nextFocus === "storyboard"
         ? $("#modernStillTitle")?.closest(".modern-stage-pane")
-        : focus === "video"
-          ? $("#modernMotionTitle")?.closest(".modern-stage-pane")
-          : $("#modernStoryTitle")?.closest(".modern-stage-pane");
-    target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+        : $("#modernMotionTitle")?.closest(".modern-stage-pane");
     target?.classList.remove("is-focus-pulse");
     requestAnimationFrame(() => target?.classList.add("is-focus-pulse"));
-  };
-  const runHiddenLegacyAction = (mode, selector) => {
-    setWorkspaceMode(mode, { persist: false });
-    $(selector)?.click();
-    showStudio();
-    renderModernStudio(state.project);
   };
   $("#modernQueueButton")?.addEventListener("click", () => {
     focusModernPane("video");
@@ -7521,7 +7571,8 @@ function bind() {
     focusModernPane("kit");
   });
   $("#modernBatchAction")?.addEventListener("click", () => {
-    runHiddenLegacyAction("video", "#generateAllSegments");
+    setWorkflowFocus("video");
+    withStudioButtonFeedback($("#modernBatchAction"), () => generateAllVideoSegments()).catch((error) => toast(error.message));
   });
   $$('[data-modern-focus]').forEach((button) => button.addEventListener("click", () => {
     const focus = button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus;
@@ -7546,13 +7597,15 @@ function bind() {
     focusModernPane("storyboard");
   });
   $("#modernStillGenerate")?.addEventListener("click", () => {
-    runHiddenLegacyAction("storyboard", "[data-job='storyboards']");
+    setWorkflowFocus("board");
+    withStudioButtonFeedback($("#modernStillGenerate"), () => startJob("storyboards")).catch((error) => toast(error.message));
   });
   $("#modernVideoEdit")?.addEventListener("click", () => {
     focusModernPane("video");
   });
   $("#modernVideoGenerate")?.addEventListener("click", () => {
-    runHiddenLegacyAction("video", "#generateAllSegments");
+    setWorkflowFocus("video");
+    withStudioButtonFeedback($("#modernVideoGenerate"), () => generateAllVideoSegments()).catch((error) => toast(error.message));
   });
   $("#studioCommandButton")?.addEventListener("click", () => toast("命令面板会在下一阶段接入；当前可直接点击流程节点聚焦步骤"));
   $("#studioPrimaryRun")?.addEventListener("click", (event) => {
@@ -7734,6 +7787,14 @@ function bind() {
   $("#modernExtractAssets")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, () => extractAssets()).catch((error) => toast(error.message));
   });
+  $("#modernConfirmAssetManifest")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => saveAssetManifest({ confirm: true })).catch((error) => toast(error.message));
+  });
+  $("#modernAssetGallery")?.addEventListener("click", (event) => {
+    const name = event.target.closest("[data-modern-asset-preview]")?.dataset.modernAssetPreview;
+    const asset = assetForName(name);
+    if (asset?.url) openLightbox(asset);
+  });
   $("#assetUploadFile").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     $("#assetUploadName").textContent = file ? file.name : "PNG / JPG / WEBP";
@@ -7893,7 +7954,7 @@ window.addEventListener("resize", () => {
 async function refreshSelectedProjectStatus() {
   if (window._pixelToysRefreshInFlight) return false;
   if (document.hidden) return false;
-  if (!state.selectedId || $("#studioShell").classList.contains("hidden")) return false;
+  if (!state.selectedId || $("#studioModernShell")?.classList.contains("hidden")) return false;
   if (hasOpenManualAssetDraft()) return false;
   window._pixelToysRefreshInFlight = true;
   try {

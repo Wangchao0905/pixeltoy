@@ -959,6 +959,36 @@
             <button type="button" data-modern-focus="video"><span>04</span><b>组装成片</b><small id="modernCutStep">等待片段</small><i></i></button>
           </section>
 
+          <section id="modernSourcePanel" class="modern-source-panel" aria-label="剧本与资产文档">
+            <header class="modern-source-head">
+              <div><span class="modern-eyebrow">INPUT SOURCES</span><strong>剧本与资产描述</strong><small>先提供剧情，再用独立资产文档锁定人物、场景和道具。</small></div>
+              <span class="modern-source-order">01 / 02</span>
+            </header>
+            <div class="modern-source-grid">
+              <section class="modern-source-field" aria-labelledby="modernScriptSourceTitle">
+                <header><span>01</span><div><small>STORY INPUT</small><h3 id="modernScriptSourceTitle">剧本 / 剧情</h3></div><i id="modernScriptSourceStatus">未保存</i></header>
+                <textarea id="modernScriptText" rows="5" placeholder="粘贴完整剧情、对白和场景推进。"></textarea>
+                <div class="modern-source-actions">
+                  <input id="modernScriptUpload" type="file" accept=".md,.txt,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                  <label class="modern-upload-button" for="modernScriptUpload">上传剧本</label>
+                  <span id="modernScriptUploadName" aria-live="polite">支持 MD / TXT / DOCX</span>
+                  <button id="modernSaveScript" type="button">保存</button>
+                </div>
+              </section>
+              <section class="modern-source-field" aria-labelledby="modernAssetSourceTitle">
+                <header><span>02</span><div><small>ASSET DOCUMENT</small><h3 id="modernAssetSourceTitle">资产描述文档</h3></div><i id="modernAssetSourceStatus">未保存</i></header>
+                <textarea id="modernAssetDescriptionText" rows="5" placeholder="独立描述人物、场景、道具的外观、服装、材质和连续性规则。"></textarea>
+                <div class="modern-source-actions">
+                  <input id="modernAssetDescriptionUpload" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                  <label class="modern-upload-button" for="modernAssetDescriptionUpload">上传资产文档</label>
+                  <span id="modernAssetDescriptionUploadName" aria-live="polite">支持 TXT / DOCX</span>
+                  <button id="modernSaveAssetDescription" type="button">保存</button>
+                  <button id="modernExtractAssets" class="is-primary" type="button">解析资产</button>
+                </div>
+              </section>
+            </div>
+          </section>
+
           <section id="modernKitBar" class="modern-kit-bar" aria-label="Reference Kit 连续性控制">
             <div><span class="modern-kit-mark">KIT</span><div><span class="modern-eyebrow">ASSET DOCUMENT → KIT → VIDEO</span><strong>镜头引用资产</strong></div></div>
             <div><span id="modernKitShot">当前镜头</span><b id="modernKitNames">未分配</b></div>

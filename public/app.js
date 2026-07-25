@@ -3896,6 +3896,8 @@ function renderWorkspace() {
   $("#configPath").textContent = "";
   $("#scriptText").value = data.contents.script || "";
   { const el = $("#assetDescriptionText"); if (el) el.value = data.contents.assetDescription || ""; }
+  { const el = $("#modernScriptText"); if (el) el.value = data.contents.script || ""; }
+  { const el = $("#modernAssetDescriptionText"); if (el) el.value = data.contents.assetDescription || ""; }
   $("#storyboardText").value = data.contents.storyboard || "";
   $("#assetManifestText").value = data.contents.assetManifest || "";
   $("#assetPromptsText").value = data.contents.assetPrompts || "";
@@ -3978,6 +3980,18 @@ function modernMediaForShot(data, shot, index, kind) {
 function renderModernStudio(data = state.project) {
   const root = $("#studioModernShell");
   if (!root || !data?.project) return;
+  const scriptSource = workflowEditorValue("script");
+  const assetSource = workflowEditorValue("assetDescription");
+  const scriptStatus = $("#modernScriptSourceStatus");
+  const assetStatus = $("#modernAssetSourceStatus");
+  if (scriptStatus) {
+    scriptStatus.textContent = scriptSource.trim() ? "已载入" : "未保存";
+    scriptStatus.classList.toggle("is-saved", !!scriptSource.trim());
+  }
+  if (assetStatus) {
+    assetStatus.textContent = assetSource.trim() ? "已载入" : "未保存";
+    assetStatus.classList.toggle("is-saved", !!assetSource.trim());
+  }
   const project = data.project;
   const title = displayProjectTitle(project);
   const progress = data.videoProgress || {};
@@ -6757,23 +6771,37 @@ function renderVideoProgress(progress) {
   }
 }
 
+const WORKFLOW_EDITOR_SELECTORS = {
+  script: ["#modernScriptText", "#scriptText"],
+  assetDescription: ["#modernAssetDescriptionText", "#assetDescriptionText"],
+};
+
+function workflowEditorElement(key) {
+  const selectors = WORKFLOW_EDITOR_SELECTORS[key] || [];
+  return selectors.map((selector) => $(selector)).find(Boolean) || null;
+}
+
+function workflowEditorValue(key) {
+  return workflowEditorElement(key)?.value || "";
+}
+
 async function saveFile(key) {
   const map = {
-    script: "#scriptText",
-    assetDescription: "#assetDescriptionText",
     storyboard: "#storyboardText",
     assetManifest: "#assetManifestText",
     assetPrompts: "#assetPromptsText",
     seedancePrompts: "#seedanceText",
     config: "#configText",
   };
+  const editor = (typeof workflowEditorElement === "function" ? workflowEditorElement(key) : null) || $(map[key] || (key === "script" ? "#scriptText" : key === "assetDescription" ? "#assetDescriptionText" : ""));
+  if (!editor) throw new Error("找不到要保存的内容");
   await api(`/api/project/${state.selectedId}/file`, {
     method: "POST",
-    body: JSON.stringify({ key, content: $(map[key]).value }),
+    body: JSON.stringify({ key, content: editor.value }),
   });
   // 保存剧情(剧本)时顺带保存「资产描述」——两个框同在剧本面板,避免用户以为一起存了却丢失。
   if (key === "script") {
-    const assetDescEl = $("#assetDescriptionText");
+    const assetDescEl = typeof workflowEditorElement === "function" ? workflowEditorElement("assetDescription") : $("#assetDescriptionText");
     if (assetDescEl) {
       await api(`/api/project/${state.selectedId}/file`, {
         method: "POST",
@@ -6787,16 +6815,17 @@ async function saveFile(key) {
 
 async function saveFileQuiet(key) {
   const map = {
-    script: "#scriptText",
     storyboard: "#storyboardText",
     assetManifest: "#assetManifestText",
     assetPrompts: "#assetPromptsText",
     seedancePrompts: "#seedanceText",
     config: "#configText",
   };
+  const editor = (typeof workflowEditorElement === "function" ? workflowEditorElement(key) : null) || $(map[key] || (key === "script" ? "#scriptText" : key === "assetDescription" ? "#assetDescriptionText" : ""));
+  if (!editor) throw new Error("找不到要保存的内容");
   await api(`/api/project/${state.selectedId}/file`, {
     method: "POST",
-    body: JSON.stringify({ key, content: $(map[key]).value }),
+    body: JSON.stringify({ key, content: editor.value }),
   });
 }
 
@@ -6843,8 +6872,8 @@ async function extractAssets() {
   // 关键:先捕获两个输入框的当前值,再做 setWorkspaceMode/saveFile/renderWorkspace。
   // 否则 renderWorkspace 会用已存内容(可能为空或旧值)重刷输入框,冲掉用户刚粘贴、尚未保存的资产描述,
   // 导致"资产文本消失"、且提取退回用剧本(只出剧本里的人物、丢场景)。
-  const capturedScriptText = $("#scriptText")?.value || "";
-  const capturedAssetDescriptionText = $("#assetDescriptionText")?.value || "";
+  const capturedScriptText = typeof workflowEditorValue === "function" ? workflowEditorValue("script") : $("#scriptText")?.value || "";
+  const capturedAssetDescriptionText = typeof workflowEditorValue === "function" ? workflowEditorValue("assetDescription") : $("#assetDescriptionText")?.value || "";
   // 资产提取是独立入口:无论用户此前停留在哪个工作区,提交和刷新后都留在资产解析面板。
   setWorkspaceMode("assets");
   const assetAnalyzerModel = document.querySelector("input[name='assetAnalyzerModel']:checked")?.value || state.assetAnalyzerModel || "claude-opus-4-8";
@@ -7042,7 +7071,7 @@ async function changeDialogueLanguage(targetLanguage) {
   const assetAnalyzerModel = document.querySelector("input[name='assetAnalyzerModel']:checked")?.value || state.assetAnalyzerModel || "claude-opus-4-8";
   state.assetAnalyzerModel = normalizeAssetAnalyzerModel(assetAnalyzerModel);
   localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
-  const scriptText = $("#scriptText").value;
+  const scriptText = typeof workflowEditorValue === "function" ? workflowEditorValue("script") : $("#scriptText")?.value || "";
   toast(state.dialogueLanguage === "zh" ? "正在转换为中文对白" : "正在转换为英文对白");
   try {
     const data = await api(`/api/project/${state.selectedId}/dialogue-language`, {
@@ -7055,7 +7084,8 @@ async function changeDialogueLanguage(targetLanguage) {
       }),
     });
     setProjectState(data.state);
-    $("#scriptText").value = data.state?.contents?.script || scriptText;
+    const scriptEditor = typeof workflowEditorElement === "function" ? workflowEditorElement("script") : $("#scriptText");
+    if (scriptEditor) scriptEditor.value = data.state?.contents?.script || scriptText;
     renderWorkspace();
     if (data.result?.skipped) {
       toast(data.result.skipReason === "manual" ? "剧本已标记为英文对白,跳过翻译" : "检测到剧本已是英文对白,跳过翻译");
@@ -7461,7 +7491,9 @@ function bind() {
   $("#modernBrandButton")?.addEventListener("click", goBackToProjects);
   const focusModernPane = (focus) => {
     const target = focus === "assets"
-      ? $("#modernKitBar")
+      ? $("#modernSourcePanel")
+      : focus === "kit"
+        ? $("#modernKitBar")
       : focus === "storyboard"
         ? $("#modernStillTitle")?.closest(".modern-stage-pane")
         : focus === "video"
@@ -7486,7 +7518,7 @@ function bind() {
     toast("已定位到资产与风格规则");
   });
   $("#modernKitButton")?.addEventListener("click", () => {
-    focusModernPane("assets");
+    focusModernPane("kit");
   });
   $("#modernBatchAction")?.addEventListener("click", () => {
     runHiddenLegacyAction("video", "#generateAllSegments");
@@ -7503,9 +7535,8 @@ function bind() {
     $("#modernCopyCount").textContent = `${event.currentTarget.value.length} 字`;
   });
   $("#modernSaveCopy")?.addEventListener("click", () => {
-    const target = state.modernStudio.copyTab === "prompt" ? "videoPromptInspectorPrompt" : "scriptText";
-    const legacy = $(target);
-    if (legacy) legacy.value = $("#modernShotCopy").value;
+    const target = state.modernStudio.copyTab === "prompt" ? $("#videoPromptInspectorPrompt") : workflowEditorElement("script");
+    if (target) target.value = $("#modernShotCopy").value;
     toast("修改已暂存，将用于下一次生成");
   });
   $("#modernShotAction")?.addEventListener("click", () => {
@@ -7652,6 +7683,56 @@ function bind() {
       toast(error.message);
       event.target.value = "";
     }
+  });
+  $("#modernScriptUpload")?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await applyScriptUpload(file, {
+        textareaSelector: "#modernScriptText",
+        nameSelector: "#modernScriptUploadName",
+        requireSave: true,
+      });
+      $("#modernScriptSourceStatus")?.classList.remove("is-saved");
+      if ($("#modernScriptSourceStatus")) $("#modernScriptSourceStatus").textContent = "有修改";
+    } catch (error) {
+      toast(error.message);
+      event.target.value = "";
+    }
+  });
+  $("#modernAssetDescriptionUpload")?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await applyScriptUpload(file, {
+        textareaSelector: "#modernAssetDescriptionText",
+        nameSelector: "#modernAssetDescriptionUploadName",
+        requireSave: true,
+        label: "资产文档",
+      });
+      $("#modernAssetSourceStatus")?.classList.remove("is-saved");
+      if ($("#modernAssetSourceStatus")) $("#modernAssetSourceStatus").textContent = "有修改";
+    } catch (error) {
+      toast(error.message);
+      event.target.value = "";
+    }
+  });
+  $("#modernScriptText")?.addEventListener("input", () => {
+    $("#modernScriptSourceStatus")?.classList.remove("is-saved");
+    if ($("#modernScriptSourceStatus")) $("#modernScriptSourceStatus").textContent = "有修改";
+  });
+  $("#modernAssetDescriptionText")?.addEventListener("input", () => {
+    $("#modernAssetSourceStatus")?.classList.remove("is-saved");
+    if ($("#modernAssetSourceStatus")) $("#modernAssetSourceStatus").textContent = "有修改";
+  });
+  $("#modernSaveScript")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => saveFile("script")).catch((error) => toast(error.message));
+  });
+  $("#modernSaveAssetDescription")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => saveFile("assetDescription")).catch((error) => toast(error.message));
+  });
+  $("#modernExtractAssets")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => extractAssets()).catch((error) => toast(error.message));
   });
   $("#assetUploadFile").addEventListener("change", (event) => {
     const file = event.target.files?.[0];

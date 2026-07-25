@@ -20,6 +20,8 @@ assert.match(html, /id="superPixelInput"/, "输入框必须存在");
 assert.match(html, /id="superPixelModel"/, "模型选择器必须存在");
 assert.match(html, /id="superPixelMode"/, "模式选择器必须存在");
 assert.match(html, /id="superPixelSend"/, "提交按钮必须存在");
+assert.match(html, /id="superPixelAssetRail"[^>]*aria-label="资产库"/, "Super Pixel 必须常驻资产侧栏");
+assert.match(html, /id="superPixelAssetRailList"/, "资产侧栏必须有独立列表容器");
 
 // 模型选项：Claude 与 ChatGPT 各三档，分组呈现。
 // 这些 ID 已在 api.apikey.fun 网关实调通过（2026-07-25），阶段 2 直接用于请求。
@@ -45,9 +47,20 @@ assert.ok(selectBlock.indexOf(`value="${stateDefault}"`) === selectBlock.indexOf
 assert.match(html, /value="ask"/, "必须有 Ask 模式");
 assert.match(html, /value="agent"/, "必须有 Agent 模式");
 
-// 卡片占位：4 张，后期填充资产图
-const cards = html.match(/class="super-pixel-card is-empty"/g) || [];
-assert.equal(cards.length, 4, "资产图占位卡必须是 4 张");
+// 卡片占位栏已移除：资产改由左侧常驻侧栏承载，底部空卡只占高度不给信息
+assert.ok(!/super-pixel-gallery|super-pixel-cards|super-pixel-card is-empty/.test(html), "资产占位卡片栏必须已移除");
+assert.ok(!/super-pixel-gallery|\.super-pixel-cards/.test(css), "卡片栏样式必须一并删除，别留死代码");
+
+// 开聊后 composer 贴底：dock 容器 + is-chatting 态
+assert.match(html, /id="superPixelDock"/, "composer 必须包在 dock 容器里才能贴底");
+assert.match(app, /classList\.toggle\("is-chatting", chatting\)/, "有消息时必须切到对话态");
+assert.match(css, /\.super-pixel-stage\.is-chatting\s*\{/, "必须有对话态布局");
+assert.match(css, /\.super-pixel-stage\.is-chatting[\s\S]{0,400}?\.super-pixel-title,?[\s\S]{0,120}?display:\s*none/, "对话态必须收掉首屏引导物");
+
+// 聊天字体：衬线，且消息与输入框同源（输入时所见即发出后所得）
+assert.match(css, /--sp-chat-font:[^;]*serif/, "聊天字体栈必须以 serif 收尾");
+assert.match(css, /\.super-pixel-message\s*\{[\s\S]*?font-family:\s*var\(--sp-chat-font\)/, "消息气泡必须用聊天字体");
+assert.match(css, /\.super-pixel-input\s*\{[\s\S]*?font-family:\s*var\(--sp-chat-font\)/, "输入框必须与气泡同字体");
 
 // 可访问性
 assert.match(html, /id="superPixelInput"[\s\S]{0,220}aria-label="剧集创作输入"/, "输入框需有 aria-label");
@@ -65,11 +78,20 @@ assert.match(app, /function showExploreSuperPixel\(\)/, "必须有 showExploreSu
 assert.match(app, /tool === "super-pixel"/, "openExploreTool 必须分发 super-pixel");
 assert.match(app, /function bindSuperPixel\(\)/, "必须有 bindSuperPixel");
 assert.match(app, /bindSuperPixel\(\);/, "bindSuperPixel 必须被调用");
+assert.match(app, /function renderSuperPixelAssetRail\(\)/, "必须渲染 Super Pixel 资产侧栏");
+assert.match(app, /bindManualAssetControls\(rail/, "侧栏卡片必须复用现有资产拖拽绑定");
+assert.match(app, /data-manifest-asset-id=/, "侧栏资产卡片必须复用现有资产拖拽协议");
+assert.match(app, /application\/x-pixel-toys-asset-type/, "composer 必须识别现有资产拖拽 MIME");
+assert.match(app, /state\.assetLibrary\.assets\.find\(\(asset\) => asset\.id === assetId\)/, "drop 后必须按 assetId 反查素材库图片");
+assert.match(app, /renderSuperPixelAssetRail\(\);/, "资产库更新后必须刷新侧栏");
+assert.match(app, /state\.exploreView === "superpixel"/, "进入 Super Pixel 时必须加载资产库");
 
 // 蜂窝背景必须真的落在 CSS 里（内联 style 会被引号撕断，见 CLAUDE.md 经验）
 assert.match(css, /\.super-pixel-hex\s*\{[\s\S]*?url\("data:image\/svg\+xml,/, "蜂窝 data URI 必须写在 CSS 中");
 assert.match(css, /\.super-pixel-view\s*\{[\s\S]*?--sp-acc:/, "配色变量必须限定在 .super-pixel-view 作用域");
 assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?super-pixel/, "必须有 reduced-motion 降级");
+assert.match(css, /\.super-pixel-asset-rail\s*\{/, "必须有资产侧栏样式");
+assert.match(css, /\.super-pixel-asset-card\s*\{/, "必须有可拖拽资产卡片样式");
 
 // —— 以下四条锁住本轮 Playwright 实测发现并修复的缺陷 ——
 
@@ -108,5 +130,6 @@ assert.match(app, /tool === "super-pixel"[\s\S]{0,160}role !== "admin"\) return/
 const cssStamp = html.match(/styles\.css\?v=([A-Za-z0-9._-]+)/)?.[1];
 const jsStamp = html.match(/app\.js\?v=([A-Za-z0-9._-]+)/)?.[1];
 assert.ok(cssStamp && jsStamp, "缓存戳必须存在");
+assert.equal(cssStamp, jsStamp, "styles.css 与 app.js 缓存戳必须同步");
 
 console.log("super pixel view tests passed");

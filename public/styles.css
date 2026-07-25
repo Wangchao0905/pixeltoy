@@ -15355,6 +15355,12 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   --sp-acc-ink: #fff;
   --sp-panel: rgba(20, 7, 11, 0.8);
   --sp-line: rgba(255, 110, 130, 0.14);
+  /* 聊天字体：衬线。剧集创作是文字活儿，衬线比系统无衬线更有编辑感。
+     西文用 Iowan/Palatino（macOS 自带，字重稳、小字号可读），中文落到
+     Songti/宋体-简。不加载 webfont——本地部署无外网字体依赖，且中文字库
+     动辄几 MB，首屏代价太大。Windows 上西文回落 Georgia、中文回落宋体。 */
+  --sp-chat-font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+    "Songti SC", "Source Han Serif SC", "Noto Serif CJK SC", SimSun, serif;
   position: relative;
   overflow: hidden;
   /* 与 .image-explore-view / .asset-library-view 一致：44px 为顶栏高度。
@@ -15383,9 +15389,148 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   background: radial-gradient(48% 34% at 50% 46%, rgba(176, 26, 46, 0.16), transparent 66%);
 }
 
-.super-pixel-stage {
+.super-pixel-layout {
   position: relative;
   z-index: 1;
+  min-height: calc(100vh - 44px);
+  display: grid;
+  grid-template-columns: minmax(210px, 252px) minmax(0, 1fr);
+}
+
+.super-pixel-asset-rail {
+  min-width: 0;
+  padding: 22px 12px;
+  border-right: 1px solid var(--sp-line);
+  background: rgba(11, 3, 7, 0.58);
+  overflow: hidden;
+}
+
+.super-pixel-asset-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 2px 12px;
+}
+
+.super-pixel-asset-rail-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.super-pixel-asset-rail-kicker {
+  color: var(--sp-dim);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
+}
+
+.super-pixel-asset-rail-head strong {
+  overflow: hidden;
+  color: var(--sp-ink);
+  font-size: 13px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.super-pixel-asset-rail-refresh {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 1px solid var(--sp-line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--sp-dim);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.super-pixel-asset-rail-refresh:hover {
+  border-color: rgba(255, 110, 130, 0.3);
+  color: var(--sp-ink);
+}
+
+.super-pixel-asset-rail-list {
+  display: grid;
+  gap: 8px;
+  max-height: calc(100vh - 116px);
+  overflow-y: auto;
+  padding: 1px 2px 8px;
+  scrollbar-width: thin;
+}
+
+.super-pixel-asset-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid var(--sp-line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: grab;
+  user-select: none;
+}
+
+.super-pixel-asset-card:hover,
+.super-pixel-asset-card.is-dragging {
+  border-color: rgba(255, 110, 130, 0.42);
+  background: rgba(217, 45, 69, 0.14);
+}
+
+.super-pixel-asset-card:active { cursor: grabbing; }
+
+.super-pixel-asset-card > img {
+  width: 72px;
+  height: 54px;
+  display: block;
+  border-radius: 5px;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.super-pixel-asset-card > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.super-pixel-asset-card strong,
+.super-pixel-asset-card span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.super-pixel-asset-card strong {
+  color: var(--sp-ink);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.super-pixel-asset-card span {
+  color: var(--sp-dim);
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.super-pixel-asset-rail-empty {
+  padding: 28px 8px;
+  border: 1px dashed var(--sp-line);
+  border-radius: 8px;
+  color: var(--sp-dim);
+  font-size: 11px;
+  text-align: center;
+}
+
+.super-pixel-stage {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -15425,14 +15570,59 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   overflow-y: auto;
 }
 
+/* 开聊后：composer 脱离流、固定到视口底部，消息区接管剩余高度。
+   .super-pixel-view 有 overflow:hidden，所以这里用 sticky 会被裁；
+   改用 stage 撑满高度 + dock 作为 flex 末项贴底，不脱离文档流。 */
+.super-pixel-stage.is-chatting {
+  min-height: calc(100vh - 44px);
+  justify-content: flex-start;
+  padding-top: 20px;
+  padding-bottom: 0;
+  gap: 12px;
+}
+
+/* 开聊后收掉首屏引导物，把高度让给对话 */
+.super-pixel-stage.is-chatting .super-pixel-logo,
+.super-pixel-stage.is-chatting .super-pixel-title,
+.super-pixel-stage.is-chatting .super-pixel-chips {
+  display: none;
+}
+
+.super-pixel-stage.is-chatting .super-pixel-messages {
+  flex: 1 1 auto;
+  max-height: none;
+  width: min(760px, 100%);
+  padding-bottom: 8px;
+}
+
+.super-pixel-dock {
+  width: min(680px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/* 不用 position:sticky —— stage 已撑满视口且 messages 是 flex:1，
+   dock 作为末项自然贴底；sticky 还会被 .super-pixel-view 的 overflow:hidden 裁掉。
+   #020101 取自 .super-pixel-view 渐变的 100% 端，保证淡出无色差。 */
+.super-pixel-stage.is-chatting .super-pixel-dock {
+  flex: 0 0 auto;
+  width: min(760px, 100%);
+  padding: 10px 0 18px;
+  background: linear-gradient(to top, #020101 62%, transparent);
+}
+
 .super-pixel-message {
   max-width: 86%;
-  padding: 10px 13px;
+  padding: 11px 14px;
   border: 1px solid var(--sp-line);
   border-radius: 12px;
   color: var(--sp-ink);
-  font-size: 13px;
-  line-height: 1.55;
+  /* 衬线在小字号会显细，比无衬线版本 +1px 拉回可读性 */
+  font-family: var(--sp-chat-font);
+  font-size: 14px;
+  line-height: 1.62;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -15531,9 +15721,11 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   box-shadow: none;
   background: transparent;
   color: var(--sp-ink);
+  /* 与消息气泡同字体：输入时看到的就是发出后的样子 */
+  font-family: var(--sp-chat-font);
   font-size: 14px;
   font-weight: 400;
-  line-height: 1.55;
+  line-height: 1.62;
   resize: none;
   overflow-y: auto;
   max-height: 12em;
@@ -15651,49 +15843,22 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 
 .super-pixel-chip:hover { color: var(--sp-ink); border-color: rgba(255, 110, 130, 0.3); }
 
-.super-pixel-gallery {
-  width: min(1100px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 22px;
-}
-
-.super-pixel-gallery-kicker {
-  color: var(--sp-dim);
-  font-size: 9.5px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.16em;
-}
-
-.super-pixel-cards {
-  display: flex;
-  gap: 14px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  scrollbar-width: thin;
-}
-
-/* 空白占位：后期填充资产图 */
-.super-pixel-card {
-  flex: 0 0 260px;
-  aspect-ratio: 16 / 9;
-  border-radius: 14px;
-  background: var(--sp-panel);
-  display: grid;
-  place-items: center;
-}
-
-.super-pixel-card.is-empty {
-  border: 1px dashed var(--sp-line);
-  color: var(--sp-dim);
-  font-size: 15px;
-  font-weight: 400;
-  line-height: 1;
-}
-
 @media (max-width: 600px) {
+  .super-pixel-layout { display: block; }
+  .super-pixel-asset-rail {
+    margin: 12px 14px 0;
+    padding: 10px;
+    border: 1px solid var(--sp-line);
+    border-radius: 14px;
+  }
+  .super-pixel-asset-rail-head { margin-bottom: 8px; }
+  .super-pixel-asset-rail-list {
+    display: flex;
+    max-height: none;
+    overflow-x: auto;
+    padding: 1px 1px 4px;
+  }
+  .super-pixel-asset-card { flex: 0 0 172px; }
   .super-pixel-stage { padding: 32px 14px 40px; gap: 16px; }
   .super-pixel-composer { width: 100%; border-radius: 16px; }
   /* 窄屏不折行：折行会把发送按钮甩到单独一行，浪费 45px 且视觉孤立。
@@ -15707,8 +15872,6 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
     text-overflow: ellipsis;
   }
   .super-pixel-tool { flex: none; }
-  .super-pixel-card { flex-basis: 210px; }
-  .super-pixel-gallery { margin-top: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

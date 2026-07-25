@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=asset-controls-20260726" />
+    <link rel="stylesheet" href="/styles.css?v=chat-dock-asset-controls-20260726" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -192,67 +192,72 @@
         <section id="superPixelView" class="super-pixel-view hidden" aria-label="Super Pixel">
           <div class="super-pixel-hex" aria-hidden="true"></div>
           <div class="super-pixel-glow" aria-hidden="true"></div>
-          <div class="super-pixel-stage">
-            <div class="super-pixel-logo" aria-hidden="true">S</div>
-            <h1 id="superPixelTitle" class="super-pixel-title">今天要拍什么？</h1>
-            <div id="superPixelMessages" class="super-pixel-messages" aria-live="polite"></div>
-            <form id="superPixelComposer" class="super-pixel-composer">
-              <div id="superPixelAttachments" class="super-pixel-attachments hidden" aria-label="已附加图片"></div>
-              <textarea id="superPixelInput" class="super-pixel-input" rows="1"
-                placeholder="描述你想拍的剧集：题材、主角、集数…（可拖入或粘贴图片）"
-                aria-label="剧集创作输入"></textarea>
-              <div class="super-pixel-toolbar">
-                <button id="superPixelAttach" class="super-pixel-tool" type="button">
-                  <span aria-hidden="true">＋</span> <span id="superPixelScriptLabel">剧本</span>
-                </button>
-                <input id="superPixelScriptUpload" class="hidden" type="file" accept=".md,.txt,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-                <button id="superPixelImagePick" class="super-pixel-tool" type="button">
-                  <span aria-hidden="true">🖼</span> 图片
-                </button>
-                <input id="superPixelImageUpload" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple />
-                <label class="super-pixel-select">
-                  <span class="sr-only">模型</span>
-                  <select id="superPixelModel" aria-label="模型">
-                    <optgroup label="Claude">
-                      <option value="claude-opus-5">Claude Opus 5</option>
-                      <option value="claude-sonnet-5">Claude Sonnet 5</option>
-                      <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
-                    </optgroup>
-                    <optgroup label="ChatGPT">
-                      <option value="gpt-5.6-terra">GPT-5.6 Terra</option>
-                      <option value="gpt-5.6-sol">GPT-5.6 Sol</option>
-                      <option value="gpt-5.6-luna">GPT-5.6 Luna</option>
-                    </optgroup>
-                  </select>
-                </label>
-                <label class="super-pixel-select">
-                  <span class="sr-only">模式</span>
-                  <select id="superPixelMode" aria-label="模式">
-                    <option value="ask">Ask</option>
-                    <option value="agent" disabled>Agent（即将开放）</option>
-                  </select>
-                </label>
-                <button id="superPixelSend" class="super-pixel-send" type="submit" aria-label="发送">
-                  <span aria-hidden="true">↑</span>
-                </button>
+          <div class="super-pixel-layout">
+            <aside id="superPixelAssetRail" class="super-pixel-asset-rail" aria-label="资产库">
+              <header class="super-pixel-asset-rail-head">
+                <div>
+                  <span class="super-pixel-asset-rail-kicker">ASSET LIBRARY</span>
+                  <strong>素材库</strong>
+                </div>
+                <button id="superPixelAssetRailRefresh" class="super-pixel-asset-rail-refresh" type="button" aria-label="刷新资产库" title="刷新资产库">↻</button>
+              </header>
+              <div id="superPixelAssetRailList" class="super-pixel-asset-rail-list" aria-live="polite"></div>
+              <div id="superPixelAssetRailEmpty" class="super-pixel-asset-rail-empty hidden">暂无资产</div>
+            </aside>
+            <div id="superPixelStage" class="super-pixel-stage">
+              <div class="super-pixel-logo" aria-hidden="true">S</div>
+              <h1 id="superPixelTitle" class="super-pixel-title">今天要拍什么？</h1>
+              <div id="superPixelMessages" class="super-pixel-messages" aria-live="polite"></div>
+              <div id="superPixelDock" class="super-pixel-dock">
+              <form id="superPixelComposer" class="super-pixel-composer">
+                <div id="superPixelAttachments" class="super-pixel-attachments hidden" aria-label="已附加图片"></div>
+                <textarea id="superPixelInput" class="super-pixel-input" rows="1"
+                  placeholder="描述你想拍的剧集：题材、主角、集数…（可拖入或粘贴图片）"
+                  aria-label="剧集创作输入"></textarea>
+                <div class="super-pixel-toolbar">
+                  <button id="superPixelAttach" class="super-pixel-tool" type="button">
+                    <span aria-hidden="true">＋</span> <span id="superPixelScriptLabel">剧本</span>
+                  </button>
+                  <input id="superPixelScriptUpload" class="hidden" type="file" accept=".md,.txt,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                  <button id="superPixelImagePick" class="super-pixel-tool" type="button">
+                    <span aria-hidden="true">＋</span> 图片
+                  </button>
+                  <input id="superPixelImageUpload" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+                  <label class="super-pixel-select">
+                    <span class="sr-only">模型</span>
+                    <select id="superPixelModel" aria-label="模型">
+                      <optgroup label="Claude">
+                        <option value="claude-opus-5">Claude Opus 5</option>
+                        <option value="claude-sonnet-5">Claude Sonnet 5</option>
+                        <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                      </optgroup>
+                      <optgroup label="ChatGPT">
+                        <option value="gpt-5.6-terra">GPT-5.6 Terra</option>
+                        <option value="gpt-5.6-sol">GPT-5.6 Sol</option>
+                        <option value="gpt-5.6-luna">GPT-5.6 Luna</option>
+                      </optgroup>
+                    </select>
+                  </label>
+                  <label class="super-pixel-select">
+                    <span class="sr-only">模式</span>
+                    <select id="superPixelMode" aria-label="模式">
+                      <option value="ask">Ask</option>
+                      <option value="agent" disabled>Agent（即将开放）</option>
+                    </select>
+                  </label>
+                  <button id="superPixelSend" class="super-pixel-send" type="submit" aria-label="发送">
+                    <span aria-hidden="true">↑</span>
+                  </button>
+                </div>
+              </form>
+              <div class="super-pixel-chips" role="group" aria-label="快捷场景">
+                <button class="super-pixel-chip" type="button" data-super-pixel-chip="新建剧集">新建剧集</button>
+                <button class="super-pixel-chip" type="button" data-super-pixel-chip="续写下一集">续写下一集</button>
+                <button class="super-pixel-chip" type="button" data-super-pixel-chip="改写风格">改写风格</button>
+                <button class="super-pixel-chip" type="button" data-super-pixel-chip="直接生成分镜">直接生成分镜</button>
               </div>
-            </form>
-            <div class="super-pixel-chips" role="group" aria-label="快捷场景">
-              <button class="super-pixel-chip" type="button" data-super-pixel-chip="新建剧集">新建剧集</button>
-              <button class="super-pixel-chip" type="button" data-super-pixel-chip="续写下一集">续写下一集</button>
-              <button class="super-pixel-chip" type="button" data-super-pixel-chip="改写风格">改写风格</button>
-              <button class="super-pixel-chip" type="button" data-super-pixel-chip="直接生成分镜">直接生成分镜</button>
+              </div>
             </div>
-            <section class="super-pixel-gallery" aria-label="资产图位">
-              <span class="super-pixel-gallery-kicker">SUPER PIXEL</span>
-              <div id="superPixelGallery" class="super-pixel-cards">
-                <!-- 空白占位：后期填充资产图 -->
-                <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
-                <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
-                <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
-                <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
-              </div>
-            </section>
           </div>
         </section>
       </section>
@@ -1168,6 +1173,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=asset-controls-20260726"></script>
+    <script src="/app.js?v=chat-dock-asset-controls-20260726"></script>
   </body>
 </html>

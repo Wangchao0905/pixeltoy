@@ -118,6 +118,7 @@ const state = {
   ui: { exploreEnabled: false },
   exploreEnabled: false,
   exploreView: "canvas",
+  superPixel: { model: "claude-opus-4-8", mode: "ask" },
   exploreProjectSearch: "",
   exploreCanvasFilter: "all",
   exploreScopeFilter: "all",
@@ -386,6 +387,8 @@ async function syncAuthUser() {
   const exploreRefresh = $("#exploreRefresh");
   const exploreAccount = $("#exploreAccount");
   const canvasCard = $(".canvas-entry-card");
+  // Super Pixel 仍在开发中，入口仅对管理员开放
+  const superPixelEntry = $('[data-explore-tool="super-pixel"]');
   if (!label) return;
   try {
     const data = await api("/api/auth/me");
@@ -405,6 +408,7 @@ async function syncAuthUser() {
     adminLink?.classList.toggle("hidden", data.user?.role !== "admin");
     exploreLoginLink?.classList.toggle("hidden", !!data.user);
     exploreAdminLink?.classList.toggle("hidden", data.user?.role !== "admin");
+    superPixelEntry?.classList.toggle("hidden", data.user?.role !== "admin");
     exploreTeamButton?.classList.toggle("hidden", !data.user);
     exploreRefresh?.classList.toggle("hidden", !data.user);
     exploreAccount?.classList.toggle("hidden", !data.user);
@@ -423,6 +427,7 @@ async function syncAuthUser() {
     exploreLoginLink?.classList.remove("hidden");
     adminLink?.classList.add("hidden");
     exploreAdminLink?.classList.add("hidden");
+    superPixelEntry?.classList.add("hidden");
     exploreTeamButton?.classList.add("hidden");
     exploreRefresh?.classList.add("hidden");
     exploreAccount?.classList.add("hidden");
@@ -2464,15 +2469,18 @@ function openAssetLibraryPreview(id) {
 }
 
 function setExploreView(view = "canvas") {
-  state.exploreView = ["image", "library"].includes(view) ? view : "canvas";
+  state.exploreView = ["image", "library", "superpixel"].includes(view) ? view : "canvas";
   $(".canvas-home")?.classList.toggle("hidden", state.exploreView !== "canvas");
   $("#imageExploreView")?.classList.toggle("hidden", state.exploreView !== "image");
   $("#assetLibraryView")?.classList.toggle("hidden", state.exploreView !== "library");
+  $("#superPixelView")?.classList.toggle("hidden", state.exploreView !== "superpixel");
   $$(".explore-topbar nav > button").forEach((button) => {
     const active = button.dataset.exploreTool === "image-generation"
       ? state.exploreView === "image"
       : button.dataset.exploreTool === "asset-library"
         ? state.exploreView === "library"
+      : button.dataset.exploreTool === "super-pixel"
+        ? state.exploreView === "superpixel"
       : button.dataset.exploreFilter
         ? state.exploreView === "canvas" && state.exploreCanvasFilter === button.dataset.exploreFilter
         : button.dataset.explorePrimaryCanvas !== undefined
@@ -2492,6 +2500,49 @@ function showExploreImageTool() {
 
 function showExploreAssetLibrary() {
   setExploreView("library");
+}
+
+function showExploreSuperPixel() {
+  setExploreView("superpixel");
+}
+
+// 阶段 1：仅布局与交互骨架，模型调用留待阶段 2。
+function bindSuperPixel() {
+  const input = $("#superPixelInput");
+  const form = $("#superPixelComposer");
+  if (input) {
+    const autoGrow = () => {
+      input.style.height = "auto";
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    input.addEventListener("input", autoGrow);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form?.requestSubmit();
+      }
+    });
+  }
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!input?.value.trim()) return;
+    toast("Super Pixel 即将上线");
+  });
+  $("#superPixelModel")?.addEventListener("change", (event) => {
+    state.superPixel.model = event.target.value;
+  });
+  $("#superPixelMode")?.addEventListener("change", (event) => {
+    state.superPixel.mode = event.target.value;
+  });
+  $("#superPixelAttach")?.addEventListener("click", () => toast("剧本上传即将上线"));
+  $$("[data-super-pixel-chip]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      if (!input) return;
+      input.value = chip.dataset.superPixelChip;
+      input.dispatchEvent(new Event("input"));
+      input.focus();
+    });
+  });
 }
 
 function showExploreCanvasHome() {
@@ -2880,6 +2931,12 @@ async function openExploreTool(tool) {
   }
   if (tool === "asset-library") {
     showExploreAssetLibrary();
+    return;
+  }
+  if (tool === "super-pixel") {
+    // 开发中功能：非管理员即使绕过隐藏的入口也不放行
+    if (state.authUser?.role !== "admin") return;
+    showExploreSuperPixel();
     return;
   }
   const mode = PixelToysWorkspaceShell.workspaceModeForTool(tool);
@@ -6768,6 +6825,7 @@ function bind() {
     if (event.target.closest("[data-explore-new-project]")) return openProjectModal();
     if (event.target.closest("[data-explore-canvas-new]")) return openBlankCanvasProject();
   });
+  bindSuperPixel();
   $("#exploreRefresh")?.addEventListener("click", () => loadProjects(false).catch((error) => toast(error.message)));
   $("#exploreAccount")?.addEventListener("click", openPersonalCenter);
   $("[data-close-personal-center]")?.addEventListener("click", closePersonalCenter);

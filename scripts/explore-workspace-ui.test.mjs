@@ -25,7 +25,8 @@ assert.match(html, /data-explore-scope="all"/);
 assert.match(html, /data-explore-scope="personal"/);
 assert.match(html, /data-explore-scope="team"/);
 assert.match(html, /data-explore-tool="asset-library"/);
-assert.match(html, /data-explore-placeholder="super-pixel"[^>]*disabled/);
+// Super Pixel 已从 disabled 占位转为可用工具入口，详见 super-pixel-view.test.mjs
+assert.match(html, /data-explore-tool="super-pixel"/);
 assert.doesNotMatch(html, /data-explore-tool="video-generation"|data-explore-tool="production-board"/);
 
 const videoSlots = html.match(/data-video-slot="work-\d+"/g) || [];

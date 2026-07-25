@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=studio-queue-progress-20260725" />
+    <link rel="stylesheet" href="/styles.css?v=super-pixel-admin-20260725" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -20,7 +20,7 @@
             <button type="button" data-explore-canvas-home data-explore-primary-canvas>Canvas</button>
             <button type="button" data-explore-tool="image-generation">Image</button>
             <button type="button" data-explore-tool="asset-library">素材库</button>
-            <button type="button" data-explore-placeholder="super-pixel" title="Coming soon: conversational model" disabled>Super Pixel</button>
+            <button type="button" class="hidden" data-explore-tool="super-pixel" title="Super Pixel：对话式剧集创作">Super Pixel</button>
           </nav>
           <div class="explore-account-actions">
             <span id="exploreAuthUserLabel"></span>
@@ -187,6 +187,57 @@
           <div id="assetLibraryEmpty" class="image-explore-empty hidden">
             <strong>素材库还没有图片</strong>
             <span>在 Image 中生成图片后会自动出现在这里。</span>
+          </div>
+        </section>
+        <section id="superPixelView" class="super-pixel-view hidden" aria-label="Super Pixel">
+          <div class="super-pixel-hex" aria-hidden="true"></div>
+          <div class="super-pixel-glow" aria-hidden="true"></div>
+          <div class="super-pixel-stage">
+            <div class="super-pixel-logo" aria-hidden="true">S</div>
+            <h1 id="superPixelTitle" class="super-pixel-title">今天要拍什么？</h1>
+            <form id="superPixelComposer" class="super-pixel-composer">
+              <textarea id="superPixelInput" class="super-pixel-input" rows="1"
+                placeholder="描述你想拍的剧集：题材、主角、集数…"
+                aria-label="剧集创作输入"></textarea>
+              <div class="super-pixel-toolbar">
+                <button id="superPixelAttach" class="super-pixel-tool" type="button">
+                  <span aria-hidden="true">＋</span> 剧本
+                </button>
+                <label class="super-pixel-select">
+                  <span class="sr-only">模型</span>
+                  <select id="superPixelModel" aria-label="模型">
+                    <option value="claude-opus-4-8">Claude Opus 4.8</option>
+                    <option value="gpt-5.2">GPT-5.2</option>
+                  </select>
+                </label>
+                <label class="super-pixel-select">
+                  <span class="sr-only">模式</span>
+                  <select id="superPixelMode" aria-label="模式">
+                    <option value="ask">Ask</option>
+                    <option value="agent">Agent</option>
+                  </select>
+                </label>
+                <button id="superPixelSend" class="super-pixel-send" type="submit" aria-label="发送">
+                  <span aria-hidden="true">↑</span>
+                </button>
+              </div>
+            </form>
+            <div class="super-pixel-chips" role="group" aria-label="快捷场景">
+              <button class="super-pixel-chip" type="button" data-super-pixel-chip="新建剧集">新建剧集</button>
+              <button class="super-pixel-chip" type="button" data-super-pixel-chip="续写下一集">续写下一集</button>
+              <button class="super-pixel-chip" type="button" data-super-pixel-chip="改写风格">改写风格</button>
+              <button class="super-pixel-chip" type="button" data-super-pixel-chip="直接生成分镜">直接生成分镜</button>
+            </div>
+            <section class="super-pixel-gallery" aria-label="资产图位">
+              <span class="super-pixel-gallery-kicker">SUPER PIXEL</span>
+              <div id="superPixelGallery" class="super-pixel-cards">
+                <!-- 空白占位：后期填充资产图 -->
+                <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
+                <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
+                <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
+                <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
+              </div>
+            </section>
           </div>
         </section>
       </section>
@@ -909,6 +960,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=studio-queue-progress-20260725"></script>
+    <script src="/app.js?v=super-pixel-admin-20260725"></script>
   </body>
 </html>

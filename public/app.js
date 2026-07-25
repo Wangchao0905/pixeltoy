@@ -4077,17 +4077,32 @@ function renderModernAssetResults(data = state.project) {
       </section>`)
     .join("") || `<div class="modern-asset-manifest-empty">尚未解析资产。请在左侧输入或上传独立资产描述文档，然后点击“解析资产”。</div>`;
 
-  gallery.innerHTML = slots.length
-    ? slots.map((slot) => {
-      const name = slot.id || slot.label || "";
-      const asset = slot.asset || assetsByName.get(name);
-      const image = asset?.url || asset?.file || "";
-      return `<button class="modern-asset-card" type="button" data-modern-asset-preview="${escapeAttr(name)}" aria-label="查看资产 ${escapeAttr(name)}">
-        <span class="modern-asset-card-media">${image ? `<img src="${escapeAttr(image)}" alt="${escapeAttr(slot.label || name)}" loading="lazy" />` : `<span>${escapeHtml(assetSlotStatusLabel(slot))}</span>`}</span>
-        <strong>${escapeHtml(slot.label || name)}</strong>
-      </button>`;
-    }).join("")
-    : "";
+  const galleryGroups = [
+    ["人物", "CHARACTER", ["Character"]],
+    ["场景", "SCENE", ["Scene"]],
+    ["道具", "PROP", ["Prop", "Insert", "Asset"]],
+  ].map(([label, kicker, types], index) => [
+    label,
+    kicker,
+    index,
+    slots.filter((slot) => types.includes(slot.type) || (!slot.type && label === "道具")),
+  ]).filter(([, , , list]) => list.length);
+  const renderModernAssetCard = (slot) => {
+    const name = slot.id || slot.label || "";
+    const asset = slot.asset || assetsByName.get(name);
+    const image = asset?.url || asset?.file || "";
+    const statusLabel = asset ? "已就绪" : assetSlotStatusLabel(slot);
+    return `<button class="modern-asset-card" type="button" data-modern-asset-preview="${escapeAttr(name)}" aria-label="查看资产 ${escapeAttr(name)}">
+      <span class="modern-asset-card-media">${image ? `<img src="${escapeAttr(image)}" alt="${escapeAttr(slot.label || name)}" loading="lazy" />` : `<span>${escapeHtml(statusLabel)}</span>`}</span>
+      <span class="modern-asset-card-copy"><strong>${escapeHtml(slot.label || name)}</strong><small>${escapeHtml(statusLabel)}</small></span>
+    </button>`;
+  };
+  gallery.innerHTML = galleryGroups.length
+    ? galleryGroups.map(([label, kicker, index, list]) => `<section class="modern-asset-wall-group">
+        <header><span>${String(index + 1).padStart(2, "0")}</span><div><small>${kicker}</small><strong>${label}</strong></div><b>${list.length}</b></header>
+        <div class="modern-asset-wall-grid">${list.map(renderModernAssetCard).join("")}</div>
+      </section>`).join("")
+    : `<div class="modern-asset-manifest-empty">确认资产分类后，生成的资产图会按人物、场景、道具显示在这里。</div>`;
 }
 
 function renderModernEpisodes(project, percent, total, completed) {

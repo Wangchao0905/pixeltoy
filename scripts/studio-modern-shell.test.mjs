@@ -18,6 +18,7 @@ for (const id of [
   "modernAssetDescriptionText",
   "modernAssetDescriptionUpload",
   "modernExtractAssets",
+  "modernAssetWall",
   "modernAssetManifestOverview",
   "modernAssetGallery",
 ]) {
@@ -34,6 +35,7 @@ assert.match(js, /renderModernStudio\(data\)/, "modern shell must hydrate from p
 assert.match(js, /modernScriptUpload/, "modern shell must wire script upload");
 assert.match(js, /modernAssetDescriptionUpload/, "modern shell must wire asset document upload");
 assert.match(js, /modernExtractAssets/, "modern shell must expose asset extraction");
+assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");
 assert.match(js, /workflowEditorElement/, "modern source inputs must use shared workflow persistence");
 assert.doesNotMatch(js, /modernDetailsButton/, "modern shell must not wire a legacy editor handoff");
 assert.doesNotMatch(js, /detailsOpen\s*=\s*true/, "modern actions must not switch to the legacy editor");
@@ -43,10 +45,11 @@ assert.match(js, /data-modern-view/, "pipeline clicks must switch the modern cor
 assert.doesNotMatch(js, /target\.scrollIntoView\(\{ behavior: "smooth"/, "pipeline clicks must not scroll the whole page");
 assert.match(css, /modern-main\[data-modern-view="storyboard"\]/, "storyboard view must have a dedicated core layout");
 assert.match(css, /\.modern-video-preview\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "video preview must use a portrait 9:16 frame");
-assert.match(css, /\.modern-source-panel\s*\{[^}]*display:\s*flex/, "source panel must keep the input columns compact beside the asset rail");
+assert.match(css, /\.modern-source-panel\s*\{[^}]*display:\s*grid/, "source panel must place the asset wall beside the parsed rail");
 assert.match(css, /\.modern-stage-pane\s*\{[^}]*align-self:\s*start/, "stage panes must not stretch to the portrait video height");
 assert.match(css, /\.modern-asset-results\s*\{[^}]*max-height:/, "asset rail must not stretch the entire source panel");
-assert.match(css, /\.modern-asset-card-media\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3/, "asset thumbnails must keep the parsed rail compact");
+assert.match(css, /\.modern-asset-wall\s*\{[^}]*grid-column:\s*1/, "asset wall must occupy the source panel workspace");
+assert.match(css, /\.modern-asset-wall-grid\s*\{[^}]*grid-template-columns:/, "asset wall must use a card grid");
 assert.match(html, /id="modernCore" class="modern-core"/, "modern shell must have a fixed core workspace");
 assert.match(css, /\.studio-modern-shell\s*\{[\s\S]*height:\s*100vh[\s\S]*overflow:\s*hidden/, "modern shell must keep the page viewport fixed");
 assert.match(css, /\.modern-core\s*\{[\s\S]*overflow:\s*auto/, "only the core workspace may scroll internally");

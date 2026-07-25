@@ -2389,12 +2389,45 @@ function assetLibraryCardHtml(asset, { workflow = false } = {}) {
   </article>`;
 }
 
+function superPixelAssetCardHtml(asset) {
+  const id = escapeAttr(asset.id || "");
+  const name = escapeHtml(asset.name || "未命名素材");
+  const preview = escapeAttr(libraryPreviewUrl(asset, 220));
+  const meta = [asset.ratio, asset.resolution].filter(Boolean).join(" · ");
+  return `<article
+    class="super-pixel-asset-card"
+    draggable="true"
+    data-manifest-asset-id="${id}"
+    data-manifest-asset-type="asset-library"
+    title="${name}"
+  >
+    <img src="${preview}" alt="${name}" loading="lazy" />
+    <div><strong>${name}</strong>${meta ? `<span>${escapeHtml(meta)}</span>` : ""}</div>
+  </article>`;
+}
+
+function renderSuperPixelAssetRail() {
+  const rail = $("#superPixelAssetRail");
+  const list = $("#superPixelAssetRailList");
+  const empty = $("#superPixelAssetRailEmpty");
+  if (!rail || !list || !empty) return;
+  const assets = state.assetLibrary.assets.filter((asset) => asset?.id && (asset.url || asset.localUrl || asset.previewUrl));
+  const signature = JSON.stringify(assets.map((asset) => [asset.id, asset.name, asset.url, asset.localUrl, asset.previewUrl]));
+  if (list.dataset.assetSig !== signature) {
+    list.dataset.assetSig = signature;
+    list.innerHTML = assets.map(superPixelAssetCardHtml).join("");
+    bindManualAssetControls(rail, null);
+  }
+  empty.classList.toggle("hidden", assets.length > 0);
+}
+
 function renderAssetLibraryView() {
   const gallery = $("#assetLibraryGallery");
   const empty = $("#assetLibraryEmpty");
   if (!gallery || !empty) return;
   gallery.innerHTML = state.assetLibrary.assets.map((asset) => assetLibraryCardHtml(asset)).join("");
   empty.classList.toggle("hidden", state.assetLibrary.assets.length > 0);
+  renderSuperPixelAssetRail();
 }
 
 function renderWorkflowAssetLibrary() {
@@ -2496,7 +2529,10 @@ function setExploreView(view = "canvas") {
   });
   renderImageExploreView();
   renderAssetLibraryView();
-  if (state.exploreView === "library" && !state.assetLibrary.loaded) loadAssetLibrary({ silent: true }).catch((error) => toast(error.message));
+  renderSuperPixelAssetRail();
+  if ((state.exploreView === "library" || state.exploreView === "superpixel") && !state.assetLibrary.loaded) {
+    loadAssetLibrary({ silent: true }).catch((error) => toast(error.message));
+  }
   requestAnimationFrame(centerExploreActiveNav);
 }
 
@@ -2563,6 +2599,7 @@ async function readSuperPixelStream(response, onDelta) {
 }
 
 const SUPER_PIXEL_MAX_ATTACHMENTS = 8;
+const SUPER_PIXEL_ASSET_MIME = "application/x-pixel-toys-asset-type";
 
 function renderSuperPixelAttachments() {
   const tray = $("#superPixelAttachments");
@@ -2639,6 +2676,22 @@ function addSuperPixelAttachment(image) {
   if (items.some((item) => item.url === image.url)) return false;
   items.push(image);
   return true;
+}
+
+function addSuperPixelLibraryAsset(assetId) {
+  const asset = state.assetLibrary.assets.find((asset) => asset.id === assetId);
+  const url = asset?.url || asset?.localUrl || asset?.previewUrl || "";
+  if (!url) {
+    toast("资产图片不可用");
+    return false;
+  }
+  const added = addSuperPixelAttachment({
+    url,
+    preview: libraryPreviewUrl(asset, 160),
+    name: asset.name || "素材库图片",
+  });
+  if (added) renderSuperPixelAttachments();
+  return added;
 }
 
 // 把一条消息转成接口要的 content：无图=字符串，有图=多模态数组
@@ -2755,12 +2808,15 @@ function bindSuperPixel() {
     await addSuperPixelLocalFiles(event.target.files);
     event.target.value = "";
   });
-  // 整个 composer 作为拖放区：本地图片文件直接拖进来
+  $("#superPixelAssetRailRefresh")?.addEventListener("click", () => loadAssetLibrary().catch((error) => toast(error.message)));
+  // 整个 composer 作为拖放区：本地图片文件或资产库图片直接拖进来
   const composer = $(".super-pixel-composer");
   if (composer) {
     const isFileDrag = (event) => [...(event.dataTransfer?.types || [])].includes("Files");
+    const isAssetDrag = (event) => [...(event.dataTransfer?.types || [])].includes(SUPER_PIXEL_ASSET_MIME);
+    const isSupportedDrag = (event) => isFileDrag(event) || isAssetDrag(event);
     composer.addEventListener("dragover", (event) => {
-      if (!isFileDrag(event)) return;
+      if (!isSupportedDrag(event)) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
       composer.classList.add("is-dragover");
@@ -2769,10 +2825,11 @@ function bindSuperPixel() {
       if (!composer.contains(event.relatedTarget)) composer.classList.remove("is-dragover");
     });
     composer.addEventListener("drop", async (event) => {
-      if (!isFileDrag(event)) return;
+      if (!isSupportedDrag(event)) return;
       event.preventDefault();
       composer.classList.remove("is-dragover");
-      await addSuperPixelLocalFiles(event.dataTransfer.files);
+      if (isFileDrag(event)) await addSuperPixelLocalFiles(event.dataTransfer.files);
+      if (isAssetDrag(event)) addSuperPixelLibraryAsset(event.dataTransfer.getData("text/plain"));
     });
   }
   // 截图直接粘贴

@@ -2552,7 +2552,10 @@ function renderSuperPixelMessages() {
   const container = $("#superPixelMessages");
   if (!container) return;
   container.textContent = "";
-  container.classList.toggle("hidden", !state.superPixel.messages.length);
+  const chatting = state.superPixel.messages.length > 0;
+  container.classList.toggle("hidden", !chatting);
+  // 开聊后切换到「对话态」：收掉首屏引导物，composer 贴到页面底部
+  $("#superPixelStage")?.classList.toggle("is-chatting", chatting);
   for (const message of state.superPixel.messages) {
     const bubble = document.createElement("div");
     bubble.className = `super-pixel-message is-${message.role}`;

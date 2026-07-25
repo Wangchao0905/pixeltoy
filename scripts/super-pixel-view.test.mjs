@@ -47,9 +47,20 @@ assert.ok(selectBlock.indexOf(`value="${stateDefault}"`) === selectBlock.indexOf
 assert.match(html, /value="ask"/, "必须有 Ask 模式");
 assert.match(html, /value="agent"/, "必须有 Agent 模式");
 
-// 卡片占位：4 张，后期填充资产图
-const cards = html.match(/class="super-pixel-card is-empty"/g) || [];
-assert.equal(cards.length, 4, "资产图占位卡必须是 4 张");
+// 卡片占位栏已移除：资产改由左侧常驻侧栏承载，底部空卡只占高度不给信息
+assert.ok(!/super-pixel-gallery|super-pixel-cards|super-pixel-card is-empty/.test(html), "资产占位卡片栏必须已移除");
+assert.ok(!/super-pixel-gallery|\.super-pixel-cards/.test(css), "卡片栏样式必须一并删除，别留死代码");
+
+// 开聊后 composer 贴底：dock 容器 + is-chatting 态
+assert.match(html, /id="superPixelDock"/, "composer 必须包在 dock 容器里才能贴底");
+assert.match(app, /classList\.toggle\("is-chatting", chatting\)/, "有消息时必须切到对话态");
+assert.match(css, /\.super-pixel-stage\.is-chatting\s*\{/, "必须有对话态布局");
+assert.match(css, /\.super-pixel-stage\.is-chatting[\s\S]{0,400}?\.super-pixel-title,?[\s\S]{0,120}?display:\s*none/, "对话态必须收掉首屏引导物");
+
+// 聊天字体：衬线，且消息与输入框同源（输入时所见即发出后所得）
+assert.match(css, /--sp-chat-font:[^;]*serif/, "聊天字体栈必须以 serif 收尾");
+assert.match(css, /\.super-pixel-message\s*\{[\s\S]*?font-family:\s*var\(--sp-chat-font\)/, "消息气泡必须用聊天字体");
+assert.match(css, /\.super-pixel-input\s*\{[\s\S]*?font-family:\s*var\(--sp-chat-font\)/, "输入框必须与气泡同字体");
 
 // 可访问性
 assert.match(html, /id="superPixelInput"[\s\S]{0,220}aria-label="剧集创作输入"/, "输入框需有 aria-label");

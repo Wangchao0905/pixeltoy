@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=super-pixel-asset-rail-20260726" />
+    <link rel="stylesheet" href="/styles.css?v=super-pixel-chat-dock-20260726" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -204,10 +204,11 @@
               <div id="superPixelAssetRailList" class="super-pixel-asset-rail-list" aria-live="polite"></div>
               <div id="superPixelAssetRailEmpty" class="super-pixel-asset-rail-empty hidden">暂无资产</div>
             </aside>
-            <div class="super-pixel-stage">
+            <div id="superPixelStage" class="super-pixel-stage">
               <div class="super-pixel-logo" aria-hidden="true">S</div>
               <h1 id="superPixelTitle" class="super-pixel-title">今天要拍什么？</h1>
               <div id="superPixelMessages" class="super-pixel-messages" aria-live="polite"></div>
+              <div id="superPixelDock" class="super-pixel-dock">
               <form id="superPixelComposer" class="super-pixel-composer">
                 <div id="superPixelAttachments" class="super-pixel-attachments hidden" aria-label="已附加图片"></div>
                 <textarea id="superPixelInput" class="super-pixel-input" rows="1"
@@ -255,16 +256,7 @@
                 <button class="super-pixel-chip" type="button" data-super-pixel-chip="改写风格">改写风格</button>
                 <button class="super-pixel-chip" type="button" data-super-pixel-chip="直接生成分镜">直接生成分镜</button>
               </div>
-              <section class="super-pixel-gallery" aria-label="资产图位">
-                <span class="super-pixel-gallery-kicker">SUPER PIXEL</span>
-                <div id="superPixelGallery" class="super-pixel-cards">
-                  <!-- 空白占位：后期填充资产图 -->
-                  <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
-                  <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
-                  <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
-                  <div class="super-pixel-card is-empty" aria-hidden="true"><span>—</span></div>
-                </div>
-              </section>
+              </div>
             </div>
           </div>
         </section>
@@ -1150,6 +1142,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=super-pixel-asset-rail-20260726"></script>
+    <script src="/app.js?v=super-pixel-chat-dock-20260726"></script>
   </body>
 </html>

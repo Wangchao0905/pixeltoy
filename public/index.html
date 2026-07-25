@@ -938,7 +938,6 @@
           <header class="modern-topbar">
             <div class="modern-breadcrumb"><span id="modernProjectCrumb">项目</span><i>/</i><strong id="modernEpisodeCrumb">制作台</strong></div>
             <div class="modern-top-actions">
-              <button id="modernDetailsButton" class="modern-quiet-button" type="button">详细编辑</button>
               <button id="modernQueueButton" class="modern-queue-button" type="button"><i></i><span id="modernQueueLabel">队列 0</span></button>
             </div>
           </header>
@@ -960,7 +959,7 @@
             <button type="button" data-modern-focus="video"><span>04</span><b>组装成片</b><small id="modernCutStep">等待片段</small><i></i></button>
           </section>
 
-          <section class="modern-kit-bar" aria-label="Reference Kit 连续性控制">
+          <section id="modernKitBar" class="modern-kit-bar" aria-label="Reference Kit 连续性控制">
             <div><span class="modern-kit-mark">KIT</span><div><span class="modern-eyebrow">ASSET DOCUMENT → KIT → VIDEO</span><strong>镜头引用资产</strong></div></div>
             <div><span id="modernKitShot">当前镜头</span><b id="modernKitNames">未分配</b></div>
             <div><span>引用状态</span><strong id="modernKitStatus">待确认</strong></div>
@@ -976,7 +975,7 @@
             <header class="modern-shot-commandbar">
               <div class="modern-selected-shot"><span id="modernSelectedShotNumber">--</span><div><h2 id="modernSelectedShotTitle">未选择镜头</h2><p id="modernSelectedShotMeta">先生成分镜草稿或视频配置</p></div></div>
               <div class="modern-shot-lineage"><span class="is-done">STORY</span><i></i><span id="modernStillLineage">STILL</span><i></i><span id="modernMotionLineage">MOTION</span></div>
-              <button id="modernShotAction" class="modern-shot-action" type="button">打开详细编辑</button>
+            <button id="modernShotAction" class="modern-shot-action" type="button">定位当前镜头</button>
             </header>
             <div class="modern-stage-grid">
               <section class="modern-stage-pane" aria-labelledby="modernStoryTitle">

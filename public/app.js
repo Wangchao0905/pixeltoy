@@ -1460,8 +1460,11 @@ function showStudio() {
   closeProjectModal();
   $("#exploreHome")?.classList.add("hidden");
   $("#projectHome").classList.add("hidden");
-  $("#studioShell").classList.toggle("hidden", !state.modernStudio.detailsOpen);
-  $("#studioModernShell")?.classList.toggle("hidden", state.modernStudio.detailsOpen);
+  state.modernStudio.detailsOpen = false;
+  // The legacy shell remains mounted as a compatibility layer for its API
+  // handlers, but it is never a user-facing workspace anymore.
+  $("#studioShell").classList.add("hidden");
+  $("#studioModernShell")?.classList.remove("hidden");
   document.body.classList.add("is-studio");
   document.body.classList.add("is-studio-modern");
   document.body.classList.toggle("is-explore-ui", state.exploreEnabled);
@@ -4051,7 +4054,7 @@ function renderModernSelectedShot(data, shot, index) {
   $("#modernSelectedShotNumber").textContent = number;
   $("#modernSelectedShotTitle").textContent = shot?.name || "未选择镜头";
   $("#modernSelectedShotMeta").textContent = shot ? `${shot.duration}s · ${shot.model || "模型未配置"} · ${shot.assets.length} 个引用资产` : "先生成分镜草稿或视频配置";
-  $("#modernShotAction").textContent = shot ? "打开详细编辑" : "打开详细编辑";
+  $("#modernShotAction").textContent = shot ? "定位当前镜头" : "定位镜头";
   const status = modernStatusLabel(shot?.status);
   $("#modernStoryStatus").textContent = shot?.prompt ? "已生成" : "待确认";
   $("#modernStillStatus").textContent = shot?.storyboardRefs?.length ? "已确认" : "待生成";
@@ -7452,43 +7455,45 @@ function bind() {
   };
   $("#backToProjects").addEventListener("click", goBackToProjects);
   $("#studioModernOverviewButton")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = false;
     showStudio();
     renderModernStudio(state.project);
   });
   $("#modernBrandButton")?.addEventListener("click", goBackToProjects);
-  $("#modernDetailsButton")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
+  const focusModernPane = (focus) => {
+    const target = focus === "assets"
+      ? $("#modernKitBar")
+      : focus === "storyboard"
+        ? $("#modernStillTitle")?.closest(".modern-stage-pane")
+        : focus === "video"
+          ? $("#modernMotionTitle")?.closest(".modern-stage-pane")
+          : $("#modernStoryTitle")?.closest(".modern-stage-pane");
+    target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    target?.classList.remove("is-focus-pulse");
+    requestAnimationFrame(() => target?.classList.add("is-focus-pulse"));
+  };
+  const runHiddenLegacyAction = (mode, selector) => {
+    setWorkspaceMode(mode, { persist: false });
+    $(selector)?.click();
     showStudio();
-    setWorkspaceMode(state.activeWorkspaceMode || "assets");
-  });
+    renderModernStudio(state.project);
+  };
   $("#modernQueueButton")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode("video");
+    focusModernPane("video");
+    toast("已定位到视频生成阶段");
   });
   $("#modernVisualBibleButton")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode("assets");
-    toast("已打开详细编辑中的资产与风格设置");
+    focusModernPane("assets");
+    toast("已定位到资产与风格规则");
   });
   $("#modernKitButton")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode("assets");
-    $("#referenceKitPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    focusModernPane("assets");
   });
   $("#modernBatchAction")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode("video");
-    $("#generateAllSegments")?.click();
+    runHiddenLegacyAction("video", "#generateAllSegments");
   });
   $$('[data-modern-focus]').forEach((button) => button.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode(button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus);
+    const focus = button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus;
+    focusModernPane(focus);
   }));
   $$('[data-modern-copy-tab]').forEach((button) => button.addEventListener("click", () => {
     state.modernStudio.copyTab = button.dataset.modernCopyTab || "story";
@@ -7501,34 +7506,22 @@ function bind() {
     const target = state.modernStudio.copyTab === "prompt" ? "videoPromptInspectorPrompt" : "scriptText";
     const legacy = $(target);
     if (legacy) legacy.value = $("#modernShotCopy").value;
-    toast("修改已暂存；详细编辑中可提交到当前流程");
+    toast("修改已暂存，将用于下一次生成");
   });
   $("#modernShotAction")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode("video");
+    focusModernPane("video");
   });
   $("#modernStillEdit")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode("storyboard");
+    focusModernPane("storyboard");
   });
   $("#modernStillGenerate")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode("storyboard");
-    $("[data-job='storyboards']")?.click();
+    runHiddenLegacyAction("storyboard", "[data-job='storyboards']");
   });
   $("#modernVideoEdit")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode("video");
+    focusModernPane("video");
   });
   $("#modernVideoGenerate")?.addEventListener("click", () => {
-    state.modernStudio.detailsOpen = true;
-    showStudio();
-    setWorkspaceMode("video");
-    $("#generateAllSegments")?.click();
+    runHiddenLegacyAction("video", "#generateAllSegments");
   });
   $("#studioCommandButton")?.addEventListener("click", () => toast("命令面板会在下一阶段接入；当前可直接点击流程节点聚焦步骤"));
   $("#studioPrimaryRun")?.addEventListener("click", (event) => {

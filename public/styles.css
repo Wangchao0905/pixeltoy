@@ -15721,8 +15721,8 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   .super-pixel-send:active { transform: none; }
 }
 
-/* Modern production overview. The legacy editor remains available from the
-   "详细编辑" command so existing generation controls keep their DOM/API. */
+/* Modern production workspace. The legacy editor DOM stays mounted only as a
+   hidden compatibility layer for existing generation handlers. */
 body.is-studio-modern {
   --modern-bg: #0f1112;
   --modern-rail: #111314;
@@ -15741,13 +15741,39 @@ body.is-studio-modern {
 }
 
 body.is-studio-modern #app { min-height: 100vh; }
+body.is-studio-modern #studioShell {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
 body.is-studio-modern #studioShell.hidden { display: none !important; }
 body.is-studio-modern #studioModernShell.hidden { display: none !important; }
 .studio-modern-shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100vh; background: var(--modern-bg); color: var(--modern-text); }
 .modern-series-nav { position: sticky; top: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border-right: 1px solid var(--modern-line); background: var(--modern-rail); }
 .modern-brand { padding: 20px 16px 16px; border-bottom: 1px solid var(--modern-line); }
 .modern-brand button { display: block; width: 146px; min-height: 0; padding: 0; border: 0; background: transparent; }
-.modern-brand-logo { position: relative; display: block; width: 146px; aspect-ratio: 960 / 165; background: url("/pixel-toys-logo.png?v=202607040215") center / contain no-repeat; }
+.modern-brand-logo {
+  position: relative;
+  display: block;
+  width: 146px;
+  aspect-ratio: 960 / 165;
+  background: url("/pixel-toys-logo.png?v=202607040215") center / contain no-repeat;
+}
+body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
+  backface-visibility: visible;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: no-preference) {
+  body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
+    animation: pixelToysCopterSpin 0.58s linear infinite !important;
+    animation-play-state: running !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
+    animation: none !important;
+  }
+}
 .modern-brand > span, .modern-eyebrow { color: var(--modern-quiet); font-family: var(--mono); font-size: 9px; letter-spacing: .08em; }
 .modern-brand > span { display: block; margin-top: 9px; }
 .modern-series-context { padding: 18px 16px 12px; }
@@ -15791,6 +15817,14 @@ body.is-studio-modern #studioModernShell.hidden { display: none !important; }
 .modern-shot-meta { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; margin: 12px 0 0; }.modern-shot-meta div { min-width: 0; padding-top: 8px; border-top: 1px solid var(--modern-line); }.modern-shot-meta dt { color: var(--modern-quiet); font-size: 8px; }.modern-shot-meta dd { margin: 4px 0 0; overflow: hidden; color: var(--modern-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .modern-reference-strip { display: flex; justify-content: space-between; gap: 8px; margin: 12px 0 9px; padding: 7px 8px; border: 1px solid var(--modern-line); background: #111314; color: var(--modern-muted); font-size: 8px; }.modern-reference-strip b { color: var(--modern-signal); font-weight: 500; }.modern-still-preview, .modern-video-preview { position: relative; display: grid; place-items: center; min-height: 206px; overflow: hidden; border: 1px solid var(--modern-line); background: #0c0e0f; }.modern-still-preview img, .modern-video-preview img, .modern-video-preview video { display: block; width: 100%; height: 206px; object-fit: cover; }.modern-empty-preview { color: var(--modern-quiet); font-size: 10px; }.modern-still-preview > .modern-empty-preview, .modern-video-preview > .modern-empty-preview { position: absolute; }.modern-still-preview img:not([src=""])+.modern-empty-preview, .modern-video-preview img:not([src=""])+.modern-empty-preview { display: none; }.modern-still-preview > span { position: absolute; left: 8px; bottom: 8px; padding: 4px 6px; border: 1px solid rgba(200,255,46,.42); background: rgba(15,17,18,.82); color: var(--modern-signal); font-family: var(--mono); font-size: 8px; }.modern-pane-actions { display: flex; gap: 7px; margin-top: 9px; }.modern-pane-actions button { flex: 1; }.modern-pane-actions button.is-primary { border-color: var(--modern-signal); background: rgba(200,255,46,.08); color: var(--modern-signal); }.modern-motion-meta { display: flex; justify-content: space-between; margin-top: 9px; color: var(--modern-muted); font-family: var(--mono); font-size: 8px; }.modern-motion-meta strong { color: var(--modern-text); font-weight: 500; }.modern-video-progress { position: absolute; right: 8px; bottom: 8px; left: 8px; height: 3px; background: rgba(255,255,255,.14); }.modern-video-progress span { display: block; width: 0; height: 100%; background: var(--modern-signal); transition: width 220ms ease; }
 .modern-stage-pane.is-disabled { opacity: .68; }.modern-stage-pane .hidden { display: none !important; }
+.modern-stage-pane.is-focus-pulse, #modernKitBar.is-focus-pulse {
+  animation: modernFocusPulse 900ms ease both !important;
+}
+@keyframes modernFocusPulse {
+  0% { outline: 0 solid rgba(200,255,46,0); outline-offset: 0; }
+  35% { outline: 2px solid rgba(200,255,46,.55); outline-offset: 3px; }
+  100% { outline: 0 solid rgba(200,255,46,0); outline-offset: 7px; }
+}
 @media (max-width: 1180px) { .studio-modern-shell { grid-template-columns: 190px minmax(0,1fr); }.modern-episode-hero { grid-template-columns: minmax(0,1fr) auto; }.modern-episode-action { grid-column: 1 / -1; justify-self: start; }.modern-kit-bar { grid-template-columns: minmax(200px,1fr) minmax(140px,1fr) auto; }.modern-kit-bar > div:nth-child(3) { display: none; } }
 @media (max-width: 980px) { body.is-studio-modern { min-width: 0; }.studio-modern-shell { display: block; }.modern-series-nav { position: relative; height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-brand { display: flex; align-items: center; justify-content: space-between; }.modern-series-context, .modern-series-footer { display: none; }.modern-episode-list { display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; }.modern-episode-row { flex: 0 0 150px; }.modern-stage-grid { grid-template-columns: 1fr; }.modern-stage-pane { border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-stage-pane:last-child { border-bottom: 0; }.modern-kit-bar { margin: 14px 14px 0; }.modern-sequence { margin: 14px; }.modern-workbench { margin: 18px 14px 24px; } }
 @media (prefers-reduced-motion: reduce) { .modern-progress-track span, .modern-video-progress span { transition: none; } }

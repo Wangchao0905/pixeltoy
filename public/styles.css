@@ -15884,4 +15884,21 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 @media (max-width: 1180px) { .studio-modern-shell { grid-template-columns: 190px minmax(0,1fr); }.modern-episode-hero { grid-template-columns: minmax(0,1fr) auto; }.modern-episode-action { grid-column: 1 / -1; justify-self: start; }.modern-kit-bar { grid-template-columns: minmax(200px,1fr) minmax(140px,1fr) auto; }.modern-kit-bar > div:nth-child(3) { display: none; } }
 @media (max-width: 980px) { .modern-source-panel { display: block; margin: 14px 14px 0; }.modern-source-grid { grid-template-columns: 1fr; }.modern-source-field + .modern-source-field { border-top: 1px solid var(--modern-line); border-left: 0; }.modern-asset-results { border-top: 1px solid var(--modern-line); border-left: 0; } }
 @media (max-width: 980px) { body.is-studio-modern { min-width: 0; }.studio-modern-shell { display: block; height: auto; min-height: 100vh; overflow: visible; }.modern-main { min-height: 0; overflow: visible; }.modern-series-nav { position: relative; height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-brand { display: flex; align-items: center; justify-content: space-between; }.modern-series-context, .modern-series-footer { display: none; }.modern-episode-list { display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; }.modern-episode-row { flex: 0 0 150px; }.modern-stage-grid { grid-template-columns: 1fr; }.modern-stage-pane { border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-stage-pane:last-child { border-bottom: 0; }.modern-kit-bar { margin: 14px 14px 0; }.modern-sequence { margin: 14px; }.modern-workbench { margin: 18px 14px 24px; }.modern-core { overflow: visible; } }
+
+/* Keep source fields compact beside the parsed-assets rail instead of stretching to its height. */
+.modern-source-panel { display: flex; flex-wrap: wrap; align-items: flex-start; }
+.modern-source-head { flex: 0 0 100%; }
+.modern-source-grid { flex: 1 1 auto; align-self: flex-start; }
+.modern-asset-results { flex: 0 0 292px; align-self: flex-start; }
+.modern-stage-pane { align-self: start; }
+
+/* Video output is portrait by design; the media element fills the locked frame. */
+.modern-video-preview { width: min(100%, 260px); aspect-ratio: 9 / 16; min-height: 0; height: auto; margin: 12px auto 0; }
+.modern-video-preview img,
+.modern-video-preview video { width: 100%; height: 100%; object-fit: cover; }
+
+@media (max-width: 980px) {
+  .modern-source-panel { display: block; }
+  .modern-source-head, .modern-source-grid, .modern-asset-results { width: 100%; }
+}
 @media (prefers-reduced-motion: reduce) { .modern-progress-track span, .modern-video-progress span { transition: none; } }

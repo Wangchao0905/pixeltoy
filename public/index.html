@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=production-os-20260725-final-cut-single-panel" />
+    <link rel="stylesheet" href="/styles.css?v=studio-queue-progress-20260725" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -833,11 +833,13 @@
               </div>
             </aside>
           </div>
-          <footer id="studioQueueBar" class="studio-queue-bar" aria-label="任务队列">
-            <span class="studio-queue-title">QUEUE</span>
-            <div id="studioQueueItems" class="studio-queue-items"></div>
-            <span id="studioQueueSummary" class="studio-queue-summary">空闲</span>
-          </div>
+          <footer id="studioQueueBar" class="studio-queue-bar is-idle" aria-label="任务队列">
+            <div id="studioQueueItems" class="studio-queue-items is-hidden"></div>
+            <span id="studioQueueSummary" class="studio-queue-summary"></span>
+            <div id="studioQueueProgress" class="studio-queue-progress" aria-hidden="true">
+              <span id="studioQueueProgressFill" class="studio-queue-progress-fill"></span>
+            </div>
+          </footer>
         </main>
       </section>
     </div>
@@ -907,6 +909,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=studio-workflow-20260725-release-2"></script>
+    <script src="/app.js?v=studio-queue-progress-20260725"></script>
   </body>
 </html>

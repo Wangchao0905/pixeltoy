@@ -12532,8 +12532,7 @@ body.is-studio .workspace.studio-board {
 body.is-studio .studio-console,
 body.is-studio .studio-flow-strip,
 body.is-studio .studio-content-shell,
-body.is-studio .studio-context-panel,
-body.is-studio .studio-queue-bar {
+body.is-studio .studio-context-panel {
   border: 1px solid var(--studio-line);
   background: linear-gradient(180deg, rgba(23, 45, 77, 0.68), rgba(7, 16, 29, 0.62));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.075), 0 22px 62px rgba(0, 0, 0, 0.2);
@@ -12678,8 +12677,7 @@ body.is-studio .studio-context-head {
   background: rgba(24, 47, 79, 0.28);
 }
 
-body.is-studio .studio-eyebrow,
-body.is-studio .studio-queue-title {
+body.is-studio .studio-eyebrow {
   color: var(--studio-signal);
   font-size: 9px;
   letter-spacing: 0.16em;
@@ -12736,49 +12734,6 @@ body.is-studio .studio-context-actions button {
   width: 100%;
 }
 
-body.is-studio .studio-queue-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-height: 42px;
-  margin-top: 12px;
-  padding: 0 14px;
-  border-radius: 15px;
-}
-
-body.is-studio .studio-queue-items {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  gap: 18px;
-  overflow: auto hidden;
-  color: var(--studio-muted);
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-body.is-studio .studio-queue-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-body.is-studio .studio-queue-item strong {
-  color: var(--studio-ink);
-  font-weight: 650;
-}
-
-body.is-studio .studio-queue-item.is-error strong {
-  color: #ff8a91;
-}
-
-body.is-studio .studio-queue-empty,
-body.is-studio .studio-queue-summary {
-  color: var(--studio-dim);
-  font-size: 10px;
-  white-space: nowrap;
-}
-
 body.is-studio button.primary,
 body.is-studio .primary {
   border-radius: 10px;
@@ -12786,7 +12741,6 @@ body.is-studio .primary {
 
 body.is-studio .panel,
 body.is-studio .studio-context-panel,
-body.is-studio .studio-queue-bar,
 body.is-studio .studio-topbar,
 body.is-studio .studio-console,
 body.is-studio .studio-content-shell,
@@ -12870,8 +12824,7 @@ body.is-studio .studio-flow-strip {
   body.is-studio .studio-console,
   body.is-studio .studio-flow-strip,
   body.is-studio .studio-content-shell,
-  body.is-studio .studio-context-panel,
-  body.is-studio .studio-queue-bar {
+  body.is-studio .studio-context-panel {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     background: #0d1c30;
@@ -13117,8 +13070,7 @@ body.is-studio #workspace.workspace.studio-board > .studio-content-shell {
 body.is-studio .studio-console,
 body.is-studio .studio-flow-strip,
 body.is-studio .studio-content-shell,
-body.is-studio .studio-context-panel,
-body.is-studio .studio-queue-bar {
+body.is-studio .studio-context-panel {
   border: 1px solid var(--studio-line);
   background:
     linear-gradient(180deg, rgba(29, 55, 90, 0.68), rgba(8, 18, 32, 0.6)),
@@ -13284,8 +13236,7 @@ body.is-studio .studio-context-head {
   background: rgba(28, 53, 86, 0.28);
 }
 
-body.is-studio .studio-eyebrow,
-body.is-studio .studio-queue-title {
+body.is-studio .studio-eyebrow {
   color: var(--studio-signal);
   font-size: 9px;
   letter-spacing: 0.16em;
@@ -13344,52 +13295,12 @@ body.is-studio .studio-context-actions button {
   width: 100%;
 }
 
-body.is-studio .studio-queue-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-height: 44px;
-  margin: 0;
-  padding: 0 14px;
-  border-radius: 16px;
-}
-
-body.is-studio .studio-queue-items {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  gap: 18px;
-  overflow: auto hidden;
-  color: var(--studio-muted);
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-body.is-studio .studio-queue-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-body.is-studio .studio-queue-item strong {
-  color: var(--studio-ink);
-  font-weight: 650;
-}
-
-body.is-studio .studio-queue-empty,
-body.is-studio .studio-queue-summary {
-  color: var(--studio-dim);
-  font-size: 10px;
-  white-space: nowrap;
-}
-
 @media (prefers-reduced-motion: no-preference) {
   body.is-studio .studio-topbar,
   body.is-studio .studio-console,
   body.is-studio .studio-flow-strip,
   body.is-studio .studio-content-shell,
-  body.is-studio .studio-context-panel,
-  body.is-studio .studio-queue-bar {
+  body.is-studio .studio-context-panel {
     animation: studioSurfaceIn 260ms ease both !important;
   }
 
@@ -13398,8 +13309,7 @@ body.is-studio .studio-queue-summary {
     animation-delay: 45ms !important;
   }
 
-  body.is-studio .studio-context-panel,
-  body.is-studio .studio-queue-bar {
+  body.is-studio .studio-context-panel {
     animation-delay: 80ms !important;
   }
 
@@ -13614,7 +13524,7 @@ body.is-studio .studio-mode-rail button.is-active {
 }
 
 body.is-studio .main.studio-stage {
-  grid-template-rows: 72px minmax(0, 1fr) 42px;
+  grid-template-rows: 72px minmax(0, 1fr) 32px;
   gap: 10px;
   padding: 12px 18px 10px;
 }
@@ -13941,17 +13851,10 @@ body.is-studio .studio-context-actions button {
   border-radius: 13px;
 }
 
-body.is-studio .studio-queue-bar {
-  min-height: 42px;
-  border-radius: 18px;
-  background: rgba(7, 16, 29, 0.72);
-}
-
 @media (prefers-reduced-motion: no-preference) {
   body.is-studio .studio-console .script-panel,
   body.is-studio .studio-context-panel,
-  body.is-studio .studio-flow-step,
-  body.is-studio .studio-queue-bar {
+  body.is-studio .studio-flow-step {
     animation: studioSurfaceIn 240ms ease both !important;
   }
 
@@ -14041,7 +13944,7 @@ body.is-studio .studio-sidebar {
 
 body.is-studio .main.studio-stage {
   display: grid !important;
-  grid-template-rows: 64px 68px minmax(0, 1fr) 54px !important;
+  grid-template-rows: 64px 68px minmax(0, 1fr) 32px !important;
   gap: 12px !important;
   width: 100%;
   height: calc(100dvh - 30px);
@@ -14054,7 +13957,6 @@ body.is-studio .main.studio-stage {
 
 body.is-studio .studio-topbar,
 body.is-studio .studio-flow-strip,
-body.is-studio .studio-queue-bar,
 body.is-studio .workspace-viewport,
 body.is-studio .studio-context-panel {
   border: 1px solid var(--studio-line) !important;
@@ -14589,57 +14491,11 @@ body.is-studio .studio-context-actions .primary {
   width: 100%;
 }
 
-body.is-studio .studio-queue-bar {
-  display: flex !important;
-  align-items: center;
-  gap: 18px;
-  min-height: 54px !important;
-  padding: 0 20px !important;
-  border-radius: 18px !important;
-}
-
-body.is-studio .studio-queue-title {
-  color: var(--studio-signal) !important;
-  font-size: 10px !important;
-  letter-spacing: 0.16em;
-}
-
-body.is-studio .studio-queue-items {
-  display: flex;
-  flex: 1 1 auto;
-  gap: 22px;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--studio-muted);
-  font-size: 11px;
-}
-
-body.is-studio .studio-queue-item {
-  display: inline-flex;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-body.is-studio .studio-queue-item strong {
-  color: var(--studio-ink);
-  font-weight: 650;
-}
-
-body.is-studio .studio-queue-item.is-error strong {
-  color: var(--studio-danger);
-}
-
-body.is-studio .studio-queue-summary {
-  color: var(--studio-muted);
-  font-size: 11px;
-}
-
 @media (prefers-reduced-motion: no-preference) {
   body.is-studio .studio-topbar,
   body.is-studio .studio-flow-strip,
   body.is-studio .workspace-viewport,
-  body.is-studio .studio-context-panel,
-  body.is-studio .studio-queue-bar {
+  body.is-studio .studio-context-panel {
     animation: studioSurfaceIn 220ms ease both !important;
   }
 
@@ -14664,7 +14520,7 @@ body.is-studio .studio-queue-summary {
   body.is-studio .main.studio-stage {
     height: auto;
     min-height: 900px;
-    grid-template-rows: 64px 68px minmax(620px, 1fr) 54px !important;
+    grid-template-rows: 64px 68px minmax(620px, 1fr) 32px !important;
   }
 
   body.is-studio .studio-flow-status {
@@ -14844,6 +14700,147 @@ body.is-studio .asset-parse-panel .asset-description-editor-shell:focus-within {
   body.is-studio .asset-parse-panel .asset-description-editor-shell {
     width: calc(100% - 32px);
     margin: 16px auto;
+  }
+}
+
+/* Queue bar: the bar itself stays compact while the bottom track carries progress. */
+body.is-studio .studio-queue-bar {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  border: 1px solid rgba(161, 199, 246, 0.14);
+  border-radius: 10px;
+  background: rgba(9, 19, 34, 0.64);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color 180ms ease, background-color 180ms ease, opacity 180ms ease;
+}
+
+body.is-studio .studio-queue-bar.is-idle {
+  border-color: rgba(161, 199, 246, 0.04);
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.4;
+}
+
+body.is-studio .studio-queue-items {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 12px;
+  overflow: hidden;
+  color: var(--studio-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+body.is-studio .studio-queue-items.is-hidden {
+  display: none;
+}
+
+body.is-studio .studio-queue-item {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  max-width: min(32vw, 240px);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+body.is-studio .studio-queue-item strong,
+body.is-studio .studio-queue-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.is-studio .studio-queue-item strong {
+  color: var(--studio-ink);
+  font-weight: 650;
+}
+
+body.is-studio .studio-queue-item.is-error strong {
+  color: var(--warn, var(--studio-warning));
+}
+
+body.is-studio .studio-queue-summary {
+  flex: 0 0 auto;
+  min-width: 58px;
+  color: var(--studio-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+body.is-studio .studio-queue-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease, background-color 180ms ease;
+}
+
+body.is-studio .studio-queue-bar.is-error .studio-queue-progress {
+  background: var(--warn, var(--studio-warning));
+}
+
+body.is-studio .studio-queue-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--studio-signal));
+  box-shadow: 0 0 8px rgba(74, 168, 255, 0.44);
+  opacity: 1;
+  transform: translateX(0);
+  transition: width 400ms ease, opacity 300ms ease;
+}
+
+body.is-studio .studio-queue-progress-fill.is-error {
+  background: var(--warn, var(--studio-warning));
+  box-shadow: 0 0 8px rgba(230, 180, 80, 0.3);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body.is-studio .studio-queue-progress-fill.is-indeterminate {
+    animation: queueScan 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes queueScan {
+  from {
+    transform: translateX(-30%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.is-studio .studio-queue-progress-fill.is-indeterminate {
+    animation: none;
+    transform: translateX(0);
   }
 }
 

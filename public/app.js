@@ -3379,12 +3379,40 @@ async function runStudioPrimaryAction() {
 }
 
 function renderStudioQueue(data) {
+  const bar = $("#studioQueueBar");
   const list = $("#studioQueueItems");
   const summary = $("#studioQueueSummary");
-  if (!list || !summary) return;
+  const progressTrack = $("#studioQueueProgress");
+  const progressFill = $("#studioQueueProgressFill");
+  if (!bar || !list || !summary || !progressTrack || !progressFill) return;
+
+  const resetState = () => {
+    bar.classList.remove("is-idle", "is-active", "is-error");
+    progressFill.classList.remove("is-indeterminate", "is-error");
+    progressTrack.classList.remove("is-error");
+  };
+  const renderState = ({ items = [], text = "", pct = 0, active = false, indeterminate = false, failed = false }) => {
+    resetState();
+    list.innerHTML = items.map((item) => item.html).join("");
+    list.style.display = items.length ? "flex" : "none";
+    summary.textContent = text;
+    summary.style.visibility = text ? "visible" : "hidden";
+    progressFill.style.width = `${indeterminate ? 30 : pct}%`;
+    progressTrack.style.opacity = active || failed ? "1" : "0";
+    if (failed) {
+      bar.classList.add("is-error");
+      progressFill.classList.add("is-error");
+      progressTrack.classList.add("is-error");
+    } else if (active) {
+      bar.classList.add("is-active");
+      if (indeterminate) progressFill.classList.add("is-indeterminate");
+    } else {
+      bar.classList.add("is-idle");
+    }
+  };
+
   if (!data?.project) {
-    list.innerHTML = "";
-    summary.textContent = "空闲";
+    renderState({});
     return;
   }
   const items = [];
@@ -3392,19 +3420,38 @@ function renderStudioQueue(data) {
     if (!job || !["running", "queued", "failed"].includes(String(job.status || "").toLowerCase())) return;
     const status = String(job.status).toLowerCase();
     const statusLabel = status === "running" ? "进行中" : status === "queued" ? "排队" : "失败 / 重试";
-    items.push(`<span class="studio-queue-item ${status === "failed" ? "is-error" : ""}"><strong>${escapeHtml(label)}</strong><span>${statusLabel}</span></span>`);
+    items.push({
+      status,
+      html: `<span class="studio-queue-item ${status === "failed" ? "is-error" : ""}"><strong>${escapeHtml(label)}</strong><span>${statusLabel}</span></span>`,
+    });
   };
   addJob("资产图", data.assetJob);
   addJob("故事板", data.storyboardJob);
   addJob("视频", data.videoJob || data.videoProgress?.job);
   const progress = data.videoProgress || {};
-  if (videoProgressHasActiveWork(progress)) {
-    const total = progress.total || progress.items?.length || 0;
-    const completed = progress.completed || 0;
-    items.push(`<span class="studio-queue-item"><strong>片段 ${completed}/${total}</strong><span>生成中</span></span>`);
+  const progressIsActive = videoProgressHasActiveWork(progress);
+  const total = Number(progress.total) > 0 ? Number(progress.total) : 0;
+  const completed = total > 0 ? Math.max(0, Math.min(total, Number(progress.completed) || 0)) : 0;
+  const pct = total > 0 ? Math.max(0, Math.min(100, (completed / total) * 100)) : 0;
+  if (progressIsActive) {
+    items.push({
+      status: "running",
+      html: `<span class="studio-queue-item"><strong>片段 ${total > 0 ? `${completed}/${total}` : "进行中"}</strong><span>生成中</span></span>`,
+    });
   }
-  list.innerHTML = items.length ? items.join("") : `<span class="studio-queue-empty">暂无进行中任务</span>`;
-  summary.textContent = items.length ? `${items.length} 项任务` : "空闲";
+  const hasActiveJob = progressIsActive || items.some((item) => ["running", "queued"].includes(item.status));
+  const allFailed = items.length > 0 && items.every((item) => item.status === "failed");
+  // 失败态优先于进度态判断:视频任务失败但已有部分片段时(total>0),
+  // 必须显示失败而不是继续渲染蓝色进度条。
+  if (allFailed) {
+    renderState({ items, text: `${items.length} 项失败`, failed: true });
+  } else if (total > 0) {
+    renderState({ items, text: `${completed}/${total} 片段`, pct, active: true });
+  } else if (hasActiveJob) {
+    renderState({ items, text: "进行中", active: true, indeterminate: true });
+  } else {
+    renderState({});
+  }
 }
 
 function compactJobLog(job) {

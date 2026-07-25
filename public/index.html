@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=asset-wall-20260726" />
+    <link rel="stylesheet" href="/styles.css?v=asset-controls-20260726" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -993,6 +993,37 @@
                 <div><span class="modern-eyebrow">ASSET BOARD</span><strong>资产图</strong><small>按人物、场景、道具分组展示，可点击查看大图。</small></div>
                 <span>GENERATED ASSETS</span>
               </header>
+              <section id="modernAssetGenerationControls" class="modern-asset-generation-controls" aria-label="资产图生图参数">
+                <div class="modern-asset-generation-row">
+                  <label><span>风格选择</span><select id="modernAssetStylePreset">
+                    <option value="photoreal">超写实</option>
+                    <option value="cg_3d">3D 渲染 / CG 质感</option>
+                    <option value="pixar_3d">皮克斯 / 迪士尼 3D</option>
+                    <option value="ghibli_miyazaki">宫崎骏 / 吉卜力</option>
+                    <option value="retro_american_cel">复古美式赛璐璐</option>
+                    <option value="american_bold_toon">美式粗线条</option>
+                    <option value="modern_anime_cel">日式动漫赛璐璐</option>
+                    <option value="american_painterly">美式厚涂插画</option>
+                    <option value="claymation">定格动画 / 黏土</option>
+                    <option value="chinese_ink">水墨 / 国风</option>
+                    <option value="pixel_art">复古像素</option>
+                    <option value="custom">自定义</option>
+                  </select></label>
+                  <label class="modern-asset-style-custom"><span>风格补充</span><input id="modernAssetStyleCustom" placeholder="补充色彩、材质、光影或镜头质感" /></label>
+                </div>
+                <div class="modern-asset-generation-row modern-asset-reference-row">
+                  <div class="modern-asset-reference-file"><span>风格参考图</span><input id="modernAssetStyleReferenceFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" /><label for="modernAssetStyleReferenceFile">上传参考图</label><small id="modernAssetStyleReferenceName">未上传</small></div>
+                  <label class="modern-asset-reference-toggle"><input id="modernAssetStyleReferenceEnabled" type="checkbox" /><span>启用风格参考</span></label>
+                  <button id="modernAssetStyleReferenceRemove" type="button">移除</button>
+                  <div id="modernAssetStyleReferencePreview" class="modern-asset-style-reference-preview"></div>
+                </div>
+                <div class="modern-asset-generation-row modern-asset-bind-row">
+                  <label><span>参考图绑定</span><select id="modernAssetReferenceTarget"><option value="">暂无解析资产</option></select></label>
+                  <div class="modern-asset-reference-file"><span>资产参考图</span><input id="modernAssetReferenceFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" /><label for="modernAssetReferenceFile">上传并绑定</label><small id="modernAssetReferenceName">未选择</small></div>
+                  <button id="modernAssetReferenceBind" class="is-primary" type="button">绑定参考图</button>
+                </div>
+                <div id="modernAssetStylePreview" class="modern-asset-style-preview" aria-live="polite"></div>
+              </section>
               <div id="modernAssetGallery" class="modern-asset-gallery" aria-live="polite"></div>
             </section>
             <section class="modern-asset-results" aria-label="解析后的资产">
@@ -1137,6 +1168,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=asset-wall-20260726"></script>
+    <script src="/app.js?v=asset-controls-20260726"></script>
   </body>
 </html>

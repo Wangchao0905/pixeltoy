@@ -15939,6 +15939,31 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-asset-group > header strong { font-size: 10px; }
 .modern-asset-chip-list { gap: 6px; }
 .modern-asset-chip { padding: 6px 8px; font-size: 11px; }
+.modern-asset-generation-controls { display: grid; gap: 8px; margin-bottom: 14px; padding: 10px; border: 1px solid var(--modern-line); border-radius: 4px; background: #111314; }
+.modern-asset-generation-row { display: grid; grid-template-columns: minmax(170px, .42fr) minmax(0, 1fr); gap: 8px; align-items: end; }
+.modern-asset-generation-row > label, .modern-asset-reference-file { display: grid; gap: 4px; min-width: 0; }
+.modern-asset-generation-row label > span, .modern-asset-reference-file > span { color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }
+.modern-asset-generation-row select, .modern-asset-generation-row input:not([type="file"]) { width: 100%; min-height: 28px; padding: 0 8px; border: 1px solid var(--modern-line); border-radius: 3px; background: #0c0e0f; color: var(--modern-text); font-size: 10px; }
+.modern-asset-generation-row select:focus, .modern-asset-generation-row input:focus { border-color: var(--modern-signal); outline: 0; }
+.modern-asset-reference-row, .modern-asset-bind-row { grid-template-columns: minmax(0, 1fr) auto auto minmax(64px, 100px); align-items: center; }
+.modern-asset-bind-row { grid-template-columns: minmax(170px, .42fr) minmax(0, 1fr) auto; }
+.modern-asset-reference-file { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; }
+.modern-asset-reference-file input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.modern-asset-reference-file label { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 8px; border: 1px solid var(--modern-line-strong); border-radius: 3px; color: var(--modern-muted); font-size: 9px; cursor: pointer; white-space: nowrap; }
+.modern-asset-reference-file label:hover { border-color: var(--modern-signal); color: var(--modern-text); }
+.modern-asset-reference-file small { min-width: 0; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-asset-reference-toggle { display: inline-flex !important; grid-template-columns: auto auto !important; align-items: center; gap: 5px !important; white-space: nowrap; }
+.modern-asset-reference-toggle input { width: 13px; height: 13px; accent-color: var(--modern-signal); }
+.modern-asset-reference-row > button, .modern-asset-bind-row > button { min-height: 28px; padding: 0 9px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 9px; white-space: nowrap; }
+.modern-asset-bind-row > button.is-primary { border-color: var(--modern-signal); background: rgba(200,255,46,.08); color: var(--modern-signal); }
+.modern-asset-reference-row > button:hover, .modern-asset-bind-row > button:hover { border-color: var(--modern-signal); color: var(--modern-text); }
+.modern-asset-style-reference-preview { width: 64px; height: 38px; overflow: hidden; border: 1px solid var(--modern-line); background: #0c0e0f; }
+.modern-asset-style-reference-preview:empty { display: none; }
+.modern-asset-style-reference-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.modern-asset-style-preview { display: flex; flex-wrap: wrap; gap: 5px 8px; align-items: center; color: var(--modern-muted); font-size: 9px; }
+.modern-asset-style-preview > span { color: var(--modern-signal); font-family: var(--mono); }
+.modern-asset-style-preview > small { color: var(--modern-quiet); font-size: 9px; }
+.modern-asset-style-preview > b { color: var(--modern-text); font-size: 9px; font-weight: 500; }
 
 @media (max-width: 980px) {
   .modern-source-panel { display: block; }
@@ -15946,4 +15971,21 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
   .modern-asset-wall { border-top: 1px solid var(--modern-line); }
   .modern-asset-results { max-height: none; overflow: visible; }
   .modern-asset-wall-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .modern-asset-reference-row, .modern-asset-bind-row { grid-template-columns: 1fr; align-items: stretch; }
+  .modern-asset-style-reference-preview { width: 100%; height: 90px; }
+}
+
+/* The compact header keeps only the actionable flow summary visible. */
+.modern-breadcrumb { display: none; }
+.modern-episode-hero { grid-template-columns: auto auto; justify-content: end; align-items: center; gap: 18px; padding: 10px 26px; }
+.modern-episode-hero > div:first-child { display: none; }
+.modern-episode-stats { align-items: center; }
+.modern-episode-action { min-height: 48px; padding: 8px 11px; }
+@media (max-width: 1180px) {
+  .modern-episode-hero { grid-template-columns: auto auto; justify-content: end; }
+  .modern-episode-action { grid-column: auto; justify-self: stretch; }
+}
+@media (max-width: 640px) {
+  .modern-episode-hero { grid-template-columns: 1fr; justify-content: stretch; }
+  .modern-episode-action { width: 100%; }
 }

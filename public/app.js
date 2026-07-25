@@ -4038,6 +4038,45 @@ function renderModernStudio(data = state.project) {
   renderModernSelectedShot(data, selected, selectedIndex);
 }
 
+function renderModernAssetGenerationControls(data = state.project) {
+  const presetInput = $("#modernAssetStylePreset");
+  const customInput = $("#modernAssetStyleCustom");
+  const stylePreview = $("#modernAssetStylePreview");
+  const referenceName = $("#modernAssetStyleReferenceName");
+  const referenceToggle = $("#modernAssetStyleReferenceEnabled");
+  const referenceRemove = $("#modernAssetStyleReferenceRemove");
+  const referencePreview = $("#modernAssetStyleReferencePreview");
+  const targetSelect = $("#modernAssetReferenceTarget");
+  if (!presetInput || !customInput || !stylePreview || !targetSelect) return;
+
+  const style = assetStyleState();
+  const styleReference = data?.assetStyleReference || {};
+  const styleReferenceAsset = styleReference.asset || null;
+  presetInput.value = style.preset;
+  customInput.value = style.custom;
+  if (referenceName) referenceName.textContent = styleReferenceAsset ? styleReference.originalFilename || styleReferenceAsset.name || "已上传参考图" : "未上传";
+  if (referenceToggle) {
+    referenceToggle.checked = styleReference.enabled !== false && !!styleReferenceAsset;
+    referenceToggle.disabled = !styleReferenceAsset;
+  }
+  if (referenceRemove) referenceRemove.disabled = !styleReferenceAsset;
+  if (referencePreview) {
+    referencePreview.innerHTML = styleReferenceAsset?.url
+      ? `<img src="${escapeAttr(styleReferenceAsset.url)}" alt="当前风格参考图" loading="lazy" />`
+      : "";
+  }
+  stylePreview.innerHTML = `<span>${escapeHtml(style.label)}</span><small>${escapeHtml(style.cue)}</small>${style.custom ? `<b>${escapeHtml(style.custom)}</b>` : ""}`;
+
+  const items = Array.isArray(data?.assetManifest?.items) ? data.assetManifest.items : [];
+  const previousTarget = state.assetUploadTargetId || targetSelect.value || "";
+  targetSelect.innerHTML = items.length
+    ? items.map((item) => `<option value="${escapeAttr(item.id)}">${escapeHtml(`${assetTypeLabel(item.type)} · ${item.label || item.id}`)}</option>`).join("")
+    : `<option value="">暂无解析资产</option>`;
+  const targetStillExists = previousTarget && items.some((item) => item.id === previousTarget);
+  targetSelect.value = targetStillExists ? previousTarget : items[0]?.id || "";
+  state.assetUploadTargetId = targetSelect.value || "";
+}
+
 function renderModernAssetResults(data = state.project) {
   const overview = $("#modernAssetManifestOverview");
   const gallery = $("#modernAssetGallery");
@@ -4056,6 +4095,7 @@ function renderModernAssetResults(data = state.project) {
     ["场景", items.filter((item) => item.type === "Scene")],
     ["道具", items.filter((item) => ["Prop", "Insert"].includes(item.type))],
   ];
+  renderModernAssetGenerationControls(data);
 
   status.textContent = extracting
     ? "模型正在分析资产文档…"
@@ -4520,6 +4560,21 @@ function persistAssetStyleFromControls() {
   localStorage.setItem("pixelToys.assetStylePreset", preset);
   localStorage.setItem("pixelToys.assetStyleCustom", custom);
   renderAssetStyleControls();
+}
+
+function persistModernAssetStyleFromControls() {
+  const preset = normalizeAssetStylePreset($("#modernAssetStylePreset")?.value || state.assetStylePreset);
+  const custom = String($("#modernAssetStyleCustom")?.value || "").trim();
+  state.assetStylePreset = preset;
+  state.assetStyleCustom = custom;
+  localStorage.setItem("pixelToys.assetStylePreset", preset);
+  localStorage.setItem("pixelToys.assetStyleCustom", custom);
+  const legacyPreset = $("#assetStylePreset");
+  const legacyCustom = $("#assetStyleCustom");
+  if (legacyPreset) legacyPreset.value = preset;
+  if (legacyCustom) legacyCustom.value = custom;
+  renderAssetStyleControls();
+  renderModernAssetGenerationControls(state.project);
 }
 
 function renderAssetUploadTargets(manifest, assets) {
@@ -7004,11 +7059,10 @@ async function uploadBoundAsset(event) {
   toast(data.result?.message || (mode === "local" ? "本地资产已添加" : "资产图已绑定"));
 }
 
-async function uploadAssetStyleReference(event) {
-  const file = event.target.files?.[0];
+async function uploadAssetStyleReferenceFile(file, input = null) {
   if (!file || !state.selectedId) return;
   if (!/\.(png|jpe?g|webp)$/i.test(file.name)) {
-    event.target.value = "";
+    if (input) input.value = "";
     return toast("只支持 PNG / JPG / WEBP");
   }
   const data = await api(`/api/project/${state.selectedId}/asset-style-reference`, {
@@ -7020,9 +7074,32 @@ async function uploadAssetStyleReference(event) {
     }),
   });
   setProjectState(data.state);
-  event.target.value = "";
+  if (input) input.value = "";
   renderWorkspace();
   toast(data.result?.message || "资产风格参考图已上传");
+}
+
+async function uploadAssetStyleReference(event) {
+  return uploadAssetStyleReferenceFile(event.target.files?.[0], event.target);
+}
+
+async function bindModernAssetReference() {
+  if (!state.selectedId) return;
+  const file = $("#modernAssetReferenceFile")?.files?.[0];
+  const target = $("#modernAssetReferenceTarget")?.value || "";
+  if (!target) return toast("请选择要绑定的解析资产");
+  if (!file) return toast("请选择资产参考图");
+  if (!/\.(png|jpe?g|webp)$/i.test(file.name)) return toast("只支持 PNG / JPG / WEBP");
+  const data = await api(`/api/project/${state.selectedId}/asset-upload`, {
+    method: "POST",
+    body: JSON.stringify({ assetId: target, filename: file.name, contentBase64: await fileBase64(file) }),
+  });
+  setProjectState(data.state);
+  $("#modernAssetReferenceFile").value = "";
+  $("#modernAssetReferenceName").textContent = "未选择";
+  state.assetUploadTargetId = target;
+  renderWorkspace();
+  toast(data.result?.message || "资产参考图已绑定");
 }
 
 async function setAssetStyleReferenceEnabled(enabled) {
@@ -7809,6 +7886,21 @@ function bind() {
     const name = event.target.closest("[data-modern-asset-preview]")?.dataset.modernAssetPreview;
     const asset = assetForName(name);
     if (asset?.url) openLightbox(asset);
+  });
+  $("#modernAssetStylePreset")?.addEventListener("change", persistModernAssetStyleFromControls);
+  $("#modernAssetStyleCustom")?.addEventListener("input", persistModernAssetStyleFromControls);
+  $("#modernAssetStyleReferenceFile")?.addEventListener("change", (event) => uploadAssetStyleReferenceFile(event.target.files?.[0], event.target).catch((error) => toast(error.message)));
+  $("#modernAssetStyleReferenceEnabled")?.addEventListener("change", (event) => setAssetStyleReferenceEnabled(event.target.checked).catch((error) => toast(error.message)));
+  $("#modernAssetStyleReferenceRemove")?.addEventListener("click", () => removeAssetStyleReference().catch((error) => toast(error.message)));
+  $("#modernAssetReferenceTarget")?.addEventListener("change", (event) => {
+    state.assetUploadTargetId = event.target.value || "";
+  });
+  $("#modernAssetReferenceFile")?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    $("#modernAssetReferenceName").textContent = file ? file.name : "未选择";
+  });
+  $("#modernAssetReferenceBind")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => bindModernAssetReference()).catch((error) => toast(error.message));
   });
   $("#assetUploadFile").addEventListener("change", (event) => {
     const file = event.target.files?.[0];

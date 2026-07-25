@@ -45,6 +45,8 @@ assert.match(css, /modern-main\[data-modern-view="storyboard"\]/, "storyboard vi
 assert.match(css, /\.modern-video-preview\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "video preview must use a portrait 9:16 frame");
 assert.match(css, /\.modern-source-panel\s*\{[^}]*display:\s*flex/, "source panel must keep the input columns compact beside the asset rail");
 assert.match(css, /\.modern-stage-pane\s*\{[^}]*align-self:\s*start/, "stage panes must not stretch to the portrait video height");
+assert.match(css, /\.modern-asset-results\s*\{[^}]*max-height:/, "asset rail must not stretch the entire source panel");
+assert.match(css, /\.modern-asset-card-media\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3/, "asset thumbnails must keep the parsed rail compact");
 assert.match(html, /id="modernCore" class="modern-core"/, "modern shell must have a fixed core workspace");
 assert.match(css, /\.studio-modern-shell\s*\{[\s\S]*height:\s*100vh[\s\S]*overflow:\s*hidden/, "modern shell must keep the page viewport fixed");
 assert.match(css, /\.modern-core\s*\{[\s\S]*overflow:\s*auto/, "only the core workspace may scroll internally");

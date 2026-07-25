@@ -15897,8 +15897,13 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-video-preview img,
 .modern-video-preview video { width: 100%; height: 100%; object-fit: cover; }
 
+/* Bound the asset rail so a long manifest cannot turn the source step into a blank wall. */
+.modern-asset-results { max-height: min(520px, calc(100vh - 250px)); overflow-y: auto; scrollbar-width: thin; }
+.modern-asset-card-media { aspect-ratio: 4 / 3; }
+
 @media (max-width: 980px) {
   .modern-source-panel { display: block; }
   .modern-source-head, .modern-source-grid, .modern-asset-results { width: 100%; }
+  .modern-asset-results { max-height: none; overflow: visible; }
 }
 @media (prefers-reduced-motion: reduce) { .modern-progress-track span, .modern-video-progress span { transition: none; } }

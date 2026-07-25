@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=super-pixel-admin-20260725" />
+    <link rel="stylesheet" href="/styles.css?v=super-pixel-models-20260725" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -206,8 +206,16 @@
                 <label class="super-pixel-select">
                   <span class="sr-only">模型</span>
                   <select id="superPixelModel" aria-label="模型">
-                    <option value="claude-opus-4-8">Claude Opus 4.8</option>
-                    <option value="gpt-5.2">GPT-5.2</option>
+                    <optgroup label="Claude">
+                      <option value="claude-opus-5">Claude Opus 5</option>
+                      <option value="claude-sonnet-5">Claude Sonnet 5</option>
+                      <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                    </optgroup>
+                    <optgroup label="ChatGPT">
+                      <option value="gpt-5.6-terra">GPT-5.6 Terra</option>
+                      <option value="gpt-5.6-sol">GPT-5.6 Sol</option>
+                      <option value="gpt-5.6-luna">GPT-5.6 Luna</option>
+                    </optgroup>
                   </select>
                 </label>
                 <label class="super-pixel-select">
@@ -960,6 +968,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=super-pixel-admin-20260725"></script>
+    <script src="/app.js?v=super-pixel-models-20260725"></script>
   </body>
 </html>

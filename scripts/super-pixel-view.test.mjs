@@ -21,9 +21,27 @@ assert.match(html, /id="superPixelModel"/, "模型选择器必须存在");
 assert.match(html, /id="superPixelMode"/, "模式选择器必须存在");
 assert.match(html, /id="superPixelSend"/, "提交按钮必须存在");
 
-// 模型/模式选项即后续双供应商与工具开关的入口
-assert.match(html, /value="claude-opus-4-8"/, "必须有 Claude 选项");
-assert.match(html, /value="gpt-5\.2"/, "必须有 GPT 选项");
+// 模型选项：Claude 与 ChatGPT 各三档，分组呈现。
+// 这些 ID 已在 api.apikey.fun 网关实调通过（2026-07-25），阶段 2 直接用于请求。
+const MODEL_IDS = [
+  "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5",
+  "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna",
+];
+const selectBlock = html.match(/<select id="superPixelModel"[\s\S]*?<\/select>/)?.[0] || "";
+for (const id of MODEL_IDS) {
+  assert.ok(selectBlock.includes(`value="${id}"`), `模型选择器缺少 ${id}`);
+}
+const optionCount = (selectBlock.match(/<option /g) || []).length;
+assert.equal(optionCount, 6, `模型选项须为 6 个（Claude 3 + ChatGPT 3），当前 ${optionCount}`);
+assert.match(selectBlock, /<optgroup label="Claude">/, "Claude 需独立分组");
+assert.match(selectBlock, /<optgroup label="ChatGPT">/, "ChatGPT 需独立分组");
+// 旧的两个选项不得残留
+assert.doesNotMatch(selectBlock, /value="gpt-5\.2"|value="claude-opus-4-8"/, "旧模型选项应已移除");
+// state 默认值必须是选择器里真实存在的 ID
+const stateDefault = app.match(/superPixel: \{ model: "([^"]+)"/)?.[1];
+assert.ok(MODEL_IDS.includes(stateDefault), `state 默认模型 ${stateDefault} 不在选项内`);
+assert.ok(selectBlock.indexOf(`value="${stateDefault}"`) === selectBlock.indexOf('value="'), "state 默认模型须与选择器首项一致");
+
 assert.match(html, /value="ask"/, "必须有 Ask 模式");
 assert.match(html, /value="agent"/, "必须有 Agent 模式");
 

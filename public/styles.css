@@ -15477,7 +15477,15 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   background-size: 4px 4px, 4px 4px;
   background-repeat: no-repeat;
 }
-.super-pixel-select > select > option { background: #14070b; color: var(--sp-ink); }
+.super-pixel-select > select > option,
+.super-pixel-select > select > optgroup > option { background: #14070b; color: var(--sp-ink); }
+/* 原生下拉里 optgroup 标签默认继承浅色系统样式，深色底上须显式指定 */
+.super-pixel-select > select > optgroup {
+  background: #14070b;
+  color: var(--sp-dim);
+  font-style: normal;
+  font-weight: 600;
+}
 
 .super-pixel-send {
   margin-left: auto;

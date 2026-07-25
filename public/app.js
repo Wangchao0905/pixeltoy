@@ -118,7 +118,7 @@ const state = {
   ui: { exploreEnabled: false },
   exploreEnabled: false,
   exploreView: "canvas",
-  superPixel: { model: "claude-opus-4-8", mode: "ask" },
+  superPixel: { model: "claude-opus-5", mode: "ask" },
   exploreProjectSearch: "",
   exploreCanvasFilter: "all",
   exploreScopeFilter: "all",

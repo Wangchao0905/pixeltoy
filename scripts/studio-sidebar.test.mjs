@@ -8,7 +8,7 @@ const sidebar = html.match(/<aside class="studio-sidebar"[\s\S]*?<\/aside>/)?.[0
 
 assert.ok(sidebar, "short drama workspace sidebar must exist");
 assert.doesNotMatch(sidebar, /studio-sidebar-nav|studioProjectsButton|studioNewProject|studioCanvasButton/, "sidebar should not expose project, new, or canvas shortcuts");
-assert.doesNotMatch(sidebar, /studio-sidebar-brand|pixel-toys-wordmark/, "sidebar should not render a top brand icon");
+assert.match(sidebar, /studio-sidebar-brand[\s\S]*?pixel-toys-wordmark/, "sidebar should render the Production OS wordmark at the top");
 
 const modes = [...sidebar.matchAll(/data-workspace-mode-button="([^"]+)"/g)].map((match) => match[1]);
 assert.deepEqual(modes, ["script", "image", "shots", "storyboard", "video"], "sidebar should expose the production modules in workflow order");

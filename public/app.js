@@ -178,6 +178,7 @@ const state = {
   loadProjectToken: null,
   activeWindowZ: Number(localStorage.getItem(layoutStorageKey(WINDOW_Z_KEY)) || 20),
   activeStudioTab: "assets",
+  modernStudio: { shotIndex: 0, copyTab: "story", detailsOpen: false },
 };
 localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
 
@@ -1266,10 +1267,13 @@ async function runReferenceUploadWorkers(references, files, worker) {
 }
 
 function showProjectHome() {
+  state.modernStudio.detailsOpen = false;
   $("#exploreHome")?.classList.toggle("hidden", !state.exploreEnabled);
   $("#projectHome").classList.toggle("hidden", state.exploreEnabled);
   $("#studioShell").classList.add("hidden");
+  $("#studioModernShell")?.classList.add("hidden");
   document.body.classList.remove("is-studio");
+  document.body.classList.remove("is-studio-modern");
   document.body.classList.toggle("is-explore-ui", state.exploreEnabled);
   if (state.exploreEnabled) {
     state.exploreView = "canvas";
@@ -1456,8 +1460,10 @@ function showStudio() {
   closeProjectModal();
   $("#exploreHome")?.classList.add("hidden");
   $("#projectHome").classList.add("hidden");
-  $("#studioShell").classList.remove("hidden");
+  $("#studioShell").classList.toggle("hidden", !state.modernStudio.detailsOpen);
+  $("#studioModernShell")?.classList.toggle("hidden", state.modernStudio.detailsOpen);
   document.body.classList.add("is-studio");
+  document.body.classList.add("is-studio-modern");
   document.body.classList.toggle("is-explore-ui", state.exploreEnabled);
 }
 
@@ -3924,6 +3930,160 @@ function renderWorkspace() {
   requestAnimationFrame(applyWindowLayout);
   setWorkspaceMode(state.activeWorkspaceMode, { persist: false });
   state.hydrating = false;
+  renderModernStudio(data);
+}
+
+function modernStatusLabel(status = "") {
+  const labels = { complete: "已完成", running: "生成中", queued: "排队中", failed: "失败", waiting: "待生成", ready: "待确认" };
+  return labels[String(status || "").toLowerCase()] || "待生成";
+}
+
+function modernShotRecords(data = state.project) {
+  const config = videoConfigDataFromProject();
+  const configShots = Array.isArray(config?.shots) ? config.shots : [];
+  const progress = Array.isArray(data?.videoProgress?.items) ? data.videoProgress.items : [];
+  const byName = new Map(progress.map((item) => [item.name, item]));
+  const names = [...new Set([...configShots.map((shot) => shot.name), ...progress.map((item) => item.name)].filter(Boolean))];
+  return names.map((name, index) => {
+    const shot = configShots.find((item) => item.name === name) || {};
+    const item = byName.get(name) || {};
+    return {
+      name,
+      number: index + 1,
+      duration: shot.duration || item.duration || "-",
+      status: item.status || (shot.prompt ? "waiting" : "ready"),
+      progress: Number(item.progress || 0),
+      prompt: shotPromptText(shot) || shot.prompt || "",
+      story: shot.story || shot.plot || shot.production?.action || shot.production?.visual || "",
+      dialogue: shot.dialogue || shot.production?.dialogue || "",
+      voice: shot.voice || shot.production?.voice || shot.production?.os || "",
+      assets: Array.isArray(shot.assets) ? shot.assets : [],
+      model: videoModelLabel(videoModelForShot(shot)),
+      file: item.file || item.url || "",
+      storyboardRefs: item.storyboardRefs || shot.storyboardRefs || [],
+    };
+  });
+}
+
+function modernMediaForShot(data, shot, index, kind) {
+  const list = kind === "storyboard" ? (data?.storyboards || data?.storyboardSlots || []) : (data?.videoProgress?.items || []);
+  const record = list.find((item) => item?.name === shot?.name) || list[index] || {};
+  const asset = record?.asset || record;
+  return asset?.url || asset?.file || asset?.output?.url || "";
+}
+
+function renderModernStudio(data = state.project) {
+  const root = $("#studioModernShell");
+  if (!root || !data?.project) return;
+  const project = data.project;
+  const title = displayProjectTitle(project);
+  const progress = data.videoProgress || {};
+  const shots = modernShotRecords(data);
+  const total = shots.length || Number(progress.total || 0);
+  const completed = shots.filter((shot) => shot.status === "complete").length || Number(progress.completed || 0);
+  const running = shots.filter((shot) => ["running", "queued"].includes(shot.status)).length;
+  const selectedIndex = Math.max(0, Math.min(state.modernStudio.shotIndex, Math.max(0, shots.length - 1)));
+  state.modernStudio.shotIndex = selectedIndex;
+  const selected = shots[selectedIndex] || null;
+  const ratio = videoConfigDataFromProject()?.settings?.ratio || "9:16";
+  const pct = total ? Math.round((completed / total) * 100) : 0;
+  $("#modernProjectTitle").textContent = title;
+  $("#modernProjectMeta").textContent = `${project.episodeSlug || "当前项目"} · ${data.assets?.length || 0} 个资产 · ${total || 0} 个镜头`;
+  $("#modernProjectCrumb").textContent = title;
+  $("#modernEpisodeCrumb").textContent = String(project.episodeSlug || "制作台").toUpperCase();
+  $("#modernEpisodeKicker").textContent = String(project.episodeSlug || "CURRENT EPISODE").toUpperCase();
+  $("#modernRatioBadge").textContent = ratio;
+  $("#modernEpisodeTitle").textContent = title;
+  $("#modernEpisodeCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
+  $("#modernShotCount").textContent = total;
+  $("#modernCompletedCount").textContent = `${pct}%`;
+  $("#modernSeriesProgress").style.width = `${pct}%`;
+  $("#modernSeriesProgressLabel").textContent = `${pct}%`;
+  $("#modernQueueLabel").textContent = `队列 ${running}`;
+  $("#modernBatchDetail").textContent = total ? `${Math.max(0, total - completed)} 个镜头待处理` : "等待生成视频配置";
+  $("#modernSequenceSummary").textContent = total ? `${completed}/${total} 完成${running ? ` · ${running} 运行中` : ""}` : "暂无镜头";
+  const manifest = data.assetManifest || {};
+  $("#modernAssetStep").textContent = manifest.confirmed ? `${manifest.items?.length || data.assets?.length || 0} 个资产已确认` : (manifest.items?.length ? "待确认分类" : "等待解析");
+  $("#modernBoardStep").textContent = data.storyboards?.length ? `${data.storyboards.length} 个故事板已生成` : "等待生成";
+  $("#modernVideoStep").textContent = data.videoConfigStatus?.ready ? `${total} 个镜头已配置` : "等待配置";
+  $("#modernCutStep").textContent = data.finalCut?.url ? "成片已组装" : "等待片段";
+  $("#modernKitShot").textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")}` : "当前镜头";
+  $("#modernKitNames").textContent = selected?.assets?.length ? selected.assets.join(" · ") : "等待故事板分配";
+  $("#modernKitStatus").textContent = selected?.assets?.length ? "已引用" : "待确认";
+  renderModernEpisodes(project, pct, total, completed);
+  renderModernShotRail(shots, selectedIndex);
+  renderModernSelectedShot(data, selected, selectedIndex);
+}
+
+function renderModernEpisodes(project, percent, total, completed) {
+  const node = $("#modernEpisodeList");
+  if (!node) return;
+  const label = project.episodeSlug || "当前项目";
+  node.innerHTML = `<button class="modern-episode-row is-active ${completed === total && total ? "is-complete" : ""}" type="button" aria-current="page"><span>01</span><div><strong>${escapeHtml(label)}</strong><small>${total ? `${completed} / ${total} 镜完成` : "等待流程启动"}</small></div><i></i></button>`;
+}
+
+function renderModernShotRail(shots, selectedIndex) {
+  const node = $("#modernShotRail");
+  if (!node) return;
+  if (!shots.length) {
+    node.innerHTML = '<div class="modern-empty-preview">生成视频配置后，镜头会出现在这里。</div>';
+    return;
+  }
+  node.innerHTML = shots.map((shot, index) => `
+    <button class="modern-shot-card ${index === selectedIndex ? "is-active" : ""} is-${escapeAttr(shot.status)}" type="button" data-modern-shot-index="${index}" role="option" aria-selected="${index === selectedIndex}">
+      <span>${String(shot.number).padStart(2, "0")}</span><div><strong>${escapeHtml(shot.name)}</strong><small>${escapeHtml(modernStatusLabel(shot.status))} · ${escapeHtml(String(shot.duration))}s</small></div>
+    </button>`).join("");
+  node.querySelectorAll("[data-modern-shot-index]").forEach((button) => button.addEventListener("click", () => {
+    state.modernStudio.shotIndex = Number(button.dataset.modernShotIndex) || 0;
+    renderModernStudio(state.project);
+  }));
+}
+
+function modernCopyValue(data, shot, tab) {
+  if (!shot) return "";
+  if (tab === "prompt") return shot.prompt || "";
+  if (tab === "dialogue") return shot.dialogue || shot.voice || shot.prompt || data?.contents?.seedancePrompts || "对白 / OS 尚未生成。";
+  return shot.story || shot.description || shot.prompt || data?.contents?.script || "剧情尚未生成。";
+}
+
+function renderModernSelectedShot(data, shot, index) {
+  const number = shot ? String(shot.number).padStart(2, "0") : "--";
+  $("#modernSelectedShotNumber").textContent = number;
+  $("#modernSelectedShotTitle").textContent = shot?.name || "未选择镜头";
+  $("#modernSelectedShotMeta").textContent = shot ? `${shot.duration}s · ${shot.model || "模型未配置"} · ${shot.assets.length} 个引用资产` : "先生成分镜草稿或视频配置";
+  $("#modernShotAction").textContent = shot ? "打开详细编辑" : "打开详细编辑";
+  const status = modernStatusLabel(shot?.status);
+  $("#modernStoryStatus").textContent = shot?.prompt ? "已生成" : "待确认";
+  $("#modernStillStatus").textContent = shot?.storyboardRefs?.length ? "已确认" : "待生成";
+  $("#modernMotionStatus").textContent = status;
+  $("#modernMotionStatus").className = `is-${shot?.status || "waiting"}`;
+  $("#modernStillLineage").className = shot?.storyboardRefs?.length ? "is-done" : "";
+  $("#modernMotionLineage").className = shot?.status === "complete" ? "is-done" : "";
+  const activeTab = state.modernStudio.copyTab;
+  $$('[data-modern-copy-tab]').forEach((button) => button.classList.toggle("is-active", button.dataset.modernCopyTab === activeTab));
+  $("#modernCopyLabel").textContent = activeTab === "prompt" ? "视频提示词" : activeTab === "dialogue" ? "对白 / OS" : "剧情";
+  const copy = modernCopyValue(data, shot, activeTab);
+  if (document.activeElement !== $("#modernShotCopy")) $("#modernShotCopy").value = copy;
+  $("#modernCopyCount").textContent = `${copy.length} 字`;
+  $("#modernShotSize").textContent = shot ? "由分镜模型决定" : "-";
+  $("#modernShotLens").textContent = shot ? "引用分镜提示词" : "-";
+  $("#modernShotMotion").textContent = shot ? "引用分镜提示词" : "-";
+  const stillUrl = modernMediaForShot(data, shot, index, "storyboard");
+  const videoUrl = modernMediaForShot(data, shot, index, "video");
+  const still = $("#modernStillPreview");
+  still.src = stillUrl;
+  still.classList.toggle("hidden", !stillUrl);
+  $("#modernStillBadge").textContent = stillUrl ? "STORYBOARD" : "待生成";
+  const poster = $("#modernVideoPoster");
+  poster.src = videoUrl ? videoUrl : stillUrl;
+  poster.classList.toggle("hidden", !videoUrl && !stillUrl);
+  const video = $("#modernVideoPreview");
+  video.classList.toggle("hidden", !videoUrl);
+  if (videoUrl && video.src !== new URL(videoUrl, window.location.href).href) video.src = videoUrl;
+  $("#modernVideoModel").textContent = shot?.model || "模型未配置";
+  $("#modernVideoResolution").textContent = videoConfigDataFromProject()?.settings?.ratio || "9:16";
+  $("#modernVideoProgress span").style.width = `${Math.max(0, Math.min(100, shot?.progress || 0))}%`;
+  $("#modernReferenceStrip").innerHTML = `<span>实际引用资产</span><b>${escapeHtml(shot?.assets?.join(" · ") || "生成后显示")}</b>`;
 }
 
 function hydrateConfigInputs(configText) {
@@ -7291,6 +7451,85 @@ function bind() {
     loadProjects(false).catch((error) => toast(error.message));
   };
   $("#backToProjects").addEventListener("click", goBackToProjects);
+  $("#studioModernOverviewButton")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = false;
+    showStudio();
+    renderModernStudio(state.project);
+  });
+  $("#modernBrandButton")?.addEventListener("click", goBackToProjects);
+  $("#modernDetailsButton")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode(state.activeWorkspaceMode || "assets");
+  });
+  $("#modernQueueButton")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode("video");
+  });
+  $("#modernVisualBibleButton")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode("assets");
+    toast("已打开详细编辑中的资产与风格设置");
+  });
+  $("#modernKitButton")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode("assets");
+    $("#referenceKitPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  $("#modernBatchAction")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode("video");
+    $("#generateAllSegments")?.click();
+  });
+  $$('[data-modern-focus]').forEach((button) => button.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode(button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus);
+  }));
+  $$('[data-modern-copy-tab]').forEach((button) => button.addEventListener("click", () => {
+    state.modernStudio.copyTab = button.dataset.modernCopyTab || "story";
+    renderModernStudio(state.project);
+  }));
+  $("#modernShotCopy")?.addEventListener("input", (event) => {
+    $("#modernCopyCount").textContent = `${event.currentTarget.value.length} 字`;
+  });
+  $("#modernSaveCopy")?.addEventListener("click", () => {
+    const target = state.modernStudio.copyTab === "prompt" ? "videoPromptInspectorPrompt" : "scriptText";
+    const legacy = $(target);
+    if (legacy) legacy.value = $("#modernShotCopy").value;
+    toast("修改已暂存；详细编辑中可提交到当前流程");
+  });
+  $("#modernShotAction")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode("video");
+  });
+  $("#modernStillEdit")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode("storyboard");
+  });
+  $("#modernStillGenerate")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode("storyboard");
+    $("[data-job='storyboards']")?.click();
+  });
+  $("#modernVideoEdit")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode("video");
+  });
+  $("#modernVideoGenerate")?.addEventListener("click", () => {
+    state.modernStudio.detailsOpen = true;
+    showStudio();
+    setWorkspaceMode("video");
+    $("#generateAllSegments")?.click();
+  });
   $("#studioCommandButton")?.addEventListener("click", () => toast("命令面板会在下一阶段接入；当前可直接点击流程节点聚焦步骤"));
   $("#studioPrimaryRun")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
@@ -7610,6 +7849,7 @@ async function refreshSelectedProjectStatus() {
     );
     renderStoryboardJob(state.project?.storyboardJob);
     renderStudioFlowStatus(state.project);
+    renderModernStudio(state.project);
     return true;
   } catch (error) {
     console.warn("Project refresh failed:", error);

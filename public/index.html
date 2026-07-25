@@ -369,6 +369,7 @@
             </div>
             <div class="topbar-right">
               <button id="backToProjects" class="ghost small studio-command-button" type="button">项目页</button>
+              <button id="studioModernOverviewButton" class="ghost small studio-command-button" type="button">新版总览</button>
               <button id="studioCommandButton" class="ghost small studio-command-button" type="button">命令 <kbd>⌘ K</kbd></button>
               <span class="studio-save-state">已保存</span>
               <button id="studioPrimaryRun" class="primary small studio-primary-run" type="button">Run: 当前步骤</button>
@@ -906,6 +907,99 @@
               <span id="studioQueueProgressFill" class="studio-queue-progress-fill"></span>
             </div>
           </footer>
+        </main>
+      </section>
+
+      <section id="studioModernShell" class="studio-modern-shell hidden" aria-label="新版制作台">
+        <aside class="modern-series-nav" aria-label="项目与剧集">
+          <header class="modern-brand">
+            <button id="modernBrandButton" type="button" aria-label="返回项目页" title="返回项目页">
+              <span class="modern-brand-logo pixel-toys-wordmark" aria-hidden="true"></span>
+            </button>
+            <span>PRODUCTION WORKSPACE</span>
+          </header>
+          <div class="modern-series-context">
+            <span class="modern-eyebrow">CURRENT PROJECT</span>
+            <h2 id="modernProjectTitle">选择或新建项目</h2>
+            <p id="modernProjectMeta">尚未加载项目</p>
+          </div>
+          <nav id="modernEpisodeList" class="modern-episode-list" aria-label="项目阶段"></nav>
+          <footer class="modern-series-footer">
+            <div class="modern-progress-track"><span id="modernSeriesProgress"></span></div>
+            <div class="modern-progress-label"><span>制作进度</span><strong id="modernSeriesProgressLabel">0%</strong></div>
+            <button id="modernVisualBibleButton" class="modern-bible-entry" type="button">
+              <span class="modern-bible-swatch" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span><b>全剧视觉圣经</b><small>风格与资产规则</small></span><em aria-hidden="true">&gt;</em>
+            </button>
+          </footer>
+        </aside>
+
+        <main class="modern-main">
+          <header class="modern-topbar">
+            <div class="modern-breadcrumb"><span id="modernProjectCrumb">项目</span><i>/</i><strong id="modernEpisodeCrumb">制作台</strong></div>
+            <div class="modern-top-actions">
+              <button id="modernDetailsButton" class="modern-quiet-button" type="button">详细编辑</button>
+              <button id="modernQueueButton" class="modern-queue-button" type="button"><i></i><span id="modernQueueLabel">队列 0</span></button>
+            </div>
+          </header>
+
+          <section class="modern-episode-hero" aria-labelledby="modernEpisodeTitle">
+            <div>
+              <div class="modern-kicker"><span id="modernEpisodeKicker">CURRENT EPISODE</span><b id="modernRatioBadge">9:16</b></div>
+              <h1 id="modernEpisodeTitle">制作台</h1>
+              <p id="modernEpisodeCopy">加载项目后显示当前剧集和制作状态。</p>
+            </div>
+            <dl class="modern-episode-stats"><div><dt>镜头</dt><dd id="modernShotCount">0</dd></div><div><dt>完成</dt><dd id="modernCompletedCount">0%</dd></div></dl>
+            <button id="modernBatchAction" class="modern-episode-action" type="button"><span><b>继续当前流程</b><small id="modernBatchDetail">等待项目</small></span><i aria-hidden="true">&gt;</i></button>
+          </section>
+
+          <section class="modern-pipeline" aria-label="制作流程">
+            <button type="button" data-modern-focus="assets"><span>01</span><b>资产文档</b><small id="modernAssetStep">等待解析</small><i></i></button>
+            <button type="button" data-modern-focus="storyboard"><span>02</span><b>故事板</b><small id="modernBoardStep">等待生成</small><i></i></button>
+            <button type="button" data-modern-focus="video"><span>03</span><b>视频生成</b><small id="modernVideoStep">等待配置</small><i></i></button>
+            <button type="button" data-modern-focus="video"><span>04</span><b>组装成片</b><small id="modernCutStep">等待片段</small><i></i></button>
+          </section>
+
+          <section class="modern-kit-bar" aria-label="Reference Kit 连续性控制">
+            <div><span class="modern-kit-mark">KIT</span><div><span class="modern-eyebrow">ASSET DOCUMENT → KIT → VIDEO</span><strong>镜头引用资产</strong></div></div>
+            <div><span id="modernKitShot">当前镜头</span><b id="modernKitNames">未分配</b></div>
+            <div><span>引用状态</span><strong id="modernKitStatus">待确认</strong></div>
+            <button id="modernKitButton" type="button">管理与修改</button>
+          </section>
+
+          <section class="modern-sequence" aria-label="镜头序列">
+            <header><div><span class="modern-eyebrow">SHOT SEQUENCE</span><strong>当前项目镜头</strong></div><span id="modernSequenceSummary">暂无镜头</span></header>
+            <div id="modernShotRail" class="modern-shot-rail" role="listbox" aria-label="镜头列表"></div>
+          </section>
+
+          <section class="modern-workbench" aria-label="当前镜头工作台">
+            <header class="modern-shot-commandbar">
+              <div class="modern-selected-shot"><span id="modernSelectedShotNumber">--</span><div><h2 id="modernSelectedShotTitle">未选择镜头</h2><p id="modernSelectedShotMeta">先生成分镜草稿或视频配置</p></div></div>
+              <div class="modern-shot-lineage"><span class="is-done">STORY</span><i></i><span id="modernStillLineage">STILL</span><i></i><span id="modernMotionLineage">MOTION</span></div>
+              <button id="modernShotAction" class="modern-shot-action" type="button">打开详细编辑</button>
+            </header>
+            <div class="modern-stage-grid">
+              <section class="modern-stage-pane" aria-labelledby="modernStoryTitle">
+                <header><span>01</span><div><small>STORY</small><h3 id="modernStoryTitle">剧情与提示词</h3></div><i id="modernStoryStatus">待确认</i></header>
+                <div class="modern-copy-tabs" role="tablist" aria-label="镜头文字"><button class="is-active" type="button" data-modern-copy-tab="story">剧情</button><button type="button" data-modern-copy-tab="prompt">视频提示词</button><button type="button" data-modern-copy-tab="dialogue">对白 / OS</button></div>
+                <label class="modern-copy-label" for="modernShotCopy" id="modernCopyLabel">剧情</label><textarea id="modernShotCopy" rows="9" placeholder="生成分镜草稿后显示完整剧情、对白和声音描述"></textarea>
+                <div class="modern-copy-footer"><span id="modernCopyCount">0 字</span><button id="modernSaveCopy" type="button">保存修改</button></div>
+                <dl class="modern-shot-meta"><div><dt>景别</dt><dd id="modernShotSize">-</dd></div><div><dt>镜头</dt><dd id="modernShotLens">-</dd></div><div><dt>运镜</dt><dd id="modernShotMotion">-</dd></div></dl>
+              </section>
+              <section class="modern-stage-pane" aria-labelledby="modernStillTitle">
+                <header><span>02</span><div><small>STILL</small><h3 id="modernStillTitle">故事板与引用</h3></div><i id="modernStillStatus">待生成</i></header>
+                <div class="modern-reference-strip" id="modernReferenceStrip"><span>实际引用资产</span><b>生成后显示</b></div>
+                <div class="modern-still-preview"><img id="modernStillPreview" src="" alt="当前镜头故事板" /><div class="modern-empty-preview">暂无故事板</div><span id="modernStillBadge">STORYBOARD</span></div>
+                <div class="modern-pane-actions"><button id="modernStillEdit" type="button">修改提示词</button><button id="modernStillGenerate" type="button">生成故事板</button></div>
+              </section>
+              <section class="modern-stage-pane" aria-labelledby="modernMotionTitle">
+                <header><span>03</span><div><small>MOTION</small><h3 id="modernMotionTitle">视频 Take</h3></div><i id="modernMotionStatus">待生成</i></header>
+                <div class="modern-video-preview"><video id="modernVideoPreview" controls playsinline preload="metadata" class="hidden"></video><img id="modernVideoPoster" src="" alt="当前镜头视频预览" /><div class="modern-empty-preview">暂无视频片段</div><div id="modernVideoProgress" class="modern-video-progress"><span></span></div></div>
+                <div class="modern-motion-meta"><span id="modernVideoModel">模型未配置</span><strong id="modernVideoResolution">9:16</strong></div>
+                <div class="modern-pane-actions"><button id="modernVideoEdit" type="button">修改视频提示词</button><button id="modernVideoGenerate" class="is-primary" type="button">生成视频</button></div>
+              </section>
+            </div>
+          </section>
         </main>
       </section>
     </div>

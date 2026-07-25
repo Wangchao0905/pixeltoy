@@ -118,7 +118,8 @@ const state = {
   ui: { exploreEnabled: false },
   exploreEnabled: false,
   exploreView: "canvas",
-  superPixel: { model: "claude-opus-5", mode: "ask" },
+  // attachments: 待发送的资产图（从资产库或本地拖入），发出后并入该条 user 消息
+  superPixel: { model: "claude-opus-5", mode: "ask", messages: [], scriptText: "", scriptName: "", sending: false, controller: null, attachments: [] },
   exploreProjectSearch: "",
   exploreCanvasFilter: "all",
   exploreScopeFilter: "all",
@@ -2506,7 +2507,196 @@ function showExploreSuperPixel() {
   setExploreView("superpixel");
 }
 
-// 阶段 1：仅布局与交互骨架，模型调用留待阶段 2。
+function renderSuperPixelMessages() {
+  const container = $("#superPixelMessages");
+  if (!container) return;
+  container.textContent = "";
+  container.classList.toggle("hidden", !state.superPixel.messages.length);
+  for (const message of state.superPixel.messages) {
+    const bubble = document.createElement("div");
+    bubble.className = `super-pixel-message is-${message.role}`;
+    // 带图的消息：先渲染缩略图，再渲染文字
+    if (Array.isArray(message.images) && message.images.length) {
+      const strip = document.createElement("div");
+      strip.className = "super-pixel-message-images";
+      for (const image of message.images) {
+        const img = document.createElement("img");
+        img.src = image.preview || image.url;
+        img.alt = image.name || "资产图";
+        img.loading = "lazy";
+        strip.appendChild(img);
+      }
+      bubble.appendChild(strip);
+    }
+    const textNode = document.createElement("div");
+    textNode.className = "super-pixel-message-text";
+    textNode.textContent = message.content || (message.pending ? "..." : "");
+    bubble.appendChild(textNode);
+    container.appendChild(bubble);
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+async function readSuperPixelStream(response, onDelta) {
+  if (!response.body) throw new Error("模型未返回流式内容");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending += decoder.decode(value, { stream: true });
+    const lines = pending.split(/\r?\n/);
+    pending = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const payload = JSON.parse(line.slice(5).trim());
+      if (payload.error) throw new Error(payload.error);
+      if (payload.delta) onDelta(payload.delta);
+    }
+  }
+}
+
+const SUPER_PIXEL_MAX_ATTACHMENTS = 8;
+
+function renderSuperPixelAttachments() {
+  const tray = $("#superPixelAttachments");
+  if (!tray) return;
+  const items = state.superPixel.attachments;
+  tray.textContent = "";
+  tray.classList.toggle("hidden", !items.length);
+  items.forEach((image, index) => {
+    const chip = document.createElement("div");
+    chip.className = "super-pixel-attachment";
+    const img = document.createElement("img");
+    img.src = image.preview || image.url;
+    img.alt = image.name || "资产图";
+    chip.appendChild(img);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "super-pixel-attachment-remove";
+    remove.setAttribute("aria-label", `移除 ${image.name || "资产图"}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", () => {
+      state.superPixel.attachments.splice(index, 1);
+      renderSuperPixelAttachments();
+    });
+    chip.appendChild(remove);
+    tray.appendChild(chip);
+  });
+}
+
+const SUPER_PIXEL_IMAGE_TYPES = /^image\/(png|jpeg|jpg|webp)$/i;
+const SUPER_PIXEL_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error(`读取 ${file.name} 失败`));
+    reader.readAsDataURL(file);
+  });
+}
+
+// 本地文件拖入/选择：转 data URL 直接进附件盘，服务端会落成公开资产再发给模型
+async function addSuperPixelLocalFiles(fileList) {
+  const files = [...(fileList || [])];
+  if (!files.length) return;
+  let added = 0;
+  const skipped = [];
+  for (const file of files) {
+    if (!SUPER_PIXEL_IMAGE_TYPES.test(file.type)) {
+      skipped.push(`${file.name}（仅支持 PNG/JPG/WebP）`);
+      continue;
+    }
+    if (file.size > SUPER_PIXEL_MAX_IMAGE_BYTES) {
+      skipped.push(`${file.name}（超过 8MB）`);
+      continue;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      if (addSuperPixelAttachment({ url: dataUrl, preview: dataUrl, name: file.name })) added += 1;
+    } catch (error) {
+      skipped.push(`${file.name}（${error.message}）`);
+    }
+  }
+  if (added) renderSuperPixelAttachments();
+  if (skipped.length) toast(`已跳过：${skipped.slice(0, 3).join("；")}`);
+}
+
+function addSuperPixelAttachment(image) {
+  if (!image?.url) return false;
+  const items = state.superPixel.attachments;
+  if (items.length >= SUPER_PIXEL_MAX_ATTACHMENTS) {
+    toast(`单条消息最多 ${SUPER_PIXEL_MAX_ATTACHMENTS} 张图`);
+    return false;
+  }
+  if (items.some((item) => item.url === image.url)) return false;
+  items.push(image);
+  return true;
+}
+
+// 把一条消息转成接口要的 content：无图=字符串，有图=多模态数组
+function superPixelMessagePayload(message) {
+  const images = Array.isArray(message.images) ? message.images : [];
+  if (!images.length) return { role: message.role, content: message.content };
+  const parts = [];
+  if (message.content) parts.push({ type: "text", text: message.content });
+  for (const image of images) parts.push({ type: "image_url", image_url: { url: image.url } });
+  return { role: message.role, content: parts };
+}
+
+async function submitSuperPixelChat(prompt) {
+  const text = String(prompt || "").trim();
+  const images = state.superPixel.attachments.slice();
+  // 只拖了图没打字也允许发，补一句默认问法
+  if (!text && !images.length) return;
+  if (state.superPixel.sending) return;
+  if (state.superPixel.mode !== "ask") return toast("Agent 模式暂未开放");
+  const assistant = { role: "assistant", content: "", pending: true };
+  state.superPixel.messages.push(
+    { role: "user", content: text || "看看这些图，给我创作建议。", images },
+    assistant,
+  );
+  state.superPixel.attachments = [];
+  renderSuperPixelAttachments();
+  state.superPixel.sending = true;
+  state.superPixel.controller = new AbortController();
+  renderSuperPixelMessages();
+  try {
+    const response = await fetch("/api/super-pixel/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({
+        model: state.superPixel.model,
+        mode: state.superPixel.mode,
+        scriptText: state.superPixel.scriptText,
+        messages: state.superPixel.messages
+          .map(superPixelMessagePayload)
+          .filter((item) => (Array.isArray(item.content) ? item.content.length : item.content)),
+      }),
+      signal: state.superPixel.controller.signal,
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+    await readSuperPixelStream(response, (delta) => {
+      assistant.content += delta;
+      assistant.pending = false;
+      renderSuperPixelMessages();
+    });
+    assistant.pending = false;
+  } catch (error) {
+    if (error?.name !== "AbortError") assistant.content = `请求失败：${error.message || "网络错误"}`;
+    assistant.pending = false;
+  } finally {
+    state.superPixel.sending = false;
+    state.superPixel.controller = null;
+    renderSuperPixelMessages();
+  }
+}
+
 function bindSuperPixel() {
   const input = $("#superPixelInput");
   const form = $("#superPixelComposer");
@@ -2526,7 +2716,10 @@ function bindSuperPixel() {
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
     if (!input?.value.trim()) return;
-    toast("Super Pixel 即将上线");
+    const prompt = input.value;
+    input.value = "";
+    input.style.height = "auto";
+    submitSuperPixelChat(prompt);
   });
   $("#superPixelModel")?.addEventListener("change", (event) => {
     state.superPixel.model = event.target.value;
@@ -2534,7 +2727,56 @@ function bindSuperPixel() {
   $("#superPixelMode")?.addEventListener("change", (event) => {
     state.superPixel.mode = event.target.value;
   });
-  $("#superPixelAttach")?.addEventListener("click", () => toast("剧本上传即将上线"));
+  const scriptUpload = $("#superPixelScriptUpload");
+  $("#superPixelAttach")?.addEventListener("click", () => scriptUpload?.click());
+  scriptUpload?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const result = await readScriptUpload(file);
+      state.superPixel.scriptText = result.text;
+      state.superPixel.scriptName = file.name;
+      $("#superPixelScriptLabel").textContent = file.name;
+      toast(result.isDocx ? "DOCX 剧本已提取" : "剧本已载入");
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      event.target.value = "";
+    }
+  });
+  const imageUpload = $("#superPixelImageUpload");
+  $("#superPixelImagePick")?.addEventListener("click", () => imageUpload?.click());
+  imageUpload?.addEventListener("change", async (event) => {
+    await addSuperPixelLocalFiles(event.target.files);
+    event.target.value = "";
+  });
+  // 整个 composer 作为拖放区：本地图片文件直接拖进来
+  const composer = $(".super-pixel-composer");
+  if (composer) {
+    const isFileDrag = (event) => [...(event.dataTransfer?.types || [])].includes("Files");
+    composer.addEventListener("dragover", (event) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      composer.classList.add("is-dragover");
+    });
+    composer.addEventListener("dragleave", (event) => {
+      if (!composer.contains(event.relatedTarget)) composer.classList.remove("is-dragover");
+    });
+    composer.addEventListener("drop", async (event) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      composer.classList.remove("is-dragover");
+      await addSuperPixelLocalFiles(event.dataTransfer.files);
+    });
+  }
+  // 截图直接粘贴
+  input?.addEventListener("paste", async (event) => {
+    const files = [...(event.clipboardData?.files || [])];
+    if (!files.length) return;
+    event.preventDefault();
+    await addSuperPixelLocalFiles(files);
+  });
   $$("[data-super-pixel-chip]").forEach((chip) => {
     chip.addEventListener("click", () => {
       if (!input) return;

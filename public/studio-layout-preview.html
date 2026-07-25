@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pixel Toys 制作台新版预览</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/studio-layout-preview.css?v=20260726-2" />
+  </head>
+  <body>
+    <div class="preview-shell">
+      <aside class="preview-series-nav" aria-label="项目与剧集">
+        <header class="preview-brand">
+          <a href="/" aria-label="返回项目页" title="返回项目页">
+            <span class="preview-brand-logo pixel-toys-wordmark" aria-hidden="true"></span>
+          </a>
+          <span>PRODUCTION WORKSPACE</span>
+        </header>
+
+        <div class="series-context">
+          <span class="eyebrow">CURRENT SERIES</span>
+          <div>
+            <h2>雾港来信</h2>
+            <button class="icon-button" type="button" aria-label="项目设置" title="项目设置">...</button>
+          </div>
+          <p>全剧 10 集 · 预计 49 分钟</p>
+        </div>
+
+        <nav class="episode-list" aria-label="分集列表">
+          <button class="episode-row is-complete" type="button">
+            <span>01</span><div><strong>潮汐之前</strong><small>视频完成 · 56 秒</small></div><i></i>
+          </button>
+          <button class="episode-row is-complete" type="button">
+            <span>02</span><div><strong>沉默的灯塔</strong><small>视频完成 · 48 秒</small></div><i></i>
+          </button>
+          <button class="episode-row is-active" type="button" aria-current="page">
+            <span>03</span><div><strong>逆风航线</strong><small>8 / 12 镜完成</small></div><i></i>
+          </button>
+          <button class="episode-row" type="button">
+            <span>04</span><div><strong>玻璃海</strong><small>分镜已确认</small></div><i></i>
+          </button>
+          <button class="episode-row" type="button">
+            <span>05</span><div><strong>回声抵岸</strong><small>待生成分镜</small></div><i></i>
+          </button>
+          <button class="episode-row" type="button">
+            <span>06</span><div><strong>白昼尽头</strong><small>剧本已解析</small></div><i></i>
+          </button>
+        </nav>
+
+        <footer class="series-footer">
+          <div class="season-progress"><span></span></div>
+          <div><span>全剧制作进度</span><strong>24%</strong></div>
+          <button id="styleBibleButton" class="bible-entry" type="button">
+            <span class="bible-swatch" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><b>全剧视觉圣经</b><small>人物、场景、风格统一继承</small></span>
+            <em aria-hidden="true">&gt;</em>
+          </button>
+        </footer>
+      </aside>
+
+      <main class="preview-main">
+        <header class="preview-topbar">
+          <div class="breadcrumb"><span>雾港来信</span><i>/</i><strong>EP 03</strong></div>
+          <div class="top-actions">
+            <button class="quiet-button" type="button">返回项目</button>
+            <button id="queueButton" class="queue-button" type="button"><i></i><span id="queueButtonText">队列 1</span></button>
+            <button class="icon-button" type="button" aria-label="更多操作" title="更多操作">...</button>
+          </div>
+        </header>
+
+        <section class="episode-hero" aria-labelledby="episodeTitle">
+          <div class="episode-copy">
+            <div class="episode-kicker"><span>EPISODE 03</span><b>9:16 已锁定</b></div>
+            <h1 id="episodeTitle">逆风航线</h1>
+            <p>林夏在暴雨前赶到废弃码头，试图阻止最后一艘船离港。</p>
+          </div>
+          <dl class="episode-stats">
+            <div><dt>镜头</dt><dd>12</dd></div>
+            <div><dt>成片时长</dt><dd>00:57</dd></div>
+          </dl>
+          <button id="episodeBatchAction" class="episode-action" type="button">
+            <span><b>继续生成本集</b><small>4 个镜头待处理</small></span><i aria-hidden="true">&gt;</i>
+          </button>
+        </section>
+
+        <section class="episode-pipeline" aria-label="本集生产进度">
+          <div class="pipeline-step is-complete">
+            <span>01</span><button id="assetParserButton" class="pipeline-step-action" type="button"><b>资产文档</b><small>独立来源 · 12 / 12 已确认</small></button><i></i>
+          </div>
+          <div class="pipeline-step is-complete">
+            <span>02</span><div><b>本集分镜</b><small>12 / 12 已确认</small></div><i></i>
+          </div>
+          <div class="pipeline-step is-current">
+            <span>03</span><div><b>视频生成</b><small id="pipelineVideoProgress">8 / 12 已完成</small></div><i></i>
+          </div>
+          <div class="pipeline-step">
+            <span>04</span><div><b>组装成片</b><small>等待全部镜头</small></div><i></i>
+          </div>
+        </section>
+
+        <section id="kitContinuityBar" class="kit-continuity-bar" aria-label="Reference Kit 连续性控制">
+          <div class="kit-bar-title">
+            <span class="kit-mark">KIT</span>
+            <div><span class="eyebrow">ASSET DOCUMENT → KIT → STORYBOARD</span><strong>分镜前资产绑定</strong></div>
+          </div>
+          <div class="kit-bar-assignment">
+            <span id="kitCurrentShot">镜头 07</span>
+            <div id="activeKitNames" class="active-kit-names"></div>
+          </div>
+          <div class="kit-bar-model">
+            <span>模型分配</span><strong id="kitConfidence">96%</strong><small id="kitSource">自动建议 · 已确认</small>
+          </div>
+          <button id="kitManagerButton" class="kit-manager-button" type="button"><span>管理与修改</span><small id="kitVersionNotice">2 个 Kit · 版本已冻结</small></button>
+        </section>
+
+        <section class="sequence-overview" aria-label="本集镜头时间轨">
+          <header class="section-heading">
+            <div><span class="eyebrow">EPISODE TIMELINE</span><strong>本集镜头</strong></div>
+            <div class="sequence-summary"><span id="sequenceStatus">8 完成</span><span>1 生成中</span><span>1 失败</span><span>2 待生成</span></div>
+          </header>
+          <div class="sequence-scroll" id="sequenceScroll">
+            <div id="shotRail" class="shot-rail" role="listbox" aria-label="镜头列表"></div>
+            <template id="shotCardTemplate"><span class="shot-stage-strip"></span></template>
+          </div>
+        </section>
+
+        <section class="shot-workbench" aria-label="当前镜头工作台">
+          <header class="shot-commandbar">
+            <div class="selected-shot-title">
+              <span id="selectedShotNumber">07</span>
+              <div><h2 id="selectedShotTitle">林夏穿过雨幕</h2><p id="selectedShotMeta">5 秒 · 分镜版本 v3 · 引用资产 3</p></div>
+            </div>
+            <div class="shot-lineage" aria-label="镜头生成链路">
+              <span class="is-done">STORY</span><i></i><span class="is-done">STILL</span><i></i><span id="motionLineage">MOTION</span>
+            </div>
+            <div class="shot-controls">
+              <label><span>视频模型</span><select id="videoModel"><option>Seedance 2.0</option><option>Kling v3 Pro</option></select></label>
+              <button id="shotAction" class="shot-action" type="button">生成新 Take</button>
+            </div>
+          </header>
+
+          <div class="preview-stage-grid">
+            <section class="stage-pane story-pane" aria-labelledby="storyStageTitle">
+              <header class="stage-heading"><span>01</span><div><small>STORY</small><h3 id="storyStageTitle">剧情与声音</h3></div><i class="stage-status is-complete">已确认</i></header>
+              <div class="stage-tabs" role="tablist" aria-label="文字内容">
+                <button class="is-active" type="button" data-copy-tab="story">剧情</button>
+                <button type="button" data-copy-tab="prompt">视频提示词</button>
+                <button type="button" data-copy-tab="dialogue">对白 / OS</button>
+              </div>
+              <div class="copy-editor">
+                <label id="copyEditorLabel" for="shotCopy">剧情</label>
+                <textarea id="shotCopy" rows="9"></textarea>
+                <div><span id="copyCount">0 字</span><button id="saveCopy" type="button">保存修改</button></div>
+              </div>
+              <dl class="shot-language">
+                <div><dt>景别</dt><dd id="shotSize">中近景</dd></div>
+                <div><dt>镜头</dt><dd id="shotLens">50mm 标准定焦</dd></div>
+                <div><dt>运镜</dt><dd id="shotMotion">侧前方匀速后退</dd></div>
+                <div><dt>声音</dt><dd id="shotVoice">对白 + OS · 3.6 秒</dd></div>
+              </dl>
+            </section>
+
+            <section class="stage-pane still-pane" aria-labelledby="stillStageTitle">
+              <header class="stage-heading"><span>02</span><div><small>STILL</small><h3 id="stillStageTitle">故事板与引用</h3></div><i class="stage-status is-complete">已确认</i></header>
+              <div id="referenceKit" class="reference-kit">
+                <div class="reference-kit-heading"><span>REFERENCE KIT · 分镜前已冻结</span><strong id="referenceCount">3 个资产自动继承</strong></div>
+                <div id="referenceKitLineage" class="reference-kit-lineage"></div>
+                <div id="referenceGrid" class="reference-grid"></div>
+              </div>
+              <div class="still-preview">
+                <img id="stillPreview" src="/home-videos/posters/work-01.jpg" alt="当前镜头故事板" />
+                <div class="still-badges"><span>STORYBOARD v3</span><b>已锁定</b></div>
+                <div id="stillTakeList" class="still-takes" aria-label="故事板版本"></div>
+              </div>
+              <div class="still-actions"><button id="editStillPrompt" type="button">修改提示词</button><button id="newStillTake" type="button">生成新画面</button></div>
+            </section>
+
+            <section class="stage-pane motion-pane" aria-labelledby="motionStageTitle">
+              <header class="stage-heading"><span>03</span><div><small>MOTION</small><h3 id="motionStageTitle">视频 Take</h3></div><i id="motionState" class="stage-status is-complete">已完成</i></header>
+              <div class="video-frame" id="videoFrame">
+                <img id="videoPoster" src="/home-videos/posters/work-01.jpg" alt="当前镜头视频预览" />
+                <div id="generationOverlay" class="generation-overlay" aria-hidden="true">
+                  <span class="generation-scan"></span><i></i><strong id="overlayStatus">队列中</strong><em id="overlayProgress">0%</em>
+                </div>
+                <button class="play-button" type="button" aria-label="播放视频" title="播放">&#9654;</button>
+                <div class="video-scrub"><span></span></div><time id="videoTime">00:05</time>
+              </div>
+              <div class="motion-meta"><span id="resultModel">Seedance 2.0</span><strong id="resultResolution">1080 × 1920</strong><button type="button" aria-label="下载视频" title="下载视频">&#8595;</button></div>
+              <div class="take-heading"><span>TAKES · 独立保存</span><strong id="takeCount">2</strong></div>
+              <div id="takeList" class="take-list"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="panelScrim" class="panel-scrim" hidden></div>
+
+    <aside id="assetParserPanel" class="side-panel asset-parser-panel" aria-hidden="true" aria-label="资产文档与解析">
+      <header><div><span class="eyebrow">TWO DOCUMENT WORKFLOW</span><h2>资产文档与解析</h2></div><button class="panel-close" type="button" data-close-panel aria-label="关闭" title="关闭">&#215;</button></header>
+      <section id="assetWorkflowMode" class="asset-workflow-mode" aria-label="资产工作流模式">
+        <button class="is-active" type="button" data-asset-mode="professional"><span>专业模式</span><small>资产文档是唯一来源</small></button>
+        <button type="button" data-asset-mode="quick"><span>快速模式</span><small>剧情仅生成待确认候选</small></button>
+      </section>
+      <section class="document-source-flow" aria-label="双文档来源">
+        <article id="scriptDocumentStatus" class="document-source-card">
+          <span class="document-kind">PLOT</span><div><strong>EP03_逆风航线_剧情.txt</strong><small>剧情、对白、动作与资产使用关系</small></div><em>已上传</em>
+        </article>
+        <i aria-hidden="true">交叉检查</i>
+        <article id="assetDocumentStatus" class="document-source-card is-authority">
+          <span class="document-kind">ASSET</span><div><strong>雾港来信_资产描述_v6.docx</strong><small>人物、场景、道具身份与视觉描述</small></div><em>正式来源</em>
+        </article>
+      </section>
+      <section id="assetSourcePolicy" class="asset-source-policy">
+        <div><span>当前资产来源</span><strong id="assetSourceTitle">资产描述文档 · v6</strong></div>
+        <p id="assetSourceRule">禁止从剧情创建正式资产；剧情只检查使用关系和缺失项。</p>
+      </section>
+      <section class="parser-health"><div><span>内容分析模型</span><strong>Claude Opus · 仅解析资产文档</strong></div><b>12 / 12</b></section>
+      <section class="asset-generation-controls">
+        <div class="panel-section-title"><span>资产图生成设置</span><b id="assetStyleStatus">3D 渲染 / CG 质感</b></div>
+        <div class="asset-style-row">
+          <label><span>生成风格</span><select id="assetStylePresetPreview"><option value="photoreal">超写实</option><option value="cg_3d" selected>3D 渲染 / CG 质感</option><option value="pixar_3d">皮克斯 / 迪士尼 3D</option><option value="ghibli_miyazaki">宫崎骏 / 吉卜力</option><option value="retro_american_cel">复古美式赛璐璐</option><option value="american_bold_toon">美式粗线条</option><option value="modern_anime_cel">日式动漫赛璐璐</option><option value="american_painterly">美式厚涂插画</option><option value="claymation">定格动画 / 黏土</option><option value="chinese_ink">水墨 / 国风</option><option value="pixel_art">复古像素</option><option value="custom">自定义</option></select></label>
+          <label><span>画质</span><select id="assetQualityPreview"><option>1K</option><option selected>2K</option><option>4K</option></select></label>
+        </div>
+        <label class="asset-style-custom-preview"><span>风格补充</span><input id="assetStyleCustomPreview" value="低饱和青灰海港，钨丝灯有限暖色" /></label>
+        <div id="assetStyleReferenceControl" class="asset-style-reference-control">
+          <button type="button" data-asset-preview="/home-videos/posters/work-04.jpg" data-asset-name="全剧风格参考" data-asset-meta="风格参考 · 已启用"><img src="/home-videos/posters/work-04.jpg" alt="全剧风格参考" /></button>
+          <div><strong>雾港冷调参考.jpg</strong><span>只继承线条、色彩、材质和光影</span></div>
+          <label><input id="assetStyleReferenceEnabledPreview" type="checkbox" checked /><span>启用</span></label>
+          <button id="replaceStyleReference" type="button">替换</button>
+        </div>
+        <div id="assetBindMode" class="asset-bind-control">
+          <label><span>上传方式</span><select id="assetBindModeSelect"><option value="bind">绑定解析资产</option><option value="replace">替换已有资产图</option><option value="local">新增本地资产</option></select></label>
+          <label><span>目标槽位</span><select id="assetBindTarget"><option value="林夏">C001 · 林夏</option><option value="陈默">C002 · 陈默</option><option value="雾港码头">S001 · 雾港码头</option><option value="离岸货船">S002 · 离岸货船</option><option value="防水文件袋">P003 · 防水文件袋</option></select></label>
+          <button id="bindOrReplaceAssetButton" type="button">绑定上传</button>
+        </div>
+      </section>
+      <section class="undefined-assets-section">
+        <div class="panel-section-title"><span>剧情交叉检查</span><b id="undefinedAssetCount">1 个未定义项</b></div>
+        <div id="undefinedAssetList" class="undefined-asset-list">
+          <article data-undefined-asset="码头工作证"><div><strong>码头工作证</strong><span>剧情第 10 镜出现，资产描述文档中未定义</span></div><button type="button" data-undefined-action="add">补入资产文档</button><button type="button" data-undefined-action="ignore">无需独立资产</button></article>
+        </div>
+      </section>
+      <section class="asset-review-section"><div class="panel-section-title"><span>人物</span><b>2 已确认</b></div><div class="asset-review-list"><article><button type="button" data-asset-preview="/home-videos/posters/work-05.jpg" data-asset-name="林夏" data-asset-meta="C001 · 人物三视图 · 2K"><img src="/home-videos/posters/work-05.jpg" alt="林夏" /></button><div><strong>林夏</strong><span>C001 · 主角 · 剧本证据 8 处</span></div><em>人物</em></article><article><button type="button" data-asset-preview="/home-videos/posters/work-03.jpg" data-asset-name="陈默" data-asset-meta="C002 · 人物三视图 · 2K"><img src="/home-videos/posters/work-03.jpg" alt="陈默" /></button><div><strong>陈默</strong><span>C002 · 关键角色 · 剧本证据 5 处</span></div><em>人物</em></article></div></section>
+      <section class="asset-review-section"><div class="panel-section-title"><span>场景</span><b>4 已确认</b></div><div class="asset-review-list"><article><button type="button" data-asset-preview="/home-videos/posters/work-04.jpg" data-asset-name="雾港码头" data-asset-meta="S001 · 场景设定 · 2K"><img src="/home-videos/posters/work-04.jpg" alt="雾港码头" /></button><div><strong>雾港码头</strong><span>S001 · 夜雨外景 · 第 1-12 镜</span></div><em>场景</em></article><article><button type="button" data-asset-preview="/home-videos/posters/work-06.jpg" data-asset-name="离岸货船" data-asset-meta="S002 · 场景设定 · 2K"><img src="/home-videos/posters/work-06.jpg" alt="离岸货船" /></button><div><strong>离岸货船</strong><span>S002 · 甲板与船体 · 第 1、8-12 镜</span></div><em>场景</em></article></div></section>
+      <section class="asset-review-section"><div class="panel-section-title"><span>道具与插入</span><b>6 已确认</b></div><div class="asset-review-list"><article><button type="button" data-asset-preview="/home-videos/posters/work-02.jpg" data-asset-name="防水文件袋" data-asset-meta="P003 · 道具三视图 · 2K"><img src="/home-videos/posters/work-02.jpg" alt="防水文件袋" /></button><div><strong>防水文件袋</strong><span>P003 · 剧情关键物 · 第 6、7、9、10 镜</span></div><em>道具</em></article></div></section>
+      <footer><span>Kit 只能使用这里确认的正式资产</span><button id="confirmAssetReview" type="button">确认资产文档</button></footer>
+    </aside>
+
+    <aside id="kitPanel" class="side-panel kit-panel" aria-hidden="true" aria-label="Reference Kit 管理">
+      <header><div><span class="eyebrow">ASSET DOCUMENT → KIT → MODEL ASSIGNMENT</span><h2>Reference Kit</h2></div><button class="panel-close" type="button" data-close-panel aria-label="关闭" title="关闭">&#215;</button></header>
+      <section class="kit-auto-status">
+        <div><span>本集自动分配</span><strong id="kitAssignmentStatus">10 已确认 · 2 待检查</strong></div>
+        <button id="autoAssignKits" type="button">重新分析本集</button>
+      </section>
+      <section class="kit-panel-section">
+        <div class="panel-section-title"><span>连续性套件</span><b>全剧 → 场景 → 镜头例外</b></div>
+        <div id="kitLibrary" class="kit-library"></div>
+      </section>
+      <section class="kit-panel-section kit-shot-editor">
+        <div class="panel-section-title"><span id="kitEditorShot">镜头 07 · 林夏穿过雨幕</span><b id="kitEditorConfidence">模型置信度 96%</b></div>
+        <label class="kit-select-field"><span>场景 Kit</span><select id="shotKitSelect"></select></label>
+        <div class="kit-lock-row" aria-label="当前锁定策略"><span>身份锁定</span><span>场景锁定</span><span>服装锁定</span><span>风格锁定</span></div>
+        <div class="kit-editor-label"><span>镜头资产</span><small>点击可排除或恢复；只影响当前镜头</small></div>
+        <div id="kitAssetOverrides" class="kit-asset-overrides"></div>
+      </section>
+      <section class="kit-panel-section">
+        <div class="panel-section-title"><span>3×3 面板分配</span><b>由分镜模型决定</b></div>
+        <div id="panelAssetBindings" class="panel-asset-bindings"></div>
+        <div id="panelBindingDetail" class="panel-binding-detail"></div>
+      </section>
+      <section id="kitImpactSummary" class="kit-impact-summary">
+        <div><span>场景 Kit 有新版本</span><strong id="kitImpactTitle">雨夜码头 v3</strong></div>
+        <p><b>4</b> 个未生成镜头可更新；<b>8</b> 个已完成镜头和历史 Take 保持原版本。</p>
+      </section>
+      <footer><span>不会覆盖已完成故事板和视频 Take</span><button id="applyKitUpdate" type="button">仅更新未生成镜头</button></footer>
+    </aside>
+
+    <aside id="styleBiblePanel" class="side-panel style-bible-panel" aria-hidden="true" aria-label="全剧视觉圣经">
+      <header><div><span class="eyebrow">GLOBAL · ALL EPISODES</span><h2>全剧视觉圣经</h2></div><button class="panel-close" type="button" data-close-panel aria-label="关闭" title="关闭">&#215;</button></header>
+      <section class="bible-overview"><div class="palette"><i></i><i></i><i></i><i></i><i></i></div><div><strong>冷调海港现实主义</strong><span>GPT Image 2 · 6 张视觉参考</span></div></section>
+      <section class="bible-section"><div class="panel-section-title"><span>自然语言视觉规则</span><b>全剧继承</b></div><p>潮湿海港、低饱和青灰色环境、钨丝灯与红色航标形成有限暖色。真实皮肤纹理，克制景深，阴雨环境保持空气透视。人物造型与服装只允许按剧情连续性变化。</p></section>
+      <section class="bible-section"><div class="panel-section-title"><span>风格参考</span><b>6</b></div><div id="bibleReferences" class="bible-references"></div></section>
+      <section class="bible-section"><div class="panel-section-title"><span>提示词示例</span><b>3 条</b></div><div class="prompt-example"><span>EXAMPLE 01</span><p>雨水切过码头冷白灯，人物从远处进入侧逆光区域，湿润地面保留自然反射，不使用虚化高光。</p></div><div class="prompt-example"><span>EXAMPLE 02</span><p>以人物真实动作和叙事信息为主，镜头运动保持单一、稳定、可执行，不增加剧情外物体。</p></div></section>
+      <footer><span>修改后将标记受影响镜头，不自动重跑</span><button type="button">保存视觉圣经</button></footer>
+    </aside>
+
+    <aside id="queuePanel" class="side-panel queue-panel" aria-hidden="true" aria-label="生成队列">
+      <header><div><span class="eyebrow">GENERATION QUEUE</span><h2>本集生成队列</h2></div><button class="panel-close" type="button" data-close-panel aria-label="关闭" title="关闭">&#215;</button></header>
+      <div class="queue-capacity"><div><span>并发槽位</span><strong id="queueCapacity">1 / 4</strong></div><div class="capacity-meter"><i></i><i></i><i></i><i></i></div></div>
+      <div id="queuePanelList" class="queue-panel-list"></div>
+      <footer><span>已完成镜头不会重新提交</span><button id="pauseQueue" type="button">暂停队列</button></footer>
+    </aside>
+
+    <div id="previewToast" class="preview-toast" role="status" aria-live="polite"></div>
+    <dialog id="assetPreviewDialog" class="asset-preview-dialog" aria-labelledby="assetPreviewTitle">
+      <header><div><strong id="assetPreviewTitle">资产图</strong><span id="assetPreviewMeta"></span></div><button id="closeAssetPreview" type="button" aria-label="关闭预览" title="关闭">&#215;</button></header>
+      <div class="asset-preview-stage"><img id="assetPreviewImage" src="" alt="" /></div>
+      <footer><span id="assetPreviewStyle">3D 渲染 / CG 质感 · 使用全剧风格参考</span><div><button id="downloadPreviewAsset" type="button" title="下载" aria-label="下载">&#8595;</button><button id="regeneratePreviewAsset" type="button" title="重新生成" aria-label="重新生成">&#8635;</button><button id="previewReplaceAsset" type="button">替换此资产</button></div></footer>
+    </dialog>
+    <script src="/studio-layout-preview.js?v=20260726-2"></script>
+  </body>
+</html>

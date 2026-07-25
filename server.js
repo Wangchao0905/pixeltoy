@@ -182,6 +182,7 @@ let runtimeAssetAnalyzerKeySource = "";
 const jobs = new Map();
 const jobChildren = new Map();
 const projectVideoQueues = new Map();
+let superPixelFetch = (...args) => fetch(...args);
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -2239,6 +2240,29 @@ function normalizeAssetAnalyzerModel(value) {
 
 function defaultStoryboardModel() {
   return process.env.STORYBOARD_MODEL || FALLBACK_STORYBOARD_MODEL;
+}
+
+const SUPER_PIXEL_MAX_IMAGES_PER_MESSAGE = 8;
+const SUPER_PIXEL_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const SUPER_PIXEL_CLAUDE_MODELS = new Set(["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
+const SUPER_PIXEL_GPT_MODELS = new Set(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"]);
+
+function superPixelModelConfig(model) {
+  if (SUPER_PIXEL_CLAUDE_MODELS.has(model)) {
+    return { apiKey: assetAnalyzerApiKey(), kind: "asset" };
+  }
+  if (SUPER_PIXEL_GPT_MODELS.has(model)) {
+    return { apiKey: compactLine(process.env.STORYBOARD_API_KEY || ""), kind: "storyboard" };
+  }
+  return null;
+}
+
+function truncateSuperPixelScript(text, maxLength = 24000) {
+  const value = String(text || "").trim();
+  if (value.length <= maxLength) return value;
+  const headLength = Math.floor(maxLength * 0.75);
+  const tailLength = maxLength - headLength;
+  return `${value.slice(0, headLength)}\n\n[剧本过长，中间内容已截断]\n\n${value.slice(-tailLength)}`;
 }
 
 function normalizeStoryboardModel(value) {
@@ -20497,6 +20521,104 @@ function usageRows() {
     );
 }
 
+// content 可以是纯文本，也可以是 [{type:"text"}, {type:"image_url"}] 多模态数组
+// （资产图拖进对话框的场景）。注意不能对数组用 String()，那会压成 "[object Object]"。
+function superPixelTextPart(value) {
+  return String(value || "").trim().slice(0, 12000);
+}
+
+function superPixelContent(raw) {
+  if (!Array.isArray(raw)) return superPixelTextPart(raw);
+  const parts = [];
+  let imageCount = 0;
+  for (const item of raw) {
+    if (item?.type === "text") {
+      const text = superPixelTextPart(item.text);
+      if (text) parts.push({ type: "text", text });
+      continue;
+    }
+    if (item?.type === "image_url") {
+      // 单条消息最多 8 张图，避免一次请求把上游图片额度/体积打爆
+      if (imageCount >= SUPER_PIXEL_MAX_IMAGES_PER_MESSAGE) continue;
+      const url = compactLine(item.image_url?.url || item.url || "");
+      if (!url) continue;
+      imageCount += 1;
+      parts.push({ type: "image_url", image_url: { url } });
+    }
+  }
+  // 只有图没有文字也允许（"这张图什么风格？"式的追问由前端补默认文案）
+  return parts.length ? parts : "";
+}
+
+// 对话看图必须内联 base64。实测 api.apikey.fun 不会去抓公网 https 图片链接
+// （模型会回「我没有收到图片」），只认 data URL。注意这和 Seedance 视频参考图正好相反：
+// 那边要求公网可读、走 assetUrlToReferenceUrl 转 S3。别把两条路混用。
+function superPixelInlineImage(url) {
+  const raw = compactLine(url);
+  if (!raw) return "";
+  if (/^data:image\//i.test(raw)) return raw;
+  // /media?path= 、file:// 、/public-assets/xxx（含 S3 公网地址反查本地镜像）
+  const local =
+    localMediaPathFromUrl(raw) || localFilePathFromUrl(raw) || localPublicAssetPathFromUrl(raw);
+  if (!local) return "";
+  if (!/\.(png|jpe?g|webp)$/i.test(local)) return "";
+  if (fs.statSync(local).size > SUPER_PIXEL_MAX_IMAGE_BYTES) return "";
+  return fileToDataUrl(local);
+}
+
+// 逐张转成内联 base64。转不出来的图跳过并保留文字，不让一张坏图搞挂整轮对话。
+async function superPixelResolveImages(messages) {
+  const out = [];
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) {
+      out.push(message);
+      continue;
+    }
+    const parts = [];
+    for (const part of message.content) {
+      if (part.type !== "image_url") {
+        parts.push(part);
+        continue;
+      }
+      const inlined = superPixelInlineImage(part.image_url.url);
+      if (inlined) parts.push({ type: "image_url", image_url: { url: inlined } });
+      else console.error(`[superPixel] 图片无法内联，已跳过: ${String(part.image_url.url).slice(0, 80)}`);
+    }
+    if (parts.length) out.push({ ...message, content: parts });
+  }
+  return out;
+}
+
+function superPixelMessages(bodyMessages) {
+  if (!Array.isArray(bodyMessages)) return [];
+  return bodyMessages
+    .filter((item) => ["user", "assistant"].includes(item?.role))
+    .map((item) => ({ role: item.role, content: superPixelContent(item.content) }))
+    .filter((item) => (Array.isArray(item.content) ? item.content.length : item.content))
+    .slice(-20);
+}
+
+function superPixelSystemPrompt(scriptText) {
+  const script = truncateSuperPixelScript(scriptText);
+  return [
+    "You are Super Pixel in Ask mode.",
+    "Answer the user's questions and creative requests with text only.",
+    "Do not call tools, modify project data, create episodes, write storyboards, or claim that you performed an action.",
+    script ? `The user uploaded this screenplay for context:\n\n${script}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+function superPixelDelta(data) {
+  const choice = data?.choices?.[0] || {};
+  const delta = choice.delta;
+  if (typeof delta === "string") return delta;
+  if (typeof delta?.content === "string") return delta.content;
+  if (Array.isArray(delta?.content)) {
+    return delta.content.map((item) => typeof item === "string" ? item : item?.text || "").join("");
+  }
+  return typeof choice.text === "string" ? choice.text : "";
+}
+
 function adminSummary() {
   const users = adminUserRows();
   const invites = inviteRows();
@@ -20528,6 +20650,110 @@ function removeUserSessions(userId) {
   const store = readAuthSessions();
   store.sessions = store.sessions.filter((session) => session.userId !== userId);
   writeAuthSessions(store);
+}
+
+async function handleSuperPixelChat(req, res) {
+  const adminUser = currentUserFromRequest(req);
+  if (!adminUser || !isAdminUser(adminUser)) return fail(res, 403, "需要管理员权限");
+  if (req.method !== "POST") return fail(res, 405, "method not allowed");
+  const body = await readBody(req);
+  const mode = compactLine(body.mode || "ask").toLowerCase();
+  if (mode !== "ask") return fail(res, 400, "Agent 模式暂未开放");
+  const model = compactLine(body.model || "");
+  const modelConfig = superPixelModelConfig(model);
+  if (!modelConfig) return fail(res, 400, "不支持的 Super Pixel 模型");
+  if (!modelConfig.apiKey) return fail(res, 503, "未配置 Super Pixel 模型 API Key");
+  const messages = superPixelMessages(body.messages);
+  if (!messages.length || messages[messages.length - 1].role !== "user") {
+    return fail(res, 400, "请输入对话内容");
+  }
+  const controller = new AbortController();
+  let clientClosed = false;
+  const onClose = () => {
+    if (!res.writableEnded) {
+      clientClosed = true;
+      controller.abort();
+    }
+  };
+  req.on("close", onClose);
+  // 拖进来的图可能是 asset:// / /media?path= / data: / 本地文件，上游都读不到，
+  // 统一过一遍 assetUrlToReferenceUrl 转成模型可读的公开 URL。
+  let resolvedMessages;
+  try {
+    resolvedMessages = await superPixelResolveImages(messages);
+  } catch (error) {
+    return fail(res, 400, "对话图片处理失败", error?.message || String(error));
+  }
+  const requestBody = {
+    model,
+    stream: true,
+    temperature: 0.7,
+    messages: [{ role: "system", content: superPixelSystemPrompt(body.scriptText) }, ...resolvedMessages],
+  };
+  try {
+    const upstream = await superPixelFetch(openAiCompatUrl("/v1/chat/completions", modelConfig.kind), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${modelConfig.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    if (!upstream.ok) {
+      const raw = await upstream.text();
+      if (!clientClosed) return fail(res, upstream.status, `Super Pixel 模型返回 HTTP ${upstream.status}`, raw.slice(0, 600));
+      return;
+    }
+    if (!upstream.body) throw new Error("Super Pixel 模型未返回流");
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    let upstreamDone = false;
+    const emit = (payload) => {
+      if (!clientClosed && !res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+    while (!upstreamDone) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const raw = line.slice(5).trim();
+        if (raw === "[DONE]") {
+          upstreamDone = true;
+          break;
+        }
+        try {
+          const delta = superPixelDelta(JSON.parse(raw));
+          if (delta) emit({ delta });
+        } catch {
+          // Ignore malformed provider chunks and keep the stream alive.
+        }
+      }
+    }
+    if (!clientClosed && !res.writableEnded) {
+      emit({ done: true });
+      res.end();
+    }
+  } catch (error) {
+    if (clientClosed || error?.name === "AbortError") return;
+    if (!res.headersSent) return fail(res, 502, "Super Pixel 流式请求失败", error.message);
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify({ error: "Super Pixel 流式请求失败" })}\n\n`);
+      res.end();
+    }
+  } finally {
+    req.off("close", onClose);
+  }
 }
 
 async function handleAdminApi(req, res, url) {
@@ -21527,6 +21753,7 @@ const server = http.createServer(async (req, res) => {
   }
   try {
     if (isAuthApiPath(url.pathname)) return await handleAuthApi(req, res, url);
+    if (url.pathname === "/api/super-pixel/chat") return await handleSuperPixelChat(req, res, url);
     if (!requireAuth(req, res, url)) return;
     if (isAdminApiPath(url.pathname)) return await handleAdminApi(req, res, url);
     if (url.pathname === "/media") {
@@ -21588,9 +21815,22 @@ if (require.main === module) {
 
 // 供隔离测试/冒烟脚本 require 后调用(require.main !== module 时不监听端口)。
 module.exports = {
+  server,
   prepareBatchVideoReferences,
   readVideoConfig,
   __test: {
+    superPixel: {
+      handle: handleSuperPixelChat,
+      setFetch(fetchImpl) {
+        superPixelFetch = typeof fetchImpl === "function" ? fetchImpl : (...args) => fetch(...args);
+      },
+      truncateScript: truncateSuperPixelScript,
+      delta: superPixelDelta,
+      messages: superPixelMessages,
+      content: superPixelContent,
+      resolveImages: superPixelResolveImages,
+      maxImages: SUPER_PIXEL_MAX_IMAGES_PER_MESSAGE,
+    },
     draft: {
       buildDraft,
       draftAssetManifestForEpisode,

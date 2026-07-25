@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=super-pixel-tune-20260725" />
+    <link rel="stylesheet" href="/styles.css?v=super-pixel-images-20260726" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -195,14 +195,21 @@
           <div class="super-pixel-stage">
             <div class="super-pixel-logo" aria-hidden="true">S</div>
             <h1 id="superPixelTitle" class="super-pixel-title">今天要拍什么？</h1>
+            <div id="superPixelMessages" class="super-pixel-messages" aria-live="polite"></div>
             <form id="superPixelComposer" class="super-pixel-composer">
+              <div id="superPixelAttachments" class="super-pixel-attachments hidden" aria-label="已附加图片"></div>
               <textarea id="superPixelInput" class="super-pixel-input" rows="1"
-                placeholder="描述你想拍的剧集：题材、主角、集数…"
+                placeholder="描述你想拍的剧集：题材、主角、集数…（可拖入或粘贴图片）"
                 aria-label="剧集创作输入"></textarea>
               <div class="super-pixel-toolbar">
                 <button id="superPixelAttach" class="super-pixel-tool" type="button">
-                  <span aria-hidden="true">＋</span> 剧本
+                  <span aria-hidden="true">＋</span> <span id="superPixelScriptLabel">剧本</span>
                 </button>
+                <input id="superPixelScriptUpload" class="hidden" type="file" accept=".md,.txt,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <button id="superPixelImagePick" class="super-pixel-tool" type="button">
+                  <span aria-hidden="true">🖼</span> 图片
+                </button>
+                <input id="superPixelImageUpload" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple />
                 <label class="super-pixel-select">
                   <span class="sr-only">模型</span>
                   <select id="superPixelModel" aria-label="模型">
@@ -222,7 +229,7 @@
                   <span class="sr-only">模式</span>
                   <select id="superPixelMode" aria-label="模式">
                     <option value="ask">Ask</option>
-                    <option value="agent">Agent</option>
+                    <option value="agent" disabled>Agent（即将开放）</option>
                   </select>
                 </label>
                 <button id="superPixelSend" class="super-pixel-send" type="submit" aria-label="发送">
@@ -968,6 +975,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=super-pixel-tune-20260725"></script>
+    <script src="/app.js?v=super-pixel-images-20260726"></script>
   </body>
 </html>

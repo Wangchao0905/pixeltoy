@@ -15360,7 +15360,7 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   /* 与 .image-explore-view / .asset-library-view 一致：44px 为顶栏高度。
      用 100% 无效——父级 .explore-home 是 auto 高度的 block，百分比无参照。 */
   min-height: calc(100vh - 44px);
-  background: linear-gradient(180deg, #1a060c 0%, #0d0407 55%, #050203 100%);
+  background: linear-gradient(180deg, #120409 0%, #080205 55%, #020101 100%);
 }
 
 .super-pixel-view.hidden { display: none; }
@@ -15373,14 +15373,14 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 }
 
 .super-pixel-hex {
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2738.1%27%20height%3D%2766.0%27%20viewBox%3D%270%200%2038.1%2066.0%27%3E%3Cpath%20d%3D%27M0%2C-22.0L19.05%2C-11.0L19.05%2C11.0L0%2C22.0L-19.05%2C11.0L-19.05%2C-11.0ZM38.1%2C-22.0L57.15%2C-11.0L57.15%2C11.0L38.1%2C22.0L19.05%2C11.0L19.05%2C-11.0ZM19.05%2C11.0L38.1%2C22.0L38.1%2C44.0L19.05%2C55.0L0.0%2C44.0L0.0%2C22.0ZM0%2C44.0L19.05%2C55.0L19.05%2C77.0L0%2C88.0L-19.05%2C77.0L-19.05%2C55.0ZM38.1%2C44.0L57.15%2C55.0L57.15%2C77.0L38.1%2C88.0L19.05%2C77.0L19.05%2C55.0Z%27%20fill%3D%27none%27%20stroke%3D%27rgba%28255%2C90%2C110%2C0.26%29%27%20stroke-width%3D%271%27%2F%3E%3C%2Fsvg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2720.78%27%20height=%2736.00%27%20viewBox=%270%200%2020.78%2036.00%27%3E%3Cpath%20d=%27M20.78,6.00L20.78,18.00L10.39,24.00L0.00,18.00L0.00,6.00L10.39,0.00Z%20M10.39,24.00L10.39,36.00L0.00,42.00L-10.39,36.00L-10.39,24.00L-0.00,18.00Z%20M31.18,24.00L31.18,36.00L20.78,42.00L10.39,36.00L10.39,24.00L20.78,18.00Z%27%20fill=%27none%27%20stroke=%27rgba%28255,86,106,0.20%29%27%20stroke-width=%270.7%27/%3E%3C/svg%3E");
   background-repeat: repeat;
-  -webkit-mask-image: radial-gradient(95% 80% at 50% 38%, #000 55%, transparent 96%);
-  mask-image: radial-gradient(95% 80% at 50% 38%, #000 55%, transparent 96%);
+  -webkit-mask-image: radial-gradient(82% 65% at 50% 36%, #000 42%, transparent 88%);
+  mask-image: radial-gradient(82% 65% at 50% 36%, #000 42%, transparent 88%);
 }
 
 .super-pixel-glow {
-  background: radial-gradient(48% 34% at 50% 46%, rgba(196, 30, 52, 0.26), transparent 68%);
+  background: radial-gradient(48% 34% at 50% 46%, rgba(176, 26, 46, 0.16), transparent 66%);
 }
 
 .super-pixel-stage {
@@ -15394,20 +15394,22 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 }
 
 .super-pixel-logo {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
   display: grid;
   place-items: center;
   background: var(--sp-acc);
   color: var(--sp-acc-ink);
-  font: 800 20px/1 system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .super-pixel-title {
   margin: 0;
   color: var(--sp-ink);
-  font-size: clamp(22px, 3vw, 28px);
+  font-size: clamp(17px, 2vw, 20px);
   font-weight: 800;
   line-height: 1.15;
   letter-spacing: -0.01em;
@@ -15418,30 +15420,41 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   width: min(680px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 15px 16px 12px;
+  gap: 10px;
+  padding: 14px 16px 10px;
   border: 1px solid var(--sp-line);
   border-radius: 20px;
-  background: var(--sp-panel);
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: rgba(20, 7, 11, 0.42);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
 }
 
 .super-pixel-input {
   width: 100%;
+  min-height: 84px;
   border: 0;
+  /* 全站 textarea 规则会加 padding:13px 与 inset 高光，形成「框中框」；
+     这里清零，让 composer 成为唯一的磨砂框 */
+  padding: 0;
+  box-shadow: none;
   background: transparent;
   color: var(--sp-ink);
-  font: 400 14px/1.5 inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
   resize: none;
   overflow-y: auto;
-  max-height: 9em;
+  max-height: 12em;
 }
 
 .super-pixel-input::placeholder { color: var(--sp-dim); }
+.super-pixel-input:focus,
+.super-pixel-input:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
 .super-pixel-input:focus { outline: none; }
 .super-pixel-composer:focus-within { border-color: rgba(255, 110, 130, 0.34); }
 
@@ -15456,11 +15469,16 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 .super-pixel-select > select {
   border: 1px solid var(--sp-line);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--sp-ink);
-  font: 500 11.5px/1 inherit;
-  padding: 7px 11px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0 10px;
   cursor: pointer;
+  /* 覆盖全站 button{min-height:36px} 与 select{height:38px}，否则做不小 */
+  height: 28px;
+  min-height: 28px;
 }
 
 .super-pixel-tool { color: var(--sp-dim); }
@@ -15491,10 +15509,10 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   margin-left: auto;
   box-sizing: border-box;
   padding: 0;
-  width: 31px;
-  height: 31px;
+  width: 28px;
+  height: 28px;
   /* 覆盖全站 button{min-height:36px}，否则圆形会被撑成椭圆 */
-  min-height: 31px;
+  min-height: 28px;
   flex: none;
   border: 0;
   border-radius: 50%;
@@ -15502,7 +15520,9 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   place-items: center;
   background: var(--sp-acc);
   color: var(--sp-acc-ink);
-  font: 700 14px/1 inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
   cursor: pointer;
   transition: transform 140ms ease, filter 140ms ease;
 }
@@ -15522,8 +15542,11 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.02);
   color: var(--sp-dim);
-  font: 500 11.5px/1 inherit;
-  padding: 8px 13px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  min-height: 0;
+  padding: 6px 12px;
   cursor: pointer;
   transition: color 140ms ease, border-color 140ms ease;
 }
@@ -15540,7 +15563,9 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 
 .super-pixel-gallery-kicker {
   color: var(--sp-dim);
-  font: 600 10px/1 inherit;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
   letter-spacing: 0.16em;
 }
 
@@ -15565,7 +15590,9 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 .super-pixel-card.is-empty {
   border: 1px dashed var(--sp-line);
   color: var(--sp-dim);
-  font: 400 18px/1 inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1;
 }
 
 @media (max-width: 600px) {

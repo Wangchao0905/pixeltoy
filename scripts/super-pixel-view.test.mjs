@@ -76,7 +76,14 @@ assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?super-pixel/, "必须�
 // 1) 全站 button{min-height:36px} 会把 31px 圆形发送键撑成椭圆
 // 提取到行首 } 为止：规则内注释含 "button{...}"，非贪婪到首个 } 会截断
 const sendRule = css.match(/\.super-pixel-send\s*\{[\s\S]*?\n\}/)?.[0] || "";
-assert.match(sendRule, /min-height:\s*31px/, "发送按钮需显式 min-height 覆盖全站 button 规则，否则圆变椭圆");
+// 不锁死具体像素（尺寸会随视觉调整变化），锁「min-height 必须等于 height」这个关系：
+// 全站 button{min-height:36px} 会压过 height，二者不一致就会被撑成椭圆。
+// 先去掉注释——注释里提到的 button{min-height:36px} 会被误当成声明匹配到
+const sendDecls = sendRule.replace(/\/\*[\s\S]*?\*\//g, "");
+const sendH = sendDecls.match(/(?<!min-)height:\s*(\d+)px/)?.[1];
+const sendMinH = sendDecls.match(/min-height:\s*(\d+)px/)?.[1];
+assert.ok(sendH && sendMinH, "发送按钮须同时声明 height 与 min-height");
+assert.equal(sendMinH, sendH, `min-height(${sendMinH}) 须等于 height(${sendH})，否则全站 button 规则会把圆撑成椭圆`);
 assert.match(sendRule, /box-sizing:\s*border-box/, "发送按钮需 border-box，否则 padding 撑破尺寸");
 
 // 2) 视图高度：用 100% 无效（父级 auto 高度），须与同级视图一致用 calc(100vh - 44px)

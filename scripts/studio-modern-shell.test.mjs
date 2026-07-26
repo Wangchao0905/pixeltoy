@@ -103,6 +103,8 @@ assert.match(js, /modern-shot-number[\s\S]*modern-shot-status[\s\S]*modern-shot-
 assert.match(css, /\.modern-shot-frame\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "shot wall frames must use a 9:16 ratio");
 assert.match(css, /\.modern-shot-frame::after\s*\{[^}]*linear-gradient/, "shot frames must include a bottom readability mask");
 assert.match(css, /\.modern-shot-card\.is-active[^}]*box-shadow:\s*0 0 0 2px var\(--mv-lime\)/, "selected shot must use the lime frame ring");
+assert.match(css, /\.modern-main\[data-modern-view="storyboard"\]\s+\.modern-source-panel,[\s\S]*?\{\s*display:\s*none/, "storyboard view must hide the source panel");
+assert.match(css, /\.modern-shot-rail\s*\{[^}]*grid-auto-flow:\s*column[^}]*grid-auto-columns:\s*minmax\(0,1fr\)/, "shot rail must place every shot in one auto-flow column row");
 
 // 改动 6：成片卡采用三列上排 + 全宽六段轨，并保留可见的业务三件套。
 const modernCutPanel = html.match(/id="modernCutPanel"[\s\S]*?<\/section>/)?.[0] || "";
@@ -122,5 +124,19 @@ assert.match(css, /\.is-complete \.modern-shot-status i \{[^}]*var\(--mv-ok\)/, 
 // .modern-shot-frame（它正是第一个 span 子元素），给已完成帧套上墨绿渐变。
 assert.doesNotMatch(css, /\.modern-shot-card(\.[a-z-]+)? ?> span:first-child/, "legacy shot thumb rules must not shadow the new frame");
 assert.doesNotMatch(css, /#26362e/i, "legacy green shot gradient must be gone");
+
+// src="" 的 img 仍占位 329\u00D7206，浏览器裂图标与 alt 文字压在
+// 「暂无故事板」占位层上面，实测两者同时显示。
+assert.match(css, /\.modern-still-preview img\[src=""\][^{]*\{[^}]*display:\s*none/, "empty-src previews must not render the broken-image glyph");
+// scrollbar-width: thin 不含配色，回落到浏览器默认亮灰，暗色界面下刺眼。
+// 用 [^}]* 锚到块边界而非固定字符数，避免以后新增 token 就把断言撑破。
+assert.match(css, /body\.is-studio-modern \{[^}]*scrollbar-color:/, "modern shell must theme its scrollbars");
+// 不能只匹配选择器名：:hover 变体里也含这段文字，删掉基础规则断言照样通过。
+assert.match(css, /body\.is-studio-modern ::-webkit-scrollbar-thumb \{[^}]*background:\s*rgba/, "modern shell must theme WebKit scrollbars too");
+
+// 固定 repeat(3,1fr) 时，视图作用域隐藏两个面板后剩下那个只占 1/3，
+// 实测 1081px 容器里 721px 是空的——与 hero 844px 死区同一类毛病。
+assert.match(css, /\.modern-stage-grid \{[^}]*grid-auto-flow:\s*column/, "stage grid must size columns to visible panes only");
+assert.doesNotMatch(css, /\.modern-stage-grid \{[^}]*repeat\(3,\s*minmax\(0,1fr\)\)/, "stage grid must not reserve columns for hidden panes");
 
 console.log("studio modern shell tests passed");

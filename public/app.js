@@ -4254,7 +4254,7 @@ function renderModernEpisodes(project, percent, total, completed) {
   const node = $("#modernEpisodeList");
   if (!node) return;
   const label = project.episodeSlug || "当前项目";
-  node.innerHTML = `<button class="modern-episode-row is-active ${completed === total && total ? "is-complete" : ""}" type="button" aria-current="page"><span>01</span><div><strong>${escapeHtml(label)}</strong><small>${total ? `${completed} / ${total} 镜完成` : "等待流程启动"}</small></div><i></i></button>`;
+  node.innerHTML = `<button class="modern-episode-row is-active ${completed === total && total ? "is-complete" : ""}" type="button" aria-current="page"><span class="modern-episode-thumb" aria-hidden="true"></span><div><strong>${escapeHtml(label)}</strong><small>${total ? `${completed} / ${total} 镜完成` : "等待流程启动"}</small></div><i></i></button>`;
 }
 
 function modernShotMediaMarkup(data, shot, index) {

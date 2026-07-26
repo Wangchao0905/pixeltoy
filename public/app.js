@@ -4370,10 +4370,36 @@ function renderModernAssetGenerationControls(data = state.project) {
   state.assetUploadTargetId = targetSelect.value || "";
 }
 
+function modernAssetGenerationStatus(data = state.project) {
+  const manifest = data?.assetManifest || {};
+  const slots = mergeSlotsWithScannedAssets(
+    data?.assetSlots || buildAssetSlots(manifest, data?.assets || []),
+    data?.assets || [],
+  );
+  const eligible = slots.filter((slot) => !slot.skipped && slot.status !== "skipped");
+  const ready = eligible.filter((slot) => slot.status === "ready" || slot.asset?.url).length;
+  const failed = eligible.filter((slot) => slot.status === "failed" || slot.failed).length;
+  const assetJob = data?.assetJob || (data?.jobs || []).find((job) => /asset|image/i.test(`${job?.type || ""} ${job?.command || ""}`));
+  const jobStatus = String(assetJob?.status || "").toLowerCase();
+  const parsed = parseAssetJobLog(assetJob?.logs || "");
+  const planned = Math.max(eligible.length, Number(assetJob?.targetAssetNames?.length || 0), parsed.generated + parsed.failed);
+  const completed = Math.min(planned || ready, Math.max(ready, parsed.generated));
+  const progress = planned ? `${completed}/${planned}` : `${ready} 项`;
+
+  if (jobStatus === "running") return { state: "running", text: `资产图生成中 · ${progress}` };
+  if (jobStatus === "queued") return { state: "queued", text: `资产图排队中 · ${progress}` };
+  if (jobStatus === "failed" || failed) return { state: "failed", text: `资产图生成失败 · ${failed || "请重试"}` };
+  if (jobStatus === "complete" && planned && completed < planned) return { state: "partial", text: `部分完成 · ${progress}` };
+  if (planned && completed >= planned) return { state: "complete", text: `资产图已完成 · ${progress}` };
+  if (eligible.length) return { state: "idle", text: `等待生成资产图 · ${ready}/${eligible.length} 已生成` };
+  return { state: "idle", text: manifest?.items?.length ? "确认资产后可生成资产图" : "等待解析资产文档" };
+}
+
 function renderModernAssetResults(data = state.project) {
   const overview = $("#modernAssetManifestOverview");
   const gallery = $("#modernAssetGallery");
   const status = $("#modernAssetManifestStatus");
+  const generationStatus = $("#modernAssetGenerationStatus");
   const confirmButton = $("#modernConfirmAssetManifest");
   if (!overview || !gallery || !status || !confirmButton) return;
 
@@ -4389,6 +4415,12 @@ function renderModernAssetResults(data = state.project) {
     ["道具", items.filter((item) => ["Prop", "Insert"].includes(item.type))],
   ];
   renderModernAssetGenerationControls(data);
+
+  if (generationStatus) {
+    const generation = modernAssetGenerationStatus(data);
+    generationStatus.className = `modern-asset-generation-status is-${generation.state}`;
+    generationStatus.textContent = generation.text;
+  }
 
   status.textContent = extracting
     ? "模型正在分析资产文档…"
@@ -4420,15 +4452,23 @@ function renderModernAssetResults(data = state.project) {
     index,
     slots.filter((slot) => types.includes(slot.type) || (!slot.type && label === "道具")),
   ]).filter(([, , , list]) => list.length);
+  const activeTargets = activeJobTargets(data?.jobs || data?.assetJob);
   const renderModernAssetCard = (slot) => {
     const name = slot.id || slot.label || "";
     const asset = slot.asset || assetsByName.get(name);
     const image = asset?.url || asset?.file || "";
-    const statusLabel = asset ? "已就绪" : assetSlotStatusLabel(slot);
-    return `<button class="modern-asset-card" type="button" data-modern-asset-preview="${escapeAttr(name)}" aria-label="查看资产 ${escapeAttr(name)}">
-      <span class="modern-asset-card-media">${image ? `<img src="${escapeAttr(image)}" alt="${escapeAttr(slot.label || name)}" loading="lazy" />` : `<span>${escapeHtml(statusLabel)}</span>`}</span>
-      <span class="modern-asset-card-copy"><strong>${escapeHtml(slot.label || name)}</strong><small>${escapeHtml(statusLabel)}</small></span>
-    </button>`;
+    const isGenerating = slot.status === "running" || isActiveJobTarget(activeTargets, name, asset?.assetName, asset?.name);
+    const isFailed = !isGenerating && (slot.status === "failed" || slot.failed);
+    const statusLabel = isGenerating ? "生成中" : isFailed ? "生成失败" : asset ? "已就绪" : slot.skipped ? "已跳过" : "待生成";
+    const actionLabel = isGenerating ? "生成中" : asset ? "重新生成" : isFailed ? "重试生成" : "生成资产图";
+    const actionDisabled = isGenerating || slot.skipped;
+    return `<article class="modern-asset-card ${isGenerating ? "is-generating" : ""} ${isFailed ? "is-failed" : ""}" data-modern-asset-name="${escapeAttr(name)}">
+      <button class="modern-asset-card-preview" type="button" data-modern-asset-preview="${escapeAttr(name)}" aria-label="查看资产 ${escapeAttr(name)}">
+        <span class="modern-asset-card-media">${image ? `<img src="${escapeAttr(image)}" alt="${escapeAttr(slot.label || name)}" loading="lazy" />` : `<span>${escapeHtml(statusLabel)}</span>`}</span>
+      </button>
+      <div class="modern-asset-card-copy"><strong>${escapeHtml(slot.label || name)}</strong><small class="modern-asset-card-status is-${isGenerating ? "running" : isFailed ? "failed" : asset ? "ready" : "waiting"}">${escapeHtml(statusLabel)}</small></div>
+      <button class="modern-asset-card-action ${isGenerating ? "is-running" : ""}" type="button" data-modern-asset-action="${escapeAttr(name)}" ${actionDisabled ? "disabled" : ""}>${actionLabel}</button>
+    </article>`;
   };
   gallery.innerHTML = galleryGroups.length
     ? galleryGroups.map(([label, kicker, index, list]) => `<section class="modern-asset-wall-group">
@@ -8316,6 +8356,17 @@ function bind() {
     }).catch((error) => toast(error.message));
   });
   $("#modernAssetGallery")?.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-modern-asset-action]");
+    if (action) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (action.disabled) return;
+      const name = action.dataset.modernAssetAction || "";
+      if (!name) return;
+      selectAssetForInspector(name);
+      regenerateAsset(name, { force: !!assetForName(name) }).catch((error) => toast(error.message));
+      return;
+    }
     const name = event.target.closest("[data-modern-asset-preview]")?.dataset.modernAssetPreview;
     if (name) selectAssetForInspector(name);
     const asset = assetForName(name);

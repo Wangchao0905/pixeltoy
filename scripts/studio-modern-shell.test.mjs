@@ -68,10 +68,14 @@ const assetWallStart = html.indexOf('id="modernAssetWall"');
 assert.ok(sourcePanelStart >= 0 && kitBarStart > sourcePanelStart && assetWallStart > kitBarStart, "资产图墙必须移出资产文档视图");
 const modernAssetImagePanel = html.match(/<section id="modernAssetImagePanel"[\s\S]*?<\/section>/)?.[0] || "";
 assert.ok(modernAssetImagePanel.includes('id="modernAssetWall"'), "资产图墙必须位于独立的资产图展示页");
+assert.ok(modernAssetImagePanel.includes('id="modernAssetGenerationStatus"'), "资产图模块必须有可见的生成状态提醒");
 for (const id of ["modernAssetGenerateAssets", "modernAssetPromptInspector", "modernAssetPromptInspectorPrompt", "modernAssetRegeneratePrompt"]) {
   assert.match(html, new RegExp(`id="${id}"`), `资产图展示页缺少 ${id}`);
 }
 assert.match(js, /modernAssetGenerateAssets[\s\S]{0,700}\[data-job='assets'\]/, "资产图页生成入口必须代理现有资产生成任务");
+assert.match(js, /function modernAssetGenerationStatus[\s\S]{0,1400}assetJob/, "资产图生成状态必须读取实际任务状态");
+assert.match(js, /const generation = modernAssetGenerationStatus\(data\)/, "资产图页面必须渲染生成状态提醒");
+assert.match(js, /data-modern-asset-action/, "资产图卡片必须提供单卡片生成或重新生成动作");
 assert.match(js, /modernAssetPromptInspectorPrompt[\s\S]{0,700}ensureAssetPromptDraft[\s\S]{0,500}draft\.dirty/, "资产图页提示词编辑必须复用草稿机制");
 assert.match(js, /modernAssetRegeneratePrompt[\s\S]{0,500}regenerateSelectedAssetFromInspector/, "资产图页重新生成必须复用检查器链路");
 // 只取 .modern-asset-image-* 自己的规则做柠檬色检查。此前写成

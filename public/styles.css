@@ -16183,15 +16183,15 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
   }
 }
 .modern-brand-copy { display: flex; min-width: 0; align-items: center; gap: 7px; }
-.modern-brand-copy strong { overflow: hidden; color: var(--mv-tx); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.modern-brand-copy span { padding: 2px 5px; border: 1px solid var(--mv-line-2); border-radius: 4px; color: var(--mv-qt); font-family: var(--mono); font-size: 8px; }
-.modern-eyebrow { color: var(--mv-qt); font-family: var(--mono); font-size: 9px; letter-spacing: .08em; }
+.modern-brand-copy strong { overflow: hidden; color: var(--mv-tx); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-brand-copy span { padding: 2px 5px; border: 1px solid var(--mv-line-2); border-radius: 4px; color: var(--mv-qt); font-family: var(--mono); font-size: 10px; }
+.modern-eyebrow { color: var(--mv-qt); font-family: var(--mono); font-size: 11px; letter-spacing: .08em; }
 .modern-series-context { display: grid; flex: none; grid-template-columns: 28px minmax(0,1fr) 10px; gap: 9px; align-items: center; margin: 12px 14px 0; padding: 9px 10px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s2); box-shadow: var(--mv-hi); }
 .modern-project-thumb { display: block; width: 28px; height: 28px; border-radius: 6px; background: linear-gradient(150deg, #3A2E5C, #1E2A3A 60%, #4A3550); box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }
 .modern-project-copy { min-width: 0; }
-.modern-series-context h2 { margin: 4px 0 0; overflow: hidden; color: var(--mv-tx); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.modern-series-context h2 { margin: 4px 0 0; overflow: hidden; color: var(--mv-tx); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .modern-series-context p { margin: 4px 0 0; overflow: hidden; color: var(--mv-mut); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
-.modern-project-chevron { color: var(--mv-qt); font-size: 12px; font-style: normal; }
+.modern-project-chevron { color: var(--mv-qt); font-size: 14px; font-style: normal; }
 .modern-episode-list { display: grid; flex: 1 1 auto; align-content: start; min-height: 0; gap: 3px; padding: 12px 14px; overflow-x: hidden; overflow-y: auto; }
 .modern-episode-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) 5px; gap: 9px; align-items: center; width: 100%; min-height: 40px; padding: 6px 8px; border: 1px solid transparent; border-left: 2px solid transparent; border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); text-align: left; }
 .modern-episode-row:hover { background: rgba(255,255,255,.032); color: var(--mv-tx); }
@@ -16201,14 +16201,14 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-episode-row > div { min-width: 0; display: grid; gap: 4px; }
 .modern-episode-row strong, .modern-episode-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modern-episode-row strong { font-size: 11.5px; font-weight: 500; }
-.modern-episode-row small { color: var(--mv-qt); font-family: var(--mono); font-size: 9px; }
+.modern-episode-row small { color: var(--mv-qt); font-family: var(--mono); font-size: 11px; }
 .modern-episode-row > i { width: 5px; height: 5px; border-radius: 50%; background: var(--mv-s3); }
 .modern-episode-row.is-complete > i { background: var(--mv-ok); }
 .modern-episode-row.is-active > i { background: var(--mv-lime); box-shadow: 0 0 0 3px rgba(200,255,46,.16); }
 .modern-series-footer { display: grid; flex: none; gap: 11px; margin-top: auto; padding: 14px; border-top: 1px solid var(--mv-line); }
 .modern-progress-track { height: 3px; overflow: hidden; border-radius: 99px; background: var(--mv-line); }
 .modern-progress-track span { display: block; width: 0; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--mv-vio), var(--mv-lime)); box-shadow: 0 0 12px rgba(200,255,46,.4); transition: width 240ms ease; }
-.modern-progress-label { display: flex; justify-content: space-between; margin-top: 7px; color: var(--mv-qt); font-size: 10px; }
+.modern-progress-label { display: flex; justify-content: space-between; margin-top: 7px; color: var(--mv-qt); font-size: 12px; }
 .modern-progress-label strong { color: var(--mv-tx); font-family: var(--mono); }
 .modern-bible-entry { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; width: 100%; min-height: 48px; padding: 8px 10px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s1); box-shadow: var(--mv-hi); color: var(--mv-mut); text-align: left; }
 .modern-bible-entry:hover { border-color: var(--mv-line-2); background: var(--mv-s2); color: var(--mv-tx); }
@@ -16219,10 +16219,10 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 
 .modern-main { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; background: var(--mv-bg); color: var(--mv-tx); }
 .modern-topbar { display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; gap: 18px; align-items: center; min-height: 56px; height: 60px; padding: 0 22px; border-bottom: 1px solid var(--mv-line); background: rgba(11,11,15,.72); box-shadow: var(--mv-hi); }
-.modern-breadcrumb { display: flex; gap: 9px; align-items: baseline; min-width: 0; font-size: 11.5px; }.modern-breadcrumb span, .modern-breadcrumb i { color: var(--mv-qt); font-style: normal; }.modern-breadcrumb i { color: var(--mv-s3); }.modern-breadcrumb h1 { margin: 0; overflow: hidden; color: var(--mv-tx); font-size: 15px; font-weight: 600; letter-spacing: 0; white-space: nowrap; text-overflow: ellipsis; }.modern-breadcrumb h1 span { color: inherit; }.modern-ratio-badge { flex: none; padding: 2.5px 7px; border: 1px solid var(--mv-line-2); border-radius: 5px; color: var(--mv-mut); font-family: var(--mono); font-size: 9px; font-weight: 500; }
-.modern-top-description { min-width: 0; overflow: hidden; margin: 0; color: var(--mv-qt); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }.modern-top-actions { display: flex; align-items: center; gap: 9px; }.modern-quiet-button, .modern-queue-button { min-height: 30px; padding: 0 11px; border: 1px solid var(--mv-line); border-radius: 8px; background: var(--mv-s1); color: var(--mv-mut); font-size: 10px; }.modern-quiet-button:hover, .modern-queue-button:hover { border-color: var(--mv-line-2); color: var(--mv-tx); }.modern-queue-button { display: inline-flex; gap: 7px; align-items: center; }.modern-queue-button i { width: 5px; height: 5px; border-radius: 50%; background: var(--mv-amb); box-shadow: 0 0 8px var(--mv-amb); }
-.modern-episode-stats { display: flex; gap: 20px; margin: 0; }.modern-episode-stats div { text-align: right; }.modern-episode-stats dt { color: var(--mv-qt); font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; }.modern-episode-stats dd { margin: 1px 0 0; color: var(--mv-tx); font-family: var(--mono); font-size: 15px; }
-.modern-episode-action { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 9px; align-items: center; min-width: 190px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: linear-gradient(145deg, #D6FF52, #A8E01C); box-shadow: 0 4px 16px -5px rgba(200,255,46,.6), var(--mv-hi); color: #0B0B0F; text-align: left; }.modern-episode-action:hover { filter: brightness(1.07); }.modern-episode-action span { display: grid; gap: 2px; }.modern-episode-action b { font-size: 11.5px; font-weight: 600; }.modern-episode-action small { color: rgba(11,11,15,.68); font-size: 9px; }.modern-episode-action i { color: rgba(11,11,15,.65); font-style: normal; }
+.modern-breadcrumb { display: flex; gap: 9px; align-items: baseline; min-width: 0; font-size: 11.5px; }.modern-breadcrumb span, .modern-breadcrumb i { color: var(--mv-qt); font-style: normal; }.modern-breadcrumb i { color: var(--mv-s3); }.modern-breadcrumb h1 { margin: 0; overflow: hidden; color: var(--mv-tx); font-size: 17px; font-weight: 600; letter-spacing: 0; white-space: nowrap; text-overflow: ellipsis; }.modern-breadcrumb h1 span { color: inherit; }.modern-ratio-badge { flex: none; padding: 2.5px 7px; border: 1px solid var(--mv-line-2); border-radius: 5px; color: var(--mv-mut); font-family: var(--mono); font-size: 11px; font-weight: 500; }
+.modern-top-description { min-width: 0; overflow: hidden; margin: 0; color: var(--mv-qt); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }.modern-top-actions { display: flex; align-items: center; gap: 9px; }.modern-quiet-button, .modern-queue-button { min-height: 30px; padding: 0 11px; border: 1px solid var(--mv-line); border-radius: 8px; background: var(--mv-s1); color: var(--mv-mut); font-size: 12px; }.modern-quiet-button:hover, .modern-queue-button:hover { border-color: var(--mv-line-2); color: var(--mv-tx); }.modern-queue-button { display: inline-flex; gap: 7px; align-items: center; }.modern-queue-button i { width: 5px; height: 5px; border-radius: 50%; background: var(--mv-amb); box-shadow: 0 0 8px var(--mv-amb); }
+.modern-episode-stats { display: flex; gap: 20px; margin: 0; }.modern-episode-stats div { text-align: right; }.modern-episode-stats dt { color: var(--mv-qt); font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; }.modern-episode-stats dd { margin: 1px 0 0; color: var(--mv-tx); font-family: var(--mono); font-size: 17px; }
+.modern-episode-action { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 9px; align-items: center; min-width: 190px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: linear-gradient(145deg, #D6FF52, #A8E01C); box-shadow: 0 4px 16px -5px rgba(200,255,46,.6), var(--mv-hi); color: #0B0B0F; text-align: left; }.modern-episode-action:hover { filter: brightness(1.07); }.modern-episode-action span { display: grid; gap: 2px; }.modern-episode-action b { font-size: 11.5px; font-weight: 600; }.modern-episode-action small { color: rgba(11,11,15,.68); font-size: 11px; }.modern-episode-action i { color: rgba(11,11,15,.65); font-style: normal; }
 
 /* flex: none —— .modern-main 是 flex column，不锁的话 pipeline 被压到 43px，
    而内容需要 55px，副标签下半截被裁。
@@ -16233,9 +16233,9 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-pipeline button { position: relative; display: flex; flex: 0 1 auto; gap: 10px; align-items: center; min-width: 0; min-height: 40px; padding: 9px 15px 9px 12px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--mv-qt); text-align: left; }
 .modern-pipeline button:hover { background: rgba(255,255,255,.032); color: var(--mv-mut); }.modern-pipeline button.is-active { box-shadow: inset 0 0 0 1px var(--mv-line-2); color: var(--mv-tx); }
 .modern-pipeline button > div { min-width: 0; }.modern-pipeline-mark { display: grid; flex: 0 0 22px; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--mv-s2); box-shadow: inset 0 0 0 1px var(--mv-line); color: var(--mv-qt); font-family: var(--mono); font-size: 9.5px; }
-.modern-pipeline b { display: block; font-size: 11.5px; font-weight: 500; white-space: nowrap; }.modern-pipeline small { display: block; overflow: hidden; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; white-space: nowrap; text-overflow: ellipsis; }.modern-pipeline button.is-complete .modern-pipeline-mark { background: rgba(110,231,160,.14); box-shadow: inset 0 0 0 1px rgba(110,231,160,.3); color: var(--mv-ok); font-size: 0; }.modern-pipeline button.is-complete .modern-pipeline-mark::before { content: "✓"; font-size: 12px; }.modern-pipeline button.is-complete b { color: var(--mv-mut); }
+.modern-pipeline b { display: block; font-size: 11.5px; font-weight: 500; white-space: nowrap; }.modern-pipeline small { display: block; overflow: hidden; color: var(--mv-qt); font-family: var(--mono); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }.modern-pipeline button.is-complete .modern-pipeline-mark { background: rgba(110,231,160,.14); box-shadow: inset 0 0 0 1px rgba(110,231,160,.3); color: var(--mv-ok); font-size: 0; }.modern-pipeline button.is-complete .modern-pipeline-mark::before { content: "✓"; font-size: 14px; }.modern-pipeline button.is-complete b { color: var(--mv-mut); }
 .modern-pipeline button.is-current { border-color: rgba(200,255,46,.2); background: linear-gradient(180deg, rgba(200,255,46,.09), rgba(200,255,46,.02)); color: var(--mv-tx); }.modern-pipeline button.is-current .modern-pipeline-mark { background: linear-gradient(145deg, var(--mv-lime), #9FD119); box-shadow: 0 3px 12px -3px rgba(200,255,46,.6); color: #0B0B0F; font-weight: 700; }.modern-pipeline button.is-current b { color: var(--mv-tx); }.modern-pipeline button.is-current small { color: rgba(200,255,46,.75); }
-.modern-pipeline-link { display: flex; flex: 0 0 26px; align-items: center; justify-content: center; width: 26px; color: var(--mv-s3); font-size: 10px; }.modern-pipeline-link.is-complete { color: rgba(110,231,160,.45); }
+.modern-pipeline-link { display: flex; flex: 0 0 26px; align-items: center; justify-content: center; width: 26px; color: var(--mv-s3); font-size: 12px; }.modern-pipeline-link.is-complete { color: rgba(110,231,160,.45); }
 .modern-pipeline-rail { height: 2px; margin: 13px 22px 0; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.05); }.modern-pipeline-rail span { display: block; width: 0; height: 100%; background: linear-gradient(90deg, var(--mv-vio), var(--mv-lime)); box-shadow: 0 0 14px rgba(200,255,46,.45); transition: width 240ms ease; }
 .modern-main[data-modern-view="assets"] .modern-sequence,
 .modern-main[data-modern-view="assets"] .modern-workbench { display: none; }
@@ -16260,21 +16260,21 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 /* align-items: start 让 STEP 标记与 FINAL CUT eyebrow 同一条基线；
    source-head 用的 end 会把它压到面板底部，与标题错开 40+px。 */
 .modern-cut-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 12px 14px; border-bottom: 1px solid var(--modern-line); }
-.modern-cut-head strong { display: block; margin-top: 4px; font-size: 12px; }
-.modern-cut-head small { display: block; margin-top: 4px; color: var(--modern-quiet); font-size: 10px; line-height: 1.6; }
-.modern-cut-status { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid var(--modern-line); color: var(--modern-muted); font-size: 11px; }
+.modern-cut-head strong { display: block; margin-top: 4px; font-size: 14px; }
+.modern-cut-head small { display: block; margin-top: 4px; color: var(--modern-quiet); font-size: 12px; line-height: 1.6; }
+.modern-cut-status { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid var(--modern-line); color: var(--modern-muted); font-size: 13px; }
 .modern-cut-preview { padding: 14px; }
 .modern-cut-preview .final-cut-video { position: relative; max-width: 320px; margin: 0 auto; }
 .modern-cut-preview video { width: 100%; border: 1px solid var(--modern-line); border-radius: 4px; background: #000; }
 /* align-content: center 是必需的：place-items 只管格内对齐，min-height
    撑出的富余空间仍会摊到行间，实测把图标与文字拉开 77px（应为 9px）。 */
-.modern-cut-preview .final-cut-placeholder { display: grid; place-items: center; align-content: center; gap: 9px; min-height: 190px; border: 1px dashed var(--modern-line-strong); border-radius: 4px; color: var(--modern-quiet); font-size: 10px; }
+.modern-cut-preview .final-cut-placeholder { display: grid; place-items: center; align-content: center; gap: 9px; min-height: 190px; border: 1px dashed var(--modern-line-strong); border-radius: 4px; color: var(--modern-quiet); font-size: 12px; }
 .modern-cut-preview .final-cut-placeholder svg { width: 30px; height: 30px; fill: none; stroke: var(--modern-line-strong); stroke-width: 1.5; }
 .modern-cut-foot { display: flex; justify-content: space-between; gap: 14px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--modern-line); background: var(--modern-surface-2); }
-.modern-cut-foot small { color: var(--modern-quiet); font-size: 10px; }
+.modern-cut-foot small { color: var(--modern-quiet); font-size: 12px; }
 /* 用 min-height 而非 height：全站 button{min-height:36px} 会压过 height。
    28px 沿用 .modern-pane-actions / .modern-source-actions 的既有约定。 */
-.modern-cut-foot button { min-height: 28px; padding: 0 15px; border: 0; border-radius: 3px; background: var(--modern-signal); color: #0f1112; font-size: 11px; font-weight: 600; cursor: pointer; }
+.modern-cut-foot button { min-height: 28px; padding: 0 15px; border: 0; border-radius: 3px; background: var(--modern-signal); color: #0f1112; font-size: 13px; font-weight: 600; cursor: pointer; }
 .modern-cut-foot button:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 1180px) {
   .modern-cut-panel { margin: 14px 14px 14px; }
@@ -16288,68 +16288,74 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-source-panel { display: grid; grid-template-columns: minmax(0, 1fr) 292px; margin: 18px 26px 0; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }
 .modern-source-head { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 16px; align-items: end; padding: 12px 14px; border-bottom: 1px solid var(--modern-line); }
 .modern-source-head > div { display: grid; gap: 4px; }
-.modern-source-head strong { font-size: 13px; }
-.modern-source-head small { color: var(--modern-muted); font-size: 9px; }
-.modern-source-order { color: var(--mv-qt); font-family: var(--mono); font-size: 9px; }
+.modern-source-head strong { font-size: 15px; }
+.modern-source-head small { color: var(--modern-muted); font-size: 11px; }
+.modern-source-order { color: var(--mv-qt); font-family: var(--mono); font-size: 11px; }
 .modern-source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; }
 .modern-source-field { min-width: 0; padding: 13px 14px 12px; }
 .modern-source-field + .modern-source-field { border-left: 1px solid var(--modern-line); }
 .modern-source-field > header { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-bottom: 9px; }
-.modern-source-field > header > span { color: var(--mv-qt); font-family: var(--mono); font-size: 10px; }
+.modern-source-field > header > span { color: var(--mv-qt); font-family: var(--mono); font-size: 12px; }
 .modern-source-field > header > div { min-width: 0; display: grid; gap: 3px; }
-.modern-source-field > header small { color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }
-.modern-source-field > header h3 { margin: 0; font-size: 12px; }
-.modern-source-field > header i { padding: 3px 5px; border: 1px solid var(--modern-line); border-radius: 3px; color: var(--modern-quiet); font-size: 8px; font-style: normal; white-space: nowrap; }
+.modern-source-field > header small { color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; }
+.modern-source-field > header h3 { margin: 0; font-size: 14px; }
+.modern-source-field > header i { padding: 3px 5px; border: 1px solid var(--modern-line); border-radius: 3px; color: var(--modern-quiet); font-size: 10px; font-style: normal; white-space: nowrap; }
 .modern-source-field > header i.is-saved { border-color: rgba(159,207,88,.32); color: #bde768; }
-.modern-source-field textarea { display: block; width: 100%; min-height: 105px; resize: vertical; padding: 9px; border: 1px solid var(--modern-line); border-radius: 4px; outline: 0; background: #111314; color: var(--modern-text); font-size: 10px; line-height: 1.55; }
+.modern-source-field textarea { display: block; width: 100%; min-height: 105px; resize: vertical; padding: 9px; border: 1px solid var(--modern-line); border-radius: 4px; outline: 0; background: #111314; color: var(--modern-text); font-size: 12px; line-height: 1.55; }
 .modern-source-field textarea:focus { border-color: var(--modern-signal); }
 .modern-source-actions { display: flex; gap: 6px; align-items: center; min-width: 0; margin-top: 8px; }
+/* 「支持 MD / TXT / DOCX」这类提示 span 原本没有收缩规则,字号统一 +2 后顶出容器
+   (实测 1100px:modernScriptUploadName 溢出 7px、AssetDescriptionUploadName 由 29px
+   恶化到 70px)。给它可收缩 + 省略号,而不是回退字号。 */
 .modern-source-actions input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.modern-upload-button, .modern-source-actions button { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 9px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 9px; white-space: nowrap; cursor: pointer; }
+.modern-upload-button, .modern-source-actions button { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 9px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 11px; white-space: nowrap; cursor: pointer; }
 .modern-upload-button:hover, .modern-source-actions button:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
 /* 二级：步骤内主动作。此前三处 .is-primary 各自用柠檬描边，与顶栏的柠檬
    实心 CTA 同屏竞争——暗底上描边柠檬的注意力权重往往还高于实心，主次是
    反的。改为中性实心，靠「实心 vs 描边」而非色相拉开层级。 */
 .modern-source-actions button.is-primary { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); box-shadow: var(--mv-hi); font-weight: 500; }
-.modern-source-actions > span { min-width: 0; flex: 1; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+/* flex: 1 会被兄弟按钮挤扁——字号统一 +2 后实测 1100px 下「支持 TXT / DOCX」
+   可见比例从 58% 掉到 19%,只剩一个省略号。改成不收缩,容器已有 flex-wrap,
+   放不下就整体换行独占一行;ellipsis 只作独占一行仍不够时的兜底。 */
+.modern-source-actions > span { min-width: 0; flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .modern-asset-results { min-width: 0; grid-column: 2; grid-row: 2; padding: 13px 14px 14px; border-left: 1px solid var(--modern-line); }
 .modern-asset-results-head { display: flex; gap: 10px; align-items: start; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid var(--modern-line); }
 .modern-asset-results-head > div { min-width: 0; display: grid; gap: 4px; }
-.modern-asset-results-head strong { font-size: 12px; }
-.modern-asset-results-head small { color: var(--modern-muted); font-size: 9px; line-height: 1.45; }
-.modern-asset-results-head button { flex: 0 0 auto; min-height: 27px; padding: 0 8px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 9px; }
+.modern-asset-results-head strong { font-size: 14px; }
+.modern-asset-results-head small { color: var(--modern-muted); font-size: 11px; line-height: 1.45; }
+.modern-asset-results-head button { flex: 0 0 auto; min-height: 27px; padding: 0 8px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 11px; }
 .modern-asset-results-head button:not(:disabled) { border-color: var(--mv-line-2); color: var(--mv-tx); }
 .modern-asset-results-head button:disabled { opacity: .5; }
 .modern-asset-manifest-overview { display: grid; gap: 8px; padding: 10px 0; }
-.modern-asset-manifest-empty { color: var(--modern-quiet); font-size: 9px; line-height: 1.5; }
+.modern-asset-manifest-empty { color: var(--modern-quiet); font-size: 11px; line-height: 1.5; }
 .modern-asset-group { display: grid; gap: 5px; }
-.modern-asset-group > header { display: flex; justify-content: space-between; gap: 8px; color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }
-.modern-asset-group > header strong { color: var(--modern-muted); font-family: inherit; font-size: 8px; font-weight: 500; }
+.modern-asset-group > header { display: flex; justify-content: space-between; gap: 8px; color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; }
+.modern-asset-group > header strong { color: var(--modern-muted); font-family: inherit; font-size: 10px; font-weight: 500; }
 .modern-asset-chip-list { display: flex; flex-wrap: wrap; gap: 4px; }
-.modern-asset-chip { display: inline-flex; max-width: 100%; padding: 4px 6px; overflow: hidden; border: 1px solid var(--modern-line); border-radius: 3px; color: var(--modern-text); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-asset-chip { display: inline-flex; max-width: 100%; padding: 4px 6px; overflow: hidden; border: 1px solid var(--modern-line); border-radius: 3px; color: var(--modern-text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .modern-asset-chip.is-skipped { color: var(--modern-quiet); text-decoration: line-through; }
 .modern-asset-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding-top: 9px; border-top: 1px solid var(--modern-line); }
 .modern-asset-card { min-width: 0; overflow: hidden; border: 1px solid var(--modern-line); border-radius: 3px; background: #111314; }
 .modern-asset-card-media { aspect-ratio: 1 / 1; display: grid; place-items: center; overflow: hidden; background: #0c0e0f; }
 .modern-asset-card-media img { width: 100%; height: 100%; object-fit: cover; }
-.modern-asset-card-media span { padding: 7px; color: var(--modern-quiet); font-size: 8px; text-align: center; }
-.modern-asset-card > strong { display: block; padding: 5px 6px 6px; overflow: hidden; color: var(--modern-muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.modern-kit-bar { display: grid; grid-template-columns: minmax(230px,1.2fr) minmax(170px,1fr) minmax(120px,.7fr) auto; gap: 18px; align-items: center; margin: 18px 26px 0; padding: 12px 14px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }.modern-kit-bar > div { min-width: 0; display: flex; gap: 10px; align-items: center; }.modern-kit-bar > div > span:not(.modern-kit-mark) { color: var(--modern-quiet); font-size: 9px; }.modern-kit-bar strong, .modern-kit-bar b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }/* 徽章是标签不是动作，不用动作色。 */
-.modern-kit-mark { display: grid; place-items: center; width: 33px; height: 28px; border: 1px solid var(--mv-line-2); border-radius: var(--mv-r-s); background: var(--mv-s3); color: var(--mv-mut); font-family: var(--mono); font-size: 9px; }.modern-kit-bar button { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line-strong); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 10px; }.modern-kit-bar button:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
-.modern-sequence { margin: 18px 26px 0; }.modern-sequence > header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 10px; }.modern-sequence > header > div { display: grid; gap: 4px; }.modern-sequence > header strong { font-size: 13px; }.modern-sequence > header > span { color: var(--modern-quiet); font-family: var(--mono); font-size: 9px; }.modern-shot-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 550; }.modern-shot-card small { display: block; margin-top: 3px; color: var(--modern-quiet); font-size: 8px; }
-.modern-workbench { margin: 22px 26px 28px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }.modern-shot-commandbar { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 18px; align-items: center; padding: 13px 15px; border-bottom: 1px solid var(--modern-line); }.modern-selected-shot { display: flex; gap: 11px; align-items: center; min-width: 0; }.modern-selected-shot > span { color: var(--mv-qt); font-family: var(--mono); font-size: 13px; }.modern-selected-shot h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }.modern-selected-shot p { margin: 4px 0 0; color: var(--modern-quiet); font-size: 9px; }.modern-shot-lineage { display: flex; gap: 7px; align-items: center; color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }.modern-shot-lineage span.is-done { color: #a8d65c; }.modern-shot-lineage i { width: 16px; height: 1px; background: var(--modern-line-strong); }.modern-shot-action { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line-strong); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 10px; }.modern-shot-action:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
+.modern-asset-card-media span { padding: 7px; color: var(--modern-quiet); font-size: 10px; text-align: center; }
+.modern-asset-card > strong { display: block; padding: 5px 6px 6px; overflow: hidden; color: var(--modern-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-kit-bar { display: grid; grid-template-columns: minmax(230px,1.2fr) minmax(170px,1fr) minmax(120px,.7fr) auto; gap: 18px; align-items: center; margin: 18px 26px 0; padding: 12px 14px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }.modern-kit-bar > div { min-width: 0; display: flex; gap: 10px; align-items: center; }.modern-kit-bar > div > span:not(.modern-kit-mark) { color: var(--modern-quiet); font-size: 11px; }.modern-kit-bar strong, .modern-kit-bar b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }/* 徽章是标签不是动作，不用动作色。 */
+.modern-kit-mark { display: grid; place-items: center; width: 33px; height: 28px; border: 1px solid var(--mv-line-2); border-radius: var(--mv-r-s); background: var(--mv-s3); color: var(--mv-mut); font-family: var(--mono); font-size: 11px; }.modern-kit-bar button { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line-strong); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 12px; }.modern-kit-bar button:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
+.modern-sequence { margin: 18px 26px 0; }.modern-sequence > header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 10px; }.modern-sequence > header > div { display: grid; gap: 4px; }.modern-sequence > header strong { font-size: 15px; }.modern-sequence > header > span { color: var(--modern-quiet); font-family: var(--mono); font-size: 11px; }.modern-shot-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 550; }.modern-shot-card small { display: block; margin-top: 3px; color: var(--modern-quiet); font-size: 10px; }
+.modern-workbench { margin: 22px 26px 28px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }.modern-shot-commandbar { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 18px; align-items: center; padding: 13px 15px; border-bottom: 1px solid var(--modern-line); }.modern-selected-shot { display: flex; gap: 11px; align-items: center; min-width: 0; }.modern-selected-shot > span { color: var(--mv-qt); font-family: var(--mono); font-size: 15px; }.modern-selected-shot h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }.modern-selected-shot p { margin: 4px 0 0; color: var(--modern-quiet); font-size: 11px; }.modern-shot-lineage { display: flex; gap: 7px; align-items: center; color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; }.modern-shot-lineage span.is-done { color: #a8d65c; }.modern-shot-lineage i { width: 16px; height: 1px; background: var(--modern-line-strong); }.modern-shot-action { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line-strong); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 12px; }.modern-shot-action:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
 /* 固定三列时，视图作用域隐藏掉两个面板后剩下那个只占 1/3，实测 1081px
    容器里 721px 是空的——与已修掉的 hero 844px 死区同一类毛病。改成按
    可见项生成列。 */
-.modern-stage-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); }.modern-stage-pane { min-width: 0; padding: 14px; border-right: 1px solid var(--modern-line); }.modern-stage-pane:last-child { border-right: 0; }.modern-stage-pane > header { display: grid; grid-template-columns: 22px minmax(0,1fr) auto; gap: 8px; align-items: center; padding-bottom: 11px; border-bottom: 1px solid var(--modern-line); }.modern-stage-pane > header > span { color: var(--mv-qt); font-family: var(--mono); font-size: 10px; }.modern-stage-pane > header > div { min-width: 0; }.modern-stage-pane > header small { color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }.modern-stage-pane > header h3 { margin: 4px 0 0; font-size: 12px; }.modern-stage-pane > header > i { padding: 3px 5px; border: 1px solid var(--modern-line); border-radius: 3px; color: var(--modern-quiet); font-size: 8px; font-style: normal; white-space: nowrap; }.modern-stage-pane > header > i.is-complete { border-color: rgba(159,207,88,.32); color: #bde768; }.modern-stage-pane > header > i.is-running { border-color: rgba(200,255,46,.42); color: var(--modern-signal); }.modern-stage-pane > header > i.is-failed { border-color: rgba(242,122,91,.4); color: var(--modern-accent); }
-.modern-copy-tabs { display: flex; gap: 5px; margin: 12px 0 8px; }.modern-copy-tabs button { min-height: 26px; padding: 0 8px; border: 1px solid var(--modern-line); border-radius: 3px; background: transparent; color: var(--modern-quiet); font-size: 9px; }/* 标签是导航不是动作，不用动作色；靠表面明度表示选中。 */
-.modern-copy-tabs button.is-active { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); box-shadow: var(--mv-hi); }.modern-copy-label { display: block; margin-bottom: 5px; color: var(--modern-quiet); font-size: 9px; }.modern-stage-pane textarea { width: 100%; min-height: 168px; resize: vertical; padding: 9px; border: 1px solid var(--modern-line); border-radius: 4px; outline: 0; background: #111314; color: var(--modern-text); font-size: 11px; line-height: 1.55; }.modern-stage-pane textarea:focus { border-color: var(--modern-signal); }.modern-copy-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 7px; }.modern-copy-footer span { color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }.modern-copy-footer button, .modern-pane-actions button { min-height: 28px; padding: 0 9px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 9px; }.modern-copy-footer button:hover, .modern-pane-actions button:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
-.modern-shot-meta { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; margin: 12px 0 0; }.modern-shot-meta div { min-width: 0; padding-top: 8px; border-top: 1px solid var(--modern-line); }.modern-shot-meta dt { color: var(--modern-quiet); font-size: 8px; }.modern-shot-meta dd { margin: 4px 0 0; overflow: hidden; color: var(--modern-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.modern-reference-strip { display: flex; justify-content: space-between; gap: 8px; margin: 12px 0 9px; padding: 7px 8px; border: 1px solid var(--modern-line); background: #111314; color: var(--modern-muted); font-size: 8px; }.modern-reference-strip b { color: var(--mv-tx); font-weight: 500; }.modern-still-preview, .modern-video-preview { position: relative; display: grid; place-items: center; min-height: 206px; overflow: hidden; border: 1px solid var(--modern-line); background: #0c0e0f; }.modern-still-preview img, .modern-video-preview img, .modern-video-preview video { display: block; width: 100%; height: 206px; object-fit: cover; }.modern-empty-preview { color: var(--modern-quiet); font-size: 10px; }.modern-still-preview > .modern-empty-preview, .modern-video-preview > .modern-empty-preview { position: absolute; }.modern-still-preview img:not([src=""])+.modern-empty-preview, .modern-video-preview img:not([src=""])+.modern-empty-preview { display: none; }
+.modern-stage-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); }.modern-stage-pane { min-width: 0; padding: 14px; border-right: 1px solid var(--modern-line); }.modern-stage-pane:last-child { border-right: 0; }.modern-stage-pane > header { display: grid; grid-template-columns: 22px minmax(0,1fr) auto; gap: 8px; align-items: center; padding-bottom: 11px; border-bottom: 1px solid var(--modern-line); }.modern-stage-pane > header > span { color: var(--mv-qt); font-family: var(--mono); font-size: 12px; }.modern-stage-pane > header > div { min-width: 0; }.modern-stage-pane > header small { color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; }.modern-stage-pane > header h3 { margin: 4px 0 0; font-size: 14px; }.modern-stage-pane > header > i { padding: 3px 5px; border: 1px solid var(--modern-line); border-radius: 3px; color: var(--modern-quiet); font-size: 10px; font-style: normal; white-space: nowrap; }.modern-stage-pane > header > i.is-complete { border-color: rgba(159,207,88,.32); color: #bde768; }.modern-stage-pane > header > i.is-running { border-color: rgba(200,255,46,.42); color: var(--modern-signal); }.modern-stage-pane > header > i.is-failed { border-color: rgba(242,122,91,.4); color: var(--modern-accent); }
+.modern-copy-tabs { display: flex; gap: 5px; margin: 12px 0 8px; }.modern-copy-tabs button { min-height: 26px; padding: 0 8px; border: 1px solid var(--modern-line); border-radius: 3px; background: transparent; color: var(--modern-quiet); font-size: 11px; }/* 标签是导航不是动作，不用动作色；靠表面明度表示选中。 */
+.modern-copy-tabs button.is-active { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); box-shadow: var(--mv-hi); }.modern-copy-label { display: block; margin-bottom: 5px; color: var(--modern-quiet); font-size: 11px; }.modern-stage-pane textarea { width: 100%; min-height: 168px; resize: vertical; padding: 9px; border: 1px solid var(--modern-line); border-radius: 4px; outline: 0; background: #111314; color: var(--modern-text); font-size: 13px; line-height: 1.55; }.modern-stage-pane textarea:focus { border-color: var(--modern-signal); }.modern-copy-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 7px; }.modern-copy-footer span { color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; }.modern-copy-footer button, .modern-pane-actions button { min-height: 28px; padding: 0 9px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 11px; }.modern-copy-footer button:hover, .modern-pane-actions button:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
+.modern-shot-meta { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; margin: 12px 0 0; }.modern-shot-meta div { min-width: 0; padding-top: 8px; border-top: 1px solid var(--modern-line); }.modern-shot-meta dt { color: var(--modern-quiet); font-size: 10px; }.modern-shot-meta dd { margin: 4px 0 0; overflow: hidden; color: var(--modern-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-reference-strip { display: flex; justify-content: space-between; gap: 8px; margin: 12px 0 9px; padding: 7px 8px; border: 1px solid var(--modern-line); background: #111314; color: var(--modern-muted); font-size: 10px; }.modern-reference-strip b { color: var(--mv-tx); font-weight: 500; }.modern-still-preview, .modern-video-preview { position: relative; display: grid; place-items: center; min-height: 206px; overflow: hidden; border: 1px solid var(--modern-line); background: #0c0e0f; }.modern-still-preview img, .modern-video-preview img, .modern-video-preview video { display: block; width: 100%; height: 206px; object-fit: cover; }.modern-empty-preview { color: var(--modern-quiet); font-size: 12px; }.modern-still-preview > .modern-empty-preview, .modern-video-preview > .modern-empty-preview { position: absolute; }.modern-still-preview img:not([src=""])+.modern-empty-preview, .modern-video-preview img:not([src=""])+.modern-empty-preview { display: none; }
 /* 反向那条此前缺失：src="" 的 img 仍占位 329×206，浏览器的裂图标与 alt
    文字压在「暂无故事板」占位层上面，实测两者同时显示。 */
 .modern-still-preview img[src=""], .modern-video-preview img[src=""] { display: none; }
-.modern-still-preview > span { position: absolute; left: 8px; bottom: 8px; padding: 4px 6px; border: 1px solid var(--mv-line-2); background: rgba(15,17,18,.82); color: var(--mv-mut); font-family: var(--mono); font-size: 8px; }.modern-pane-actions { display: flex; gap: 7px; margin-top: 9px; }.modern-pane-actions button { flex: 1; }.modern-pane-actions button.is-primary { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); box-shadow: var(--mv-hi); font-weight: 500; }.modern-motion-meta { display: flex; justify-content: space-between; margin-top: 9px; color: var(--modern-muted); font-family: var(--mono); font-size: 8px; }.modern-motion-meta strong { color: var(--modern-text); font-weight: 500; }.modern-video-progress { position: absolute; right: 8px; bottom: 8px; left: 8px; height: 3px; background: rgba(255,255,255,.14); }.modern-video-progress span { display: block; width: 0; height: 100%; background: var(--modern-signal); transition: width 220ms ease; }
+.modern-still-preview > span { position: absolute; left: 8px; bottom: 8px; padding: 4px 6px; border: 1px solid var(--mv-line-2); background: rgba(15,17,18,.82); color: var(--mv-mut); font-family: var(--mono); font-size: 10px; }.modern-pane-actions { display: flex; gap: 7px; margin-top: 9px; }.modern-pane-actions button { flex: 1; }.modern-pane-actions button.is-primary { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); box-shadow: var(--mv-hi); font-weight: 500; }.modern-motion-meta { display: flex; justify-content: space-between; margin-top: 9px; color: var(--modern-muted); font-family: var(--mono); font-size: 10px; }.modern-motion-meta strong { color: var(--modern-text); font-weight: 500; }.modern-video-progress { position: absolute; right: 8px; bottom: 8px; left: 8px; height: 3px; background: rgba(255,255,255,.14); }.modern-video-progress span { display: block; width: 0; height: 100%; background: var(--modern-signal); transition: width 220ms ease; }
 .modern-stage-pane.is-disabled { opacity: .68; }.modern-stage-pane .hidden { display: none !important; }
 .modern-stage-pane.is-focus-pulse, #modernKitBar.is-focus-pulse {
   animation: modernFocusPulse 900ms ease both !important;
@@ -16393,55 +16399,55 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-asset-wall { grid-column: 1; grid-row: 3; min-width: 0; padding: 14px; border-top: 1px solid var(--modern-line); }
 .modern-asset-wall-head { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
 .modern-asset-wall-head > div { display: grid; gap: 4px; }
-.modern-asset-wall-head strong { font-size: 13px; }
-.modern-asset-wall-head small, .modern-asset-wall-head > span { color: var(--modern-muted); font-size: 9px; }
+.modern-asset-wall-head strong { font-size: 15px; }
+.modern-asset-wall-head small, .modern-asset-wall-head > span { color: var(--modern-muted); font-size: 11px; }
 .modern-asset-gallery { display: grid; gap: 16px; padding: 0; border-top: 0; }
 .modern-asset-wall-group { display: grid; gap: 8px; min-width: 0; }
 .modern-asset-wall-group > header { display: flex; align-items: center; gap: 9px; padding-bottom: 7px; border-bottom: 1px solid var(--modern-line); }
-.modern-asset-wall-group > header > span { color: var(--mv-qt); font-family: var(--mono); font-size: 10px; }
+.modern-asset-wall-group > header > span { color: var(--mv-qt); font-family: var(--mono); font-size: 12px; }
 .modern-asset-wall-group > header > div { display: grid; gap: 2px; min-width: 0; }
-.modern-asset-wall-group > header small { color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }
-.modern-asset-wall-group > header strong { color: var(--modern-text); font-size: 12px; }
-.modern-asset-wall-group > header > b { margin-left: auto; color: var(--modern-muted); font-family: var(--mono); font-size: 9px; font-weight: 500; }
+.modern-asset-wall-group > header small { color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; }
+.modern-asset-wall-group > header strong { color: var(--modern-text); font-size: 14px; }
+.modern-asset-wall-group > header > b { margin-left: auto; color: var(--modern-muted); font-family: var(--mono); font-size: 11px; font-weight: 500; }
 .modern-asset-wall-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
 .modern-asset-card { display: grid; grid-template-rows: auto auto; min-width: 0; padding: 0; overflow: hidden; border: 1px solid var(--modern-line); border-radius: 5px; background: #111314; color: var(--modern-text); text-align: left; cursor: zoom-in; }
 .modern-asset-card:hover, .modern-asset-card:focus-visible { border-color: var(--mv-line-2); outline: none; }
 .modern-asset-card-media { aspect-ratio: 16 / 9; }
 .modern-asset-card-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; padding: 8px 9px 9px; }
-.modern-asset-card-copy strong { min-width: 0; overflow: hidden; color: var(--modern-text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.modern-asset-card-copy small { flex: 0 0 auto; color: var(--modern-muted); font-size: 9px; }
+.modern-asset-card-copy strong { min-width: 0; overflow: hidden; color: var(--modern-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-asset-card-copy small { flex: 0 0 auto; color: var(--modern-muted); font-size: 11px; }
 .modern-asset-results { grid-column: 2; grid-row: 2 / span 2; width: auto; flex: none; max-height: min(680px, calc(100vh - 250px)); overflow-y: auto; }
-.modern-asset-results-head strong { font-size: 15px; }
-.modern-asset-results-head small { font-size: 10px; }
-.modern-asset-group > header { font-size: 10px; }
-.modern-asset-group > header strong { font-size: 10px; }
+.modern-asset-results-head strong { font-size: 17px; }
+.modern-asset-results-head small { font-size: 12px; }
+.modern-asset-group > header { font-size: 12px; }
+.modern-asset-group > header strong { font-size: 12px; }
 .modern-asset-chip-list { gap: 6px; }
-.modern-asset-chip { padding: 6px 8px; font-size: 11px; }
+.modern-asset-chip { padding: 6px 8px; font-size: 13px; }
 .modern-asset-generation-controls { display: grid; gap: 8px; margin-bottom: 14px; padding: 10px; border: 1px solid var(--modern-line); border-radius: 4px; background: #111314; }
 .modern-asset-generation-row { display: grid; grid-template-columns: minmax(170px, .42fr) minmax(0, 1fr); gap: 8px; align-items: end; }
 .modern-asset-generation-row > label, .modern-asset-reference-file { display: grid; gap: 4px; min-width: 0; }
-.modern-asset-generation-row label > span, .modern-asset-reference-file > span { color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; }
-.modern-asset-generation-row select, .modern-asset-generation-row input:not([type="file"]) { width: 100%; min-height: 28px; padding: 0 8px; border: 1px solid var(--modern-line); border-radius: 3px; background: #0c0e0f; color: var(--modern-text); font-size: 10px; }
+.modern-asset-generation-row label > span, .modern-asset-reference-file > span { color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; }
+.modern-asset-generation-row select, .modern-asset-generation-row input:not([type="file"]) { width: 100%; min-height: 28px; padding: 0 8px; border: 1px solid var(--modern-line); border-radius: 3px; background: #0c0e0f; color: var(--modern-text); font-size: 12px; }
 .modern-asset-generation-row select:focus, .modern-asset-generation-row input:focus { border-color: var(--modern-signal); outline: 0; }
 .modern-asset-reference-row, .modern-asset-bind-row { grid-template-columns: minmax(0, 1fr) auto auto minmax(64px, 100px); align-items: center; }
 .modern-asset-bind-row { grid-template-columns: minmax(170px, .42fr) minmax(0, 1fr) auto; }
 .modern-asset-reference-file { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; }
 .modern-asset-reference-file input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.modern-asset-reference-file label { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 8px; border: 1px solid var(--modern-line-strong); border-radius: 3px; color: var(--modern-muted); font-size: 9px; cursor: pointer; white-space: nowrap; }
+.modern-asset-reference-file label { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 8px; border: 1px solid var(--modern-line-strong); border-radius: 3px; color: var(--modern-muted); font-size: 11px; cursor: pointer; white-space: nowrap; }
 .modern-asset-reference-file label:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
-.modern-asset-reference-file small { min-width: 0; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-asset-reference-file small { min-width: 0; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .modern-asset-reference-toggle { display: inline-flex !important; grid-template-columns: auto auto !important; align-items: center; gap: 5px !important; white-space: nowrap; }
 .modern-asset-reference-toggle input { width: 13px; height: 13px; accent-color: var(--modern-signal); }
-.modern-asset-reference-row > button, .modern-asset-bind-row > button { min-height: 28px; padding: 0 9px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 9px; white-space: nowrap; }
+.modern-asset-reference-row > button, .modern-asset-bind-row > button { min-height: 28px; padding: 0 9px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: transparent; color: var(--modern-muted); font-size: 11px; white-space: nowrap; }
 .modern-asset-bind-row > button.is-primary { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); box-shadow: var(--mv-hi); font-weight: 500; }
 .modern-asset-reference-row > button:hover, .modern-asset-bind-row > button:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
 .modern-asset-style-reference-preview { width: 64px; height: 38px; overflow: hidden; border: 1px solid var(--modern-line); background: #0c0e0f; }
 .modern-asset-style-reference-preview:empty { display: none; }
 .modern-asset-style-reference-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.modern-asset-style-preview { display: flex; flex-wrap: wrap; gap: 5px 8px; align-items: center; color: var(--modern-muted); font-size: 9px; }
+.modern-asset-style-preview { display: flex; flex-wrap: wrap; gap: 5px 8px; align-items: center; color: var(--modern-muted); font-size: 11px; }
 .modern-asset-style-preview > span { color: var(--mv-qt); font-family: var(--mono); }
-.modern-asset-style-preview > small { color: var(--modern-quiet); font-size: 9px; }
-.modern-asset-style-preview > b { color: var(--modern-text); font-size: 9px; font-weight: 500; }
+.modern-asset-style-preview > small { color: var(--modern-quiet); font-size: 11px; }
+.modern-asset-style-preview > b { color: var(--modern-text); font-size: 11px; font-weight: 500; }
 
 @media (max-width: 980px) {
   .modern-source-panel { display: block; }
@@ -16464,7 +16470,11 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
   flex-direction: column;
   align-content: flex-start;
   width: 100%;
-  max-width: 1140px;
+  /* 1140px 的居中阅读栏对纯文字视图合理,但在 1512px 屏上白扔 245px
+     (实测:main 1288 → core 1140,左右各 74px 外边距 + 24px 内边距,
+     资产图墙每行只排得下 3 张)。上限提到 1560px:常见笔记本宽度下等于
+     铺满,超宽屏仍有上限,不至于一行拉出 8-9 张、文字行长过长。 */
+  max-width: 1560px;
   margin: 0 auto;
   gap: 16px;
   padding: 20px 24px 34px;
@@ -16618,7 +16628,7 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
   border-radius: var(--mv-r-s);
   background: var(--mv-bg);
 }
-.modern-asset-style-preview { color: var(--mv-mut); font-size: 10px; }
+.modern-asset-style-preview { color: var(--mv-mut); font-size: 12px; }
 .modern-asset-style-preview > span { color: var(--mv-vio); }
 .modern-asset-style-preview > small { color: var(--mv-qt); }
 .modern-asset-style-preview > b { color: var(--mv-tx); }
@@ -16677,7 +16687,7 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
   width: 100%;
   height: 100%;
   color: var(--mv-qt);
-  font-size: 10px;
+  font-size: 12px;
 }
 .modern-shot-number,
 .modern-shot-status,
@@ -16731,7 +16741,7 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-shot-card.is-failed .seg-f i,
 .seg-c.is-failed .seg-f i { background: #F27A5B; box-shadow: 0 0 7px #F27A5B; }
 .modern-shot-copy { min-width: 0; padding: 0 2px; }
-.modern-shot-copy strong { display: block; overflow: hidden; color: var(--mv-mut); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-shot-copy strong { display: block; overflow: hidden; color: var(--mv-mut); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .modern-shot-card.is-active .modern-shot-frame { box-shadow: 0 0 0 2px var(--mv-lime), var(--mv-e2); }
 .modern-shot-card.is-active .modern-shot-copy strong { color: var(--mv-tx); }
 
@@ -16772,10 +16782,10 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .specs { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
 .spec { min-width: 0; padding: 10px 12px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s2); box-shadow: var(--mv-hi); }
 .spec dt { color: var(--mv-qt); font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; }
-.spec dd { margin: 4px 0 0; color: var(--mv-tx); font-family: var(--mono); font-size: 13px; }
-.spec dd u { color: var(--mv-qt); font-size: 10px; text-decoration: none; }
+.spec dd { margin: 4px 0 0; color: var(--mv-tx); font-family: var(--mono); font-size: 15px; }
+.spec dd u { color: var(--mv-qt); font-size: 12px; text-decoration: none; }
 .note { display: grid; align-content: start; gap: 8px; padding: 12px 14px; border-left: 2px solid rgba(139,124,255,.5); border-radius: 0 var(--mv-r-s) var(--mv-r-s) 0; background: rgba(139,124,255,.06); color: var(--mv-mut); font-size: 10.5px; line-height: 1.65; }
-.note b { color: var(--mv-tx); font-family: var(--mono); font-size: 9px; letter-spacing: .1em; }
+.note b { color: var(--mv-tx); font-family: var(--mono); font-size: 11px; letter-spacing: .1em; }
 .note ul { display: grid; gap: 5px; margin: 0; padding-left: 15px; }
 .dl { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; align-content: start; align-self: stretch; width: 216px; min-width: 0; padding: 11px 13px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s2); box-shadow: var(--mv-hi); }
 .dl > u { display: block; width: 30px; height: 40px; border-radius: 4px; background: linear-gradient(160deg, #2A3242, #171B24); }
@@ -16785,7 +16795,7 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .dl .btn.is-disabled { cursor: not-allowed; opacity: .5; pointer-events: none; }
 .track { padding: 0 16px 16px; }
 .track-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 0 9px; }
-.track-h > span:last-child { color: var(--mv-qt); font-size: 10px; }
+.track-h > span:last-child { color: var(--mv-qt); font-size: 12px; }
 .segs { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 6px; }
 .seg-c { min-width: 0; overflow: hidden; border-radius: var(--mv-r-s); }
 .seg-f { position: relative; aspect-ratio: 16 / 10; overflow: hidden; border-radius: var(--mv-r-s); background: var(--mv-s2); box-shadow: inset 0 0 0 1px var(--mv-line); }
@@ -16831,8 +16841,8 @@ body.is-studio-modern ::-webkit-scrollbar-corner { background: transparent; }
 .modern-asset-image-panel { display: grid; gap: 16px; min-width: 0; }
 .modern-asset-image-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; min-width: 0; }
 .modern-asset-image-head > div { min-width: 0; }
-.modern-asset-image-head h2 { margin: 5px 0 0; color: var(--mv-tx); font-size: 22px; line-height: 1.1; }
-.modern-asset-image-head p { margin: 7px 0 0; color: var(--mv-mut); font-size: 11px; line-height: 1.5; }
+.modern-asset-image-head h2 { margin: 5px 0 0; color: var(--mv-tx); font-size: 24px; line-height: 1.1; }
+.modern-asset-image-head p { margin: 7px 0 0; color: var(--mv-mut); font-size: 13px; line-height: 1.5; }
 .modern-asset-image-action,
 .modern-asset-prompt-actions button { min-height: 32px; padding: 0 12px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); font-size: 10.5px; cursor: pointer; }
 .modern-asset-image-action.is-primary,
@@ -16843,9 +16853,9 @@ body.is-studio-modern ::-webkit-scrollbar-corner { background: transparent; }
 .modern-asset-prompt-actions button:disabled { cursor: not-allowed; opacity: .5; }
 .modern-asset-wall { min-width: 0; padding: 18px; border: 1px solid var(--mv-line); border-radius: var(--mv-r); background: var(--mv-s1); box-shadow: var(--mv-e1), var(--mv-hi); }
 .modern-asset-wall .modern-asset-wall-head { margin-bottom: 16px; }
-.modern-asset-wall .modern-asset-wall-head strong { font-size: 15px; }
+.modern-asset-wall .modern-asset-wall-head strong { font-size: 17px; }
 .modern-asset-generation-disclosure { margin-bottom: 18px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s2); }
-.modern-asset-generation-disclosure summary { padding: 11px 13px; color: var(--mv-mut); font-size: 11px; cursor: pointer; }
+.modern-asset-generation-disclosure summary { padding: 11px 13px; color: var(--mv-mut); font-size: 13px; cursor: pointer; }
 .modern-asset-generation-disclosure summary:hover { color: var(--mv-tx); }
 .modern-asset-generation-disclosure[open] summary { border-bottom: 1px solid var(--mv-line); color: var(--mv-tx); }
 .modern-asset-generation-disclosure .modern-asset-generation-controls { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
@@ -16858,24 +16868,24 @@ body.is-studio-modern ::-webkit-scrollbar-corner { background: transparent; }
 .modern-asset-card-media { aspect-ratio: 4 / 3; min-height: 190px; }
 .modern-asset-card-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .modern-asset-card-copy { padding: 10px 11px 11px; }
-.modern-asset-card-copy strong { font-size: 12px; }
-.modern-asset-card-copy small { font-size: 10px; }
+.modern-asset-card-copy strong { font-size: 14px; }
+.modern-asset-card-copy small { font-size: 12px; }
 .modern-asset-prompt-inspector { display: grid; gap: 10px; min-width: 0; padding: 16px 18px; border: 1px solid var(--mv-line); border-radius: var(--mv-r); background: var(--mv-s1); box-shadow: var(--mv-e1), var(--mv-hi); }
 .modern-asset-prompt-inspector.hidden { display: none; }
 .modern-asset-prompt-inspector > header { display: flex; align-items: start; justify-content: space-between; gap: 14px; }
 .modern-asset-prompt-inspector > header > div { display: grid; gap: 4px; min-width: 0; }
-.modern-asset-prompt-inspector > header strong { color: var(--mv-tx); font-size: 14px; }
-.modern-asset-prompt-inspector > header small { overflow: hidden; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.modern-asset-prompt-inspector > header button { min-height: 28px; padding: 0 9px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); font-size: 10px; cursor: pointer; }
+.modern-asset-prompt-inspector > header strong { color: var(--mv-tx); font-size: 16px; }
+.modern-asset-prompt-inspector > header small { overflow: hidden; color: var(--mv-qt); font-family: var(--mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-asset-prompt-inspector > header button { min-height: 28px; padding: 0 9px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); font-size: 12px; cursor: pointer; }
 .modern-asset-prompt-inspector > header button:hover { border-color: var(--mv-line-2); color: var(--mv-tx); }
 .modern-asset-prompt-inspector > label { color: var(--mv-mut); font-size: 10.5px; }
-.modern-asset-prompt-inspector > textarea { width: 100%; min-height: 150px; resize: vertical; padding: 11px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); outline: 0; background: var(--mv-bg); color: var(--mv-tx); font-size: 11px; line-height: 1.6; }
+.modern-asset-prompt-inspector > textarea { width: 100%; min-height: 150px; resize: vertical; padding: 11px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); outline: 0; background: var(--mv-bg); color: var(--mv-tx); font-size: 13px; line-height: 1.6; }
 .modern-asset-prompt-inspector > textarea:focus { border-color: var(--mv-line-2); box-shadow: var(--mv-hi); }
-.modern-asset-prompt-draft { display: flex; justify-content: space-between; gap: 10px; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; }
+.modern-asset-prompt-draft { display: flex; justify-content: space-between; gap: 10px; color: var(--mv-qt); font-family: var(--mono); font-size: 11px; }
 .modern-asset-prompt-draft span:first-child { color: var(--mv-mut); }
 .modern-asset-prompt-policy { border-top: 1px solid var(--mv-line); padding-top: 9px; }
-.modern-asset-prompt-policy summary { color: var(--mv-mut); font-size: 10px; cursor: pointer; }
-.modern-asset-prompt-policy pre { max-height: 120px; margin: 8px 0 0; overflow: auto; white-space: pre-wrap; color: var(--mv-qt); font-family: inherit; font-size: 10px; line-height: 1.5; }
+.modern-asset-prompt-policy summary { color: var(--mv-mut); font-size: 12px; cursor: pointer; }
+.modern-asset-prompt-policy pre { max-height: 120px; margin: 8px 0 0; overflow: auto; white-space: pre-wrap; color: var(--mv-qt); font-family: inherit; font-size: 12px; line-height: 1.5; }
 .modern-asset-prompt-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 /* With the image wall removed, the document step can give both source text and parsed assets real room. */
@@ -16940,14 +16950,14 @@ body.is-studio-modern .modern-icon-button { width: 32px; padding: 0; }
   background: var(--mv-bg);
 }
 .modern-episode-copy { min-width: 0; }
-.modern-episode-kicker { display: flex; gap: 10px; align-items: center; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; }
+.modern-episode-kicker { display: flex; gap: 10px; align-items: center; color: var(--mv-qt); font-family: var(--mono); font-size: 11px; }
 .modern-episode-kicker b { padding: 3px 6px; border: 1px solid rgba(217,45,69,.38); border-radius: 3px; color: #f27a5b; font-weight: 500; }
 .modern-episode-copy h2 { margin: 9px 0 0; color: var(--mv-tx); font-size: clamp(24px, 2.2vw, 34px); line-height: 1; letter-spacing: 0; }
-.modern-episode-copy p { max-width: 58ch; margin: 10px 0 0; color: var(--mv-mut); font-size: 11px; line-height: 1.55; }
+.modern-episode-copy p { max-width: 58ch; margin: 10px 0 0; color: var(--mv-mut); font-size: 13px; line-height: 1.55; }
 .modern-episode-hero-stats { display: flex; gap: 24px; margin: 0; }
 .modern-episode-hero-stats div { min-width: 56px; }
-.modern-episode-hero-stats dt { color: var(--mv-qt); font-family: var(--mono); font-size: 8px; letter-spacing: .1em; }
-.modern-episode-hero-stats dd { margin: 4px 0 0; color: var(--mv-tx); font-family: var(--mono); font-size: 18px; }
+.modern-episode-hero-stats dt { color: var(--mv-qt); font-family: var(--mono); font-size: 10px; letter-spacing: .1em; }
+.modern-episode-hero-stats dd { margin: 4px 0 0; color: var(--mv-tx); font-family: var(--mono); font-size: 20px; }
 .modern-episode-hero .modern-episode-action { min-width: 220px; min-height: 46px; padding: 0 14px; border-radius: 4px; background: var(--modern-signal); box-shadow: 0 7px 22px -12px rgba(217,45,69,.9); color: #fff; }
 .modern-episode-hero .modern-episode-action:hover { filter: brightness(1.08); }
 .modern-episode-hero .modern-episode-action small { color: rgba(255,255,255,.72); }
@@ -16966,17 +16976,17 @@ body.is-studio-modern .modern-icon-button { width: 32px; padding: 0; }
 .modern-batch-scope-accordion:not(.is-open) { display: none; }
 .modern-batch-scope-accordion > header { display: flex; justify-content: space-between; gap: 14px; align-items: end; }
 .modern-batch-scope-accordion > header > div { display: grid; gap: 4px; }
-.modern-batch-scope-accordion > header strong { font-size: 12px; }
-.modern-batch-scope-accordion > header > span { color: var(--mv-mut); font-family: var(--mono); font-size: 9px; }
+.modern-batch-scope-accordion > header strong { font-size: 14px; }
+.modern-batch-scope-accordion > header > span { color: var(--mv-mut); font-family: var(--mono); font-size: 11px; }
 .modern-batch-scope-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .modern-batch-scope-options button { display: grid; gap: 4px; min-height: 48px; padding: 9px 10px; border: 1px solid var(--mv-line); border-radius: 4px; background: var(--mv-s2); color: var(--mv-mut); text-align: left; }
 .modern-batch-scope-options button:hover { border-color: var(--mv-line-2); color: var(--mv-tx); }
 .modern-batch-scope-options button.is-selected { border-color: rgba(217,45,69,.5); background: rgba(217,45,69,.1); color: var(--mv-tx); }
-.modern-batch-scope-options b { font-size: 10px; font-weight: 600; }
-.modern-batch-scope-options small { color: var(--mv-qt); font-family: var(--mono); font-size: 8px; }
+.modern-batch-scope-options b { font-size: 12px; font-weight: 600; }
+.modern-batch-scope-options small { color: var(--mv-qt); font-family: var(--mono); font-size: 10px; }
 .modern-batch-scope-actions { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding-top: 2px; }
-.modern-batch-scope-actions > span { color: var(--mv-qt); font-size: 9px; }
-.modern-batch-scope-actions button { min-height: 30px; padding: 0 12px; border: 1px solid rgba(217,45,69,.5); border-radius: 4px; background: var(--modern-signal); color: #fff; font-size: 10px; }
+.modern-batch-scope-actions > span { color: var(--mv-qt); font-size: 11px; }
+.modern-batch-scope-actions button { min-height: 30px; padding: 0 12px; border: 1px solid rgba(217,45,69,.5); border-radius: 4px; background: var(--modern-signal); color: #fff; font-size: 12px; }
 .modern-batch-scope-actions button:disabled { opacity: .45; cursor: not-allowed; }
 
 body.is-studio-modern .modern-pipeline { padding: 15px 26px 0; }

@@ -131,7 +131,10 @@ assert.match(css, /\.studio-modern-shell\s*\{[\s\S]*height:\s*100vh[\s\S]*overfl
 assert.match(css, /\.modern-core\s*\{[\s\S]*overflow:\s*auto/, "only the core workspace may scroll internally");
 
 // 改动 3：内容区限制 measure，卡片之间露出画布，并保留浮起层次。
-assert.match(css, /\.modern-core\s*\{[^}]*max-width:\s*1140px[^}]*margin:\s*0 auto[^}]*gap:\s*16px/, "modern core must use a centered 1140px measure with 16px gaps");
+// 上限由 1140px 提到 1560px：用户实测反馈「模块整体宽度太窄」，1512px 屏上
+// 1140px 阅读栏白扔 245px（main 1288 → core 1140），资产图墙每行只排 3 张。
+// 仍保留上限（不是去掉 max-width），避免超宽屏一行排出 8-9 张、文字行长过长。
+assert.match(css, /\.modern-core\s*\{[^}]*max-width:\s*1560px[^}]*margin:\s*0 auto[^}]*gap:\s*16px/, "modern core must use a centered 1560px measure with 16px gaps");
 assert.match(css, /\.modern-source-panel\s*\{[^}]*border-radius:\s*var\(--mv-r\)[^}]*box-shadow:\s*var\(--mv-e1\),\s*var\(--mv-hi\)/, "modern cards must use the mv radius, elevation, and highlight");
 assert.match(css, /\.modern-core\s*\{[^}]*overflow-x:\s*hidden[^}]*overflow-y:\s*auto/, "core scrolling must declare both overflow axes");
 

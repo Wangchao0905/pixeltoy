@@ -4220,7 +4220,11 @@ function renderModernStudio(data = state.project) {
   const ratio = videoConfigDataFromProject()?.settings?.ratio || "9:16";
   const pct = total ? Math.round((completed / total) * 100) : 0;
   const projectName = project.seriesTitle || project.title || project.scriptTitle || title;
-  const episodeTitle = [project.episodeCode, project.episodeLabel].filter(Boolean).join(" · ") || project.episodeSlug || "制作台";
+  // 服务端 episodeCode 与 episodeLabel 同值(server.js 7916/7942 与 7967/8001 均为
+  // `const episodeLabel = episodeCode(slug)` 后 `episodeCode: episodeLabel`),
+  // 直接 join 会显示成「E01 · E01」。去重后再拼,将来两者真的分化仍然正确。
+  const episodeTitle = [...new Set([project.episodeCode, project.episodeLabel].filter(Boolean))].join(" · ")
+    || project.episodeSlug || "制作台";
   const manifest = data.assetManifest || {};
   const confirmedAssetCount = manifest.confirmed ? Number(manifest.items?.length || 0) : 0;
   const generatedAssetCount = Array.isArray(data.assets) ? data.assets.filter((asset) => asset?.url).length : 0;
@@ -4239,7 +4243,10 @@ function renderModernStudio(data = state.project) {
   $("#modernEpisodeCrumb").textContent = episodeTitle;
   $("#modernRatioBadge").textContent = ratio;
   $("#modernEpisodeCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
-  $("#modernEpisodeKicker").textContent = project.episodeCode || project.episodeSlug || "EPISODE";
+  // 眉标与正下方的 hero 标题同值时会上下叠出两个「E01」(episodeCode 与
+  // episodeTitle 在当前数据下都是 E01)。同值就退回类目词,眉标本来就是类目标签。
+  const kicker = project.episodeCode || project.episodeSlug || "";
+  $("#modernEpisodeKicker").textContent = kicker && kicker !== episodeTitle ? kicker : "EPISODE";
   $("#modernEpisodeHeroTitle").textContent = episodeTitle;
   $("#modernEpisodeHeroCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
   $("#modernHeroRatio").textContent = `${ratio} 已锁定`;

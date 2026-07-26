@@ -26,24 +26,28 @@
 
 ## Design tokens
 
-全部加在 `body.is-studio-modern` 作用域内，**不要污染全局**（legacy 视图仍在用旧变量）。
+全部加在 `body.is-studio-modern` 作用域内，**且必须带 `--mv-` 前缀**。
+
+> 初版规格用了无前缀的 `--bg` / `--line` / `--ok`，那是错的：本文件已有 4 套主题
+> 各自定义 `--bg`，即便限定在 `body.is-studio-modern` 内，后代仍会继承并覆盖
+> 它们本该拿到的全局值。改动 1 已把 42 处引用改为 `--mv-*`，后续沿用。
 
 ```css
---bg: #0B0B0F;        /* 画布 */
---s1: #13131A;        /* 卡片 */
---s2: #1A1A23;        /* 卡内抬升 */
---s3: #23232E;        /* 活动态控件 */
---line: rgba(255,255,255,.07);
---line-2: rgba(255,255,255,.12);
---tx: #EDEDF2; --mut: #9A9AA8; --qt: #62626F;
---lime: #C8FF2E;      /* 行动 / 当前 */
---vio: #8B7CFF;       /* AI 生成物 */
---amb: #FFB86B;       /* 进行中 */
---ok: #6EE7A0;        /* 完成 */
---e1: 0 1px 2px rgba(0,0,0,.5), 0 8px 24px -10px rgba(0,0,0,.6);
---e2: 0 1px 2px rgba(0,0,0,.5), 0 18px 44px -14px rgba(0,0,0,.7);
---hi: inset 0 1px 0 rgba(255,255,255,.05);
---r: 12px; --r-s: 7px;
+--mv-bg: #0B0B0F;        /* 画布 */
+--mv-s1: #13131A;        /* 卡片 */
+--mv-s2: #1A1A23;        /* 卡内抬升 */
+--mv-s3: #23232E;        /* 活动态控件 */
+--mv-line: rgba(255,255,255,.07);
+--mv-line-2: rgba(255,255,255,.12);
+--mv-tx: #EDEDF2; --mv-mut: #9A9AA8; --mv-qt: #8A8A99;  /* #62626F 仅 3.27:1，不达 AA */
+--mv-lime: #C8FF2E;      /* 行动 / 当前 */
+--mv-vio: #8B7CFF;       /* AI 生成物 */
+--mv-amb: #FFB86B;       /* 进行中 */
+--mv-ok: #6EE7A0;        /* 完成 */
+--mv-e1: 0 1px 2px rgba(0,0,0,.5), 0 8px 24px -10px rgba(0,0,0,.6);
+--mv-e2: 0 1px 2px rgba(0,0,0,.5), 0 18px 44px -14px rgba(0,0,0,.7);
+--mv-hi: inset 0 1px 0 rgba(255,255,255,.05);
+--mv-r: 12px; --mv-r-s: 7px;
 ```
 
 保留现有 `--mono` 定义（上一个 commit 刚补的，别删）。
@@ -128,3 +132,14 @@
 - 顶栏高度 ≤ 60px，且面包屑与剧集名可见
 - 成片卡内 `.cut-info` 底边与 `.cut-prev` 底边落差为 0
 - 四个流程步骤 `data-modern-focus` 值互不相同（`scripts/modern-final-cut.test.mjs` 已覆盖）
+
+## 改动 1–2 执行中踩到的坑（改动 3–6 请避开）
+
+1. **token 必须带 `--mv-` 前缀**，理由见上。
+2. **对比度**：`--mv-qt` 不能低于 4.5:1（对 `--mv-bg` 与 `--mv-s1` 都要过）。
+   9px / 11.5px 都算正文，不能按大字号的 3:1 放宽。
+3. **`.modern-main` 是 flex column**：放进去的区块若不锁 `flex: none`，会被压缩。
+   `.modern-pipeline` 就因此被压到 43px（内容需 55px），副标签裁掉 12px。
+4. **`overflow-x: auto` 会连带开纵向裁剪**：CSS 规范规定一轴非 visible 时，
+   另一轴的 visible 提升为 auto。想只横向滚动，得显式写 `overflow-y: hidden`
+   并确认纵向没有需要溢出的内容，或只在窄屏 media query 里开。

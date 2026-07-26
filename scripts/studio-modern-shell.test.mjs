@@ -139,4 +139,21 @@ assert.match(css, /body\.is-studio-modern ::-webkit-scrollbar-thumb \{[^}]*backg
 assert.match(css, /\.modern-stage-grid \{[^}]*grid-auto-flow:\s*column/, "stage grid must size columns to visible panes only");
 assert.doesNotMatch(css, /\.modern-stage-grid \{[^}]*repeat\(3,\s*minmax\(0,1fr\)\)/, "stage grid must not reserve columns for hidden panes");
 
+// 改动 9：柠檬只留给顶栏唯一主行动、流程轴当前步骤、进度轨。
+// hover 是指针反馈不是优先级信号——此前 7 条 hover 规则把边框染成柠檬，
+// 让每个中性按钮悬停时都借用主色，柠檬因此不再代表「这是主行动」。
+const modernScope = css.slice(css.indexOf("body.is-studio-modern {"));
+const hoverLime = [...modernScope.matchAll(/([^{}\n]{1,150}?:hover[^{}\n]{0,60})\{([^}]*)\}/g)]
+  .filter(([, , body]) => /--modern-signal|--mv-lime|200,255,46|C8FF2E/.test(body))
+  .map(([, sel]) => sel.trim());
+assert.deepEqual(hoverLime, [], `hover must not change hue: ${hoverLime.join(" | ")}`);
+// 三处 .is-primary 此前各自用柠檬描边，与顶栏柠檬实心 CTA 同屏竞争。
+for (const sel of [".modern-source-actions button.is-primary", ".modern-pane-actions button.is-primary"]) {
+  const rule = modernScope.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{([^}]*)\\}"))?.[1] ?? "";
+  assert.ok(rule.length, `${sel} rule must exist`);
+  assert.doesNotMatch(rule, /--modern-signal|--mv-lime|200,255,46/, `${sel} must be tier-2 neutral, not lime`);
+}
+// 仅因「可用」就染信号色，语义为零。
+assert.doesNotMatch(modernScope, /button:not\(:disabled\)\s*\{[^}]*(--modern-signal|200,255,46)/, "enabled-ness is not a reason to use the signal color");
+
 console.log("studio modern shell tests passed");

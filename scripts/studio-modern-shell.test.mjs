@@ -85,4 +85,42 @@ assert.match(html, /id="modernCore" class="modern-core"/, "modern shell must hav
 assert.match(css, /\.studio-modern-shell\s*\{[\s\S]*height:\s*100vh[\s\S]*overflow:\s*hidden/, "modern shell must keep the page viewport fixed");
 assert.match(css, /\.modern-core\s*\{[\s\S]*overflow:\s*auto/, "only the core workspace may scroll internally");
 
+// 改动 3：内容区限制 measure，卡片之间露出画布，并保留浮起层次。
+assert.match(css, /\.modern-core\s*\{[^}]*max-width:\s*1140px[^}]*margin:\s*0 auto[^}]*gap:\s*16px/, "modern core must use a centered 1140px measure with 16px gaps");
+assert.match(css, /\.modern-source-panel\s*\{[^}]*border-radius:\s*var\(--mv-r\)[^}]*box-shadow:\s*var\(--mv-e1\),\s*var\(--mv-hi\)/, "modern cards must use the mv radius, elevation, and highlight");
+assert.match(css, /\.modern-core\s*\{[^}]*overflow-x:\s*hidden[^}]*overflow-y:\s*auto/, "core scrolling must declare both overflow axes");
+
+// 改动 4：资产参数控件共享 96px 标签列，原生 select 仍保留并采用 seg 外观。
+assert.match(html, /modern-asset-form-row/, "asset controls must expose the aligned form rows");
+assert.match(css, /\.modern-asset-generation-row\s*\{[^}]*grid-template-columns:\s*96px\s+minmax\(0,1fr\)/, "asset form rows must share a 96px label column");
+assert.match(html, /<select class="seg" id="modernAssetStylePreset"/, "style preset select must remain and use seg styling");
+assert.match(html, /<select class="seg" id="modernAssetReferenceTarget"/, "reference target select must remain and use seg styling");
+assert.match(css, /\.modern-asset-generation-controls\s+select\.seg[^}]*border-radius:\s*999px/, "native selects must receive the pill seg appearance");
+
+// 改动 5：镜头墙由大帧媒体承载镜号、状态和时长信息。
+assert.match(js, /modern-shot-frame/, "shot rail must render media-first frames");
+assert.match(js, /modern-shot-number[\s\S]*modern-shot-status[\s\S]*modern-shot-duration/, "shot frames must include number, status, and duration overlays");
+assert.match(css, /\.modern-shot-frame\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "shot wall frames must use a 9:16 ratio");
+assert.match(css, /\.modern-shot-frame::after\s*\{[^}]*linear-gradient/, "shot frames must include a bottom readability mask");
+assert.match(css, /\.modern-shot-card\.is-active[^}]*box-shadow:\s*0 0 0 2px var\(--mv-lime\)/, "selected shot must use the lime frame ring");
+
+// 改动 6：成片卡采用三列上排 + 全宽六段轨，并保留可见的业务三件套。
+const modernCutPanel = html.match(/id="modernCutPanel"[\s\S]*?<\/section>/)?.[0] || "";
+for (const className of ["cut-top", "cut-info", "track", "segs"]) {
+  assert.ok(modernCutPanel.includes(`class="${className}"`), `modern cut panel missing ${className}`);
+}
+assert.match(css, /\.cut-top\s*\{[^}]*grid-template-columns:\s*216px\s+minmax\(0,1fr\)\s+auto[^}]*align-items:\s*stretch/, "cut top must use the 216px preview column and stretch the other columns");
+assert.match(css, /\.cut-info\s*\{[^}]*grid-template-rows:\s*auto\s+1fr[^}]*height:\s*100%/, "cut info must fill the preview height with auto plus 1fr rows");
+assert.match(css, /\.segs\s*\{[^}]*grid-template-columns:\s*repeat\(6,\s*minmax\(0,1fr\)\)/, "cut track must show six equal segment slots");
+
+// app.js 产出 <em class="modern-shot-status"><i></i>文字</em>；此前无任何规则，
+// 实测 0\u00D70，左下状态点与文字都不显示。
+assert.match(css, /\.modern-shot-status \{[^}]*position:\s*absolute/, "shot status overlay must be positioned in the frame");
+assert.match(css, /\.modern-shot-status i \{[^}]*border-radius:\s*50%/, "shot status must render a state dot");
+assert.match(css, /\.is-complete \.modern-shot-status i \{[^}]*var\(--mv-ok\)/, "complete shots must use the ok state color");
+// 旧规则 .modern-shot-card.is-complete > span:first-child 会命中新的
+// .modern-shot-frame（它正是第一个 span 子元素），给已完成帧套上墨绿渐变。
+assert.doesNotMatch(css, /\.modern-shot-card(\.[a-z-]+)? ?> span:first-child/, "legacy shot thumb rules must not shadow the new frame");
+assert.doesNotMatch(css, /#26362e/i, "legacy green shot gradient must be gone");
+
 console.log("studio modern shell tests passed");

@@ -1000,8 +1000,10 @@
                 <span>GENERATED ASSETS</span>
               </header>
               <section id="modernAssetGenerationControls" class="modern-asset-generation-controls" aria-label="资产图生图参数">
-                <div class="modern-asset-generation-row">
-                  <label><span>风格选择</span><select id="modernAssetStylePreset">
+                <div class="modern-asset-generation-row modern-asset-form-row">
+                  <label for="modernAssetStylePreset">风格选择</label>
+                  <div class="modern-asset-form-control">
+                    <select class="seg" id="modernAssetStylePreset">
                     <option value="photoreal">超写实</option>
                     <option value="cg_3d">3D 渲染 / CG 质感</option>
                     <option value="pixar_3d">皮克斯 / 迪士尼 3D</option>
@@ -1014,19 +1016,31 @@
                     <option value="chinese_ink">水墨 / 国风</option>
                     <option value="pixel_art">复古像素</option>
                     <option value="custom">自定义</option>
-                  </select></label>
-                  <label class="modern-asset-style-custom"><span>风格补充</span><input id="modernAssetStyleCustom" placeholder="补充色彩、材质、光影或镜头质感" /></label>
+                    </select>
+                  </div>
                 </div>
-                <div class="modern-asset-generation-row modern-asset-reference-row">
-                  <div class="modern-asset-reference-file"><span>风格参考图</span><input id="modernAssetStyleReferenceFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" /><label for="modernAssetStyleReferenceFile">上传参考图</label><small id="modernAssetStyleReferenceName">未上传</small></div>
-                  <label class="modern-asset-reference-toggle"><input id="modernAssetStyleReferenceEnabled" type="checkbox" /><span>启用风格参考</span></label>
-                  <button id="modernAssetStyleReferenceRemove" type="button">移除</button>
-                  <div id="modernAssetStyleReferencePreview" class="modern-asset-style-reference-preview"></div>
+                <div class="modern-asset-generation-row modern-asset-form-row">
+                  <label for="modernAssetStyleCustom">风格补充</label>
+                  <div class="modern-asset-form-control">
+                    <input id="modernAssetStyleCustom" placeholder="补充色彩、材质、光影或镜头质感" />
+                  </div>
                 </div>
-                <div class="modern-asset-generation-row modern-asset-bind-row">
-                  <label><span>参考图绑定</span><select id="modernAssetReferenceTarget"><option value="">暂无解析资产</option></select></label>
-                  <div class="modern-asset-reference-file"><span>资产参考图</span><input id="modernAssetReferenceFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" /><label for="modernAssetReferenceFile">上传并绑定</label><small id="modernAssetReferenceName">未选择</small></div>
-                  <button id="modernAssetReferenceBind" class="is-primary" type="button">绑定参考图</button>
+                <div class="modern-asset-generation-row modern-asset-form-row modern-asset-reference-row">
+                  <label for="modernAssetStyleReferenceFile">风格参考图</label>
+                  <div class="modern-asset-form-control">
+                    <div class="modern-asset-reference-file"><input id="modernAssetStyleReferenceFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" /><label for="modernAssetStyleReferenceFile">上传参考图</label><small id="modernAssetStyleReferenceName">未上传</small></div>
+                    <label class="modern-asset-reference-toggle"><input id="modernAssetStyleReferenceEnabled" type="checkbox" /><span>启用风格参考</span></label>
+                    <button id="modernAssetStyleReferenceRemove" type="button">移除</button>
+                    <div id="modernAssetStyleReferencePreview" class="modern-asset-style-reference-preview"></div>
+                  </div>
+                </div>
+                <div class="modern-asset-generation-row modern-asset-form-row modern-asset-bind-row">
+                  <label for="modernAssetReferenceTarget">绑定目标</label>
+                  <div class="modern-asset-form-control">
+                    <select class="seg" id="modernAssetReferenceTarget"><option value="">暂无解析资产</option></select>
+                    <div class="modern-asset-reference-file"><input id="modernAssetReferenceFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" /><label for="modernAssetReferenceFile">上传并绑定</label><small id="modernAssetReferenceName">未选择</small></div>
+                    <button id="modernAssetReferenceBind" type="button">绑定参考图</button>
+                  </div>
                 </div>
                 <div id="modernAssetStylePreview" class="modern-asset-style-preview" aria-live="polite"></div>
               </section>
@@ -1092,7 +1106,25 @@
               <span class="modern-source-order">STEP 04 / 04</span>
             </header>
             <div id="finalCutStatus" class="modern-cut-status inline-status"></div>
-            <div id="finalCutPreview" class="modern-cut-preview"></div>
+            <div class="cut">
+              <div class="cut-top">
+                <div id="finalCutPreview" class="modern-cut-preview cut-prev"></div>
+                <div class="cut-info">
+                  <div class="specs">
+                    <dl class="spec"><dt>OUTPUT</dt><dd>1080×1920</dd></dl>
+                    <dl class="spec"><dt>FRAMERATE</dt><dd>24 <u>fps</u></dd></dl>
+                    <dl class="spec"><dt>SEGMENTS</dt><dd id="modernFinalCutSegments">0 / 0 <u>就绪</u></dd></dl>
+                    <dl class="spec"><dt>DURATION</dt><dd id="modernFinalCutDuration">00:00</dd></dl>
+                  </div>
+                  <div class="note"><b>ASSEMBLY RULES</b><ul><li>按镜号顺序硬切拼接，不插入转场</li><li>统一缩放至 1080×1920，不足部分补黑边</li><li>保留各片段原声，不做混音或响度归一</li><li>全部片段完成后才能组装，缺片时服务端返回缺失镜号</li></ul></div>
+                </div>
+                <div class="dl"><u></u><div><b id="modernFinalCutFilename">rough_cut.mp4</b><small id="modernFinalCutDownloadStatus">尚未生成</small></div><a id="modernFinalCutDownload" class="btn is-disabled" href="#" aria-disabled="true">下载成片</a></div>
+              </div>
+              <div class="track">
+                <div class="track-h"><span class="modern-eyebrow">ASSEMBLY ORDER</span><span>按镜号顺序硬切</span></div>
+                <div id="modernFinalCutTrack" class="segs"></div>
+              </div>
+            </div>
             <footer class="modern-cut-foot">
               <small>片段全部完成后才能组装；缺片时服务端会直接报错。</small>
               <button id="assembleFinalCutBtn" class="primary" type="button">组装成片</button>

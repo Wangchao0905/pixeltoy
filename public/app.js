@@ -4138,7 +4138,8 @@ function renderModernStudio(data = state.project) {
   $("#modernKitStatus").textContent = selected?.assets?.length ? "已引用" : "待确认";
   renderModernEpisodes(project, pct, total, completed);
   renderModernAssetResults(data);
-  renderModernShotRail(shots, selectedIndex);
+  renderModernShotRail(shots, selectedIndex, data);
+  renderModernFinalCutTrack(shots);
   renderModernSelectedShot(data, selected, selectedIndex);
 }
 
@@ -4256,7 +4257,15 @@ function renderModernEpisodes(project, percent, total, completed) {
   node.innerHTML = `<button class="modern-episode-row is-active ${completed === total && total ? "is-complete" : ""}" type="button" aria-current="page"><span>01</span><div><strong>${escapeHtml(label)}</strong><small>${total ? `${completed} / ${total} 镜完成` : "等待流程启动"}</small></div><i></i></button>`;
 }
 
-function renderModernShotRail(shots, selectedIndex) {
+function modernShotMediaMarkup(data, shot, index) {
+  const videoUrl = modernMediaForShot(data, shot, index, "video");
+  const stillUrl = modernMediaForShot(data, shot, index, "storyboard");
+  if (videoUrl) return `<video class="modern-shot-media" src="${escapeAttr(videoUrl)}" muted autoplay loop playsinline preload="metadata" aria-hidden="true"></video>`;
+  if (stillUrl) return `<img class="modern-shot-media" src="${escapeAttr(stillUrl)}" alt="" />`;
+  return '<span class="modern-shot-empty">暂无媒体</span>';
+}
+
+function renderModernShotRail(shots, selectedIndex, data) {
   const node = $("#modernShotRail");
   if (!node) return;
   if (!shots.length) {
@@ -4265,12 +4274,29 @@ function renderModernShotRail(shots, selectedIndex) {
   }
   node.innerHTML = shots.map((shot, index) => `
     <button class="modern-shot-card ${index === selectedIndex ? "is-active" : ""} is-${escapeAttr(shot.status)}" type="button" data-modern-shot-index="${index}" role="option" aria-selected="${index === selectedIndex}">
-      <span>${String(shot.number).padStart(2, "0")}</span><div><strong>${escapeHtml(shot.name)}</strong><small>${escapeHtml(modernStatusLabel(shot.status))} · ${escapeHtml(String(shot.duration))}s</small></div>
+      <span class="modern-shot-frame">${modernShotMediaMarkup(data, shot, index)}<b class="modern-shot-number">${String(shot.number).padStart(2, "0")}</b><em class="modern-shot-status"><i></i>${escapeHtml(modernStatusLabel(shot.status))}</em><small class="modern-shot-duration">${escapeHtml(String(shot.duration))}s</small></span>
+      <span class="modern-shot-copy"><strong>${escapeHtml(shot.name)}</strong></span>
     </button>`).join("");
   node.querySelectorAll("[data-modern-shot-index]").forEach((button) => button.addEventListener("click", () => {
     state.modernStudio.shotIndex = Number(button.dataset.modernShotIndex) || 0;
     renderModernStudio(state.project);
   }));
+}
+
+function renderModernFinalCutTrack(shots = []) {
+  const node = $("#modernFinalCutTrack");
+  if (!node) return;
+  const ready = shots.filter((shot) => shot.status === "complete").length;
+  const segments = $("#modernFinalCutSegments");
+  const duration = shots.reduce((total, shot) => total + (Number(shot.duration) || 0), 0);
+  const durationEl = $("#modernFinalCutDuration");
+  if (segments) segments.innerHTML = `${ready} / ${shots.length} <u>就绪</u>`;
+  if (durationEl) durationEl.textContent = `00:${String(Math.round(duration)).padStart(2, "0")}`;
+  node.innerHTML = shots.map((shot, index) => `
+    <div class="seg-c is-${escapeAttr(shot.status)}">
+      <div class="seg-f">${modernShotMediaMarkup(state.project, shot, index)}<b>${String(shot.number).padStart(2, "0")}</b><i></i></div>
+      <p>${escapeHtml(modernStatusLabel(shot.status))}</p>
+    </div>`).join("");
 }
 
 function modernCopyValue(data, shot, tab) {
@@ -6822,6 +6848,7 @@ function renderFinalCut(finalCut = null) {
   const statusEl = $("#finalCutStatus");
   const previewEl = $("#finalCutPreview");
   const btn = $("#assembleFinalCutBtn");
+  const downloadEl = $("#modernFinalCutDownload");
   if (!statusEl || !previewEl) return;
   const running = !!fc.running;
   if (btn) {
@@ -6829,6 +6856,17 @@ function renderFinalCut(finalCut = null) {
     btn.classList.add("primary");
     btn.classList.remove("ghost");
     btn.textContent = running ? "组装中…" : fc.output ? "重新组装" : "组装成片";
+  }
+  if (downloadEl) {
+    const downloadUrl = fc.output?.downloadUrl || fc.output?.url || "";
+    downloadEl.href = downloadUrl || "#";
+    downloadEl.classList.toggle("is-disabled", !downloadUrl);
+    downloadEl.setAttribute("aria-disabled", downloadUrl ? "false" : "true");
+    downloadEl.setAttribute("download", downloadUrl ? "rough_cut.mp4" : "");
+    const filename = $("#modernFinalCutFilename");
+    const downloadStatus = $("#modernFinalCutDownloadStatus");
+    if (filename) filename.textContent = downloadUrl ? "rough_cut.mp4" : "rough_cut.mp4";
+    if (downloadStatus) downloadStatus.textContent = downloadUrl ? "成片已生成" : "尚未生成";
   }
   if (fc.error) {
     statusEl.innerHTML = `<span class="pill warn">组装失败</span><span>${escapeHtml(fc.error)}</span>`;

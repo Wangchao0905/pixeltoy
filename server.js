@@ -17847,16 +17847,21 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
   if (model === "rules") return { ok: false, model, reason: "使用本地规则拆解，未调用外部分镜模型" };
   const apiKey = storyboardApiKey();
   if (!apiKey) return { ok: false, model, reason: "未配置视频分镜模型 API Key" };
-  const requestBody = (withJsonMode) => ({
-    model,
-    temperature: 0.35,
-    ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
-    messages: [
-      { role: "system", content: storyboardSystemPrompt() },
-      { role: "user", content: storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, durationPlan }) },
-    ],
-  });
-  try {
+  // 网关偶发返回空内容、坏 JSON 或短暂 5xx；同一请求直接失败会让整套视频配置不可用。
+  // 备用模型仍使用同一 STORYBOARD_API_KEY，只更换 GPT 导演模型，不改变提示词来源。
+  const candidates = [...new Set([model, "gpt-5.6-terra", "gpt-5.6-luna"])]
+    .filter((candidate) => candidate && candidate !== "rules");
+  const attempted = [];
+  for (const candidate of candidates) {
+    const requestBody = (withJsonMode) => ({
+      model: candidate,
+      temperature: 0.35,
+      ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
+      messages: [
+        { role: "system", content: storyboardSystemPrompt() },
+        { role: "user", content: storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, durationPlan }) },
+      ],
+    });
     const post = (withJsonMode) =>
       fetch(openAiCompatUrl("/v1/chat/completions", "storyboard"), {
         method: "POST",
@@ -17866,20 +17871,26 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
         },
         body: JSON.stringify(requestBody(withJsonMode)),
       });
-    let response = await post(true);
-    let raw = await response.text();
-    if (!response.ok && response.status === 400 && /response_format|json_object/i.test(raw)) {
-      response = await post(false);
-      raw = await response.text();
+    try {
+      let response = await post(true);
+      let raw = await response.text();
+      if (!response.ok && response.status === 400 && /response_format|json_object/i.test(raw)) {
+        response = await post(false);
+        raw = await response.text();
+      }
+      if (!response.ok) {
+        attempted.push(`${candidate}: HTTP ${response.status} ${raw.slice(0, 240)}`);
+        continue;
+      }
+      const data = JSON.parse(raw);
+      const content = data.choices?.[0]?.message?.content || "";
+      const parsed = JSON.parse(stripJsonFence(content));
+      return normalizeStoryboardPlan(parsed, { model: candidate, assets, dialogueLanguage, code, beats, durationPlan });
+    } catch (error) {
+      attempted.push(`${candidate}: ${error?.message || String(error)}`);
     }
-    if (!response.ok) return { ok: false, model, reason: `模型接口返回 HTTP ${response.status}: ${raw.slice(0, 600)}` };
-    const data = JSON.parse(raw);
-    const content = data.choices?.[0]?.message?.content || "";
-    const parsed = JSON.parse(stripJsonFence(content));
-    return normalizeStoryboardPlan(parsed, { model, assets, dialogueLanguage, code, beats, durationPlan });
-  } catch (error) {
-    return { ok: false, model, reason: error.message };
   }
+  return { ok: false, model, reason: `所有导演模型均失败：${attempted.join("；") || "未知失败"}` };
 }
 
 const IMAGE_STORYBOARD_PANEL_COUNT = 9;

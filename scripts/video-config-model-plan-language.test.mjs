@@ -85,6 +85,38 @@ const recovered = await context.ensureModelShotPlanForConfig("/project/e01", { s
 assert.equal(modelPlanBuilds, 1, "a missing plan must invoke only the model-plan builder");
 assert.equal(recovered, recoveredPlan, "the newly persisted model plan must be returned to config generation");
 
+// 导演模型偶发返回坏 JSON 时，配置生成必须自动切换备用 GPT 导演模型，而不是直接提示失败。
+context.normalizeStoryboardModel = (value) => value || "gpt-5.6-sol";
+context.storyboardApiKey = () => "test-key";
+context.storyboardSystemPrompt = () => "system";
+context.storyboardUserPrompt = () => "user";
+context.openAiCompatUrl = (path, kind) => `${kind}:${path}`;
+context.stripJsonFence = (value) => value;
+context.normalizeStoryboardPlan = (data, options) => ({ ok: true, model: options.model, shots: data.shots || [] });
+const directorRequests = [];
+const directorResponses = [
+  { ok: true, status: 200, body: { choices: [{ message: { content: "not-json" } }] } },
+  { ok: true, status: 200, body: { choices: [{ message: { content: JSON.stringify({ shots: [{ id: "V001" }] }) } }] } },
+];
+context.fetch = async (_url, options) => {
+  directorRequests.push(JSON.parse(options.body));
+  const response = directorResponses.shift();
+  return { ok: response.ok, status: response.status, async text() { return JSON.stringify(response.body); } };
+};
+vm.runInContext(extractFunction(server, "async function callStoryboardModel("), context, { filename: "server.js" });
+const directorRecovery = await context.callStoryboardModel({
+  script,
+  assets: [{ name: "S001", type: "Scene", label: "站台" }],
+  dialogueLanguage: "en",
+  targetShotCount: 1,
+  code: "E01",
+  beats: [script],
+  durationPlan: { durations: [8], target: 8 },
+});
+assert.equal(directorRequests[0]?.model, "gpt-5.6-sol", "导演模型必须先使用默认模型");
+assert.equal(directorRequests[1]?.model, "gpt-5.6-terra", "导演模型失败后必须切换备用模型");
+assert.equal(directorRecovery.model, "gpt-5.6-terra", "备用导演模型成功结果必须继续进入配置流程");
+
 assert.match(
   server,
   /const dialogueLanguage = modelPlanDialogueLanguageForConfig\(modelPlan, script, requestedDialogueLanguage\);/,

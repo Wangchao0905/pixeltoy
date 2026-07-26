@@ -35,6 +35,14 @@ assert.doesNotMatch(html, /id="modernDetailsButton"/, "modern shell must not exp
 assert.match(css, /body\.is-studio-modern[\s\S]*--modern-signal/, "modern palette must be scoped to modern studio");
 assert.doesNotMatch(css, /body\.is-studio-modern\s+#studioShell/, "modern shell must not depend on a hidden legacy editor");
 assert.match(css, /modern-brand-logo\.pixel-toys-wordmark::before[\s\S]*animation:[^;]+!important/, "modern logo rotor must override the studio thermal guard");
+// 左栏品牌必须是带动效的 PNG 字标,不得再被替换成纯 CSS 图形。
+// fb7b2c2「左栏换皮」曾换成 22px 柠檬渐变方块 + ::after 字母 P,盖掉 PNG 与
+// 螺旋桨动效,用户要求换回。那个柠檬渐变还违反改动 9 的机制(柠檬只准出现在
+// 顶栏主行动、流程轴当前步骤、进度轨三处)。
+const brandLogoRule = css.match(/\.modern-brand-logo\s*\{[^}]*\}/)?.[0] || "";
+assert.match(brandLogoRule, /pixel-toys-logo\.png/, "左栏品牌必须使用 PNG 字标");
+assert.doesNotMatch(brandLogoRule, /--mv-lime|linear-gradient/, "左栏品牌字标不得被替换成柠檬渐变图形");
+assert.doesNotMatch(css, /\.modern-brand-logo[^{]*::after\s*\{[^}]*content:\s*"P"/, "左栏品牌不得用字母 P 顶替字标");
 assert.match(js, /studioModernShell/, "modern shell visibility must be wired");
 assert.match(js, /renderModernStudio\(data\)/, "modern shell must hydrate from project state");
 assert.match(js, /modernScriptUpload/, "modern shell must wire script upload");

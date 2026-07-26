@@ -976,20 +976,8 @@
               <div><dt>成片时长</dt><dd id="modernHeroDuration">00:00</dd></div>
             </dl>
             <div class="modern-episode-video-actions" aria-label="视频生成操作">
-              <button id="modernBuildConfig" class="modern-video-action modern-video-action-config" type="button">生成视频配置</button>
               <button id="modernVideoGenerate" class="modern-video-action modern-video-action-generate" type="button" disabled>生成视频</button>
-              <button id="modernBatchAction" class="modern-episode-secondary-action" type="button"><span><b>选择生成范围</b><small id="modernBatchDetail">等待视频配置</small></span><i aria-hidden="true">&gt;</i></button>
             </div>
-          </section>
-
-          <section id="modernBatchScopeAccordion" class="modern-batch-scope-accordion is-open" aria-label="视频提交范围">
-            <header><div><span class="modern-eyebrow">SUBMIT SCOPE</span><strong id="modernBatchScopeTitle">本集视频生成</strong></div><span id="modernBatchScopeCount">暂无可提交镜头</span></header>
-            <div class="modern-batch-scope-options" role="group" aria-label="生成范围">
-              <button type="button" class="is-selected" data-modern-batch-scope="current"><b>当前镜头</b><small>镜头 -- · 1 个</small></button>
-              <button type="button" data-modern-batch-scope="missing"><b>缺失镜头</b><small>失败 + 待生成 · 0 个</small></button>
-              <button type="button" data-modern-batch-scope="episode"><b>本集全部</b><small>只提交未完成 · 0 个</small></button>
-            </div>
-            <div class="modern-batch-scope-actions"><span id="modernBatchScopeNote">会创建新的 Take，当前采用版本和其他镜头不受影响</span><button id="modernBatchScopeSubmit" class="is-primary" type="button">提交当前镜头</button></div>
           </section>
 
           <section class="modern-pipeline" aria-label="制作流程">
@@ -1156,7 +1144,7 @@
                 <header><span>03</span><div><small>MOTION</small><h3 id="modernMotionTitle">视频 Take</h3></div><i id="modernMotionStatus">待生成</i></header>
                 <div class="modern-video-preview"><video id="modernVideoPreview" controls playsinline preload="metadata" class="hidden"></video><img id="modernVideoPoster" src="" alt="当前镜头视频预览" /><div class="modern-empty-preview">暂无视频片段</div><div id="modernVideoProgress" class="modern-video-progress"><span></span></div></div>
                 <div class="modern-motion-meta"><span id="modernVideoModel">模型未配置</span><strong id="modernVideoResolution">9:16</strong></div>
-                <div class="modern-pane-actions"><button id="modernVideoEdit" type="button">修改视频提示词</button></div>
+                <div class="modern-pane-actions"><button id="modernBuildConfig" class="modern-video-action modern-video-action-config" type="button">生成视频配置</button><button id="modernVideoEdit" type="button">修改视频提示词</button></div>
               </section>
             </div>
           </section>

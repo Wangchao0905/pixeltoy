@@ -4502,20 +4502,31 @@ function renderModernFinalCutTrack(shots = []) {
 }
 
 function modernCopyValue(data, shot, tab) {
-  if (!shot) return "";
+  const contents = data?.contents || {};
+  if (!shot) {
+    if (tab === "prompt") return contents.seedancePrompts || "";
+    if (tab === "dialogue") return contents.seedancePrompts || "对白 / OS 尚未生成。";
+    return contents.storyboard || "";
+  }
   if (tab === "prompt") return shot.prompt || "";
   if (tab === "dialogue") return shot.dialogue || shot.voice || shot.prompt || data?.contents?.seedancePrompts || "对白 / OS 尚未生成。";
   return shot.story || shot.description || shot.prompt || data?.contents?.script || "剧情尚未生成。";
 }
 
 function renderModernSelectedShot(data, shot, index) {
-  const number = shot ? String(shot.number).padStart(2, "0") : "--";
+  const contents = data?.contents || {};
+  const hasDraft = Boolean(String(contents.storyboard || "").trim());
+  const hasPrompt = Boolean(String(contents.seedancePrompts || "").trim());
+  const hasDraftContent = hasDraft || hasPrompt;
+  const number = shot ? String(shot.number).padStart(2, "0") : hasDraftContent ? "SB" : "--";
   $("#modernSelectedShotNumber").textContent = number;
-  $("#modernSelectedShotTitle").textContent = shot?.name || "未选择镜头";
-  $("#modernSelectedShotMeta").textContent = shot ? `${shot.duration}s · ${shot.model || "模型未配置"} · ${shot.assets.length} 个引用资产` : "先生成分镜草稿或视频配置";
+  $("#modernSelectedShotTitle").textContent = shot?.name || (hasDraftContent ? "分镜草稿" : "未选择镜头");
+  $("#modernSelectedShotMeta").textContent = shot
+    ? `${shot.duration}s · ${shot.model || "模型未配置"} · ${shot.assets.length} 个引用资产`
+    : hasDraftContent ? "已生成分镜草稿 · 可继续生成视频配置" : "先生成分镜草稿或视频配置";
   $("#modernShotAction").textContent = shot ? "定位当前镜头" : "定位镜头";
   const status = modernStatusLabel(shot?.status);
-  $("#modernStoryStatus").textContent = shot?.prompt ? "已生成" : "待确认";
+  $("#modernStoryStatus").textContent = shot?.prompt || hasDraftContent ? "已生成" : "待确认";
   $("#modernStillStatus").textContent = shot?.storyboardRefs?.length ? "已确认" : "待生成";
   $("#modernMotionStatus").textContent = status;
   $("#modernMotionStatus").className = `is-${shot?.status || "waiting"}`;

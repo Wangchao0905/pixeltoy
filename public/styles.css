@@ -16241,7 +16241,6 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-main[data-modern-view="assets"] .modern-workbench { display: none; }
 .modern-main[data-modern-view="storyboard"] .modern-source-panel,
 .modern-main[data-modern-view="storyboard"] .modern-kit-bar,
-.modern-main[data-modern-view="storyboard"] .modern-stage-pane:first-child,
 .modern-main[data-modern-view="storyboard"] .modern-stage-pane:last-child { display: none; }
 .modern-main[data-modern-view="video"] .modern-source-panel,
 .modern-main[data-modern-view="video"] .modern-kit-bar,

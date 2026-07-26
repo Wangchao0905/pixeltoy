@@ -129,6 +129,10 @@ for (const rule of assetImageRules) {
 assert.match(css, /modern-main\[data-modern-view="storyboard"\]/, "storyboard view must have a dedicated core layout");
 assert.match(css, /\.modern-video-preview\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "video preview must use a portrait 9:16 frame");
 assert.match(css, /\.modern-still-preview\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "storyboard preview must use a portrait 9:16 frame");
+assert.doesNotMatch(css, /\.modern-main\[data-modern-view="storyboard"\][\s\S]*?\.modern-stage-pane:first-child\s*\{\s*display:\s*none/, "storyboard view must keep the draft pane visible");
+assert.match(js, /function modernCopyValue[\s\S]*?contents\.storyboard/, "storyboard copy must fall back to the saved draft content");
+assert.match(js, /function modernCopyValue[\s\S]*?contents\.seedancePrompts/, "prompt and dialogue tabs must fall back to saved prompt content");
+assert.match(js, /已生成分镜草稿 · 可继续生成视频配置/, "draft-only state must be visible before video config exists");
 assert.match(css, /\.modern-source-panel\s*\{[^}]*display:\s*grid/, "source panel must place the asset wall beside the parsed rail");
 assert.match(css, /\.modern-stage-pane\s*\{[^}]*align-self:\s*start/, "stage panes must not stretch to the portrait video height");
 assert.match(css, /\.modern-asset-results\s*\{[^}]*max-height:/, "asset rail must not stretch the entire source panel");

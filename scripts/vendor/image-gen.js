@@ -286,8 +286,12 @@ async function readImageResponse(response) {
 
 function shouldFallbackToResponses(error) {
   const status = Number(error?.detail?.status || 0);
-  if (![400, 404, 405, 422, 501].includes(status)) return false;
   const text = `${error?.message || ""} ${error?.detail?.body || ""}`.toLowerCase();
+  // The gateway can have capacity for the Responses image tool while its
+  // legacy /images/generations account pool is empty. Keep this fallback
+  // narrow: a generic 503 should not trigger a second paid request.
+  if (status === 503 && /no available (?:compatible )?(?:accounts?|channels?)|no available channel|无可用账号|无可用渠道/.test(text)) return true;
+  if (![400, 404, 405, 422, 501].includes(status)) return false;
   return /image|model|stream|response_format|parameter|unsupported|not found|method/.test(text);
 }
 

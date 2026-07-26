@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
 
 const root = path.resolve(new URL("..", import.meta.url).pathname);
 const imageGen = fs.readFileSync(path.join(root, "scripts/vendor/image-gen.js"), "utf8");
@@ -25,6 +26,26 @@ if (!imageGen.includes('Accept: "application/json"') || !imageGen.includes("stre
 }
 if (!imageGen.includes("function buildTextResponsesRequest") || !imageGen.includes("function shouldFallbackToResponses")) {
   throw new Error("text image generation must fall back to the Responses image tool when the direct route is rejected");
+}
+function extractFunction(source, name) {
+  const start = source.indexOf(`function ${name}`);
+  if (start < 0) throw new Error(`missing ${name}`);
+  const bodyStart = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}" && --depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`unterminated ${name}`);
+}
+const fallbackContext = {};
+vm.createContext(fallbackContext);
+vm.runInContext(`${extractFunction(imageGen, "shouldFallbackToResponses")}; globalThis.shouldFallbackToResponses = shouldFallbackToResponses;`, fallbackContext);
+if (!fallbackContext.shouldFallbackToResponses({ detail: { status: 503, body: '{"error":{"message":"No available compatible accounts"}}' } })) {
+  throw new Error("503 no-account text generation failures must fall back to the Responses image tool");
+}
+if (fallbackContext.shouldFallbackToResponses({ detail: { status: 503, body: '{"error":{"message":"service temporarily unavailable"}}' } })) {
+  throw new Error("generic 503 failures must not trigger an unbounded second generation route");
 }
 if (!server.includes('--orchestration-model') || !server.includes("const detail = parseImageGenFailure(text)")) {
   throw new Error("image generation failures must retain the orchestration model and upstream HTTP details");

@@ -10,6 +10,8 @@ assert.match(html, /class="preview-series-nav"/, "preview needs a persistent pro
 assert.match(html, /href="\/"[^>]*aria-label="返回项目页"/, "animated wordmark must return to the project home");
 assert.match(html, /class="preview-brand-logo pixel-toys-wordmark"/, "preview must reuse the current animated online wordmark");
 assert.match(html, /id="episodeBatchAction"/, "the main action must operate on the current episode");
+assert.match(html, /id="batchScopeAccordion"/, "batch generation must expose a visible scope selector");
+assert.match(html, /data-batch-scope="current"/, "batch scope must support current-shot generation");
 assert.match(html, /class="episode-pipeline"/, "episode progress needs one authoritative pipeline");
 assert.match(html, /id="assetParserButton"/, "asset parsing must remain a visible workflow entry");
 assert.match(html, /id="assetParserPanel"/, "asset parsing needs a dedicated review surface");
@@ -38,9 +40,13 @@ assert.match(html, /id="takeList"/, "preview needs non-destructive take history"
 assert.match(html, /id="styleBibleButton"/, "the series visual bible needs a direct entry point");
 assert.match(html, /id="styleBiblePanel"/, "the visual bible must expose references and natural-language guidance");
 assert.match(html, /id="queuePanel"/, "batch generation needs a visible queue panel");
+assert.match(html, /id="shotInspectorPanel"/, "shot editing needs a visible shot inspector");
+assert.match(html, /id="cutPanel"/, "episode completion needs a dedicated cut panel");
+assert.match(html, /id="shotPromptInspector"/, "shot inspector needs a prompt editor");
 assert.doesNotMatch(html, /id="episodeCost"|本集花费/, "episode production cost must not appear in the preview header");
 assert.match(css, /grid-template-columns:[^;]*minmax\(0, 0\.9fr\)[^;]*minmax\(0, 1\.05fr\)[^;]*minmax\(360px, 1\.2fr\)/, "workspace needs stable story, still, and motion columns");
-assert.match(css, /--signal:\s*#c8ff2e/, "preview needs the electric-lime signal color from the approved visual reference");
+assert.match(css, /--signal:\s*#d92d45/, "preview needs the Pixel Toys dark-red signal color");
+assert.match(css, /\.batch-scope-accordion[\s\S]*grid-template-columns/, "batch scope needs a compact accordion layout");
 assert.match(css, /@keyframes pixelToysCopterSpin/, "online logo rotor animation must remain active in the preview");
 assert.match(css, /@media \(max-width: 1240px\)[\s\S]*\.motion-pane\s*\{[^}]*grid-column:\s*1 \/ -1/, "compact desktop layout must give video its own row instead of crushing all three stages");
 assert.match(css, /\.shot-card\[data-state="running"\][\s\S]*animation:/, "running shots need motion feedback");
@@ -56,6 +62,9 @@ assert.match(js, /function autoAssignReferenceKits\(/, "the director model needs
 assert.match(js, /function applyKitVersionToPendingShots\(/, "Kit updates must target unfinished shots without overwriting completed shots");
 assert.match(js, /function renderPanelAssetBindings\(/, "storyboard panels need explicit asset allocation instead of asset spreading");
 assert.match(js, /function simulateEpisodeBatch\(/, "the episode action must demonstrate bounded batch generation");
+assert.match(js, /function renderBatchScope\(/, "batch scope must update the visible submission count");
+assert.match(js, /function retryFailedShot\(/, "queue failures need a retry interaction");
+assert.match(js, /function simulateCutAssembly\(/, "the preview needs a dedicated cut assembly state");
 assert.match(js, /function toggleStyleBible\(/, "the global visual bible must be inspectable without leaving the episode");
 
 console.log("studio layout preview tests passed");

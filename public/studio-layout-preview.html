@@ -79,8 +79,18 @@
             <div><dt>成片时长</dt><dd>00:57</dd></div>
           </dl>
           <button id="episodeBatchAction" class="episode-action" type="button">
-            <span><b>继续生成本集</b><small>4 个镜头待处理</small></span><i aria-hidden="true">&gt;</i>
+            <span><b>选择生成范围</b><small>4 个镜头待处理 · 不会重复提交已完成镜头</small></span><i aria-hidden="true">&gt;</i>
           </button>
+        </section>
+
+        <section id="batchScopeAccordion" class="batch-scope-accordion is-open" aria-label="视频提交范围">
+          <header><div><span class="eyebrow">SUBMIT SCOPE</span><strong id="batchScopeTitle">本集视频生成</strong></div><span id="batchScopeCount">4 个镜头 · 预计 20 秒</span></header>
+          <div class="batch-scope-options" role="group" aria-label="生成范围">
+            <button type="button" class="is-selected" data-batch-scope="current"><b>当前镜头</b><small>镜头 07 · 1 个</small></button>
+            <button type="button" data-batch-scope="missing"><b>缺失镜头</b><small>失败 + 待生成 · 3 个</small></button>
+            <button type="button" data-batch-scope="episode"><b>本集全部</b><small>只提交未完成 · 4 个</small></button>
+          </div>
+          <div class="batch-scope-actions"><span id="batchScopeNote">会创建新的 Take，当前采用版本和其他镜头不受影响</span><button id="batchScopeSubmit" class="is-primary" type="button">生成镜头 07 新 Take</button></div>
         </section>
 
         <section class="episode-pipeline" aria-label="本集生产进度">
@@ -91,10 +101,10 @@
             <span>02</span><div><b>本集分镜</b><small>12 / 12 已确认</small></div><i></i>
           </div>
           <div class="pipeline-step is-current">
-            <span>03</span><div><b>视频生成</b><small id="pipelineVideoProgress">8 / 12 已完成</small></div><i></i>
+            <span>03</span><button id="videoPipelineButton" class="pipeline-step-action" type="button"><b>视频生成</b><small id="pipelineVideoProgress">8 / 12 已完成</small></button><i></i>
           </div>
           <div class="pipeline-step">
-            <span>04</span><div><b>组装成片</b><small>等待全部镜头</small></div><i></i>
+            <span>04</span><button id="cutPipelineButton" class="pipeline-step-action" type="button"><b>组装成片</b><small id="pipelineCutProgress">等待 4 个镜头</small></button><i></i>
           </div>
         </section>
 
@@ -134,6 +144,7 @@
               <span class="is-done">STORY</span><i></i><span class="is-done">STILL</span><i></i><span id="motionLineage">MOTION</span>
             </div>
             <div class="shot-controls">
+              <button id="shotInspectorButton" class="shot-inspector-button" type="button">镜头设置</button>
               <label><span>视频模型</span><select id="videoModel"><option>Seedance 2.0</option><option>Kling v3 Pro</option></select></label>
               <button id="shotAction" class="shot-action" type="button">生成新 Take</button>
             </div>
@@ -168,7 +179,7 @@
                 <div id="referenceGrid" class="reference-grid"></div>
               </div>
               <div class="still-preview">
-                <img id="stillPreview" src="/home-videos/posters/work-01.jpg" alt="当前镜头故事板" />
+                <img id="stillPreview" src="/infinity-3d.png" alt="当前镜头故事板" />
                 <div class="still-badges"><span>STORYBOARD v3</span><b>已锁定</b></div>
                 <div id="stillTakeList" class="still-takes" aria-label="故事板版本"></div>
               </div>
@@ -178,7 +189,7 @@
             <section class="stage-pane motion-pane" aria-labelledby="motionStageTitle">
               <header class="stage-heading"><span>03</span><div><small>MOTION</small><h3 id="motionStageTitle">视频 Take</h3></div><i id="motionState" class="stage-status is-complete">已完成</i></header>
               <div class="video-frame" id="videoFrame">
-                <img id="videoPoster" src="/home-videos/posters/work-01.jpg" alt="当前镜头视频预览" />
+                <img id="videoPoster" src="/infinity-3d.png" alt="当前镜头视频预览" />
                 <div id="generationOverlay" class="generation-overlay" aria-hidden="true">
                   <span class="generation-scan"></span><i></i><strong id="overlayStatus">队列中</strong><em id="overlayProgress">0%</em>
                 </div>
@@ -224,7 +235,7 @@
         </div>
         <label class="asset-style-custom-preview"><span>风格补充</span><input id="assetStyleCustomPreview" value="低饱和青灰海港，钨丝灯有限暖色" /></label>
         <div id="assetStyleReferenceControl" class="asset-style-reference-control">
-          <button type="button" data-asset-preview="/home-videos/posters/work-04.jpg" data-asset-name="全剧风格参考" data-asset-meta="风格参考 · 已启用"><img src="/home-videos/posters/work-04.jpg" alt="全剧风格参考" /></button>
+          <button type="button" data-asset-preview="/infinity-3d.png" data-asset-name="全剧风格参考" data-asset-meta="风格参考 · 已启用"><img src="/infinity-3d.png" alt="全剧风格参考" /></button>
           <div><strong>雾港冷调参考.jpg</strong><span>只继承线条、色彩、材质和光影</span></div>
           <label><input id="assetStyleReferenceEnabledPreview" type="checkbox" checked /><span>启用</span></label>
           <button id="replaceStyleReference" type="button">替换</button>
@@ -241,7 +252,7 @@
           <article data-undefined-asset="码头工作证"><div><strong>码头工作证</strong><span>剧情第 10 镜出现，资产描述文档中未定义</span></div><button type="button" data-undefined-action="add">补入资产文档</button><button type="button" data-undefined-action="ignore">无需独立资产</button></article>
         </div>
       </section>
-      <section class="asset-review-section"><div class="panel-section-title"><span>人物</span><b>2 已确认</b></div><div class="asset-review-list"><article><button type="button" data-asset-preview="/home-videos/posters/work-05.jpg" data-asset-name="林夏" data-asset-meta="C001 · 人物三视图 · 2K"><img src="/home-videos/posters/work-05.jpg" alt="林夏" /></button><div><strong>林夏</strong><span>C001 · 主角 · 剧本证据 8 处</span></div><em>人物</em></article><article><button type="button" data-asset-preview="/home-videos/posters/work-03.jpg" data-asset-name="陈默" data-asset-meta="C002 · 人物三视图 · 2K"><img src="/home-videos/posters/work-03.jpg" alt="陈默" /></button><div><strong>陈默</strong><span>C002 · 关键角色 · 剧本证据 5 处</span></div><em>人物</em></article></div></section>
+      <section class="asset-review-section"><div class="panel-section-title"><span>人物</span><b>2 已确认</b></div><div class="asset-review-list"><article><button type="button" data-asset-preview="/videos/pixel-toy-public-beta-outro/snapshots/frame-04-at-2.12s.png" data-asset-name="林夏" data-asset-meta="C001 · 人物三视图 · 2K"><img src="/videos/pixel-toy-public-beta-outro/snapshots/frame-04-at-2.12s.png" alt="林夏" /></button><div><strong>林夏</strong><span>C001 · 主角 · 剧本证据 8 处</span></div><em>人物</em></article><article><button type="button" data-asset-preview="/videos/pixel-toy-public-beta-outro/snapshots/frame-02-at-1.06s.png" data-asset-name="陈默" data-asset-meta="C002 · 人物三视图 · 2K"><img src="/videos/pixel-toy-public-beta-outro/snapshots/frame-02-at-1.06s.png" alt="陈默" /></button><div><strong>陈默</strong><span>C002 · 关键角色 · 剧本证据 5 处</span></div><em>人物</em></article></div></section>
       <section class="asset-review-section"><div class="panel-section-title"><span>场景</span><b>4 已确认</b></div><div class="asset-review-list"><article><button type="button" data-asset-preview="/home-videos/posters/work-04.jpg" data-asset-name="雾港码头" data-asset-meta="S001 · 场景设定 · 2K"><img src="/home-videos/posters/work-04.jpg" alt="雾港码头" /></button><div><strong>雾港码头</strong><span>S001 · 夜雨外景 · 第 1-12 镜</span></div><em>场景</em></article><article><button type="button" data-asset-preview="/home-videos/posters/work-06.jpg" data-asset-name="离岸货船" data-asset-meta="S002 · 场景设定 · 2K"><img src="/home-videos/posters/work-06.jpg" alt="离岸货船" /></button><div><strong>离岸货船</strong><span>S002 · 甲板与船体 · 第 1、8-12 镜</span></div><em>场景</em></article></div></section>
       <section class="asset-review-section"><div class="panel-section-title"><span>道具与插入</span><b>6 已确认</b></div><div class="asset-review-list"><article><button type="button" data-asset-preview="/home-videos/posters/work-02.jpg" data-asset-name="防水文件袋" data-asset-meta="P003 · 道具三视图 · 2K"><img src="/home-videos/posters/work-02.jpg" alt="防水文件袋" /></button><div><strong>防水文件袋</strong><span>P003 · 剧情关键物 · 第 6、7、9、10 镜</span></div><em>道具</em></article></div></section>
       <footer><span>Kit 只能使用这里确认的正式资产</span><button id="confirmAssetReview" type="button">确认资产文档</button></footer>
@@ -290,6 +301,30 @@
       <div class="queue-capacity"><div><span>并发槽位</span><strong id="queueCapacity">1 / 4</strong></div><div class="capacity-meter"><i></i><i></i><i></i><i></i></div></div>
       <div id="queuePanelList" class="queue-panel-list"></div>
       <footer><span>已完成镜头不会重新提交</span><button id="pauseQueue" type="button">暂停队列</button></footer>
+    </aside>
+
+    <aside id="shotInspectorPanel" class="side-panel shot-inspector-panel" aria-hidden="true" aria-label="当前镜头设置">
+      <header><div><span class="eyebrow">SHOT INSPECTOR</span><h2 id="inspectorTitle">镜头 07 · 林夏穿过雨幕</h2></div><button class="panel-close" type="button" data-close-panel aria-label="关闭" title="关闭">&#215;</button></header>
+      <section class="inspector-context"><span id="inspectorStatus" class="inspector-status is-complete">已完成</span><div><strong id="inspectorMeta">5 秒 · 引用资产 3 个 · Take 02</strong><small>只影响当前镜头，其他镜头和已完成 Take 不变</small></div></section>
+      <section class="inspector-section">
+        <div class="panel-section-title"><span>视频提示词</span><b id="inspectorDirtyState">已保存</b></div>
+        <textarea id="shotPromptInspector" rows="12">镜号 7（5 秒） 景别：单人中近景。摄像机 / 镜头：50mm 标准定焦。运镜：侧前方匀速后退，全程保持连续。机位视角：侧前方平视。画面：林夏沿码头奔向即将离岸的货船，举起防水文件袋，隔着雨幕寻找陈默；保持人物身份、服装、场景空间与前后镜头一致，不增加剧情外物体。人声 OS：至少让我把真相交给你。人物台词：陈默！音效：持续暴雨、海浪、远处船笛与现场环境声。</textarea>
+        <div class="inspector-count"><span id="inspectorPromptCount">0 字</span><span>自然语言镜头格式 · 非 JSON</span></div>
+      </section>
+      <section class="inspector-section inspector-retry-section">
+        <div class="panel-section-title"><span>失败恢复</span><b>不覆盖历史 Take</b></div>
+        <label><span>重试模型</span><select id="inspectorRetryModel"><option>Seedance 2.0</option><option>Kling v3 Pro</option></select></label>
+        <p id="inspectorFailureMessage">当前镜头成功后仍可生成新的 Take；如果失败，只重试这一镜。</p>
+      </section>
+      <footer><button id="restoreShotPrompt" type="button">恢复原稿</button><button id="saveShotPrompt" class="is-primary" type="button">保存当前镜头</button><button id="retryFailedShotButton" type="button">失败后重试</button></footer>
+    </aside>
+
+    <aside id="cutPanel" class="side-panel cut-panel" aria-hidden="true" aria-label="成片组装">
+      <header><div><span class="eyebrow">FINAL CUT</span><h2>本集成片</h2></div><button class="panel-close" type="button" data-close-panel aria-label="关闭" title="关闭">&#215;</button></header>
+      <section class="cut-readiness"><span class="cut-state is-blocked">待补齐</span><div><strong id="cutReadyTitle">还有 4 个镜头未完成</strong><small id="cutReadyCopy">完成后才能组装本集 00:57 成片。</small></div></section>
+      <div class="cut-preview-placeholder"><span>9:16</span><strong>成片预览</strong><small>所有镜头完成后在此播放</small></div>
+      <section class="cut-checklist"><div><span>镜头完整</span><b>8 / 12</b></div><div><span>音频连续性</span><b>待检查</b></div><div><span>字幕 / 对白</span><b>已准备</b></div></section>
+      <footer><span>不会修改任何单独 Take</span><button id="assembleCutButton" class="is-primary" type="button" disabled>组装成片</button></footer>
     </aside>
 
     <div id="previewToast" class="preview-toast" role="status" aria-live="polite"></div>

@@ -179,7 +179,7 @@ const state = {
   loadProjectToken: null,
   activeWindowZ: Number(localStorage.getItem(layoutStorageKey(WINDOW_Z_KEY)) || 20),
   activeStudioTab: "assets",
-  modernStudio: { shotIndex: 0, copyTab: "story", focus: "assets", detailsOpen: false },
+  modernStudio: { shotIndex: 0, copyTab: "story", focus: "video", detailsOpen: false, batchScope: "current" },
 };
 localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
 
@@ -4239,6 +4239,10 @@ function renderModernStudio(data = state.project) {
   $("#modernEpisodeCrumb").textContent = episodeTitle;
   $("#modernRatioBadge").textContent = ratio;
   $("#modernEpisodeCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
+  $("#modernEpisodeKicker").textContent = project.episodeCode || project.episodeSlug || "EPISODE";
+  $("#modernEpisodeHeroTitle").textContent = episodeTitle;
+  $("#modernEpisodeHeroCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
+  $("#modernHeroRatio").textContent = `${ratio} 已锁定`;
   $("#modernShotCount").textContent = total;
   $("#modernCompletedCount").textContent = `${pct}%`;
   $("#modernSeriesProgress").style.width = `${pct}%`;
@@ -4267,6 +4271,57 @@ function renderModernStudio(data = state.project) {
   renderModernShotRail(shots, selectedIndex, data);
   renderModernFinalCutTrack(shots);
   renderModernSelectedShot(data, selected, selectedIndex);
+  renderModernBatchScope(shots, selectedIndex);
+}
+
+function modernBatchScopeTargets(shots = [], scope = state.modernStudio.batchScope) {
+  if (scope === "current") return shots.length ? [state.modernStudio.shotIndex] : [];
+  if (scope === "missing") return shots.map((shot, index) => ["failed", "waiting", "ready"].includes(shot.status) ? index : -1).filter((index) => index >= 0);
+  return shots.map((shot, index) => shot.status === "complete" ? -1 : index).filter((index) => index >= 0);
+}
+
+function renderModernBatchScope(shots = [], selectedIndex = 0) {
+  const accordion = $("#modernBatchScopeAccordion");
+  if (!accordion) return;
+  const scope = ["current", "missing", "episode"].includes(state.modernStudio.batchScope) ? state.modernStudio.batchScope : "current";
+  state.modernStudio.batchScope = scope;
+  const selected = shots[selectedIndex];
+  const targets = modernBatchScopeTargets(shots, scope);
+  const totalSeconds = targets.reduce((sum, index) => sum + (Number(shots[index]?.duration) || 0), 0);
+  const currentText = selected ? `镜头 ${String(selected.number).padStart(2, "0")} · 1 个` : "暂无当前镜头";
+  accordion.querySelectorAll("[data-modern-batch-scope]").forEach((button) => {
+    const buttonScope = button.dataset.modernBatchScope;
+    const isSelected = buttonScope === scope;
+    button.classList.toggle("is-selected", isSelected);
+    button.setAttribute("aria-pressed", String(isSelected));
+    const small = button.querySelector("small");
+    if (!small) return;
+    if (buttonScope === "current") small.textContent = currentText;
+    if (buttonScope === "missing") small.textContent = `失败 + 待生成 · ${modernBatchScopeTargets(shots, "missing").length} 个`;
+    if (buttonScope === "episode") small.textContent = `只提交未完成 · ${modernBatchScopeTargets(shots, "episode").length} 个`;
+  });
+  const scopeLabel = { current: "当前镜头", missing: "缺失镜头", episode: "本集全部" }[scope];
+  const count = $("#modernBatchScopeCount");
+  const title = $("#modernBatchScopeTitle");
+  const submit = $("#modernBatchScopeSubmit");
+  const note = $("#modernBatchScopeNote");
+  if (title) title.textContent = `${scopeLabel}视频生成`;
+  if (count) count.textContent = targets.length ? `${targets.length} 个镜头 · 预计 ${Math.round(totalSeconds)} 秒` : "没有可提交的镜头";
+  if (submit) {
+    const currentComplete = scope === "current" && selected?.status === "complete";
+    submit.textContent = currentComplete ? `生成镜头 ${String(selected.number).padStart(2, "0")} 新 Take` : `提交${scopeLabel}${targets.length ? ` · ${targets.length} 个` : ""}`;
+    submit.disabled = !targets.length;
+  }
+  if (note) note.textContent = scope === "current" && selected?.status === "complete"
+    ? "会创建新的 Take，当前采用版本和其他镜头不受影响"
+    : "已完成镜头与历史 Take 会保留，不会重复提交";
+  const heroCount = $("#modernHeroShotCount");
+  const heroDuration = $("#modernHeroDuration");
+  if (heroCount) heroCount.textContent = String(shots.length || 0);
+  if (heroDuration) {
+    const duration = shots.reduce((sum, shot) => sum + (Number(shot.duration) || 0), 0);
+    heroDuration.textContent = `00:${String(Math.round(duration)).padStart(2, "0")}`;
+  }
 }
 
 function renderModernAssetGenerationControls(data = state.project) {
@@ -7966,6 +8021,8 @@ function bind() {
     focusModernPane("video");
     toast("已定位到视频生成阶段");
   });
+  $("#modernReturnProject")?.addEventListener("click", goBackToProjects);
+  $("#modernMoreActions")?.addEventListener("click", () => toast("更多操作将在当前项目菜单中提供"));
   $("#modernVisualBibleButton")?.addEventListener("click", () => {
     focusModernPane("assets");
     toast("已定位到资产与风格规则");
@@ -7974,8 +8031,30 @@ function bind() {
     focusModernPane("kit");
   });
   $("#modernBatchAction")?.addEventListener("click", () => {
-    setWorkflowFocus("video");
-    withStudioButtonFeedback($("#modernBatchAction"), () => generateAllVideoSegments()).catch((error) => toast(error.message));
+    const accordion = $("#modernBatchScopeAccordion");
+    if (!accordion) return;
+    accordion.classList.toggle("is-open");
+    if (accordion.classList.contains("is-open")) {
+      renderModernBatchScope(modernShotRecords(state.project), state.modernStudio.shotIndex);
+      toast("请选择要提交的镜头范围");
+    }
+  });
+  $("#modernBatchScopeAccordion")?.addEventListener("click", (event) => {
+    const scopeButton = event.target.closest("[data-modern-batch-scope]");
+    if (scopeButton) {
+      state.modernStudio.batchScope = scopeButton.dataset.modernBatchScope || "current";
+      renderModernBatchScope(modernShotRecords(state.project), state.modernStudio.shotIndex);
+      return;
+    }
+    const submit = event.target.closest("#modernBatchScopeSubmit");
+    if (!submit || submit.disabled) return;
+    const shots = modernShotRecords(state.project);
+    const target = shots[state.modernStudio.shotIndex];
+    const scope = state.modernStudio.batchScope || "current";
+    const action = scope === "current" && target
+      ? () => generateVideoSegment(target.name, { forceRegenerate: target.status === "complete" })
+      : () => generateAllVideoSegments();
+    withStudioButtonFeedback(submit, action).catch((error) => toast(error.message));
   });
   $$('[data-modern-focus]').forEach((button) => button.addEventListener("click", () => {
     const focus = button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus;

@@ -23,6 +23,9 @@ const shotSeeds = [
 ];
 
 const initialStates = ["complete", "complete", "complete", "complete", "complete", "complete", "complete", "complete", "running", "failed", "ready", "ready"];
+const failureReasons = {
+  9: "内容安全策略拦截：镜头动作与文本描述冲突",
+};
 
 const shots = shotSeeds.map((seed, index) => {
   const [title, duration, story, dialogue, size, lens, motion, assets] = seed;
@@ -38,6 +41,7 @@ const shots = shotSeeds.map((seed, index) => {
     motion,
     assets,
     state,
+    failureReason: failureReasons[index] || "",
     progress: state === "complete" || state === "failed" ? 100 : state === "running" ? 64 : 0,
     image: posters[(index + 3) % posters.length],
     prompt: buildPrompt(index + 1, duration, size, lens, motion, story, dialogue),
@@ -123,8 +127,12 @@ let selectedPanelIndex = 3;
 let assetWorkflowMode = "professional";
 let toastTimer = null;
 let batchTimer = null;
-let batchTargets = [8];
+let batchScope = "current";
+let batchTargets = [];
 let queuePaused = false;
+const shotTimers = new Map();
+let cutTimer = null;
+let cutState = "blocked";
 let selectedAssetStyle = "cg_3d";
 let assetStyleReferenceEnabled = true;
 let assetBindMode = "bind";
@@ -210,6 +218,7 @@ function renderSelectedShot() {
   renderStillTakes();
   renderMotion();
   renderKitPanel();
+  renderInspector();
 }
 
 function copyValueForShot(shot) {
@@ -512,6 +521,175 @@ function renderTakeList() {
   });
 }
 
+function scopeTargets(scope = batchScope) {
+  if (scope === "current") return [selectedShotIndex];
+  if (scope === "missing") return shots.map((shot, index) => ["failed", "ready"].includes(shot.state) ? index : -1).filter((index) => index >= 0);
+  return shots.map((shot, index) => shot.state === "complete" ? -1 : index).filter((index) => index >= 0);
+}
+
+function scopeLabel(scope = batchScope) {
+  return { current: "当前镜头", missing: "缺失镜头", episode: "本集全部" }[scope] || "当前镜头";
+}
+
+function renderBatchScope() {
+  const targets = scopeTargets();
+  const totalSeconds = targets.reduce((sum, index) => sum + shots[index].duration, 0);
+  const current = currentShot();
+  const currentTarget = batchScope === "current" ? `镜头 ${padded(current.number)} · 1 个` : `${targets.length} 个镜头`;
+  const submitLabel = batchScope === "current" && current.state === "complete"
+    ? `生成镜头 ${padded(current.number)} 新 Take`
+    : `提交${scopeLabel()}${targets.length ? ` · ${targets.length} 个` : ""}`;
+
+  $$("[data-batch-scope]").forEach((button) => {
+    const selected = button.dataset.batchScope === batchScope;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+    const small = button.querySelector("small");
+    if (!small) return;
+    const buttonTargets = scopeTargets(button.dataset.batchScope);
+    if (button.dataset.batchScope === "current") small.textContent = currentTarget;
+    if (button.dataset.batchScope === "missing") small.textContent = `失败 + 待生成 · ${buttonTargets.length} 个`;
+    if (button.dataset.batchScope === "episode") small.textContent = `只提交未完成 · ${buttonTargets.length} 个`;
+  });
+
+  $("#batchScopeTitle").textContent = `${scopeLabel()}视频生成`;
+  $("#batchScopeCount").textContent = targets.length ? `${targets.length} 个镜头 · 预计 ${totalSeconds} 秒` : "没有可提交的镜头";
+  $("#batchScopeSubmit").textContent = submitLabel;
+  $("#batchScopeSubmit").disabled = !targets.length || Boolean(batchTimer);
+  $("#batchScopeSubmit").classList.toggle("is-running", Boolean(batchTimer));
+  $("#batchScopeAccordion").classList.toggle("is-running", Boolean(batchTimer));
+  const actionNote = batchScope === "current" && current.state === "complete"
+    ? "会创建新的 Take，当前采用版本和其他镜头不受影响"
+    : "已完成镜头与历史 Take 会保留，不会重复提交";
+  $("#batchScopeNote").textContent = actionNote;
+}
+
+function renderInspector() {
+  const shot = currentShot();
+  const statusLabels = { complete: "已完成", running: "生成中", queued: "队列中", failed: "生成失败", ready: "待生成" };
+  const status = $("#inspectorStatus");
+  status.className = `inspector-status is-${shot.state}`;
+  status.textContent = statusLabels[shot.state];
+  $("#inspectorTitle").textContent = `镜头 ${padded(shot.number)} · ${shot.title}`;
+  $("#inspectorMeta").textContent = `${shot.duration} 秒 · 引用资产 ${effectiveShotAssets(shot).length} 个 · ${shot.takes ? `Take ${padded(shot.selectedTake + 1)}` : "尚无视频 Take"}`;
+  $("#inspectorFailureMessage").textContent = shot.state === "failed"
+    ? `${shot.failureReason || "模型未返回可用视频"}。可切换模型后只重试这一镜。`
+    : "当前镜头成功后仍可生成新的 Take；如果失败，只重试这一镜。";
+  const prompt = $("#shotPromptInspector");
+  prompt.value = shot.prompt;
+  prompt.classList.remove("is-dirty");
+  $("#inspectorPromptCount").textContent = `${shot.prompt.length} 字`;
+  $("#inspectorDirtyState").textContent = "已保存";
+  $("#retryFailedShotButton").disabled = shot.state !== "failed";
+  $("#retryFailedShotButton").textContent = shot.state === "failed" ? "失败后重试" : "仅失败时可重试";
+}
+
+function renderCutPanel() {
+  const completed = shots.filter((shot) => shot.state === "complete").length;
+  const ready = completed === shots.length;
+  const state = $("#cutPanel .cut-state");
+  const title = $("#cutReadyTitle");
+  const copy = $("#cutReadyCopy");
+  const button = $("#assembleCutButton");
+  if (cutState === "assembling") {
+    state.className = "cut-state is-running";
+    state.textContent = "组装中";
+    title.textContent = "正在校验镜头与时间线";
+    copy.textContent = "不会改变任何单独 Take，完成后生成独立成片。";
+    button.disabled = true;
+  } else if (cutState === "complete") {
+    state.className = "cut-state is-complete";
+    state.textContent = "可预览";
+    title.textContent = "本集成片已组装";
+    copy.textContent = "9:16 成片已就绪，可在此面板继续预览。";
+    button.disabled = false;
+    button.textContent = "重新组装";
+  } else if (ready) {
+    cutState = "ready";
+    state.className = "cut-state is-ready";
+    state.textContent = "可组装";
+    title.textContent = "12 个镜头已完成";
+    copy.textContent = "可以组装本集 00:57 成片，单独 Take 不会被覆盖。";
+    button.disabled = false;
+    button.textContent = "组装成片";
+  } else {
+    cutState = "blocked";
+    state.className = "cut-state is-blocked";
+    state.textContent = "待补齐";
+    title.textContent = `还有 ${shots.length - completed} 个镜头未完成`;
+    copy.textContent = `完成后才能组装本集 00:57 成片。`;
+    button.disabled = true;
+    button.textContent = "组装成片";
+  }
+  const checklist = $$("#cutPanel .cut-checklist b");
+  if (checklist[0]) checklist[0].textContent = `${completed} / ${shots.length}`;
+}
+
+function completeShot(index) {
+  const shot = shots[index];
+  shot.state = "complete";
+  shot.progress = 100;
+  shot.failureReason = "";
+  shot.takes += 1;
+  shot.selectedTake = shot.takes - 1;
+}
+
+function runShotProgress(index, increment = 17, interval = 420) {
+  if (shotTimers.has(index)) return;
+  const shot = shots[index];
+  shot.state = "running";
+  shot.progress = 0;
+  const timer = window.setInterval(() => {
+    shot.progress = Math.min(100, shot.progress + increment);
+    renderAllLiveState();
+    if (shot.progress >= 100) {
+      window.clearInterval(timer);
+      shotTimers.delete(index);
+      completeShot(index);
+      renderAllLiveState();
+      showToast(`镜头 ${padded(shot.number)} 已完成；历史 Take 继续保留`);
+    }
+  }, interval);
+  shotTimers.set(index, timer);
+}
+
+function retryFailedShot(index = selectedShotIndex) {
+  const shot = shots[index];
+  if (!shot || shot.state !== "failed") {
+    showToast("只有失败镜头可以重试，已完成镜头不会被覆盖");
+    return;
+  }
+  selectedShotIndex = index;
+  batchTargets = [...new Set([...batchTargets, index])];
+  shot.state = "queued";
+  shot.progress = 0;
+  shot.failureReason = "";
+  if (batchTimer) startQueuedShots(2, batchTargets);
+  else runShotProgress(index, 20, 460);
+  renderSelectedShot();
+  renderAllLiveState();
+  openPanel("queuePanel");
+  showToast(`镜头 ${padded(shot.number)} 已重新提交；已完成镜头不受影响`);
+}
+
+function simulateCutAssembly() {
+  openPanel("cutPanel");
+  const completed = shots.filter((shot) => shot.state === "complete").length;
+  if (completed !== shots.length) {
+    showToast(`还有 ${shots.length - completed} 个镜头未完成，暂不能组装成片`);
+    return;
+  }
+  if (cutTimer) return;
+  cutState = "assembling";
+  renderCutPanel();
+  cutTimer = window.setTimeout(() => {
+    cutTimer = null;
+    cutState = "complete";
+    renderCutPanel();
+    showToast("本集成片已组装，独立于所有镜头 Take");
+  }, 900);
+}
+
 function renderEpisodeMetrics() {
   const completed = shots.filter((shot) => shot.state === "complete").length;
   const running = shots.filter((shot) => shot.state === "running").length;
@@ -522,6 +700,8 @@ function renderEpisodeMetrics() {
   $("#queueButtonText").textContent = `队列 ${running + shots.filter((shot) => shot.state === "queued").length}`;
   const detail = $("#episodeBatchAction").querySelector("small");
   detail.textContent = completed === shots.length ? "全部镜头已完成" : `${failed + pending + running} 个镜头待处理`;
+  $("#pipelineCutProgress").textContent = completed === shots.length ? "可以组装成片" : `等待 ${shots.length - completed} 个镜头`;
+  renderCutPanel();
 }
 
 function simulateEpisodeBatch() {
@@ -530,9 +710,14 @@ function simulateEpisodeBatch() {
     return;
   }
 
-  batchTargets = shots.map((shot, index) => shot.state === "complete" ? -1 : index).filter((index) => index >= 0);
+  batchTargets = scopeTargets();
   if (!batchTargets.length) {
-    showToast("本集视频已经全部完成");
+    showToast(`${scopeLabel()}没有可提交的镜头`);
+    return;
+  }
+
+  if (batchScope === "current" && ["running", "queued"].includes(currentShot().state)) {
+    openPanel("queuePanel");
     return;
   }
 
@@ -540,11 +725,12 @@ function simulateEpisodeBatch() {
     const shot = shots[index];
     shot.state = "queued";
     shot.progress = 0;
+    shot.failureReason = "";
   });
-  startQueuedShots(2);
+  startQueuedShots(2, batchTargets);
   queuePaused = false;
   $("#episodeBatchAction").classList.add("is-running");
-  $("#episodeBatchAction b").textContent = "本集生成中";
+  $("#episodeBatchAction b").textContent = `${scopeLabel()}生成中`;
   $("#pauseQueue").textContent = "暂停队列";
   renderAllLiveState();
   openPanel("queuePanel");
@@ -561,18 +747,20 @@ function simulateEpisodeBatch() {
         shot.selectedTake = shot.takes - 1;
       }
     });
-    startQueuedShots(2);
+    startQueuedShots(2, batchTargets);
     renderAllLiveState();
 
-    const unfinished = shots.some((shot) => shot.state === "running" || shot.state === "queued");
+    const unfinished = batchTargets.some((index) => ["running", "queued"].includes(shots[index].state));
     if (!unfinished) finishEpisodeBatch();
   }, 500);
+  renderAllLiveState();
 }
 
-function startQueuedShots(limit) {
+function startQueuedShots(limit, targets = shots.map((_, index) => index)) {
   let available = limit - shots.filter((shot) => shot.state === "running").length;
-  for (const shot of shots) {
+  for (const index of targets) {
     if (available <= 0) break;
+    const shot = shots[index];
     if (shot.state === "queued") {
       shot.state = "running";
       available -= 1;
@@ -584,9 +772,9 @@ function finishEpisodeBatch() {
   window.clearInterval(batchTimer);
   batchTimer = null;
   $("#episodeBatchAction").classList.remove("is-running");
-  $("#episodeBatchAction b").textContent = "本集视频已完成";
+  $("#episodeBatchAction b").textContent = `${scopeLabel()}已完成`;
   renderAllLiveState();
-  showToast("本集 12 个镜头已完成，所有旧 Take 均已保留");
+  showToast(`${scopeLabel()}已完成；所有旧 Take 均已保留`);
 }
 
 function runSingleShot() {
@@ -595,41 +783,29 @@ function runSingleShot() {
     openPanel("queuePanel");
     return;
   }
-  const previousState = shot.state;
-  shot.state = "running";
-  shot.progress = 0;
+  runShotProgress(selectedShotIndex);
   renderAllLiveState();
-  let localProgress = 0;
-  const timer = window.setInterval(() => {
-    localProgress += 17;
-    shot.progress = Math.min(localProgress, 100);
-    renderAllLiveState();
-    if (shot.progress >= 100) {
-      window.clearInterval(timer);
-      shot.state = "complete";
-      shot.takes += 1;
-      shot.selectedTake = shot.takes - 1;
-      renderAllLiveState();
-      showToast(previousState === "complete" ? "新 Take 已生成，旧版本仍保留" : `镜头 ${padded(shot.number)} 已完成`);
-    }
-  }, 420);
 }
 
 function renderAllLiveState() {
   renderShotRail();
   renderEpisodeMetrics();
+  renderBatchScope();
   renderQueuePanel();
   renderMotion();
 }
 
 function renderQueuePanel() {
-  const tracked = batchTargets.length ? batchTargets : shots.map((shot, index) => shot.state === "running" || shot.state === "failed" ? index : -1).filter((index) => index >= 0);
+  const tracked = [...new Set([...(batchTargets || []), ...shots.map((shot, index) => ["running", "queued", "failed"].includes(shot.state) ? index : -1).filter((index) => index >= 0)])];
   const running = shots.filter((shot) => shot.state === "running").length;
   $("#queueCapacity").textContent = `${running} / 4`;
   $$(".capacity-meter i").forEach((bar, index) => bar.classList.toggle("is-active", index < running));
   $("#queuePanelList").innerHTML = tracked.map((index) => {
     const shot = shots[index];
-    return `<div class="queue-item is-${shot.state}"><span>${padded(shot.number)}</span><div><b>${escapeHtml(shot.title)}</b><small>${stateLabel(shot)} · ${shot.takes} 个历史 Take 保留</small></div><em>${shot.state === "running" ? `${shot.progress}%` : stateLabel(shot)}</em></div>`;
+    const reason = shot.state === "failed" ? `<small class="queue-failure">${escapeHtml(shot.failureReason || "模型未返回可用视频")}</small>` : "";
+    const retry = shot.state === "failed" ? `<button type="button" data-queue-action="retry" data-shot-index="${index}">重试</button>` : "";
+    const cancel = shot.state === "queued" ? `<button type="button" data-queue-action="cancel" data-shot-index="${index}">取消</button>` : "";
+    return `<div class="queue-item is-${shot.state}"><span>${padded(shot.number)}</span><div><b>${escapeHtml(shot.title)}</b><small>${stateLabel(shot)} · ${shot.takes} 个历史 Take 保留</small>${reason}<div class="queue-item-actions"><button type="button" data-queue-action="inspect" data-shot-index="${index}">查看镜头</button>${retry}${cancel}</div></div><em>${shot.state === "running" ? `${shot.progress}%` : stateLabel(shot)}</em></div>`;
   }).join("") || '<div class="queue-item"><span>--</span><div><b>队列为空</b><small>没有待处理任务</small></div></div>';
 }
 
@@ -663,12 +839,26 @@ function showToast(message) {
   toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 2400);
 }
 
+function normalizePreviewAssets() {
+  $("#stillPreview").src = posters[0];
+  $("#videoPoster").src = posters[0];
+  $("#assetStyleReferenceControl img").src = posters[3];
+  $$('[data-asset-preview]').forEach((button, index) => {
+    const source = posters[(index + 1) % posters.length];
+    button.dataset.assetPreview = source;
+    const image = button.querySelector("img");
+    if (image) image.src = source;
+  });
+}
+
 function initializePreview() {
+  normalizePreviewAssets();
   renderShotRail();
   renderSelectedShot();
   renderAssetDocumentState();
   renderAssetOperationState();
   renderEpisodeMetrics();
+  renderBatchScope();
   renderQueuePanel();
   $("#bibleReferences").innerHTML = posters.map((poster, index) => `<img src="${poster}" alt="视觉参考 ${index + 1}" />`).join("");
 
@@ -688,8 +878,30 @@ function initializePreview() {
     showToast("已保存到当前镜头，不影响其他镜头");
   });
 
-  $("#episodeBatchAction").addEventListener("click", simulateEpisodeBatch);
+  $("#episodeBatchAction").addEventListener("click", () => {
+    if (batchTimer) openPanel("queuePanel");
+    else {
+      $("#batchScopeAccordion").classList.add("is-open", "is-attention");
+      window.setTimeout(() => $("#batchScopeAccordion").classList.remove("is-attention"), 700);
+      showToast("先选择提交范围，再提交视频生成");
+    }
+  });
+  $("#batchScopeSubmit").addEventListener("click", simulateEpisodeBatch);
+  $("#batchScopeAccordion").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-batch-scope]");
+    if (!button) return;
+    batchScope = button.dataset.batchScope;
+    renderBatchScope();
+    showToast(`已选择${scopeLabel()}；不会覆盖已完成镜头`);
+  });
   $("#shotAction").addEventListener("click", runSingleShot);
+  $("#shotInspectorButton").addEventListener("click", () => {
+    renderInspector();
+    openPanel("shotInspectorPanel");
+  });
+  $("#videoPipelineButton").addEventListener("click", () => openPanel("queuePanel"));
+  $("#cutPipelineButton").addEventListener("click", simulateCutAssembly);
+  $("#assembleCutButton").addEventListener("click", simulateCutAssembly);
   $("#styleBibleButton").addEventListener("click", toggleStyleBible);
   $("#queueButton").addEventListener("click", () => openPanel("queuePanel"));
   $("#assetParserButton").addEventListener("click", () => openPanel("assetParserPanel"));
@@ -702,6 +914,28 @@ function initializePreview() {
     $("#pauseQueue").textContent = queuePaused ? "继续队列" : "暂停队列";
     showToast(queuePaused ? "队列已暂停，当前结果不会丢失" : "队列已继续");
   });
+  $("#queuePanelList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-queue-action]");
+    if (!button) return;
+    const index = Number(button.dataset.shotIndex);
+    const action = button.dataset.queueAction;
+    if (action === "retry") retryFailedShot(index);
+    if (action === "inspect") {
+      selectedShotIndex = index;
+      renderSelectedShot();
+      openPanel("shotInspectorPanel");
+    }
+    if (action === "cancel") {
+      const shot = shots[index];
+      if (shot.state === "queued") {
+        shot.state = "ready";
+        shot.progress = 0;
+        batchTargets = batchTargets.filter((target) => target !== index);
+        renderAllLiveState();
+        showToast(`镜头 ${padded(shot.number)} 已取消排队，历史 Take 保留`);
+      }
+    }
+  });
   $("#newStillTake").addEventListener("click", () => showToast("将创建新的故事板 Take，当前版本继续保留"));
   $("#editStillPrompt").addEventListener("click", () => {
     copyTab = "prompt";
@@ -709,6 +943,23 @@ function initializePreview() {
     $("#shotCopy").focus();
     showToast("已切换到当前镜头提示词");
   });
+  $("#shotPromptInspector").addEventListener("input", (event) => {
+    const dirty = event.target.value !== currentShot().prompt;
+    event.target.classList.toggle("is-dirty", dirty);
+    $("#inspectorDirtyState").textContent = dirty ? "未保存" : "已保存";
+    $("#inspectorPromptCount").textContent = `${event.target.value.length} 字`;
+  });
+  $("#saveShotPrompt").addEventListener("click", () => {
+    currentShot().prompt = $("#shotPromptInspector").value;
+    renderInspector();
+    showToast(`镜头 ${padded(currentShot().number)} 提示词已保存；只影响当前镜头`);
+  });
+  $("#restoreShotPrompt").addEventListener("click", () => {
+    renderInspector();
+    showToast("已恢复当前镜头的已保存提示词");
+  });
+  $("#retryFailedShotButton").addEventListener("click", () => retryFailedShot());
+  $("#inspectorRetryModel").addEventListener("change", (event) => showToast(`重试模型已切换为「${event.target.value}」`));
   $("#confirmAssetReview").addEventListener("click", () => showToast("资产描述文档已确认，12 个正式资产可用于 Kit"));
   $("#assetWorkflowMode").addEventListener("click", (event) => {
     const button = event.target.closest("[data-asset-mode]");

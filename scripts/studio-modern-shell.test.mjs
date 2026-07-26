@@ -66,6 +66,9 @@ assert.ok(modernHeroStart >= 0 && modernBatchStart > modernHeroStart, "modern he
 const modernHeroHtml = html.slice(modernHeroStart, modernBatchStart);
 assert.match(modernHeroHtml, /id="modernBuildConfig"[^>]*class="[^"]*modern-video-action/, "video config must be a prominent hero action");
 assert.match(modernHeroHtml, /id="modernVideoGenerate"[^>]*class="[^"]*modern-video-action[^>]*disabled/, "video generation must start disabled in the hero");
+assert.match(css, /\.modern-episode-hero\s*\{[^}]*padding:\s*14px 26px/, "episode hero must stay compact");
+assert.match(css, /\.modern-episode-video-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2[^}]*minmax\(112px/, "video actions must share one compact row");
+assert.match(css, /\.modern-episode-copy p\s*\{[^}]*display:\s*none/, "non-action hero description must not consume vertical space");
 const modernMotionStart = html.indexOf('aria-labelledby="modernMotionTitle"');
 const modernCutStart = html.indexOf('<section id="modernCutPanel"');
 assert.ok(modernMotionStart >= 0 && modernCutStart > modernMotionStart, "modern video pane must remain in the workbench");

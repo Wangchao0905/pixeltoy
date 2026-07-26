@@ -16380,6 +16380,8 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-video-preview { width: min(100%, 260px); aspect-ratio: 9 / 16; min-height: 0; height: auto; margin: 12px auto 0; }
 .modern-video-preview img,
 .modern-video-preview video { width: 100%; height: 100%; object-fit: cover; }
+.modern-still-preview { width: min(100%, 260px); aspect-ratio: 9 / 16; min-height: 0; height: auto; margin: 12px auto 0; }
+.modern-still-preview img { width: 100%; height: 100%; object-fit: cover; }
 
 /* Bound the asset rail so a long manifest cannot turn the source step into a blank wall. */
 .modern-asset-results { max-height: min(520px, calc(100vh - 250px)); overflow-y: auto; scrollbar-width: thin; }

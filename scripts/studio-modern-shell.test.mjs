@@ -54,6 +54,9 @@ assert.match(js, /modernGenerateDraft[\s\S]{0,700}generateDraft\(\)/, "modern sh
 assert.match(js, /modernBuildConfig[\s\S]{0,700}buildConfig\(button\)/, "modern shell must bind the video config action");
 assert.doesNotMatch(js, /modernGenerateDraft[\s\S]{0,700}#draftBtn/, "modern draft action must not proxy through the hidden legacy button");
 assert.doesNotMatch(js, /modernBuildConfig[\s\S]{0,700}#buildConfigBtn/, "modern config action must not proxy through the hidden legacy button");
+assert.doesNotMatch(js, /hasStoryboardDraft|请先生成分镜草稿/, "storyboard must not be a prerequisite for video config");
+assert.match(js, /configButton\.disabled = configGenerating \|\| !scriptSource\.trim\(\)/, "video config must only require script input in the modern shell");
+assert.match(js, /body\.ratio = "9:16"/, "storyboard generation must request the vertical 9:16 format");
 const modernSequenceStart = html.indexOf('<section class="modern-sequence"');
 const modernWorkbenchStart = html.indexOf('<section class="modern-workbench"');
 assert.ok(modernSequenceStart >= 0 && modernWorkbenchStart > modernSequenceStart, "modern shot sequence must remain a bounded section");
@@ -115,6 +118,7 @@ for (const rule of assetImageRules) {
 }
 assert.match(css, /modern-main\[data-modern-view="storyboard"\]/, "storyboard view must have a dedicated core layout");
 assert.match(css, /\.modern-video-preview\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "video preview must use a portrait 9:16 frame");
+assert.match(css, /\.modern-still-preview\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "storyboard preview must use a portrait 9:16 frame");
 assert.match(css, /\.modern-source-panel\s*\{[^}]*display:\s*grid/, "source panel must place the asset wall beside the parsed rail");
 assert.match(css, /\.modern-stage-pane\s*\{[^}]*align-self:\s*start/, "stage panes must not stretch to the portrait video height");
 assert.match(css, /\.modern-asset-results\s*\{[^}]*max-height:/, "asset rail must not stretch the entire source panel");

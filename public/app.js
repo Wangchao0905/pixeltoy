@@ -4197,8 +4197,6 @@ function renderModernStudio(data = state.project) {
   });
   const scriptSource = workflowEditorValue("script");
   const assetSource = workflowEditorValue("assetDescription");
-  const draftText = String(data.contents?.storyboard || "").trim();
-  const hasStoryboardDraft = /^#{3}\s+\S+/m.test(draftText) || /(?:镜号\s*\d+|shot\s*\d+)/i.test(draftText);
   const draftButton = $("#modernGenerateDraft");
   if (draftButton) {
     const drafting = isDraftGenerating();
@@ -4209,9 +4207,9 @@ function renderModernStudio(data = state.project) {
   const configButton = $("#modernBuildConfig");
   if (configButton) {
     const configGenerating = configButton.dataset.studioFeedbackBusy === "true";
-    configButton.disabled = configGenerating || !hasStoryboardDraft;
+    configButton.disabled = configGenerating || !scriptSource.trim();
     configButton.textContent = configGenerating ? "生成中..." : "生成视频配置";
-    configButton.title = configGenerating ? "视频配置生成中" : hasStoryboardDraft ? "根据分镜草稿生成视频配置" : "请先生成分镜草稿";
+    configButton.title = configGenerating ? "视频配置生成中" : scriptSource.trim() ? "根据剧本、资产和模型导演设计生成视频配置" : "请先输入或上传剧本";
   }
   const scriptStatus = $("#modernScriptSourceStatus");
   const assetStatus = $("#modernAssetSourceStatus");
@@ -4244,10 +4242,12 @@ function renderModernStudio(data = state.project) {
   const manifest = data.assetManifest || {};
   const confirmedAssetCount = manifest.confirmed ? Number(manifest.items?.length || 0) : 0;
   const generatedAssetCount = Array.isArray(data.assets) ? data.assets.filter((asset) => asset?.url).length : 0;
+  const videoConfigReady = Boolean(data.videoConfigStatus?.exists && total);
+  const storyboardReady = Boolean(data.storyboards?.length);
   const pipelineComplete = [
     Boolean(manifest.confirmed),
     Boolean(confirmedAssetCount > 0 && generatedAssetCount >= confirmedAssetCount),
-    Boolean(data.storyboards?.length),
+    storyboardReady || videoConfigReady,
     Boolean(total && completed === total),
     Boolean(data.finalCut?.url),
   ];
@@ -4283,7 +4283,7 @@ function renderModernStudio(data = state.project) {
   $("#modernPipelineProgress").style.width = `${Math.round((pipelineComplete.filter(Boolean).length / pipelineComplete.length) * 100)}%`;
   $("#modernAssetStep").textContent = manifest.confirmed ? `${manifest.items?.length || data.assets?.length || 0} 个资产已确认` : (manifest.items?.length ? "待确认分类" : "等待解析");
   $("#modernAssetImageStep").textContent = confirmedAssetCount ? `${Math.min(generatedAssetCount, confirmedAssetCount)}/${confirmedAssetCount} 已生成` : "等待确认资产";
-  $("#modernBoardStep").textContent = data.storyboards?.length ? `${data.storyboards.length} 个故事板已生成` : "等待生成";
+  $("#modernBoardStep").textContent = storyboardReady ? `${data.storyboards.length} 个故事板已生成` : videoConfigReady ? "可选 · 已跳过" : "可选 · 未生成";
   $("#modernVideoStep").textContent = data.videoConfigStatus?.ready ? `${total} 个镜头已配置` : "等待配置";
   $("#modernCutStep").textContent = data.finalCut?.url ? "成片已组装" : "等待片段";
   $("#modernKitShot").textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")}` : "当前镜头";
@@ -7600,6 +7600,7 @@ async function startJob(type) {
     body.quality = $("#assetQuality")?.value || "1k";
     body.storyboardRange = $("#storyboardGenerateRange")?.value || "missing";
     body.dialogueLanguage = state.dialogueLanguage;
+    body.ratio = "9:16";
   }
   const data = await api(`/api/project/${state.selectedId}/job`, {
     method: "POST",

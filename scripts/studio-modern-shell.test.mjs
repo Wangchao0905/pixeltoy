@@ -50,6 +50,43 @@ assert.doesNotMatch(js, /#studioShell/, "runtime must not query the removed lega
 assert.doesNotMatch(js, /runHiddenLegacyAction/, "modern actions must not proxy through legacy buttons");
 assert.match(js, /data-modern-view/, "pipeline clicks must switch the modern core view");
 assert.doesNotMatch(js, /target\.scrollIntoView\(\{ behavior: "smooth"/, "pipeline clicks must not scroll the whole page");
+const pipelineFocuses = [...html.matchAll(/<button[^>]*data-modern-focus="([a-z]+)"/g)].map((m) => m[1]);
+assert.deepEqual(pipelineFocuses, ["assets", "assetimg", "storyboard", "video", "cut"], "pipeline 必须按顺序包含五个独立步骤");
+assert.equal(pipelineFocuses.indexOf("assetimg"), pipelineFocuses.indexOf("assets") + 1, "资产图步骤必须紧跟资产文档");
+assert.equal(pipelineFocuses.indexOf("storyboard"), pipelineFocuses.indexOf("assetimg") + 1, "故事板必须紧跟资产图步骤");
+const sourcePanelStart = html.indexOf('id="modernSourcePanel"');
+const kitBarStart = html.indexOf('id="modernKitBar"');
+const assetWallStart = html.indexOf('id="modernAssetWall"');
+assert.ok(sourcePanelStart >= 0 && kitBarStart > sourcePanelStart && assetWallStart > kitBarStart, "资产图墙必须移出资产文档视图");
+const modernAssetImagePanel = html.match(/<section id="modernAssetImagePanel"[\s\S]*?<\/section>/)?.[0] || "";
+assert.ok(modernAssetImagePanel.includes('id="modernAssetWall"'), "资产图墙必须位于独立的资产图展示页");
+for (const id of ["modernAssetGenerateAssets", "modernAssetPromptInspector", "modernAssetPromptInspectorPrompt", "modernAssetRegeneratePrompt"]) {
+  assert.match(html, new RegExp(`id="${id}"`), `资产图展示页缺少 ${id}`);
+}
+assert.match(js, /modernAssetGenerateAssets[\s\S]{0,700}\[data-job='assets'\]/, "资产图页生成入口必须代理现有资产生成任务");
+assert.match(js, /modernAssetPromptInspectorPrompt[\s\S]{0,700}ensureAssetPromptDraft[\s\S]{0,500}draft\.dirty/, "资产图页提示词编辑必须复用草稿机制");
+assert.match(js, /modernAssetRegeneratePrompt[\s\S]{0,500}regenerateSelectedAssetFromInspector/, "资产图页重新生成必须复用检查器链路");
+// 只取 .modern-asset-image-* 自己的规则做柠檬色检查。此前写成
+// css.slice(css.indexOf(...))：类名不存在时 indexOf 返回 -1、slice(-1) 拿到
+// 最后一个字符,assert.ok 恒真——断言永远不会失败(实测改坏 3 处类名仍通过);
+// 且切到文件末尾会把后面所有无关 CSS 纳入检查,以后在末尾加合法柠檬规则会假报警。
+const assetImageRules = [...css.matchAll(/\.modern-asset-image[a-z-]*[^{}]*\{[^}]*\}/g)].map((m) => m[0]);
+assert.ok(assetImageRules.length >= 1, "缺少资产图展示页样式(.modern-asset-image-*)");
+// 资产图墙分组必须单列铺满。旧值 repeat(2, minmax(0,1fr)) 是图墙还挤在资产步骤
+// 里时的设计,继承到独立展示页后每组只占一半宽度、组内每行仅 2 张(1440px 实测),
+// 图的面积被砍半。这条守住「重在展现资产图」。
+const galleryRules = [...css.matchAll(/\.modern-asset-gallery[^{}]*\{[^}]*\}/g)].map((m) => m[0]);
+const galleryCols = galleryRules.filter((r) => /grid-template-columns/.test(r));
+assert.ok(galleryCols.length >= 1, "资产图画廊必须显式声明列数");
+assert.match(galleryCols.at(-1), /grid-template-columns:\s*minmax\(0,\s*1fr\)/, "资产图画廊分组必须单列铺满(最后一条声明为准)");
+// 面板内只留一层标题：合并前有 ASSET GALLERY + ASSET BOARD 两层说同一件事,
+// 三层标题吃掉约 270px 才见到第一张图。
+// 只认真实标记,不匹配注释——index.html 里留了说明这层为何被移除的注释,
+// 早先写成 /modern-asset-wall-head/ 会被自己的注释匹配到,造成假阳性。
+assert.doesNotMatch(html, /class="[^"]*\bmodern-asset-wall-head\b/, "资产图页不得再有重复的图墙标题层");
+for (const rule of assetImageRules) {
+  assert.doesNotMatch(rule, /--modern-signal|--mv-lime|200,255,46|C8FF2E/, `新增资产图展示页不得使用柠檬色: ${rule.slice(0, 60)}`);
+}
 assert.match(css, /modern-main\[data-modern-view="storyboard"\]/, "storyboard view must have a dedicated core layout");
 assert.match(css, /\.modern-video-preview\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "video preview must use a portrait 9:16 frame");
 assert.match(css, /\.modern-source-panel\s*\{[^}]*display:\s*grid/, "source panel must place the asset wall beside the parsed rail");

@@ -16548,9 +16548,9 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 }
 .modern-asset-generation-controls input:focus,
 .modern-asset-generation-controls select:focus {
-  border-color: rgba(200,255,46,.45);
+  border-color: var(--mv-line-2);
   outline: 0;
-  box-shadow: 0 0 0 3px rgba(200,255,46,.1);
+  box-shadow: var(--mv-hi);
 }
 .modern-asset-reference-row .modern-asset-form-control,
 .modern-asset-bind-row .modern-asset-form-control { flex-wrap: wrap; }
@@ -16604,7 +16604,7 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
   gap: 6px !important;
   padding: 0 9px;
 }
-.modern-asset-reference-toggle input { width: 13px; height: 13px; accent-color: var(--mv-lime); }
+.modern-asset-reference-toggle input { width: 13px; height: 13px; accent-color: var(--mv-line-2); }
 .modern-asset-reference-row > .modern-asset-form-control > button,
 .modern-asset-bind-row > .modern-asset-form-control > button { padding: 0 10px; cursor: pointer; }
 .modern-asset-style-reference-preview {
@@ -16817,3 +16817,86 @@ body.is-studio-modern ::-webkit-scrollbar-track { background: transparent; }
 body.is-studio-modern ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 9px; background: rgba(255,255,255,.16); background-clip: content-box; }
 body.is-studio-modern ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.26); background-clip: content-box; }
 body.is-studio-modern ::-webkit-scrollbar-corner { background: transparent; }
+
+/* Asset images live in their own media-first step; the document step keeps only its inputs and manifest rail. */
+.modern-main:not([data-modern-view="assetimg"]) .modern-asset-image-panel { display: none; }
+.modern-main[data-modern-view="assetimg"] .modern-source-panel,
+.modern-main[data-modern-view="assetimg"] .modern-kit-bar,
+.modern-main[data-modern-view="assetimg"] .modern-sequence,
+.modern-main[data-modern-view="assetimg"] .modern-workbench,
+.modern-main[data-modern-view="assetimg"] .modern-cut-panel { display: none; }
+.modern-core > .modern-asset-image-panel { flex: none; width: 100%; min-width: 0; margin: 0; }
+.modern-asset-image-panel { display: grid; gap: 16px; min-width: 0; }
+.modern-asset-image-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; min-width: 0; }
+.modern-asset-image-head > div { min-width: 0; }
+.modern-asset-image-head h2 { margin: 5px 0 0; color: var(--mv-tx); font-size: 22px; line-height: 1.1; }
+.modern-asset-image-head p { margin: 7px 0 0; color: var(--mv-mut); font-size: 11px; line-height: 1.5; }
+.modern-asset-image-action,
+.modern-asset-prompt-actions button { min-height: 32px; padding: 0 12px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); font-size: 10.5px; cursor: pointer; }
+.modern-asset-image-action.is-primary,
+.modern-asset-prompt-actions button.is-primary { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); box-shadow: var(--mv-hi); font-weight: 500; }
+.modern-asset-image-action:hover,
+.modern-asset-prompt-actions button:hover { border-color: var(--mv-line-2); background: var(--mv-s2); color: var(--mv-tx); }
+.modern-asset-image-action:disabled,
+.modern-asset-prompt-actions button:disabled { cursor: not-allowed; opacity: .5; }
+.modern-asset-wall { min-width: 0; padding: 18px; border: 1px solid var(--mv-line); border-radius: var(--mv-r); background: var(--mv-s1); box-shadow: var(--mv-e1), var(--mv-hi); }
+.modern-asset-wall .modern-asset-wall-head { margin-bottom: 16px; }
+.modern-asset-wall .modern-asset-wall-head strong { font-size: 15px; }
+.modern-asset-generation-disclosure { margin-bottom: 18px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s2); }
+.modern-asset-generation-disclosure summary { padding: 11px 13px; color: var(--mv-mut); font-size: 11px; cursor: pointer; }
+.modern-asset-generation-disclosure summary:hover { color: var(--mv-tx); }
+.modern-asset-generation-disclosure[open] summary { border-bottom: 1px solid var(--mv-line); color: var(--mv-tx); }
+.modern-asset-generation-disclosure .modern-asset-generation-controls { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+/* 分组改单列铺满:16329 行那条 repeat(2, minmax(0,1fr)) 是图墙还挤在资产
+   步骤里时的设计,16396 只改了 gap 没改列数,两列布局一路继承到了独立展示页
+   ——每组只拿到一半宽度,组内卡片每行仅 2 张(1440px 实测),图的面积被砍半,
+   与「重在展现资产图」相反。展示页让每组吃满整宽。 */
+.modern-asset-gallery { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.modern-asset-wall-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 14px; }
+.modern-asset-card-media { aspect-ratio: 4 / 3; min-height: 190px; }
+.modern-asset-card-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.modern-asset-card-copy { padding: 10px 11px 11px; }
+.modern-asset-card-copy strong { font-size: 12px; }
+.modern-asset-card-copy small { font-size: 10px; }
+.modern-asset-prompt-inspector { display: grid; gap: 10px; min-width: 0; padding: 16px 18px; border: 1px solid var(--mv-line); border-radius: var(--mv-r); background: var(--mv-s1); box-shadow: var(--mv-e1), var(--mv-hi); }
+.modern-asset-prompt-inspector.hidden { display: none; }
+.modern-asset-prompt-inspector > header { display: flex; align-items: start; justify-content: space-between; gap: 14px; }
+.modern-asset-prompt-inspector > header > div { display: grid; gap: 4px; min-width: 0; }
+.modern-asset-prompt-inspector > header strong { color: var(--mv-tx); font-size: 14px; }
+.modern-asset-prompt-inspector > header small { overflow: hidden; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-asset-prompt-inspector > header button { min-height: 28px; padding: 0 9px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); font-size: 10px; cursor: pointer; }
+.modern-asset-prompt-inspector > header button:hover { border-color: var(--mv-line-2); color: var(--mv-tx); }
+.modern-asset-prompt-inspector > label { color: var(--mv-mut); font-size: 10.5px; }
+.modern-asset-prompt-inspector > textarea { width: 100%; min-height: 150px; resize: vertical; padding: 11px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); outline: 0; background: var(--mv-bg); color: var(--mv-tx); font-size: 11px; line-height: 1.6; }
+.modern-asset-prompt-inspector > textarea:focus { border-color: var(--mv-line-2); box-shadow: var(--mv-hi); }
+.modern-asset-prompt-draft { display: flex; justify-content: space-between; gap: 10px; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; }
+.modern-asset-prompt-draft span:first-child { color: var(--mv-mut); }
+.modern-asset-prompt-policy { border-top: 1px solid var(--mv-line); padding-top: 9px; }
+.modern-asset-prompt-policy summary { color: var(--mv-mut); font-size: 10px; cursor: pointer; }
+.modern-asset-prompt-policy pre { max-height: 120px; margin: 8px 0 0; overflow: auto; white-space: pre-wrap; color: var(--mv-qt); font-family: inherit; font-size: 10px; line-height: 1.5; }
+.modern-asset-prompt-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+/* With the image wall removed, the document step can give both source text and parsed assets real room. */
+.modern-main[data-modern-view="assets"] .modern-source-panel { grid-template-columns: minmax(0, 1.35fr) minmax(320px, .85fr); grid-template-rows: auto minmax(400px, calc(100vh - 370px)); }
+.modern-main[data-modern-view="assets"] .modern-source-grid { min-height: 0; height: 100%; }
+.modern-main[data-modern-view="assets"] .modern-source-field { display: flex; min-height: 0; flex-direction: column; }
+.modern-main[data-modern-view="assets"] .modern-source-field textarea { flex: 1 1 auto; min-height: 240px; }
+.modern-main[data-modern-view="assets"] .modern-asset-results { height: 100%; max-height: none; overflow-y: auto; }
+.modern-main[data-modern-view="assets"] .modern-source-actions { flex-wrap: wrap; }
+
+@media (max-width: 980px) {
+  .modern-asset-image-head { align-items: stretch; flex-direction: column; }
+  .modern-asset-image-action { align-self: flex-start; }
+  .modern-asset-wall-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+  .modern-main[data-modern-view="assets"] .modern-source-panel { grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
+  .modern-main[data-modern-view="assets"] .modern-source-grid { height: auto; min-height: 0; }
+  .modern-main[data-modern-view="assets"] .modern-source-field { min-height: 310px; }
+  .modern-main[data-modern-view="assets"] .modern-source-field textarea { min-height: 240px; }
+  .modern-main[data-modern-view="assets"] .modern-asset-results { height: auto; }
+}
+@media (max-width: 720px) {
+  .modern-asset-wall { padding: 14px; }
+  .modern-asset-card-media { min-height: 180px; }
+  .modern-asset-prompt-actions { justify-content: stretch; }
+  .modern-asset-prompt-actions button { flex: 1 1 120px; }
+}

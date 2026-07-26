@@ -3866,6 +3866,7 @@ function renderStudioActionStates(data = state.project, activeRun = null) {
   const videoRunning = videoProgressHasActiveWork(videoProgress);
   const videoLabel = `视频生成中 ${videoProgress.completed || 0}/${videoProgress.total || 0}`;
   setStudioTaskButtonState(document.querySelector("[data-job='assets']"), assetRunning, isAssetExtracting() ? "资产解析中" : "资产生成中");
+  setStudioTaskButtonState($("#modernAssetGenerateAssets"), assetRunning, isAssetExtracting() ? "资产解析中" : "资产生成中");
   setStudioTaskButtonState(document.querySelector("[data-job='storyboards']"), boardRunning, "故事板生成中");
   setStudioTaskButtonState($("#generateAllSegments"), videoRunning, videoLabel);
   setStudioTaskButtonState($("#studioPrimaryRun"), !!activeRun, activeRun ? `运行中 · ${activeRun.label}` : "");
@@ -4185,7 +4186,7 @@ function modernMediaForShot(data, shot, index, kind) {
 function renderModernStudio(data = state.project) {
   const root = $("#studioModernShell");
   if (!root || !data?.project) return;
-  const modernFocus = ["assets", "storyboard", "video", "cut"].includes(state.modernStudio.focus)
+  const modernFocus = ["assets", "assetimg", "storyboard", "video", "cut"].includes(state.modernStudio.focus)
     ? state.modernStudio.focus
     : "assets";
   state.modernStudio.focus = modernFocus;
@@ -4221,8 +4222,11 @@ function renderModernStudio(data = state.project) {
   const projectName = project.seriesTitle || project.title || project.scriptTitle || title;
   const episodeTitle = [project.episodeCode, project.episodeLabel].filter(Boolean).join(" · ") || project.episodeSlug || "制作台";
   const manifest = data.assetManifest || {};
+  const confirmedAssetCount = manifest.confirmed ? Number(manifest.items?.length || 0) : 0;
+  const generatedAssetCount = Array.isArray(data.assets) ? data.assets.filter((asset) => asset?.url).length : 0;
   const pipelineComplete = [
     Boolean(manifest.confirmed),
+    Boolean(confirmedAssetCount > 0 && generatedAssetCount >= confirmedAssetCount),
     Boolean(data.storyboards?.length),
     Boolean(total && completed === total),
     Boolean(data.finalCut?.url),
@@ -4251,6 +4255,7 @@ function renderModernStudio(data = state.project) {
   });
   $("#modernPipelineProgress").style.width = `${Math.round((pipelineComplete.filter(Boolean).length / pipelineComplete.length) * 100)}%`;
   $("#modernAssetStep").textContent = manifest.confirmed ? `${manifest.items?.length || data.assets?.length || 0} 个资产已确认` : (manifest.items?.length ? "待确认分类" : "等待解析");
+  $("#modernAssetImageStep").textContent = confirmedAssetCount ? `${Math.min(generatedAssetCount, confirmedAssetCount)}/${confirmedAssetCount} 已生成` : "等待确认资产";
   $("#modernBoardStep").textContent = data.storyboards?.length ? `${data.storyboards.length} 个故事板已生成` : "等待生成";
   $("#modernVideoStep").textContent = data.videoConfigStatus?.ready ? `${total} 个镜头已配置` : "等待配置";
   $("#modernCutStep").textContent = data.finalCut?.url ? "成片已组装" : "等待片段";
@@ -4529,13 +4534,19 @@ function assetPromptInspectorWorkspace() {
 
 function renderAssetInspector() {
   const inspector = $("#assetInspector");
-  if (!inspector) return;
+  if (!inspector) {
+    renderModernAssetPromptInspector();
+    return;
+  }
   const assetName = state.selectedAssetId;
   const item = assetPromptItem(assetName);
   const asset = assetForName(assetName);
   const visible = assetPromptInspectorWorkspace() && !!assetName && !!item && state.assetInspectorOpen;
   inspector.classList.toggle("hidden", !visible);
-  if (!visible) return;
+  if (!visible) {
+    renderModernAssetPromptInspector();
+    return;
+  }
   const draft = ensureAssetPromptDraft(assetName);
   $("#assetInspectorName").textContent = item.label || assetName;
   $("#assetInspectorMeta").textContent = `${assetTypeLabel(item.type)} · ${asset?.assetStyleLabel || state.assetStylePreset} · ${$("#assetQuality")?.value || "1k"}`;
@@ -4544,6 +4555,30 @@ function renderAssetInspector() {
   $("#assetInspectorDraftStatus").textContent = draft.dirty ? "未保存修改" : "已保存";
   $("#assetInspectorPromptCount").textContent = `${draft.value.length} / 4000`;
   $("#assetInspectorPolicy").textContent = [item.usage, item.note, "风格锁由当前项目资产风格控制。"].filter(Boolean).join("\n");
+  renderModernAssetPromptInspector();
+}
+
+function renderModernAssetPromptInspector() {
+  const inspector = $("#modernAssetPromptInspector");
+  if (!inspector) return;
+  const assetName = state.selectedAssetId;
+  const item = assetPromptItem(assetName);
+  const asset = assetForName(assetName);
+  const visible = assetPromptInspectorWorkspace() && !!assetName && !!item && state.assetInspectorOpen;
+  inspector.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  const draft = ensureAssetPromptDraft(assetName);
+  $("#modernAssetPromptName").textContent = item.label || assetName;
+  $("#modernAssetPromptMeta").textContent = `${assetTypeLabel(item.type)} · ${asset?.assetStyleLabel || state.assetStylePreset} · ${$("#assetQuality")?.value || "1k"}`;
+  const input = $("#modernAssetPromptInspectorPrompt");
+  if (document.activeElement !== input) input.value = draft.value;
+  $("#modernAssetPromptDraftStatus").textContent = draft.dirty ? "已修改未保存" : "已保存";
+  $("#modernAssetPromptCount").textContent = `${draft.value.length} / 4000`;
+  $("#modernAssetPromptPolicy").textContent = [item.usage, item.note, "风格锁由当前项目资产风格控制。"].filter(Boolean).join("\n");
+  const assetRunning = isAssetExtracting() || ["running", "queued"].includes(String(state.project?.assetJob?.status || "").toLowerCase());
+  $("#modernAssetRestorePrompt").disabled = assetRunning;
+  $("#modernAssetSavePrompt").disabled = assetRunning;
+  $("#modernAssetRegeneratePrompt").disabled = assetRunning;
 }
 
 async function saveAssetPrompt() {
@@ -4982,6 +5017,11 @@ function renderAssetManifest(manifest) {
     const canGenerate = !!items.length;
     generateAssetBtn.disabled = extracting || !canGenerate;
     generateAssetBtn.title = extracting ? "资产解析运行中" : canGenerate ? "生成资产图" : "请先提取资产";
+  }
+  const modernGenerateAssetBtn = $("#modernAssetGenerateAssets");
+  if (modernGenerateAssetBtn) {
+    modernGenerateAssetBtn.disabled = generateAssetBtn ? generateAssetBtn.disabled : true;
+    modernGenerateAssetBtn.title = generateAssetBtn?.title || "当前没有可执行的资产图生成任务";
   }
   const signature = assetManifestRenderSignature(manifest, { extracting });
   if (overview.dataset.manifestSig === signature && overview.childElementCount > 0) return;
@@ -7905,13 +7945,15 @@ function bind() {
   const focusModernPane = (focus) => {
     const nextFocus = focus === "kit"
       ? "assets"
-      : ["storyboard", "video", "cut"].includes(focus)
+      : ["assetimg", "storyboard", "video", "cut"].includes(focus)
         ? focus
         : "assets";
     state.modernStudio.focus = nextFocus;
     renderModernStudio(state.project);
     const target = nextFocus === "assets"
       ? $("#modernSourcePanel")
+      : nextFocus === "assetimg"
+        ? $("#modernAssetImagePanel")
       : nextFocus === "storyboard"
         ? $("#modernStillTitle")?.closest(".modern-stage-pane")
         : nextFocus === "cut"
@@ -7989,6 +8031,14 @@ function bind() {
     draft.dirty = draft.value !== draft.original;
     renderAssetInspector();
   });
+  $("#modernAssetPromptInspectorPrompt")?.addEventListener("input", (event) => {
+    const assetName = state.selectedAssetId;
+    if (!assetName) return;
+    const draft = ensureAssetPromptDraft(assetName);
+    draft.value = event.currentTarget.value;
+    draft.dirty = draft.value !== draft.original;
+    renderAssetInspector();
+  });
   $("#closeAssetInspector")?.addEventListener("click", () => {
     state.assetInspectorOpen = false;
     renderAssetInspector();
@@ -8005,6 +8055,25 @@ function bind() {
     withStudioButtonFeedback(button, () => saveAssetPrompt()).catch((error) => toast(error.message));
   });
   $("#regenerateAssetFromInspector")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => regenerateSelectedAssetFromInspector()).catch((error) => toast(error.message));
+  });
+  $("#modernAssetClosePrompt")?.addEventListener("click", () => {
+    state.assetInspectorOpen = false;
+    renderAssetInspector();
+  });
+  $("#modernAssetRestorePrompt")?.addEventListener("click", () => {
+    const draft = assetPromptDraft(state.selectedAssetId);
+    if (!draft) return;
+    draft.value = draft.original;
+    draft.dirty = false;
+    renderAssetInspector();
+  });
+  $("#modernAssetSavePrompt")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    withStudioButtonFeedback(button, () => saveAssetPrompt()).catch((error) => toast(error.message));
+  });
+  $("#modernAssetRegeneratePrompt")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
     withStudioButtonFeedback(button, () => regenerateSelectedAssetFromInspector()).catch((error) => toast(error.message));
   });
@@ -8151,8 +8220,18 @@ function bind() {
   $("#modernConfirmAssetManifest")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, () => saveAssetManifest({ confirm: true })).catch((error) => toast(error.message));
   });
+  $("#modernAssetGenerateAssets")?.addEventListener("click", (event) => {
+    const target = document.querySelector("[data-job='assets']");
+    if (!target) return toast("当前没有可执行的资产图生成任务");
+    if (target.disabled) return toast(target.title || "请先提取资产，再生成资产图");
+    withStudioButtonFeedback(event.currentTarget, () => {
+      if (target.disabled) return toast(target.title || "请先提取资产，再生成资产图");
+      target.click();
+    }).catch((error) => toast(error.message));
+  });
   $("#modernAssetGallery")?.addEventListener("click", (event) => {
     const name = event.target.closest("[data-modern-asset-preview]")?.dataset.modernAssetPreview;
+    if (name) selectAssetForInspector(name);
     const asset = assetForName(name);
     if (asset?.url) openLightbox(asset);
   });

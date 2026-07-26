@@ -10,7 +10,6 @@ const js = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 
 for (const id of [
   "studioModernShell",
-  "modernShotRail",
   "modernShotCopy",
   "modernVideoPreview",
   "modernScriptText",
@@ -28,6 +27,7 @@ for (const id of [
   "modernAssetManifestOverview",
   "modernAssetGallery",
   "modernBuildConfig",
+  "modernVideoGenerate",
 ]) {
   assert.match(html, new RegExp(`id=\"${id}\"`), `modern shell missing ${id}`);
 }
@@ -56,15 +56,20 @@ assert.doesNotMatch(js, /modernGenerateDraft[\s\S]{0,700}#draftBtn/, "modern dra
 assert.doesNotMatch(js, /modernBuildConfig[\s\S]{0,700}#buildConfigBtn/, "modern config action must not proxy through the hidden legacy button");
 assert.doesNotMatch(js, /hasStoryboardDraft|请先生成分镜草稿/, "storyboard must not be a prerequisite for video config");
 assert.match(js, /configButton\.disabled = configGenerating \|\| !scriptSource\.trim\(\)/, "video config must only require script input in the modern shell");
+assert.match(js, /videoGenerateButton\.disabled = [^;]*!videoConfigReady/, "video generation must remain disabled until config is ready");
 assert.match(js, /body\.ratio = "9:16"/, "storyboard generation must request the vertical 9:16 format");
-const modernSequenceStart = html.indexOf('<section class="modern-sequence"');
-const modernWorkbenchStart = html.indexOf('<section class="modern-workbench"');
-assert.ok(modernSequenceStart >= 0 && modernWorkbenchStart > modernSequenceStart, "modern shot sequence must remain a bounded section");
-assert.doesNotMatch(html.slice(modernSequenceStart, modernWorkbenchStart), /id="modernBuildConfig"/, "video config must not live in the low-frequency storyboard sequence");
+assert.doesNotMatch(html, /class="modern-sequence"/, "the empty shot sequence section must be removed from the modern shell");
+assert.doesNotMatch(html, /id="modernShotRail"/, "the modern shell must not render the low-frequency shot sequence rail");
+const modernHeroStart = html.indexOf('<section class="modern-episode-hero"');
+const modernBatchStart = html.indexOf('<section id="modernBatchScopeAccordion"');
+assert.ok(modernHeroStart >= 0 && modernBatchStart > modernHeroStart, "modern hero must contain the video actions");
+const modernHeroHtml = html.slice(modernHeroStart, modernBatchStart);
+assert.match(modernHeroHtml, /id="modernBuildConfig"[^>]*class="[^"]*modern-video-action/, "video config must be a prominent hero action");
+assert.match(modernHeroHtml, /id="modernVideoGenerate"[^>]*class="[^"]*modern-video-action[^>]*disabled/, "video generation must start disabled in the hero");
 const modernMotionStart = html.indexOf('aria-labelledby="modernMotionTitle"');
 const modernCutStart = html.indexOf('<section id="modernCutPanel"');
 assert.ok(modernMotionStart >= 0 && modernCutStart > modernMotionStart, "modern video pane must remain in the workbench");
-assert.match(html.slice(modernMotionStart, modernCutStart), /id="modernBuildConfig"/, "video config must live in the video generation pane");
+assert.doesNotMatch(html.slice(modernMotionStart, modernCutStart), /id="modernBuildConfig"|id="modernVideoGenerate"/, "video generation actions must not be placed at the bottom of the video pane");
 assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");
 assert.match(js, /function bindModernAssetReference/, "modern shell must bind uploaded reference images to parsed assets");
 assert.match(js, /persistModernAssetStyleFromControls/, "modern shell must persist modern asset style controls");

@@ -4198,7 +4198,7 @@ function renderModernStudio(data = state.project) {
   const scriptSource = workflowEditorValue("script");
   const assetSource = workflowEditorValue("assetDescription");
   const draftText = String(data.contents?.storyboard || "").trim();
-  const hasStoryboardDraft = /^#{2,3}\s+/m.test(draftText) || /(?:镜号|分镜|shot\s*\d+)/i.test(draftText);
+  const hasStoryboardDraft = /^#{3}\s+\S+/m.test(draftText) || /(?:镜号\s*\d+|shot\s*\d+)/i.test(draftText);
   const draftButton = $("#modernGenerateDraft");
   if (draftButton) {
     const drafting = isDraftGenerating();

@@ -4197,6 +4197,22 @@ function renderModernStudio(data = state.project) {
   });
   const scriptSource = workflowEditorValue("script");
   const assetSource = workflowEditorValue("assetDescription");
+  const draftText = String(data.contents?.storyboard || "").trim();
+  const hasStoryboardDraft = /^#{2,3}\s+/m.test(draftText) || /(?:镜号|分镜|shot\s*\d+)/i.test(draftText);
+  const draftButton = $("#modernGenerateDraft");
+  if (draftButton) {
+    const drafting = isDraftGenerating();
+    draftButton.disabled = drafting || !scriptSource.trim();
+    draftButton.textContent = drafting ? "生成中..." : "生成分镜草稿";
+    draftButton.title = drafting ? "分镜草稿生成中" : scriptSource.trim() ? "根据当前剧本生成分镜草稿" : "请先输入或上传剧本";
+  }
+  const configButton = $("#modernBuildConfig");
+  if (configButton) {
+    const configGenerating = configButton.dataset.studioFeedbackBusy === "true";
+    configButton.disabled = configGenerating || !hasStoryboardDraft;
+    configButton.textContent = configGenerating ? "生成中..." : "生成视频配置";
+    configButton.title = configGenerating ? "视频配置生成中" : hasStoryboardDraft ? "根据分镜草稿生成视频配置" : "请先生成分镜草稿";
+  }
   const scriptStatus = $("#modernScriptSourceStatus");
   const assetStatus = $("#modernAssetSourceStatus");
   if (scriptStatus) {
@@ -7660,8 +7676,7 @@ async function changeDialogueLanguage(targetLanguage) {
   }
 }
 
-async function buildConfig() {
-  const button = $("#buildConfigBtn");
+async function buildConfig(button = $("#buildConfigBtn")) {
   const originalLabel = button?.textContent || "生成视频配置";
   if (button) {
     button.disabled = true;
@@ -8337,6 +8352,11 @@ function bind() {
   $("#modernSaveScript")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, () => saveFile("script")).catch((error) => toast(error.message));
   });
+  $("#modernGenerateDraft")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    withStudioButtonFeedback(button, () => generateDraft()).catch((error) => toast(error.message));
+  });
   $("#modernSaveAssetDescription")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, () => saveFile("assetDescription")).catch((error) => toast(error.message));
   });
@@ -8345,6 +8365,11 @@ function bind() {
   });
   $("#modernConfirmAssetManifest")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, () => saveAssetManifest({ confirm: true })).catch((error) => toast(error.message));
+  });
+  $("#modernBuildConfig")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    withStudioButtonFeedback(button, () => buildConfig(button)).catch((error) => toast(error.message));
   });
   $("#modernAssetGenerateAssets")?.addEventListener("click", (event) => {
     const target = document.querySelector("[data-job='assets']");

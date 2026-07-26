@@ -15,6 +15,7 @@ for (const id of [
   "modernVideoPreview",
   "modernScriptText",
   "modernScriptUpload",
+  "modernGenerateDraft",
   "modernAssetDescriptionText",
   "modernAssetDescriptionUpload",
   "modernExtractAssets",
@@ -26,6 +27,7 @@ for (const id of [
   "modernAssetReferenceBind",
   "modernAssetManifestOverview",
   "modernAssetGallery",
+  "modernBuildConfig",
 ]) {
   assert.match(html, new RegExp(`id=\"${id}\"`), `modern shell missing ${id}`);
 }
@@ -48,6 +50,10 @@ assert.match(js, /renderModernStudio\(data\)/, "modern shell must hydrate from p
 assert.match(js, /modernScriptUpload/, "modern shell must wire script upload");
 assert.match(js, /modernAssetDescriptionUpload/, "modern shell must wire asset document upload");
 assert.match(js, /modernExtractAssets/, "modern shell must expose asset extraction");
+assert.match(js, /modernGenerateDraft[\s\S]{0,700}generateDraft\(\)/, "modern shell must bind the storyboard draft action");
+assert.match(js, /modernBuildConfig[\s\S]{0,700}buildConfig\(button\)/, "modern shell must bind the video config action");
+assert.doesNotMatch(js, /modernGenerateDraft[\s\S]{0,700}#draftBtn/, "modern draft action must not proxy through the hidden legacy button");
+assert.doesNotMatch(js, /modernBuildConfig[\s\S]{0,700}#buildConfigBtn/, "modern config action must not proxy through the hidden legacy button");
 assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");
 assert.match(js, /function bindModernAssetReference/, "modern shell must bind uploaded reference images to parsed assets");
 assert.match(js, /persistModernAssetStyleFromControls/, "modern shell must persist modern asset style controls");

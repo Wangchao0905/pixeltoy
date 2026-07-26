@@ -1016,6 +1016,7 @@
                   <label class="modern-upload-button" for="modernScriptUpload">上传剧本</label>
                   <span id="modernScriptUploadName" aria-live="polite">支持 MD / TXT / DOCX</span>
                   <button id="modernSaveScript" type="button">保存</button>
+                  <button id="modernGenerateDraft" class="is-primary" type="button">生成分镜草稿</button>
                 </div>
               </section>
               <section class="modern-source-field" aria-labelledby="modernAssetSourceTitle">
@@ -1128,7 +1129,10 @@
           </section>
 
           <section class="modern-sequence" aria-label="镜头序列">
-            <header><div><span class="modern-eyebrow">SHOT SEQUENCE</span><strong>当前项目镜头</strong></div><span id="modernSequenceSummary">暂无镜头</span></header>
+            <header>
+              <div><span class="modern-eyebrow">SHOT SEQUENCE</span><strong>当前项目镜头</strong></div>
+              <div class="modern-sequence-actions"><span id="modernSequenceSummary">暂无镜头</span><button id="modernBuildConfig" class="is-primary" type="button">生成视频配置</button></div>
+            </header>
             <div id="modernShotRail" class="modern-shot-rail" role="listbox" aria-label="镜头列表"></div>
           </section>
 

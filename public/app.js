@@ -4198,6 +4198,7 @@ function renderModernStudio(data = state.project) {
   const scriptSource = workflowEditorValue("script");
   const assetSource = workflowEditorValue("assetDescription");
   const videoConfigReady = Boolean(data.videoConfigStatus?.ready);
+  const videoConfigAvailable = Boolean(data.videoConfigStatus?.exists);
   const videoRunning = videoProgressHasActiveWork(data.videoProgress || {});
   const draftButton = $("#modernGenerateDraft");
   if (draftButton) {
@@ -4216,9 +4217,16 @@ function renderModernStudio(data = state.project) {
   const videoGenerateButton = $("#modernVideoGenerate");
   if (videoGenerateButton) {
     const configGenerating = configButton?.dataset.studioFeedbackBusy === "true";
-    videoGenerateButton.disabled = configGenerating || videoRunning || !videoConfigReady;
+    const configMissing = Array.isArray(data.videoConfigStatus?.missing) ? data.videoConfigStatus.missing.filter(Boolean).join("、") : "";
+    videoGenerateButton.disabled = configGenerating || videoRunning || !videoConfigAvailable;
     videoGenerateButton.textContent = videoRunning ? "生成中..." : "生成视频";
-    videoGenerateButton.title = videoRunning ? "视频片段生成中" : videoConfigReady ? "提交视频生成任务" : "请先生成并确认视频配置";
+    videoGenerateButton.title = videoRunning
+      ? "视频片段生成中"
+      : videoConfigReady
+        ? "提交视频生成任务"
+        : videoConfigAvailable
+          ? `配置已生成，但还缺：${configMissing || "参考图校验"}`
+          : "请先生成视频配置";
   }
   const scriptStatus = $("#modernScriptSourceStatus");
   const assetStatus = $("#modernAssetSourceStatus");

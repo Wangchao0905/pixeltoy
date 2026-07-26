@@ -56,7 +56,8 @@ assert.doesNotMatch(js, /modernGenerateDraft[\s\S]{0,700}#draftBtn/, "modern dra
 assert.doesNotMatch(js, /modernBuildConfig[\s\S]{0,700}#buildConfigBtn/, "modern config action must not proxy through the hidden legacy button");
 assert.doesNotMatch(js, /hasStoryboardDraft|请先生成分镜草稿/, "storyboard must not be a prerequisite for video config");
 assert.match(js, /configButton\.disabled = configGenerating \|\| !scriptSource\.trim\(\)/, "video config must only require script input in the modern shell");
-assert.match(js, /videoGenerateButton\.disabled = [^;]*!videoConfigReady/, "video generation must remain disabled until config is ready");
+assert.match(js, /const videoConfigAvailable = Boolean\(data\.videoConfigStatus\?\.exists\)/, "video generation must detect an existing config separately from readiness");
+assert.match(js, /videoGenerateButton\.disabled = [^;]*!videoConfigAvailable/, "video generation must be clickable once a config exists");
 assert.match(js, /body\.ratio = "9:16"/, "storyboard generation must request the vertical 9:16 format");
 assert.doesNotMatch(html, /class="modern-sequence"/, "the empty shot sequence section must be removed from the modern shell");
 assert.doesNotMatch(html, /id="modernShotRail"/, "the modern shell must not render the low-frequency shot sequence rail");

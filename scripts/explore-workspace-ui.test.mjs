@@ -14,6 +14,7 @@ assert.match(server, /ui:\s*uiRuntimeConfig\(\)/);
 assert.match(server, /function isStandaloneImageGenerationApiPath\(pathname = ""\)/);
 assert.match(server, /if \(isStandaloneImageGenerationApiPath\(url\.pathname\)\)/);
 assert.match(html, /id="exploreHome"/);
+assert.match(html, /id="projectHome"[^>]*class="project-home hidden"/, "旧项目首页必须默认隐藏，避免首屏闪现蓝色旧页面");
 assert.match(html, /class="explore-brand-mark pixel-toys-wordmark"/);
 assert.match(html, /id="exploreLoginLink"[^>]*href="\/auth\.html\?next=\/"[^>]*>登录<\/a>/);
 assert.match(html, /id="exploreAccount"[^>]*aria-label="个人中心"/);

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=rail-drawer-dropeffect-20260726" />
+    <link rel="stylesheet" href="/styles.css?v=superpixel-select-theme-20260726" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -194,7 +194,15 @@
           <div class="super-pixel-glow" aria-hidden="true"></div>
           <div class="super-pixel-layout">
             <button id="superPixelAssetRailToggle" class="super-pixel-asset-rail-toggle" type="button" aria-controls="superPixelAssetRail" aria-expanded="false" aria-label="素材库" title="素材库">
-              <span aria-hidden="true">▦</span>
+              <span class="super-pixel-asset-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="14" height="14" rx="2"></rect>
+                  <path d="m3 16 4-4a2 2 0 0 1 3 0l5 5"></path>
+                  <path d="m14 13 1-1a2 2 0 0 1 3 0l3 3"></path>
+                  <path d="M7 21h10a2 2 0 0 0 2-2V8"></path>
+                  <path d="M8.5 8.5h.01"></path>
+                </svg>
+              </span>
             </button>
             <aside id="superPixelAssetRail" class="super-pixel-asset-rail" aria-label="资产库">
               <header class="super-pixel-asset-rail-head">
@@ -216,7 +224,7 @@
               <form id="superPixelComposer" class="super-pixel-composer">
                 <div id="superPixelAttachments" class="super-pixel-attachments hidden" aria-label="已附加图片"></div>
                 <textarea id="superPixelInput" class="super-pixel-input" rows="1"
-                  placeholder="描述你想拍的剧集：题材、主角、集数…（可拖入或粘贴图片）"
+                  placeholder="说出你的想法。"
                   aria-label="剧集创作输入"></textarea>
                 <div class="super-pixel-toolbar">
                   <button id="superPixelAttach" class="super-pixel-tool" type="button">
@@ -266,7 +274,7 @@
         </section>
       </section>
 
-      <section id="projectHome" class="project-home">
+      <section id="projectHome" class="project-home hidden">
         <header class="project-home-header">
           <div class="brand">
             <div class="mark pixel-toys-wordmark" aria-label="Pixel Toys"></div>
@@ -1219,6 +1227,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=rail-drawer-dropeffect-20260726"></script>
+    <script src="/app.js?v=superpixel-select-theme-20260726"></script>
   </body>
 </html>

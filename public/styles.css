@@ -15365,8 +15365,20 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   overflow: hidden;
   /* 与 .image-explore-view / .asset-library-view 一致：44px 为顶栏高度。
      用 100% 无效——父级 .explore-home 是 auto 高度的 block，百分比无参照。 */
+  height: calc(100vh - 44px);
   min-height: calc(100vh - 44px);
   background: linear-gradient(180deg, #120409 0%, #080205 55%, #020101 100%);
+}
+
+/* Super Pixel shares the Explore top bar, so its accent needs a scoped state
+   on the outer shell rather than inheriting from the view's local variables. */
+.explore-home.is-superpixel .explore-topbar nav > button[data-explore-tool="super-pixel"],
+.explore-home.is-superpixel .explore-topbar nav > button[data-explore-tool="super-pixel"]:hover,
+.explore-home.is-superpixel .explore-topbar nav > button[data-explore-tool="super-pixel"]:focus-visible,
+.explore-home.is-superpixel #exploreAdminLink,
+.explore-home.is-superpixel #exploreAdminLink:hover,
+.explore-home.is-superpixel #exploreAdminLink:focus-visible {
+  color: #d92d45 !important;
 }
 
 .super-pixel-view.hidden { display: none; }
@@ -15392,7 +15404,8 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 .super-pixel-layout {
   position: relative;
   z-index: 1;
-  min-height: calc(100vh - 44px);
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-columns: 0 minmax(0, 1fr);
   transition: grid-template-columns 180ms ease;
@@ -15425,6 +15438,13 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 .super-pixel-asset-rail-toggle:hover {
   border-color: rgba(255, 110, 130, 0.3);
   color: var(--sp-ink);
+}
+
+.super-pixel-asset-icon,
+.super-pixel-asset-icon svg {
+  display: block;
+  width: 17px;
+  height: 17px;
 }
 
 .super-pixel-asset-rail {
@@ -15582,6 +15602,9 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   gap: 20px;
   padding: clamp(40px, 9vh, 96px) 24px 56px;
 }
@@ -15622,7 +15645,8 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
    .super-pixel-view 有 overflow:hidden，所以这里用 sticky 会被裁；
    改用 stage 撑满高度 + dock 作为 flex 末项贴底，不脱离文档流。 */
 .super-pixel-stage.is-chatting {
-  min-height: calc(100vh - 44px);
+  height: 100%;
+  min-height: 0;
   justify-content: flex-start;
   padding-top: 20px;
   padding-bottom: 0;
@@ -15638,9 +15662,12 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 
 .super-pixel-stage.is-chatting .super-pixel-messages {
   flex: 1 1 auto;
+  min-height: 0;
   max-height: none;
   width: min(760px, 100%);
   padding-bottom: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .super-pixel-dock {
@@ -15779,7 +15806,14 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   max-height: 12em;
 }
 
-.super-pixel-input::placeholder { color: var(--sp-dim); }
+.super-pixel-input::placeholder {
+  color: rgba(252, 239, 240, 0.48);
+  transition: color 120ms ease;
+}
+.super-pixel-input:focus::placeholder,
+.super-pixel-input:focus-visible::placeholder {
+  color: transparent;
+}
 .super-pixel-input:focus,
 .super-pixel-input:focus-visible {
   outline: none;
@@ -15797,10 +15831,11 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 }
 
 .super-pixel-tool,
-.super-pixel-select > select {
+.super-pixel-select > select,
+.super-pixel-select-trigger {
   border: 1px solid var(--sp-line);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(20, 7, 11, 0.8);
   color: var(--sp-ink);
   font-size: 11px;
   font-weight: 500;
@@ -15812,6 +15847,8 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   min-height: 28px;
 }
 
+.super-pixel-tool { background: rgba(255, 255, 255, 0.03); }
+
 .super-pixel-tool { color: var(--sp-dim); }
 .super-pixel-tool #superPixelScriptLabel {
   display: inline-block;
@@ -15821,10 +15858,128 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   vertical-align: bottom;
 }
 .super-pixel-tool:hover,
-.super-pixel-select > select:hover { border-color: rgba(255, 110, 130, 0.3); }
+.super-pixel-select > select:hover,
+.super-pixel-select-trigger:hover,
+.super-pixel-select.is-open .super-pixel-select-trigger {
+  border-color: rgba(255, 110, 130, 0.3);
+}
 
-.super-pixel-select { display: inline-flex; }
+.super-pixel-select {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.super-pixel-select > .super-pixel-native-select {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+}
+
+.super-pixel-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  box-shadow: none;
+}
+
+.super-pixel-select-trigger::after {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--sp-dim);
+}
+
+.super-pixel-select-trigger-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.super-pixel-select-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  width: max(100%, 168px);
+  max-height: min(360px, calc(100vh - 128px));
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid rgba(255, 110, 130, 0.26);
+  border-radius: 12px;
+  background: rgba(20, 7, 11, 0.96);
+  color: var(--sp-ink);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255, 210, 216, 0.05);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  scrollbar-width: thin;
+}
+
+.super-pixel-select-group {
+  padding: 7px 9px 4px;
+  color: var(--sp-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.super-pixel-select-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 31px;
+  padding: 0 28px 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--sp-ink);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.super-pixel-select-option:hover,
+.super-pixel-select-option:focus-visible,
+.super-pixel-select-option.is-selected {
+  background: rgba(217, 45, 69, 0.28);
+  color: #fff;
+  outline: none;
+}
+
+.super-pixel-select-option.is-selected::after {
+  content: "✓";
+  position: absolute;
+  right: 9px;
+  color: #ff8796;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.super-pixel-select-option:disabled {
+  background: transparent;
+  color: rgba(252, 239, 240, 0.36);
+  cursor: not-allowed;
+}
+
 .super-pixel-select > select {
+  appearance: none;
+  padding-right: 24px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--sp-dim) 50%),
   appearance: none;
   padding-right: 24px;
   background-image: linear-gradient(45deg, transparent 50%, var(--sp-dim) 50%),
@@ -15892,6 +16047,11 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 .super-pixel-chip:hover { color: var(--sp-ink); border-color: rgba(255, 110, 130, 0.3); }
 
 @media (max-width: 600px) {
+  .super-pixel-view {
+    height: auto;
+    min-height: calc(100vh - 44px);
+    overflow: visible;
+  }
   .super-pixel-layout { display: block; }
   .super-pixel-layout:not(.is-rail-open) .super-pixel-asset-rail { display: none; }
   .super-pixel-layout:not(.is-rail-open) .super-pixel-stage { padding-top: 52px; }
@@ -15910,7 +16070,8 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
     padding: 1px 1px 4px;
   }
   .super-pixel-asset-card { flex: 0 0 172px; }
-  .super-pixel-stage { padding: 32px 14px 40px; gap: 16px; }
+  .super-pixel-stage { height: auto; min-height: calc(100vh - 44px); padding: 32px 14px 40px; gap: 16px; }
+  .super-pixel-stage.is-chatting { height: calc(100vh - 44px); min-height: 0; overflow: hidden; }
   .super-pixel-composer { width: 100%; border-radius: 16px; }
   /* 窄屏不折行：折行会把发送按钮甩到单独一行，浪费 45px 且视觉孤立。
      实测内容宽 304px < 可用 362px，改用 nowrap 后单行放得下；

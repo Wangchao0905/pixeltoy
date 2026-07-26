@@ -2520,6 +2520,7 @@ function openAssetLibraryPreview(id) {
 
 function setExploreView(view = "canvas") {
   state.exploreView = ["image", "library", "superpixel"].includes(view) ? view : "canvas";
+  $("#exploreHome")?.classList.toggle("is-superpixel", state.exploreView === "superpixel");
   $(".canvas-home")?.classList.toggle("hidden", state.exploreView !== "canvas");
   $("#imageExploreView")?.classList.toggle("hidden", state.exploreView !== "image");
   $("#assetLibraryView")?.classList.toggle("hidden", state.exploreView !== "library");
@@ -2769,8 +2770,128 @@ async function submitSuperPixelChat(prompt) {
   }
 }
 
+function enhanceSuperPixelSelect(select) {
+  if (!select || select.dataset.superPixelEnhanced === "true") return;
+  const wrapper = select.closest(".super-pixel-select");
+  if (!wrapper) return;
+  select.dataset.superPixelEnhanced = "true";
+
+  // Keep the native select as the state/accessibility source, but render the
+  // popup ourselves so macOS does not replace the dark Super Pixel palette.
+  const width = Math.max(select.offsetWidth, select.scrollWidth, 88);
+  wrapper.style.width = `${width}px`;
+  select.classList.add("super-pixel-native-select");
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "super-pixel-select-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-label", select.getAttribute("aria-label") || "选择项");
+
+  const triggerText = document.createElement("span");
+  triggerText.className = "super-pixel-select-trigger-text";
+  const menu = document.createElement("div");
+  menu.className = "super-pixel-select-menu hidden";
+  menu.id = `${select.id}Menu`;
+  menu.setAttribute("role", "listbox");
+  trigger.setAttribute("aria-controls", menu.id);
+
+  const optionButtons = [];
+  const addOption = (option) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "super-pixel-select-option";
+    item.setAttribute("role", "option");
+    item.dataset.value = option.value;
+    item.textContent = option.textContent;
+    item.disabled = option.disabled;
+    item.addEventListener("click", () => {
+      if (option.disabled) return;
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      closeMenu();
+      trigger.focus();
+    });
+    menu.appendChild(item);
+    optionButtons.push({ option, item });
+  };
+
+  [...select.children].forEach((child) => {
+    if (child.tagName === "OPTGROUP") {
+      const group = document.createElement("div");
+      group.className = "super-pixel-select-group";
+      group.textContent = child.label;
+      menu.appendChild(group);
+      [...child.children].forEach(addOption);
+      return;
+    }
+    if (child.tagName === "OPTION") addOption(child);
+  });
+
+  const update = () => {
+    const selected = select.options[select.selectedIndex];
+    triggerText.textContent = selected?.textContent || "选择项";
+    optionButtons.forEach(({ option, item }) => {
+      const active = option === selected;
+      item.classList.toggle("is-selected", active);
+      item.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  };
+
+  const closeMenu = () => {
+    menu.classList.add("hidden");
+    wrapper.classList.remove("is-open");
+    trigger.setAttribute("aria-expanded", "false");
+  };
+
+  const closeOtherMenus = () => {
+    $$(".super-pixel-select.is-open").forEach((openWrapper) => {
+      if (openWrapper === wrapper) return;
+      openWrapper.querySelector(".super-pixel-select-trigger")?.click();
+    });
+  };
+
+  const openMenu = () => {
+    closeOtherMenus();
+    update();
+    menu.classList.remove("hidden");
+    wrapper.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    requestAnimationFrame(() => {
+      optionButtons.find(({ option }) => option === select.options[select.selectedIndex])?.item.focus();
+    });
+  };
+
+  trigger.appendChild(triggerText);
+  wrapper.append(trigger, menu);
+  select.addEventListener("change", update);
+  trigger.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (wrapper.classList.contains("is-open")) closeMenu();
+    else openMenu();
+  });
+  trigger.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openMenu();
+    } else if (event.key === "Escape") {
+      closeMenu();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!wrapper.contains(event.target)) closeMenu();
+  });
+  update();
+}
+
+function enhanceSuperPixelSelects() {
+  $$(".super-pixel-select > select").forEach(enhanceSuperPixelSelect);
+}
+
 function bindSuperPixel() {
   setSuperPixelAssetRailOpen(localStorage.getItem(SUPER_PIXEL_RAIL_OPEN_KEY) === "1", { persist: false });
+  enhanceSuperPixelSelects();
   $("#superPixelAssetRailToggle")?.addEventListener("click", () => {
     const layout = $(".super-pixel-layout");
     setSuperPixelAssetRailOpen(!layout?.classList.contains("is-rail-open"));

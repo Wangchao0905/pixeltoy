@@ -17,11 +17,12 @@ assert.doesNotMatch(html, /Coming soon: conversational model/, "Coming soon 文�
 // 视图容器与结构
 assert.match(html, /id="superPixelView"[^>]*class="super-pixel-view hidden"/, "视图容器必须存在且默认隐藏");
 assert.match(html, /id="superPixelInput"/, "输入框必须存在");
+assert.match(html, /id="superPixelInput"[\s\S]*?placeholder="说出你的想法。"/, "Super Pixel 输入框提示文字必须简洁为说出你的想法");
 assert.match(html, /id="superPixelModel"/, "模型选择器必须存在");
 assert.match(html, /id="superPixelMode"/, "模式选择器必须存在");
 assert.match(html, /id="superPixelSend"/, "提交按钮必须存在");
 assert.match(html, /<div class="super-pixel-layout">\s*<button id="superPixelAssetRailToggle"[^>]*type="button"[^>]*aria-controls="superPixelAssetRail"[^>]*aria-expanded="false"[^>]*aria-label="素材库"[^>]*title="素材库"/, "Super Pixel 必须提供默认收起的资产抽屉开关");
-assert.match(html, /id="superPixelAssetRailToggle"[\s\S]{0,220}<span aria-hidden="true">[^<]+<\/span>/, "资产抽屉开关必须有隐藏的网格图标");
+assert.match(html, /id="superPixelAssetRailToggle"[\s\S]{0,320}<span class="super-pixel-asset-icon" aria-hidden="true">[\s\S]*?<svg[^>]*>[\s\S]*?<\/svg>[\s\S]*?<\/span>/, "资产抽屉开关必须有清晰的素材库图标");
 assert.match(html, /id="superPixelAssetRail"[^>]*aria-label="资产库"/, "Super Pixel 资产侧栏必须保留为可收起抽屉");
 assert.match(html, /id="superPixelAssetRailClose"[^>]*type="button"[^>]*aria-label="收起素材库"/, "资产抽屉必须提供关闭按钮");
 assert.match(html, /id="superPixelAssetRailList"/, "资产侧栏必须有独立列表容器");
@@ -67,6 +68,8 @@ assert.match(css, /--sp-chat-font:[^;]*"PingFang SC"/, "中文必须落 PingFang
 assert.doesNotMatch(css, /--sp-chat-font:[^;]*"Songti SC"/, "聊天字体不应再回落宋体衬线");
 assert.match(css, /\.super-pixel-message\s*\{[\s\S]*?font-family:\s*var\(--sp-chat-font\)/, "消息气泡必须用聊天字体");
 assert.match(css, /\.super-pixel-input\s*\{[\s\S]*?font-family:\s*var\(--sp-chat-font\)/, "输入框必须与气泡同字体");
+assert.match(css, /\.super-pixel-input::placeholder\s*\{[\s\S]*?rgba\(252,\s*239,\s*240,\s*0\.48\)/, "输入框提示文字必须使用半透明颜色");
+assert.match(css, /\.super-pixel-input:focus(?:::placeholder|,)[\s\S]*?color:\s*transparent/, "输入框获得焦点后必须隐藏提示文字");
 
 // 可访问性
 assert.match(html, /id="superPixelInput"[\s\S]{0,220}aria-label="剧集创作输入"/, "输入框需有 aria-label");
@@ -79,12 +82,15 @@ assert.equal(chips.length, 4, "场景 chips 必须是 4 个可聚焦 button");
 // JS 接线
 assert.match(app, /\["image", "library", "superpixel"\]/, "setExploreView 必须接受 superpixel");
 assert.match(app, /#superPixelView"\)\?\.classList\.toggle\("hidden"/, "必须切换视图容器可见性");
+assert.match(app, /#exploreHome"\)\?\.classList\.toggle\("is-superpixel", state\.exploreView === "superpixel"\)/, "进入 Super Pixel 时必须给 Explore 外壳加主题状态类");
 assert.match(app, /dataset\.exploreTool === "super-pixel"/, "导航高亮必须处理 super-pixel");
 assert.match(app, /function showExploreSuperPixel\(\)/, "必须有 showExploreSuperPixel");
 assert.match(app, /tool === "super-pixel"/, "openExploreTool 必须分发 super-pixel");
 assert.match(app, /function bindSuperPixel\(\)/, "必须有 bindSuperPixel");
 assert.match(app, /bindSuperPixel\(\);/, "bindSuperPixel 必须被调用");
 assert.match(app, /function renderSuperPixelAssetRail\(\)/, "必须渲染 Super Pixel 资产侧栏");
+assert.match(app, /function enhanceSuperPixelSelects\(\)/, "模型和模式下拉必须使用统一的自定义菜单");
+assert.match(app, /enhanceSuperPixelSelects\(\);/, "Super Pixel 初始化时必须增强下拉菜单");
 assert.match(app, /bindManualAssetControls\(rail/, "侧栏卡片必须复用现有资产拖拽绑定");
 assert.match(app, /data-manifest-asset-id=/, "侧栏资产卡片必须复用现有资产拖拽协议");
 assert.match(app, /application\/x-pixel-toys-asset-type/, "composer 必须识别现有资产拖拽 MIME");
@@ -107,9 +113,13 @@ assert.match(app, /localStorage\.setItem\(SUPER_PIXEL_RAIL_OPEN_KEY/, "资产抽
 // 蜂窝背景必须真的落在 CSS 里（内联 style 会被引号撕断，见 CLAUDE.md 经验）
 assert.match(css, /\.super-pixel-hex\s*\{[\s\S]*?url\("data:image\/svg\+xml,/, "蜂窝 data URI 必须写在 CSS 中");
 assert.match(css, /\.super-pixel-view\s*\{[\s\S]*?--sp-acc:/, "配色变量必须限定在 .super-pixel-view 作用域");
+assert.match(css, /\.explore-home\.is-superpixel[\s\S]*?data-explore-tool="super-pixel"[\s\S]*?color:\s*#d92d45\s*!important/, "Super Pixel 顶栏入口与 Admin 必须使用暗红强调色");
 assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?super-pixel/, "必须有 reduced-motion 降级");
 assert.match(css, /\.super-pixel-asset-rail\s*\{/, "必须有资产侧栏样式");
 assert.match(css, /\.super-pixel-asset-card\s*\{/, "必须有可拖拽资产卡片样式");
+assert.match(css, /\.super-pixel-asset-icon[\s\S]*?width:\s*17px[\s\S]*?height:\s*17px/, "素材库图标必须有稳定尺寸");
+assert.match(css, /\.super-pixel-select-menu\s*\{[\s\S]*?background:\s*rgba\(20,\s*7,\s*11,\s*0\.96\)/, "下拉菜单背景必须与对话框使用同一暗红色系");
+assert.match(css, /\.super-pixel-select-option\.is-selected[\s\S]*?background:\s*rgba\(217,\s*45,\s*69,\s*0\.28\)/, "下拉选中态必须使用 Super Pixel 暗红强调色");
 assert.match(css, /\.super-pixel-layout\s*\{[\s\S]*?grid-template-columns:\s*0\s+minmax\(0,\s*1fr\)/, "资产抽屉默认必须收起为零宽度");
 assert.match(css, /\.super-pixel-layout\.is-rail-open\s*\{[\s\S]*?grid-template-columns:\s*minmax\(210px,\s*252px\)\s+minmax\(0,\s*1fr\)/, "打开资产抽屉必须把聊天内容向右推开");
 
@@ -130,7 +140,11 @@ assert.match(sendRule, /box-sizing:\s*border-box/, "发送按钮需 border-box�
 
 // 2) 视图高度：用 100% 无效（父级 auto 高度），须与同级视图一致用 calc(100vh - 44px)
 const viewRule = css.match(/\.super-pixel-view\s*\{[\s\S]*?\n\}/)?.[0] || "";
+assert.match(viewRule, /height:\s*calc\(100vh - 44px\)/, "对话视图必须固定可用高度，避免消息把输入框向下撑走");
 assert.match(viewRule, /min-height:\s*calc\(100vh - 44px\)/, "视图高度须用 calc(100vh - 44px)，与 image/library 视图一致");
+assert.match(css, /\.super-pixel-layout\s*\{[\s\S]*?height:\s*100%[\s\S]*?min-height:\s*0/, "Super Pixel 布局容器必须允许 flex/grid 子项收缩");
+assert.match(css, /\.super-pixel-stage\s*\{[\s\S]*?height:\s*100%[\s\S]*?min-height:\s*0[\s\S]*?overflow:\s*hidden/, "对话 stage 必须固定高度并裁住外层溢出");
+assert.match(css, /\.super-pixel-stage\.is-chatting\s+\.super-pixel-messages\s*\{[\s\S]*?min-height:\s*0[\s\S]*?overflow-y:\s*auto/, "对话消息必须是唯一可滚动区域");
 
 // 3) 窄屏工具条不得折行，否则发送键被甩到单独一行
 const narrow = css.match(/@media \(max-width: 600px\)\s*\{[\s\S]*?\n\}/)?.[0] || "";

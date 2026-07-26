@@ -4097,13 +4097,22 @@ function renderModernStudio(data = state.project) {
   const selected = shots[selectedIndex] || null;
   const ratio = videoConfigDataFromProject()?.settings?.ratio || "9:16";
   const pct = total ? Math.round((completed / total) * 100) : 0;
+  const projectName = project.seriesTitle || project.title || project.scriptTitle || title;
+  const episodeTitle = [project.episodeCode, project.episodeLabel].filter(Boolean).join(" · ") || project.episodeSlug || "制作台";
+  const manifest = data.assetManifest || {};
+  const pipelineComplete = [
+    Boolean(manifest.confirmed),
+    Boolean(data.storyboards?.length),
+    Boolean(total && completed === total),
+    Boolean(data.finalCut?.url),
+  ];
+  const currentPipelineIndex = pipelineComplete.findIndex((done) => !done);
+  const pipelineCurrentIndex = currentPipelineIndex === -1 ? pipelineComplete.length - 1 : currentPipelineIndex;
   $("#modernProjectTitle").textContent = title;
   $("#modernProjectMeta").textContent = `${project.episodeSlug || "当前项目"} · ${data.assets?.length || 0} 个资产 · ${total || 0} 个镜头`;
-  $("#modernProjectCrumb").textContent = title;
-  $("#modernEpisodeCrumb").textContent = String(project.episodeSlug || "制作台").toUpperCase();
-  $("#modernEpisodeKicker").textContent = String(project.episodeSlug || "CURRENT EPISODE").toUpperCase();
+  $("#modernProjectCrumb").textContent = projectName;
+  $("#modernEpisodeCrumb").textContent = episodeTitle;
   $("#modernRatioBadge").textContent = ratio;
-  $("#modernEpisodeTitle").textContent = title;
   $("#modernEpisodeCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
   $("#modernShotCount").textContent = total;
   $("#modernCompletedCount").textContent = `${pct}%`;
@@ -4112,7 +4121,14 @@ function renderModernStudio(data = state.project) {
   $("#modernQueueLabel").textContent = `队列 ${running}`;
   $("#modernBatchDetail").textContent = total ? `${Math.max(0, total - completed)} 个镜头待处理` : "等待生成视频配置";
   $("#modernSequenceSummary").textContent = total ? `${completed}/${total} 完成${running ? ` · ${running} 运行中` : ""}` : "暂无镜头";
-  const manifest = data.assetManifest || {};
+  root.querySelectorAll("[data-modern-focus]").forEach((button, index) => {
+    button.classList.toggle("is-complete", pipelineComplete[index]);
+    button.classList.toggle("is-current", index === pipelineCurrentIndex);
+  });
+  root.querySelectorAll(".modern-pipeline-link").forEach((link, index) => {
+    link.classList.toggle("is-complete", pipelineComplete[index]);
+  });
+  $("#modernPipelineProgress").style.width = `${Math.round((pipelineComplete.filter(Boolean).length / pipelineComplete.length) * 100)}%`;
   $("#modernAssetStep").textContent = manifest.confirmed ? `${manifest.items?.length || data.assets?.length || 0} 个资产已确认` : (manifest.items?.length ? "待确认分类" : "等待解析");
   $("#modernBoardStep").textContent = data.storyboards?.length ? `${data.storyboards.length} 个故事板已生成` : "等待生成";
   $("#modernVideoStep").textContent = data.videoConfigStatus?.ready ? `${total} 个镜头已配置` : "等待配置";

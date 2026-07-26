@@ -15938,15 +15938,40 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 /* Modern production workspace. The legacy editor DOM stays mounted only as a
    hidden compatibility layer for existing generation handlers. */
 body.is-studio-modern {
-  --modern-bg: #0f1112;
-  --modern-rail: #111314;
-  --modern-surface: #151718;
-  --modern-surface-2: #1b1d1e;
-  --modern-line: #292c2d;
-  --modern-line-strong: #3a3d3e;
-  --modern-text: #f1f2ee;
-  --modern-muted: #a0a39f;
-  --modern-quiet: #6f736f;
+  /* --mv-* 前缀：无前缀的 --bg / --line / --ok 在本文件中已有 4 套不同定义
+     （各主题各一份），即便限定在 body.is-studio-modern 内也会被后代继承，
+     覆盖它们本该拿到的全局值。 */
+  --mv-bg: #0B0B0F;
+  --mv-s1: #13131A;
+  --mv-s2: #1A1A23;
+  --mv-s3: #23232E;
+  --mv-line: rgba(255,255,255,.07);
+  --mv-line-2: rgba(255,255,255,.12);
+  --mv-tx: #EDEDF2;
+  --mv-mut: #9A9AA8;
+  /* #62626F 对 --mv-bg 仅 3.27:1，低于 WCAG AA 正文 4.5:1；未达态步骤标签
+     用的正是这个色，实测读不清。#8A8A99 → 5.78:1（对卡面 5.44:1）。 */
+  --mv-qt: #8A8A99;
+  --mv-lime: #C8FF2E;
+  --mv-vio: #8B7CFF;
+  --mv-amb: #FFB86B;
+  --mv-ok: #6EE7A0;
+  --mv-e1: 0 1px 2px rgba(0,0,0,.5), 0 8px 24px -10px rgba(0,0,0,.6);
+  --mv-e2: 0 1px 2px rgba(0,0,0,.5), 0 18px 44px -14px rgba(0,0,0,.7);
+  --mv-hi: inset 0 1px 0 rgba(255,255,255,.05);
+  --mv-r: 12px;
+  --mv-r-s: 7px;
+  /* 旧 modern-* 别名指向新色板，避免顶栏用新色、画布用旧色的割裂
+     （实测顶栏 #0B0B0F vs 画布 #0f1112）。尚未迁完的规则继续沿用别名。 */
+  --modern-bg: var(--mv-bg);
+  --modern-rail: #0E0E14;
+  --modern-surface: var(--mv-s1);
+  --modern-surface-2: var(--mv-s2);
+  --modern-line: var(--mv-line);
+  --modern-line-strong: var(--mv-line-2);
+  --modern-text: var(--mv-tx);
+  --modern-muted: var(--mv-mut);
+  --modern-quiet: var(--mv-qt);
   --modern-signal: #c8ff2e;
   --modern-accent: #f27a5b;
   /* 全文 12+ 处 font-family: var(--mono) 此前无定义，静默回落 Inter——
@@ -16015,12 +16040,25 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-bible-entry > span:nth-child(2) { display: grid; gap: 3px; }.modern-bible-entry b { font-size: 10px; }.modern-bible-entry small { color: var(--modern-quiet); font-size: 8px; }.modern-bible-entry em { color: var(--modern-signal); font-style: normal; }
 
 .modern-main { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; background: var(--modern-bg); }
-.modern-topbar { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 22px; border-bottom: 1px solid var(--modern-line); background: rgba(15,17,18,.96); }
-.modern-breadcrumb { display: flex; gap: 9px; align-items: center; font-size: 10px; }.modern-breadcrumb span, .modern-breadcrumb i { color: var(--modern-quiet); font-style: normal; }.modern-breadcrumb strong { color: var(--modern-signal); font-family: var(--mono); }
-.modern-top-actions { display: flex; align-items: center; gap: 7px; }.modern-quiet-button, .modern-queue-button { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 10px; }.modern-quiet-button:hover, .modern-queue-button:hover { border-color: var(--modern-line-strong); color: var(--modern-text); }.modern-queue-button { display: inline-flex; gap: 7px; align-items: center; }.modern-queue-button i { width: 6px; height: 6px; border-radius: 50%; background: var(--modern-signal); }
-.modern-episode-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 24px; align-items: end; padding: 30px 26px 24px; border-bottom: 1px solid var(--modern-line); }.modern-kicker { display: flex; gap: 10px; align-items: center; color: var(--modern-quiet); font-family: var(--mono); font-size: 9px; }.modern-kicker b { padding: 4px 7px; border: 1px solid rgba(200,255,46,.3); border-radius: 3px; color: var(--modern-signal); font-size: 8px; font-weight: 500; }.modern-episode-hero h1 { margin: 8px 0 0; font-size: clamp(26px, 3vw, 40px); line-height: 1.05; letter-spacing: 0; }.modern-episode-hero p { max-width: 560px; margin: 10px 0 0; color: var(--modern-muted); font-size: 12px; line-height: 1.6; }.modern-episode-stats { display: flex; gap: 22px; margin: 0; }.modern-episode-stats div { min-width: 58px; }.modern-episode-stats dt { color: var(--modern-quiet); font-size: 9px; }.modern-episode-stats dd { margin: 4px 0 0; color: var(--modern-text); font-family: var(--mono); font-size: 17px; }.modern-episode-action { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; align-items: center; min-width: 190px; padding: 11px 13px; border: 1px solid var(--modern-signal); border-radius: 4px; background: rgba(200,255,46,.08); color: var(--modern-text); text-align: left; }.modern-episode-action:hover { background: rgba(200,255,46,.14); }.modern-episode-action span { display: grid; gap: 4px; }.modern-episode-action b { font-size: 11px; }.modern-episode-action small { color: var(--modern-muted); font-size: 9px; }.modern-episode-action i { color: var(--modern-signal); font-style: normal; }
+.modern-topbar { display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; gap: 18px; align-items: center; min-height: 56px; height: 60px; padding: 0 22px; border-bottom: 1px solid var(--mv-line); background: rgba(11,11,15,.72); box-shadow: var(--mv-hi); }
+.modern-breadcrumb { display: flex; gap: 9px; align-items: baseline; min-width: 0; font-size: 11.5px; }.modern-breadcrumb span, .modern-breadcrumb i { color: var(--mv-qt); font-style: normal; }.modern-breadcrumb i { color: var(--mv-s3); }.modern-breadcrumb h1 { margin: 0; overflow: hidden; color: var(--mv-tx); font-size: 15px; font-weight: 600; letter-spacing: 0; white-space: nowrap; text-overflow: ellipsis; }.modern-breadcrumb h1 span { color: inherit; }.modern-ratio-badge { flex: none; padding: 2.5px 7px; border: 1px solid var(--mv-line-2); border-radius: 5px; color: var(--mv-mut); font-family: var(--mono); font-size: 9px; font-weight: 500; }
+.modern-top-description { min-width: 0; overflow: hidden; margin: 0; color: var(--mv-qt); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }.modern-top-actions { display: flex; align-items: center; gap: 9px; }.modern-quiet-button, .modern-queue-button { min-height: 30px; padding: 0 11px; border: 1px solid var(--mv-line); border-radius: 8px; background: var(--mv-s1); color: var(--mv-mut); font-size: 10px; }.modern-quiet-button:hover, .modern-queue-button:hover { border-color: var(--mv-line-2); color: var(--mv-tx); }.modern-queue-button { display: inline-flex; gap: 7px; align-items: center; }.modern-queue-button i { width: 5px; height: 5px; border-radius: 50%; background: var(--mv-amb); box-shadow: 0 0 8px var(--mv-amb); }
+.modern-episode-stats { display: flex; gap: 20px; margin: 0; }.modern-episode-stats div { text-align: right; }.modern-episode-stats dt { color: var(--mv-qt); font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; }.modern-episode-stats dd { margin: 1px 0 0; color: var(--mv-tx); font-family: var(--mono); font-size: 15px; }
+.modern-episode-action { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 9px; align-items: center; min-width: 190px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: linear-gradient(145deg, #D6FF52, #A8E01C); box-shadow: 0 4px 16px -5px rgba(200,255,46,.6), var(--mv-hi); color: #0B0B0F; text-align: left; }.modern-episode-action:hover { filter: brightness(1.07); }.modern-episode-action span { display: grid; gap: 2px; }.modern-episode-action b { font-size: 11.5px; font-weight: 600; }.modern-episode-action small { color: rgba(11,11,15,.68); font-size: 9px; }.modern-episode-action i { color: rgba(11,11,15,.65); font-style: normal; }
 
-.modern-pipeline { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); border-bottom: 1px solid var(--modern-line); }.modern-pipeline button { position: relative; display: grid; grid-template-columns: 25px minmax(0,1fr) 8px; grid-template-rows: auto auto; column-gap: 9px; align-items: center; min-height: 67px; padding: 11px 15px; border: 0; border-right: 1px solid var(--modern-line); background: transparent; color: var(--modern-muted); text-align: left; }.modern-pipeline button:last-child { border-right: 0; }.modern-pipeline button:hover { background: var(--modern-surface); color: var(--modern-text); }.modern-pipeline button.is-active { background: var(--modern-surface-2); color: var(--modern-text); }.modern-pipeline span { grid-row: 1 / span 2; align-self: start; color: var(--modern-signal); font-family: var(--mono); font-size: 10px; }.modern-pipeline b { font-size: 11px; font-weight: 600; }.modern-pipeline small { color: var(--modern-quiet); font-size: 9px; }.modern-pipeline i { grid-column: 3; grid-row: 1 / span 2; width: 6px; height: 6px; border-radius: 50%; background: var(--modern-line-strong); }.modern-pipeline button.is-complete i { background: #9fcf58; }.modern-pipeline button.is-current i { background: var(--modern-signal); box-shadow: 0 0 0 4px rgba(200,255,46,.1); }
+/* flex: none —— .modern-main 是 flex column，不锁的话 pipeline 被压到 43px，
+   而内容需要 55px，副标签下半截被裁。
+   且不能用 overflow-x: auto：一轴非 visible 时另一轴的 visible 会被提升为
+   auto，横向滚动的意图会连带开启纵向裁剪。窄屏溢出交给 media query。 */
+.modern-pipeline { display: flex; flex: none; align-items: stretch; gap: 0; padding: 15px 22px 0; }
+@media (max-width: 860px) { .modern-pipeline { overflow-x: auto; overflow-y: hidden; padding-bottom: 7px; scrollbar-width: none; } }
+.modern-pipeline button { position: relative; display: flex; flex: 0 1 auto; gap: 10px; align-items: center; min-width: 0; min-height: 40px; padding: 9px 15px 9px 12px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--mv-qt); text-align: left; }
+.modern-pipeline button:hover { background: rgba(255,255,255,.032); color: var(--mv-mut); }.modern-pipeline button.is-active { box-shadow: inset 0 0 0 1px var(--mv-line-2); color: var(--mv-tx); }
+.modern-pipeline button > div { min-width: 0; }.modern-pipeline-mark { display: grid; flex: 0 0 22px; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--mv-s2); box-shadow: inset 0 0 0 1px var(--mv-line); color: var(--mv-qt); font-family: var(--mono); font-size: 9.5px; }
+.modern-pipeline b { display: block; font-size: 11.5px; font-weight: 500; white-space: nowrap; }.modern-pipeline small { display: block; overflow: hidden; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; white-space: nowrap; text-overflow: ellipsis; }.modern-pipeline button.is-complete .modern-pipeline-mark { background: rgba(110,231,160,.14); box-shadow: inset 0 0 0 1px rgba(110,231,160,.3); color: var(--mv-ok); font-size: 0; }.modern-pipeline button.is-complete .modern-pipeline-mark::before { content: "✓"; font-size: 12px; }.modern-pipeline button.is-complete b { color: var(--mv-mut); }
+.modern-pipeline button.is-current { border-color: rgba(200,255,46,.2); background: linear-gradient(180deg, rgba(200,255,46,.09), rgba(200,255,46,.02)); color: var(--mv-tx); }.modern-pipeline button.is-current .modern-pipeline-mark { background: linear-gradient(145deg, var(--mv-lime), #9FD119); box-shadow: 0 3px 12px -3px rgba(200,255,46,.6); color: #0B0B0F; font-weight: 700; }.modern-pipeline button.is-current b { color: var(--mv-tx); }.modern-pipeline button.is-current small { color: rgba(200,255,46,.75); }
+.modern-pipeline-link { display: flex; flex: 0 0 26px; align-items: center; justify-content: center; width: 26px; color: var(--mv-s3); font-size: 10px; }.modern-pipeline-link.is-complete { color: rgba(110,231,160,.45); }
+.modern-pipeline-rail { height: 2px; margin: 13px 22px 0; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.05); }.modern-pipeline-rail span { display: block; width: 0; height: 100%; background: linear-gradient(90deg, var(--mv-vio), var(--mv-lime)); box-shadow: 0 0 14px rgba(200,255,46,.45); transition: width 240ms ease; }
 .modern-main[data-modern-view="assets"] .modern-sequence,
 .modern-main[data-modern-view="assets"] .modern-workbench { display: none; }
 .modern-main[data-modern-view="storyboard"] .modern-source-panel,
@@ -16131,7 +16169,7 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
   35% { outline: 2px solid rgba(200,255,46,.55); outline-offset: 3px; }
   100% { outline: 0 solid rgba(200,255,46,0); outline-offset: 7px; }
 }
-@media (max-width: 1180px) { .studio-modern-shell { grid-template-columns: 190px minmax(0,1fr); }.modern-episode-hero { grid-template-columns: minmax(0,1fr) auto; }.modern-episode-action { grid-column: 1 / -1; justify-self: start; }.modern-kit-bar { grid-template-columns: minmax(200px,1fr) minmax(140px,1fr) auto; }.modern-kit-bar > div:nth-child(3) { display: none; } }
+@media (max-width: 1180px) { .studio-modern-shell { grid-template-columns: 190px minmax(0,1fr); }.modern-topbar { gap: 12px; padding: 0 16px; }.modern-episode-action { min-width: 166px; padding: 0 11px; }.modern-kit-bar { grid-template-columns: minmax(200px,1fr) minmax(140px,1fr) auto; }.modern-kit-bar > div:nth-child(3) { display: none; } }
 @media (max-width: 980px) { .modern-source-panel { display: block; margin: 14px 14px 0; }.modern-source-grid { grid-template-columns: 1fr; }.modern-source-field + .modern-source-field { border-top: 1px solid var(--modern-line); border-left: 0; }.modern-asset-results { border-top: 1px solid var(--modern-line); border-left: 0; } }
 @media (max-width: 980px) { body.is-studio-modern { min-width: 0; }.studio-modern-shell { display: block; height: auto; min-height: 100vh; overflow: visible; }.modern-main { min-height: 0; overflow: visible; }.modern-series-nav { position: relative; height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-brand { display: flex; align-items: center; justify-content: space-between; }.modern-series-context, .modern-series-footer { display: none; }.modern-episode-list { display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; }.modern-episode-row { flex: 0 0 150px; }.modern-stage-grid { grid-template-columns: 1fr; }.modern-stage-pane { border-right: 0; border-bottom: 1px solid var(--modern-line); }.modern-stage-pane:last-child { border-bottom: 0; }.modern-kit-bar { margin: 14px 14px 0; }.modern-sequence { margin: 14px; }.modern-workbench { margin: 18px 14px 24px; }.modern-core { overflow: visible; } }
 
@@ -16223,19 +16261,4 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
   .modern-asset-wall-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .modern-asset-reference-row, .modern-asset-bind-row { grid-template-columns: 1fr; align-items: stretch; }
   .modern-asset-style-reference-preview { width: 100%; height: 90px; }
-}
-
-/* The compact header keeps only the actionable flow summary visible. */
-.modern-breadcrumb { display: none; }
-.modern-episode-hero { grid-template-columns: auto auto; justify-content: end; align-items: center; gap: 18px; padding: 10px 26px; }
-.modern-episode-hero > div:first-child { display: none; }
-.modern-episode-stats { align-items: center; }
-.modern-episode-action { min-height: 48px; padding: 8px 11px; }
-@media (max-width: 1180px) {
-  .modern-episode-hero { grid-template-columns: auto auto; justify-content: end; }
-  .modern-episode-action { grid-column: auto; justify-self: stretch; }
-}
-@media (max-width: 640px) {
-  .modern-episode-hero { grid-template-columns: 1fr; justify-content: stretch; }
-  .modern-episode-action { width: 100%; }
 }

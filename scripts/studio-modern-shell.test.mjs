@@ -57,9 +57,30 @@ assert.match(css, /\.modern-stage-pane\s*\{[^}]*align-self:\s*start/, "stage pan
 assert.match(css, /\.modern-asset-results\s*\{[^}]*max-height:/, "asset rail must not stretch the entire source panel");
 assert.match(css, /\.modern-asset-wall\s*\{[^}]*grid-column:\s*1/, "asset wall must occupy the source panel workspace");
 assert.match(css, /\.modern-asset-wall-grid\s*\{[^}]*grid-template-columns:/, "asset wall must use a card grid");
-assert.match(css, /\.modern-episode-hero\s*\{[^}]*grid-template-columns:\s*auto auto[^}]*padding:\s*10px 26px/, "episode hero must fit the compact flow summary");
-assert.match(css, /\.modern-episode-hero\s*> div:first-child\s*\{[^}]*display:\s*none/, "episode hero must hide the redundant title block");
-assert.match(css, /\.modern-breadcrumb\s*\{[^}]*display:\s*none/, "modern topbar must keep only the queue action");
+assert.doesNotMatch(html, /modern-episode-hero/, "episode hero must be merged into the topbar");
+assert.doesNotMatch(html, /modernEpisodeKicker/, "removed episode kicker must not remain in the DOM");
+assert.match(html, /<header class="modern-topbar">[\s\S]*modernProjectCrumb[\s\S]*modernEpisodeTitle[\s\S]*modernEpisodeCopy[\s\S]*modern-episode-stats[\s\S]*modern-top-actions/, "topbar must contain the merged episode summary");
+assert.match(css, /\.modern-topbar\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*auto\s+minmax\(0,1fr\)\s+auto\s+auto[^}]*height:\s*60px/, "topbar must use the four-column single-row layout");
+assert.match(css, /\.modern-topbar\s*\{[^}]*min-height:\s*56px/, "topbar must remain at least 56px tall");
+assert.doesNotMatch(js, /modernEpisodeKicker/, "runtime must not assign the removed episode kicker");
+assert.doesNotMatch(css, /\.modern-episode-hero/, "hero styles must be removed after merging the topbar");
+assert.match(html, /<section class="modern-pipeline"[\s\S]*modern-pipeline-link[\s\S]*modern-pipeline-rail/, "pipeline must include arrow links and a progress rail");
+assert.match(css, /\.modern-pipeline\s*\{[^}]*display:\s*flex/, "pipeline must use a flex filmstrip layout");
+assert.match(css, /\.modern-pipeline-link\s*\{[^}]*width:\s*26px/, "pipeline steps must be joined by fixed-width arrows");
+assert.match(css, /\.modern-pipeline-rail\s*\{[^}]*height:\s*2px/, "pipeline must have a 2px bottom progress rail");
+assert.match(css, /\.modern-pipeline-rail span\s*\{[^}]*background:\s*linear-gradient\(90deg,\s*var\(--mv-vio\),\s*var\(--mv-lime\)\)/, "pipeline rail must use violet-to-lime progress");
+// 无前缀的 --bg / --line / --ok 在本文件已有 4 套主题各自的定义，即便限定
+// 在 body.is-studio-modern 内也会被后代继承并覆盖它们本该拿到的全局值。
+assert.match(css, /body\.is-studio-modern \{[\s\S]{0,900}--mv-bg:/, "modern tokens must use the --mv- prefix");
+assert.doesNotMatch(css, /body\.is-studio-modern \{[\s\S]{0,900}\n\s*--bg:/, "modern tokens must not shadow the global --bg");
+// #62626F 对 #0B0B0F 仅 3.27:1，低于 WCAG AA 正文 4.5:1；未达态步骤标签用的是它。
+assert.doesNotMatch(css, /--mv-qt:\s*#62626F/i, "--mv-qt must clear WCAG AA against the canvas");
+// overflow-x: auto 会把 overflow-y 的 visible 提升为 auto，连带纵向裁剪副标签。
+// 只查基础规则（含 flex: none 那条）；窄屏 media query 里的 overflow-x 是刻意的。
+assert.doesNotMatch(css, /\.modern-pipeline \{[^}]*flex:\s*none[^}]*overflow-x:\s*auto/, "pipeline must not clip vertically at desktop width");
+assert.match(css, /\.modern-pipeline \{[^}]*flex:\s*none/, "pipeline must not shrink inside the flex column");
+assert.doesNotMatch(css, /\.modern-pipeline\s*\{[^}]*display:\s*grid/, "pipeline must not retain the equal-column grid");
+assert.doesNotMatch(css, /modern-pipeline button[^}]*border-right/, "pipeline must not use hard block dividers");
 assert.match(html, /id="modernCore" class="modern-core"/, "modern shell must have a fixed core workspace");
 assert.match(css, /\.studio-modern-shell\s*\{[\s\S]*height:\s*100vh[\s\S]*overflow:\s*hidden/, "modern shell must keep the page viewport fixed");
 assert.match(css, /\.modern-core\s*\{[\s\S]*overflow:\s*auto/, "only the core workspace may scroll internally");

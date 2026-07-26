@@ -54,6 +54,14 @@ assert.match(js, /modernGenerateDraft[\s\S]{0,700}generateDraft\(\)/, "modern sh
 assert.match(js, /modernBuildConfig[\s\S]{0,700}buildConfig\(button\)/, "modern shell must bind the video config action");
 assert.doesNotMatch(js, /modernGenerateDraft[\s\S]{0,700}#draftBtn/, "modern draft action must not proxy through the hidden legacy button");
 assert.doesNotMatch(js, /modernBuildConfig[\s\S]{0,700}#buildConfigBtn/, "modern config action must not proxy through the hidden legacy button");
+const modernSequenceStart = html.indexOf('<section class="modern-sequence"');
+const modernWorkbenchStart = html.indexOf('<section class="modern-workbench"');
+assert.ok(modernSequenceStart >= 0 && modernWorkbenchStart > modernSequenceStart, "modern shot sequence must remain a bounded section");
+assert.doesNotMatch(html.slice(modernSequenceStart, modernWorkbenchStart), /id="modernBuildConfig"/, "video config must not live in the low-frequency storyboard sequence");
+const modernMotionStart = html.indexOf('aria-labelledby="modernMotionTitle"');
+const modernCutStart = html.indexOf('<section id="modernCutPanel"');
+assert.ok(modernMotionStart >= 0 && modernCutStart > modernMotionStart, "modern video pane must remain in the workbench");
+assert.match(html.slice(modernMotionStart, modernCutStart), /id="modernBuildConfig"/, "video config must live in the video generation pane");
 assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");
 assert.match(js, /function bindModernAssetReference/, "modern shell must bind uploaded reference images to parsed assets");
 assert.match(js, /persistModernAssetStyleFromControls/, "modern shell must persist modern asset style controls");

@@ -2881,9 +2881,15 @@ async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLangua
     throw new Error(`视频分镜模型不可用或返回不完整设计，请重试。${result.reason || "未知失败"}`);
   }
   if (!result.shots?.length) throw new Error("视频分镜模型没有返回可用镜头");
+  // 指纹必须用未压缩的 script:writeStoryboardModelPlan 只把这个参数用于
+  // sha1Text(script),而三处校验(modelShotPlanNeedsRefresh /
+  // modelPlanDialogueLanguageForConfig / modelShotPlanForConfig)都拿原始 script 算。
+  // 这里若传 compactLine 过的 videoScript,剧本一带换行指纹就永不相等,
+  // needsRefresh 恒为 true —— 表现为「生成视频配置」白跑 160 秒模型后必抛
+  // 「模型导演设计生成失败」,从来不可能成功。模型调用仍用压缩版 videoScript。
   writeStoryboardModelPlan(episodeRoot, {
     model: result.model,
-    script: videoScript,
+    script,
     dialogueLanguage: normalizedDialogueLanguage,
     shots: result.shots,
   });

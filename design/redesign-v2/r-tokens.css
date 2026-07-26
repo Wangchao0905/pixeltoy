@@ -1,0 +1,37 @@
+:root {
+  /* 画布偏蓝紫的近黑，比中性灰更有胶片感 */
+  --bg: #0B0B0F;
+  --s1: #13131A;      /* 抬升一层 */
+  --s2: #1A1A23;      /* 抬升两层 */
+  --s3: #23232E;
+  /* 发丝线用半透明白，不用实色——叠在任何表面上都自然 */
+  --line: rgba(255,255,255,.07);
+  --line-2: rgba(255,255,255,.12);
+  --tx: #EDEDF2;
+  --mut: #9A9AA8;
+  --qt: #62626F;
+  --lime: #C8FF2E;    /* 行动 / 当前 */
+  --vio: #8B7CFF;     /* AI 生成物 */
+  --amb: #FFB86B;     /* 进行中 */
+  --ok: #6EE7A0;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: Inter, -apple-system, "PingFang SC", system-ui, sans-serif;
+  /* 景深：贴地阴影 + 远投阴影，两段式 */
+  --e1: 0 1px 2px rgba(0,0,0,.5), 0 8px 24px -10px rgba(0,0,0,.6);
+  --e2: 0 1px 2px rgba(0,0,0,.5), 0 18px 44px -14px rgba(0,0,0,.7);
+  --hi: inset 0 1px 0 rgba(255,255,255,.05);
+  --r: 12px;
+  --r-s: 7px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--tx); font-family: var(--sans); font-size: 13px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+/* 环境光：左上一团冷光 + 右侧暖光，让纯黑不死板 */
+body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(900px 500px at 12% -8%, rgba(139,124,255,.13), transparent 70%),
+    radial-gradient(700px 420px at 96% 8%, rgba(200,255,46,.055), transparent 70%); }
+/* 胶片颗粒：极轻，只为消除大面积纯色的塑料感 */
+body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: .035; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.eyebrow { color: var(--qt); font-family: var(--mono); font-size: 9.5px; letter-spacing: .11em; text-transform: uppercase; }
+.shell { position: relative; z-index: 1; display: grid; grid-template-columns: 236px minmax(0,1fr); min-height: 900px; }

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"/>
+<title>制作台 · 视觉重构</title>
+<link rel="stylesheet" href="r-tokens.css"/><link rel="stylesheet" href="r-rail.css"/>
+<link rel="stylesheet" href="r-top.css"/><link rel="stylesheet" href="r-body.css"/>
+<link rel="stylesheet" href="r-cut.css"/></head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand"><em>P</em><b>Pixel Toys</b><span>v2</span></div>
+    <div class="proj"><u></u><div><small>PROJECT</small><strong>雪原追猎</strong></div><i>⌄</i></div>
+    <div>
+      <div class="rail-sec"><span class="eyebrow">Episodes</span><button>+</button></div>
+      <div class="eps">
+        <div class="ep done"><u></u><div><b>EP01 · 冰湖</b><small>12 shots</small></div><i></i></div>
+        <div class="ep done"><u></u><div><b>EP02 · 断桥</b><small>10 shots</small></div><i></i></div>
+        <div class="ep on"><u></u><div><b>EP03 · 雪原追猎</b><small>6 shots</small></div><i></i></div>
+        <div class="ep"><u></u><div><b>EP04 · 归途</b><small>草稿</small></div><i></i></div>
+      </div>
+    </div>
+    <div class="rail-foot">
+      <div>
+        <div class="prog-row"><span>本集完成度</span><strong>42%</strong></div>
+        <div class="prog"><b></b></div>
+      </div>
+      <button class="bible"><em><i style="background:linear-gradient(150deg,#3E3357,#1E2636)"></i><i style="background:linear-gradient(150deg,#2E4A52,#182028)"></i><i style="background:linear-gradient(150deg,#5A4340,#241E27)"></i></em><span>项目资产库 · 24</span></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <div class="crumb"><span>雪原追猎</span><i>/</i><h1>EP03 · 雪原追猎</h1><b class="chip">9:16</b></div>
+      <p class="top-desc">雪原追踪段落，冷调为主，第 4 镜需补雪雾粒子。</p>
+      <dl class="stats"><div><dt>SHOTS</dt><dd>6</dd></div><div><dt>DONE</dt><dd>42%</dd></div></dl>
+      <div class="top-act">
+        <button class="q"><i></i>队列 2</button>
+        <button class="cta">继续当前流程<i>→</i></button>
+      </div>
+    </header>
+
+    <nav class="flow">
+      <button class="step done"><em>✓</em><div><b>资产文档</b><small>24 assets</small></div></button>
+      <div class="link lit">→</div>
+      <button class="step done"><em>✓</em><div><b>故事板</b><small>6 / 6</small></div></button>
+      <div class="link lit">→</div>
+      <button class="step on"><em>03</em><div><b>视频生成</b><small>4 / 6 running</small></div></button>
+      <div class="link">→</div>
+      <button class="step"><em>04</em><div><b>组装成片</b><small>等待片段</small></div></button>
+    </nav>
+    <div class="flow-rail"><b></b></div>
+
+    <div class="wrap" id="wrap"></div>
+  </main>
+</div>
+<script src="parts.js"></script>
+</body></html>

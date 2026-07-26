@@ -15949,6 +15949,9 @@ body.is-studio-modern {
   --modern-quiet: #6f736f;
   --modern-signal: #c8ff2e;
   --modern-accent: #f27a5b;
+  /* 全文 12+ 处 font-family: var(--mono) 此前无定义，静默回落 Inter——
+     eyebrow 标签与数字读数全都不是等宽，控制台质感立不起来。 */
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   min-width: 1024px;
   background: var(--modern-bg);
   color: var(--modern-text);
@@ -16028,6 +16031,39 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-main[data-modern-view="video"] .modern-kit-bar,
 .modern-main[data-modern-view="video"] .modern-stage-pane:first-child,
 .modern-main[data-modern-view="video"] .modern-stage-pane:nth-child(2) { display: none; }
+/* 成片面板只在第 04 步出现；其余三个视图隐藏。 */
+.modern-main:not([data-modern-view="cut"]) .modern-cut-panel { display: none; }
+.modern-main[data-modern-view="cut"] .modern-source-panel,
+.modern-main[data-modern-view="cut"] .modern-kit-bar,
+.modern-main[data-modern-view="cut"] .modern-sequence,
+.modern-main[data-modern-view="cut"] .modern-workbench { display: none; }
+/* ===== 第 04 步：组装成片面板 =====
+   此前成片只存在于 legacy template（永不渲染）与隐藏 bridge 中，
+   新版制作台没有任何可见入口。这里给它一个与 source-panel 同规格的面板。 */
+.modern-cut-panel { margin: 18px 26px 18px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }
+/* align-items: start 让 STEP 标记与 FINAL CUT eyebrow 同一条基线；
+   source-head 用的 end 会把它压到面板底部，与标题错开 40+px。 */
+.modern-cut-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 12px 14px; border-bottom: 1px solid var(--modern-line); }
+.modern-cut-head strong { display: block; margin-top: 4px; font-size: 12px; }
+.modern-cut-head small { display: block; margin-top: 4px; color: var(--modern-quiet); font-size: 10px; line-height: 1.6; }
+.modern-cut-status { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid var(--modern-line); color: var(--modern-muted); font-size: 11px; }
+.modern-cut-preview { padding: 14px; }
+.modern-cut-preview .final-cut-video { position: relative; max-width: 320px; margin: 0 auto; }
+.modern-cut-preview video { width: 100%; border: 1px solid var(--modern-line); border-radius: 4px; background: #000; }
+/* align-content: center 是必需的：place-items 只管格内对齐，min-height
+   撑出的富余空间仍会摊到行间，实测把图标与文字拉开 77px（应为 9px）。 */
+.modern-cut-preview .final-cut-placeholder { display: grid; place-items: center; align-content: center; gap: 9px; min-height: 190px; border: 1px dashed var(--modern-line-strong); border-radius: 4px; color: var(--modern-quiet); font-size: 10px; }
+.modern-cut-preview .final-cut-placeholder svg { width: 30px; height: 30px; fill: none; stroke: var(--modern-line-strong); stroke-width: 1.5; }
+.modern-cut-foot { display: flex; justify-content: space-between; gap: 14px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--modern-line); background: var(--modern-surface-2); }
+.modern-cut-foot small { color: var(--modern-quiet); font-size: 10px; }
+/* 用 min-height 而非 height：全站 button{min-height:36px} 会压过 height。
+   28px 沿用 .modern-pane-actions / .modern-source-actions 的既有约定。 */
+.modern-cut-foot button { min-height: 28px; padding: 0 15px; border: 0; border-radius: 3px; background: var(--modern-signal); color: #0f1112; font-size: 11px; font-weight: 600; cursor: pointer; }
+.modern-cut-foot button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 1180px) {
+  .modern-cut-panel { margin: 14px 14px 14px; }
+}
+
 .modern-core { min-height: 0; flex: 1 1 auto; overflow: auto; scrollbar-width: thin; }
 .modern-core > .modern-source-panel,
 .modern-core > .modern-kit-bar,

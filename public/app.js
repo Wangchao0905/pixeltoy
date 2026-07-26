@@ -3690,8 +3690,15 @@ function studioPrimaryActionForMode(mode = state.activeWorkspaceMode, data = sta
     return { label: "Run: 生成视频配置", selector: "#buildConfigBtn", focus: "shots" };
   }
   if (mode === "video") {
-    return finalCutOutputReady(data?.finalCut)
-      ? { label: "Run: 组装成片", selector: "#assembleFinalCutBtn", focus: "video" }
+    // 判据是「片段是否齐」，不是「成片是否已存在」。原先写成 finalCutOutputReady()
+    // 时条件是反的：只有成片已生成才给出组装入口，首次组装永远拿不到——
+    // 服务端那套 ffmpeg 拼接（runFinalCutAssembly）因此成了死代码。
+    // 服务端仍会自行校验缺片并报错，这里只决定「提供哪个入口」。
+    const progress = data?.videoProgress || {};
+    const total = progress.total || progress.items?.length || 0;
+    const segmentsAllDone = total > 0 && (progress.completed || 0) >= total && !progress.running;
+    return segmentsAllDone
+      ? { label: finalCutOutputReady(data?.finalCut) ? "Run: 重新组装成片" : "Run: 组装成片", selector: "#assembleFinalCutBtn", focus: "cut" }
       : { label: "Run: 视频生成", selector: "#generateAllSegments", focus: "video" };
   }
   return { label: "Run: 当前步骤", selector: "", focus: studioWorkflowFocusFromMode(mode) };
@@ -4057,7 +4064,7 @@ function modernMediaForShot(data, shot, index, kind) {
 function renderModernStudio(data = state.project) {
   const root = $("#studioModernShell");
   if (!root || !data?.project) return;
-  const modernFocus = ["assets", "storyboard", "video"].includes(state.modernStudio.focus)
+  const modernFocus = ["assets", "storyboard", "video", "cut"].includes(state.modernStudio.focus)
     ? state.modernStudio.focus
     : "assets";
   state.modernStudio.focus = modernFocus;
@@ -7721,14 +7728,20 @@ function bind() {
   });
   $("#modernBrandButton")?.addEventListener("click", goBackToProjects);
   const focusModernPane = (focus) => {
-    const nextFocus = focus === "kit" ? "assets" : focus === "storyboard" ? "storyboard" : focus === "video" ? "video" : "assets";
+    const nextFocus = focus === "kit"
+      ? "assets"
+      : ["storyboard", "video", "cut"].includes(focus)
+        ? focus
+        : "assets";
     state.modernStudio.focus = nextFocus;
     renderModernStudio(state.project);
     const target = nextFocus === "assets"
       ? $("#modernSourcePanel")
       : nextFocus === "storyboard"
         ? $("#modernStillTitle")?.closest(".modern-stage-pane")
-        : $("#modernMotionTitle")?.closest(".modern-stage-pane");
+        : nextFocus === "cut"
+          ? $("#modernCutPanel")
+          : $("#modernMotionTitle")?.closest(".modern-stage-pane");
     target?.classList.remove("is-focus-pulse");
     requestAnimationFrame(() => target?.classList.add("is-focus-pulse"));
   };

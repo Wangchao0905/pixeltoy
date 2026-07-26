@@ -965,7 +965,7 @@
             <button type="button" data-modern-focus="assets"><span>01</span><b>资产文档</b><small id="modernAssetStep">等待解析</small><i></i></button>
             <button type="button" data-modern-focus="storyboard"><span>02</span><b>故事板</b><small id="modernBoardStep">等待生成</small><i></i></button>
             <button type="button" data-modern-focus="video"><span>03</span><b>视频生成</b><small id="modernVideoStep">等待配置</small><i></i></button>
-            <button type="button" data-modern-focus="video"><span>04</span><b>组装成片</b><small id="modernCutStep">等待片段</small><i></i></button>
+            <button type="button" data-modern-focus="cut"><span>04</span><b>组装成片</b><small id="modernCutStep">等待片段</small><i></i></button>
           </section>
 
           <section id="modernCore" class="modern-core" aria-label="当前流程核心工作区">
@@ -1088,6 +1088,19 @@
               </section>
             </div>
           </section>
+
+          <section id="modernCutPanel" class="modern-cut-panel" aria-label="组装成片">
+            <header class="modern-cut-head">
+              <div><span class="modern-eyebrow">FINAL CUT</span><strong>组装成片</strong><small>把已完成片段按顺序硬切拼成完整成片（1080×1920 / 24fps，保留音频）。</small></div>
+              <span class="modern-source-order">STEP 04 / 04</span>
+            </header>
+            <div id="finalCutStatus" class="modern-cut-status inline-status"></div>
+            <div id="finalCutPreview" class="modern-cut-preview"></div>
+            <footer class="modern-cut-foot">
+              <small>片段全部完成后才能组装；缺片时服务端会直接报错。</small>
+              <button id="assembleFinalCutBtn" class="primary" type="button">组装成片</button>
+            </footer>
+          </section>
           </section>
         </main>
       </section>
@@ -1104,7 +1117,7 @@
         <div id="referenceKitPanel"><form id="referenceKitForm"></form><button id="newReferenceKit" type="button"></button><button id="referenceKitCancel" type="button"></button><div id="referenceKitList"></div></div>
         <div id="storyboardGridGallery"></div><span id="storyboardGridCount"></span><div id="storyboardJobStatus"></div><select id="storyboardGenerateRange"><option value="missing">缺失</option></select><button data-job="storyboards" type="button"></button>
         <div id="videoConfigStatus"></div><span id="videoConfigLabel"></span><button id="buildConfigBtn" type="button"></button><input id="configGroup" /><select id="configModel"><option value="seedance-2-0">Seedance 2.0</option></select><select id="configResolution"><option value="480p">480p</option></select><select id="configRatio"><option value="9:16">9:16</option></select><select id="configPromptMode"><option value="prompt">提示词</option><option value="production_board">Production Board</option></select>
-        <div id="videoProgressSummary"></div><div id="videoProgressList"></div><button id="generateAllSegments" type="button"></button><div id="finalCutStatus"></div><div id="finalCutPreview"></div><button id="assembleFinalCutBtn" type="button"></button>
+        <div id="videoProgressSummary"></div><div id="videoProgressList"></div><button id="generateAllSegments" type="button"></button>
         <div id="studioFlowStatus"></div><span id="studioFlowProgress"></span><div id="studioLogContent"></div><div id="studioContextTitle"></div><div id="studioContextCopy"></div><div id="studioContextStage"></div><div id="studioContextStatus"></div><div id="studioContextDownstream"></div><button id="studioContextOpen" type="button"></button><div id="studioQueueBar"><div id="studioQueueItems"></div><span id="studioQueueSummary"></span><div id="studioQueueProgress"><span id="studioQueueProgressFill"></span></div></div>
         <button id="backToProjects" type="button"></button><button id="studioModernOverviewButton" type="button"></button><button id="studioCommandButton" type="button"></button><button id="studioPrimaryRun" type="button"></button><button id="studioProjectsButton" type="button"></button><button id="refreshState" type="button"></button><button id="zoomOut" type="button"></button><button id="zoomIn" type="button"></button><button id="zoomFit" type="button"></button><button id="resetLayout" type="button"></button>
         <input id="assetUploadFile" type="file" /><input id="assetUploadLabel" /><select id="assetUploadTarget"></select><select id="assetUploadMode"><option value="bind">绑定</option></select><span id="assetUploadName"></span><span id="assetUploadHint"></span><button id="assetUploadButton" type="button"></button><form id="assetUploadForm"></form><input id="storyboardUploadFile" type="file" /><span id="storyboardUploadName"></span><select id="storyboardUploadTarget"></select><button id="storyboardUploadButton" type="button"></button><form id="storyboardUploadForm"></form><button id="refreshStoryboards" type="button"></button>

@@ -515,16 +515,20 @@ async function api(path, options = {}) {
 }
 
 function sharedLibraryAssetToCanvasAsset(asset = {}) {
-  const url = asset.url || asset.publicUrl || asset.localUrl || asset.previewUrl || "";
+  const url = asset.url || asset.publicUrl || asset.public_url || asset.localUrl || asset.local_url || asset.previewUrl || "";
   const imageGenerationAsset = asset.source === "image-generation" || asset.aiGenerated === true;
   return stripDataUrlFromAsset({
     id: `library_${asset.id}`,
     name: asset.name || "素材库图片",
     type: asset.type || "Library",
     url,
-    previewUrl: libraryPreviewUrl({ ...asset, previewUrl: asset.previewUrl || asset.localUrl || url }, 480),
-    publicUrl: asset.url || asset.publicUrl || "",
-    localUrl: asset.localUrl || "",
+    previewUrl: libraryPreviewUrl({
+      ...asset,
+      previewUrl: asset.previewUrl || asset.preview_url || asset.localUrl || asset.local_url || url,
+    }, 480),
+    // 保留素材库的各类地址，认证服务端会在旧 HTTP、HTTPS 和本地镜像之间择优。
+    publicUrl: asset.publicUrl || asset.public_url || "",
+    localUrl: asset.localUrl || asset.local_url || "",
     source: asset.source || "asset-library",
     prompt: asset.prompt || "",
     ratio: asset.ratio || "",
@@ -4670,6 +4674,7 @@ async function certifyArkVirtualPersonAsset(asset, options = {}) {
           url: asset.url,
           previewUrl: asset.previewUrl,
           publicUrl: asset.publicUrl,
+          localUrl: asset.localUrl,
           mediaType: asset.mediaType,
           type: asset.type,
           manifestType: asset.manifestType,

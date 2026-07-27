@@ -27,6 +27,9 @@ for (const id of [
   "modernAssetManifestOverview",
   "modernAssetGallery",
   "modernBuildConfig",
+  "modernVideoQueue",
+  "modernVideoQueueGrid",
+  "modernVideoQueueFilters",
   "modernVideoGenerate",
 ]) {
   assert.match(html, new RegExp(`id=\"${id}\"`), `modern shell missing ${id}`);
@@ -83,6 +86,11 @@ assert.doesNotMatch(html.slice(modernMotionStart, modernCutStart), /id="modernBu
 assert.doesNotMatch(html, /id="modernShotAction"/, "current-shot locator must be replaced by the video config action");
 assert.doesNotMatch(html, /id="modernStillGenerate"/, "storyboard pane must not expose a generate-storyboard action");
 assert.doesNotMatch(js, /modernShotAction|modernStillGenerate/, "removed modern actions must not remain wired in runtime");
+assert.match(js, /function renderModernVideoQueue\([\s\S]*modernVideoQueueGrid/, "modern shell must render the video segment queue");
+assert.match(js, /renderModernVideoQueue\(shots, selectedIndex, data\)/, "video segment queue must hydrate with all shot records");
+assert.match(js, /modernStudio\.queueFilter/, "video segment queue filter must persist during refreshes");
+assert.match(css, /\.modern-video-queue-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill/, "video segment queue must use a responsive card grid");
+assert.match(css, /\.modern-video-queue-card\.is-running[\s\S]*\.modern-video-queue-status/, "running queue cards must expose a visible status treatment");
 assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");
 assert.match(js, /function bindModernAssetReference/, "modern shell must bind uploaded reference images to parsed assets");
 assert.match(js, /persistModernAssetStyleFromControls/, "modern shell must persist modern asset style controls");
@@ -189,14 +197,17 @@ assert.match(html, /<select class="seg" id="modernAssetStylePreset"/, "style pre
 assert.match(html, /<select class="seg" id="modernAssetReferenceTarget"/, "reference target select must remain and use seg styling");
 assert.match(css, /\.modern-asset-generation-controls\s+select\.seg[^}]*border-radius:\s*999px/, "native selects must receive the pill seg appearance");
 
-// 改动 5：镜头墙由大帧媒体承载镜号、状态和时长信息。
-assert.match(js, /modern-shot-frame/, "shot rail must render media-first frames");
-assert.match(js, /modern-shot-number[\s\S]*modern-shot-status[\s\S]*modern-shot-duration/, "shot frames must include number, status, and duration overlays");
-assert.match(css, /\.modern-shot-frame\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "shot wall frames must use a 9:16 ratio");
-assert.match(css, /\.modern-shot-frame::after\s*\{[^}]*linear-gradient/, "shot frames must include a bottom readability mask");
-assert.match(css, /\.modern-shot-card\.is-active[^}]*box-shadow:\s*0 0 0 2px var\(--mv-lime\)/, "selected shot must use the lime frame ring");
+// 改动 5：视频片段队列用统一的 9:16 媒体帧承载镜号、状态、时长和进度。
+assert.match(js, /modern-video-queue-frame/, "video queue must render media-first frames");
+assert.match(js, /modern-video-queue-number[\s\S]*modern-video-queue-status[\s\S]*modern-video-queue-duration/, "video queue frames must include number, status, and duration overlays");
+assert.match(css, /\.modern-video-queue-frame\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "video queue frames must use a 9:16 ratio");
+assert.match(css, /\.modern-video-queue-frame::after\s*\{[^}]*linear-gradient/, "video queue frames must include a bottom readability mask");
+assert.match(css, /\.modern-video-queue-card\.is-active[^}]*box-shadow:\s*0 0 0 2px rgba\(217,45,69/, "selected queue card must use the signal frame ring");
 assert.match(css, /\.modern-main\[data-modern-view="storyboard"\]\s+\.modern-source-panel,[\s\S]*?\{\s*display:\s*none/, "storyboard view must hide the source panel");
-assert.match(css, /\.modern-shot-rail\s*\{[^}]*grid-auto-flow:\s*column[^}]*grid-auto-columns:\s*minmax\(0,1fr\)/, "shot rail must place every shot in one auto-flow column row");
+assert.match(css, /\.modern-video-queue-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill/, "video queue must use a responsive card grid");
+assert.match(html, /id="modernVideoQueueProgress"[^>]*class="modern-video-queue-meter"/, "queue overview meter must use its own layout class");
+assert.match(css, /\.modern-video-queue-meter\s*\{[^}]*flex:\s*1\s+1\s+auto/, "queue overview meter must remain in the toolbar flow");
+assert.match(css, /\.modern-main:not\(\[data-modern-view="video"\]\)\s+\.modern-video-queue\s*\{[^}]*display:\s*none/, "video queue must stay scoped to the video step");
 
 // 改动 6：成片卡采用三列上排 + 全宽六段轨，并保留可见的业务三件套。
 const modernCutPanel = html.match(/id="modernCutPanel"[\s\S]*?<\/section>/)?.[0] || "";
@@ -207,14 +218,11 @@ assert.match(css, /\.cut-top\s*\{[^}]*grid-template-columns:\s*216px\s+minmax\(0
 assert.match(css, /\.cut-info\s*\{[^}]*grid-template-rows:\s*auto\s+1fr[^}]*height:\s*100%/, "cut info must fill the preview height with auto plus 1fr rows");
 assert.match(css, /\.segs\s*\{[^}]*grid-template-columns:\s*repeat\(6,\s*minmax\(0,1fr\)\)/, "cut track must show six equal segment slots");
 
-// app.js 产出 <em class="modern-shot-status"><i></i>文字</em>；此前无任何规则，
-// 实测 0\u00D70，左下状态点与文字都不显示。
-assert.match(css, /\.modern-shot-status \{[^}]*position:\s*absolute/, "shot status overlay must be positioned in the frame");
-assert.match(css, /\.modern-shot-status i \{[^}]*border-radius:\s*50%/, "shot status must render a state dot");
-assert.match(css, /\.is-complete \.modern-shot-status i \{[^}]*var\(--mv-ok\)/, "complete shots must use the ok state color");
-// 旧规则 .modern-shot-card.is-complete > span:first-child 会命中新的
-// .modern-shot-frame（它正是第一个 span 子元素），给已完成帧套上墨绿渐变。
-assert.doesNotMatch(css, /\.modern-shot-card(\.[a-z-]+)? ?> span:first-child/, "legacy shot thumb rules must not shadow the new frame");
+// 队列状态点必须始终可见，并且完成/失败状态使用明确的语义色。
+assert.match(css, /\.modern-video-queue-number,[\s\S]*\.modern-video-queue-status,[\s\S]*\{[^}]*position:\s*absolute/, "queue status overlay must be positioned in the frame");
+assert.match(css, /\.modern-video-queue-status i \{[^}]*border-radius:\s*50%/, "queue status must render a state dot");
+assert.match(css, /\.modern-video-queue-card\.is-complete \.modern-video-queue-status i \{[^}]*var\(--mv-ok\)/, "complete queue cards must use the ok state color");
+assert.match(css, /\.modern-video-queue-card\.is-failed \.modern-video-queue-status i \{[^}]*var\(--modern-accent\)/, "failed queue cards must use the failure state color");
 assert.doesNotMatch(css, /#26362e/i, "legacy green shot gradient must be gone");
 
 // src="" 的 img 仍占位 329\u00D7206，浏览器裂图标与 alt 文字压在

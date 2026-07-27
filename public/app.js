@@ -179,7 +179,7 @@ const state = {
   loadProjectToken: null,
   activeWindowZ: Number(localStorage.getItem(layoutStorageKey(WINDOW_Z_KEY)) || 20),
   activeStudioTab: "assets",
-  modernStudio: { shotIndex: 0, copyTab: "story", focus: "video", detailsOpen: false },
+  modernStudio: { shotIndex: 0, copyTab: "story", queueFilter: "all", focus: "video", detailsOpen: false },
 };
 localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
 
@@ -4172,6 +4172,7 @@ function modernShotRecords(data = state.project) {
       model: videoModelLabel(videoModelForShot(shot)),
       file: item.file || item.url || "",
       storyboardRefs: item.storyboardRefs || shot.storyboardRefs || [],
+      failedReason: item.failedReason || item.error || item.message || "",
     };
   });
 }
@@ -4309,6 +4310,7 @@ function renderModernStudio(data = state.project) {
   $("#modernKitStatus").textContent = selected?.assets?.length ? "已引用" : "待确认";
   renderModernEpisodes(project, pct, total, completed);
   renderModernAssetResults(data);
+  renderModernVideoQueue(shots, selectedIndex, data);
   renderModernFinalCutTrack(shots);
   renderModernSelectedShot(data, selected, selectedIndex);
 }
@@ -4475,22 +4477,92 @@ function modernShotMediaMarkup(data, shot, index) {
   return '<span class="modern-shot-empty">暂无媒体</span>';
 }
 
-function renderModernShotRail(shots, selectedIndex, data) {
-  const node = $("#modernShotRail");
+function modernVideoQueueStatus(shot = {}) {
+  const status = String(shot.status || "waiting").toLowerCase();
+  return ["complete", "running", "queued", "failed"].includes(status) ? status : "waiting";
+}
+
+function modernVideoQueueMediaMarkup(data, shot, index, status) {
+  const videoUrl = modernMediaForShot(data, shot, index, "video");
+  const stillUrl = modernMediaForShot(data, shot, index, "storyboard");
+  if (videoUrl) {
+    return `<video class="modern-video-queue-media" src="${escapeAttr(videoUrl)}"${stillUrl ? ` poster="${escapeAttr(stillUrl)}"` : ""} muted loop playsinline preload="metadata" data-modern-queue-video aria-hidden="true"></video>`;
+  }
+  if (stillUrl) return `<img class="modern-video-queue-media" src="${escapeAttr(stillUrl)}" alt="" loading="lazy" />`;
+  return `<span class="modern-video-queue-placeholder is-${status}" aria-hidden="true"><i></i><b>${escapeHtml(status === "failed" ? "重试" : status === "running" ? "生成中" : "待生成")}</b></span>`;
+}
+
+function renderModernVideoQueue(shots, selectedIndex, data) {
+  const node = $("#modernVideoQueueGrid");
   if (!node) return;
+  const queue = $("#modernVideoQueue");
+  const filter = ["all", "active", "complete", "failed"].includes(state.modernStudio.queueFilter)
+    ? state.modernStudio.queueFilter
+    : "all";
+  state.modernStudio.queueFilter = filter;
+  const counts = {
+    all: shots.length,
+    active: shots.filter((shot) => ["running", "queued"].includes(modernVideoQueueStatus(shot))).length,
+    complete: shots.filter((shot) => modernVideoQueueStatus(shot) === "complete").length,
+    failed: shots.filter((shot) => modernVideoQueueStatus(shot) === "failed").length,
+  };
+  const progress = counts.all ? Math.round((counts.complete / counts.all) * 100) : 0;
+  const countNode = $("#modernVideoQueueCounts");
+  const progressLabel = $("#modernVideoQueueProgressLabel");
+  const progressBar = $("#modernVideoQueueProgress span");
+  const summary = $("#modernVideoQueueSummary");
+  if (countNode) countNode.textContent = `${counts.complete}/${counts.all} 个片段完成`;
+  if (progressLabel) progressLabel.textContent = `${progress}%`;
+  if (progressBar) progressBar.style.width = `${progress}%`;
+  if (summary) {
+    summary.textContent = counts.all
+      ? counts.active
+        ? `${counts.active} 个片段正在队列中，已完成片段不会被重新提交。`
+        : counts.failed
+          ? `${counts.failed} 个片段需要处理，其余结果保持不变。`
+          : "所有片段都已生成，可继续检查或组装成片。"
+      : "生成视频配置后，所有镜头会按顺序显示在这里。";
+  }
+  $("#modernVideoQueueFilters")?.querySelectorAll("[data-modern-queue-filter]").forEach((button) => {
+    const key = button.dataset.modernQueueFilter || "all";
+    button.classList.toggle("is-active", key === filter);
+    button.setAttribute("aria-selected", key === filter ? "true" : "false");
+    const count = button.querySelector("[data-modern-queue-filter-count]");
+    if (count) count.textContent = String(counts[key] || 0);
+  });
+  const visibleShots = shots
+    .map((shot, index) => ({ shot, index, status: modernVideoQueueStatus(shot) }))
+    .filter(({ status }) => filter === "all" || (filter === "active" ? ["running", "queued"].includes(status) : status === filter));
   if (!shots.length) {
-    node.innerHTML = '<div class="modern-empty-preview">生成视频配置后，镜头会出现在这里。</div>';
+    queue?.classList.add("is-empty");
+    node.innerHTML = '<div class="modern-video-queue-empty"><span class="modern-video-queue-empty-mark">04</span><strong>生成视频配置后显示片段</strong><small>配置会把每个镜头拆成独立 Take，生成状态和预览都会保留在这里。</small></div>';
     return;
   }
-  node.innerHTML = shots.map((shot, index) => `
-    <button class="modern-shot-card ${index === selectedIndex ? "is-active" : ""} is-${escapeAttr(shot.status)}" type="button" data-modern-shot-index="${index}" role="option" aria-selected="${index === selectedIndex}">
-      <span class="modern-shot-frame">${modernShotMediaMarkup(data, shot, index)}<b class="modern-shot-number">${String(shot.number).padStart(2, "0")}</b><em class="modern-shot-status"><i></i>${escapeHtml(modernStatusLabel(shot.status))}</em><small class="modern-shot-duration">${escapeHtml(String(shot.duration))}s</small></span>
-      <span class="modern-shot-copy"><strong>${escapeHtml(shot.name)}</strong></span>
-    </button>`).join("");
-  node.querySelectorAll("[data-modern-shot-index]").forEach((button) => button.addEventListener("click", () => {
-    state.modernStudio.shotIndex = Number(button.dataset.modernShotIndex) || 0;
+  queue?.classList.remove("is-empty");
+  if (!visibleShots.length) {
+    node.innerHTML = `<div class="modern-video-queue-filter-empty"><strong>没有符合条件的片段</strong><span>切换筛选查看全部镜头。</span></div>`;
+    return;
+  }
+  node.innerHTML = visibleShots.map(({ shot, index, status }) => `
+    <article class="modern-video-queue-card is-${status} ${index === selectedIndex ? "is-active" : ""}" role="listitem">
+      <button class="modern-video-queue-select" type="button" data-modern-queue-index="${index}" aria-label="查看镜头 ${escapeAttr(String(shot.number).padStart(2, "0"))} ${escapeAttr(shot.name)}" aria-pressed="${index === selectedIndex ? "true" : "false"}">
+        <span class="modern-video-queue-frame">${modernVideoQueueMediaMarkup(data, shot, index, status)}<b class="modern-video-queue-number">${String(shot.number).padStart(2, "0")}</b><em class="modern-video-queue-status"><i></i>${escapeHtml(modernStatusLabel(status))}</em><small class="modern-video-queue-duration">${escapeHtml(String(shot.duration))}s</small>${status === "complete" ? '<span class="modern-video-queue-play" aria-hidden="true">▶</span>' : ""}<span class="modern-video-queue-progress"><i style="width:${status === "complete" ? 100 : Math.max(0, Math.min(100, Number(shot.progress) || 0))}%"></i></span></span>
+        <span class="modern-video-queue-copy"><strong>${escapeHtml(shot.name)}</strong><small>${escapeHtml(shot.model || "模型未配置")}</small></span>
+      </button>
+      ${status === "failed" && shot.failedReason ? `<p class="modern-video-queue-error" title="${escapeAttr(shot.failedReason)}">${escapeHtml(shot.failedReason)}</p>` : ""}
+    </article>`).join("");
+  node.querySelectorAll("[data-modern-queue-index]").forEach((button) => button.addEventListener("click", () => {
+    state.modernStudio.shotIndex = Number(button.dataset.modernQueueIndex) || 0;
     renderModernStudio(state.project);
   }));
+  node.querySelectorAll("[data-modern-queue-video]").forEach((video) => {
+    const card = video.closest(".modern-video-queue-card");
+    card?.addEventListener("mouseenter", () => video.play().catch(() => {}));
+    card?.addEventListener("mouseleave", () => {
+      video.pause();
+      video.currentTime = 0;
+    });
+  });
 }
 
 function renderModernFinalCutTrack(shots = []) {
@@ -8116,6 +8188,12 @@ function bind() {
   });
   $("#modernStillEdit")?.addEventListener("click", () => {
     focusModernPane("storyboard");
+  });
+  $("#modernVideoQueueFilters")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-modern-queue-filter]");
+    if (!button) return;
+    state.modernStudio.queueFilter = button.dataset.modernQueueFilter || "all";
+    renderModernStudio(state.project);
   });
   $("#modernVideoEdit")?.addEventListener("click", () => {
     focusModernPane("video");

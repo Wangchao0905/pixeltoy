@@ -1149,6 +1149,30 @@
             </div>
           </section>
 
+          <section id="modernVideoQueue" class="modern-video-queue" aria-labelledby="modernVideoQueueTitle">
+            <header class="modern-video-queue-head">
+              <div>
+                <span class="modern-eyebrow">VIDEO TAKES</span>
+                <h2 id="modernVideoQueueTitle">视频片段</h2>
+                <p id="modernVideoQueueSummary">生成视频配置后，所有镜头会按顺序显示在这里。</p>
+              </div>
+              <div class="modern-video-queue-overview">
+                <strong id="modernVideoQueueProgressLabel">0%</strong>
+                <span id="modernVideoQueueCounts">0 个片段</span>
+              </div>
+            </header>
+            <div class="modern-video-queue-toolbar">
+              <div id="modernVideoQueueProgress" class="modern-video-queue-meter" aria-hidden="true"><span></span></div>
+              <div id="modernVideoQueueFilters" class="modern-video-queue-filters" role="tablist" aria-label="视频片段筛选">
+                <button class="is-active" type="button" role="tab" aria-selected="true" data-modern-queue-filter="all">全部 <b data-modern-queue-filter-count="all">0</b></button>
+                <button type="button" role="tab" aria-selected="false" data-modern-queue-filter="active">进行中 <b data-modern-queue-filter-count="active">0</b></button>
+                <button type="button" role="tab" aria-selected="false" data-modern-queue-filter="complete">已完成 <b data-modern-queue-filter-count="complete">0</b></button>
+                <button type="button" role="tab" aria-selected="false" data-modern-queue-filter="failed">失败 <b data-modern-queue-filter-count="failed">0</b></button>
+              </div>
+            </div>
+            <div id="modernVideoQueueGrid" class="modern-video-queue-grid" role="list" aria-live="polite"></div>
+          </section>
+
           <section id="modernCutPanel" class="modern-cut-panel" aria-label="组装成片">
             <header class="modern-cut-head">
               <div><span class="modern-eyebrow">FINAL CUT</span><strong>组装成片</strong><small>把已完成片段按顺序硬切拼成完整成片（1080×1920 / 24fps，保留音频）。</small></div>

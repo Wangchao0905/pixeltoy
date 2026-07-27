@@ -15396,6 +15396,11 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 
 .super-pixel-view.hidden { display: none; }
 
+.super-pixel-view.has-open-select,
+.super-pixel-stage.has-open-select {
+  overflow: visible;
+}
+
 .super-pixel-hex,
 .super-pixel-glow {
   position: absolute;
@@ -16132,7 +16137,7 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 .super-pixel-select-menu {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 8px);
   z-index: 30;
   width: max(100%, 168px);
   max-height: min(360px, calc(100vh - 128px));

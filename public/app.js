@@ -3631,6 +3631,9 @@ function enhanceSuperPixelSelect(select) {
     menu.classList.add("hidden");
     wrapper.classList.remove("is-open");
     trigger.setAttribute("aria-expanded", "false");
+    const hasOpenSelect = !!document.querySelector(".super-pixel-select.is-open");
+    document.querySelector(".super-pixel-view")?.classList.toggle("has-open-select", hasOpenSelect);
+    document.querySelector(".super-pixel-stage")?.classList.toggle("has-open-select", hasOpenSelect);
   };
 
   const closeOtherMenus = () => {
@@ -3645,6 +3648,8 @@ function enhanceSuperPixelSelect(select) {
     update();
     menu.classList.remove("hidden");
     wrapper.classList.add("is-open");
+    document.querySelector(".super-pixel-view")?.classList.add("has-open-select");
+    document.querySelector(".super-pixel-stage")?.classList.add("has-open-select");
     trigger.setAttribute("aria-expanded", "true");
     requestAnimationFrame(() => {
       optionButtons.find(({ option }) => option === select.options[select.selectedIndex])?.item.focus();

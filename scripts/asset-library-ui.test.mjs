@@ -49,5 +49,8 @@ assert.match(styles, /\.asset-library-view/);
 assert.match(styles, /\.workflow-asset-library/);
 assert.match(canvasCss, /\.shared-asset-library-panel/);
 assert.match(canvasCss, /\.canvas-asset-library-list/);
+assert.match(app, /super-pixel-view.*has-open-select|has-open-select.*super-pixel-view/);
+assert.match(styles, /\.super-pixel-select-menu\s*\{[\s\S]*?top:\s*calc\(100% \+ 8px\);/);
+assert.doesNotMatch(styles, /\.super-pixel-select-menu\s*\{[\s\S]*?bottom:\s*calc\(100% \+ 8px\);/);
 
 console.log("asset library UI contract tests passed");

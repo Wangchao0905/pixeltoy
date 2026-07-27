@@ -4529,10 +4529,18 @@ function renderModernSelectedShot(data, shot, index) {
   const number = shot ? String(shot.number).padStart(2, "0") : hasDraftContent ? "SB" : "--";
   $("#modernSelectedShotNumber").textContent = number;
   $("#modernSelectedShotTitle").textContent = shot?.name || (hasDraftContent ? "分镜草稿" : "未选择镜头");
-  $("#modernSelectedShotMeta").textContent = shot
+  const shotModel = shot?.model ? normalizeVideoModelName(shot.model) : $("#configModel")?.value || "seedance-2-0-fast";
+  const modernModel = $("#modernParamModel");
+  if (modernModel) modernModel.value = shotModel;
+  const modernSettings = videoConfigDataFromProject()?.settings || {};
+  const modernRatio = $("#modernParamRatio");
+  const modernResolution = $("#modernParamResolution");
+  if (modernRatio && modernSettings.ratio) modernRatio.value = modernSettings.ratio;
+  if (modernResolution && modernSettings.resolution) modernResolution.value = modernSettings.resolution;
+  syncModernVideoParams("modern");
+  $("#modernSelectedShotSummary").textContent = shot
     ? `${shot.duration}s · ${shot.model || "模型未配置"} · ${shot.assets.length} 个引用资产`
     : hasDraftContent ? "已生成分镜草稿 · 可继续生成视频配置" : "先生成分镜草稿或视频配置";
-  $("#modernShotAction").textContent = shot ? "定位当前镜头" : "定位镜头";
   const status = modernStatusLabel(shot?.status);
   $("#modernStoryStatus").textContent = shot?.prompt || hasDraftContent ? "已生成" : "待确认";
   $("#modernStillStatus").textContent = shot?.storyboardRefs?.length ? "已确认" : "待生成";
@@ -4567,6 +4575,22 @@ function renderModernSelectedShot(data, shot, index) {
   $("#modernReferenceStrip").innerHTML = `<span>实际引用资产</span><b>${escapeHtml(shot?.assets?.join(" · ") || "生成后显示")}</b>`;
 }
 
+function syncModernVideoParams(source = "legacy") {
+  const pairs = [
+    ["modernParamRatio", "configRatio"],
+    ["modernParamResolution", "configResolution"],
+    ["modernParamModel", "configModel"],
+  ];
+  pairs.forEach(([modernId, legacyId]) => {
+    const modern = $(`#${modernId}`);
+    const legacy = $(`#${legacyId}`);
+    if (!modern || !legacy) return;
+    const from = source === "modern" ? modern : legacy;
+    const to = source === "modern" ? legacy : modern;
+    if (from.value) to.value = from.value;
+  });
+}
+
 function hydrateConfigInputs(configText) {
   try {
     const config = JSON.parse(configText);
@@ -4589,6 +4613,7 @@ function hydrateConfigInputs(configText) {
     $("#configRatio").value = "9:16";
     $("#configPromptMode").value = "prompt";
   }
+  syncModernVideoParams("legacy");
 }
 
 function assetPromptItem(assetName = "") {
@@ -7674,6 +7699,9 @@ async function buildConfig(button = $("#buildConfigBtn")) {
 async function refreshVideoConfig({ silent } = { silent: false }) {
   await saveFileQuiet("seedancePrompts");
   const project = state.project?.project || {};
+  const modelInput = $("#modernParamModel") || $("#configModel");
+  const resolutionInput = $("#modernParamResolution") || $("#configResolution");
+  const ratioInput = $("#modernParamRatio") || $("#configRatio");
   const assetAnalyzerModel = document.querySelector("input[name='assetAnalyzerModel']:checked")?.value || state.assetAnalyzerModel || "claude-opus-4-8";
   state.assetAnalyzerModel = normalizeAssetAnalyzerModel(assetAnalyzerModel);
   localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
@@ -7681,9 +7709,9 @@ async function refreshVideoConfig({ silent } = { silent: false }) {
     method: "POST",
     body: JSON.stringify({
       groupName: $("#configGroup").value.trim(),
-      modelName: normalizeVideoModelName($("#configModel").value || project.model),
-      resolution: $("#configResolution").value || "480p",
-      ratio: $("#configRatio").value || "9:16",
+      modelName: normalizeVideoModelName(modelInput?.value || project.model),
+      resolution: resolutionInput?.value || "480p",
+      ratio: ratioInput?.value || "9:16",
       promptMode: $("#configPromptMode")?.value || "prompt",
       assetAnalyzerModel: state.assetAnalyzerModel,
       dialogueLanguage: state.dialogueLanguage,
@@ -8086,15 +8114,8 @@ function bind() {
     if (target) target.value = $("#modernShotCopy").value;
     toast("修改已暂存，将用于下一次生成");
   });
-  $("#modernShotAction")?.addEventListener("click", () => {
-    focusModernPane("video");
-  });
   $("#modernStillEdit")?.addEventListener("click", () => {
     focusModernPane("storyboard");
-  });
-  $("#modernStillGenerate")?.addEventListener("click", () => {
-    setWorkflowFocus("board");
-    withStudioButtonFeedback($("#modernStillGenerate"), () => startJob("storyboards")).catch((error) => toast(error.message));
   });
   $("#modernVideoEdit")?.addEventListener("click", () => {
     focusModernPane("video");
@@ -8494,7 +8515,16 @@ function bind() {
     withStudioButtonFeedback(button, () => buildConfig()).catch((error) => toast(error.message));
   });
   ["configPromptMode", "configRatio", "configResolution", "configModel"].forEach((id) => {
-    $(`#${id}`).addEventListener("change", () => refreshVideoConfig({ silent: true }).catch((error) => toast(error.message)));
+    $(`#${id}`)?.addEventListener("change", () => {
+      syncModernVideoParams("legacy");
+      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+    });
+  });
+  ["modernParamRatio", "modernParamResolution", "modernParamModel"].forEach((id) => {
+    $(`#${id}`)?.addEventListener("change", () => {
+      syncModernVideoParams("modern");
+      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+    });
   });
 }
 

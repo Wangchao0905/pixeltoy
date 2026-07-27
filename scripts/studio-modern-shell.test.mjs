@@ -75,7 +75,14 @@ assert.match(css, /\.modern-episode-copy p\s*\{[^}]*display:\s*none/, "non-actio
 const modernMotionStart = html.indexOf('aria-labelledby="modernMotionTitle"');
 const modernCutStart = html.indexOf('<section id="modernCutPanel"');
 assert.ok(modernMotionStart >= 0 && modernCutStart > modernMotionStart, "modern video pane must remain in the workbench");
-assert.match(html.slice(modernMotionStart, modernCutStart), /id="modernBuildConfig"[^>]*class="[^"]*modern-video-action/, "video config must live in the video generation pane");
+const modernCommandbarStart = html.indexOf('<header class="modern-shot-commandbar"');
+const modernStageStart = html.indexOf('<div class="modern-stage-grid"', modernCommandbarStart);
+assert.ok(modernCommandbarStart >= 0 && modernStageStart > modernCommandbarStart, "modern workbench must expose the command bar before the three panes");
+assert.match(html.slice(modernCommandbarStart, modernStageStart), /id="modernBuildConfig"[^>]*class="[^"]*modern-video-action/, "video config must live beside the current-shot controls");
+assert.doesNotMatch(html.slice(modernMotionStart, modernCutStart), /id="modernBuildConfig"/, "video pane must not duplicate the video config action at the bottom");
+assert.doesNotMatch(html, /id="modernShotAction"/, "current-shot locator must be replaced by the video config action");
+assert.doesNotMatch(html, /id="modernStillGenerate"/, "storyboard pane must not expose a generate-storyboard action");
+assert.doesNotMatch(js, /modernShotAction|modernStillGenerate/, "removed modern actions must not remain wired in runtime");
 assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");
 assert.match(js, /function bindModernAssetReference/, "modern shell must bind uploaded reference images to parsed assets");
 assert.match(js, /persistModernAssetStyleFromControls/, "modern shell must persist modern asset style controls");

@@ -7994,9 +7994,12 @@ function lightweightProjectSummary(episodeRoot) {
   const rawVideoFiles = walkFiles(path.join(episodeRoot, "06_videos", "raw"), (file) => /\.(mp4|mov)$/i.test(file), 1).sort();
   const rawClipCount = rawVideoFiles.length;
   const finalCutFile = finalCutOutputFile(episodeRoot);
-  const previewFile = fs.existsSync(finalCutFile) && fs.statSync(finalCutFile).isFile()
+  const previewAsset = scannedAssets.find((asset) => asset.path && fs.existsSync(asset.path)) || null;
+  const previewAssetMedia = previewAsset ? mediaItem(previewAsset.path, episodeRoot) : null;
+  const videoPreviewFile = fs.existsSync(finalCutFile) && fs.statSync(finalCutFile).isFile()
     ? finalCutFile
-    : rawVideoFiles[0] || scannedAssets.find((asset) => asset.path && fs.existsSync(asset.path))?.path || "";
+    : rawVideoFiles[0] || "";
+  const previewFile = videoPreviewFile || previewAsset?.path || "";
   const previewMedia = previewFile ? mediaItem(previewFile, episodeRoot) : null;
   const progressFacts = buildTeamProjectProgressFacts({
     episodeRoot,
@@ -8041,7 +8044,8 @@ function lightweightProjectSummary(episodeRoot) {
     preview: previewMedia
       ? {
           type: /\.(mp4|mov|webm|m4v)$/i.test(previewMedia.name) ? "video" : "image",
-          url: previewMedia.url,
+          url: /\.(mp4|mov|webm|m4v)$/i.test(previewMedia.name) ? previewMedia.url : coverThumbUrl(previewMedia.url, 480),
+          posterUrl: previewAssetMedia ? coverThumbUrl(previewAssetMedia.url, 480) : "",
           name: previewMedia.name,
           size: previewMedia.size,
           updatedAt: previewMedia.updatedAt,

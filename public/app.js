@@ -2058,7 +2058,7 @@ function bindExploreProductionPreviewVideos(node) {
 function exploreProductionPreviewMarkup(project = {}) {
   const preview = project.preview || null;
   if (preview?.url && preview.type === "video") {
-    return `<video src="${escapeAttr(preview.url)}" poster="/infinity-3d.png" muted loop playsinline preload="metadata" data-explore-project-preview aria-label="${escapeAttr(displayProjectTitle(project))} 项目预览"></video>`;
+    return `<video src="${escapeAttr(preview.url)}" poster="${escapeAttr(preview.posterUrl || "/infinity-3d.png")}" muted loop playsinline preload="none" data-explore-project-preview aria-label="${escapeAttr(displayProjectTitle(project))} 项目预览"></video>`;
   }
   if (preview?.url) return `<img src="${escapeAttr(preview.url)}" alt="" loading="lazy" decoding="async" />`;
   return `<img src="/infinity-3d.png" alt="" loading="lazy" decoding="async" />`;

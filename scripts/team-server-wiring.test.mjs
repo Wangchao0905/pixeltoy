@@ -36,6 +36,7 @@ assert.match(lightweightProjectSummarySource, /plannedShots: progressFacts\.plan
 assert.doesNotMatch(lightweightProjectSummarySource, /walkFiles\(path\.join\(episodeRoot, "04_assets"/);
 assert.match(lightweightProjectSummarySource, /const rawVideoFiles = walkFiles/);
 assert.match(lightweightProjectSummarySource, /preview: previewMedia/);
+assert.match(lightweightProjectSummarySource, /posterUrl: previewAssetMedia/);
 assert.doesNotMatch(lightweightProjectSummarySource, /ensureVideoConfigIsolation|writeWorkflowState/);
 assert.match(locateConfigSource, /function locateConfig\(episodeRoot, options = \{\}\)/);
 assert.match(locateConfigSource, /selectVideoConfigRecord\(files, \{/);

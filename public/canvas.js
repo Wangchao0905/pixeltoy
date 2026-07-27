@@ -211,6 +211,9 @@ const IMAGE_NODE_DEFAULTS = {
   ratio: "16:9",
   resolution: "1k",
 };
+// 视频编辑器外壳以桌面端 16:9 布局为基准固定尺寸；所选比例只影响槽内画面。
+const VIDEO_EDITOR_DEFAULT_WIDTH = 620;
+const VIDEO_EDITOR_DEFAULT_HEIGHT = 650;
 const CANVAS_MIN_SCALE = 0.02;
 const CANVAS_ZOOM_SPEED = 0.0048;
 const ASSET_NODE_DEFAULT_WIDTH = 400;
@@ -219,8 +222,8 @@ const ASSET_NODE_MIN_WIDTH = 96;
 const ASSET_NODE_MAX_WIDTH = 640;
 const ASSET_NODE_MIN_HEIGHT = 64;
 const ASSET_NODE_MAX_HEIGHT = 560;
-const VIDEO_NODE_DEFAULT_WIDTH = 520;
-const VIDEO_NODE_DEFAULT_HEIGHT = 620;
+const VIDEO_NODE_DEFAULT_WIDTH = VIDEO_EDITOR_DEFAULT_WIDTH;
+const VIDEO_NODE_DEFAULT_HEIGHT = VIDEO_EDITOR_DEFAULT_HEIGHT;
 const VIDEO_NODE_MIN_WIDTH = 420;
 const VIDEO_NODE_MAX_WIDTH = 1400;
 const VIDEO_NODE_MIN_HEIGHT = 420;
@@ -2044,9 +2047,23 @@ function syncVideoNodeShell(element, node) {
 
 function ratioSizedNodeDimensions(node = {}, kind = "video") {
   const isImage = kind === "image";
-  const settings = isImage ? { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) } : { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}) };
-  const ratio = settings.ratio || (isImage ? IMAGE_NODE_DEFAULTS.ratio : VIDEO_NODE_DEFAULTS.ratio);
-  const ratioSize = CANVAS_NODE_RATIO_DIMENSIONS[ratio] || CANVAS_NODE_RATIO_DIMENSIONS[isImage ? IMAGE_NODE_DEFAULTS.ratio : VIDEO_NODE_DEFAULTS.ratio];
+  if (kind === "video") {
+    const layoutRatio = node.settings?.ratio || VIDEO_NODE_DEFAULTS.ratio;
+    const hasManualSize = node.ratioManualSize === true && node.ratioLayoutRatio === layoutRatio && Number.isFinite(Number(node.width)) && Number.isFinite(Number(node.height));
+    if (hasManualSize) {
+      return {
+        width: clampNodeDimension(node.width, VIDEO_NODE_MIN_WIDTH, VIDEO_NODE_MAX_WIDTH, VIDEO_EDITOR_DEFAULT_WIDTH),
+        height: clampNodeDimension(node.height, VIDEO_NODE_MIN_HEIGHT, VIDEO_NODE_MAX_HEIGHT, VIDEO_EDITOR_DEFAULT_HEIGHT),
+      };
+    }
+    return {
+      width: VIDEO_EDITOR_DEFAULT_WIDTH,
+      height: VIDEO_EDITOR_DEFAULT_HEIGHT,
+    };
+  }
+  const settings = { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) };
+  const ratio = settings.ratio || IMAGE_NODE_DEFAULTS.ratio;
+  const ratioSize = CANVAS_NODE_RATIO_DIMENSIONS[ratio] || CANVAS_NODE_RATIO_DIMENSIONS[IMAGE_NODE_DEFAULTS.ratio];
   const minWidth = isImage ? IMAGE_NODE_MIN_WIDTH : VIDEO_NODE_MIN_WIDTH;
   const maxWidth = isImage ? IMAGE_NODE_MAX_WIDTH : VIDEO_NODE_MAX_WIDTH;
   const minHeight = isImage ? IMAGE_NODE_MIN_HEIGHT : VIDEO_NODE_MIN_HEIGHT;
@@ -2090,7 +2107,6 @@ function videoNodeSize(node = {}) {
 function syncVideoNodeDimensions(element, node) {
   if (!element || node?.kind !== "video") return;
   const size = ratioSizedNodeDimensions(node, "video");
-  const isOpen = canvasState.activeVideoNodeId === node.id;
   const layoutRatio = node.settings?.ratio || VIDEO_NODE_DEFAULTS.ratio;
   const isManuallySized = node.ratioManualSize === true && node.ratioLayoutRatio === layoutRatio;
   if (!isManuallySized && node.ratioLayoutRatio && node.ratioLayoutRatio !== layoutRatio) node.ratioManualSize = false;
@@ -2099,7 +2115,7 @@ function syncVideoNodeDimensions(element, node) {
   node.ratioLayoutRatio = layoutRatio;
   element.classList.toggle("is-manually-sized", isManuallySized);
   element.style.setProperty("--video-node-width", `${size.width}px`);
-  element.style.setProperty("--video-node-height", isOpen && isManuallySized ? `${size.height}px` : "auto");
+  element.style.setProperty("--video-node-height", `${size.height}px`);
 }
 
 function videoNodePayload(node, { forceNoAudio = false } = {}) {

@@ -80,8 +80,10 @@ assert.match(css, /@keyframes node-ecg-pulse[\s\S]*?left:\s*calc\(100% \+ 60px\)
   "image generation pulse should travel across the trace");
 assert.match(js, /const isOpen = canvasState\.activeVideoNodeId === node\.id[\s\S]*?element\.style\.height = isOpen \? `\$\{size\.height\}px` : "auto"/s,
   "image modules should collapse their composer height until activated");
-assert.match(js, /const isOpen = canvasState\.activeVideoNodeId === node\.id[\s\S]*?const isManuallySized[\s\S]*?--video-node-height[\s\S]*?isOpen && isManuallySized \? `\$\{size\.height\}px` : "auto"/s,
-  "video modules should use fixed height only after deliberate manual resizing");
+assert.match(js, /const VIDEO_EDITOR_DEFAULT_WIDTH = 620;[\s\S]*?const VIDEO_EDITOR_DEFAULT_HEIGHT = 650;/s,
+  "video modules should expose the stable 16:9 editor baseline");
+assert.match(js, /element\.style\.setProperty\("--video-node-height", `\$\{size\.height\}px`\)/,
+  "video modules should keep their shell height stable across ratio changes");
 assert.match(js, /function panCanvasBy\(deltaX, deltaY\)/,
   "trackpad wheel panning should share one viewport translation helper");
 assert.match(js, /function startCanvasPan\(event\)[\s\S]*?event\.button !== 1/s,

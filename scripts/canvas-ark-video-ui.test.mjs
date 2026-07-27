@@ -82,8 +82,8 @@ assert.doesNotMatch(css, /\.video-node \.video-composer \{[^}]*min-height:\s*740
 assert.doesNotMatch(css, /\.video-node \.video-prompt \{[^}]*height:\s*555px/s, "video prompt must not use the fixed legacy height");
 assert.match(js, /VIDEO_NODE_DEFAULT_WIDTH/, "video nodes must have a persisted default width");
 assert.match(js, /VIDEO_NODE_DEFAULT_HEIGHT/, "video nodes must have a persisted default height");
-assert.match(js, /const VIDEO_NODE_DEFAULT_WIDTH = 520;/, "video nodes should use a compact default width");
-assert.match(js, /const VIDEO_NODE_DEFAULT_HEIGHT = 620;/, "video nodes should use a compact default height");
+assert.match(js, /const VIDEO_EDITOR_DEFAULT_WIDTH = 620;/, "video nodes should use the 16:9 editor width");
+assert.match(js, /const VIDEO_EDITOR_DEFAULT_HEIGHT = 650;/, "video nodes should use the 16:9 editor height");
 assert.match(js, /legacyDefaultSize = Number\(node\.width\) === 780 && Number\(node\.height\) === 780/, "legacy square video nodes should migrate to the compact default");
 assert.match(js, /startNodeResize\(event, node\.id, resizeHandle\.dataset\.resizeCorner/, "video handles must pass their corner to resize logic");
 assert.match(js, /corner\.includes\("left"\)/, "resize logic must account for left corners");
@@ -123,11 +123,11 @@ assert.match(css, /\.video-capture-tail-button\s*\{[^}]*opacity:\s*0;[^}]*visibi
 assert.match(css, /\.video-preview-slot:hover \.video-capture-tail-button[\s\S]*?opacity:\s*1/s, "tail-frame camera button should appear on preview hover");
 assert.match(css, /\.video-node\[data-video-status="completed"\] \.video-preview-slot\s*\{[^}]*background:\s*transparent/s, "completed video previews must not render a dark slot background");
 assert.match(css, /\/\* Keep the compact node frameless on the sides[\s\S]*?border-left:\s*0;[\s\S]*?border-right:\s*0;/, "video nodes should not render left and right frame borders");
-assert.match(css, /\.canvas-node\.video-node\[data-video-ratio="9:16"\][\s\S]*?--video-preview-max-width:\s*232px;/, "vertical video previews should stay compact inside the node");
+assert.match(css, /\.video-node\[data-video-ratio="9:16"\][\s\S]*?--video-preview-width:\s*calc\(var\(--video-preview-frame-height\) \* 9 \/ 16\);/, "vertical video previews should stay centered inside the fixed stage");
 assert.doesNotMatch(css, /asset-tray|tray-asset|asset-upload-badge|assetUploadPulse/, "canvas asset tray styles should be removed");
 assert.match(css, /\.canvas-node\.video-node\.is-composer-open\s*\{[^}]*min-width:\s*420px;[^}]*min-height:\s*420px;/s, "expanded video nodes must keep a minimum size while resizing");
 assert.match(css, /\.canvas-node\.video-node:not\(\.is-composer-open\)\s*\{[^}]*min-width:\s*260px;[^}]*min-height:\s*0;/s, "collapsed video nodes must not reserve the hidden composer height");
-assert.match(css, /\.canvas-node\.video-node\.is-composer-open:not\(\.is-manually-sized\)\s*\{[^}]*height:\s*auto;/s, "automatic video layouts must size to their content instead of reserving a tall empty prompt area");
+assert.match(css, /\.canvas-node\.video-node\.is-composer-open\s*\{[^}]*height:\s*var\(--video-node-height\);/s, "video editors must keep the fixed 16:9 shell height");
 assert.match(css, /\.video-node \.video-prompt\s*\{[^}]*font-size:\s*22px;[^}]*line-height:\s*1\.5/s, "video prompt text must remain readable after canvas scaling");
 const videoPromptRules = [...css.matchAll(/\.video-node \.video-prompt\s*\{([^}]*)\}/g)];
 assert.match(videoPromptRules.at(-1)?.[1] || "", /font-size:\s*22px;[\s\S]*line-height:\s*1\.5/, "the final video prompt rule must keep the readable editor type size");

@@ -53,6 +53,8 @@ assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?max-width:\s*68%/s,
   "every preview should remain visibly narrower than the prompt composer");
 assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?border:\s*0\s*!important[\s\S]*?border-radius:\s*0\s*!important[\s\S]*?background:\s*transparent\s*!important/s,
   "the video preview must remain completely frameless");
+assert.match(css, /\.canvas-node\.video-node[\s\S]*?background:\s*transparent\s*!important[\s\S]*?box-shadow:\s*none\s*!important/s,
+  "the video node shell must not become a second card around the composer");
 assert.match(css, /\.video-node\[data-video-ratio="16:9"\] \.video-preview-slot[\s\S]*?--video-preview-width:\s*420px/s,
   "landscape previews should use a compact width instead of filling the composer");
 assert.match(css, /\.video-node \.video-composer[\s\S]*?border-radius:\s*20px[\s\S]*?background:/s,

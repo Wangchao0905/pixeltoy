@@ -56,6 +56,8 @@ assert.match(app, /function createEmptyProject\(\)[\s\S]*?projectName:\s*"Untitl
 assert.match(app, /function openProjectModal\(\)\s*\{\s*return createEmptyProject\(\);/);
 assert.match(app, /exploreLoginLink\?\.classList\.toggle\("hidden", !!data\.user\)/);
 assert.match(app, /function setupExploreVideoPlayback/);
+assert.match(html, /styles\.css\?v=project-preview-20260727/);
+assert.match(html, /app\.js\?v=project-preview-20260727/);
 assert.match(styles, /\.video-showcase-six/);
 assert.match(styles, /\.video-showcase-grid-six/);
 assert.match(styles, /\.explore-canvas-library/);

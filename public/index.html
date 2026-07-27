@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=video-params-20260727" />
+    <link rel="stylesheet" href="/styles.css?v=agent-mode-20260727" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -240,7 +240,6 @@
                     <select id="superPixelModel" aria-label="模型">
                       <optgroup label="Claude">
                         <option value="claude-opus-5">Claude Opus 5</option>
-                        <option value="claude-sonnet-5">Claude Sonnet 5</option>
                         <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
                       </optgroup>
                       <optgroup label="ChatGPT">
@@ -254,7 +253,7 @@
                     <span class="sr-only">模式</span>
                     <select id="superPixelMode" aria-label="模式">
                       <option value="ask">Ask</option>
-                      <option value="agent" disabled>Agent（即将开放）</option>
+                      <option value="agent">Agent</option>
                     </select>
                   </label>
                   <button id="superPixelSend" class="super-pixel-send" type="submit" aria-label="发送">
@@ -1331,6 +1330,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=video-params-20260727"></script>
+    <script src="/app.js?v=agent-mode-20260727"></script>
   </body>
 </html>

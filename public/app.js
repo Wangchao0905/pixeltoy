@@ -1269,6 +1269,7 @@ async function runReferenceUploadWorkers(references, files, worker) {
 }
 
 function showProjectHome() {
+  stopSuperPixelGenerationPolls();
   state.modernStudio.detailsOpen = false;
   $("#exploreHome")?.classList.toggle("hidden", !state.exploreEnabled);
   $("#projectHome").classList.toggle("hidden", state.exploreEnabled);
@@ -2521,6 +2522,7 @@ function openAssetLibraryPreview(id) {
 
 function setExploreView(view = "canvas") {
   state.exploreView = ["image", "library", "superpixel"].includes(view) ? view : "canvas";
+  if (state.exploreView !== "superpixel") stopSuperPixelGenerationPolls();
   $("#exploreHome")?.classList.toggle("is-superpixel", state.exploreView === "superpixel");
   $(".canvas-home")?.classList.toggle("hidden", state.exploreView !== "canvas");
   $("#imageExploreView")?.classList.toggle("hidden", state.exploreView !== "image");
@@ -2543,6 +2545,7 @@ function setExploreView(view = "canvas") {
   renderImageExploreView();
   renderAssetLibraryView();
   renderSuperPixelAssetRail();
+  if (state.exploreView === "superpixel") resumeSuperPixelGenerationPolls();
   if ((state.exploreView === "library" || state.exploreView === "superpixel") && !state.assetLibrary.loaded) {
     loadAssetLibrary({ silent: true }).catch((error) => toast(error.message));
   }
@@ -2561,15 +2564,190 @@ function showExploreSuperPixel() {
   setExploreView("superpixel");
 }
 
+const SUPER_PIXEL_POLL_INTERVAL_MS = 1200;
+const SUPER_PIXEL_POLL_MAX_ATTEMPTS = 3000;
+const superPixelPolls = new Set();
+
+function superPixelCardIsMounted(card) {
+  return state.exploreView === "superpixel"
+    && !!$("#superPixelMessages")
+    && state.superPixel.messages.includes(card);
+}
+
+function stopSuperPixelPoll(card) {
+  const poll = card?.poll;
+  if (!poll) return;
+  poll.stopped = true;
+  if (poll.timer) clearTimeout(poll.timer);
+  poll.controller?.abort();
+  card.poll = null;
+  superPixelPolls.delete(card);
+}
+
+function stopSuperPixelGenerationPolls() {
+  for (const card of [...superPixelPolls]) stopSuperPixelPoll(card);
+}
+
+function pruneSuperPixelGenerationPolls() {
+  for (const card of [...superPixelPolls]) {
+    if (!superPixelCardIsMounted(card)) stopSuperPixelPoll(card);
+  }
+}
+
+function resumeSuperPixelGenerationPolls() {
+  if (state.exploreView !== "superpixel") return;
+  for (const card of state.superPixel.messages) {
+    if (!card?.kind || card.status !== "running" || card.poll || !card.taskId) continue;
+    if (card.kind === "image") startSuperPixelImagePoll(card);
+    if (card.kind === "video") startSuperPixelVideoPoll(card);
+  }
+}
+
+function appendSuperPixelCardMeta(parent, label, value) {
+  const row = document.createElement("div");
+  row.className = "super-pixel-card-meta-row";
+  const labelNode = document.createElement("span");
+  labelNode.className = "super-pixel-card-meta-label";
+  labelNode.textContent = label;
+  const valueNode = document.createElement("span");
+  valueNode.className = "super-pixel-card-meta-value";
+  valueNode.textContent = value || "未设置";
+  row.append(labelNode, valueNode);
+  parent.appendChild(row);
+}
+
+function renderSuperPixelToolCardHeader(card, kicker, title) {
+  const header = document.createElement("header");
+  header.className = "super-pixel-tool-card-head";
+  const copy = document.createElement("div");
+  copy.className = "super-pixel-tool-card-title";
+  const kickerNode = document.createElement("span");
+  kickerNode.className = "super-pixel-tool-card-kicker";
+  kickerNode.textContent = kicker;
+  const titleNode = document.createElement("strong");
+  titleNode.textContent = title;
+  copy.append(kickerNode, titleNode);
+  const statusNode = document.createElement("span");
+  statusNode.className = "super-pixel-card-status";
+  statusNode.textContent = {
+    running: "生成中",
+    submitting: "提交中",
+    confirming: "待确认",
+    completed: "已完成",
+    failed: "失败",
+    cancelled: "已取消",
+  }[card.status] || "处理中";
+  header.append(copy, statusNode);
+  return header;
+}
+
+function renderSuperPixelImageCard(message) {
+  const card = document.createElement("article");
+  card.className = `super-pixel-tool-card super-pixel-image-card is-${message.status || "running"}`;
+  card.appendChild(renderSuperPixelToolCardHeader(message, "IMAGE TOOL", "图片生成"));
+  const meta = message.meta || {};
+  if (message.status === "completed" && message.url) {
+    const image = document.createElement("img");
+    image.className = "super-pixel-tool-card-media";
+    image.src = message.url;
+    image.alt = meta.prompt || "生成图片";
+    image.loading = "lazy";
+    card.appendChild(image);
+  } else if (message.status === "failed") {
+    const error = document.createElement("p");
+    error.className = "super-pixel-tool-card-message is-error";
+    error.textContent = message.message || "图片生成失败";
+    card.appendChild(error);
+  } else {
+    const loading = document.createElement("div");
+    loading.className = "super-pixel-tool-card-media is-loading";
+    loading.setAttribute("aria-label", "图片生成中");
+    loading.textContent = message.message || "图片生成中";
+    card.appendChild(loading);
+  }
+  const details = document.createElement("div");
+  details.className = "super-pixel-tool-card-details";
+  appendSuperPixelCardMeta(details, "提示词", meta.prompt || "");
+  appendSuperPixelCardMeta(details, "模型", meta.imageModel || "gpt-image-2");
+  appendSuperPixelCardMeta(details, "画幅", [meta.ratio, meta.resolution].filter(Boolean).join(" · "));
+  card.appendChild(details);
+  return card;
+}
+
+function renderSuperPixelVideoConfirmCard(message) {
+  const card = document.createElement("article");
+  card.className = `super-pixel-tool-card super-pixel-video-card is-${message.status || "confirming"}`;
+  card.appendChild(renderSuperPixelToolCardHeader(message, "VIDEO TOOL", "视频生成"));
+  const args = message.args || {};
+  const prompt = document.createElement("p");
+  prompt.className = "super-pixel-tool-card-prompt";
+  prompt.textContent = args.prompt || "未提供视频提示词";
+  card.appendChild(prompt);
+  const details = document.createElement("div");
+  details.className = "super-pixel-tool-card-details";
+  appendSuperPixelCardMeta(details, "模型", args.videoModel || "seedance-2-0");
+  appendSuperPixelCardMeta(details, "时长", args.duration ? `${args.duration} 秒` : "5 秒");
+  appendSuperPixelCardMeta(details, "比例", args.ratio || "9:16");
+  card.appendChild(details);
+  if (message.status === "completed" && message.videoUrl) {
+    const video = document.createElement("video");
+    video.className = "super-pixel-tool-card-media";
+    video.src = message.videoUrl;
+    video.controls = true;
+    video.playsInline = true;
+    card.appendChild(video);
+  } else if (message.status === "failed" || message.status === "cancelled") {
+    const status = document.createElement("p");
+    status.className = `super-pixel-tool-card-message${message.status === "failed" ? " is-error" : ""}`;
+    status.textContent = message.message || (message.status === "cancelled" ? "已取消视频生成" : "视频生成失败");
+    card.appendChild(status);
+  } else if (message.status !== "confirming") {
+    const loading = document.createElement("div");
+    loading.className = "super-pixel-tool-card-media is-loading";
+    loading.setAttribute("aria-label", "视频生成中");
+    loading.textContent = message.message || "视频生成中";
+    card.appendChild(loading);
+  }
+  if (message.status === "confirming") {
+    const actions = document.createElement("div");
+    actions.className = "super-pixel-tool-card-actions";
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = "super-pixel-tool-card-confirm";
+    confirm.textContent = "确认生成";
+    confirm.addEventListener("click", () => confirmSuperPixelVideoCard(message));
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "super-pixel-tool-card-cancel";
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => cancelSuperPixelVideoCard(message));
+    actions.append(confirm, cancel);
+    card.appendChild(actions);
+  }
+  return card;
+}
+
 function renderSuperPixelMessages() {
   const container = $("#superPixelMessages");
-  if (!container) return;
+  if (!container) {
+    stopSuperPixelGenerationPolls();
+    return;
+  }
+  pruneSuperPixelGenerationPolls();
   container.textContent = "";
   const chatting = state.superPixel.messages.length > 0;
   container.classList.toggle("hidden", !chatting);
   // 开聊后切换到「对话态」：收掉首屏引导物，composer 贴到页面底部
   $("#superPixelStage")?.classList.toggle("is-chatting", chatting);
   for (const message of state.superPixel.messages) {
+    if (message.kind === "image") {
+      container.appendChild(renderSuperPixelImageCard(message));
+      continue;
+    }
+    if (message.kind === "video") {
+      container.appendChild(renderSuperPixelVideoConfirmCard(message));
+      continue;
+    }
     const bubble = document.createElement("div");
     bubble.className = `super-pixel-message is-${message.role}`;
     // 带图的消息：先渲染缩略图，再渲染文字
@@ -2594,24 +2772,219 @@ function renderSuperPixelMessages() {
   container.scrollTop = container.scrollHeight;
 }
 
-async function readSuperPixelStream(response, onDelta) {
+function insertSuperPixelToolCard(card, assistant) {
+  const messages = state.superPixel.messages;
+  if (messages.some((message) => message.kind === card.kind && message.callId === card.callId)) return;
+  const assistantIndex = messages.indexOf(assistant);
+  messages.splice(assistantIndex >= 0 ? assistantIndex : messages.length, 0, card);
+  renderSuperPixelMessages();
+}
+
+function handleSuperPixelStreamEvent(type, data, assistant) {
+  if (type === "toolStart" || type === "toolResult") {
+    assistant.toolEvents = [...(assistant.toolEvents || []), { type, data }];
+    return;
+  }
+  if (type === "toolCard" && data?.kind === "image") {
+    const card = {
+      role: "tool",
+      kind: "image",
+      callId: data.callId || "",
+      taskId: data.taskId || "",
+      meta: data.meta || {},
+      status: data.taskId ? "running" : "failed",
+      message: data.taskId ? "图片生成中" : "图片任务缺少 taskId",
+    };
+    insertSuperPixelToolCard(card, assistant);
+    if (card.taskId) startSuperPixelImagePoll(card);
+    return;
+  }
+  if (type === "toolConfirm" && data?.kind === "video") {
+    const card = {
+      role: "tool",
+      kind: "video",
+      callId: data.callId || "",
+      args: data.args || {},
+      status: "confirming",
+    };
+    insertSuperPixelToolCard(card, assistant);
+  }
+}
+
+function startSuperPixelGenerationPoll(card, buildPath, applyResult) {
+  if (!card?.taskId || card.poll || !superPixelCardIsMounted(card)) return;
+  const controller = new AbortController();
+  const poll = { controller, timer: null, attempts: 0, stopped: false };
+  card.poll = poll;
+  superPixelPolls.add(card);
+  const schedule = () => {
+    if (poll.stopped || !superPixelCardIsMounted(card)) return stopSuperPixelPoll(card);
+    poll.timer = setTimeout(() => {
+      poll.timer = null;
+      tick();
+    }, SUPER_PIXEL_POLL_INTERVAL_MS);
+  };
+  const tick = async () => {
+    if (poll.stopped || !superPixelCardIsMounted(card)) return stopSuperPixelPoll(card);
+    try {
+      const data = await api(buildPath(card), { cache: "no-store", signal: controller.signal });
+      if (poll.stopped || !superPixelCardIsMounted(card)) return stopSuperPixelPoll(card);
+      const done = applyResult(card, data.result || {});
+      renderSuperPixelMessages();
+      if (done) return stopSuperPixelPoll(card);
+      poll.attempts += 1;
+      if (poll.attempts >= SUPER_PIXEL_POLL_MAX_ATTEMPTS) {
+        card.message = "任务仍在后台生成，请稍后查看";
+        renderSuperPixelMessages();
+        return stopSuperPixelPoll(card);
+      }
+      schedule();
+    } catch (error) {
+      if (controller.signal.aborted || poll.stopped) return;
+      card.status = "failed";
+      card.message = error.message || "生成任务查询失败";
+      renderSuperPixelMessages();
+      stopSuperPixelPoll(card);
+    }
+  };
+  tick();
+}
+
+function startSuperPixelImagePoll(card) {
+  const taskId = String(card?.taskId || "");
+  if (!taskId) return;
+  startSuperPixelGenerationPoll(
+    card,
+    () => `/api/canvas/image-generations/${encodeURIComponent(taskId)}`,
+    (target, result) => {
+      const status = String(result.status || "").toLowerCase();
+      if (status === "completed" && result.url) {
+        target.status = "completed";
+        target.url = result.url;
+        target.message = "";
+        return true;
+      }
+      if (status === "completed") {
+        target.status = "failed";
+        target.message = "图片任务已完成但没有返回图片地址";
+        return true;
+      }
+      if (status === "failed") {
+        target.status = "failed";
+        target.message = result.message || "图片生成失败";
+        return true;
+      }
+      target.status = "running";
+      target.message = result.message || "图片生成中";
+      return false;
+    },
+  );
+}
+
+function startSuperPixelVideoPoll(card) {
+  const taskId = String(card?.taskId || "");
+  const provider = String(card?.provider || "");
+  if (!taskId) return;
+  startSuperPixelGenerationPoll(
+    card,
+    () => `/api/canvas/video-generations/${encodeURIComponent(taskId)}${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`,
+    (target, result) => {
+      const status = String(result.status || "").toLowerCase();
+      if (status === "completed" && result.videoUrl) {
+        target.status = "completed";
+        target.videoUrl = result.videoUrl;
+        target.message = "";
+        return true;
+      }
+      if (status === "completed") {
+        target.status = "failed";
+        target.message = "视频任务已完成但没有返回视频地址";
+        return true;
+      }
+      if (status === "failed") {
+        target.status = "failed";
+        target.message = result.message || "视频生成失败";
+        return true;
+      }
+      target.status = "running";
+      target.message = result.message || "视频生成中";
+      return false;
+    },
+  );
+}
+
+function cancelSuperPixelVideoCard(card) {
+  if (!card || card.status !== "confirming") return;
+  card.status = "cancelled";
+  card.message = "已取消视频生成";
+  renderSuperPixelMessages();
+}
+
+async function confirmSuperPixelVideoCard(card) {
+  if (!card || card.status !== "confirming") return;
+  const args = card.args || {};
+  card.status = "submitting";
+  card.message = "正在提交视频任务";
+  renderSuperPixelMessages();
+  try {
+    const data = await api("/api/canvas/video-generations", {
+      method: "POST",
+      body: JSON.stringify({ ...args, model: args.videoModel }),
+    });
+    const result = data.result || {};
+    if (result.videoUrl) {
+      card.status = "completed";
+      card.videoUrl = result.videoUrl;
+      card.message = "";
+      renderSuperPixelMessages();
+      return;
+    }
+    if (String(result.status || "").toLowerCase() === "completed") {
+      throw new Error("视频任务已完成但没有返回视频地址");
+    }
+    if (!result.taskId) throw new Error(result.message || "视频接口没有返回 taskId");
+    card.status = "running";
+    card.taskId = result.taskId;
+    card.provider = result.provider || "";
+    card.message = result.message || "视频生成中";
+    renderSuperPixelMessages();
+    startSuperPixelVideoPoll(card);
+  } catch (error) {
+    card.status = "failed";
+    card.message = error.message || "视频提交失败";
+    renderSuperPixelMessages();
+  }
+}
+
+async function readSuperPixelStream(response, onDelta, onEvent = () => {}) {
   if (!response.body) throw new Error("模型未返回流式内容");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let pending = "";
+  const processLine = (line) => {
+    if (!line.startsWith("data:")) return;
+    const raw = line.slice(5).trim();
+    if (!raw || raw === "[DONE]") return;
+    const payload = JSON.parse(raw);
+    if (payload.error) throw new Error(payload.error);
+    if (payload.delta) onDelta(payload.delta);
+    for (const eventName of ["toolStart", "toolCard", "toolConfirm", "toolResult"]) {
+      if (payload[eventName]) onEvent(eventName, payload[eventName]);
+    }
+    if (payload.done) onEvent("done", payload.done);
+  };
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      pending += decoder.decode();
+      break;
+    }
     pending += decoder.decode(value, { stream: true });
     const lines = pending.split(/\r?\n/);
     pending = lines.pop() || "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      const payload = JSON.parse(line.slice(5).trim());
-      if (payload.error) throw new Error(payload.error);
-      if (payload.delta) onDelta(payload.delta);
-    }
+    for (const line of lines) processLine(line);
   }
+  if (pending) processLine(pending);
 }
 
 const SUPER_PIXEL_MAX_ATTACHMENTS = 8;
@@ -2712,6 +3085,7 @@ function addSuperPixelLibraryAsset(assetId) {
 
 // 把一条消息转成接口要的 content：无图=字符串，有图=多模态数组
 function superPixelMessagePayload(message) {
+  if (!message || !["user", "assistant"].includes(message.role)) return null;
   const images = Array.isArray(message.images) ? message.images : [];
   if (!images.length) return { role: message.role, content: message.content };
   const parts = [];
@@ -2726,7 +3100,6 @@ async function submitSuperPixelChat(prompt) {
   // 只拖了图没打字也允许发，补一句默认问法
   if (!text && !images.length) return;
   if (state.superPixel.sending) return;
-  if (state.superPixel.mode !== "ask") return toast("Agent 模式暂未开放");
   const assistant = { role: "assistant", content: "", pending: true };
   state.superPixel.messages.push(
     { role: "user", content: text || "看看这些图，给我创作建议。", images },
@@ -2747,7 +3120,7 @@ async function submitSuperPixelChat(prompt) {
         scriptText: state.superPixel.scriptText,
         messages: state.superPixel.messages
           .map(superPixelMessagePayload)
-          .filter((item) => (Array.isArray(item.content) ? item.content.length : item.content)),
+          .filter((item) => item && (Array.isArray(item.content) ? item.content.length : item.content)),
       }),
       signal: state.superPixel.controller.signal,
     });
@@ -2755,11 +3128,15 @@ async function submitSuperPixelChat(prompt) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data.message || `HTTP ${response.status}`);
     }
-    await readSuperPixelStream(response, (delta) => {
-      assistant.content += delta;
-      assistant.pending = false;
-      renderSuperPixelMessages();
-    });
+    await readSuperPixelStream(
+      response,
+      (delta) => {
+        assistant.content += delta;
+        assistant.pending = false;
+        renderSuperPixelMessages();
+      },
+      (type, data) => handleSuperPixelStreamEvent(type, data, assistant),
+    );
     assistant.pending = false;
   } catch (error) {
     if (error?.name !== "AbortError") assistant.content = `请求失败：${error.message || "网络错误"}`;

@@ -15712,6 +15712,159 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   background: var(--sp-panel);
 }
 
+.super-pixel-tool-card {
+  width: min(760px, 100%);
+  min-width: 0;
+  align-self: flex-start;
+  display: grid;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid rgba(255, 110, 130, 0.26);
+  border-radius: 14px;
+  background: rgba(31, 10, 16, 0.76);
+  color: var(--sp-ink);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+}
+
+.super-pixel-tool-card.is-completed { border-color: rgba(130, 224, 161, 0.32); }
+.super-pixel-tool-card.is-failed { border-color: rgba(255, 128, 128, 0.44); }
+.super-pixel-tool-card.is-cancelled { opacity: 0.58; }
+
+.super-pixel-tool-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.super-pixel-tool-card-title {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.super-pixel-tool-card-title strong {
+  min-width: 0;
+  color: var(--sp-ink);
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.super-pixel-tool-card-kicker {
+  color: var(--sp-dim);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.super-pixel-card-status {
+  flex: none;
+  color: var(--sp-dim);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.super-pixel-tool-card.is-completed .super-pixel-card-status { color: #9ae6ae; }
+.super-pixel-tool-card.is-failed .super-pixel-card-status { color: #ffaaa9; }
+.super-pixel-tool-card.is-cancelled .super-pixel-card-status { color: var(--sp-dim); }
+
+.super-pixel-tool-card-media {
+  width: 100%;
+  max-width: 100%;
+  max-height: 420px;
+  aspect-ratio: 16 / 9;
+  display: block;
+  object-fit: contain;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.super-pixel-video-card .super-pixel-tool-card-media { aspect-ratio: 16 / 9; }
+
+.super-pixel-tool-card-media.is-loading {
+  display: grid;
+  place-items: center;
+  min-height: 132px;
+  color: var(--sp-dim);
+  font-size: 11px;
+}
+
+.super-pixel-tool-card-details {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.super-pixel-card-meta-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.super-pixel-card-meta-label { color: var(--sp-dim); }
+.super-pixel-card-meta-value {
+  min-width: 0;
+  color: var(--sp-ink);
+  overflow-wrap: anywhere;
+}
+
+.super-pixel-tool-card-prompt {
+  margin: 0;
+  color: var(--sp-ink);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.super-pixel-tool-card-message {
+  margin: 0;
+  color: var(--sp-dim);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.super-pixel-tool-card-message.is-error { color: #ffaaa9; }
+
+.super-pixel-tool-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.super-pixel-tool-card-actions button {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--sp-line);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.super-pixel-tool-card-confirm {
+  border-color: rgba(255, 110, 130, 0.5) !important;
+  background: var(--sp-acc);
+  color: var(--sp-acc-ink);
+}
+
+.super-pixel-tool-card-cancel {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--sp-dim);
+}
+
+.super-pixel-tool-card-actions button:hover { filter: brightness(1.1); }
+.super-pixel-tool-card-actions button:focus-visible { outline: 2px solid rgba(255, 161, 173, 0.82); outline-offset: 2px; }
+
 .super-pixel-composer {
   width: min(680px, 100%);
   display: flex;
@@ -16073,6 +16226,9 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   .super-pixel-stage { height: auto; min-height: calc(100vh - 44px); padding: 32px 14px 40px; gap: 16px; }
   .super-pixel-stage.is-chatting { height: calc(100vh - 44px); min-height: 0; overflow: hidden; }
   .super-pixel-composer { width: 100%; border-radius: 16px; }
+  .super-pixel-tool-card { width: 100%; padding: 12px; }
+  .super-pixel-tool-card-head { gap: 8px; }
+  .super-pixel-tool-card-media { max-height: 300px; }
   /* 窄屏不折行：折行会把发送按钮甩到单独一行，浪费 45px 且视觉孤立。
      实测内容宽 304px < 可用 362px，改用 nowrap 后单行放得下；
      模型选择器允许被压缩并截断，保证发送按钮始终留在行内右端。 */

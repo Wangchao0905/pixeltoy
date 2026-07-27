@@ -4181,7 +4181,16 @@ function modernMediaForShot(data, shot, index, kind) {
   const list = kind === "storyboard" ? (data?.storyboards || data?.storyboardSlots || []) : (data?.videoProgress?.items || []);
   const record = list.find((item) => item?.name === shot?.name) || list[index] || {};
   const asset = record?.asset || record;
-  return asset?.url || asset?.file || asset?.output?.url || "";
+  // videoProgress.items.file is the server media descriptor ({ url, path, ... }),
+  // not a URL string. Unwrap it before assigning it to <video src>.
+  return asset?.url
+    || asset?.file?.url
+    || (typeof asset?.file === "string" ? asset.file : "")
+    || asset?.output?.url
+    || asset?.output?.file?.url
+    || asset?.videoUrl
+    || asset?.video_url
+    || "";
 }
 
 function renderModernStudio(data = state.project) {

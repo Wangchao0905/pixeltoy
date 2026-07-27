@@ -572,7 +572,8 @@ function sharedLibraryAssetToCanvasAsset(asset = {}) {
     // 素材库进入独立画布后始终保留独立来源,避免后续拖拽触发工作流自动认证。
     source: "shared-asset-library",
     librarySource: asset.source || "",
-    prompt: asset.prompt || "",
+    description: asset.description || asset.prompt || asset.metadata?.description || "",
+    prompt: asset.prompt || asset.description || asset.metadata?.description || "",
     ratio: asset.ratio || "",
     resolution: asset.resolution || "",
     assetStylePreset: asset.assetStylePreset || (imageGenerationAsset ? "photoreal" : ""),
@@ -1061,6 +1062,8 @@ function projectAssets() {
     type: asset.manifestType || asset.type || "",
     url: asset.url,
     previewUrl: asset.previewUrl || "",
+    description: asset.description || asset.prompt || asset.assetDescription || asset.metadata?.description || "",
+    prompt: asset.prompt || asset.description || asset.assetDescription || asset.metadata?.description || "",
     assetStylePreset: asset.assetStylePreset || "",
     assetStyleLabel: asset.assetStyleLabel || "",
     generationMode: asset.generationMode || "",
@@ -3912,7 +3915,11 @@ function syncAssetNodeElement(element, node) {
     element.classList.add("asset-node-without-preview");
   }
   const caption = element.querySelector(".asset-node-caption");
-  if (caption) caption.textContent = asset?.name || "图片资产";
+  if (caption) {
+    const captionText = asset?.description || asset?.prompt || asset?.name || "图片资产";
+    caption.textContent = captionText;
+    caption.title = captionText;
+  }
   return true;
 }
 
@@ -3936,6 +3943,7 @@ function renderNodes({ preserveExisting = false } = {}) {
           size.height,
           assetPreviewUrl(a || {}) || "",
           a?.name || "",
+          a?.description || a?.prompt || "",
           a?.arkPersonAsset?.status || "",
           a?.arkPersonAsset?.assetUrl || "",
         ];

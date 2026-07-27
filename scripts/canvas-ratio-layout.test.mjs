@@ -90,6 +90,12 @@ assert.match(js, /canvasState\.viewportPan\s*=\s*\{/,
   "canvas pan should retain its pointer origin separately from node dragging");
 assert.match(js, /function updateCanvasPan\(event\)[\s\S]*?canvasState\.viewport\.x[\s\S]*?canvasState\.viewport\.y/s,
   "middle-button movement should translate the whole viewport");
+assert.match(js, /description:\s*asset\.description\s*\|\|\s*asset\.prompt/s,
+  "project assets should carry their visual description into the canvas");
+assert.match(js, /caption\.textContent\s*=\s*captionText/s,
+  "asset nodes should render the description instead of only the file name");
+assert.match(js, /a\?\.description\s*\|\|\s*a\?\.prompt/s,
+  "asset refresh signatures should notice description changes");
 assert.match(js, /function applyCanvasPanFrame\(\)/,
   "canvas panning should have a frame-coalesced render path");
 assert.match(js, /requestAnimationFrame\(applyCanvasPanFrame\)/,

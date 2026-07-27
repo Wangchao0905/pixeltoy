@@ -615,7 +615,7 @@ body.canvas-page {
   left: 0;
   overflow: hidden;
   max-width: var(--asset-node-width);
-  max-height: 0;
+  max-height: 34px;
   margin-top: 0;
   padding: 5px 2px;
   border: 0;
@@ -624,18 +624,19 @@ body.canvas-page {
   color: rgba(223, 235, 250, 0.7);
   font-size: 11px;
   line-height: 1.15;
-  opacity: 0;
+  opacity: 1;
   pointer-events: none;
-  transform: translateY(-3px);
+  transform: translateY(0);
   transition: opacity 120ms ease, transform 120ms ease, max-height 120ms ease, margin-top 120ms ease;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .canvas-node.asset-node.is-selected .asset-node-caption {
-  max-height: 20px;
-  opacity: 1;
-  transform: translateY(0);
+  max-height: 34px;
 }
 
 .asset-node-file {

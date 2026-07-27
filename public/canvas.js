@@ -544,6 +544,7 @@ function sharedLibraryAssetToCanvasAsset(asset = {}) {
 }
 
 function isImageGeneratedLibraryAsset(asset = {}) {
+  if (asset.scope === "team" || asset.source === "team-project") return true;
   const source = `${asset.source || ""} ${asset.generationMode || ""} ${asset.metadata?.tool || ""}`;
   const type = String(asset.type || "").toLowerCase();
   if (/video|mp4|mov|webm/.test(type)) return false;
@@ -574,8 +575,8 @@ function renderSharedAssetLibrary() {
         const id = escapeHtml(asset.id || "");
         const name = escapeHtml(asset.name || "未命名素材");
         const preview = escapeHtml(libraryPreviewUrl(asset, 360));
-        const metaSource = isImageGeneratedLibraryAsset(asset) ? "Image 生成" : asset.source || "素材";
-        const meta = escapeHtml([metaSource, asset.ratio, asset.resolution].filter(Boolean).join(" · "));
+        const metaSource = asset.scope === "team" ? "团队共享" : isImageGeneratedLibraryAsset(asset) ? "Image 生成" : asset.source || "素材";
+        const meta = escapeHtml([metaSource, asset.metadata?.sourceProjectName || "", asset.ratio, asset.resolution].filter(Boolean).join(" · "));
         return `<article class="canvas-asset-library-card" draggable="true" data-shared-library-id="${id}">
           <button class="canvas-asset-library-card-preview" type="button" data-shared-library-preview="${id}" aria-label="选择${name}加入画布">
             <img src="${preview}" alt="${name}" loading="lazy" decoding="async" />

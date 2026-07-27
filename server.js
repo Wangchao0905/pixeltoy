@@ -3800,6 +3800,63 @@ function teamResourceDescriptor({ teamId, episodeRoot, type, resource }) {
   };
 }
 
+function teamSharedAssetId(teamId, episodeRoot, asset = {}) {
+  const identity = [teamId, encodeId(episodeRoot), asset.rel || asset.path || asset.assetName || asset.name || ""]
+    .map((value) => compactLine(value))
+    .join("\u001f");
+  return `team_asset_${crypto.createHash("sha1").update(identity).digest("hex").slice(0, 24)}`;
+}
+
+function shareProjectAssetsWithTeam(episodeRoot, teamId, ownerUserId) {
+  const cleanTeamId = compactLine(teamId);
+  const cleanOwnerUserId = compactLine(ownerUserId);
+  if (!cleanTeamId || !cleanOwnerUserId) return 0;
+  const projectId = encodeId(episodeRoot);
+  const projectName = projectDisplayNameForSummary(episodeRoot);
+  const records = [];
+  for (const asset of scanAssets(episodeRoot)) {
+    if (!asset?.path || asset.manifestType === "Storyboard" || !fs.existsSync(asset.path) || !isAssetMedia(asset)) continue;
+    const promptMeta = promptMetaForAsset(episodeRoot, asset.assetName) || {};
+    const type = normalizeAssetType(asset.manifestType || asset.type || "Prop", "Prop");
+    const sourceUrl = compactLine(asset.url || `/media?path=${encodeURIComponent(asset.path)}`);
+    records.push({
+      id: teamSharedAssetId(cleanTeamId, episodeRoot, asset),
+      ownerUserId: cleanOwnerUserId,
+      teamId: cleanTeamId,
+      name: compactLine(asset.assetName || asset.name || "未命名资产"),
+      type,
+      url: sourceUrl,
+      previewUrl: sourceUrl,
+      localUrl: sourceUrl,
+      source: "team-project",
+      prompt: compactLine(promptMeta.prompt || promptMeta.description || ""),
+      ratio: compactLine(promptMeta.ratio || ""),
+      resolution: compactLine(promptMeta.resolution || ""),
+      metadata: {
+        sourceProjectId: projectId,
+        sourceProjectName: projectName,
+        sourceResourceType: "asset-image",
+        sourceResourceId: compactLine(asset.assetName || asset.name || ""),
+      },
+    });
+  }
+  return assetLibrary.upsertMany(records, { userId: cleanOwnerUserId }).length;
+}
+
+function syncTeamAssetLibraryForUser(user = {}) {
+  const membership = teamMembershipForUser(user.id);
+  if (!membership) return 0;
+  let shared = 0;
+  for (const episodeRoot of scanEpisodeRoots()) {
+    const scope = projectScopeRecord(episodeRoot);
+    if (scope.scope !== "team" || scope.teamId !== membership.teamId) continue;
+    const ownerUserId = projectOwner(episodeRoot).ownerUserId;
+    if (!ownerUserId) continue;
+    shared += shareProjectAssetsWithTeam(episodeRoot, membership.teamId, ownerUserId);
+  }
+  return shared;
+}
+
 function teamResourceCatalog(user = {}, typeFilter = "") {
   const membership = teamMembershipForUser(user.id);
   if (!membership) return [];
@@ -10400,8 +10457,18 @@ async function createPublicCanvasAsset(body = {}) {
 
 function publicAssetLibraryRecord(record = {}) {
   if (!record || typeof record !== "object") return null;
-  const { ownerUserId, ...publicRecord } = record;
-  return publicRecord;
+  const { ownerUserId, teamId, ...publicRecord } = record;
+  const localSource = teamId
+    ? localPathForAssetLibraryUrl(record.localUrl || record.url || record.previewUrl || "")
+    : "";
+  const teamMediaUrl = localSource
+    ? `/api/team/asset-library/${encodeURIComponent(record.id)}/media?v=${encodeURIComponent(compactLine(record.updatedAt || ""))}`
+    : "";
+  return {
+    ...publicRecord,
+    ...(teamMediaUrl ? { url: teamMediaUrl, previewUrl: teamMediaUrl, localUrl: "" } : {}),
+    scope: teamId ? "team" : "personal",
+  };
 }
 
 function assetLibraryUserId(req) {
@@ -10412,6 +10479,10 @@ function assetLibraryUserId(req) {
 
 async function saveAssetToLibrary(body = {}, userId = "") {
   const input = body.asset && typeof body.asset === "object" ? { ...body.asset, ...body } : { ...body };
+  // 普通素材库写入始终是个人资产；团队共享由项目转换流程在服务端受控建立。
+  delete input.ownerUserId;
+  delete input.teamId;
+  delete input.sharedTeamId;
   let url = compactLine(input.url || input.publicUrl || input.previewUrl || "");
   let localUrl = compactLine(input.localUrl || "");
   if (isDataImageUrl(input.dataUrl || input.data_url || "")) {
@@ -10437,6 +10508,13 @@ function localPathForAssetLibraryUrl(url = "") {
   return localPublicAssetPathFromUrl(clean) || localMediaPathFromUrl(clean) || localFilePathFromUrl(clean) || "";
 }
 
+function localTeamAssetLibraryPathFromUrl(url = "") {
+  const match = compactLine(url).match(/^\/api\/team\/asset-library\/([^/]+)\/media(?:\?|$)/);
+  if (!match) return "";
+  const record = assetLibrary.get(decodeURIComponent(match[1]));
+  return record?.teamId ? localPathForAssetLibraryUrl(record.localUrl || record.url || record.previewUrl || "") : "";
+}
+
 async function assetLibraryImageBuffer(record = {}) {
   const local = localPathForAssetLibraryUrl(record.localUrl || record.url || record.previewUrl || "");
   if (local && fs.existsSync(local)) {
@@ -10456,7 +10534,8 @@ async function assetLibraryImageBuffer(record = {}) {
 async function importAssetLibraryAsset(episodeRoot, body = {}, userId = "") {
   const libraryId = compactLine(body.libraryId || body.id || "");
   if (!libraryId) throw new Error("缺少素材库资产 ID");
-  const record = assetLibrary.get(libraryId, { userId });
+  const membership = teamMembershipForUser(userId);
+  const record = assetLibrary.get(libraryId, { userId, teamId: membership?.teamId || "" });
   if (!record) throw new Error("素材库资产不存在或无权访问");
   let assetId = safeManifestAssetId(body.assetId || "");
   let added = null;
@@ -12217,6 +12296,8 @@ async function resolveCanvasImageReferenceToLocalPath(url = "") {
   }
   const media = localMediaPathFromUrl(clean);
   if (media && fs.existsSync(media)) return media;
+  const teamLibraryMedia = localTeamAssetLibraryPathFromUrl(clean);
+  if (teamLibraryMedia && fs.existsSync(teamLibraryMedia)) return teamLibraryMedia;
   const publicAsset = localPublicAssetPathFromUrl(clean);
   if (publicAsset && fs.existsSync(publicAsset)) return publicAsset;
   const filePath = localFilePathFromUrl(clean);
@@ -20842,7 +20923,10 @@ async function resolveSuperPixelReferenceImages(values = [], conversationImages 
       url = compactLine(publicAsset.url || publicAsset.localUrl || "");
       thumbnailUrl = compactLine(publicAsset.localUrl || publicAsset.url || "");
     } else {
-      const localFile = localMediaPathFromUrl(sourceUrl) || localFilePathFromUrl(sourceUrl) || localPublicAssetPathFromUrl(sourceUrl);
+      const localFile = localMediaPathFromUrl(sourceUrl)
+        || localTeamAssetLibraryPathFromUrl(sourceUrl)
+        || localFilePathFromUrl(sourceUrl)
+        || localPublicAssetPathFromUrl(sourceUrl);
       if (localFile) {
         const publicAsset = await createPublicCanvasAsset({ name, dataUrl: fileToDataUrl(localFile) });
         url = compactLine(publicAsset.url || publicAsset.localUrl || "");
@@ -21347,6 +21431,22 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, team: currentTeamSummary(user) });
   }
 
+  const teamAssetMediaMatch = url.pathname.match(/^\/api\/team\/asset-library\/([^/]+)\/media$/);
+  if (req.method === "GET" && teamAssetMediaMatch) {
+    const userId = assetLibraryUserId(req);
+    const membership = teamMembershipForUser(userId);
+    const record = assetLibrary.get(decodeURIComponent(teamAssetMediaMatch[1]), {
+      userId,
+      teamId: membership?.teamId || "",
+    });
+    if (!record?.teamId || !membership || record.teamId !== membership.teamId) return fail(res, 404, "团队素材不存在");
+    const file = localPathForAssetLibraryUrl(record.localUrl || record.url || record.previewUrl || "");
+    if (!file || !fs.existsSync(file) || !fs.statSync(file).isFile()) return fail(res, 404, "团队素材文件不存在");
+    const sourceProject = episodeRootForFile(file);
+    if (sourceProject) assertUserCanAccessProject(req, sourceProject);
+    return serveMedia(req, res, file, { cacheSeconds: 86400 });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/team/transfer") {
     const user = currentUserFromRequest(req);
     const membership = assertCurrentTeamMembership(user);
@@ -21591,8 +21691,11 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/asset-library") {
     const userId = assetLibraryUserId(req);
+    const membership = teamMembershipForUser(userId);
+    if (membership) syncTeamAssetLibraryForUser({ id: userId });
     const assets = assetLibrary.list({
       userId,
+      teamId: membership?.teamId || "",
       search: url.searchParams.get("search") || "",
       limit: url.searchParams.get("limit") || 100,
     }).map(publicAssetLibraryRecord);
@@ -21602,7 +21705,8 @@ async function handleApi(req, res, url) {
   const assetLibraryMatch = url.pathname.match(/^\/api\/asset-library\/([^/]+)$/);
   if (req.method === "GET" && assetLibraryMatch) {
     const userId = assetLibraryUserId(req);
-    const asset = assetLibrary.get(decodeURIComponent(assetLibraryMatch[1]), { userId });
+    const membership = teamMembershipForUser(userId);
+    const asset = assetLibrary.get(decodeURIComponent(assetLibraryMatch[1]), { userId, teamId: membership?.teamId || "" });
     if (!asset) return fail(res, 404, "素材库资产不存在");
     return send(res, 200, { ok: true, asset: publicAssetLibraryRecord(asset) });
   }
@@ -21615,7 +21719,11 @@ async function handleApi(req, res, url) {
 
   if (req.method === "DELETE" && assetLibraryMatch) {
     const userId = assetLibraryUserId(req);
-    const removed = assetLibrary.remove(decodeURIComponent(assetLibraryMatch[1]), { userId });
+    const membership = teamMembershipForUser(userId);
+    const assetId = decodeURIComponent(assetLibraryMatch[1]);
+    const asset = assetLibrary.get(assetId, { userId, teamId: membership?.teamId || "" });
+    if (!asset) return fail(res, 404, "素材库资产不存在");
+    const removed = assetLibrary.remove(assetId, { userId });
     if (!removed) return fail(res, 404, "素材库资产不存在");
     return send(res, 200, { ok: true, removed: true });
   }
@@ -21895,7 +22003,8 @@ async function handleApi(req, res, url) {
       scopeChangedAt: new Date().toISOString(),
       scopeChangedByUserId: user.id,
     });
-    return send(res, 200, fullProjectState(episodeRoot));
+    const sharedAssetCount = shareProjectAssetsWithTeam(episodeRoot, membership.teamId, user.id);
+    return send(res, 200, { ...fullProjectState(episodeRoot), sharedAssetCount });
   }
 
   if (req.method === "POST" && action === "duplicate-personal") {

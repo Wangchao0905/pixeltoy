@@ -677,6 +677,8 @@ async function createTeam(event) {
   const data = await api("/api/team", { method: "POST", body: JSON.stringify({ name }) });
   state.team = data.team || null;
   form.reset();
+  state.assetLibrary.loaded = false;
+  await loadAssetLibrary({ silent: true });
   await loadProjects(false);
   renderTeamPanel();
   toast("团队已创建");
@@ -689,6 +691,8 @@ async function joinTeam(event) {
   const data = await api("/api/team/join", { method: "POST", body: JSON.stringify({ code }) });
   state.team = data.team || null;
   form.reset();
+  state.assetLibrary.loaded = false;
+  await loadAssetLibrary({ silent: true });
   await loadProjects(false);
   if (userHasCanvasPermission()) await loadBlankCanvasList();
   renderTeamPanel();
@@ -701,6 +705,8 @@ async function leaveTeam() {
   state.team = null;
   state.teamInvite = null;
   state.exploreScopeFilter = "all";
+  state.assetLibrary.loaded = false;
+  state.assetLibrary.assets = [];
   await loadProjects(false);
   if (userHasCanvasPermission()) await loadBlankCanvasList();
   renderTeamPanel();
@@ -2014,7 +2020,7 @@ function projectProgressLabel(project = {}) {
 
 function projectScopeActionsHtml(project = {}) {
   if (project.scope === "personal" && state.team) {
-    return `<button type="button" data-project-team="${escapeAttr(project.id)}" title="加入团队">⇧</button>`;
+    return `<button type="button" data-project-team="${escapeAttr(project.id)}" title="转换为团队项目并共享资产" aria-label="转换为团队项目并共享资产">⇧</button>`;
   }
   if (project.scope === "team") {
     return `<button type="button" data-project-duplicate-personal="${escapeAttr(project.id)}" title="复制为个人项目">⧉</button>`;
@@ -2160,11 +2166,14 @@ function renderExploreHome() {
 }
 
 async function moveProjectToTeam(projectId) {
-  if (!window.confirm("加入团队后不能直接转回个人项目，是否继续？")) return;
-  await api(`/api/project/${projectId}/team`, { method: "POST", body: JSON.stringify({}) });
+  if (!window.confirm("转换后项目将对团队成员可见，项目资产也会同步到团队共享素材库，且不能直接转回个人项目。是否继续？")) return;
+  const data = await api(`/api/project/${projectId}/team`, { method: "POST", body: JSON.stringify({}) });
+  state.assetLibrary.loaded = false;
+  await loadAssetLibrary({ silent: true });
   await loadProjects(false);
   renderTeamPanel();
-  toast("项目已加入团队");
+  const sharedCount = Number(data.sharedAssetCount || 0);
+  toast(sharedCount ? `项目已加入团队，已共享 ${sharedCount} 个资产` : "项目已加入团队，当前没有可共享的资产");
 }
 
 async function duplicateProjectAsPersonal(projectId) {
@@ -2522,7 +2531,13 @@ function assetLibraryCardHtml(asset, { workflow = false } = {}) {
   const id = escapeAttr(asset.id || "");
   const name = escapeHtml(asset.name || "未命名素材");
   const preview = escapeAttr(libraryPreviewUrl(asset, workflow ? 320 : 360));
-  const meta = [asset.source === "image-generation" ? "Image 生成" : asset.source || "素材", asset.ratio, asset.resolution].filter(Boolean).join(" · ");
+  const meta = [
+    asset.scope === "team" ? "团队共享" : "个人",
+    asset.source === "image-generation" ? "Image 生成" : asset.source || "素材",
+    asset.metadata?.sourceProjectName || "",
+    asset.ratio,
+    asset.resolution,
+  ].filter(Boolean).join(" · ");
   if (workflow) {
     return `<article class="workflow-asset-library-card">
       <img src="${preview}" alt="${name}" loading="lazy" />
@@ -2540,7 +2555,7 @@ function assetLibraryCardHtml(asset, { workflow = false } = {}) {
     <div class="asset-library-card-body"><strong>${name}</strong><span>${escapeHtml(meta)}</span></div>
     <div class="asset-library-card-actions">
       <a class="ghost small" href="/canvas.html?libraryAssetId=${id}">打开画布</a>
-      <button type="button" class="ghost small" data-asset-library-remove="${id}">移除</button>
+      ${asset.scope === "team" ? "" : `<button type="button" class="ghost small" data-asset-library-remove="${id}">移除</button>`}
     </div>
   </article>`;
 }

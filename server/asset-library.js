@@ -14,6 +14,7 @@ function normalizeRecord(input = {}, { userId = "" } = {}) {
   return {
     id,
     ownerUserId: compact(input.ownerUserId || userId, 160),
+    teamId: compact(input.teamId || input.sharedTeamId, 160),
     name: compact(input.name || input.assetName || "未命名素材", 160),
     type: compact(input.type || "image", 40),
     url,
@@ -53,36 +54,50 @@ function createAssetLibrary({ filePath, now = () => new Date() } = {}) {
     fs.renameSync(tmp, filePath);
   }
 
-  function list({ userId = "", search = "", limit = 100 } = {}) {
+  function list({ userId = "", teamId = "", search = "", limit = 100 } = {}) {
     const query = compact(search, 120).toLowerCase();
     const max = Math.max(1, Math.min(500, Number(limit) || 100));
     return readStore().assets
-      .filter((asset) => !userId || asset.ownerUserId === userId)
-      .filter((asset) => !query || `${asset.name} ${asset.prompt} ${asset.source}`.toLowerCase().includes(query))
+      .filter((asset) => !userId
+        || (asset.teamId ? !!teamId && asset.teamId === teamId : asset.ownerUserId === userId))
+      .filter((asset) => !query || `${asset.name} ${asset.prompt} ${asset.source} ${asset.metadata?.sourceProjectName || ""}`.toLowerCase().includes(query))
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
       .slice(0, max);
   }
 
-  function get(id, { userId = "" } = {}) {
+  function get(id, { userId = "", teamId = "" } = {}) {
     const cleanId = compact(id, 120);
-    return readStore().assets.find((asset) => asset.id === cleanId && (!userId || asset.ownerUserId === userId)) || null;
+    return readStore().assets.find(
+      (asset) => asset.id === cleanId && (!userId
+        || (asset.teamId ? !!teamId && asset.teamId === teamId : asset.ownerUserId === userId)),
+    ) || null;
   }
 
-  function upsert(input = {}, { userId = "" } = {}) {
+  function upsertMany(inputs = [], { userId = "" } = {}) {
     const store = readStore();
-    const normalized = normalizeRecord(input, { userId });
-    const ownerUserId = normalized.ownerUserId || compact(userId, 160);
-    if (!ownerUserId) throw new Error("素材库资产缺少所属用户");
-    normalized.ownerUserId = ownerUserId;
-    const existingIndex = store.assets.findIndex((asset) => asset.id === normalized.id && asset.ownerUserId === ownerUserId);
-    if (existingIndex >= 0) {
-      normalized.createdAt = store.assets[existingIndex].createdAt || normalized.createdAt;
-      store.assets[existingIndex] = { ...store.assets[existingIndex], ...normalized, updatedAt: now().toISOString() };
-    } else {
-      store.assets.push(normalized);
+    const results = [];
+    for (const input of Array.isArray(inputs) ? inputs : []) {
+      const normalized = normalizeRecord(input, { userId });
+      const ownerUserId = normalized.ownerUserId || compact(userId, 160);
+      if (!ownerUserId) throw new Error("素材库资产缺少所属用户");
+      normalized.ownerUserId = ownerUserId;
+      const existingIndex = store.assets.findIndex((asset) => asset.id === normalized.id && asset.ownerUserId === ownerUserId);
+      if (existingIndex >= 0) {
+        normalized.createdAt = store.assets[existingIndex].createdAt || normalized.createdAt;
+        store.assets[existingIndex] = { ...store.assets[existingIndex], ...normalized, updatedAt: now().toISOString() };
+        results.push(store.assets[existingIndex]);
+      } else {
+        store.assets.push(normalized);
+        results.push(normalized);
+      }
     }
+    if (!results.length) return results;
     writeStore(store);
-    return existingIndex >= 0 ? store.assets[existingIndex] : normalized;
+    return results;
+  }
+
+  function upsert(input = {}, options = {}) {
+    return upsertMany([input], options)[0];
   }
 
   function remove(id, { userId = "" } = {}) {
@@ -94,7 +109,7 @@ function createAssetLibrary({ filePath, now = () => new Date() } = {}) {
     return true;
   }
 
-  return { list, get, upsert, remove };
+  return { list, get, upsert, upsertMany, remove };
 }
 
 module.exports = { createAssetLibrary, normalizeRecord };

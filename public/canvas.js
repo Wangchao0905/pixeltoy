@@ -677,6 +677,14 @@ function toggleSharedAssetLibrary(open = !canvasState.sharedAssetLibrary.open) {
   }
 }
 
+function clearLibraryAssetDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("libraryAssetId")) return;
+  params.delete("libraryAssetId");
+  const query = params.toString();
+  window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+}
+
 function bindSharedAssetLibraryControls() {
   qs("#canvasAssetLibraryRefresh")?.addEventListener("click", () => loadSharedAssetLibrary().catch((error) => toast(error.message)));
   qs("#canvasAssetLibrarySearch")?.addEventListener("input", (event) => {
@@ -5186,10 +5194,15 @@ async function boot() {
     try {
       const data = await api(`/api/asset-library/${encodeURIComponent(libraryAssetId)}`);
       // The deep-link asset is still added to the canvas, but it must not
-      // replace the library list. Keeping the full list makes refreshes of a
-      // `libraryAssetId` URL behave like a normal library view.
+      // replace the library list. Keeping the full list makes the initial
+      // deep-link view behave like a normal library view after import.
       await loadSharedAssetLibrary({ silent: true });
-      if (data.asset) addSharedLibraryAsset(data.asset);
+      if (data.asset) {
+        addSharedLibraryAsset(data.asset);
+        // This is a one-time deep link. Leaving it in the URL reopens the
+        // large library panel on every refresh and hides the canvas result.
+        clearLibraryAssetDeepLink();
+      }
       toggleSharedAssetLibrary(true);
     } catch (error) {
       toast(error.message);

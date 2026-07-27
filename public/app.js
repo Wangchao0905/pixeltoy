@@ -123,7 +123,7 @@ const state = {
   exploreEnabled: false,
   exploreView: "canvas",
   // attachments: 待发送的资产图（从资产库或本地拖入），发出后并入该条 user 消息
-  superPixel: { model: "claude-opus-5", mode: "ask", messages: [], scriptText: "", scriptName: "", sending: false, controller: null, attachments: [] },
+  superPixel: { model: "claude-opus-5", mode: "ask", messages: [], scriptText: "", scriptName: "", sending: false, controller: null, uploading: 0, uploadError: "", attachments: [] },
   exploreProjectSearch: "",
   exploreCanvasFilter: "all",
   exploreScopeFilter: "all",
@@ -207,6 +207,7 @@ function superPixelHistoryMessageSnapshot(message) {
       name: String(image?.name || "资产图").slice(0, 200),
       url: String(image?.url || "").slice(0, 8 * 1024 * 1024),
       preview: String(image?.preview || "").slice(0, 8 * 1024 * 1024),
+      modelUrl: String(image?.modelUrl || "").slice(0, 8 * 1024 * 1024),
     }));
   }
   return snapshot;
@@ -3145,6 +3146,8 @@ async function readSuperPixelStream(response, onDelta, onEvent = () => {}) {
 
 const SUPER_PIXEL_MAX_ATTACHMENTS = 8;
 const SUPER_PIXEL_ASSET_MIME = "application/x-pixel-toys-asset-type";
+const SUPER_PIXEL_MODEL_IMAGE_MAX_EDGE = 1024;
+const SUPER_PIXEL_MODEL_IMAGE_QUALITY = 0.8;
 
 function renderSuperPixelAttachments() {
   const tray = $("#superPixelAttachments");
@@ -3185,12 +3188,76 @@ function readFileAsDataUrl(file) {
   });
 }
 
-// 本地文件拖入/选择：转 data URL 直接进附件盘，服务端会落成公开资产再发给模型
+function readBlobAsDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("读取图片预览失败"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function resizeSuperPixelImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      if (!sourceWidth || !sourceHeight) {
+        reject(new Error("无法读取图片尺寸"));
+        return;
+      }
+      const scale = Math.min(1, SUPER_PIXEL_MODEL_IMAGE_MAX_EDGE / Math.max(sourceWidth, sourceHeight));
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("浏览器不支持图片缩放"));
+        return;
+      }
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", SUPER_PIXEL_MODEL_IMAGE_QUALITY));
+    };
+    image.onerror = () => reject(new Error("无法读取图片预览"));
+    image.src = dataUrl;
+  });
+}
+
+async function imageUrlToSuperPixelModelUrl(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`读取图片失败（HTTP ${response.status}）`);
+  return resizeSuperPixelImage(await readBlobAsDataUrl(await response.blob()));
+}
+
+async function uploadSuperPixelImage(file) {
+  const originalDataUrl = await readFileAsDataUrl(file);
+  const modelUrl = await resizeSuperPixelImage(originalDataUrl);
+  const response = await fetch("/api/canvas/public-assets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: file.name, dataUrl: originalDataUrl }),
+  });
+  const data = await response.json().catch(() => ({}));
+  const publicUrl = String(data.result?.url || "").trim();
+  if (!response.ok || !/^https:\/\//i.test(publicUrl)) {
+    throw new Error(data.message || "图片上传失败，未生成稳定公网地址");
+  }
+  return { url: publicUrl, preview: modelUrl, modelUrl, name: file.name, source: "local" };
+}
+
+// 本地文件拖入/选择：先上传原图，再把缩图作为模型侧视觉输入。
 async function addSuperPixelLocalFiles(fileList) {
   const files = [...(fileList || [])];
   if (!files.length) return;
   let added = 0;
   const skipped = [];
+  const uploadFailures = [];
+  const uploadable = [];
   for (const file of files) {
     if (!SUPER_PIXEL_IMAGE_TYPES.test(file.type)) {
       skipped.push(`${file.name}（仅支持 PNG/JPG/WebP）`);
@@ -3200,14 +3267,31 @@ async function addSuperPixelLocalFiles(fileList) {
       skipped.push(`${file.name}（超过 8MB）`);
       continue;
     }
+    uploadable.push(file);
+  }
+  state.superPixel.uploading += uploadable.length;
+  for (const file of uploadable) {
     try {
-      const dataUrl = await readFileAsDataUrl(file);
-      if (addSuperPixelAttachment({ url: dataUrl, preview: dataUrl, name: file.name, source: "local" })) added += 1;
+      if (state.superPixel.attachments.length >= SUPER_PIXEL_MAX_ATTACHMENTS) {
+        skipped.push(`${file.name}（已达到 ${SUPER_PIXEL_MAX_ATTACHMENTS} 张上限）`);
+        continue;
+      }
+      if (addSuperPixelAttachment(await uploadSuperPixelImage(file))) {
+        added += 1;
+      }
     } catch (error) {
       skipped.push(`${file.name}（${error.message}）`);
+      uploadFailures.push(`${file.name}（${error.message || "请重试"}）`);
+    } finally {
+      state.superPixel.uploading = Math.max(0, state.superPixel.uploading - 1);
     }
+    renderSuperPixelAttachments();
   }
-  if (added) renderSuperPixelAttachments();
+  state.superPixel.uploadError = uploadFailures.length
+    ? `图片上传失败：${uploadFailures.slice(0, 3).join("；")}`
+    : added
+      ? ""
+      : state.superPixel.uploadError;
   if (skipped.length) toast(`已跳过：${skipped.slice(0, 3).join("；")}`);
 }
 
@@ -3223,21 +3307,39 @@ function addSuperPixelAttachment(image) {
   return true;
 }
 
-function addSuperPixelLibraryAsset(assetId) {
+async function addSuperPixelLibraryAsset(assetId) {
   const asset = state.assetLibrary.assets.find((asset) => asset.id === assetId);
   const url = asset?.url || asset?.localUrl || asset?.previewUrl || "";
   if (!url) {
     toast("资产图片不可用");
     return false;
   }
-  const added = addSuperPixelAttachment({
-    url,
-    preview: libraryPreviewUrl(asset, 160),
-    name: asset.name || "素材库图片",
-    source: "asset-library",
-  });
-  if (added) renderSuperPixelAttachments();
-  return added;
+  if (!/^https:\/\//i.test(url)) {
+    state.superPixel.uploadError = "图片上传失败：素材库图片缺少稳定公网地址";
+    toast(state.superPixel.uploadError);
+    return false;
+  }
+  state.superPixel.uploading += 1;
+  try {
+    const modelSource = asset.localUrl || asset.previewUrl || url;
+    const modelUrl = await imageUrlToSuperPixelModelUrl(modelSource);
+    const added = addSuperPixelAttachment({
+      url,
+      preview: modelUrl,
+      modelUrl,
+      name: asset.name || "素材库图片",
+      source: "asset-library",
+    });
+    if (added) renderSuperPixelAttachments();
+    if (added) state.superPixel.uploadError = "";
+    return added;
+  } catch (error) {
+    state.superPixel.uploadError = `图片上传失败：${error.message || "请重试"}`;
+    toast(state.superPixel.uploadError);
+    return false;
+  } finally {
+    state.superPixel.uploading = Math.max(0, state.superPixel.uploading - 1);
+  }
 }
 
 // 把一条消息转成接口要的 content：无图=字符串，有图=多模态数组
@@ -3247,7 +3349,11 @@ function superPixelMessagePayload(message) {
   if (!images.length) return { role: message.role, content: message.content };
   const parts = [];
   if (message.content) parts.push({ type: "text", text: message.content });
-  for (const image of images) parts.push({ type: "image_url", image_url: { url: image.url } });
+  for (const image of images) {
+    const sourceUrl = String(image?.url || "").trim();
+    const modelUrl = String(image?.modelUrl || "").trim() || (/^data:/i.test(sourceUrl) ? "" : sourceUrl);
+    if (modelUrl) parts.push({ type: "image_url", image_url: { url: modelUrl } });
+  }
   return { role: message.role, content: parts };
 }
 
@@ -3256,7 +3362,7 @@ function superPixelConversationImages() {
   const seen = new Set();
   const add = (image, fallbackSource = "conversation") => {
     const url = String(image?.url || "").trim();
-    if (!url || seen.has(url)) return;
+    if (!url || /^data:/i.test(url) || seen.has(url)) return;
     seen.add(url);
     images.push({
       url,
@@ -3278,6 +3384,14 @@ function superPixelConversationImages() {
 async function submitSuperPixelChat(prompt) {
   const text = String(prompt || "").trim();
   const images = state.superPixel.attachments.slice();
+  if (state.superPixel.uploading > 0) {
+    toast("图片仍在上传，请稍候");
+    return;
+  }
+  if (state.superPixel.uploadError) {
+    toast(state.superPixel.uploadError);
+    return;
+  }
   // 只拖了图没打字也允许发，补一句默认问法
   if (!text && !images.length) return;
   if (state.superPixel.sending) return;
@@ -3476,7 +3590,7 @@ function bindSuperPixel() {
   }
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (!input?.value.trim()) return;
+    if (!input?.value.trim() && !state.superPixel.attachments.length) return;
     const prompt = input.value;
     input.value = "";
     input.style.height = "auto";
@@ -3536,7 +3650,7 @@ function bindSuperPixel() {
       event.preventDefault();
       composer.classList.remove("is-dragover");
       if (isFileDrag(event)) await addSuperPixelLocalFiles(event.dataTransfer.files);
-      if (isAssetDrag(event)) addSuperPixelLibraryAsset(event.dataTransfer.getData("text/plain"));
+      if (isAssetDrag(event)) await addSuperPixelLibraryAsset(event.dataTransfer.getData("text/plain"));
     });
   }
   // 截图直接粘贴

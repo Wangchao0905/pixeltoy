@@ -1837,6 +1837,7 @@ async function openBlankCanvasProject() {
 function openProjectFromState(data) {
   const id = data?.project?.id || "";
   if (!id) throw new Error("项目创建成功，但没有返回项目 ID");
+  state.modernStudio.focus = "assets";
   state.selectedId = id;
   initialProjectHandled = true;
   localStorage.setItem("pixelToys.canvasProjectId", id);
@@ -4612,13 +4613,69 @@ async function saveProjectDisplayName(event) {
       submit.disabled = true;
       submit.textContent = "保存中";
     }
-    const data = await api(`/api/project/${state.selectedId}/display-name`, {
-      method: "POST",
-      body: JSON.stringify({ displayName }),
-    });
-    setProjectState(data);
-    renderWorkspace();
-    await loadProjects(false);
+    await persistProjectDisplayName(displayName);
+    toast("项目名称已保存");
+  } finally {
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = original;
+    }
+  }
+}
+
+async function persistProjectDisplayName(displayName) {
+  const nextName = String(displayName || "").trim();
+  if (!state.selectedId) throw new Error("请先打开一个项目");
+  if (!nextName) throw new Error("请输入项目名称");
+  const data = await api(`/api/project/${state.selectedId}/display-name`, {
+    method: "POST",
+    body: JSON.stringify({ displayName: nextName }),
+  });
+  setProjectState(data);
+  renderWorkspace();
+  await loadProjects(false);
+}
+
+function setModernProjectMenu(open) {
+  const menu = $("#modernProjectMenu");
+  const context = $("#modernProjectContext");
+  if (!menu || !context) return;
+  const nextOpen = Boolean(open);
+  menu.classList.toggle("hidden", !nextOpen);
+  context.setAttribute("aria-expanded", String(nextOpen));
+}
+
+function closeModernProjectRename() {
+  $("#modernProjectRenameForm")?.classList.add("hidden");
+}
+
+function openModernProjectRename() {
+  if (!state.selectedId || !state.project?.project) return toast("请先打开一个项目");
+  setModernProjectMenu(false);
+  const form = $("#modernProjectRenameForm");
+  const input = $("#modernProjectRenameInput");
+  if (!form || !input) return;
+  input.value = displayProjectTitle(state.project.project);
+  form.classList.remove("hidden");
+  input.focus();
+  input.select();
+}
+
+async function saveModernProjectDisplayName(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const input = $("#modernProjectRenameInput");
+  const submit = form.querySelector("button[type='submit']");
+  const displayName = input?.value.trim() || "";
+  if (!displayName) return toast("请输入项目名称");
+  const original = submit?.textContent || "保存";
+  try {
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = "保存中";
+    }
+    await persistProjectDisplayName(displayName);
+    closeModernProjectRename();
     toast("项目名称已保存");
   } finally {
     if (submit) {
@@ -8821,6 +8878,29 @@ function bind() {
     renderModernStudio(state.project);
   });
   $("#modernBrandButton")?.addEventListener("click", goBackToProjects);
+  $("#modernProjectContext")?.addEventListener("click", () => {
+    setModernProjectMenu($("#modernProjectMenu")?.classList.contains("hidden"));
+  });
+  $("#modernProjectContext")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setModernProjectMenu($("#modernProjectMenu")?.classList.contains("hidden"));
+    }
+  });
+  $("#modernNewProject")?.addEventListener("click", () => {
+    setModernProjectMenu(false);
+    openProjectModal();
+  });
+  $("#modernRenameProject")?.addEventListener("click", openModernProjectRename);
+  $("#modernProjectRenameForm")?.addEventListener("submit", (event) => saveModernProjectDisplayName(event).catch((error) => toast(error.message)));
+  $("#modernCancelProjectRename")?.addEventListener("click", closeModernProjectRename);
+  $("#modernProjectSwitcher")?.addEventListener("click", (event) => {
+    if (!event.target.closest("#modernProjectContext") && !event.target.closest("#modernProjectMenu")) return;
+    event.stopPropagation();
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest("#modernProjectSwitcher")) setModernProjectMenu(false);
+  });
   const focusModernPane = (focus) => {
     const nextFocus = focus === "kit"
       ? "assets"

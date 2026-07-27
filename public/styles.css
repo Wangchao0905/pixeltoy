@@ -16403,6 +16403,21 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-series-context h2 { margin: 4px 0 0; overflow: hidden; color: var(--mv-tx); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .modern-series-context p { margin: 4px 0 0; overflow: hidden; color: var(--mv-mut); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
 .modern-project-chevron { color: var(--mv-qt); font-size: 14px; font-style: normal; }
+.modern-project-switcher { position: relative; flex: none; }
+.modern-series-context { cursor: pointer; outline: 0; text-align: left; }
+.modern-series-context:focus-visible { border-color: var(--mv-lime); box-shadow: 0 0 0 3px rgba(200,255,46,.12), var(--mv-hi); }
+.modern-series-context:hover { border-color: var(--mv-line-2); background: var(--mv-s3); }
+.modern-project-menu { display: grid; gap: 3px; margin: 6px 14px 0; padding: 4px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s1); box-shadow: var(--mv-e1); }
+.modern-project-menu button { display: flex; gap: 8px; align-items: center; width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--mv-mut); text-align: left; font-size: 11px; }
+.modern-project-menu button:hover, .modern-project-menu button:focus-visible { background: var(--mv-s3); color: var(--mv-tx); outline: 0; }
+.modern-project-menu button > span:first-child { width: 14px; color: var(--mv-lime); font-size: 14px; text-align: center; }
+.modern-project-rename-form { display: grid; gap: 6px; margin: 6px 14px 0; padding: 9px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s1); box-shadow: var(--mv-e1); }
+.modern-project-rename-form label { color: var(--mv-qt); font-family: var(--mono); font-size: 10px; }
+.modern-project-rename-form input { width: 100%; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--mv-line-2); border-radius: 5px; background: var(--mv-bg); color: var(--mv-tx); font-size: 11px; }
+.modern-project-rename-form input:focus { border-color: var(--mv-lime); outline: 0; box-shadow: 0 0 0 3px rgba(200,255,46,.1); }
+.modern-project-rename-form > div { display: flex; justify-content: flex-end; gap: 5px; }
+.modern-project-rename-form button { min-height: 27px; padding: 0 8px; border: 1px solid var(--mv-line-2); border-radius: 5px; background: transparent; color: var(--mv-mut); font-size: 10px; }
+.modern-project-rename-form button[type="submit"] { border-color: rgba(200,255,46,.4); background: rgba(200,255,46,.12); color: var(--mv-lime); }
 .modern-episode-list { display: grid; flex: 1 1 auto; align-content: start; min-height: 0; gap: 3px; padding: 12px 14px; overflow-x: hidden; overflow-y: auto; }
 .modern-episode-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) 5px; gap: 9px; align-items: center; width: 100%; min-height: 40px; padding: 6px 8px; border: 1px solid transparent; border-left: 2px solid transparent; border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); text-align: left; }
 .modern-episode-row:hover { background: rgba(255,255,255,.032); color: var(--mv-tx); }

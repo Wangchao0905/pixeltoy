@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=empty-studio-20260727" />
+    <link rel="stylesheet" href="/styles.css?v=project-menu-20260727" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -936,10 +936,21 @@
                  字样(960×165,o 内为机器人头 + 红色螺旋桨),并排会重复。只留版本徽章。 -->
             <div class="modern-brand-copy"><span>v2</span></div>
           </header>
-          <div class="modern-series-context">
-            <span class="modern-project-thumb" aria-hidden="true"></span>
-            <div class="modern-project-copy"><span class="modern-eyebrow">PROJECT</span><h2 id="modernProjectTitle">选择或新建项目</h2><p id="modernProjectMeta">尚未加载项目</p></div>
-            <i class="modern-project-chevron" aria-hidden="true">⌄</i>
+          <div id="modernProjectSwitcher" class="modern-project-switcher">
+            <div id="modernProjectContext" class="modern-series-context" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false">
+              <span class="modern-project-thumb" aria-hidden="true"></span>
+              <div class="modern-project-copy"><span class="modern-eyebrow">PROJECT</span><h2 id="modernProjectTitle">选择或新建项目</h2><p id="modernProjectMeta">尚未加载项目</p></div>
+              <i class="modern-project-chevron" aria-hidden="true">⌄</i>
+            </div>
+            <div id="modernProjectMenu" class="modern-project-menu hidden" role="menu" aria-label="项目操作">
+              <button id="modernNewProject" type="button" role="menuitem"><span aria-hidden="true">＋</span><span>新建项目</span></button>
+              <button id="modernRenameProject" type="button" role="menuitem"><span aria-hidden="true">✎</span><span>修改项目名</span></button>
+            </div>
+            <form id="modernProjectRenameForm" class="modern-project-rename-form hidden">
+              <label for="modernProjectRenameInput">项目名称</label>
+              <input id="modernProjectRenameInput" type="text" maxlength="80" autocomplete="off" required />
+              <div><button id="modernCancelProjectRename" type="button">取消</button><button type="submit">保存</button></div>
+            </form>
           </div>
           <nav id="modernEpisodeList" class="modern-episode-list" aria-label="项目阶段"></nav>
           <footer class="modern-series-footer">
@@ -1330,6 +1341,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=empty-studio-20260727"></script>
+    <script src="/app.js?v=project-menu-20260727"></script>
   </body>
 </html>

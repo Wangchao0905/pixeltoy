@@ -34,6 +34,9 @@ for (const id of [
   "modernVideoQueuePrompt",
   "modernVideoQueueGenerate",
   "modernVideoGenerate",
+  "modernProjectContext",
+  "modernProjectMenu",
+  "modernProjectRenameForm",
 ]) {
   assert.match(html, new RegExp(`id=\"${id}\"`), `modern shell missing ${id}`);
 }
@@ -53,6 +56,10 @@ assert.doesNotMatch(brandLogoRule, /--mv-lime|linear-gradient/, "左栏品牌字
 assert.doesNotMatch(css, /\.modern-brand-logo[^{]*::after\s*\{[^}]*content:\s*"P"/, "左栏品牌不得用字母 P 顶替字标");
 assert.match(js, /studioModernShell/, "modern shell visibility must be wired");
 assert.match(js, /renderModernStudio\(data\)/, "modern shell must hydrate from project state");
+assert.match(js, /function openProjectFromState\([\s\S]*state\.modernStudio\.focus = "assets"/, "new projects must open on the asset document module");
+assert.match(js, /modernNewProject[\s\S]*openProjectModal\(\)/, "modern project menu must support creating a new project");
+assert.match(js, /modernRenameProject[\s\S]*openModernProjectRename/, "modern project menu must support renaming the current project");
+assert.match(js, /function persistProjectDisplayName[\s\S]*\/display-name/, "modern rename must reuse the project display-name API");
 assert.match(js, /modernScriptUpload/, "modern shell must wire script upload");
 assert.match(js, /modernAssetDescriptionUpload/, "modern shell must wire asset document upload");
 assert.match(js, /modernExtractAssets/, "modern shell must expose asset extraction");

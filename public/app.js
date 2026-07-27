@@ -20,6 +20,9 @@ const IMAGE_EXPLORE_HISTORY_KEY = "pixelToys.imageExploreHistory.v1";
 const IMAGE_EXPLORE_STORYBOARD_HISTORY_KEY = "pixelToys.imageStoryboardHistory.v1";
 const IMAGE_EXPLORE_STORYBOARD_RECOVERY_KEY = "pixelToys.imageStoryboardRecovery.v1";
 const SUPER_PIXEL_RAIL_OPEN_KEY = "pixelToys.superPixelRailOpen";
+const SUPER_PIXEL_HISTORY_KEY = "pixelToys.superPixelHistory.v1";
+const SUPER_PIXEL_HISTORY_MAX_MESSAGES = 100;
+const SUPER_PIXEL_HISTORY_SAVE_DELAY_MS = 250;
 const IMAGE_EXPLORE_POLL_INTERVAL_MS = 1200;
 const IMAGE_EXPLORE_POLL_MAX_ATTEMPTS = 3000;
 const IMAGE_EXPLORE_STORYBOARD_RECOVERY_LOOKBACK_MS = 36 * 60 * 60 * 1000;
@@ -182,6 +185,102 @@ const state = {
   modernStudio: { shotIndex: 0, copyTab: "story", queueFilter: "all", focus: "video", detailsOpen: false },
 };
 localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
+
+let superPixelHistorySaveTimer = null;
+
+function superPixelHistoryStorageKey(user = state.authUser) {
+  const identity = String(user?.id || user?.username || "anonymous").trim() || "anonymous";
+  return `${SUPER_PIXEL_HISTORY_KEY}.${identity}`;
+}
+
+function superPixelHistoryMessageSnapshot(message) {
+  if (!message || typeof message !== "object") return null;
+  const snapshot = {};
+  for (const key of ["role", "kind", "callId", "taskId", "provider", "status", "message", "content", "pending", "url", "videoUrl"]) {
+    if (message[key] === undefined) continue;
+    snapshot[key] = typeof message[key] === "string" ? message[key].slice(0, 16000) : message[key];
+  }
+  if (message.meta && typeof message.meta === "object") snapshot.meta = { ...message.meta };
+  if (message.args && typeof message.args === "object") snapshot.args = { ...message.args };
+  if (Array.isArray(message.images)) {
+    snapshot.images = message.images.slice(0, 8).map((image) => ({
+      name: String(image?.name || "资产图").slice(0, 200),
+      url: String(image?.url || "").slice(0, 8 * 1024 * 1024),
+      preview: String(image?.preview || "").slice(0, 8 * 1024 * 1024),
+    }));
+  }
+  return snapshot;
+}
+
+function superPixelHistorySnapshot() {
+  return state.superPixel.messages
+    .map(superPixelHistoryMessageSnapshot)
+    .filter(Boolean)
+    .slice(-SUPER_PIXEL_HISTORY_MAX_MESSAGES);
+}
+
+function writeSuperPixelHistorySnapshot() {
+  if (state.authUser?.role !== "admin") return;
+  const key = superPixelHistoryStorageKey();
+  const messages = superPixelHistorySnapshot();
+  try {
+    localStorage.setItem(key, JSON.stringify(messages));
+  } catch {
+    // 大图可能超过 localStorage 限额，至少保留文本和非内联图片地址。
+    const compact = messages.map((message) => {
+      if (!Array.isArray(message.images)) return message;
+      return {
+        ...message,
+        images: message.images.map((image) => ({
+          ...image,
+          url: /^data:/i.test(image.url) ? "" : image.url,
+          preview: /^data:/i.test(image.preview) ? "" : image.preview,
+        })),
+      };
+    });
+    try {
+      localStorage.setItem(key, JSON.stringify(compact));
+    } catch {
+      // 历史过大时不阻断当前对话，下一次保存仍会重试精简结果。
+    }
+  }
+}
+
+function persistSuperPixelHistory({ immediate = false } = {}) {
+  if (state.authUser?.role !== "admin") return;
+  clearTimeout(superPixelHistorySaveTimer);
+  if (immediate) {
+    writeSuperPixelHistorySnapshot();
+    return;
+  }
+  superPixelHistorySaveTimer = setTimeout(() => {
+    superPixelHistorySaveTimer = null;
+    writeSuperPixelHistorySnapshot();
+  }, SUPER_PIXEL_HISTORY_SAVE_DELAY_MS);
+}
+
+function readSuperPixelHistory(user = state.authUser) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(superPixelHistoryStorageKey(user)) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((message) => message && ["user", "assistant", "tool"].includes(message.role))
+      .slice(-SUPER_PIXEL_HISTORY_MAX_MESSAGES);
+  } catch {
+    return [];
+  }
+}
+
+function restoreSuperPixelHistory() {
+  const messages = readSuperPixelHistory();
+  if (!messages.length) return;
+  state.superPixel.messages = messages.map((message) => ({
+    ...message,
+    pending: false,
+  }));
+  renderSuperPixelMessages();
+  resumeSuperPixelGenerationPolls();
+}
 
 const WINDOW_LAYOUT_VERSION = `studio-${WORKSPACE_LAYOUT_VERSION}`;
 const DEFAULT_WINDOWS = {
@@ -401,6 +500,8 @@ async function syncAuthUser() {
     clearLegacyLayoutPreferences();
     state.imageStudio.history = readImageExploreHistory(state.authUser);
     state.imageStudio.storyboardHistory = readImageExploreStoryboardHistory(state.authUser);
+    if (data.user?.role === "admin") restoreSuperPixelHistory();
+    else state.superPixel.messages = [];
     renderImageExploreView();
     recoverImageExploreStoryboards().catch(() => {});
     resumeImageExploreGenerations().catch(() => {});
@@ -2774,6 +2875,7 @@ function renderSuperPixelMessages() {
   requestAnimationFrame(() => {
     container.scrollTop = shouldStickToBottom ? container.scrollHeight : Math.min(previousScrollTop, container.scrollHeight);
   });
+  persistSuperPixelHistory();
 }
 
 function insertSuperPixelToolCard(card, assistant) {
@@ -3109,6 +3211,7 @@ async function submitSuperPixelChat(prompt) {
     { role: "user", content: text || "看看这些图，给我创作建议。", images },
     assistant,
   );
+  persistSuperPixelHistory({ immediate: true });
   state.superPixel.attachments = [];
   renderSuperPixelAttachments();
   state.superPixel.sending = true;
@@ -9137,6 +9240,7 @@ function bind() {
 }
 
 bind();
+window.addEventListener("pagehide", () => persistSuperPixelHistory({ immediate: true }));
 if (WORKFLOW_PREVIEW_MODE) {
   showWorkflowPreview();
 } else {

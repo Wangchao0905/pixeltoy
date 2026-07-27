@@ -150,6 +150,10 @@ assert.match(css, /\.super-pixel-stage\.is-chatting\s+\.super-pixel-messages\s*\
 assert.match(css, /\.super-pixel-image-card \.super-pixel-tool-card-details\s*\{[\s\S]*?display:\s*none/, "图片工具卡不应显示提示词和模型规格");
 assert.match(css, /\.super-pixel-image-card \.super-pixel-tool-card-media\s*\{[\s\S]*?max-height:\s*min\(36vh,\s*300px\)/, "图片工具卡预览高度必须受控");
 assert.match(app, /const previousScrollTop = container\.scrollTop[\s\S]*?shouldStickToBottom/, "用户上翻消息时不能被重新渲染强制拉到底部");
+assert.match(app, /const SUPER_PIXEL_HISTORY_KEY = "pixelToys\.superPixelHistory\.v1"/, "Super Pixel 历史必须使用独立持久化键");
+assert.match(app, /function restoreSuperPixelHistory\(\)[\s\S]*?readSuperPixelHistory[\s\S]*?state\.superPixel\.messages/, "刷新后必须恢复 Super Pixel 历史消息");
+assert.match(app, /function persistSuperPixelHistory\([\s\S]*?localStorage\.setItem/, "Super Pixel 消息必须持久化到本地");
+assert.match(app, /window\.addEventListener\("pagehide", \(\) => persistSuperPixelHistory\(\{ immediate: true \}\)\)/, "离开页面前必须立即保存 Super Pixel 历史");
 
 // 3) 窄屏工具条不得折行，否则发送键被甩到单独一行
 const narrow = css.match(/@media \(max-width: 600px\)\s*\{[\s\S]*?\n\}/)?.[0] || "";

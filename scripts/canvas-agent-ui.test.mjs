@@ -18,7 +18,7 @@ assert.match(html, /id="canvasAgentPanel"[^>]*aria-hidden="true"[^>]*inert/);
 assert.match(html, /id="canvasAgentClose"/);
 assert.match(html, /id="canvasAgentThread"/);
 assert.match(html, /id="canvasAgentComposer"/);
-assert.match(html, /id="canvasAgentInput"[^>]*disabled/);
+assert.match(html, /id="canvasAgentInput"[^>]*placeholder=/);
 
 assert.match(css, /\.canvas-agent-launcher\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:\s*22px;[\s\S]*?bottom:\s*22px;/);
 assert.match(css, /\.canvas-agent-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:\s*20px;[\s\S]*?width:\s*min\(402px/);
@@ -35,7 +35,7 @@ assert.match(js, /qs\("#canvasAgentClose"\)\?\.addEventListener\("click"/);
 assert.match(js, /event\.key === "Escape"[\s\S]*?setCanvasAgentOpen\(false\)/);
 assert.match(js, /canvasAgentContextName/);
 
-assert.match(html, /canvas\.css\?v=canvas-agent-ui-20260728/);
-assert.match(html, /canvas\.js\?v=canvas-agent-ui-20260728/);
+assert.match(html, /canvas\.css\?v=canvas-agent-models-20260728/);
+assert.match(html, /canvas\.js\?v=canvas-agent-models-20260728/);
 
 console.log("canvas agent UI tests passed");

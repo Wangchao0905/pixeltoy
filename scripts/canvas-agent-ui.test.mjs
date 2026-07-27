@@ -41,6 +41,6 @@ assert.match(css, /\.canvas-agent-composer\s*\{[\s\S]*?border:\s*1px\s+solid/);
 assert.match(css, /\.canvas-agent-composer textarea\s*\{[\s\S]*?border:\s*0;[\s\S]*?outline:\s*0;[\s\S]*?box-shadow:\s*none;/);
 assert.match(css, /\.canvas-agent-send\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;/);
 assert.match(html, /canvas\.css\?v=canvas-assembly-background-20260728/);
-assert.match(html, /canvas\.js\?v=canvas-assembly-background-20260728/);
+assert.match(html, /canvas\.js\?v=canvas-navigation-performance-20260728/);
 
 console.log("canvas agent UI tests passed");

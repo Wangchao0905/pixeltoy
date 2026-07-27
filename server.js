@@ -22686,6 +22686,9 @@ async function handleApi(req, res, url) {
     // 「资产描述」独立输入(只做资产解析,不影响剧情/分镜);建项目时一并落盘。
     if (typeof body.assetDescriptionText === "string") writeAssetDescription(episodeRoot, body.assetDescriptionText);
     if (requestedDisplayName) persistProjectDisplayName(episodeRoot, requestedDisplayName);
+    if (body.responseMode === "summary") {
+      return send(res, 200, { ok: true, loading: true, project: lightweightProjectSummary(episodeRoot) });
+    }
     return send(res, 200, fullProjectState(episodeRoot));
   }
 

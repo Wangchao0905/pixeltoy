@@ -99,6 +99,10 @@ function syncCanvasUrl(projectId = "", canvasId = "") {
 const params = new URLSearchParams(window.location.search);
 const initialProjectId = params.get("project") || "";
 const initialCanvasId = params.get("canvas") || "";
+const initialCanvasBootstrap = params.get("bootstrap") === "1";
+let sharedAssetLibraryRequest = null;
+let sharedAssetLibraryRequestKey = "";
+let sharedAssetLibrarySearchTimer = null;
 const canvasState = {
   selectedId: initialProjectId,
   canvasId: initialCanvasId,
@@ -668,12 +672,32 @@ function libraryPreviewUrl(asset = {}, width = 360) {
   }
 }
 
+function renderHtmlInBatches(node, items, renderItem, { batchSize = 24, onComplete = null } = {}) {
+  if (!node) return;
+  const token = (Number(node.dataset.renderToken) || 0) + 1;
+  node.dataset.renderToken = String(token);
+  node.innerHTML = "";
+  let index = 0;
+  const append = () => {
+    if (node.dataset.renderToken !== String(token)) return;
+    const end = Math.min(items.length, index + batchSize);
+    if (end > index) node.insertAdjacentHTML("beforeend", items.slice(index, end).map(renderItem).join(""));
+    index = end;
+    if (index < items.length) requestAnimationFrame(append);
+    else onComplete?.();
+  };
+  append();
+}
+
 function renderSharedAssetLibrary() {
   const list = qs("#canvasAssetLibraryList");
   if (!list) return;
   const assets = canvasState.sharedAssetLibrary.assets || [];
-  list.innerHTML = assets.length
-    ? assets.map((asset) => {
+  if (!assets.length) {
+    list.innerHTML = `<div class="canvas-asset-library-empty">素材库暂无图片</div>`;
+    return;
+  }
+  renderHtmlInBatches(list, assets, (asset) => {
         const id = escapeHtml(asset.id || "");
         const name = escapeHtml(asset.name || "未命名素材");
         const preview = escapeHtml(libraryPreviewUrl(asset, 360));
@@ -688,21 +712,35 @@ function renderSharedAssetLibrary() {
             <button class="primary" type="button" data-shared-library-use="${id}">加入画布</button>
           </div>
         </article>`;
-      }).join("")
-    : `<div class="canvas-asset-library-empty">素材库暂无图片</div>`;
+  });
 }
 
 async function loadSharedAssetLibrary({ search = canvasState.sharedAssetLibrary.search, silent = false } = {}) {
-  canvasState.sharedAssetLibrary.search = String(search || "");
-  const params = new URLSearchParams();
-  params.set("limit", "500");
-  if (canvasState.sharedAssetLibrary.search) params.set("search", canvasState.sharedAssetLibrary.search);
-  const data = await api(`/api/asset-library${params.toString() ? `?${params}` : ""}`);
-  canvasState.sharedAssetLibrary.assets = (Array.isArray(data.assets) ? data.assets : []).filter(isCanvasLibraryImageAsset);
-  canvasState.sharedAssetLibrary.loaded = true;
-  renderSharedAssetLibrary();
-  if (!silent) toast(`素材库已加载 ${canvasState.sharedAssetLibrary.assets.length} 个资产`);
-  return canvasState.sharedAssetLibrary.assets;
+  const nextSearch = String(search || "");
+  if (sharedAssetLibraryRequest && sharedAssetLibraryRequestKey === nextSearch) return sharedAssetLibraryRequest;
+  canvasState.sharedAssetLibrary.search = nextSearch;
+  const request = (async () => {
+    const requestParams = new URLSearchParams();
+    requestParams.set("limit", "500");
+    if (nextSearch) requestParams.set("search", nextSearch);
+    const data = await api(`/api/asset-library?${requestParams}`);
+    if (canvasState.sharedAssetLibrary.search !== nextSearch) return canvasState.sharedAssetLibrary.assets;
+    canvasState.sharedAssetLibrary.assets = (Array.isArray(data.assets) ? data.assets : []).filter(isCanvasLibraryImageAsset);
+    canvasState.sharedAssetLibrary.loaded = true;
+    renderSharedAssetLibrary();
+    if (!silent) toast(`素材库已加载 ${canvasState.sharedAssetLibrary.assets.length} 个资产`);
+    return canvasState.sharedAssetLibrary.assets;
+  })();
+  sharedAssetLibraryRequest = request;
+  sharedAssetLibraryRequestKey = nextSearch;
+  try {
+    return await request;
+  } finally {
+    if (sharedAssetLibraryRequest === request) {
+      sharedAssetLibraryRequest = null;
+      sharedAssetLibraryRequestKey = "";
+    }
+  }
 }
 
 function addSharedLibraryAsset(asset = {}, { node = true, point = null, silent = false } = {}) {
@@ -742,7 +780,10 @@ function clearLibraryAssetDeepLink() {
 function bindSharedAssetLibraryControls() {
   qs("#canvasAssetLibraryRefresh")?.addEventListener("click", () => loadSharedAssetLibrary().catch((error) => toast(error.message)));
   qs("#canvasAssetLibrarySearch")?.addEventListener("input", (event) => {
-    loadSharedAssetLibrary({ search: event.currentTarget.value, silent: true }).catch((error) => toast(error.message));
+    clearTimeout(sharedAssetLibrarySearchTimer);
+    sharedAssetLibrarySearchTimer = setTimeout(() => {
+      loadSharedAssetLibrary({ search: event.currentTarget.value, silent: true }).catch((error) => toast(error.message));
+    }, 180);
   });
   qs("#canvasAssetLibraryList")?.addEventListener("click", (event) => {
     const useId = event.target.closest("[data-shared-library-use]")?.dataset.sharedLibraryUse;
@@ -5246,13 +5287,33 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
       canvasState.hydrating = false;
       return false;
     }
-    if (!restoreCanvasState(saved.state)) {
+    const restored = restoreCanvasState(saved.state);
+    if (!restored) {
       canvasState.nodes = [];
       canvasState.connections = [];
       canvasState.assets = [];
       canvasState.layoutChanged = false;
       canvasState.viewport = { x: 0, y: 0, scale: 1 };
       canvasState.livenessLibrary = defaultLivenessLibraryState();
+      if (initialCanvasBootstrap && canvasState.canvasId) {
+        api("/api/canvas/state", {
+          method: "POST",
+          body: JSON.stringify({
+            projectId: canvasState.canvasId,
+            name: "Untitled",
+            nextNodeId: 1,
+            viewport: { x: 0, y: 0, scale: 1 },
+            assets: [],
+            nodes: [],
+            connections: [],
+          }),
+        }).then((data) => {
+          canvasState.stateUpdatedAt = data.state?.updatedAt || canvasState.stateUpdatedAt;
+        }).catch((error) => toast(error.message));
+        params.delete("bootstrap");
+        const query = params.toString();
+        window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+      }
     }
     renderProjectTitle();
     syncLivenessLibraryPanel();
@@ -5269,7 +5330,11 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
   canvasState.selectedId = id;
   const urlCanvasId = new URLSearchParams(window.location.search).get("canvas") || "";
   localStorage.setItem("pixelToys.canvasProjectId", id);
-  const project = await api(`/api/project/${id}`);
+  const projectRequest = api(`/api/project/${id}`);
+  const preloadedCanvasRequest = urlCanvasId
+    ? api(`/api/canvas/state?projectId=${encodeURIComponent(urlCanvasId)}`).catch(() => null)
+    : null;
+  const project = await projectRequest;
   if (!videoLoadIsCurrent()) {
     canvasState.hydrating = false;
     return false;
@@ -5279,7 +5344,10 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
   canvasState.canvasId = currentCanvasId || urlCanvasId || "";
   syncCanvasUrl(id, canvasState.canvasId);
   renderProjectTitle();
-  const saved = await api(`/api/canvas/state?projectId=${encodeURIComponent(canvasStorageProjectId())}`);
+  const preloadedCanvas = urlCanvasId === canvasState.canvasId && preloadedCanvasRequest
+    ? await preloadedCanvasRequest
+    : null;
+  const saved = preloadedCanvas || await api(`/api/canvas/state?projectId=${encodeURIComponent(canvasStorageProjectId())}`);
   if (!videoLoadIsCurrent()) {
     canvasState.hydrating = false;
     return false;

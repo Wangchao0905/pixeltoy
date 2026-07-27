@@ -36,6 +36,13 @@ const IMAGE_EXPLORE_STORYBOARD_RECOVERY_LOOKBACK_MS = 36 * 60 * 60 * 1000;
 let initialProjectHandled = false;
 let teamProgressOpenToken = null;
 const INITIAL_EXPLORE_VIEW = normalizeExploreView(new URLSearchParams(window.location.search).get("view"));
+const PROJECT_LIST_CACHE_TTL_MS = 1200;
+let projectListRequest = null;
+let projectListLoadedAt = 0;
+let blankCanvasListRequest = null;
+let assetLibraryRequest = null;
+let assetLibraryRequestKey = "";
+let assetLibrarySearchTimer = null;
 
 function imageExploreStorageKey(user = null) {
   const identity = user?.id || user?.username || "anonymous";
@@ -136,6 +143,7 @@ const state = {
   exploreCanvasFilter: "all",
   exploreScopeFilter: "all",
   blankCanvases: [],
+  blankCanvasesLoaded: false,
   imageStudio: {
     history: readImageExploreHistory(),
     storyboardHistory: readImageExploreStoryboardHistory(),
@@ -186,6 +194,7 @@ const state = {
     assetExtracting: false,
     draftGenerating: false,
     projectCreating: false,
+    canvasCreating: false,
   },
   loadProjectToken: null,
   activeWindowZ: Number(localStorage.getItem(layoutStorageKey(WINDOW_Z_KEY)) || 20),
@@ -512,7 +521,6 @@ async function syncAuthUser() {
     state.imageStudio.storyboardHistory = readImageExploreStoryboardHistory(state.authUser);
     if (data.user?.role === "admin") restoreSuperPixelHistory();
     else state.superPixel.messages = [];
-    renderImageExploreView();
     recoverImageExploreStoryboards().catch(() => {});
     resumeImageExploreGenerations().catch(() => {});
     const authDisplayName = data.user?.role === "admin"
@@ -529,7 +537,7 @@ async function syncAuthUser() {
     exploreAccount?.classList.toggle("hidden", !data.user);
     canvasCard?.classList.toggle("hidden", !data.user?.canvasEnabled);
     if (data.user?.role !== "admin" && state.exploreView === "superpixel") showExploreCanvasHome();
-    if (data.user?.canvasEnabled) loadBlankCanvasList().catch(() => {});
+    if (data.user?.canvasEnabled && state.exploreView === "canvas") loadBlankCanvasList().catch(() => {});
     loadTeam().catch((error) => toast(error.message));
   } catch {
     state.authUser = null;
@@ -537,7 +545,6 @@ async function syncAuthUser() {
     clearLegacyLayoutPreferences();
     state.imageStudio.history = readImageExploreHistory();
     state.imageStudio.storyboardHistory = readImageExploreStoryboardHistory();
-    renderImageExploreView();
     label.textContent = "";
     if (exploreLabel) exploreLabel.textContent = "";
     exploreLoginLink?.classList.remove("hidden");
@@ -690,7 +697,7 @@ async function createTeam(event) {
   form.reset();
   state.assetLibrary.loaded = false;
   await loadAssetLibrary({ silent: true });
-  await loadProjects(false);
+  await loadProjects(false, { force: true });
   renderTeamPanel();
   toast("团队已创建");
 }
@@ -704,8 +711,8 @@ async function joinTeam(event) {
   form.reset();
   state.assetLibrary.loaded = false;
   await loadAssetLibrary({ silent: true });
-  await loadProjects(false);
-  if (userHasCanvasPermission()) await loadBlankCanvasList();
+  await loadProjects(false, { force: true });
+  if (userHasCanvasPermission()) await loadBlankCanvasList({ force: true });
   renderTeamPanel();
   toast("已加入团队");
 }
@@ -718,8 +725,8 @@ async function leaveTeam() {
   state.exploreScopeFilter = "all";
   state.assetLibrary.loaded = false;
   state.assetLibrary.assets = [];
-  await loadProjects(false);
-  if (userHasCanvasPermission()) await loadBlankCanvasList();
+  await loadProjects(false, { force: true });
+  if (userHasCanvasPermission()) await loadBlankCanvasList({ force: true });
   renderTeamPanel();
   toast("已退出团队");
 }
@@ -1475,64 +1482,76 @@ function blankCanvasTimeLabel(iso) {
   return new Date(t).toLocaleDateString();
 }
 
-async function loadBlankCanvasList() {
-  const node = $("#blankCanvasList");
-  const data = await api("/api/canvas/blank-list");
-  const canvases = data.canvases || [];
-  state.blankCanvases = canvases;
-  renderExploreCanvasLibrary();
-  if (!node) return;
-  const newTile = `
-    <button class="blank-canvas-new" type="button" data-canvas-new aria-label="新建项目">
-      <span class="blank-canvas-new-plus">+</span>
-      <span class="blank-canvas-new-label">新建项目</span>
-    </button>`;
-  const cards = canvases
-    .map(
-      (item) => `
-      <div class="blank-canvas-card" data-canvas-id="${escapeAttr(item.id)}">
-        <div class="blank-canvas-cover" data-canvas-open="${escapeAttr(item.id)}" role="button" tabindex="0" aria-label="打开 ${escapeAttr(item.name)}">
-          ${item.cover ? `<img src="${escapeAttr(item.cover)}" alt="" loading="lazy" decoding="async" />` : `<span class="blank-canvas-cover-empty">${item.nodeCount || 0} 个节点</span>`}
-          ${item.canDelete ? `<button class="blank-canvas-del" type="button" data-canvas-delete="${escapeAttr(item.id)}" aria-label="删除" title="删除">✕</button>` : ""}
-        </div>
-        <div class="blank-canvas-caption">
-          <strong data-canvas-title="${escapeAttr(item.id)}" title="双击重命名">${escapeHtml(item.name)}</strong>
-          <span>${item.scope === "team" ? "Team" : "Personal"} · 编辑于 ${escapeHtml(blankCanvasTimeLabel(item.updatedAt) || "刚刚")}</span>
-        </div>
-      </div>`,
-    )
-    .join("");
-  node.innerHTML = newTile + cards;
-  node.querySelector("[data-canvas-new]")?.addEventListener("click", () => openBlankCanvasProject());
-  node.querySelectorAll("[data-canvas-open]").forEach((cover) => {
-    const open = () => {
-      window.location.href = `/canvas.html?canvas=${encodeURIComponent(cover.dataset.canvasOpen)}`;
-    };
-    cover.addEventListener("click", open);
-    cover.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        open();
-      }
+async function loadBlankCanvasList({ force = false } = {}) {
+  if (!force && state.blankCanvasesLoaded) return state.blankCanvases;
+  if (blankCanvasListRequest) return blankCanvasListRequest;
+  const request = (async () => {
+    const node = $("#blankCanvasList");
+    const data = await api("/api/canvas/blank-list");
+    const canvases = data.canvases || [];
+    state.blankCanvases = canvases;
+    state.blankCanvasesLoaded = true;
+    renderExploreCanvasLibrary();
+    if (!node) return canvases;
+    const newTile = `
+      <button class="blank-canvas-new" type="button" data-canvas-new aria-label="新建项目">
+        <span class="blank-canvas-new-plus">+</span>
+        <span class="blank-canvas-new-label">新建项目</span>
+      </button>`;
+    const cards = canvases
+      .map(
+        (item) => `
+        <div class="blank-canvas-card" data-canvas-id="${escapeAttr(item.id)}">
+          <div class="blank-canvas-cover" data-canvas-open="${escapeAttr(item.id)}" role="button" tabindex="0" aria-label="打开 ${escapeAttr(item.name)}">
+            ${item.cover ? `<img src="${escapeAttr(item.cover)}" alt="" loading="lazy" decoding="async" />` : `<span class="blank-canvas-cover-empty">${item.nodeCount || 0} 个节点</span>`}
+            ${item.canDelete ? `<button class="blank-canvas-del" type="button" data-canvas-delete="${escapeAttr(item.id)}" aria-label="删除" title="删除">✕</button>` : ""}
+          </div>
+          <div class="blank-canvas-caption">
+            <strong data-canvas-title="${escapeAttr(item.id)}" title="双击重命名">${escapeHtml(item.name)}</strong>
+            <span>${item.scope === "team" ? "Team" : "Personal"} · 编辑于 ${escapeHtml(blankCanvasTimeLabel(item.updatedAt) || "刚刚")}</span>
+          </div>
+        </div>`,
+      )
+      .join("");
+    node.innerHTML = newTile + cards;
+    node.querySelector("[data-canvas-new]")?.addEventListener("click", () => openBlankCanvasProject());
+    node.querySelectorAll("[data-canvas-open]").forEach((cover) => {
+      const open = () => {
+        window.location.href = `/canvas.html?canvas=${encodeURIComponent(cover.dataset.canvasOpen)}`;
+      };
+      cover.addEventListener("click", open);
+      cover.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      });
     });
-  });
-  node.querySelectorAll("[data-canvas-delete]").forEach((button) => {
-    button.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      const id = button.dataset.canvasDelete;
-      if (!confirm("删除这个画布项目？此操作不可恢复。")) return;
-      try {
-        await api("/api/canvas/blank-delete", { method: "POST", body: JSON.stringify({ projectId: id }) });
-        toast("已删除");
-        loadBlankCanvasList().catch(() => {});
-      } catch (error) {
-        toast(error.message);
-      }
+    node.querySelectorAll("[data-canvas-delete]").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        const id = button.dataset.canvasDelete;
+        if (!confirm("删除这个画布项目？此操作不可恢复。")) return;
+        try {
+          await api("/api/canvas/blank-delete", { method: "POST", body: JSON.stringify({ projectId: id }) });
+          toast("已删除");
+          loadBlankCanvasList({ force: true }).catch(() => {});
+        } catch (error) {
+          toast(error.message);
+        }
+      });
     });
-  });
-  node.querySelectorAll("[data-canvas-title]").forEach((strong) => {
-    strong.addEventListener("dblclick", () => startRenameBlankCanvas(strong, strong.dataset.canvasTitle));
-  });
+    node.querySelectorAll("[data-canvas-title]").forEach((strong) => {
+      strong.addEventListener("dblclick", () => startRenameBlankCanvas(strong, strong.dataset.canvasTitle));
+    });
+    return canvases;
+  })();
+  blankCanvasListRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (blankCanvasListRequest === request) blankCanvasListRequest = null;
+  }
 }
 
 function startRenameBlankCanvas(strongEl, id) {
@@ -1695,10 +1714,11 @@ async function createEmptyProject() {
         assetAnalyzerModel: state.assetAnalyzerModel,
         dialogueLanguage: state.dialogueLanguage,
         autoDraft: false,
+        responseMode: "summary",
       }),
     });
     openProjectFromState(data);
-    loadProjects(false).catch((error) => toast(error.message));
+    loadProjects(false, { force: true }).catch((error) => toast(error.message));
   } catch (error) {
     toast(error.message);
   } finally {
@@ -1844,43 +1864,36 @@ function createBlankCanvasId() {
   return `canvas_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function openBlankCanvasProject() {
-  const canvasName = "Untitled";
+function openBlankCanvasProject() {
+  if (state.uiBusy.canvasCreating) return;
+  state.uiBusy.canvasCreating = true;
   const canvasId = createBlankCanvasId();
-  try {
-    await api("/api/canvas/state", {
-      method: "POST",
-      body: JSON.stringify({
-        projectId: canvasId,
-        name: canvasName,
-        nextNodeId: 1,
-        viewport: { x: 0, y: 0, scale: 1 },
-        assets: [],
-        nodes: [],
-        connections: [],
-      }),
-    });
-    localStorage.setItem("pixelToys.lastBlankCanvasId", canvasId);
-    window.location.href = `/canvas.html?canvas=${encodeURIComponent(canvasId)}`;
-  } catch (error) {
-    toast(error.message);
-  }
+  document.querySelectorAll("[data-canvas-new], #openBlankCanvasProject").forEach((button) => {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+  });
+  localStorage.setItem("pixelToys.lastBlankCanvasId", canvasId);
+  window.location.href = `/canvas.html?canvas=${encodeURIComponent(canvasId)}&bootstrap=1`;
 }
 
 function openProjectFromState(data) {
   const id = data?.project?.id || "";
   if (!id) throw new Error("项目创建成功，但没有返回项目 ID");
+  const nextState = data?.loading ? projectShellStateFromSummary(data.project) : data;
   state.modernStudio.focus = "assets";
   state.selectedId = id;
   initialProjectHandled = true;
   localStorage.setItem("pixelToys.canvasProjectId", id);
   syncProjectUrl(id);
   updateGenerationCanvasLinks();
-  setProjectState(data);
-  reconcileOptimisticAssetJobs(data);
+  setProjectState(nextState);
+  reconcileOptimisticAssetJobs(nextState);
   renderWorkspace();
   renderProjectList();
   showStudio();
+  if (data?.loading) {
+    loadProject(id, { openStudio: false }).catch((error) => toast(error.message));
+  }
 }
 
 function resetProjectScopedUiState() {
@@ -1901,7 +1914,27 @@ function resetProjectScopedUiState() {
   state.assetUploadTargetId = "";
 }
 
-async function loadProjects(keepSelection = true) {
+function loadProjects(keepSelection = true, { force = false } = {}) {
+  const fresh = Date.now() - projectListLoadedAt < PROJECT_LIST_CACHE_TTL_MS;
+  if (projectListRequest) return projectListRequest;
+  if (!force && fresh) return Promise.resolve(state.projects);
+  const request = loadProjectsOnce(keepSelection);
+  projectListRequest = request;
+  return request.then(
+    (value) => {
+      if (projectListRequest === request) projectListLoadedAt = Date.now();
+      return value;
+    },
+    (error) => {
+      if (projectListRequest === request) projectListLoadedAt = 0;
+      throw error;
+    },
+  ).finally(() => {
+    if (projectListRequest === request) projectListRequest = null;
+  });
+}
+
+async function loadProjectsOnce(keepSelection = true) {
   let data;
   try {
     data = await api("/api/projects");
@@ -2190,7 +2223,6 @@ function renderExploreHome() {
     button.setAttribute("aria-selected", active ? "true" : "false");
   });
   $("[data-explore-primary-canvas]")?.classList.toggle("is-active", state.exploreCanvasFilter !== "productions");
-  renderExploreCanvasLibrary();
   setExploreView(state.exploreView);
   requestAnimationFrame(centerExploreActiveNav);
 }
@@ -2200,7 +2232,7 @@ async function moveProjectToTeam(projectId) {
   const data = await api(`/api/project/${projectId}/team`, { method: "POST", body: JSON.stringify({}) });
   state.assetLibrary.loaded = false;
   await loadAssetLibrary({ silent: true });
-  await loadProjects(false);
+  await loadProjects(false, { force: true });
   renderTeamPanel();
   const sharedCount = Number(data.sharedAssetCount || 0);
   toast(sharedCount ? `项目已加入团队，已共享 ${sharedCount} 个资产` : "项目已加入团队，当前没有可共享的资产");
@@ -2208,7 +2240,7 @@ async function moveProjectToTeam(projectId) {
 
 async function duplicateProjectAsPersonal(projectId) {
   const data = await api(`/api/project/${projectId}/duplicate-personal`, { method: "POST", body: JSON.stringify({}) });
-  await loadProjects(false);
+  await loadProjects(false, { force: true });
   if (data.project?.id) await loadProject(data.project.id);
   toast("已创建个人副本");
 }
@@ -2216,20 +2248,20 @@ async function duplicateProjectAsPersonal(projectId) {
 async function moveBlankCanvasToTeam(projectId) {
   if (!window.confirm("加入团队后不能直接转回个人画布，是否继续？")) return;
   await api("/api/canvas/blank-team", { method: "POST", body: JSON.stringify({ projectId }) });
-  await loadBlankCanvasList();
+  await loadBlankCanvasList({ force: true });
   toast("画布已加入团队");
 }
 
 async function duplicateBlankCanvasAsPersonal(projectId) {
   const data = await api("/api/canvas/blank-duplicate-personal", { method: "POST", body: JSON.stringify({ projectId }) });
-  await loadBlankCanvasList();
+  await loadBlankCanvasList({ force: true });
   if (data.canvas?.id) window.location.href = `/canvas.html?canvas=${encodeURIComponent(data.canvas.id)}`;
 }
 
 async function deleteBlankCanvasFromHome(projectId) {
   if (!window.confirm("删除这个画布项目？此操作不可恢复。")) return;
   await api("/api/canvas/blank-delete", { method: "POST", body: JSON.stringify({ projectId }) });
-  await loadBlankCanvasList();
+  await loadBlankCanvasList({ force: true });
   toast("已删除");
 }
 
@@ -2610,6 +2642,23 @@ function superPixelAssetCardHtml(asset) {
   </article>`;
 }
 
+function renderHtmlInBatches(node, items, renderItem, { batchSize = 24, onComplete = null } = {}) {
+  if (!node) return;
+  const token = (Number(node.dataset.renderToken) || 0) + 1;
+  node.dataset.renderToken = String(token);
+  node.innerHTML = "";
+  let index = 0;
+  const append = () => {
+    if (node.dataset.renderToken !== String(token)) return;
+    const end = Math.min(items.length, index + batchSize);
+    if (end > index) node.insertAdjacentHTML("beforeend", items.slice(index, end).map(renderItem).join(""));
+    index = end;
+    if (index < items.length) requestAnimationFrame(append);
+    else onComplete?.();
+  };
+  append();
+}
+
 function renderSuperPixelAssetRail() {
   const rail = $("#superPixelAssetRail");
   const list = $("#superPixelAssetRailList");
@@ -2619,8 +2668,9 @@ function renderSuperPixelAssetRail() {
   const signature = JSON.stringify(assets.map((asset) => [asset.id, asset.name, asset.url, asset.localUrl, asset.previewUrl]));
   if (list.dataset.assetSig !== signature) {
     list.dataset.assetSig = signature;
-    list.innerHTML = assets.map(superPixelAssetCardHtml).join("");
-    bindManualAssetControls(rail, null);
+    renderHtmlInBatches(list, assets, superPixelAssetCardHtml, {
+      onComplete: () => bindManualAssetControls(rail, null),
+    });
   }
   empty.classList.toggle("hidden", assets.length > 0);
 }
@@ -2639,9 +2689,8 @@ function renderAssetLibraryView() {
   const gallery = $("#assetLibraryGallery");
   const empty = $("#assetLibraryEmpty");
   if (!gallery || !empty) return;
-  gallery.innerHTML = state.assetLibrary.assets.map((asset) => assetLibraryCardHtml(asset)).join("");
+  renderHtmlInBatches(gallery, state.assetLibrary.assets, (asset) => assetLibraryCardHtml(asset));
   empty.classList.toggle("hidden", state.assetLibrary.assets.length > 0);
-  renderSuperPixelAssetRail();
 }
 
 function renderWorkflowAssetLibrary() {
@@ -2667,22 +2716,42 @@ function renderWorkflowAssetLibrary() {
     const query = String(state.assetLibrary.search || "").trim().toLowerCase();
     return !query || `${asset.name || ""} ${asset.prompt || ""}`.toLowerCase().includes(query);
   });
-  list.innerHTML = visible.length
-    ? visible.map((asset) => assetLibraryCardHtml(asset, { workflow: true })).join("")
-    : `<div class="asset-empty-state">素材库暂无可用图片</div>`;
+  if (!visible.length) {
+    list.innerHTML = `<div class="asset-empty-state">素材库暂无可用图片</div>`;
+    return;
+  }
+  renderHtmlInBatches(list, visible, (asset) => assetLibraryCardHtml(asset, { workflow: true }));
 }
 
 async function loadAssetLibrary({ search = state.assetLibrary.search, silent = false } = {}) {
-  state.assetLibrary.search = String(search || "");
-  const params = new URLSearchParams();
-  if (state.assetLibrary.search) params.set("search", state.assetLibrary.search);
-  const data = await api(`/api/asset-library${params.toString() ? `?${params}` : ""}`);
-  state.assetLibrary.assets = Array.isArray(data.assets) ? data.assets : [];
-  state.assetLibrary.loaded = true;
-  renderAssetLibraryView();
-  renderWorkflowAssetLibrary();
-  if (!silent) toast(`素材库已加载 ${state.assetLibrary.assets.length} 个资产`);
-  return state.assetLibrary.assets;
+  const nextSearch = String(search || "");
+  const requestKey = nextSearch;
+  if (assetLibraryRequest && assetLibraryRequestKey === requestKey) return assetLibraryRequest;
+  state.assetLibrary.search = nextSearch;
+  const request = (async () => {
+    const params = new URLSearchParams();
+    if (nextSearch) params.set("search", nextSearch);
+    const data = await api(`/api/asset-library${params.toString() ? `?${params}` : ""}`);
+    // A slower search response must not overwrite the result of a newer query.
+    if (state.assetLibrary.search !== nextSearch) return state.assetLibrary.assets;
+    state.assetLibrary.assets = Array.isArray(data.assets) ? data.assets : [];
+    state.assetLibrary.loaded = true;
+    if (state.exploreView === "library") renderAssetLibraryView();
+    if (state.exploreView === "superpixel") renderSuperPixelAssetRail();
+    renderWorkflowAssetLibrary();
+    if (!silent) toast(`素材库已加载 ${state.assetLibrary.assets.length} 个资产`);
+    return state.assetLibrary.assets;
+  })();
+  assetLibraryRequest = request;
+  assetLibraryRequestKey = requestKey;
+  try {
+    return await request;
+  } finally {
+    if (assetLibraryRequest === request) {
+      assetLibraryRequest = null;
+      assetLibraryRequestKey = "";
+    }
+  }
 }
 
 async function removeAssetLibraryAsset(id) {
@@ -2744,9 +2813,21 @@ function setExploreView(view = "canvas") {
           : false;
     button.classList.toggle("is-active", active);
   });
-  renderImageExploreView();
-  renderAssetLibraryView();
-  renderSuperPixelAssetRail();
+  if (state.exploreView === "canvas") {
+    renderExploreCanvasLibrary();
+    if (!projectListRequest && !projectListLoadedAt) {
+      loadProjects().catch((error) => toast(error.message));
+    }
+    if (state.authUser?.canvasEnabled && !state.blankCanvasesLoaded) {
+      loadBlankCanvasList().catch((error) => toast(error.message));
+    }
+  } else if (state.exploreView === "image") {
+    renderImageExploreView();
+  } else if (state.exploreView === "library") {
+    renderAssetLibraryView();
+  } else if (state.exploreView === "superpixel") {
+    renderSuperPixelAssetRail();
+  }
   if (state.exploreView === "superpixel") resumeSuperPixelGenerationPolls();
   if ((state.exploreView === "library" || state.exploreView === "superpixel") && !state.assetLibrary.loaded) {
     loadAssetLibrary({ silent: true }).catch((error) => toast(error.message));
@@ -3811,7 +3892,6 @@ function bindSuperPixel() {
 
 function showExploreCanvasHome() {
   setExploreView("canvas");
-  renderExploreHome();
 }
 
 function replaceImageExploreHistoryItem(id, patch = {}) {
@@ -4204,6 +4284,7 @@ async function openExploreTool(tool) {
     return;
   }
   const mode = PixelToysWorkspaceShell.workspaceModeForTool(tool);
+  if (!state.selectedId && !state.projects.length) await loadProjects();
   const projectId = state.selectedId || state.projects[0]?.id || "";
   if (!projectId) {
     openProjectModal();
@@ -4849,7 +4930,7 @@ async function deleteProject(project) {
     renderWorkspace();
     showProjectHome();
   }
-  await loadProjects(false);
+  await loadProjects(false, { force: true });
   toast("项目已删除");
 }
 
@@ -4886,7 +4967,7 @@ async function persistProjectDisplayName(displayName) {
   });
   setProjectState(data);
   renderWorkspace();
-  await loadProjects(false);
+  await loadProjects(false, { force: true });
 }
 
 function setModernProjectMenu(open) {
@@ -5422,7 +5503,7 @@ async function addSeriesEpisode() {
     }),
   });
   openProjectFromState(data);
-  await loadProjects(false);
+  await loadProjects(false, { force: true });
 }
 
 function modernShotMediaMarkup(data, shot, index) {
@@ -8994,7 +9075,7 @@ async function runSeriesPreflight() {
 
 function bind() {
   bindStudioButtonFeedback();
-  $("#refreshProjects").addEventListener("click", () => loadProjects(false).catch((error) => toast(error.message)));
+  $("#refreshProjects").addEventListener("click", () => loadProjects(false, { force: true }).catch((error) => toast(error.message)));
   $("#logoutButton")?.addEventListener("click", () => logout().catch((error) => toast(error.message)));
   $("#changePasswordButton")?.addEventListener("click", openChangePasswordDialog);
   $("#changePasswordForm")?.addEventListener("submit", (event) => submitPasswordChange(event).catch((error) => toast(error.message)));
@@ -9049,7 +9130,7 @@ function bind() {
     if (event.target.closest("[data-explore-canvas-new]")) return openBlankCanvasProject();
   });
   bindSuperPixel();
-  $("#exploreRefresh")?.addEventListener("click", () => loadProjects(false).catch((error) => toast(error.message)));
+  $("#exploreRefresh")?.addEventListener("click", () => loadProjects(false, { force: true }).catch((error) => toast(error.message)));
   $("#exploreAccount")?.addEventListener("click", openPersonalCenter);
   $("[data-close-personal-center]")?.addEventListener("click", closePersonalCenter);
   $("#personalCenterPasswordButton")?.addEventListener("click", () => {
@@ -9226,7 +9307,10 @@ function bind() {
   });
   $("#assetLibraryRefresh")?.addEventListener("click", () => loadAssetLibrary().catch((error) => toast(error.message)));
   $("#assetLibrarySearch")?.addEventListener("input", (event) => {
-    loadAssetLibrary({ search: event.currentTarget.value, silent: true }).catch((error) => toast(error.message));
+    clearTimeout(assetLibrarySearchTimer);
+    assetLibrarySearchTimer = setTimeout(() => {
+      loadAssetLibrary({ search: event.currentTarget.value, silent: true }).catch((error) => toast(error.message));
+    }, 180);
   });
   $("#assetLibraryGallery")?.addEventListener("click", (event) => {
     const removeId = event.target.closest("[data-asset-library-remove]")?.dataset.assetLibraryRemove;
@@ -9244,7 +9328,10 @@ function bind() {
   });
   $("#workflowAssetLibraryRefresh")?.addEventListener("click", () => loadAssetLibrary().catch((error) => toast(error.message)));
   $("#workflowAssetLibrarySearch")?.addEventListener("input", (event) => {
-    loadAssetLibrary({ search: event.currentTarget.value, silent: true }).catch((error) => toast(error.message));
+    clearTimeout(assetLibrarySearchTimer);
+    assetLibrarySearchTimer = setTimeout(() => {
+      loadAssetLibrary({ search: event.currentTarget.value, silent: true }).catch((error) => toast(error.message));
+    }, 180);
   });
   $("#workflowAssetLibraryList")?.addEventListener("click", (event) => {
     const useId = event.target.closest("[data-workflow-library-use]")?.dataset.workflowLibraryUse;
@@ -9269,7 +9356,7 @@ function bind() {
   const goBackToProjects = () => {
     syncProjectUrl("");
     showProjectHome();
-    loadProjects(false).catch((error) => toast(error.message));
+    loadProjects(false, { force: true }).catch((error) => toast(error.message));
   };
   $("#backToProjects").addEventListener("click", goBackToProjects);
   $("#studioModernOverviewButton")?.addEventListener("click", () => {
@@ -9754,13 +9841,14 @@ function bind() {
       payload.assetAnalyzerModel = state.assetAnalyzerModel;
       payload.dialogueLanguage = state.dialogueLanguage;
       payload.autoDraft = false;
+      payload.responseMode = "summary";
       const createStatus = $("#projectCreateStatus");
       if (createStatus) createStatus.textContent = "正在创建项目目录和制作台。";
       const data = await api("/api/projects", { method: "POST", body: JSON.stringify(payload) });
       toast("项目已创建，可在制作台继续生成草稿和提取资产");
       closeProjectModal();
       openProjectFromState(data);
-      loadProjects(false).catch((error) => toast(error.message));
+      loadProjects(false, { force: true }).catch((error) => toast(error.message));
     } catch (error) {
       toast(error.message);
     } finally {
@@ -9853,7 +9941,8 @@ if (WORKFLOW_PREVIEW_MODE) {
   // 先闪一下项目列表首页。项目数据稍后由 loadProjects→loadProject 填充;若该项目不存在,
   // loadProjects 内会回退到首页。
   if (INITIAL_PROJECT_ID) showStudio();
-  loadProjects().catch((error) => toast(error.message));
+  const needsProjectIndex = !!INITIAL_PROJECT_ID || state.exploreView === "canvas";
+  if (needsProjectIndex) loadProjects().catch((error) => toast(error.message));
 }
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && state.exploreEnabled) setupExploreVideoPlayback();

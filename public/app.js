@@ -5005,6 +5005,8 @@ function renderModernAssetGenerationControls(data = state.project) {
   const targetStillExists = previousTarget && items.some((item) => item.id === previousTarget);
   targetSelect.value = targetStillExists ? previousTarget : items[0]?.id || "";
   state.assetUploadTargetId = targetSelect.value || "";
+  syncAssetGenerationRange();
+  updateAssetGenerateButtonHint(items.length > 0);
 }
 
 function modernAssetGenerationStatus(data = state.project) {
@@ -5943,6 +5945,37 @@ function assetManifestRenderSignature(manifest, { extracting = false } = {}) {
   });
 }
 
+const ASSET_GENERATION_RANGE_HINTS = Object.freeze({
+  missing: "仅生成缺失的资产图",
+  selected: "只生成已选中的资产",
+  failed: "重试失败的资产图",
+  all: "重新生成全部资产图",
+});
+
+function syncAssetGenerationRange(value = "") {
+  const modernSelect = $("#modernAssetGenerateRange");
+  const legacySelect = $("#assetGenerateRange");
+  const range = value || modernSelect?.value || legacySelect?.value || "missing";
+  if (modernSelect && modernSelect.value !== range) modernSelect.value = range;
+  if (legacySelect && legacySelect.value !== range) legacySelect.value = range;
+  return range;
+}
+
+function updateAssetGenerateButtonHint(canGenerate = !!state.project?.assetManifest?.items?.length) {
+  const button = document.querySelector("[data-job='assets']");
+  const modernButton = $("#modernAssetGenerateAssets");
+  const range = syncAssetGenerationRange();
+  const hint = canGenerate
+    ? range === "selected" && !state.selectedAssetIds.size
+      ? "请先勾选要生成的资产"
+      : ASSET_GENERATION_RANGE_HINTS[range] || "生成资产图"
+    : "请先提取资产，再生成资产图";
+  [button, modernButton].filter(Boolean).forEach((target) => {
+    target.title = `生成资产图：${hint}`;
+    target.setAttribute("aria-label", `生成资产图（${hint}）`);
+  });
+}
+
 function renderAssetManifest(manifest) {
   const overview = $("#assetManifestOverview");
   const status = $("#assetManifestStatus");
@@ -5974,12 +6007,17 @@ function renderAssetManifest(manifest) {
     // 提取后即可生成：只要解析出资产(items)就点亮，不再要求单独"确认"（确认门槛已按需求去掉，提取时自动确认）。
     const canGenerate = !!items.length;
     generateAssetBtn.disabled = extracting || !canGenerate;
-    generateAssetBtn.title = extracting ? "资产解析运行中" : canGenerate ? "生成资产图" : "请先提取资产";
+    updateAssetGenerateButtonHint(canGenerate);
+    if (extracting) {
+      generateAssetBtn.title = "资产解析运行中";
+      generateAssetBtn.setAttribute("aria-label", "资产解析运行中");
+    }
   }
   const modernGenerateAssetBtn = $("#modernAssetGenerateAssets");
   if (modernGenerateAssetBtn) {
     modernGenerateAssetBtn.disabled = generateAssetBtn ? generateAssetBtn.disabled : true;
     modernGenerateAssetBtn.title = generateAssetBtn?.title || "当前没有可执行的资产图生成任务";
+    modernGenerateAssetBtn.setAttribute("aria-label", generateAssetBtn?.getAttribute("aria-label") || "生成资产图");
   }
   const signature = assetManifestRenderSignature(manifest, { extracting });
   if (overview.dataset.manifestSig === signature && overview.childElementCount > 0) return;
@@ -8320,6 +8358,38 @@ async function uploadBoundAsset(event) {
   toast(data.result?.message || (mode === "local" ? "本地资产已添加" : "资产图已绑定"));
 }
 
+async function uploadModernManualAsset(event) {
+  event.preventDefault();
+  if (!state.selectedId) throw new Error("请先打开一个项目");
+  const file = $("#modernManualAssetUploadFile")?.files?.[0];
+  const label = $("#modernManualAssetUploadLabel")?.value.trim() || "";
+  const type = $("#modernManualAssetUploadType")?.value || "Prop";
+  if (!label) throw new Error("请填写资产名称");
+  if (!file) throw new Error("请选择资产图文件");
+  if (!/\.(png|jpe?g|webp)$/i.test(file.name)) throw new Error("只支持 PNG / JPG / WEBP");
+  const status = $("#modernManualAssetUploadStatus");
+  if (status) status.textContent = "正在上传，完成后请在解析结果中确认分类…";
+  const data = await api(`/api/project/${state.selectedId}/asset-upload-local`, {
+    method: "POST",
+    body: JSON.stringify({
+      type,
+      label,
+      filename: file.name,
+      contentBase64: await fileBase64(file),
+      confirm: false,
+      generate: false,
+    }),
+  });
+  setProjectState(data.state);
+  $("#modernManualAssetUploadLabel").value = "";
+  $("#modernManualAssetUploadFile").value = "";
+  $("#modernManualAssetUploadName").textContent = "PNG / JPG / WEBP";
+  renderWorkspace();
+  $("#modernManualAssetUploadPanel").open = true;
+  if ($("#modernManualAssetUploadStatus")) $("#modernManualAssetUploadStatus").textContent = "已上传，解析结果中标记为待确认；确认分类后才能继续下一步。";
+  toast(data.result?.message || "资产图已上传，等待确认分类");
+}
+
 async function uploadAssetStyleReferenceFile(file, input = null) {
   if (!file || !state.selectedId) return;
   if (!/\.(png|jpe?g|webp)$/i.test(file.name)) {
@@ -9243,8 +9313,10 @@ function bind() {
   $("#modernAssetGenerateAssets")?.addEventListener("click", (event) => {
     const target = document.querySelector("[data-job='assets']");
     if (!target) return toast("当前没有可执行的资产图生成任务");
+    syncAssetGenerationRange($("#modernAssetGenerateRange")?.value);
     if (target.disabled) return toast(target.title || "请先提取资产，再生成资产图");
     withStudioButtonFeedback(event.currentTarget, () => {
+      syncAssetGenerationRange($("#modernAssetGenerateRange")?.value);
       if (target.disabled) return toast(target.title || "请先提取资产，再生成资产图");
       target.click();
     }).catch((error) => toast(error.message));
@@ -9294,6 +9366,17 @@ function bind() {
     $("#assetUploadName").textContent = file ? file.name : "PNG / JPG / WEBP";
     state.assetUploadTargetId = $("#assetUploadTarget")?.value || "";
     updateAssetUploadHint();
+  });
+  $("#modernManualAssetUploadFile")?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    $("#modernManualAssetUploadName").textContent = file ? file.name : "PNG / JPG / WEBP";
+  });
+  $("#modernManualAssetUpload")?.addEventListener("submit", (event) => {
+    const button = event.currentTarget.querySelector("button[type='submit']");
+    withStudioButtonFeedback(button, () => uploadModernManualAsset(event)).catch((error) => {
+      if ($("#modernManualAssetUploadStatus")) $("#modernManualAssetUploadStatus").textContent = "上传失败，请检查图片格式后重试。";
+      toast(error.message);
+    });
   });
   $("#assetUploadMode")?.addEventListener("change", () => renderAssetUploadMode());
   $("#assetUploadLabel")?.addEventListener("input", () => updateAssetUploadHint());
@@ -9395,6 +9478,14 @@ function bind() {
   });
   $("#assetStylePreset")?.addEventListener("change", persistAssetStyleFromControls);
   $("#assetStyleCustom")?.addEventListener("input", persistAssetStyleFromControls);
+  $("#assetGenerateRange")?.addEventListener("change", (event) => {
+    syncAssetGenerationRange(event.currentTarget.value);
+    updateAssetGenerateButtonHint();
+  });
+  $("#modernAssetGenerateRange")?.addEventListener("change", (event) => {
+    syncAssetGenerationRange(event.currentTarget.value);
+    updateAssetGenerateButtonHint();
+  });
   $$("input[name='draftDialogueLanguage']").forEach((input) => {
     input.addEventListener("change", () => changeDialogueLanguage(input.value).catch((error) => toast(error.message)));
   });

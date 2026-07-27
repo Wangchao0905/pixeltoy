@@ -6054,10 +6054,13 @@ function addManualAsset(episodeRoot, body = {}) {
       ],
     },
   });
-  nextManifest.confirmed = true;
-  nextManifest.confirmedAt = manifest.confirmedAt || new Date().toISOString();
+  const shouldConfirm = body.confirm !== false;
+  nextManifest.confirmed = shouldConfirm;
+  nextManifest.confirmedAt = shouldConfirm ? manifest.confirmedAt || new Date().toISOString() : "";
   const normalized = writeAssetManifest(episodeRoot, nextManifest);
-  const binding = bindManualAssetToConfig(episodeRoot, manualAsset);
+  const binding = shouldConfirm
+    ? bindManualAssetToConfig(episodeRoot, manualAsset)
+    : { updated: false, boundShots: [], reason: "资产分类尚未确认" };
   return {
     asset: normalized.items.find((item) => item.id === id),
     binding,
@@ -6079,6 +6082,7 @@ function uploadLocalAsset(episodeRoot, body = {}) {
     description: compactLine(body.description || `本地上传的${type}资产图`),
     evidence: compactLine(body.evidence || "用户本地上传"),
     generate: false,
+    confirm: body.confirm !== false,
   });
   const upload = uploadBoundAsset(episodeRoot, {
     assetId: created.asset.id,
@@ -6090,7 +6094,9 @@ function uploadLocalAsset(episodeRoot, body = {}) {
     manifest: created.manifest,
     binding: created.binding,
     upload,
-    message: `已添加本地资产：${created.asset.label}，可直接作为视频参考图使用`,
+    message: created.manifest.confirmed
+      ? `已添加本地资产：${created.asset.label}，可直接作为视频参考图使用`
+      : `已上传资产图：${created.asset.label}，请确认分类后继续`,
   };
 }
 

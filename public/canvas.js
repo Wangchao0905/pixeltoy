@@ -197,6 +197,15 @@ const VIDEO_PREVIEW_RATIOS = {
   "21:9": "21 / 9",
   adaptive: "9 / 16",
 };
+const VIDEO_PREVIEW_WIDTHS = Object.freeze({
+  "9:16": 196,
+  "16:9": 420,
+  "3:4": 240,
+  "4:3": 390,
+  "1:1": 300,
+  "21:9": 500,
+  adaptive: 196,
+});
 const CANVAS_NODE_RATIO_DIMENSIONS = Object.freeze({
   "9:16": { width: 9, height: 16, preferredWidth: 420 },
   "16:9": { width: 16, height: 9, preferredWidth: 620 },
@@ -2060,12 +2069,15 @@ function ratioSizedNodeDimensions(node = {}, kind = "video") {
       };
     }
     const width = clampNodeDimension(VIDEO_EDITOR_DEFAULT_WIDTH, VIDEO_NODE_MIN_WIDTH, VIDEO_NODE_MAX_WIDTH, VIDEO_EDITOR_DEFAULT_WIDTH);
-    const previewHeight = Math.round(width * ratioSize.height / ratioSize.width);
+    const previewWidth = Math.min(Math.round(width * 0.68), VIDEO_PREVIEW_WIDTHS[ratio] || VIDEO_PREVIEW_WIDTHS[VIDEO_NODE_DEFAULTS.ratio]);
+    const previewHeight = Math.round(previewWidth * ratioSize.height / ratioSize.width);
     return {
       width,
-      // Keep the editor shell stable. The selected ratio is applied inside the
-      // preview slot, which is capped to the available media area in CSS.
-      height: clampNodeDimension(VIDEO_EDITOR_DEFAULT_HEIGHT, VIDEO_NODE_MIN_HEIGHT, VIDEO_NODE_MAX_HEIGHT, VIDEO_EDITOR_DEFAULT_HEIGHT),
+      // The prompt composer has a fixed height; only the media area grows with
+      // the selected ratio so portrait shots do not leave horizontal shots
+      // with a large empty tail.
+      height: clampNodeDimension(previewHeight + 386, VIDEO_NODE_MIN_HEIGHT, VIDEO_NODE_MAX_HEIGHT, VIDEO_EDITOR_DEFAULT_HEIGHT),
+      previewWidth,
       previewHeight,
     };
   }

@@ -40,6 +40,8 @@ assert.match(
   "从指定素材进入画布时仍需先加载完整素材库",
 );
 assert.match(canvas, /function clearLibraryAssetDeepLink\(\)/, "素材深链处理完成后必须从 URL 清除，避免刷新重复打开素材库");
+assert.match(canvas, /function promoteStandaloneCanvas\(\{ force = false \} = \{\}\)/, "独立画布首次进入时必须升级为可在项目页展示的个人画布");
+assert.match(canvas, /promoteStandaloneCanvas\(\{ force: !!libraryAssetId \}\)/, "素材深链进入独立画布时必须先创建可持久化的画布 ID");
 assert.match(canvas, /asset\.scope === "team"/);
 assert.match(canvas, /function isCanvasLibraryImageAsset\(/);
 assert.doesNotMatch(canvas, /\.filter\(isImageGeneratedLibraryAsset\)/, "画布素材库不得只显示 Image 生成资产");

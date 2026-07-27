@@ -352,6 +352,40 @@ function serializableCanvasState() {
   };
 }
 
+function createCanvasProjectId() {
+  return `canvas_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+let standalonePromotionPromise = null;
+
+function shouldPromoteStandaloneCanvas(force = false) {
+  return !canvasState.selectedId
+    && !canvasState.canvasId
+    && !initialCanvasId
+    && (force || canvasState.assets.length > 0 || canvasState.nodes.length > 0);
+}
+
+async function promoteStandaloneCanvas({ force = false } = {}) {
+  if (!shouldPromoteStandaloneCanvas(force)) return false;
+  if (standalonePromotionPromise) return standalonePromotionPromise;
+  const projectId = createCanvasProjectId();
+  const payload = { ...serializableCanvasState(), projectId, name: "Untitled" };
+  standalonePromotionPromise = api("/api/canvas/state", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }).then((data) => {
+    canvasState.canvasId = projectId;
+    canvasState.stateUpdatedAt = data.state?.updatedAt || canvasState.stateUpdatedAt;
+    localStorage.setItem(LAST_PROJECT_ID_KEY, projectId);
+    localStorage.setItem("pixelToys.lastBlankCanvasId", projectId);
+    syncCanvasUrl("", projectId);
+    return true;
+  }).finally(() => {
+    standalonePromotionPromise = null;
+  });
+  return standalonePromotionPromise;
+}
+
 function stripDataUrlFromAsset(asset = {}) {
   const next = { ...asset };
   if (/^data:image\//i.test(String(next.url || ""))) {
@@ -374,10 +408,10 @@ function scheduleCanvasSave() {
   // Do not let a pending local preview overwrite a completed upload with an empty URL.
   if (hasPendingCanvasAssetUploads()) return;
   canvasState.saveTimer = setTimeout(() => {
-    api("/api/canvas/state", {
+    promoteStandaloneCanvas().then(() => api("/api/canvas/state", {
       method: "POST",
       body: JSON.stringify(serializableCanvasState()),
-    }).then((data) => {
+    })).then((data) => {
       canvasState.stateUpdatedAt = data.state?.updatedAt || canvasState.stateUpdatedAt;
     }).catch((error) => console.warn("canvas save failed", error));
   }, 600);
@@ -5198,6 +5232,13 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
 async function boot() {
   await loadProject(canvasState.selectedId, { useUrlCanvas: true });
   const libraryAssetId = new URLSearchParams(window.location.search).get("libraryAssetId") || "";
+  if (!canvasState.selectedId && !canvasState.canvasId && (libraryAssetId || canvasState.assets.length || canvasState.nodes.length)) {
+    try {
+      await promoteStandaloneCanvas({ force: !!libraryAssetId });
+    } catch (error) {
+      toast(error.message);
+    }
+  }
   if (libraryAssetId) {
     try {
       const data = await api(`/api/asset-library/${encodeURIComponent(libraryAssetId)}`);

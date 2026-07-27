@@ -84,7 +84,14 @@ assert.ok(modernMotionStart >= 0 && modernCutStart > modernMotionStart, "modern 
 const modernCommandbarStart = html.indexOf('<header class="modern-shot-commandbar"');
 const modernStageStart = html.indexOf('<div class="modern-stage-grid"', modernCommandbarStart);
 assert.ok(modernCommandbarStart >= 0 && modernStageStart > modernCommandbarStart, "modern workbench must expose the command bar before the three panes");
-assert.match(html.slice(modernCommandbarStart, modernStageStart), /id="modernBuildConfig"[^>]*class="[^"]*modern-video-action/, "video config must live beside the current-shot controls");
+const modernCommandbarHtml = html.slice(modernCommandbarStart, modernStageStart);
+assert.match(modernCommandbarHtml, /id="modernBuildConfig"[^>]*class="[^"]*modern-video-action/, "video config must live beside the current-shot controls");
+assert.match(modernCommandbarHtml, /class="modern-video-param-caption"/, "video params must have a dedicated control-group caption");
+assert.match(modernCommandbarHtml, /class="modern-command-status"/, "command bar must separate workflow status from parameters");
+assert.match(modernCommandbarHtml, /id="modernSelectedShotTitle"[^>]*class="[^"]*modern-shot-title-compat/, "shot title must remain only as a hidden runtime compatibility node");
+assert.match(css, /body\.is-studio-modern \.modern-shot-title-compat,[\s\S]*display:\s*none/, "shot title must not occupy the command bar visually");
+assert.match(css, /body\.is-studio-modern \.modern-shot-commandbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\s+auto/, "command bar must use a compact four-part layout");
+assert.match(css, /body\.is-studio-modern \.modern-video-param-controls\s*\{[^}]*grid-template-columns:\s*minmax\(80px,\s*\.45fr\)/, "video params must use compact aligned control units");
 const modernQueueStart = html.indexOf('<section id="modernVideoQueue"');
 assert.ok(modernQueueStart > modernCommandbarStart && modernQueueStart < modernStageStart, "video queue must sit directly below the command bar");
 assert.match(css, /\.modern-main\[data-modern-view="video"\] \.modern-stage-grid\s*\{[^}]*display:\s*none/, "video view must remove the standalone motion preview stage");

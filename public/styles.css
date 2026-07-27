@@ -17160,3 +17160,194 @@ body.is-studio-modern .modern-kit-bar { margin: 16px 26px 0; border-radius: 5px;
   .modern-video-queue-progress i,
   .modern-video-queue-play { animation: none; transition: none; }
 }
+
+/* Current-shot controls: the title is runtime metadata, not a visual header.
+   Keep the bar focused on the three decisions needed before video generation. */
+body.is-studio-modern .modern-shot-commandbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: stretch;
+  min-height: 64px;
+  padding: 9px 13px;
+  background: var(--mv-bg);
+}
+body.is-studio-modern .modern-selected-shot {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-content: center;
+  min-width: 72px;
+  padding-right: 13px;
+  border-right: 1px solid var(--mv-line);
+}
+body.is-studio-modern .modern-shot-index-label {
+  grid-column: 1 / -1;
+  color: var(--mv-qt);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+body.is-studio-modern .modern-selected-shot > strong {
+  grid-column: 1 / -1;
+  color: var(--mv-tx);
+  font-family: var(--mono);
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1;
+}
+body.is-studio-modern .modern-shot-title-compat,
+body.is-studio-modern .modern-shot-summary-compat {
+  display: none;
+}
+body.is-studio-modern .modern-video-params {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+}
+body.is-studio-modern .modern-video-param-caption {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 3px;
+  min-width: 76px;
+  padding-right: 12px;
+  border-right: 1px solid var(--mv-line);
+}
+body.is-studio-modern .modern-video-param-caption span {
+  color: var(--mv-mut);
+  font-size: 11px;
+  font-weight: 550;
+}
+body.is-studio-modern .modern-video-param-caption small {
+  color: var(--mv-qt);
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+body.is-studio-modern .modern-video-param-controls {
+  display: grid;
+  grid-template-columns: minmax(80px, .45fr) minmax(82px, .5fr) minmax(180px, 1.4fr);
+  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+  width: min(100%, 510px);
+}
+body.is-studio-modern .modern-video-param {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--mv-qt);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  white-space: normal;
+}
+body.is-studio-modern .modern-video-param > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.is-studio-modern .modern-video-params select {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 31px;
+  padding: 0 24px 0 9px;
+  border: 1px solid var(--mv-line-2);
+  border-radius: var(--mv-r-s);
+  background: var(--mv-s2);
+  color: var(--mv-tx);
+  font-family: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+body.is-studio-modern .modern-video-params select:hover {
+  border-color: rgba(255,255,255,.28);
+  background: var(--mv-s3);
+}
+body.is-studio-modern .modern-video-params select:focus-visible {
+  border-color: var(--modern-signal);
+  box-shadow: 0 0 0 2px rgba(217,45,69,.16);
+}
+body.is-studio-modern .modern-command-status {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-width: 112px;
+  padding: 0 12px;
+  border-left: 1px solid var(--mv-line);
+}
+body.is-studio-modern .modern-command-status-label {
+  color: var(--mv-qt);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+body.is-studio-modern .modern-command-status .modern-shot-lineage {
+  gap: 6px;
+  font-size: 9px;
+}
+body.is-studio-modern .modern-command-status .modern-shot-lineage i {
+  width: 10px;
+}
+body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
+  align-self: center;
+  min-width: 142px;
+  min-height: 36px;
+  padding: 0 13px;
+}
+
+@media (max-width: 1000px) {
+  body.is-studio-modern .modern-shot-commandbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    row-gap: 9px;
+  }
+  body.is-studio-modern .modern-selected-shot { grid-column: 1; grid-row: 1; }
+  body.is-studio-modern .modern-command-status { grid-column: 2; grid-row: 1; }
+  body.is-studio-modern .modern-shot-commandbar > .modern-video-action { grid-column: 3; grid-row: 1; }
+  body.is-studio-modern .modern-video-params {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    padding-top: 9px;
+    border-top: 1px solid var(--mv-line);
+  }
+}
+@media (max-width: 660px) {
+  body.is-studio-modern .modern-shot-commandbar {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  body.is-studio-modern .modern-command-status {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    min-width: 0;
+    padding-right: 0;
+  }
+  body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    width: 100%;
+  }
+  body.is-studio-modern .modern-video-params {
+    grid-row: 2;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  body.is-studio-modern .modern-video-param-caption {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    min-width: 0;
+    padding: 0;
+    border-right: 0;
+  }
+  body.is-studio-modern .modern-video-param-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  body.is-studio-modern .modern-video-param-model { grid-column: 1 / -1; }
+}

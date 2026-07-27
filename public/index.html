@@ -1122,9 +1122,25 @@
 
           <section class="modern-workbench" aria-label="当前镜头工作台">
             <header class="modern-shot-commandbar">
-              <div class="modern-selected-shot"><span id="modernSelectedShotNumber">--</span><div><h2 id="modernSelectedShotTitle">未选择镜头</h2><div id="modernSelectedShotMeta" class="modern-video-params" aria-label="视频参数"><div class="modern-video-param-controls"><label class="modern-video-param"><span>比例</span><select id="modernParamRatio" aria-label="视频比例"><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label><label class="modern-video-param"><span>规格</span><select id="modernParamResolution" aria-label="视频分辨率"><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option></select></label><label class="modern-video-param modern-video-param-model"><span>模型</span><select id="modernParamModel" aria-label="视频模型"><option value="seedance-2-0">Seedance 2.0</option><option value="seedance-2-0-fast">Seedance 2.0 Fast</option><option value="seedance-2-0-mini">Seedance 2.0 Mini</option><option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option><option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option></select></label></div><span id="modernSelectedShotSummary">先生成分镜草稿或视频配置</span></div></div></div>
-              <div class="modern-shot-lineage"><span class="is-done">STORY</span><i></i><span id="modernStillLineage">STILL</span><i></i><span id="modernMotionLineage">MOTION</span></div>
-            <button id="modernBuildConfig" class="modern-video-action modern-video-action-config" type="button">生成视频配置</button>
+              <div class="modern-selected-shot">
+                <span class="modern-shot-index-label">当前镜头</span>
+                <strong id="modernSelectedShotNumber">--</strong>
+                <h2 id="modernSelectedShotTitle" class="modern-shot-title-compat" aria-hidden="true"></h2>
+              </div>
+              <div id="modernSelectedShotMeta" class="modern-video-params" aria-label="视频参数">
+                <div class="modern-video-param-caption"><span>视频参数</span><small>用于当前片段</small></div>
+                <div class="modern-video-param-controls">
+                  <label class="modern-video-param"><span>比例</span><select id="modernParamRatio" aria-label="视频比例"><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label>
+                  <label class="modern-video-param"><span>规格</span><select id="modernParamResolution" aria-label="视频分辨率"><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option></select></label>
+                  <label class="modern-video-param modern-video-param-model"><span>模型</span><select id="modernParamModel" aria-label="视频模型"><option value="seedance-2-0">Seedance 2.0</option><option value="seedance-2-0-fast">Seedance 2.0 Fast</option><option value="seedance-2-0-mini">Seedance 2.0 Mini</option><option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option><option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option></select></label>
+                </div>
+                <span id="modernSelectedShotSummary" class="modern-shot-summary-compat" aria-hidden="true"></span>
+              </div>
+              <div class="modern-command-status">
+                <div class="modern-command-status-label">流程</div>
+                <div class="modern-shot-lineage"><span class="is-done">STORY</span><i></i><span id="modernStillLineage">STILL</span><i></i><span id="modernMotionLineage">MOTION</span></div>
+              </div>
+              <button id="modernBuildConfig" class="modern-video-action modern-video-action-config" type="button">生成视频配置</button>
             </header>
             <section id="modernVideoQueue" class="modern-video-queue" aria-labelledby="modernVideoQueueTitle">
               <header class="modern-video-queue-head">

@@ -36,7 +36,7 @@ class FakeElement {
 }
 
 const elements = new Map(
-  ["buildConfigBtn", "seedanceText", "configGroup", "configModel", "configResolution", "configRatio", "configPromptMode"].map(
+  ["buildConfigBtn", "seedanceText", "configGroup", "configModel", "configResolution", "configRatio", "configPromptMode", "modernParamModel", "modernParamResolution", "modernParamRatio"].map(
     (id) => [id, new FakeElement(id)],
   ),
 );
@@ -99,6 +99,7 @@ for (const signature of [
   "async function saveFileQuiet(",
   "async function refreshVideoConfig(",
   "async function buildConfig(",
+  "function syncModernVideoParams(",
   "function hydrateConfigInputs(",
 ]) {
   vm.runInContext(extractFunction(app, signature), context, { filename: "public/app.js" });

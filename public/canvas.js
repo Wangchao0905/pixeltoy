@@ -4443,6 +4443,26 @@ function nodeWidth(node) {
   return element?.offsetWidth || (node?.kind === "video" ? 520 : node?.kind === "asset" ? assetNodeSize(node).width : 360);
 }
 
+function syncVideoNodePortPosition(element) {
+  if (!element?.classList.contains("video-node")) return;
+  const preview = element.querySelector(".video-preview-slot");
+  const elementRect = element.getBoundingClientRect();
+  const previewRect = preview?.getBoundingClientRect();
+  if (!previewRect?.width || !previewRect?.height || !elementRect.width || !elementRect.height) {
+    element.style.removeProperty("--video-port-y");
+    element.style.removeProperty("--video-port-left");
+    element.style.removeProperty("--video-port-right");
+    return;
+  }
+  const scaleX = elementRect.width / Math.max(1, element.offsetWidth);
+  const scaleY = elementRect.height / Math.max(1, element.offsetHeight);
+  const unscaleX = (value) => value / Math.max(scaleX, 0.0001);
+  const unscaleY = (value) => value / Math.max(scaleY, 0.0001);
+  element.style.setProperty("--video-port-y", `${unscaleY(previewRect.top - elementRect.top + previewRect.height / 2)}px`);
+  element.style.setProperty("--video-port-left", `${unscaleX(previewRect.left - elementRect.left)}px`);
+  element.style.setProperty("--video-port-right", `${unscaleX(previewRect.right - elementRect.left)}px`);
+}
+
 function nodePortPoint(node, port) {
   if (!node) return { x: 0, y: 0 };
   const width = nodeWidth(node);
@@ -4455,6 +4475,14 @@ function nodePortPoint(node, port) {
     }
     const size = assetNodeSize(node);
     return { x: node.x + size.width, y: node.y + size.height / 2 };
+  }
+  if (node.kind === "video") {
+    syncVideoNodePortPosition(element);
+    const preview = element?.querySelector(".video-preview-slot");
+    const rect = preview?.getBoundingClientRect();
+    if (rect?.width && rect?.height) {
+      return stagePoint(port === "input" ? rect.left : rect.right, rect.top + rect.height / 2);
+    }
   }
   // 图片/视频节点：优先测量实际端口按钮位置，这样收起/展开改变高度时连线与剪刀仍精确对齐。
   const portEl = element?.querySelector(port === "input" ? ".node-port.input-port" : ".node-port.output-port");

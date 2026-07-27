@@ -62,4 +62,28 @@ assert.match(css, /\.video-node \.video-composer[\s\S]*?border-radius:\s*20px[\s
 assert.match(css, /\.video-node \.video-settings-strip[\s\S]*?grid-template-rows:\s*48px 50px/s,
   "video controls should use a stable model row and action row");
 
+const finalComposerCss = css.slice(css.lastIndexOf("/* Final video composer layout:"));
+assert.match(finalComposerCss,
+  /grid-template-columns:\s*minmax\(92px, 0\.95fr\)\s+minmax\(92px, 0\.95fr\)\s+minmax\(180px, 1\.8fr\)\s+44px\s+minmax\(126px, 1\.2fr\)/,
+  "the final action row should use five tracks without an empty spacer column");
+assert.match(finalComposerCss,
+  /\.video-node \.video-duration-field[\s\S]*?grid-template-columns:\s*auto 42px minmax\(118px, 1fr\)/s,
+  "the duration field should reserve a readable slider track");
+assert.match(finalComposerCss,
+  /\.video-node \.video-setting-row > \.video-setting,[\s\S]*?backdrop-filter:\s*blur\(16px\)/s,
+  "video parameters should use the blue frosted control surface");
+assert.match(js, /function syncVideoNodePortPosition\(element\)[\s\S]*?video-port-left/s,
+  "video port positions should be derived from the rendered preview slot");
+assert.match(js, /node\.kind === "video"[\s\S]*?preview\?\.getBoundingClientRect\(\)/s,
+  "video connection endpoints should read the preview bounds");
+assert.match(finalComposerCss,
+  /\.canvas-node\.video-node,[\s\S]*?background:\s*transparent !important;[\s\S]*?box-shadow:\s*none !important/s,
+  "the video editor shell must remain frameless and transparent");
+assert.match(finalComposerCss,
+  /\.video-node > \.node-port\.input-port,[\s\S]*?left:\s*calc\(var\(--video-port-left, 0px\) - 12px\) !important/s,
+  "video input ports should sit on the preview left edge");
+assert.match(finalComposerCss,
+  /\.video-node > \.node-port\.output-port[\s\S]*?left:\s*calc\(var\(--video-port-right, 100%\) - 12px\) !important/s,
+  "video output ports should sit on the preview right edge");
+
 console.log("canvas video editor layout tests passed");

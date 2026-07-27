@@ -2063,7 +2063,10 @@ function ratioSizedNodeDimensions(node = {}, kind = "video") {
     const previewHeight = Math.round(width * ratioSize.height / ratioSize.width);
     return {
       width,
-      height: clampNodeDimension(previewHeight + RATIO_LAYOUT_CHROME_HEIGHT.video, VIDEO_NODE_MIN_HEIGHT, VIDEO_NODE_MAX_HEIGHT, VIDEO_EDITOR_DEFAULT_HEIGHT),
+      // Keep the editor shell stable. The selected ratio is applied inside the
+      // preview slot, which is capped to the available media area in CSS.
+      height: clampNodeDimension(VIDEO_EDITOR_DEFAULT_HEIGHT, VIDEO_NODE_MIN_HEIGHT, VIDEO_NODE_MAX_HEIGHT, VIDEO_EDITOR_DEFAULT_HEIGHT),
+      previewHeight,
     };
   }
   const settings = { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) };

@@ -41,5 +41,17 @@ assert.match(css, /\.video-node \.video-composer[\s\S]*?flex:\s*0 0 auto[\s\S]*?
   "the prompt and parameter composer must keep a fixed height");
 assert.match(css, /\.video-node \.video-prompt[\s\S]*?flex:\s*0 0 118px[\s\S]*?height:\s*118px/s,
   "the prompt field must stay fixed while the preview ratio changes");
+assert.match(sizeFn, /if \(kind === "video"\)[\s\S]*?height: clampNodeDimension\(VIDEO_EDITOR_DEFAULT_HEIGHT/s,
+  "video editors should keep a stable shell height while the preview scales inside it");
+assert.match(css, /\.video-node\[data-video-ratio="9:16"\] \.video-preview-slot[\s\S]*?--video-preview-width:\s*196px/s,
+  "portrait previews should stay compact inside the fixed editor shell");
+assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?width:\s*min\(100%, var\(--video-preview-width, 100%\)\)/s,
+  "preview width should be capped independently from the editor shell");
+assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?max-width:\s*68%/s,
+  "every preview should remain visibly narrower than the prompt composer");
+assert.match(css, /\.video-node\[data-video-ratio="16:9"\] \.video-preview-slot[\s\S]*?--video-preview-width:\s*420px/s,
+  "landscape previews should use a compact width instead of filling the composer");
+assert.match(css, /\.video-node \.video-composer[\s\S]*?border-radius:\s*20px[\s\S]*?background:/s,
+  "the prompt composer should read as the wider lower panel");
 
 console.log("canvas video editor layout tests passed");

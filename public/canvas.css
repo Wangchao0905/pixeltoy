@@ -5499,6 +5499,71 @@ body.canvas-page .canvas-topbar {
   box-shadow: 0 0 0 1px rgba(104, 183, 255, 0.32);
 }
 
+/* Keep the preview card visually lighter than the wider prompt composer. */
+.video-node .video-preview-slot {
+  width: min(100%, var(--video-preview-width, 100%));
+  max-width: 68%;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 18px;
+  background: #101419;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.video-node[data-video-ratio="9:16"] .video-preview-slot,
+.video-node[data-video-ratio="adaptive"] .video-preview-slot {
+  --video-preview-width: 196px;
+}
+
+.video-node[data-video-ratio="3:4"] .video-preview-slot {
+  --video-preview-width: 240px;
+}
+
+.video-node[data-video-ratio="1:1"] .video-preview-slot {
+  --video-preview-width: 300px;
+}
+
+.video-node[data-video-ratio="4:3"] .video-preview-slot {
+  --video-preview-width: 390px;
+}
+
+.video-node[data-video-ratio="16:9"] .video-preview-slot {
+  --video-preview-width: 420px;
+}
+
+.video-node[data-video-ratio="21:9"] .video-preview-slot {
+  --video-preview-width: 500px;
+}
+
+/* The prompt is the working surface: keep it visibly wider than the media
+   card and give it one continuous dark shell like the reference layout. */
+.video-node .video-composer {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 16px 18px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.035)),
+    rgba(23, 24, 27, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 16px 36px rgba(0, 0, 0, 0.22);
+}
+
+.video-node .video-prompt {
+  flex: 0 0 118px;
+  width: 100%;
+  height: 118px;
+  padding: 14px 6px 10px;
+  background: transparent;
+}
+
+.video-node .video-settings-strip {
+  margin-top: auto;
+}
+
 .canvas-node:not(.asset-node) > .node-port.input-port,
 .canvas-node:not(.asset-node) > .node-port.output-port {
   top: 50% !important;

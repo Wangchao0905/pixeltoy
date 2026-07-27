@@ -348,6 +348,7 @@ const VIDEO_MODEL_OPTIONS = {
   "seedance-2-0-mini": "Seedance 2.0 Mini",
   "seedance-2-0-person-reference": "Seedance 2.0 人物素材参考",
   "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
+  "grok-imagine-video": "Grok Imagine Video",
 };
 
 function mergeCanvasAssetState(existing = {}, incoming = {}) {
@@ -2475,6 +2476,9 @@ function renderImageExploreView() {
   $("#imageExploreModel").value = state.imageStudio.model || "gpt-image-2";
   $("#imageExploreRatio").value = state.imageStudio.ratio;
   $("#imageExploreResolution").value = state.imageStudio.resolution;
+  const grokImageSelected = state.imageStudio.model === "grok-imagine-image";
+  $("#imageExploreRatio")?.closest("label")?.toggleAttribute("hidden", grokImageSelected);
+  $("#imageExploreResolution")?.closest("label")?.toggleAttribute("hidden", grokImageSelected);
   $("#imageExploreCount").textContent = String(state.imageStudio.count);
   const storyboardToggle = $("#imageExploreStoryboardToggle");
   const storyboardOptions = $("#imageExploreStoryboardOptions");

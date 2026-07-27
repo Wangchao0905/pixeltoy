@@ -56,8 +56,11 @@ assert.match(app, /function createEmptyProject\(\)[\s\S]*?projectName:\s*"Untitl
 assert.match(app, /function openProjectModal\(\)\s*\{\s*return createEmptyProject\(\);/);
 assert.match(app, /exploreLoginLink\?\.classList\.toggle\("hidden", !!data\.user\)/);
 assert.match(app, /function setupExploreVideoPlayback/);
-assert.match(html, /styles\.css\?v=project-preview-fast-20260727/);
-assert.match(html, /app\.js\?v=project-preview-fast-20260727/);
+const stylesStamp = html.match(/styles\.css\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
+const appStamp = html.match(/app\.js\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
+assert.ok(stylesStamp, "styles.css 必须带缓存戳");
+assert.ok(appStamp, "app.js 必须带缓存戳");
+assert.equal(appStamp, stylesStamp, "两个缓存戳必须同步 bump");
 assert.match(styles, /\.video-showcase-six/);
 assert.match(styles, /\.video-showcase-grid-six/);
 assert.match(styles, /\.explore-canvas-library/);

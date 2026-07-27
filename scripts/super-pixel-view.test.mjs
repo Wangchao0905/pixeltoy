@@ -27,20 +27,22 @@ assert.match(html, /id="superPixelAssetRail"[^>]*aria-label="资产库"/, "Super
 assert.match(html, /id="superPixelAssetRailClose"[^>]*type="button"[^>]*aria-label="收起素材库"/, "资产抽屉必须提供关闭按钮");
 assert.match(html, /id="superPixelAssetRailList"/, "资产侧栏必须有独立列表容器");
 
-// 模型选项：Claude 两档与 ChatGPT 三档，分组呈现。
+// 模型选项：Claude 两档、ChatGPT 三档与 Grok，分组呈现。
 // 这些 ID 已在 api.apikey.fun 网关实调通过（2026-07-25），阶段 2 直接用于请求。
 const MODEL_IDS = [
   "claude-opus-5", "claude-haiku-4-5",
   "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna",
+  "grok-4.5",
 ];
 const selectBlock = html.match(/<select id="superPixelModel"[\s\S]*?<\/select>/)?.[0] || "";
 for (const id of MODEL_IDS) {
   assert.ok(selectBlock.includes(`value="${id}"`), `模型选择器缺少 ${id}`);
 }
 const optionCount = (selectBlock.match(/<option /g) || []).length;
-assert.equal(optionCount, 5, `模型选项须为 5 个（Claude 2 + ChatGPT 3），当前 ${optionCount}`);
+assert.equal(optionCount, 6, `模型选项须为 6 个（Claude 2 + ChatGPT 3 + Grok 1），当前 ${optionCount}`);
 assert.match(selectBlock, /<optgroup label="Claude">/, "Claude 需独立分组");
 assert.match(selectBlock, /<optgroup label="ChatGPT">/, "ChatGPT 需独立分组");
+assert.match(selectBlock, /<optgroup label="Grok">/, "Grok 需独立分组");
 // 旧的两个选项不得残留
 assert.doesNotMatch(selectBlock, /value="gpt-5\.2"|value="claude-opus-4-8"/, "旧模型选项应已移除");
 assert.doesNotMatch(selectBlock, /value="claude-sonnet-5"/, "网关不支持 claude-sonnet-5");

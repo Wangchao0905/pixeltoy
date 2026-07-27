@@ -84,11 +84,13 @@ const BYTEPLUS_ARK_VIDEO_API_KEY_ENV_NAMES = [
   "BYTEPLUS_ARK_API_KEY",
   "BYTEPLUS_API_KEY",
 ];
+const GROK_VIDEO_API_KEY_ENV_NAMES = ["XAI_API_KEY"];
 // 火山方舟(Ark)官方视频网关。Gravitex 使用独立的 Seedance 网关。
 // BytePlus ModelArk 是 Ark 的国际版(ap-southeast 区),API 结构与火山中国区一致,仅 base URL / key / 模型 ID 前缀不同(dreamina- vs doubao-)。
 const DEFAULT_VOLC_ARK_VIDEO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 const DEFAULT_BYTEPLUS_ARK_VIDEO_BASE_URL = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_GRAVITEX_VIDEO_BASE_URL = "https://api.gravitex.ai/v1";
+const GROK_API_BASE_URL = "https://apikey.fun/v1";
 const VIDEO_API_LOG_PATH = path.join(APP_ROOT, ".pixel-toys-video-api.log");
 const VIDEO_API_REQUEST_TIMEOUT_MS = Math.max(10_000, Number(process.env.VIDEO_API_REQUEST_TIMEOUT_MS || 120_000));
 const PROJECT_VIDEO_RANGE_CHUNK_BYTES = Math.max(64 * 1024, Number(process.env.PROJECT_VIDEO_RANGE_CHUNK_BYTES || 128 * 1024));
@@ -2130,6 +2132,7 @@ function imageApiKeySource() {
 function videoApiKeyNamesForProvider(provider = canvasVideoProvider()) {
   if (provider === "gravitex") return GRAVITEX_VIDEO_API_KEY_ENV_NAMES;
   if (provider === "byteplus") return BYTEPLUS_ARK_VIDEO_API_KEY_ENV_NAMES;
+  if (provider === "grok") return GROK_VIDEO_API_KEY_ENV_NAMES;
   return ARK_VIDEO_API_KEY_ENV_NAMES;
 }
 
@@ -2151,6 +2154,7 @@ function normalizeCanvasVideoProvider(value) {
   const raw = compactLine(value || "").toLowerCase();
   if (["gravitex", "gravitex-ai", "gravitexai", "seedance", "seedance-2", "seedance-2-0"].includes(raw)) return "gravitex";
   if (["byteplus", "byteplus-ark", "byteplus-modelark", "modelark", "ark-intl", "ark-international"].includes(raw)) return "byteplus";
+  if (["grok", "xai"].includes(raw)) return "grok";
   if (["ark", "volc", "volcengine", "volcengine-ark", "bytedance-ark"].includes(raw)) return "ark";
   return "ark";
 }
@@ -2161,6 +2165,7 @@ function canvasVideoProvider() {
 
 function canvasVideoProviderForBody(body = {}) {
   const modelMode = compactLine(body.modelMode || body.model || "");
+  if (modelMode === "grok-imagine-video") return "grok";
   // 显式选择「海外火山」模型选项时,本次生成走 BytePlus ModelArk(ap-southeast 区),优先于全局默认与自动路由。
   if (/^seedance-2-0-byteplus$/i.test(modelMode)) return "byteplus";
   const sourceAssets = Array.isArray(body.assets) ? body.assets : [];
@@ -2190,10 +2195,15 @@ function gravitexVideoBaseUrl() {
   return (process.env.GRAVITEX_VIDEO_BASE_URL || process.env.GRAVITEX_BASE_URL || DEFAULT_GRAVITEX_VIDEO_BASE_URL).replace(/\/+$/, "");
 }
 
+function grokApiBaseUrl() {
+  return GROK_API_BASE_URL;
+}
+
 function canvasVideoBaseUrl() {
   const provider = canvasVideoProvider();
   if (provider === "gravitex") return gravitexVideoBaseUrl();
   if (provider === "byteplus") return bytePlusArkVideoBaseUrl();
+  if (provider === "grok") return grokApiBaseUrl();
   return volcArkVideoBaseUrl();
 }
 
@@ -2246,6 +2256,7 @@ const SUPER_PIXEL_MAX_IMAGES_PER_MESSAGE = 8;
 const SUPER_PIXEL_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const SUPER_PIXEL_CLAUDE_MODELS = new Set(["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
 const SUPER_PIXEL_GPT_MODELS = new Set(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"]);
+const SUPER_PIXEL_GROK_MODELS = new Set(["grok-4.5", "grok-4.5-latest", "grok-4.3"]);
 
 function superPixelModelConfig(model) {
   if (SUPER_PIXEL_CLAUDE_MODELS.has(model)) {
@@ -2253,6 +2264,9 @@ function superPixelModelConfig(model) {
   }
   if (SUPER_PIXEL_GPT_MODELS.has(model)) {
     return { apiKey: compactLine(process.env.STORYBOARD_API_KEY || ""), kind: "storyboard" };
+  }
+  if (SUPER_PIXEL_GROK_MODELS.has(model)) {
+    return { apiKey: process.env.XAI_API_KEY, kind: "grok" };
   }
   return null;
 }
@@ -2275,6 +2289,7 @@ function openAiCompatBaseUrl(kind = "asset") {
   if (kind === "storyboard") {
     return (process.env.STORYBOARD_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.apikey.fun/v1").replace(/\/+$/, "");
   }
+  if (kind === "grok") return grokApiBaseUrl();
   return (process.env.ASSET_ANALYZER_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.apikey.fun/v1").replace(/\/+$/, "");
 }
 
@@ -9964,6 +9979,13 @@ function arkVideoUrl(pathname) {
   return `${baseUrl}${clean}`;
 }
 
+function grokApiUrl(pathname) {
+  const clean = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const baseUrl = grokApiBaseUrl();
+  if (baseUrl.endsWith("/v1") && clean.startsWith("/v1/")) return `${baseUrl}${clean.slice(3)}`;
+  return `${baseUrl}${clean}`;
+}
+
 function volcArkImageBaseUrl() {
   return (
     process.env.VOLC_ARK_IMAGE_BASE_URL ||
@@ -10019,7 +10041,8 @@ function normalizeGravitexSeedanceModel(value) {
 function normalizeVideoConfigModelName(value = "") {
   const raw = compactLine(value || DEFAULT_VIDEO_CONFIG_MODEL);
   const lower = raw.toLowerCase();
-  if (["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus"].includes(raw)) return raw;
+  if (["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
+  if (/grok|xai/.test(lower)) return "grok-imagine-video";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0-person-reference";
   if (/byteplus|海外|modelark|ap-southeast/.test(lower)) return "seedance-2-0-byteplus";
   if (/mini|迷你/.test(lower)) return "seedance-2-0-mini";
@@ -11790,6 +11813,15 @@ async function callGravitexJson(pathname, options = {}) {
   }
 }
 
+async function callGrokJson(pathname, options = {}) {
+  return callVideoJson(
+    grokApiUrl(pathname),
+    options,
+    "缺少 XAI_API_KEY：Grok 生成需要在 .env.local 配置后重启服务。",
+    "grok",
+  );
+}
+
 async function createArkCanvasVideoGeneration(body = {}) {
   const payload = await buildSeedanceGenerationPayload(body);
   const raw = await callArkJson("/contents/generations/tasks", {
@@ -12188,10 +12220,142 @@ async function getGravitexCanvasVideoGeneration(taskId) {
   return { ...normalizeGravitexGenerationStatus(raw), provider: "gravitex" };
 }
 
+function grokVideoPayload({ prompt, duration, ratio, referenceUrl } = {}) {
+  const payload = {
+    model: "grok-imagine-video",
+    prompt: compactLine(prompt),
+    duration: Number(duration) || 5,
+  };
+  if (ratio) payload.aspect_ratio = ratio;
+  if (referenceUrl) payload.image = { url: referenceUrl };
+  return payload;
+}
+
+async function grokVideoReferenceUrl(body = {}) {
+  const assets = Array.isArray(body.assets) ? body.assets : [];
+  const directReferences = Array.isArray(body.referenceImages) ? body.referenceImages : [];
+  const firstAsset = assets.find((asset) => compactLine(asset?.url || asset?.image_url?.url || ""));
+  const sourceUrl = compactLine(
+    body.firstFrameUrl
+      || body.startFrameUrl
+      || firstAsset?.url
+      || firstAsset?.image_url?.url
+      || directReferences[0]
+      || "",
+  );
+  if (!sourceUrl) return "";
+  const referenceUrl = compactLine(await assetUrlToReferenceUrl(sourceUrl, { allowAssetUrl: true }));
+  if (!/^https?:\/\//i.test(referenceUrl)) throw new Error("Grok 出片参考图必须是公网 HTTP URL。");
+  return referenceUrl;
+}
+
+async function buildGrokVideoGenerationPayload(body = {}) {
+  const prompt = cleanSeedancePromptForSubmission(body.prompt);
+  if (!prompt) throw new Error("缺少视频提示词");
+  const duration = Number(body.duration);
+  const ratio = ["9:16", "16:9"].includes(compactLine(body.ratio || "")) ? compactLine(body.ratio) : "";
+  const referenceUrl = await grokVideoReferenceUrl(body);
+  return grokVideoPayload({
+    prompt,
+    duration: Number.isFinite(duration) && duration > 0 ? duration : 5,
+    ratio,
+    referenceUrl,
+  });
+}
+
+function normalizeGrokVideoStatus(raw = {}, fallbackTaskId = "") {
+  const statusRaw = compactLine(raw?.status || raw?.data?.status || "").toLowerCase();
+  const taskId = compactLine(raw?.request_id || raw?.data?.request_id || fallbackTaskId);
+  const progress = normalizeProgressValue(raw?.progress, raw?.data?.progress);
+  const message = compactLine(raw?.error?.message || raw?.message || raw?.data?.message || "");
+  if (statusRaw === "done") {
+    return { status: "completed", statusRaw, taskId, progress: 100, message: "生成完成", raw };
+  }
+  if (["failed", "error", "cancelled", "canceled"].includes(statusRaw)) {
+    return {
+      status: "failed",
+      statusRaw,
+      taskId,
+      progress: progress ?? 100,
+      message: message || "视频生成失败",
+      raw,
+    };
+  }
+  return {
+    status: "running",
+    statusRaw: statusRaw || "pending",
+    taskId,
+    progress,
+    message: message || "视频生成中",
+    raw,
+  };
+}
+
+const grokCanvasVideoDownloads = new Map();
+
+async function downloadGrokCanvasVideoContent(taskId) {
+  const cleanTaskId = compactLine(taskId);
+  if (!cleanTaskId) throw new Error("缺少 Grok 视频任务 ID");
+  if (grokCanvasVideoDownloads.has(cleanTaskId)) return grokCanvasVideoDownloads.get(cleanTaskId);
+  const download = (async () => {
+    const key = process.env.XAI_API_KEY;
+    if (!key) throw new Error("缺少 XAI_API_KEY：Grok 生成需要在 .env.local 配置后重启服务。");
+    const response = await fetchWithTimeout(
+      grokApiUrl(`/v1/videos/${encodeURIComponent(cleanTaskId)}/content`),
+      { headers: { Authorization: `Bearer ${key}` } },
+      VIDEO_API_REQUEST_TIMEOUT_MS,
+    );
+    if (!response.ok) throw new Error(`Grok 视频下载失败：HTTP ${response.status}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length) throw new Error("Grok 视频下载为空");
+    const asset = await createCanvasVideoAsset({
+      name: `grok-video-${crypto.createHash("sha1").update(cleanTaskId).digest("hex").slice(0, 16)}.mp4`,
+      dataUrl: `data:video/mp4;base64,${buffer.toString("base64")}`,
+    });
+    return compactLine(asset.videoUrl || asset.videoLocalUrl || "");
+  })();
+  grokCanvasVideoDownloads.set(cleanTaskId, download);
+  try {
+    return await download;
+  } catch (error) {
+    grokCanvasVideoDownloads.delete(cleanTaskId);
+    throw error;
+  }
+}
+
+async function createGrokCanvasVideoGeneration(body = {}) {
+  const payload = await buildGrokVideoGenerationPayload(body);
+  const raw = await callGrokJson("/v1/videos/generations", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const taskId = compactLine(raw?.request_id || raw?.data?.request_id || "");
+  if (!taskId) throw new Error("Grok 视频接口没有返回 request_id");
+  return {
+    status: "running",
+    taskId,
+    progress: 0,
+    message: "视频生成中",
+    provider: "grok",
+    request: payload,
+  };
+}
+
+async function getGrokCanvasVideoGeneration(taskId) {
+  const cleanTaskId = compactLine(taskId);
+  if (!cleanTaskId) throw new Error("缺少任务 ID");
+  const raw = await callGrokJson(`/v1/videos/${encodeURIComponent(cleanTaskId)}`, { method: "GET" });
+  const result = normalizeGrokVideoStatus(raw, cleanTaskId);
+  if (result.status !== "completed") return { ...result, provider: "grok" };
+  const videoUrl = await downloadGrokCanvasVideoContent(result.taskId || cleanTaskId);
+  return { ...result, videoUrl, provider: "grok" };
+}
+
 async function createCanvasVideoGeneration(body = {}) {
   const provider = canvasVideoProviderForBody(body);
   if (provider === "gravitex") return createGravitexCanvasVideoGeneration(body);
   if (provider === "byteplus") return createBytePlusArkCanvasVideoGeneration(body);
+  if (provider === "grok") return createGrokCanvasVideoGeneration(body);
   return createArkCanvasVideoGeneration(body);
 }
 
@@ -12199,6 +12363,7 @@ async function getCanvasVideoGeneration(taskId, provider = canvasVideoProvider()
   const normalizedProvider = normalizeCanvasVideoProvider(provider);
   if (normalizedProvider === "gravitex") return getGravitexCanvasVideoGeneration(taskId);
   if (normalizedProvider === "byteplus") return getBytePlusArkCanvasVideoGeneration(taskId);
+  if (normalizedProvider === "grok") return getGrokCanvasVideoGeneration(taskId);
   return getArkCanvasVideoGeneration(taskId);
 }
 
@@ -12226,6 +12391,7 @@ const SEEDREAM_MIN_IMAGE_PIXELS = 3_686_400;
 
 function normalizeCanvasImageModel(value) {
   const raw = compactLine(value || "gpt-image-2").toLowerCase();
+  if (["grok-imagine-image", "grok-imagine"].includes(raw)) return "grok-imagine-image";
   if (["seedream-5-0-pro", "seedream-5.0-pro", "seedream-5-pro", "doubao-seedream-5-0-260128"].includes(raw)) return "seedream-5-0-pro";
   if (["seedream-5-0-lite", "seedream-5.0-lite", "seedream-5-lite", "doubao-seedream-5-0-lite-260128"].includes(raw)) return "seedream-5-0-lite";
   return "gpt-image-2";
@@ -12233,6 +12399,9 @@ function normalizeCanvasImageModel(value) {
 
 function canvasImageModelConfig(value) {
   const key = normalizeCanvasImageModel(value);
+  if (key === "grok-imagine-image") {
+    return { key, provider: "grok", model: "grok-imagine-image", supportsSize: false };
+  }
   if (key === "seedream-5-0-pro") {
     return {
       key,
@@ -12247,7 +12416,7 @@ function canvasImageModelConfig(value) {
       model: process.env.VOLC_ARK_IMAGE_LITE_MODEL || process.env.SEEDREAM_5_LITE_MODEL || DEFAULT_SEEDREAM_5_LITE_MODEL,
     };
   }
-  return { key, provider: "gpt", model: GPT_IMAGE_MODEL };
+  return { key, provider: "gpt", model: GPT_IMAGE_MODEL, supportsSize: true };
 }
 
 function canvasImageSizeFor(ratio, resolution) {
@@ -12357,7 +12526,7 @@ async function resolveCanvasImageReferenceToLocalPath(url = "") {
 
 async function completeCanvasImageJob(entry = {}) {
   if (!entry.outPath || !fs.existsSync(entry.outPath)) throw new Error("上游没有返回有效图片文件");
-  await normalizeCanvasImageOutput(entry);
+  if (entry.normalizeOutput !== false) await normalizeCanvasImageOutput(entry);
   const version = Math.round(fs.statSync(entry.outPath).mtimeMs);
   Object.assign(entry, {
     // 图片本体已经可读时就结束图片任务。对象存储上传和素材库写入不能阻塞前端拿到结果。
@@ -12460,6 +12629,35 @@ function seedreamImagePayload(entry = {}) {
   return payload;
 }
 
+function grokImagePayload(entry = {}) {
+  return {
+    model: "grok-imagine-image",
+    prompt: compactLine(entry.prompt),
+    response_format: "b64_json",
+  };
+}
+
+function grokImageResult(raw = {}) {
+  const image = raw?.data?.[0] || raw?.output?.[0] || null;
+  const b64 = compactLine(image?.b64_json || "");
+  if (!b64) return null;
+  const mime = compactLine(image?.mime_type || "image/png").toLowerCase();
+  return { b64, mime: /^image\/(?:png|jpeg|jpg|webp)$/.test(mime) ? mime : "image/png" };
+}
+
+async function writeGrokImageResult(entry, raw) {
+  const result = grokImageResult(raw);
+  if (!result) throw new Error("Grok 图片接口没有返回 b64_json");
+  const buffer = Buffer.from(result.b64, "base64");
+  if (!buffer.length || buffer.length > 50 * 1024 * 1024) throw new Error("Grok 返回的图片内容无效");
+  const ext = result.mime === "image/jpeg" || result.mime === "image/jpg" ? ".jpg" : result.mime === "image/webp" ? ".webp" : ".png";
+  if (path.extname(entry.outPath) !== ext) {
+    entry.fileName = entry.fileName.replace(/\.png$/i, ext);
+    entry.outPath = path.join(CANVAS_PUBLIC_ASSET_DIR, entry.fileName);
+  }
+  fs.writeFileSync(entry.outPath, buffer);
+}
+
 function isCanvasImagePolicyFailure(rawError = "") {
   return /moderation|safety|content[_\s-]?(?:policy|filter)|content_policy_violation|blocked|rejected|审核|敏感|违规|违禁|内容策略/i.test(String(rawError || ""));
 }
@@ -12510,6 +12708,21 @@ async function runSeedreamCanvasImageJob(taskId, policyRetried = false, requestP
       return runSeedreamCanvasImageJob(taskId, true, policySafeCanvasImagePrompt(entry.prompt));
     }
     Object.assign(entry, { status: "failed", message: classifyImageGenError(detail, "ark") });
+  }
+}
+
+async function runGrokCanvasImageJob(taskId) {
+  const entry = canvasImageJobs.get(taskId);
+  if (!entry) return;
+  try {
+    const raw = await callGrokJson("/v1/images/generations", {
+      method: "POST",
+      body: JSON.stringify(grokImagePayload(entry)),
+    });
+    await writeGrokImageResult(entry, raw);
+    await completeCanvasImageJob(entry);
+  } catch (error) {
+    Object.assign(entry, { status: "failed", message: classifyImageGenError(error?.message || "Grok 图片生成失败", "grok") });
   }
 }
 
@@ -12653,6 +12866,8 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
   if (status === 401 || status === 403) {
     return provider === "ark"
       ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
+      : provider === "grok"
+        ? "Grok 出图鉴权失败：请检查 XAI_API_KEY。"
       : "出图鉴权失败：请检查 OPENAI_API_KEY（apikey.fun 网关）。";
   }
   if (status === 429) return "生图接口限流（HTTP 429），请稍后重试。";
@@ -12663,6 +12878,8 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
   if (/invalid|unauthorized|401|api key|token|鉴权|密钥/i.test(text)) {
     return provider === "ark"
       ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
+      : provider === "grok"
+        ? "Grok 出图鉴权失败：请检查 XAI_API_KEY。"
       : "出图鉴权失败：请检查 OPENAI_API_KEY（apikey.fun 网关）。";
   }
   if (/timeout|timed out|ETIMEDOUT/i.test(text)) return "出图超时，请重试或降低分辨率。";
@@ -12677,19 +12894,25 @@ async function createCanvasImageGeneration(body = {}) {
   if (modelConfig.provider === "gpt") {
     if (!imageApiKey()) throw new Error("缺少 OPENAI_API_KEY：GPT Image 2 出图需要 api.apikey.fun 的生图 Key，请在 .env.local 配置后重启服务。");
     if (!IMAGE_GEN_SKILL_SCRIPT || !fs.existsSync(IMAGE_GEN_SKILL_SCRIPT)) throw new Error("缺少 image-gen 脚本：请先安装 apikey.fun 的 image-gen skill。");
+  } else if (modelConfig.provider === "grok") {
+    if (!process.env.XAI_API_KEY) throw new Error("缺少 XAI_API_KEY：Grok 出图需要在 .env.local 配置后重启服务。");
   } else if (!videoApiKey("ark")) {
     throw new Error("缺少 VOLC_ARK_API_KEY：Seedream 5.0 Pro/Lite 出图需要火山方舟 API Key，请在 .env.local 配置后重启服务。");
   }
-  const ratio = CANVAS_IMAGE_SIZE_TABLE[body.ratio] ? body.ratio : "16:9";
-  const resolution = ["1k", "2k", "4k"].includes(String(body.resolution || "").toLowerCase()) ? String(body.resolution).toLowerCase() : "1k";
-  const size = canvasImageSizeFor(ratio, resolution);
-  const providerSize = modelConfig.provider === "ark" ? seedreamImageSizeFor(ratio, resolution) : canvasImageProviderSizeFor(ratio);
+  const supportsSize = modelConfig.supportsSize !== false;
+  const ratio = supportsSize && CANVAS_IMAGE_SIZE_TABLE[body.ratio] ? body.ratio : supportsSize ? "16:9" : "";
+  const resolution = supportsSize && ["1k", "2k", "4k"].includes(String(body.resolution || "").toLowerCase()) ? String(body.resolution).toLowerCase() : supportsSize ? "1k" : "";
+  const size = supportsSize ? canvasImageSizeFor(ratio, resolution) : "";
+  const providerSize = modelConfig.provider === "ark" ? seedreamImageSizeFor(ratio, resolution) : modelConfig.provider === "gpt" ? canvasImageProviderSizeFor(ratio) : "";
   fs.mkdirSync(CANVAS_PUBLIC_ASSET_DIR, { recursive: true });
   const taskId = crypto.randomUUID();
   const fileName = `canvas-image-${taskId}.png`;
   const outPath = path.join(CANVAS_PUBLIC_ASSET_DIR, fileName);
   // 参考图（可选）：有则走 image 模式（首图为基准，其余为参考），否则纯文生图。
   const requestedReferences = (Array.isArray(body.referenceImages) ? body.referenceImages : []).map(compactLine).filter(Boolean).slice(0, 4);
+  if (modelConfig.provider === "grok" && requestedReferences.length) {
+    throw new Error("Grok 出图当前不支持参考图，请移除参考图后重试。");
+  }
   const references = (await Promise.all(requestedReferences.map(resolveCanvasImageReferenceToLocalPath))).filter(Boolean);
   if (requestedReferences.length && references.length !== requestedReferences.length) {
     throw new Error(`参考图解析失败：要求 ${requestedReferences.length} 张，实际解析到 ${references.length} 张。请重新上传或导入参考图。`);
@@ -12726,6 +12949,7 @@ async function createCanvasImageGeneration(body = {}) {
     imageModel: modelConfig.key,
     provider: modelConfig.provider,
     providerModel: modelConfig.model,
+    normalizeOutput: supportsSize,
     referencePaths: references,
     prompt,
     ownerUserId: compactLine(body.ownerUserId || ""),
@@ -12733,6 +12957,7 @@ async function createCanvasImageGeneration(body = {}) {
     child: null,
   });
   if (modelConfig.provider === "ark") enqueueCanvasImageJob(taskId, () => runSeedreamCanvasImageJob(taskId));
+  else if (modelConfig.provider === "grok") enqueueCanvasImageJob(taskId, () => runGrokCanvasImageJob(taskId));
   else enqueueCanvasImageJob(taskId, () => runCanvasImageJob(taskId, args, env));
   // 清理老任务（>30 分钟）避免内存无界增长。
   for (const [id, job] of canvasImageJobs) {
@@ -20857,7 +21082,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The image description." },
-          imageModel: { type: "string", enum: ["gpt-image-2", "seedream-5-0-pro", "seedream-5-0-lite"], default: "gpt-image-2" },
+          imageModel: { type: "string", enum: ["gpt-image-2", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image-2" },
           ratio: { type: "string", enum: Object.keys(CANVAS_IMAGE_SIZE_TABLE), default: "16:9" },
           resolution: { type: "string", enum: ["1k", "2k", "4k"], default: "1k" },
           referenceImages: { type: "array", items: { type: "string" }, maxItems: 4 },
@@ -20876,7 +21101,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The video description." },
-          videoModel: { type: "string", default: "seedance-2-0" },
+          videoModel: { type: "string", enum: ["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
           duration: { type: "number", minimum: 1, default: 5 },
           ratio: { type: "string", default: "9:16" },
           firstFrameUrl: { type: "string" },
@@ -21632,6 +21857,8 @@ async function handleApi(req, res, url) {
       ? await buildGravitexVideoGenerationPayload(body)
       : provider === "byteplus"
         ? await buildSeedanceGenerationPayload({ ...body, __provider: "byteplus" })
+        : provider === "grok"
+          ? await buildGrokVideoGenerationPayload(body)
         : await buildSeedanceGenerationPayload(body);
     return send(res, 200, {
       ok: true,
@@ -22539,6 +22766,7 @@ module.exports = {
     canvasVideo: {
       canvasVideoProviderForBody,
       buildSeedanceGenerationPayload,
+      grokVideoPayload,
       normalizeVideoResolution,
     },
     videoReferences: {
@@ -22565,6 +22793,7 @@ module.exports = {
     canvasImage: {
       normalizeCanvasImageModel,
       canvasImageModelConfig,
+      grokImagePayload,
       seedreamImageSizeFor,
       seedreamImageResult,
       seedreamImagePayload,

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=super-pixel-image-retry-20260727" />
+    <link rel="stylesheet" href="/styles.css?v=grok-integration-20260727" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -119,6 +119,7 @@
                   <option value="gpt-image-2">GPT Image 2</option>
                   <option value="seedream-5-0-pro">Seedream 5.0 Pro</option>
                   <option value="seedream-5-0-lite">Seedream 5.0 Lite</option>
+                  <option value="grok-imagine-image">Grok Imagine Image</option>
                 </select>
               </label>
               <label class="image-explore-control image-explore-ratio">
@@ -246,6 +247,9 @@
                         <option value="gpt-5.6-terra">GPT-5.6 Terra</option>
                         <option value="gpt-5.6-sol">GPT-5.6 Sol</option>
                         <option value="gpt-5.6-luna">GPT-5.6 Luna</option>
+                      </optgroup>
+                      <optgroup label="Grok">
+                        <option value="grok-4.5">Grok 4.5</option>
                       </optgroup>
                     </select>
                   </label>
@@ -796,6 +800,7 @@
                               <option value="seedance-2-0-mini">Seedance 2.0 Mini</option>
                               <option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option>
                               <option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option>
+                              <option value="grok-imagine-video">Grok Imagine Video</option>
                             </select>
                           </label>
                         </div>
@@ -821,6 +826,7 @@
                               <option value="seedance-2-0-mini">Seedance 2.0 Mini</option>
                               <option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option>
                               <option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option>
+                              <option value="grok-imagine-video">Grok Imagine Video</option>
                             </select>
                           </label>
                           <label for="videoPromptInspectorPrompt">视频提示词</label>
@@ -1177,7 +1183,7 @@
                 <div class="modern-video-param-controls">
                   <label class="modern-video-param"><span>比例</span><select id="modernParamRatio" aria-label="视频比例"><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label>
                   <label class="modern-video-param"><span>规格</span><select id="modernParamResolution" aria-label="视频分辨率"><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option></select></label>
-                  <label class="modern-video-param modern-video-param-model"><span>模型</span><select id="modernParamModel" aria-label="视频模型"><option value="seedance-2-0">Seedance 2.0</option><option value="seedance-2-0-fast">Seedance 2.0 Fast</option><option value="seedance-2-0-mini">Seedance 2.0 Mini</option><option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option><option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option></select></label>
+                  <label class="modern-video-param modern-video-param-model"><span>模型</span><select id="modernParamModel" aria-label="视频模型"><option value="seedance-2-0">Seedance 2.0</option><option value="seedance-2-0-fast">Seedance 2.0 Fast</option><option value="seedance-2-0-mini">Seedance 2.0 Mini</option><option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option><option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option><option value="grok-imagine-video">Grok Imagine Video</option></select></label>
                 </div>
                 <span id="modernSelectedShotSummary" class="modern-shot-summary-compat" aria-hidden="true"></span>
               </div>
@@ -1227,6 +1233,7 @@
                       <option value="seedance-2-0-mini">Seedance 2.0 Mini</option>
                       <option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option>
                       <option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option>
+                      <option value="grok-imagine-video">Grok Imagine Video</option>
                     </select>
                     <p id="modernVideoQueueInspectorFailure"></p>
                     <div class="modern-video-queue-inspector-actions"><button id="modernVideoQueueRestorePrompt" type="button">还原</button><button id="modernVideoQueueSavePrompt" type="button">保存修改</button><button id="modernVideoQueueGenerate" class="is-primary" type="button">生成视频</button></div>
@@ -1302,12 +1309,12 @@
         <div id="assetInspector"><span id="assetInspectorName"></span><span id="assetInspectorMeta"></span><textarea id="assetInspectorPrompt"></textarea><span id="assetInspectorDraftStatus"></span><span id="assetInspectorPromptCount"></span><span id="assetInspectorPolicy"></span><button id="closeAssetInspector" type="button"></button><button id="restoreAssetPrompt" type="button"></button><button id="saveAssetPrompt" type="button"></button><button id="regenerateAssetFromInspector" type="button"></button></div>
         <div id="referenceKitPanel"><form id="referenceKitForm"></form><button id="newReferenceKit" type="button"></button><button id="referenceKitCancel" type="button"></button><div id="referenceKitList"></div></div>
         <div id="storyboardGridGallery"></div><span id="storyboardGridCount"></span><div id="storyboardJobStatus"></div><select id="storyboardGenerateRange"><option value="missing">缺失</option></select><button data-job="storyboards" type="button"></button>
-        <div id="videoConfigStatus"></div><span id="videoConfigLabel"></span><button id="buildConfigBtn" type="button"></button><input id="configGroup" /><select id="configModel"><option value="seedance-2-0">Seedance 2.0</option></select><select id="configResolution"><option value="480p">480p</option></select><select id="configRatio"><option value="9:16">9:16</option></select><select id="configPromptMode"><option value="prompt">提示词</option><option value="production_board">Production Board</option></select>
+        <div id="videoConfigStatus"></div><span id="videoConfigLabel"></span><button id="buildConfigBtn" type="button"></button><input id="configGroup" /><select id="configModel"><option value="seedance-2-0">Seedance 2.0</option><option value="grok-imagine-video">Grok Imagine Video</option></select><select id="configResolution"><option value="480p">480p</option></select><select id="configRatio"><option value="9:16">9:16</option></select><select id="configPromptMode"><option value="prompt">提示词</option><option value="production_board">Production Board</option></select>
         <div id="videoProgressSummary"></div><div id="videoProgressList"></div><button id="generateAllSegments" type="button"></button>
         <div id="studioFlowStatus"></div><span id="studioFlowProgress"></span><div id="studioLogContent"></div><div id="studioContextTitle"></div><div id="studioContextCopy"></div><div id="studioContextStage"></div><div id="studioContextStatus"></div><div id="studioContextDownstream"></div><button id="studioContextOpen" type="button"></button><div id="studioQueueBar"><div id="studioQueueItems"></div><span id="studioQueueSummary"></span><div id="studioQueueProgress"><span id="studioQueueProgressFill"></span></div></div>
         <button id="backToProjects" type="button"></button><button id="studioModernOverviewButton" type="button"></button><button id="studioCommandButton" type="button"></button><button id="studioPrimaryRun" type="button"></button><button id="studioProjectsButton" type="button"></button><button id="refreshState" type="button"></button><button id="zoomOut" type="button"></button><button id="zoomIn" type="button"></button><button id="zoomFit" type="button"></button><button id="resetLayout" type="button"></button>
         <input id="assetUploadFile" type="file" /><input id="assetUploadLabel" /><select id="assetUploadTarget"></select><select id="assetUploadMode"><option value="bind">绑定</option></select><span id="assetUploadName"></span><span id="assetUploadHint"></span><button id="assetUploadButton" type="button"></button><form id="assetUploadForm"></form><input id="storyboardUploadFile" type="file" /><span id="storyboardUploadName"></span><select id="storyboardUploadTarget"></select><button id="storyboardUploadButton" type="button"></button><form id="storyboardUploadForm"></form><button id="refreshStoryboards" type="button"></button>
-        <aside id="videoPromptInspector"><span id="videoPromptInspectorName"></span><span id="videoPromptInspectorMeta"></span><select id="videoPromptInspectorModel"><option value="seedance-2-0">Seedance 2.0</option></select><textarea id="videoPromptInspectorPrompt"></textarea><span id="videoPromptInspectorDraftStatus"></span><span id="videoPromptInspectorPromptCount"></span><p id="videoPromptInspectorFailure"></p><button id="closeVideoPromptInspector" type="button"></button><button id="restoreVideoPrompt" type="button"></button><button id="saveVideoPrompt" type="button"></button><button id="regenerateVideoFromInspector" type="button"></button></aside>
+        <aside id="videoPromptInspector"><span id="videoPromptInspectorName"></span><span id="videoPromptInspectorMeta"></span><select id="videoPromptInspectorModel"><option value="seedance-2-0">Seedance 2.0</option><option value="grok-imagine-video">Grok Imagine Video</option></select><textarea id="videoPromptInspectorPrompt"></textarea><span id="videoPromptInspectorDraftStatus"></span><span id="videoPromptInspectorPromptCount"></span><p id="videoPromptInspectorFailure"></p><button id="closeVideoPromptInspector" type="button"></button><button id="restoreVideoPrompt" type="button"></button><button id="saveVideoPrompt" type="button"></button><button id="regenerateVideoFromInspector" type="button"></button></aside>
       </div>
     </div>
 
@@ -1376,6 +1383,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=super-pixel-image-retry-20260727"></script>
+    <script src="/app.js?v=grok-integration-20260727"></script>
   </body>
 </html>

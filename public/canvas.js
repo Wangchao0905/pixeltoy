@@ -3681,6 +3681,13 @@ async function batchGenerateVideoNodes() {
   toast(started ? `已提交 ${started} 个视频生成任务` : "没有通过校验的视频模块；请先验证超写实素材");
 }
 
+function syncImageModelControls(element, settings = {}) {
+  const hidden = settings.model === "grok-imagine-image";
+  element.querySelectorAll('[data-node-field="ratio"], [data-node-field="resolution"]').forEach((field) => {
+    field.closest("label")?.toggleAttribute("hidden", hidden);
+  });
+}
+
 function syncNodeControls(element, node) {
   if (node.kind === "asset") return;
   const prompt = element.querySelector(".node-prompt");
@@ -3690,6 +3697,7 @@ function syncNodeControls(element, node) {
   }
   if (node.kind === "image") {
     const settings = { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) };
+    syncImageModelControls(element, settings);
     if (prompt) bindPromptMentionMenu(prompt, node);
     element.querySelectorAll("[data-node-field]").forEach((field) => {
       const key = field.dataset.nodeField;
@@ -3700,6 +3708,7 @@ function syncNodeControls(element, node) {
           node.ratioManualSize = false;
         }
         node.settings = { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}), [key]: field.value };
+        syncImageModelControls(element, node.settings);
         if (key === "ratio") {
           if (!refreshImageNodeElement(node.id)) renderNodes();
           renderLinks();

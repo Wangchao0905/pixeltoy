@@ -126,8 +126,8 @@ assert.match(css, /\.generation-canvas-shell\s*\{[\s\S]*?height:\s*100dvh/s,
   "canvas shell should occupy the viewport so its background cannot expose the page below");
 assert.match(css, /\.blank-canvas\s*\{[\s\S]*?height:\s*100%/s,
   "blank canvas should fill the shell grid track");
-assert.match(css, /\.blank-canvas\.is-viewport-moving\s+\.video-preview-slot\s+video[\s\S]*?visibility:\s*hidden/s,
-  "video compositor layers should be isolated while panning to prevent white flashes");
+assert.match(css, /\.blank-canvas\.is-viewport-moving\s+\.video-preview-slot\s+video[\s\S]*?visibility:\s*visible\s*!important/s,
+  "video previews should remain visible while panning the canvas");
 assert.match(js, /function startSelectionMarquee\(event\)[\s\S]*?initialSelection:\s*\[\.\.\.canvasState\.selectedNodeIds\][\s\S]*?setPointerCapture/s,
   "blank-canvas dragging should capture a pointer for marquee selection");
 assert.match(js, /function updateMarqueeSelection\(\)[\s\S]*?rectsIntersect\(rect,[\s\S]*?setSelectedNodes\(next\)/s,

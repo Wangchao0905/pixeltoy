@@ -1194,13 +1194,6 @@ body.canvas-page {
   box-shadow: none;
 }
 
-/* Native video surfaces can flash a stale white compositor tile while their
-   transformed ancestor is being panned. Keep the dark preview shell visible
-   and restore the video as soon as the gesture settles. */
-.blank-canvas.is-viewport-moving .video-preview-slot video {
-  visibility: hidden;
-}
-
 /* 视频/图片生成结果统一的下载按钮：默认隐藏，鼠标悬停在节点上才淡入。 */
 .media-download-button {
   position: absolute;
@@ -5573,59 +5566,59 @@ body.canvas-page .canvas-topbar {
   overflow: hidden;
 }
 
-/* Extend the same blue glass material across the prompt surface and its
-   reference chips so gray pockets do not interrupt the video module. */
+/* Graphite glass hierarchy: the prompt is the broadest surface, references
+   sit one step above it, and controls stay quiet so the action remains clear. */
 .video-node .video-composer {
-  border-color: rgba(117, 198, 255, 0.34);
+  border-color: rgba(255, 255, 255, 0.14);
   background:
-    linear-gradient(145deg, rgba(47, 133, 224, 0.3), rgba(10, 42, 83, 0.68)),
-    rgba(7, 20, 41, 0.9);
+    linear-gradient(145deg, rgba(57, 61, 66, 0.88), rgba(15, 17, 20, 0.96)),
+    rgba(17, 19, 22, 0.96);
   box-shadow:
-    inset 0 1px 0 rgba(218, 243, 255, 0.14),
-    inset 0 -20px 36px rgba(0, 39, 91, 0.2),
-    0 16px 36px rgba(0, 18, 48, 0.28);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-  backdrop-filter: blur(22px) saturate(150%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -20px 36px rgba(0, 0, 0, 0.24),
+    0 16px 36px rgba(0, 0, 0, 0.34);
+  -webkit-backdrop-filter: blur(22px) saturate(110%);
+  backdrop-filter: blur(22px) saturate(110%);
 }
 
 .video-node .video-reference-assets .node-asset-chip {
-  border-color: rgba(113, 195, 255, 0.36);
+  border-color: rgba(255, 255, 255, 0.16);
   background:
-    linear-gradient(135deg, rgba(42, 125, 211, 0.26), rgba(10, 44, 85, 0.58)),
-    rgba(7, 25, 51, 0.78);
+    linear-gradient(135deg, rgba(68, 73, 79, 0.82), rgba(25, 28, 32, 0.9)),
+    rgba(19, 21, 24, 0.92);
   box-shadow:
-    inset 0 1px 0 rgba(218, 243, 255, 0.12),
-    inset 0 -10px 20px rgba(0, 35, 82, 0.16);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  backdrop-filter: blur(14px) saturate(140%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -10px 20px rgba(0, 0, 0, 0.2);
+  -webkit-backdrop-filter: blur(14px) saturate(110%);
+  backdrop-filter: blur(14px) saturate(110%);
 }
 
 .video-node .video-reference-assets .node-asset-chip.from-upstream {
-  border-color: rgba(133, 210, 255, 0.58);
+  border-color: rgba(255, 255, 255, 0.24);
   background:
-    linear-gradient(135deg, rgba(53, 151, 240, 0.34), rgba(14, 58, 111, 0.68)),
-    rgba(8, 31, 63, 0.82);
+    linear-gradient(135deg, rgba(87, 94, 102, 0.88), rgba(34, 38, 43, 0.92)),
+    rgba(24, 27, 30, 0.94);
 }
 
 .video-node .video-advanced-controls,
 .video-node .video-advanced-controls .video-audio-toggle {
-  border-color: rgba(110, 190, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.14);
   background:
-    linear-gradient(135deg, rgba(46, 127, 216, 0.24), rgba(10, 43, 84, 0.56)),
-    rgba(7, 23, 48, 0.8);
+    linear-gradient(135deg, rgba(46, 50, 55, 0.82), rgba(15, 17, 20, 0.9)),
+    rgba(17, 19, 22, 0.94);
   box-shadow:
-    inset 0 1px 0 rgba(218, 243, 255, 0.1),
-    inset 0 -10px 22px rgba(0, 35, 82, 0.14);
-  -webkit-backdrop-filter: blur(16px) saturate(145%);
-  backdrop-filter: blur(16px) saturate(145%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -10px 22px rgba(0, 0, 0, 0.2);
+  -webkit-backdrop-filter: blur(16px) saturate(110%);
+  backdrop-filter: blur(16px) saturate(110%);
 }
 
 .video-node .video-advanced-controls .video-audio-toggle:hover,
 .video-node .video-advanced-controls .video-audio-toggle:focus-within {
-  border-color: rgba(133, 207, 255, 0.52);
+  border-color: rgba(255, 255, 255, 0.28);
   background:
-    linear-gradient(135deg, rgba(69, 160, 244, 0.3), rgba(18, 67, 126, 0.58)),
-    rgba(8, 31, 64, 0.78);
+    linear-gradient(135deg, rgba(61, 66, 72, 0.88), rgba(22, 25, 29, 0.94)),
+    rgba(20, 22, 25, 0.94);
 }
 
 .video-node .video-prompt {
@@ -5701,31 +5694,31 @@ body.canvas-page .canvas-topbar {
   width: 126px;
 }
 
-/* Blue frosted controls keep the parameter row distinct from the dark canvas
-   without adding another heavy card around the video node. */
+/* Graphite frosted controls keep the parameter row distinct without adding
+   another heavy card around the video node. */
 .video-node .video-setting-row > .video-setting,
 .video-node .video-duration-field,
 .video-node .video-settings-button {
   box-sizing: border-box;
-  border: 1px solid rgba(110, 190, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   background:
-    linear-gradient(135deg, rgba(61, 153, 255, 0.3), rgba(19, 76, 145, 0.28)),
-    rgba(9, 35, 71, 0.66);
+    linear-gradient(135deg, rgba(54, 58, 63, 0.88), rgba(22, 24, 27, 0.94)),
+    rgba(20, 22, 25, 0.92);
   box-shadow:
-    inset 0 1px 0 rgba(215, 241, 255, 0.14),
-    inset 0 -12px 24px rgba(0, 35, 82, 0.16);
-  -webkit-backdrop-filter: blur(16px) saturate(145%);
-  backdrop-filter: blur(16px) saturate(145%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -12px 24px rgba(0, 0, 0, 0.22);
+  -webkit-backdrop-filter: blur(16px) saturate(110%);
+  backdrop-filter: blur(16px) saturate(110%);
 }
 
 .video-node .video-setting-row > .video-setting:hover,
 .video-node .video-duration-field:focus-within,
 .video-node .video-settings-button:hover,
 .video-node .video-settings-button:focus-visible {
-  border-color: rgba(133, 207, 255, 0.56);
+  border-color: rgba(255, 255, 255, 0.3);
   background:
-    linear-gradient(135deg, rgba(73, 169, 255, 0.32), rgba(25, 91, 169, 0.26)),
-    rgba(9, 42, 84, 0.58);
+    linear-gradient(135deg, rgba(66, 71, 77, 0.9), rgba(27, 30, 34, 0.94)),
+    rgba(22, 24, 27, 0.92);
 }
 
 .video-node .video-duration-field {
@@ -5739,22 +5732,24 @@ body.canvas-page .canvas-topbar {
   min-width: 108px;
 }
 
-/* Keep the native option list in the same dark-blue visual world as the
-   canvas. `color-scheme` covers the browser chrome while option colors cover
-   engines that allow author styling of the popup rows. */
+/* Keep native option lists in the same graphite visual world as the canvas. */
 .video-node .video-settings-strip select {
   color-scheme: dark;
 }
 
 .video-node .video-settings-strip select option,
 .video-node .video-settings-strip select optgroup {
-  background: #0b1a2d;
-  color: #e8f4ff;
+  background: #15181c;
+  color: #f0f3f5;
 }
 
 .video-node .video-settings-strip select option:checked {
-  background: #1f83e0;
+  background: #3f464e;
   color: #ffffff;
+}
+
+.video-node .video-duration-field input[type="range"] {
+  accent-color: #cbd2d8;
 }
 
 @container (max-width: 499px) {
@@ -5856,6 +5851,11 @@ body.canvas-page .canvas-topbar {
   display: none !important;
 }
 
+.video-node .video-selection-handle {
+  display: none !important;
+  pointer-events: none;
+}
+
 /* The preview is the visual lead-in to the prompt surface. Preserve the
    title-to-preview breathing room while removing the seam between preview and
    the input module below it. */
@@ -5874,6 +5874,14 @@ body.canvas-page .canvas-topbar {
 .video-node.is-composer-open .video-composer {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
+}
+
+/* Keep native video visible during viewport movement. A temporary compositor
+   layer avoids the blank-after-pan flash without reloading the media element. */
+.blank-canvas.is-viewport-moving .video-preview-slot video {
+  visibility: visible !important;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 /* Canvas Agent: a quiet, independent control layer over the infinite canvas. */

@@ -73,14 +73,14 @@ assert.match(finalComposerCss,
   /\.video-node \.video-settings-strip select[\s\S]*?color-scheme:\s*dark[\s\S]*?select option,[\s\S]*?background:\s*#0b1a2d/s,
   "video parameter dropdowns should use the dark canvas color scheme");
 assert.match(finalComposerCss,
-  /\.video-node \.video-composer[\s\S]*?backdrop-filter:\s*blur\(22px\) saturate\(150%\)/s,
-  "the prompt surface should use the shared blue frosted material");
+  /\.video-node \.video-composer[\s\S]*?background:[\s\S]*?rgba\(17, 19, 22, 0\.96\)[\s\S]*?backdrop-filter:\s*blur\(22px\) saturate\(110%\)/s,
+  "the prompt surface should use the shared graphite frosted material");
 assert.match(finalComposerCss,
-  /\.video-node \.video-reference-assets \.node-asset-chip[\s\S]*?rgba\(42, 125, 211, 0\.26\)/s,
-  "reference asset chips should use the shared blue frosted material");
+  /\.video-node \.video-reference-assets \.node-asset-chip[\s\S]*?rgba\(68, 73, 79, 0\.82\)/s,
+  "reference asset chips should use the shared graphite frosted material");
 assert.match(finalComposerCss,
-  /\.video-node \.video-advanced-controls,[\s\S]*?backdrop-filter:\s*blur\(16px\) saturate\(145%\)/s,
-  "advanced video controls should use the shared blue frosted material");
+  /\.video-node \.video-advanced-controls,[\s\S]*?backdrop-filter:\s*blur\(16px\) saturate\(110%\)/s,
+  "advanced video controls should use the shared graphite frosted material");
 assert.match(finalComposerCss,
   /\.video-node > \.node-port\.input-port,[\s\S]*?opacity:\s*0\s*!important/s,
   "video connection ports should not render blue dots");
@@ -94,8 +94,14 @@ assert.match(finalComposerCss,
   /\.video-node \.video-titlebar[\s\S]*?display:\s*none\s*!important/s,
   "the video node should not render its title, icon, or close button");
 assert.match(finalComposerCss,
+  /\.video-node \.video-selection-handle[\s\S]*?display:\s*none\s*!important/s,
+  "the video node should not render corner resize handles");
+assert.match(finalComposerCss,
   /\.video-node \.video-setting-row > \.video-setting,[\s\S]*?backdrop-filter:\s*blur\(16px\)/s,
-  "video parameters should use the blue frosted control surface");
+  "video parameters should use the graphite frosted control surface");
+assert.doesNotMatch(finalComposerCss,
+  /rgba\(61, 153, 255, 0\.3\)|rgba\(47, 133, 224, 0\.3\)|rgba\(42, 125, 211, 0\.26\)/,
+  "video surfaces should not retain the previous saturated blue fills");
 assert.match(js, /function syncVideoNodePortPosition\(element\)[\s\S]*?video-port-left/s,
   "video port positions should be derived from the rendered preview slot");
 assert.match(js, /node\.kind === "video"[\s\S]*?preview\?\.getBoundingClientRect\(\)/s,

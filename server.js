@@ -22166,13 +22166,17 @@ function serveMedia(req, res, file, options = {}) {
       ? `public, max-age=${options.cacheSeconds}`
       : "no-store";
   if (!range) {
-    return send(res, 200, fs.readFileSync(file), {
+    res.writeHead(200, {
       "Content-Type": contentType,
       "Content-Length": String(stat.size),
       "Accept-Ranges": "bytes",
       "Cache-Control": cacheControl,
       ...disposition,
     });
+    const stream = fs.createReadStream(file);
+    stream.on("error", (error) => res.destroy(error));
+    stream.pipe(res);
+    return;
   }
   const match = range.match(/bytes=(\d*)-(\d*)/);
   if (!match) {

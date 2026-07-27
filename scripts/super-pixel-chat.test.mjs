@@ -13,8 +13,14 @@ assert.match(html, /<option value="agent">Agent<\/option>/);
 assert.doesNotMatch(html, /<option value="agent" disabled>/);
 const superPixelModelSelect = html.match(/<select id="superPixelModel"[\s\S]*?<\/select>/)?.[0] || "";
 assert.doesNotMatch(superPixelModelSelect, /value="claude-sonnet-5"/);
-assert.match(html, /styles\.css\?v=img-ref-20260727/);
-assert.match(html, /app\.js\?v=img-ref-20260727/);
+// 别咬缓存戳的字面值。?v= 是并发协作里唯一必冲突行,任何人 bump 一次就会把
+// 硬编码的字面值断言打挂(2026-07-27 实测:被 empty-studio-20260727 冲掉)。
+// 这里只保证两个戳存在且一致——那才是「改动能到浏览器」的真实条件。
+const stylesStamp = html.match(/styles\.css\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
+const appStamp = html.match(/app\.js\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
+assert.ok(stylesStamp, "styles.css 必须带缓存戳");
+assert.ok(appStamp, "app.js 必须带缓存戳");
+assert.equal(appStamp, stylesStamp, "两个缓存戳必须同步 bump");
 assert.match(app, /async function submitSuperPixelChat\(prompt\)/);
 assert.match(app, /fetch\("\/api\/super-pixel\/chat"/);
 assert.match(app, /Accept: "text\/event-stream"/);

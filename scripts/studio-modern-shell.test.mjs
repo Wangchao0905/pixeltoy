@@ -60,6 +60,8 @@ assert.match(js, /function openProjectFromState\([\s\S]*state\.modernStudio\.foc
 assert.match(js, /modernNewProject[\s\S]*openProjectModal\(\)/, "modern project menu must support creating a new project");
 assert.match(js, /modernRenameProject[\s\S]*openModernProjectRename/, "modern project menu must support renaming the current project");
 assert.match(js, /function persistProjectDisplayName[\s\S]*\/display-name/, "modern rename must reuse the project display-name API");
+assert.match(js, /function modernVideoQueueCount[\s\S]*progress\.queue[\s\S]*queue\.total/, "queue count must include the active batch queue");
+assert.match(js, /const queueCount = modernVideoQueueCount\(progress\)[\s\S]*modernQueueLabel/, "queue label must use the real queue count");
 assert.match(js, /modernScriptUpload/, "modern shell must wire script upload");
 assert.match(js, /modernAssetDescriptionUpload/, "modern shell must wire asset document upload");
 assert.match(js, /modernExtractAssets/, "modern shell must expose asset extraction");

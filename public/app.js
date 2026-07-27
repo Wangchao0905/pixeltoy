@@ -4767,6 +4767,29 @@ function modernStatusLabel(status = "") {
   return labels[String(status || "").toLowerCase()] || "待生成";
 }
 
+function modernVideoQueueCount(progress = {}) {
+  const items = Array.isArray(progress.items) ? progress.items : [];
+  const activeItems = items.filter((item) => {
+    const status = String(item?.status || "").toLowerCase();
+    const statusCode = item?.statusCode;
+    const label = String(item?.label || item?.message || "");
+    return ["running", "queued"].includes(status)
+      || statusCode === 0
+      || statusCode === 1
+      || /生成中|排队|等待接口进度|等待上一段|等待前序|正在下载|抽取尾帧|尾帧/.test(label);
+  }).length;
+  const queue = progress.queue || {};
+  const queueStatus = String(queue.status || "").toLowerCase();
+  const queueActive = progress.running === true
+    || queue.running === true
+    || ["preparing", "running"].includes(queueStatus);
+  if (!queueActive) return activeItems;
+  const total = Number(queue.total) || 0;
+  const completed = Math.max(0, Number(queue.completed) || 0);
+  const remaining = total > 0 ? Math.max(0, total - completed) : 0;
+  return Math.max(activeItems, remaining, 1);
+}
+
 function modernShotRecords(data = state.project) {
   const config = videoConfigDataFromProject();
   const configShots = Array.isArray(config?.shots) ? config.shots : [];
@@ -4872,7 +4895,7 @@ function renderModernStudio(data = state.project) {
   const shots = modernShotRecords(data);
   const total = shots.length || Number(progress.total || 0);
   const completed = shots.filter((shot) => shot.status === "complete").length || Number(progress.completed || 0);
-  const running = shots.filter((shot) => ["running", "queued"].includes(shot.status)).length;
+  const queueCount = modernVideoQueueCount(progress);
   const selectedIndex = Math.max(0, Math.min(state.modernStudio.shotIndex, Math.max(0, shots.length - 1)));
   state.modernStudio.shotIndex = selectedIndex;
   const selected = shots[selectedIndex] || null;
@@ -4916,7 +4939,9 @@ function renderModernStudio(data = state.project) {
   $("#modernCompletedCount").textContent = `${pct}%`;
   $("#modernSeriesProgress").style.width = `${pct}%`;
   $("#modernSeriesProgressLabel").textContent = `${pct}%`;
-  $("#modernQueueLabel").textContent = `队列 ${running}`;
+  $("#modernQueueLabel").textContent = `队列 ${queueCount}`;
+  const queueButton = $("#modernQueueButton");
+  if (queueButton) queueButton.title = queueCount ? `查看视频队列，剩余 ${queueCount} 个任务` : "查看视频生成队列";
   $("#modernHeroShotCount").textContent = String(total || 0);
   const totalDuration = shots.reduce((sum, shot) => sum + (Number(shot.duration) || 0), 0);
   $("#modernHeroDuration").textContent = `00:${String(Math.round(totalDuration)).padStart(2, "0")}`;
@@ -8923,7 +8948,8 @@ function bind() {
   };
   $("#modernQueueButton")?.addEventListener("click", () => {
     focusModernPane("video");
-    toast("已定位到视频生成阶段");
+    const queueCount = modernVideoQueueCount(state.project?.videoProgress || {});
+    toast(queueCount ? `已定位到视频队列，剩余 ${queueCount} 个任务` : "当前没有进行中的视频任务");
   });
   $("#modernReturnProject")?.addEventListener("click", goBackToProjects);
   $("#modernMoreActions")?.addEventListener("click", () => toast("更多操作将在当前项目菜单中提供"));

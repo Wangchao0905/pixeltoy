@@ -68,6 +68,7 @@ body.canvas-page {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   width: 100vw;
+  height: 100dvh;
   min-height: 100dvh;
   padding-top: 48px;
   box-sizing: border-box;
@@ -225,6 +226,7 @@ body.canvas-page {
 
 .blank-canvas {
   position: relative;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   overscroll-behavior: none;
@@ -417,6 +419,7 @@ body.canvas-page {
   position: absolute;
   inset: 0;
   z-index: 4;
+  isolation: isolate;
   transform-origin: 0 0;
   will-change: transform;
   /* 让节点层空白处对指针透明，悬停才能穿透到下面 z-index:3 的连线 hitbox（显示剪刀）；
@@ -1168,6 +1171,8 @@ body.canvas-page {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     0 18px 44px rgba(0, 0, 0, 0.34);
+  contain: paint;
+  isolation: isolate;
   cursor: pointer;
 }
 
@@ -1186,6 +1191,13 @@ body.canvas-page {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
+}
+
+/* Native video surfaces can flash a stale white compositor tile while their
+   transformed ancestor is being panned. Keep the dark preview shell visible
+   and restore the video as soon as the gesture settles. */
+.blank-canvas.is-viewport-moving .video-preview-slot video {
+  visibility: hidden;
 }
 
 /* 视频/图片生成结果统一的下载按钮：默认隐藏，鼠标悬停在节点上才淡入。 */
@@ -3317,6 +3329,7 @@ body.canvas-page {
   }
 
   .generation-canvas-shell {
+    height: auto;
     min-height: 100dvh;
   }
 
@@ -3327,6 +3340,7 @@ body.canvas-page {
   }
 
   .blank-canvas {
+    height: auto;
     min-height: 900px;
   }
 

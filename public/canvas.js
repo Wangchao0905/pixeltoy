@@ -121,6 +121,7 @@ const canvasState = {
   arkPersonPollTimers: new Map(),
   viewport: { x: 0, y: 0, scale: 1 },
   viewportPan: null,
+  viewportPanFrame: 0,
   sharedAssetLibrary: {
     assets: [],
     search: "",
@@ -981,6 +982,8 @@ function startCanvasPan(event) {
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
+    currentX: event.clientX,
+    currentY: event.clientY,
     originX: viewport.x,
     originY: viewport.y,
   };
@@ -989,19 +992,37 @@ function startCanvasPan(event) {
   markCanvasViewportMoving();
 }
 
+function applyCanvasPanFrame() {
+  canvasState.viewportPanFrame = 0;
+  const pan = canvasState.viewportPan;
+  if (!pan) return;
+  canvasState.viewport.x = pan.originX + (pan.currentX - pan.startX);
+  canvasState.viewport.y = pan.originY + (pan.currentY - pan.startY);
+  applyCanvasViewport();
+}
+
 function updateCanvasPan(event) {
   const pan = canvasState.viewportPan;
   if (!pan || (pan.pointerId != null && event.pointerId !== pan.pointerId)) return;
   event.preventDefault();
-  canvasState.viewport.x = pan.originX + (event.clientX - pan.startX);
-  canvasState.viewport.y = pan.originY + (event.clientY - pan.startY);
+  pan.currentX = event.clientX;
+  pan.currentY = event.clientY;
   markCanvasViewportMoving();
-  applyCanvasViewport();
+  if (!canvasState.viewportPanFrame) {
+    canvasState.viewportPanFrame = requestAnimationFrame(applyCanvasPanFrame);
+  }
 }
 
 function endCanvasPan(event = {}) {
   const pan = canvasState.viewportPan;
   if (!pan || (pan.pointerId != null && event.pointerId != null && event.pointerId !== pan.pointerId)) return;
+  if (Number.isFinite(event.clientX)) pan.currentX = event.clientX;
+  if (Number.isFinite(event.clientY)) pan.currentY = event.clientY;
+  if (canvasState.viewportPanFrame) {
+    cancelAnimationFrame(canvasState.viewportPanFrame);
+    canvasState.viewportPanFrame = 0;
+    applyCanvasPanFrame();
+  }
   const canvas = qs("#blankCanvas");
   if (pan.pointerId != null) canvas?.releasePointerCapture?.(pan.pointerId);
   canvas?.classList.remove("is-middle-panning");

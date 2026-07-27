@@ -90,6 +90,10 @@ assert.match(js, /canvasState\.viewportPan\s*=\s*\{/,
   "canvas pan should retain its pointer origin separately from node dragging");
 assert.match(js, /function updateCanvasPan\(event\)[\s\S]*?canvasState\.viewport\.x[\s\S]*?canvasState\.viewport\.y/s,
   "middle-button movement should translate the whole viewport");
+assert.match(js, /function applyCanvasPanFrame\(\)/,
+  "canvas panning should have a frame-coalesced render path");
+assert.match(js, /requestAnimationFrame\(applyCanvasPanFrame\)/,
+  "canvas panning should render at most once per animation frame");
 assert.doesNotMatch(js, /imagePreview\.addEventListener\("click"/, 
   "image preview clicks must not duplicate the node drag click-vs-move decision");
 assert.doesNotMatch(js, /preview\.addEventListener\("click",[\s\S]*?setActiveVideoNode\(node\.id\)/s,
@@ -110,6 +114,12 @@ assert.match(js, /addEventListener\("pointercancel", endCanvasPan\)/,
   "the canvas should cancel middle-button pan when the pointer is canceled");
 assert.match(css, /\.blank-canvas\.is-middle-panning[\s\S]*?\{[^}]*cursor:\s*grabbing/s,
   "middle-button panning should expose a grabbing cursor");
+assert.match(css, /\.generation-canvas-shell\s*\{[\s\S]*?height:\s*100dvh/s,
+  "canvas shell should occupy the viewport so its background cannot expose the page below");
+assert.match(css, /\.blank-canvas\s*\{[\s\S]*?height:\s*100%/s,
+  "blank canvas should fill the shell grid track");
+assert.match(css, /\.blank-canvas\.is-viewport-moving\s+\.video-preview-slot\s+video[\s\S]*?visibility:\s*hidden/s,
+  "video compositor layers should be isolated while panning to prevent white flashes");
 assert.match(js, /function startSelectionMarquee\(event\)[\s\S]*?initialSelection:\s*\[\.\.\.canvasState\.selectedNodeIds\][\s\S]*?setPointerCapture/s,
   "blank-canvas dragging should capture a pointer for marquee selection");
 assert.match(js, /function updateMarqueeSelection\(\)[\s\S]*?rectsIntersect\(rect,[\s\S]*?setSelectedNodes\(next\)/s,

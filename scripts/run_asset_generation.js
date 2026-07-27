@@ -138,7 +138,18 @@ function extractTextToImagePrompt(section) {
 
 function outputPath(root, asset) {
   const folder = asset.type === "Character" ? "characters" : asset.type === "Scene" ? "scenes" : asset.type === "Storyboard" ? "storyboards" : "props";
-  return path.join(root, "04_assets", folder, `${asset.name}.png`);
+  return path.join(resolveSeriesAssetDir(root), folder, `${asset.name}.png`);
+}
+
+function projectDirForEpisode(root) {
+  const marker = `${path.sep}outputs${path.sep}`;
+  const resolved = path.resolve(root);
+  const at = resolved.indexOf(marker);
+  return at === -1 ? path.dirname(resolved) : resolved.slice(0, at);
+}
+
+function resolveSeriesAssetDir(root) {
+  return path.join(projectDirForEpisode(root), "assets");
 }
 
 function typeCounts(assets) {
@@ -1696,7 +1707,7 @@ async function main() {
   console.log(
     `${new Date().toISOString()} planned assets: ${counts.Character || 0} characters, ${counts.Scene || 0} scenes, ${counts.Prop || 0} props, ${counts.Insert || 0} inserts, ${counts.Storyboard || 0} storyboards`,
   );
-  const logsDir = path.join(args.episodeRoot, "04_assets", "generation_logs");
+  const logsDir = path.join(resolveSeriesAssetDir(args.episodeRoot), "generation_logs");
   if (!args.dryRun) fs.mkdirSync(logsDir, { recursive: true });
   const results = [];
   let aborted = false;

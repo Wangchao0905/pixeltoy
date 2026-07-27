@@ -16400,6 +16400,15 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-series-context { cursor: pointer; outline: 0; text-align: left; }
 .modern-series-context:focus-visible { border-color: var(--mv-lime); box-shadow: 0 0 0 3px rgba(200,255,46,.12), var(--mv-hi); }
 .modern-series-context:hover { border-color: var(--mv-line-2); background: var(--mv-s3); }
+.modern-episode-switcher { display: flex; gap: 4px; margin: 8px 14px 0; overflow-x: auto; }
+.modern-episode-switcher .modern-episode-row { display: inline-flex; flex: 0 0 auto; min-height: 29px; padding: 0 8px; border: 1px solid var(--mv-line); border-radius: 4px; background: var(--mv-s2); color: var(--mv-mut); }
+.modern-episode-switcher .modern-episode-row > div { display: block; }
+.modern-episode-switcher .modern-episode-row strong { font-family: var(--mono); font-size: 10px; }
+.modern-episode-switcher .modern-episode-row small, .modern-episode-switcher .modern-episode-row > i { display: none; }
+.modern-episode-switcher .modern-episode-thumb { display: none; }
+.modern-episode-switcher .modern-episode-row.is-active { border-color: var(--mv-lime); color: var(--mv-tx); }
+.modern-episode-add { flex: 0 0 29px; min-height: 29px; border: 1px dashed var(--mv-line-2); border-radius: 4px; background: transparent; color: var(--mv-lime); font-size: 17px; line-height: 1; }
+.modern-episode-add:hover { border-color: var(--mv-line-2); }
 .modern-project-menu { display: grid; gap: 3px; margin: 6px 14px 0; padding: 4px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s1); box-shadow: var(--mv-e1); }
 .modern-project-menu button { display: flex; gap: 8px; align-items: center; width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--mv-mut); text-align: left; font-size: 11px; }
 .modern-project-menu button:hover, .modern-project-menu button:focus-visible { background: var(--mv-s3); color: var(--mv-tx); outline: 0; }
@@ -17094,6 +17103,7 @@ body.is-studio-modern ::-webkit-scrollbar-corner { background: transparent; }
 .modern-asset-image-head h2 { margin: 5px 0 0; color: var(--mv-tx); font-size: 24px; line-height: 1.1; }
 .modern-asset-image-head p { margin: 7px 0 0; color: var(--mv-mut); font-size: 13px; line-height: 1.5; }
 .modern-asset-generation-status { display: inline-flex; align-items: center; gap: 7px; margin-top: 9px; color: var(--mv-mut); font-family: var(--mono); font-size: 11px; line-height: 1.3; }
+.modern-series-asset-notice { display: block; margin-top: 7px; color: var(--mv-lime); font-family: var(--mono); font-size: 10px; line-height: 1.4; }
 .modern-asset-generation-status::before { width: 7px; height: 7px; border-radius: 50%; background: var(--mv-qt); content: ""; }
 .modern-asset-generation-status.is-running::before { background: #e4ad64; box-shadow: 0 0 0 4px rgba(228,173,100,.12); animation: modernAssetStatusPulse 1.4s ease-in-out infinite; }
 .modern-asset-generation-status.is-queued::before { background: #b7a1e8; }

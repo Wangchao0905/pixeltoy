@@ -547,8 +547,8 @@ assert(assetImageRule.includes("box-shadow: none;"), "canvas asset images must n
 const assetCaptionRule = sectionBetween(canvasCss, ".asset-node-caption {", ".asset-node-file {");
 assert(assetCaptionRule.includes("border: 0;"), "canvas asset captions must be borderless");
 assert(assetCaptionRule.includes("background: transparent;"), "canvas asset captions must not use a boxed panel");
-assert(assetCaptionRule.includes("opacity: 0;"), "canvas asset captions must be hidden until the image is selected");
-assert(canvasCss.includes(".canvas-node.asset-node.is-selected .asset-node-caption"), "canvas asset captions must show when selected");
+assert(assetCaptionRule.includes("opacity: 1;"), "canvas asset captions must stay visible without selection");
+assert(assetCaptionRule.includes("max-height: 34px;") && assetCaptionRule.includes("white-space: normal;"), "canvas asset captions must remain readable across two lines");
 const assetConnectorRule = sectionBetween(canvasCss, ".asset-node .asset-connector {", ".asset-node:focus-within .asset-connector,");
 assert(assetConnectorRule.includes("width: 28px;") && assetConnectorRule.includes("height: 28px;"), "canvas asset plus connector must stay compact");
 assert(assetConnectorRule.includes("border: 2px solid rgba(255, 255, 255"), "canvas asset plus connector must use a TapNow-style white circle");

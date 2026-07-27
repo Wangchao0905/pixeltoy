@@ -13780,6 +13780,7 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
       videoUrl: localVideo?.url || snapshot.videoUrl || "",
       taskId: snapshot.taskId || "",
       taskProvider: snapshot.provider || "",
+      submittedAt: snapshot.updatedAt || "",
       progress: 100,
       tailFrameReady: snapshot.tailFrameReady === true,
       tailFrameUrl: snapshot.tailFrameUrl || "",
@@ -13795,6 +13796,7 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
       videoUrl: "",
       taskId: snapshot.taskId || "",
       taskProvider: snapshot.provider || "",
+      submittedAt: snapshot.updatedAt || "",
       progress: Number.isFinite(Number(snapshot.progress)) ? Number(snapshot.progress) : 100,
       tailFrameReady: false,
       tailFrameUrl: "",
@@ -13810,6 +13812,7 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
       videoUrl: "",
       taskId: snapshot.taskId || "",
       taskProvider: snapshot.provider || "",
+      submittedAt: snapshot.updatedAt || "",
       progress: snapshot.progress === null || snapshot.progress === undefined ? null : snapshot.progress,
       tailFrameReady: false,
       tailFrameUrl: "",
@@ -13825,6 +13828,7 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
       videoUrl: "",
       taskId: "",
       taskProvider: "",
+      submittedAt: snapshot.updatedAt || "",
       progress: 0,
       tailFrameReady: false,
       tailFrameUrl: "",
@@ -13834,6 +13838,39 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
     };
   }
   return null;
+}
+
+function projectSnapshotCanvasVideoState(previousNode = {}, node = {}, snapshotFields = null) {
+  if (snapshotFields && typeof snapshotFields === "object") {
+    return {
+      status: snapshotFields.status || node.status || "idle",
+      statusMessage: snapshotFields.statusMessage || "",
+      videoUrl: snapshotFields.videoUrl || "",
+      taskId: snapshotFields.taskId || "",
+      taskProvider: snapshotFields.taskProvider || "",
+      submittedAt: snapshotFields.submittedAt || "",
+      progress: snapshotFields.progress ?? null,
+      tailFrameReady: snapshotFields.tailFrameReady === true,
+      tailFrameUrl: snapshotFields.tailFrameUrl || "",
+      tailFrameFileUrl: snapshotFields.tailFrameFileUrl || "",
+      tailFrameLocalFile: snapshotFields.tailFrameLocalFile || "",
+      tailFrameMessage: snapshotFields.tailFrameMessage || "",
+    };
+  }
+  return {
+    status: previousNode.status || node.status || "idle",
+    statusMessage: previousNode.statusMessage || node.statusMessage || "",
+    videoUrl: previousNode.videoUrl || node.videoUrl || "",
+    taskId: previousNode.taskId || node.taskId || "",
+    taskProvider: previousNode.taskProvider || node.taskProvider || "",
+    submittedAt: previousNode.submittedAt || node.submittedAt || "",
+    progress: previousNode.progress ?? node.progress ?? null,
+    tailFrameReady: previousNode.tailFrameReady === true || node.tailFrameReady === true,
+    tailFrameUrl: previousNode.tailFrameUrl || node.tailFrameUrl || "",
+    tailFrameFileUrl: previousNode.tailFrameFileUrl || node.tailFrameFileUrl || "",
+    tailFrameLocalFile: previousNode.tailFrameLocalFile || node.tailFrameLocalFile || "",
+    tailFrameMessage: previousNode.tailFrameMessage || node.tailFrameMessage || "",
+  };
 }
 
 function syncProjectShotsToCanvasState(episodeRoot, config = {}, shots = [], options = {}) {
@@ -13876,26 +13913,16 @@ function syncProjectShotsToCanvasState(episodeRoot, config = {}, shots = [], opt
   for (const shot of shots) {
     const node = canvasNodeFromConfigShot(shot, shotIndex.get(shot.name) ?? 0, canvasConfig);
     const previousNode = nodeById.get(node.id) || {};
-    const snapshotFields = projectSnapshotCanvasFields(episodeRoot, shot.name, runNamespace) || {};
+    const snapshotFields = projectSnapshotCanvasFields(episodeRoot, shot.name, runNamespace);
+    const videoState = projectSnapshotCanvasVideoState(previousNode, node, snapshotFields);
     nodeById.set(node.id, {
       ...previousNode,
       ...node,
-      ...snapshotFields,
+      ...videoState,
       prompt: options.forcePrompt === true ? node.prompt : (promptHasStoryContent(previousNode.prompt) ? previousNode.prompt : node.prompt),
-      status: snapshotFields.status || previousNode.status || node.status,
-      statusMessage: snapshotFields.statusMessage || previousNode.statusMessage || node.statusMessage,
-      videoUrl: snapshotFields.videoUrl || previousNode.videoUrl || node.videoUrl,
-      taskId: snapshotFields.taskId || previousNode.taskId || node.taskId,
-      taskProvider: snapshotFields.taskProvider || previousNode.taskProvider || node.taskProvider,
-      progress: snapshotFields.progress ?? previousNode.progress ?? node.progress,
       startFrameUrl: storyboardsActive ? "" : node.startFrameUrl || previousNode.startFrameUrl || "",
       tailFrameSourceNodeId: storyboardsActive ? "" : node.tailFrameSourceNodeId || previousNode.tailFrameSourceNodeId || "",
       tailFrameSourceName: storyboardsActive ? "" : node.tailFrameSourceName || previousNode.tailFrameSourceName || "",
-      tailFrameReady: snapshotFields.tailFrameReady ?? previousNode.tailFrameReady,
-      tailFrameUrl: snapshotFields.tailFrameUrl || previousNode.tailFrameUrl || "",
-      tailFrameFileUrl: snapshotFields.tailFrameFileUrl || previousNode.tailFrameFileUrl || "",
-      tailFrameLocalFile: snapshotFields.tailFrameLocalFile || previousNode.tailFrameLocalFile || "",
-      tailFrameMessage: snapshotFields.tailFrameMessage || previousNode.tailFrameMessage || "",
     });
   }
   const nodes = [...nodeById.values()].filter((node) => {

@@ -3470,6 +3470,14 @@ body.canvas-page {
   -webkit-backdrop-filter: blur(14px);
 }
 
+/* Keep the canvas navigation available even when compact UI flags are present. */
+body.canvas-page .canvas-topbar {
+  display: flex !important;
+  visibility: visible;
+  opacity: 1;
+  z-index: 1200;
+}
+
 .canvas-brand {
   min-width: 0;
 }

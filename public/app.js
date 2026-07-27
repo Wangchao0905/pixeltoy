@@ -2733,6 +2733,8 @@ function renderSuperPixelMessages() {
     stopSuperPixelGenerationPolls();
     return;
   }
+  const previousScrollTop = container.scrollTop;
+  const shouldStickToBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
   pruneSuperPixelGenerationPolls();
   container.textContent = "";
   const chatting = state.superPixel.messages.length > 0;
@@ -2769,7 +2771,9 @@ function renderSuperPixelMessages() {
     bubble.appendChild(textNode);
     container.appendChild(bubble);
   }
-  container.scrollTop = container.scrollHeight;
+  requestAnimationFrame(() => {
+    container.scrollTop = shouldStickToBottom ? container.scrollHeight : Math.min(previousScrollTop, container.scrollHeight);
+  });
 }
 
 function insertSuperPixelToolCard(card, assistant) {

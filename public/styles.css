@@ -15663,11 +15663,41 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 .super-pixel-stage.is-chatting .super-pixel-messages {
   flex: 1 1 auto;
   min-height: 0;
+  height: 0;
   max-height: none;
   width: min(760px, 100%);
   padding-bottom: 8px;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
+}
+
+/* Super Pixel chat refinement: keep the conversation usable while image cards stay compact. */
+.super-pixel-messages {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 110, 130, 0.42) transparent;
+}
+
+.super-pixel-messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.super-pixel-messages::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 110, 130, 0.42);
+}
+
+.super-pixel-stage.is-chatting .super-pixel-messages {
+  overscroll-behavior-y: contain;
+}
+
+.super-pixel-image-card .super-pixel-tool-card-details {
+  display: none;
+}
+
+.super-pixel-image-card .super-pixel-tool-card-media {
+  max-height: min(36vh, 300px);
 }
 
 .super-pixel-dock {

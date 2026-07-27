@@ -146,6 +146,10 @@ assert.match(viewRule, /min-height:\s*calc\(100vh - 44px\)/, "视图高度须用
 assert.match(css, /\.super-pixel-layout\s*\{[\s\S]*?height:\s*100%[\s\S]*?min-height:\s*0/, "Super Pixel 布局容器必须允许 flex/grid 子项收缩");
 assert.match(css, /\.super-pixel-stage\s*\{[\s\S]*?height:\s*100%[\s\S]*?min-height:\s*0[\s\S]*?overflow:\s*hidden/, "对话 stage 必须固定高度并裁住外层溢出");
 assert.match(css, /\.super-pixel-stage\.is-chatting\s+\.super-pixel-messages\s*\{[\s\S]*?min-height:\s*0[\s\S]*?overflow-y:\s*auto/, "对话消息必须是唯一可滚动区域");
+assert.match(css, /\.super-pixel-stage\.is-chatting\s+\.super-pixel-messages\s*\{[\s\S]*?height:\s*0[\s\S]*?overflow-x:\s*hidden/, "对话消息区域必须占据剩余高度并允许内部滚动");
+assert.match(css, /\.super-pixel-image-card \.super-pixel-tool-card-details\s*\{[\s\S]*?display:\s*none/, "图片工具卡不应显示提示词和模型规格");
+assert.match(css, /\.super-pixel-image-card \.super-pixel-tool-card-media\s*\{[\s\S]*?max-height:\s*min\(36vh,\s*300px\)/, "图片工具卡预览高度必须受控");
+assert.match(app, /const previousScrollTop = container\.scrollTop[\s\S]*?shouldStickToBottom/, "用户上翻消息时不能被重新渲染强制拉到底部");
 
 // 3) 窄屏工具条不得折行，否则发送键被甩到单独一行
 const narrow = css.match(/@media \(max-width: 600px\)\s*\{[\s\S]*?\n\}/)?.[0] || "";

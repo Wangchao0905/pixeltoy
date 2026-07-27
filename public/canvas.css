@@ -4955,82 +4955,16 @@ body.canvas-page .canvas-topbar {
   margin: 0;
   aspect-ratio: var(--video-preview-ratio, 9 / 16);
   border: 0;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.055);
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
 
-/* The preview is a fixed 16:9 stage inside the stable editor shell. A
-   portrait or square result is centered inside that stage instead of changing
-   the prompt, reference, or parameter geometry below it. */
-.canvas-node.video-node {
-  --video-preview-frame-height: 349px;
-  --video-preview-width: 100%;
-  --video-preview-height: auto;
-}
-
-.video-node .video-preview-frame {
-  height: var(--video-preview-frame-height);
-  display: grid;
-  place-items: center;
-}
-
-.video-node .video-preview-slot {
-  width: var(--video-preview-width);
-  height: var(--video-preview-height);
-  max-width: 100%;
-  max-height: 100%;
-}
-
-.video-node[data-video-ratio="9:16"],
-.video-node[data-video-ratio="adaptive"] {
-  --video-preview-width: calc(var(--video-preview-frame-height) * 9 / 16);
-  --video-preview-height: var(--video-preview-frame-height);
-}
-
-.video-node[data-video-ratio="3:4"] {
-  --video-preview-width: calc(var(--video-preview-frame-height) * 3 / 4);
-  --video-preview-height: var(--video-preview-frame-height);
-}
-
-.video-node[data-video-ratio="4:3"] {
-  --video-preview-width: calc(var(--video-preview-frame-height) * 4 / 3);
-  --video-preview-height: var(--video-preview-frame-height);
-}
-
-.video-node[data-video-ratio="1:1"] {
-  --video-preview-width: var(--video-preview-frame-height);
-  --video-preview-height: var(--video-preview-frame-height);
-}
-
-.video-node[data-video-ratio="16:9"] {
-  --video-preview-width: 100%;
-  --video-preview-height: auto;
-}
-
-.video-node[data-video-ratio="21:9"] {
-  --video-preview-width: 100%;
-  --video-preview-height: auto;
-}
-
-.video-node:not(.is-composer-open) {
-  --video-preview-frame-height: 261px;
-}
-
-@media (max-width: 760px) {
-  .canvas-node.video-node {
-    --video-preview-frame-height: min(349px, calc((100vw - 32px) * 0.5625));
-  }
-
-  .video-node:not(.is-composer-open) {
-    --video-preview-frame-height: min(261px, calc((100vw - 32px) * 0.5625));
-  }
-}
-
 .video-node .video-composer {
-  flex: 1 1 auto;
+  --video-composer-height: 250px;
+  flex: 0 0 auto;
   min-height: 0;
-  height: auto;
+  height: var(--video-composer-height);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -5040,11 +4974,11 @@ body.canvas-page .canvas-topbar {
 }
 
 .video-node .video-prompt {
-  flex: 1 1 auto;
+  flex: 0 0 118px;
   width: 100%;
-  height: auto;
-  min-height: 130px;
-  max-height: none;
+  height: 118px;
+  min-height: 118px;
+  max-height: 118px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -5181,6 +5115,10 @@ body.canvas-page .canvas-topbar {
 
   .video-node .video-settings-strip {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .video-node .video-composer {
+    --video-composer-height: 352px;
   }
 
   .video-node .video-setting-row > .video-setting-model,

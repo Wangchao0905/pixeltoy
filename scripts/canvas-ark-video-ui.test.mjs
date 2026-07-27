@@ -123,7 +123,7 @@ assert.match(css, /\.video-capture-tail-button\s*\{[^}]*opacity:\s*0;[^}]*visibi
 assert.match(css, /\.video-preview-slot:hover \.video-capture-tail-button[\s\S]*?opacity:\s*1/s, "tail-frame camera button should appear on preview hover");
 assert.match(css, /\.video-node\[data-video-status="completed"\] \.video-preview-slot\s*\{[^}]*background:\s*transparent/s, "completed video previews must not render a dark slot background");
 assert.match(css, /\/\* Keep the compact node frameless on the sides[\s\S]*?border-left:\s*0;[\s\S]*?border-right:\s*0;/, "video nodes should not render left and right frame borders");
-assert.match(css, /\.video-node\[data-video-ratio="9:16"\][\s\S]*?--video-preview-width:\s*calc\(var\(--video-preview-frame-height\) \* 9 \/ 16\);/, "vertical video previews should stay centered inside the fixed stage");
+assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?border:\s*0[\s\S]*?border-radius:\s*0/s, "video previews should render without a surrounding frame");
 assert.doesNotMatch(css, /asset-tray|tray-asset|asset-upload-badge|assetUploadPulse/, "canvas asset tray styles should be removed");
 assert.match(css, /\.canvas-node\.video-node\.is-composer-open\s*\{[^}]*min-width:\s*420px;[^}]*min-height:\s*420px;/s, "expanded video nodes must keep a minimum size while resizing");
 assert.match(css, /\.canvas-node\.video-node:not\(\.is-composer-open\)\s*\{[^}]*min-width:\s*260px;[^}]*min-height:\s*0;/s, "collapsed video nodes must not reserve the hidden composer height");

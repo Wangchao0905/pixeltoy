@@ -19,9 +19,9 @@ const sizeFn = js.slice(sizeFnStart, sizeFnEnd);
 const videoFixedBranch = sizeFn.indexOf('if (kind === "video")');
 const ratioMapLookup = sizeFn.indexOf("CANVAS_NODE_RATIO_DIMENSIONS[ratio]");
 assert.ok(videoFixedBranch >= 0 && videoFixedBranch < ratioMapLookup,
-  "video sizing must return the fixed editor shell before reading the selected ratio");
-assert.match(sizeFn, /if \(kind === "video"\)[\s\S]*?width: VIDEO_EDITOR_DEFAULT_WIDTH[\s\S]*?height: VIDEO_EDITOR_DEFAULT_HEIGHT/s,
-  "video sizing must use the fixed editor dimensions");
+  "video sizing must keep the fixed editor width before reading the selected ratio");
+assert.match(sizeFn, /if \(kind === "video"\)[\s\S]*?const ratioSize = CANVAS_NODE_RATIO_DIMENSIONS\[ratio\][\s\S]*?const previewHeight = Math\.round\(width \* ratioSize\.height \/ ratioSize\.width\)/s,
+  "video sizing must use the selected ratio for the preview height");
 assert.match(js, /VIDEO_PREVIEW_RATIOS\[effectiveSettings\.ratio\]/,
   "the selected ratio must still control the preview slot");
 
@@ -33,9 +33,13 @@ assert.equal(ratioWidthRules.length, 0,
 
 assert.match(css, /\.canvas-node\.video-node\.is-composer-open[\s\S]*?width:\s*var\(--video-node-width\)/s,
   "the open video editor should keep one explicit shell width");
-assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?aspect-ratio:\s*var\(--video-preview-ratio/s,
-  "the preview surface should own the selected video ratio");
-assert.match(css, /\.video-node \.video-prompt[\s\S]*?flex:\s*1 1 auto[\s\S]*?min-height:\s*130px/s,
-  "the prompt field should remain in a stable editor flow instead of resizing with the preview");
+assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?aspect-ratio:\s*var\(--video-preview-ratio[\s\S]*?border:\s*0[\s\S]*?border-radius:\s*0/s,
+  "the preview surface should own the selected video ratio without a frame");
+assert.doesNotMatch(css, /--video-preview-frame-height/,
+  "the preview must not be constrained by the old fixed stage");
+assert.match(css, /\.video-node \.video-composer[\s\S]*?flex:\s*0 0 auto[\s\S]*?height:\s*var\(--video-composer-height/s,
+  "the prompt and parameter composer must keep a fixed height");
+assert.match(css, /\.video-node \.video-prompt[\s\S]*?flex:\s*0 0 118px[\s\S]*?height:\s*118px/s,
+  "the prompt field must stay fixed while the preview ratio changes");
 
 console.log("canvas video editor layout tests passed");

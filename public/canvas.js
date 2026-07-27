@@ -2048,7 +2048,10 @@ function syncVideoNodeShell(element, node) {
 function ratioSizedNodeDimensions(node = {}, kind = "video") {
   const isImage = kind === "image";
   if (kind === "video") {
-    const layoutRatio = node.settings?.ratio || VIDEO_NODE_DEFAULTS.ratio;
+    const settings = { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}) };
+    const ratio = settings.ratio || VIDEO_NODE_DEFAULTS.ratio;
+    const ratioSize = CANVAS_NODE_RATIO_DIMENSIONS[ratio] || CANVAS_NODE_RATIO_DIMENSIONS[VIDEO_NODE_DEFAULTS.ratio];
+    const layoutRatio = ratio;
     const hasManualSize = node.ratioManualSize === true && node.ratioLayoutRatio === layoutRatio && Number.isFinite(Number(node.width)) && Number.isFinite(Number(node.height));
     if (hasManualSize) {
       return {
@@ -2056,9 +2059,11 @@ function ratioSizedNodeDimensions(node = {}, kind = "video") {
         height: clampNodeDimension(node.height, VIDEO_NODE_MIN_HEIGHT, VIDEO_NODE_MAX_HEIGHT, VIDEO_EDITOR_DEFAULT_HEIGHT),
       };
     }
+    const width = clampNodeDimension(VIDEO_EDITOR_DEFAULT_WIDTH, VIDEO_NODE_MIN_WIDTH, VIDEO_NODE_MAX_WIDTH, VIDEO_EDITOR_DEFAULT_WIDTH);
+    const previewHeight = Math.round(width * ratioSize.height / ratioSize.width);
     return {
-      width: VIDEO_EDITOR_DEFAULT_WIDTH,
-      height: VIDEO_EDITOR_DEFAULT_HEIGHT,
+      width,
+      height: clampNodeDimension(previewHeight + RATIO_LAYOUT_CHROME_HEIGHT.video, VIDEO_NODE_MIN_HEIGHT, VIDEO_NODE_MAX_HEIGHT, VIDEO_EDITOR_DEFAULT_HEIGHT),
     };
   }
   const settings = { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) };

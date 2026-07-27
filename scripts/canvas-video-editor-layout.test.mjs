@@ -64,11 +64,35 @@ assert.match(css, /\.video-node \.video-settings-strip[\s\S]*?grid-template-rows
 
 const finalComposerCss = css.slice(css.lastIndexOf("/* Final video composer layout:"));
 assert.match(finalComposerCss,
-  /grid-template-columns:\s*minmax\(92px, 0\.95fr\)\s+minmax\(92px, 0\.95fr\)\s+minmax\(180px, 1\.8fr\)\s+44px\s+minmax\(126px, 1\.2fr\)/,
+  /grid-template-columns:\s*minmax\(92px, 0\.95fr\)\s+minmax\(92px, 0\.95fr\)\s+190px\s+44px\s+minmax\(126px, 1\.2fr\)/,
   "the final action row should use five tracks without an empty spacer column");
 assert.match(finalComposerCss,
-  /\.video-node \.video-duration-field[\s\S]*?grid-template-columns:\s*auto 42px minmax\(118px, 1fr\)/s,
+  /\.video-node \.video-duration-field[\s\S]*?grid-template-columns:\s*auto 34px minmax\(108px, 1fr\)/s,
   "the duration field should reserve a readable slider track");
+assert.match(finalComposerCss,
+  /\.video-node \.video-settings-strip select[\s\S]*?color-scheme:\s*dark[\s\S]*?select option,[\s\S]*?background:\s*#0b1a2d/s,
+  "video parameter dropdowns should use the dark canvas color scheme");
+assert.match(finalComposerCss,
+  /\.video-node \.video-composer[\s\S]*?backdrop-filter:\s*blur\(22px\) saturate\(150%\)/s,
+  "the prompt surface should use the shared blue frosted material");
+assert.match(finalComposerCss,
+  /\.video-node \.video-reference-assets \.node-asset-chip[\s\S]*?rgba\(42, 125, 211, 0\.26\)/s,
+  "reference asset chips should use the shared blue frosted material");
+assert.match(finalComposerCss,
+  /\.video-node \.video-advanced-controls,[\s\S]*?backdrop-filter:\s*blur\(16px\) saturate\(145%\)/s,
+  "advanced video controls should use the shared blue frosted material");
+assert.match(finalComposerCss,
+  /\.video-node > \.node-port\.input-port,[\s\S]*?opacity:\s*0\s*!important/s,
+  "video connection ports should not render blue dots");
+assert.match(finalComposerCss,
+  /\.video-node\.is-composer-open[\s\S]*?row-gap:\s*0/s,
+  "the open video node should join its preview and input surface");
+assert.match(finalComposerCss,
+  /\.video-node \.video-preview-frame[\s\S]*?margin-bottom:\s*0\s*!important/s,
+  "the video preview should touch the prompt surface below it");
+assert.match(finalComposerCss,
+  /\.video-node \.video-titlebar[\s\S]*?display:\s*none\s*!important/s,
+  "the video node should not render its title, icon, or close button");
 assert.match(finalComposerCss,
   /\.video-node \.video-setting-row > \.video-setting,[\s\S]*?backdrop-filter:\s*blur\(16px\)/s,
   "video parameters should use the blue frosted control surface");

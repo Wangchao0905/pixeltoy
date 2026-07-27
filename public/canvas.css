@@ -5573,6 +5573,61 @@ body.canvas-page .canvas-topbar {
   overflow: hidden;
 }
 
+/* Extend the same blue glass material across the prompt surface and its
+   reference chips so gray pockets do not interrupt the video module. */
+.video-node .video-composer {
+  border-color: rgba(117, 198, 255, 0.34);
+  background:
+    linear-gradient(145deg, rgba(47, 133, 224, 0.3), rgba(10, 42, 83, 0.68)),
+    rgba(7, 20, 41, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(218, 243, 255, 0.14),
+    inset 0 -20px 36px rgba(0, 39, 91, 0.2),
+    0 16px 36px rgba(0, 18, 48, 0.28);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+
+.video-node .video-reference-assets .node-asset-chip {
+  border-color: rgba(113, 195, 255, 0.36);
+  background:
+    linear-gradient(135deg, rgba(42, 125, 211, 0.26), rgba(10, 44, 85, 0.58)),
+    rgba(7, 25, 51, 0.78);
+  box-shadow:
+    inset 0 1px 0 rgba(218, 243, 255, 0.12),
+    inset 0 -10px 20px rgba(0, 35, 82, 0.16);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+}
+
+.video-node .video-reference-assets .node-asset-chip.from-upstream {
+  border-color: rgba(133, 210, 255, 0.58);
+  background:
+    linear-gradient(135deg, rgba(53, 151, 240, 0.34), rgba(14, 58, 111, 0.68)),
+    rgba(8, 31, 63, 0.82);
+}
+
+.video-node .video-advanced-controls,
+.video-node .video-advanced-controls .video-audio-toggle {
+  border-color: rgba(110, 190, 255, 0.28);
+  background:
+    linear-gradient(135deg, rgba(46, 127, 216, 0.24), rgba(10, 43, 84, 0.56)),
+    rgba(7, 23, 48, 0.8);
+  box-shadow:
+    inset 0 1px 0 rgba(218, 243, 255, 0.1),
+    inset 0 -10px 22px rgba(0, 35, 82, 0.14);
+  -webkit-backdrop-filter: blur(16px) saturate(145%);
+  backdrop-filter: blur(16px) saturate(145%);
+}
+
+.video-node .video-advanced-controls .video-audio-toggle:hover,
+.video-node .video-advanced-controls .video-audio-toggle:focus-within {
+  border-color: rgba(133, 207, 255, 0.52);
+  background:
+    linear-gradient(135deg, rgba(69, 160, 244, 0.3), rgba(18, 67, 126, 0.58)),
+    rgba(8, 31, 64, 0.78);
+}
+
 .video-node .video-prompt {
   grid-row: 1;
   flex: 1 1 auto;
@@ -5599,7 +5654,7 @@ body.canvas-page .canvas-topbar {
   display: grid;
   /* Five controls share the action row. The previous sixth empty track
      squeezed the duration control and made the slider unreadable. */
-  grid-template-columns: minmax(92px, 0.95fr) minmax(92px, 0.95fr) minmax(180px, 1.8fr) 44px minmax(126px, 1.2fr);
+  grid-template-columns: minmax(92px, 0.95fr) minmax(92px, 0.95fr) 190px 44px minmax(126px, 1.2fr);
   grid-template-rows: 48px 50px;
   align-items: stretch;
   gap: 8px;
@@ -5654,8 +5709,8 @@ body.canvas-page .canvas-topbar {
   box-sizing: border-box;
   border: 1px solid rgba(110, 190, 255, 0.3);
   background:
-    linear-gradient(135deg, rgba(61, 153, 255, 0.24), rgba(19, 76, 145, 0.2)),
-    rgba(9, 35, 71, 0.52);
+    linear-gradient(135deg, rgba(61, 153, 255, 0.3), rgba(19, 76, 145, 0.28)),
+    rgba(9, 35, 71, 0.66);
   box-shadow:
     inset 0 1px 0 rgba(215, 241, 255, 0.14),
     inset 0 -12px 24px rgba(0, 35, 82, 0.16);
@@ -5674,14 +5729,32 @@ body.canvas-page .canvas-topbar {
 }
 
 .video-node .video-duration-field {
-  min-width: 180px;
-  grid-template-columns: auto 42px minmax(118px, 1fr);
-  gap: 8px;
-  padding: 7px 12px;
+  min-width: 190px;
+  grid-template-columns: auto 34px minmax(108px, 1fr);
+  gap: 4px;
+  padding: 6px 8px;
 }
 
 .video-node .video-duration-field input[type="range"] {
-  min-width: 118px;
+  min-width: 108px;
+}
+
+/* Keep the native option list in the same dark-blue visual world as the
+   canvas. `color-scheme` covers the browser chrome while option colors cover
+   engines that allow author styling of the popup rows. */
+.video-node .video-settings-strip select {
+  color-scheme: dark;
+}
+
+.video-node .video-settings-strip select option,
+.video-node .video-settings-strip select optgroup {
+  background: #0b1a2d;
+  color: #e8f4ff;
+}
+
+.video-node .video-settings-strip select option:checked {
+  background: #1f83e0;
+  color: #ffffff;
 }
 
 @container (max-width: 499px) {
@@ -5765,6 +5838,42 @@ body.canvas-page .canvas-topbar {
 .video-node > .node-port.output-port {
   right: auto !important;
   left: calc(var(--video-port-right, 100%) - 12px) !important;
+}
+
+/* Keep connection targets available to the canvas interaction layer, but do
+   not paint the blue endpoint dots over the video preview. */
+.video-node > .node-port.input-port,
+.video-node > .node-port.output-port {
+  opacity: 0 !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* The video module is self-explanatory in the canvas: remove its redundant
+   title, icon, and close-button row so the preview can start at the node edge. */
+.video-node .video-titlebar {
+  display: none !important;
+}
+
+/* The preview is the visual lead-in to the prompt surface. Preserve the
+   title-to-preview breathing room while removing the seam between preview and
+   the input module below it. */
+.video-node.is-composer-open {
+  row-gap: 0;
+}
+
+.video-node.is-composer-open .video-titlebar {
+  margin-bottom: 12px;
+}
+
+.video-node.is-composer-open .video-preview-frame {
+  margin-bottom: 0 !important;
+}
+
+.video-node.is-composer-open .video-composer {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 /* Canvas Agent: a quiet, independent control layer over the infinite canvas. */

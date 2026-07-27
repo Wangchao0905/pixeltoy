@@ -6,7 +6,7 @@
     <title>canvas</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/styles.css?v=canvas-shell-visual-20260727" />
-    <link rel="stylesheet" href="/canvas.css?v=canvas-agent-models-20260728" />
+    <link rel="stylesheet" href="/canvas.css?v=canvas-agent-logo-20260728" />
   </head>
   <body class="canvas-page hide-liveness-library-ui">
     <div id="canvasApp" class="generation-canvas-shell">
@@ -32,36 +32,13 @@
 
       <button id="canvasAgentToggle" class="canvas-agent-launcher" type="button" aria-expanded="false" aria-controls="canvasAgentPanel" aria-label="打开 Canvas Agent" title="Canvas Agent">
         <span class="canvas-agent-logo" aria-hidden="true">
-          <span class="canvas-agent-propeller"></span>
-          <svg class="canvas-agent-robot" viewBox="0 0 48 48" fill="none">
-            <path d="M24 14.5V10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-            <circle cx="24" cy="7.4" r="2" fill="currentColor" />
-            <path d="M15.7 18.5A5.5 5.5 0 0 1 21.2 13h5.6a5.5 5.5 0 0 1 5.5 5.5v8a5.5 5.5 0 0 1-5.5 5.5h-5.6a5.5 5.5 0 0 1-5.5-5.5v-8Z" fill="rgba(232,244,255,.13)" stroke="currentColor" stroke-width="2.2" />
-            <circle cx="21.2" cy="22.6" r="1.8" fill="currentColor" />
-            <circle cx="26.8" cy="22.6" r="1.8" fill="currentColor" />
-            <path d="M21.1 27.3c1.8 1.1 4 1.1 5.8 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            <path d="M18.4 33.2h11.2l2.1 7.3H16.3l2.1-7.3Z" fill="rgba(232,244,255,.1)" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" />
-            <path d="M16.2 35.2 12.6 38M31.8 35.2l3.6 2.8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-          </svg>
+          <img class="canvas-agent-source-logo" src="/pixel-toys-logo-animated.gif" alt="" />
         </span>
       </button>
 
       <aside id="canvasAgentPanel" class="canvas-agent-panel" role="dialog" aria-modal="false" aria-labelledby="canvasAgentTitle" aria-hidden="true" inert>
         <header class="canvas-agent-panel-header">
           <div class="canvas-agent-panel-identity">
-            <span class="canvas-agent-panel-icon" aria-hidden="true">
-              <span class="canvas-agent-propeller"></span>
-              <svg class="canvas-agent-robot" viewBox="0 0 48 48" fill="none">
-                <path d="M24 14.5V10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-                <circle cx="24" cy="7.4" r="2" fill="currentColor" />
-                <path d="M15.7 18.5A5.5 5.5 0 0 1 21.2 13h5.6a5.5 5.5 0 0 1 5.5 5.5v8a5.5 5.5 0 0 1-5.5 5.5h-5.6a5.5 5.5 0 0 1-5.5-5.5v-8Z" fill="rgba(232,244,255,.13)" stroke="currentColor" stroke-width="2.2" />
-                <circle cx="21.2" cy="22.6" r="1.8" fill="currentColor" />
-                <circle cx="26.8" cy="22.6" r="1.8" fill="currentColor" />
-                <path d="M21.1 27.3c1.8 1.1 4 1.1 5.8 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                <path d="M18.4 33.2h11.2l2.1 7.3H16.3l2.1-7.3Z" fill="rgba(232,244,255,.1)" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" />
-                <path d="M16.2 35.2 12.6 38M31.8 35.2l3.6 2.8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-              </svg>
-            </span>
             <div>
               <strong id="canvasAgentTitle">Canvas Agent</strong>
               <span>画布协作助手</span>
@@ -88,19 +65,6 @@
 
         <div id="canvasAgentThread" class="canvas-agent-thread" aria-live="polite">
           <div class="canvas-agent-empty">
-            <span class="canvas-agent-empty-mark" aria-hidden="true">
-              <span class="canvas-agent-propeller"></span>
-              <svg class="canvas-agent-robot" viewBox="0 0 48 48" fill="none">
-                <path d="M24 14.5V10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-                <circle cx="24" cy="7.4" r="2" fill="currentColor" />
-                <path d="M15.7 18.5A5.5 5.5 0 0 1 21.2 13h5.6a5.5 5.5 0 0 1 5.5 5.5v8a5.5 5.5 0 0 1-5.5 5.5h-5.6a5.5 5.5 0 0 1-5.5-5.5v-8Z" fill="rgba(232,244,255,.13)" stroke="currentColor" stroke-width="2.2" />
-                <circle cx="21.2" cy="22.6" r="1.8" fill="currentColor" />
-                <circle cx="26.8" cy="22.6" r="1.8" fill="currentColor" />
-                <path d="M21.1 27.3c1.8 1.1 4 1.1 5.8 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                <path d="M18.4 33.2h11.2l2.1 7.3H16.3l2.1-7.3Z" fill="rgba(232,244,255,.1)" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" />
-                <path d="M16.2 35.2 12.6 38M31.8 35.2l3.6 2.8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-              </svg>
-            </span>
             <strong>把下一步交给 Agent</strong>
             <p>连接模型后，可直接分析节点、整理引用关系和规划生成步骤。</p>
             <div class="canvas-agent-suggestions" aria-label="建议操作">
@@ -496,6 +460,6 @@
     </template>
 
     <div id="canvasToast" class="toast hidden"></div>
-    <script src="/canvas.js?v=canvas-agent-models-20260728"></script>
+    <script src="/canvas.js?v=canvas-agent-logo-20260728"></script>
   </body>
 </html>

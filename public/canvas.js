@@ -1095,6 +1095,10 @@ function setStudioBackLink() {
 
 function renderProjectTitle() {
   setStudioBackLink();
+  const contextName = qs("#canvasAgentContextName");
+  if (contextName) {
+    contextName.textContent = canvasState.project?.title || canvasState.project?.episodeSlug || (canvasState.canvasId ? "独立画布" : "未命名画布");
+  }
 }
 
 function projectAssets() {
@@ -5294,6 +5298,29 @@ async function boot() {
     }
   }
 }
+
+function setCanvasAgentOpen(open) {
+  const toggle = qs("#canvasAgentToggle");
+  const panel = qs("#canvasAgentPanel");
+  if (!toggle || !panel) return;
+  const isOpen = Boolean(open);
+  panel.setAttribute("aria-hidden", String(!isOpen));
+  panel.toggleAttribute("inert", !isOpen);
+  panel.inert = !isOpen;
+  toggle.setAttribute("aria-expanded", String(isOpen));
+  toggle.setAttribute("aria-label", isOpen ? "收起 Canvas Agent" : "打开 Canvas Agent");
+}
+
+qs("#canvasAgentToggle")?.addEventListener("click", () => {
+  const panel = qs("#canvasAgentPanel");
+  setCanvasAgentOpen(panel?.getAttribute("aria-hidden") !== "false");
+});
+qs("#canvasAgentClose")?.addEventListener("click", () => setCanvasAgentOpen(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && qs("#canvasAgentPanel")?.getAttribute("aria-hidden") === "false") {
+    setCanvasAgentOpen(false);
+  }
+});
 
 qs("#blankCanvas").addEventListener("contextmenu", showContextMenu);
 qs("#blankCanvas").addEventListener("wheel", handleCanvasWheel, { passive: false });

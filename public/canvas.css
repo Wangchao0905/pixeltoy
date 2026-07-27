@@ -5688,3 +5688,442 @@ body.canvas-page .canvas-topbar {
   top: 50% !important;
   transform: translateY(-50%) !important;
 }
+
+/* Canvas Agent: a quiet, independent control layer over the infinite canvas. */
+.canvas-agent-launcher {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border: 1px solid rgba(151, 213, 255, 0.34);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(21, 49, 82, 0.94), rgba(8, 18, 35, 0.94));
+  color: #dff3ff;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42), 0 0 0 5px rgba(55, 160, 255, 0.08);
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.canvas-agent-launcher::before {
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  content: "";
+  pointer-events: none;
+}
+
+.canvas-agent-launcher:hover,
+.canvas-agent-launcher:focus-visible {
+  border-color: rgba(255, 89, 108, 0.72);
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.48), 0 0 0 6px rgba(255, 73, 95, 0.11);
+  outline: none;
+  transform: translateY(-3px);
+}
+
+.canvas-agent-launcher[aria-expanded="true"] {
+  border-color: rgba(255, 89, 108, 0.68);
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.48), 0 0 0 6px rgba(255, 73, 95, 0.1);
+}
+
+.canvas-agent-logo,
+.canvas-agent-panel-icon,
+.canvas-agent-empty-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+}
+
+.canvas-agent-robot {
+  position: relative;
+  z-index: 1;
+  width: 42px;
+  height: 42px;
+  color: #dff3ff;
+  filter: drop-shadow(0 2px 8px rgba(77, 176, 255, 0.28));
+}
+
+.canvas-agent-propeller {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  animation: canvasAgentPropellerSpin 0.58s linear infinite;
+  pointer-events: none;
+}
+
+.canvas-agent-propeller::before,
+.canvas-agent-propeller::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 63, 83, 0.25), #ff5266 45%, #ffb0b8 100%);
+  box-shadow: 0 0 10px rgba(255, 65, 85, 0.45);
+  content: "";
+}
+
+.canvas-agent-propeller::before {
+  width: 25px;
+  height: 5px;
+  transform: translate(-50%, -50%);
+}
+
+.canvas-agent-propeller::after {
+  width: 5px;
+  height: 25px;
+  transform: translate(-50%, -50%);
+}
+
+.canvas-agent-propeller {
+  background: radial-gradient(circle, #fff1f2 0 18%, #ff4f65 20% 48%, transparent 52%);
+}
+
+@keyframes canvasAgentPropellerSpin {
+  to { transform: translateX(-50%) rotate(360deg); }
+}
+
+.canvas-agent-panel {
+  position: fixed;
+  top: 62px;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1390;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  width: min(402px, calc(100vw - 40px));
+  overflow: hidden;
+  border: 1px solid rgba(149, 211, 255, 0.24);
+  border-radius: 22px;
+  background: linear-gradient(165deg, rgba(13, 29, 51, 0.94), rgba(6, 14, 27, 0.96));
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px) saturate(1.15);
+  -webkit-backdrop-filter: blur(24px) saturate(1.15);
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 180ms ease, transform 260ms cubic-bezier(0.22, 0.75, 0.25, 1);
+}
+
+.canvas-agent-panel[aria-hidden="true"] {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(100% + 28px));
+}
+
+.canvas-agent-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 17px 17px 14px;
+  border-bottom: 1px solid rgba(155, 211, 255, 0.12);
+}
+
+.canvas-agent-panel-identity,
+.canvas-agent-panel-actions {
+  display: flex;
+  align-items: center;
+}
+
+.canvas-agent-panel-identity {
+  gap: 11px;
+  min-width: 0;
+}
+
+.canvas-agent-panel-icon {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(125, 199, 255, 0.24);
+  border-radius: 12px;
+  background: rgba(74, 168, 255, 0.1);
+}
+
+.canvas-agent-panel-icon .canvas-agent-robot {
+  width: 34px;
+  height: 34px;
+}
+
+.canvas-agent-panel-icon .canvas-agent-propeller {
+  top: -5px;
+  transform: translateX(-50%) scale(0.78);
+}
+
+.canvas-agent-panel-icon .canvas-agent-propeller::before,
+.canvas-agent-panel-icon .canvas-agent-propeller::after {
+  box-shadow: 0 0 7px rgba(255, 65, 85, 0.4);
+}
+
+.canvas-agent-panel-identity strong,
+.canvas-agent-panel-identity span {
+  display: block;
+}
+
+.canvas-agent-panel-identity strong {
+  color: rgba(245, 251, 255, 0.96);
+  font-size: 14px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.canvas-agent-panel-identity div > span {
+  margin-top: 3px;
+  color: rgba(196, 219, 241, 0.56);
+  font-size: 11px;
+}
+
+.canvas-agent-panel-actions {
+  gap: 8px;
+}
+
+.canvas-agent-preview-badge {
+  padding: 4px 7px;
+  border: 1px solid rgba(255, 94, 112, 0.28);
+  border-radius: 999px;
+  color: rgba(255, 164, 174, 0.88);
+  font-size: 9px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+}
+
+.canvas-agent-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid rgba(196, 219, 241, 0.15);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(222, 239, 255, 0.72);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.canvas-agent-close:hover,
+.canvas-agent-close:focus-visible {
+  border-color: rgba(255, 105, 122, 0.48);
+  color: #fff;
+  outline: none;
+}
+
+.canvas-agent-context {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 14px 17px 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(155, 211, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(196, 219, 241, 0.55);
+  font-size: 11px;
+}
+
+.canvas-agent-context-dot,
+.canvas-agent-footer-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #65c4ff;
+  box-shadow: 0 0 10px rgba(101, 196, 255, 0.72);
+}
+
+.canvas-agent-context strong {
+  overflow: hidden;
+  margin-left: 3px;
+  color: rgba(232, 244, 255, 0.84);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-thread {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 17px;
+}
+
+.canvas-agent-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 36px 12px 24px;
+  text-align: center;
+}
+
+.canvas-agent-empty-mark {
+  width: 84px;
+  height: 84px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(116, 197, 255, 0.2);
+  border-radius: 26px;
+  background: radial-gradient(circle at 50% 30%, rgba(91, 184, 255, 0.18), rgba(255, 255, 255, 0.03) 65%);
+  color: #dff3ff;
+  box-shadow: 0 18px 42px rgba(46, 148, 240, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.canvas-agent-empty-mark .canvas-agent-robot {
+  width: 62px;
+  height: 62px;
+}
+
+.canvas-agent-empty-mark .canvas-agent-propeller {
+  top: -1px;
+  transform: translateX(-50%) scale(1.05);
+}
+
+.canvas-agent-empty > strong {
+  color: rgba(245, 251, 255, 0.94);
+  font-size: 16px;
+  font-weight: 720;
+  letter-spacing: 0;
+}
+
+.canvas-agent-empty > p {
+  max-width: 270px;
+  margin: 8px 0 18px;
+  color: rgba(196, 219, 241, 0.58);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.canvas-agent-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.canvas-agent-suggestions button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(155, 211, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(196, 219, 241, 0.46);
+  font-size: 11px;
+}
+
+.canvas-agent-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 9px;
+  margin: 0 17px;
+  padding: 10px;
+  border: 1px solid rgba(155, 211, 255, 0.14);
+  border-radius: 15px;
+  background: rgba(2, 8, 17, 0.42);
+}
+
+.canvas-agent-composer textarea {
+  min-width: 0;
+  min-height: 38px;
+  max-height: 120px;
+  flex: 1 1 auto;
+  resize: none;
+  padding: 9px 2px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgba(245, 251, 255, 0.94);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.canvas-agent-composer textarea::placeholder {
+  color: rgba(196, 219, 241, 0.38);
+}
+
+.canvas-agent-composer textarea:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.canvas-agent-send {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid rgba(129, 199, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(70, 160, 240, 0.12);
+  color: rgba(177, 220, 255, 0.45);
+}
+
+.canvas-agent-send svg {
+  width: 16px;
+  height: 16px;
+}
+
+.canvas-agent-panel-footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 18px;
+  color: rgba(196, 219, 241, 0.42);
+  font-size: 10px;
+}
+
+.canvas-agent-footer-dot {
+  width: 5px;
+  height: 5px;
+  background: #ff6578;
+  box-shadow: 0 0 8px rgba(255, 101, 120, 0.6);
+}
+
+@media (max-width: 640px) {
+  .canvas-agent-launcher {
+    right: 14px;
+    bottom: 14px;
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+  }
+
+  .canvas-agent-panel {
+    top: 54px;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    border-radius: 18px;
+  }
+
+  .canvas-agent-preview-badge {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-agent-propeller {
+    animation: none;
+  }
+
+  .canvas-agent-launcher,
+  .canvas-agent-panel {
+    transition: none;
+  }
+}

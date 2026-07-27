@@ -8408,6 +8408,9 @@ function projectStatusSnapshot(episodeRoot) {
   if (!allowedPath(episodeRoot) || !fs.existsSync(episodeRoot)) throw new Error("project not found");
   const workflow = readWorkflowState(episodeRoot);
   const configRecord = ensureVideoConfigIsolation(episodeRoot);
+  // 状态轮询是制作台保持进度的主路径。队列本体在内存中,服务重启后只能依靠
+  // 持久化的 video_task_nodes/*.json 恢复,否则前端会永远停在 queued_local。
+  recoverProjectVideoQueueIfNeeded(episodeRoot, configRecord?.data || {});
   const runNamespace = currentRunNamespace(episodeRoot, configRecord?.data);
   const runStart = currentRunStartMs(episodeRoot, configRecord?.data);
   const localJobs = mergeJobs(episodeRoot, { runNamespace });

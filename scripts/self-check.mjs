@@ -338,7 +338,7 @@ assert(canvas.includes("timeoutMs: VIDEO_SUBMIT_TIMEOUT_MS"), "video submit requ
 assert(canvas.includes("function pollProjectVideoNode"), "project video nodes must keep polling project state until completion");
 assert(canvas.includes("function resumeVideoPolls"), "canvas restore must resume saved video tasks");
 assert(canvas.includes("resumeVideoPolls();"), "canvas load must resume saved video tasks after hydration");
-assert(canvas.includes("pollVideoNode(node.id, node.taskId, node.taskProvider || \"\")"), "saved standalone video tasks must resume with their provider");
+assert(/pollVideoNode\(node\.id, node\.taskId, node\.taskProvider \|\| ""(?:, ensureVideoGenerationToken\(node\.id\))?\)/.test(canvas), "saved standalone video tasks must resume with their provider");
 assert(canvas.includes('class="video-media-actions"') && canvasCss.includes(".video-media-actions") && canvasCss.includes("bottom: auto"), "tail-frame capture control must share the top action row with download");
 assert(canvas.includes("tailFrameUrl: node.tailFrameUrl || \"\"") && canvas.includes("videoLocalFile: saved.videoLocalFile || node.videoLocalFile || \"\""), "manual tail-frame capture must reuse saved frame and local video paths");
 assert(server.includes("复用已缓存尾帧") && server.includes("const downloadTarget = `${tmp}.download-"), "tail-frame extraction must reuse cached frames and avoid partial source files");

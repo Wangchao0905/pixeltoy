@@ -255,6 +255,33 @@ function toast(message) {
   node._timer = setTimeout(() => node.classList.add("hidden"), 2600);
 }
 
+// A cancelled timeout does not cancel an already-running fetch. Keep a
+// per-node generation token so late responses from an older generation can
+// never restore its video or tail frame.
+const videoGenerationTokens = new Map();
+
+function beginVideoGeneration(nodeId) {
+  const token = Symbol(`video-generation:${nodeId}`);
+  videoGenerationTokens.set(nodeId, token);
+  return token;
+}
+
+function ensureVideoGenerationToken(nodeId) {
+  let token = videoGenerationTokens.get(nodeId);
+  if (!token) token = beginVideoGeneration(nodeId);
+  return token;
+}
+
+function videoOperationIsCurrent(nodeId, options = {}) {
+  const { generationToken = null, taskId = "" } = options;
+  if (generationToken && videoGenerationTokens.get(nodeId) !== generationToken) return false;
+  if (taskId) {
+    const node = canvasState.nodes.find((item) => item.id === nodeId);
+    if (node?.taskId && node.taskId !== taskId) return false;
+  }
+  return true;
+}
+
 function clearVideoPoll(nodeId) {
   const timer = canvasState.pollTimers.get(nodeId);
   if (timer) clearTimeout(timer);
@@ -266,18 +293,30 @@ function clearVideoPoll(nodeId) {
 // already stopped by then, so the "尾帧已就绪" update would otherwise only show
 // after a manual page refresh. Do a few bounded, delayed project re-syncs to
 // pick up the tail frame automatically, then stop.
-function scheduleTailFrameSync(nodeId, attempt = 0) {
+function scheduleTailFrameSync(nodeId, attempt = 0, generationToken = ensureVideoGenerationToken(nodeId)) {
   const node = canvasState.nodes.find((item) => item.id === nodeId);
-  if (!node || node.kind !== "video" || node.tailFrameReady || attempt >= 4) return;
+  if (
+    !node ||
+    node.kind !== "video" ||
+    node.tailFrameReady ||
+    attempt >= 4 ||
+    !videoOperationIsCurrent(nodeId, { generationToken, taskId: node.taskId || "" })
+  ) return;
   const timer = setTimeout(async () => {
+    if (!videoOperationIsCurrent(nodeId, { generationToken, taskId: node.taskId || "" })) return;
     try {
       if (canvasState.selectedId) {
-        await loadProject(canvasState.selectedId, { preserveSelection: true, silent: true });
+        await loadProject(canvasState.selectedId, {
+          preserveSelection: true,
+          silent: true,
+          videoGeneration: { nodeId, generationToken },
+        });
       }
     } catch {}
+    if (!videoOperationIsCurrent(nodeId, { generationToken, taskId: node.taskId || "" })) return;
     const fresh = canvasState.nodes.find((item) => item.id === nodeId);
     if (fresh && fresh.kind === "video" && !fresh.tailFrameReady) {
-      scheduleTailFrameSync(nodeId, attempt + 1);
+      scheduleTailFrameSync(nodeId, attempt + 1, generationToken);
     }
   }, videoPollDelay(5000));
   canvasState.pollTimers.set(nodeId, timer);
@@ -3076,9 +3115,10 @@ function updateVideoNodeStatus(nodeId, patch, options = {}) {
   if (options.persist !== false) scheduleCanvasSave();
 }
 
-async function persistNodeTailFrame(nodeId, result = {}) {
+async function persistNodeTailFrame(nodeId, result = {}, generationToken = ensureVideoGenerationToken(nodeId)) {
   const node = canvasState.nodes.find((item) => item.id === nodeId);
-  if (!node) return null;
+  const expectedTaskId = node?.taskId || result.taskId || "";
+  if (!node || !videoOperationIsCurrent(nodeId, { generationToken, taskId: expectedTaskId })) return null;
   // 只针对尾帧模式:故事板 / Production Board 模式不抽尾帧、不做首尾帧连续
   const usesProductionBoard = node.videoPromptMode === "production_board" || (Array.isArray(node.storyboardRefs) && node.storyboardRefs.length > 0);
   if (usesProductionBoard) return null;
@@ -3090,6 +3130,7 @@ async function persistNodeTailFrame(nodeId, result = {}) {
   // 视频本身用远程 URL 正常播放;仅无法做海报缩略图与多段首尾帧接龙。
   const isOverseasVideo = node.taskProvider === "byteplus" || /(?:^|[.\/])ap-southeast|bytepluses\.com/i.test(videoUrl);
   if (isOverseasVideo && !tailFrameUrl) {
+    if (!videoOperationIsCurrent(nodeId, { generationToken, taskId: expectedTaskId })) return null;
     updateVideoNodeStatus(nodeId, {
       tailFrameReady: false,
       videoUrl: node.videoUrl || videoUrl,
@@ -3107,6 +3148,7 @@ async function persistNodeTailFrame(nodeId, result = {}) {
         tailFrameUrl,
       }),
     });
+    if (!videoOperationIsCurrent(nodeId, { generationToken, taskId: expectedTaskId })) return null;
     const saved = data.result || {};
     updateVideoNodeStatus(nodeId, {
       tailFrameReady: saved.ready === true,
@@ -3118,6 +3160,7 @@ async function persistNodeTailFrame(nodeId, result = {}) {
     });
     return saved;
   } catch (error) {
+    if (!videoOperationIsCurrent(nodeId, { generationToken, taskId: expectedTaskId })) return null;
     updateVideoNodeStatus(nodeId, {
       tailFrameReady: false,
       tailFrameUrl,
@@ -3127,7 +3170,8 @@ async function persistNodeTailFrame(nodeId, result = {}) {
   }
 }
 
-function markVideoNodeFailed(nodeId, message) {
+function markVideoNodeFailed(nodeId, message, options = {}) {
+  if (!videoOperationIsCurrent(nodeId, options)) return false;
   clearVideoPoll(nodeId);
   // 海外火山音频审核拦截:若本节点开着音频且还没自动重试过,自动关音频重试一次,而不是直接判失败。
   const node = canvasState.nodes.find((item) => item.id === nodeId);
@@ -3139,16 +3183,17 @@ function markVideoNodeFailed(nodeId, message) {
     !audioRetriedVideoNodes.has(nodeId)
   ) {
     audioRetriedVideoNodes.add(nodeId);
+    const retryToken = beginVideoGeneration(nodeId);
     updateVideoNodeStatus(nodeId, {
       status: "running",
       statusMessage: "音频被审核拦截,正在关闭音频重试…",
       progress: null,
     });
     toast("生成的音频被海外火山判定敏感,已自动关闭音频重新生成");
-    generateVideoNode(nodeId, { forceNoAudio: true }).catch((error) =>
-      markVideoNodeFailed(nodeId, error.message || "关音频重试失败"),
+    generateVideoNode(nodeId, { forceNoAudio: true, generationToken: retryToken }).catch((error) =>
+      markVideoNodeFailed(nodeId, error.message || "关音频重试失败", { generationToken: retryToken }),
     );
-    return;
+    return true;
   }
   updateVideoNodeStatus(nodeId, {
     status: "failed",
@@ -3156,6 +3201,7 @@ function markVideoNodeFailed(nodeId, message) {
     progress: 100,
   });
   toast(message || "视频生成失败");
+  return true;
 }
 
 // ---- 图片生成节点（gpt-image-2 通道） ----
@@ -3408,14 +3454,21 @@ function projectVideoNodeIsActive(node = {}) {
   return status === "running" || status === "queued" || status === "pending";
 }
 
-async function pollProjectVideoNode(nodeId) {
+async function pollProjectVideoNode(nodeId, generationToken = ensureVideoGenerationToken(nodeId)) {
+  if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
   clearVideoPoll(nodeId);
   let attempts = 0;
   const tick = async () => {
     try {
+      if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
       const selectedId = canvasState.selectedId;
       if (!selectedId) return;
-      await loadProject(selectedId, { preserveSelection: true, silent: true });
+      await loadProject(selectedId, {
+        preserveSelection: true,
+        silent: true,
+        videoGeneration: { nodeId, generationToken },
+      });
+      if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
       const next = canvasState.nodes.find((item) => item.id === nodeId);
       if (!projectVideoNodeIsActive(next)) return;
       attempts += 1;
@@ -3424,7 +3477,7 @@ async function pollProjectVideoNode(nodeId) {
       canvasState.pollTimers.set(nodeId, timer);
     } catch (error) {
       const node = canvasState.nodes.find((item) => item.id === nodeId);
-      if (!projectVideoNodeIsActive(node)) return;
+      if (!videoOperationIsCurrent(nodeId, { generationToken }) || !projectVideoNodeIsActive(node)) return;
       const timer = setTimeout(tick, videoPollDelay(5000));
       canvasState.pollTimers.set(nodeId, timer);
     }
@@ -3433,7 +3486,13 @@ async function pollProjectVideoNode(nodeId) {
   canvasState.pollTimers.set(nodeId, timer);
 }
 
-function applyVideoGenerationResult(nodeId, result = {}) {
+function applyVideoGenerationResult(nodeId, result = {}, options = {}) {
+  const generationToken = options.generationToken || ensureVideoGenerationToken(nodeId);
+  const expectedTaskId = options.expectedTaskId || "";
+  if (
+    !videoOperationIsCurrent(nodeId, { generationToken, taskId: expectedTaskId }) ||
+    (expectedTaskId && result.taskId && result.taskId !== expectedTaskId)
+  ) return true;
   const status = String(result.status || "").toLowerCase();
   const nextProgress = normalizeVideoProgress(result.progress, 99);
   const node = canvasState.nodes.find((item) => item.id === nodeId);
@@ -3448,13 +3507,13 @@ function applyVideoGenerationResult(nodeId, result = {}) {
       taskProvider: result.provider || "",
       progress: 100,
     });
-    persistNodeTailFrame(nodeId, result);
+    persistNodeTailFrame(nodeId, result, generationToken);
     toast("视频已生成");
-    scheduleTailFrameSync(nodeId);
+    scheduleTailFrameSync(nodeId, 0, generationToken);
     return true;
   }
   if (status === "failed") {
-    markVideoNodeFailed(nodeId, result.message || "Seedance 任务失败");
+    markVideoNodeFailed(nodeId, result.message || "Seedance 任务失败", { generationToken, taskId: expectedTaskId });
     return true;
   }
   const taskChanged = !!result.taskId && result.taskId !== node?.taskId;
@@ -3470,20 +3529,23 @@ function applyVideoGenerationResult(nodeId, result = {}) {
   return false;
 }
 
-async function pollVideoNode(nodeId, taskId, provider = "") {
-  if (!taskId) return;
+async function pollVideoNode(nodeId, taskId, provider = "", generationToken = ensureVideoGenerationToken(nodeId)) {
+  if (!taskId || !videoOperationIsCurrent(nodeId, { generationToken, taskId })) return;
   clearVideoPoll(nodeId);
   const tick = async () => {
     try {
+      if (!videoOperationIsCurrent(nodeId, { generationToken, taskId })) return;
       const providerQuery = provider ? `?provider=${encodeURIComponent(provider)}` : "";
       const data = await api(`/api/canvas/video-generations/${encodeURIComponent(taskId)}${providerQuery}`);
-      const done = applyVideoGenerationResult(nodeId, data.result || {});
+      if (!videoOperationIsCurrent(nodeId, { generationToken, taskId })) return;
+      const done = applyVideoGenerationResult(nodeId, data.result || {}, { generationToken, expectedTaskId: taskId });
       if (!done) {
+        if (!videoOperationIsCurrent(nodeId, { generationToken, taskId })) return;
         const timer = setTimeout(tick, videoPollDelay(5000));
         canvasState.pollTimers.set(nodeId, timer);
       }
     } catch (error) {
-      markVideoNodeFailed(nodeId, error.message);
+      markVideoNodeFailed(nodeId, error.message, { generationToken, taskId });
     }
   };
   const timer = setTimeout(tick, videoPollDelay(2500));
@@ -3497,21 +3559,25 @@ function resumeVideoPolls() {
     if (!["running", "queued", "pending"].includes(status)) continue;
     if (canvasState.pollTimers.has(node.id)) continue;
     if (isProjectVideoNode(node) && shotNameFromProjectVideoNode(node)) {
-      pollProjectVideoNode(node.id);
+      pollProjectVideoNode(node.id, ensureVideoGenerationToken(node.id));
       continue;
     }
-    if (node.taskId) pollVideoNode(node.id, node.taskId, node.taskProvider || "");
+    if (node.taskId) pollVideoNode(node.id, node.taskId, node.taskProvider || "", ensureVideoGenerationToken(node.id));
   }
 }
 
 async function generateVideoNode(nodeId, options = {}) {
   const node = canvasState.nodes.find((item) => item.id === nodeId);
   if (!node || node.kind !== "video") return;
+  const generationToken = options.generationToken || beginVideoGeneration(nodeId);
+  if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
+  // Invalidate the previous poll immediately, before any async reference
+  // preparation, so its in-flight response cannot win this regeneration.
+  clearVideoPoll(nodeId);
   // 手动发起(非音频重试)时,清掉旧的重试标记,让本轮可以重新尝试带音频。
   if (!options.forceNoAudio) audioRetriedVideoNodes.delete(nodeId);
   const projectShotName = shotNameFromProjectVideoNode(node);
   if (isProjectVideoNode(node) && projectShotName) {
-    clearVideoPoll(nodeId);
     updateVideoNodeStatus(nodeId, {
       status: "running",
       statusMessage: "正在通过项目队列提交 Seedance 任务",
@@ -3535,18 +3601,24 @@ async function generateVideoNode(nodeId, options = {}) {
           shotName: projectShotName,
         }),
       });
-      await loadProject(canvasState.selectedId, { preserveSelection: true });
+      if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
+      await loadProject(canvasState.selectedId, {
+        preserveSelection: true,
+        videoGeneration: { nodeId, generationToken },
+      });
+      if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
       const result = data.result?.result || data.result || {};
       const latestNode = canvasState.nodes.find((item) => item.id === nodeId);
-      if (projectVideoNodeIsActive(latestNode)) pollProjectVideoNode(nodeId);
+      if (projectVideoNodeIsActive(latestNode)) pollProjectVideoNode(nodeId, generationToken);
       toast(result.message || "项目片段已提交，状态已同步");
     } catch (error) {
-      markVideoNodeFailed(nodeId, error.message || "项目片段生成失败");
+      markVideoNodeFailed(nodeId, error.message || "项目片段生成失败", { generationToken });
     }
     return;
   }
   if (syncVideoModelForReferences(node)) renderNodes();
   const readiness = await ensurePhotorealReferencesReady([node]);
+  if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
   if (readiness.pending) {
     renderNodes();
     scheduleCanvasSave();
@@ -3575,14 +3647,15 @@ async function generateVideoNode(nodeId, options = {}) {
       body: JSON.stringify(videoNodePayload(node, { forceNoAudio: !!options.forceNoAudio })),
     });
     const result = data.result || {};
+    if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
     if (!result.videoUrl && String(result.status || "").toLowerCase() !== "completed" && !result.taskId) {
-      markVideoNodeFailed(nodeId, result.message || "视频接口没有返回 taskId，请重试");
+      markVideoNodeFailed(nodeId, result.message || "视频接口没有返回 taskId，请重试", { generationToken });
       return;
     }
-    const done = applyVideoGenerationResult(nodeId, result);
-    if (!done && result.taskId) await pollVideoNode(nodeId, result.taskId, result.provider || "");
+    const done = applyVideoGenerationResult(nodeId, result, { generationToken });
+    if (!done && result.taskId) await pollVideoNode(nodeId, result.taskId, result.provider || "", generationToken);
   } catch (error) {
-    markVideoNodeFailed(nodeId, error.message || "视频提交失败");
+    markVideoNodeFailed(nodeId, error.message || "视频提交失败", { generationToken });
   }
 }
 
@@ -5001,6 +5074,10 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
   // 数据替换节点并触发 renderNodes 全量重建,把正在拖的节点销毁重建 → 内部布局乱跳/尺寸重排。
   // 拖拽/缩放结束后 pointerup 会再触发刷新,不会漏更新。用户主动切项目不会与拖拽同时发生。
   if ((canvasState.drag || canvasState.resize) && options.silent) return;
+  const videoGeneration = options.videoGeneration || null;
+  const videoLoadIsCurrent = () =>
+    !videoGeneration || videoOperationIsCurrent(videoGeneration.nodeId, { generationToken: videoGeneration.generationToken });
+  if (!videoLoadIsCurrent()) return false;
   canvasState.hydrating = true;
   const previousSelection = options.preserveSelection ? [...canvasState.selectedNodeIds] : [];
   if (!options.preserveSelection) clearNodeSelection();
@@ -5010,6 +5087,10 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
     canvasState.canvasId = options.useUrlCanvas ? initialCanvasId || "" : "";
     syncCanvasUrl("", canvasState.canvasId);
     const saved = await api(`/api/canvas/state?projectId=${encodeURIComponent(canvasStorageProjectId())}`);
+    if (!videoLoadIsCurrent()) {
+      canvasState.hydrating = false;
+      return false;
+    }
     if (!restoreCanvasState(saved.state)) {
       canvasState.nodes = [];
       canvasState.connections = [];
@@ -5033,12 +5114,21 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
   canvasState.selectedId = id;
   const urlCanvasId = new URLSearchParams(window.location.search).get("canvas") || "";
   localStorage.setItem("pixelToys.canvasProjectId", id);
-  canvasState.project = await api(`/api/project/${id}`);
+  const project = await api(`/api/project/${id}`);
+  if (!videoLoadIsCurrent()) {
+    canvasState.hydrating = false;
+    return false;
+  }
+  canvasState.project = project;
   const currentCanvasId = projectVideoCanvasId(canvasState.project);
   canvasState.canvasId = currentCanvasId || urlCanvasId || "";
   syncCanvasUrl(id, canvasState.canvasId);
   renderProjectTitle();
   const saved = await api(`/api/canvas/state?projectId=${encodeURIComponent(canvasStorageProjectId())}`);
+  if (!videoLoadIsCurrent()) {
+    canvasState.hydrating = false;
+    return false;
+  }
   if (!restoreCanvasState(saved.state)) {
     canvasState.nodes = [];
     canvasState.connections = [];

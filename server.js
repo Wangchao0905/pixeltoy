@@ -7991,7 +7991,13 @@ function lightweightProjectSummary(episodeRoot) {
   const configData = readVideoConfig(episodeRoot, { allowEmptyShots: true })?.data || {};
   const scannedAssets = scanAssets(episodeRoot);
   const storyboardCount = scannedAssets.filter((asset) => asset.manifestType === "Storyboard").length;
-  const rawClipCount = walkFiles(path.join(episodeRoot, "06_videos", "raw"), (file) => /\.(mp4|mov)$/i.test(file), 1).length;
+  const rawVideoFiles = walkFiles(path.join(episodeRoot, "06_videos", "raw"), (file) => /\.(mp4|mov)$/i.test(file), 1).sort();
+  const rawClipCount = rawVideoFiles.length;
+  const finalCutFile = finalCutOutputFile(episodeRoot);
+  const previewFile = fs.existsSync(finalCutFile) && fs.statSync(finalCutFile).isFile()
+    ? finalCutFile
+    : rawVideoFiles[0] || scannedAssets.find((asset) => asset.path && fs.existsSync(asset.path))?.path || "";
+  const previewMedia = previewFile ? mediaItem(previewFile, episodeRoot) : null;
   const progressFacts = buildTeamProjectProgressFacts({
     episodeRoot,
     scriptText,
@@ -8032,6 +8038,15 @@ function lightweightProjectSummary(episodeRoot) {
       storyboards: storyboardCount,
       plannedShots: progressFacts.plannedShots,
     },
+    preview: previewMedia
+      ? {
+          type: /\.(mp4|mov|webm|m4v)$/i.test(previewMedia.name) ? "video" : "image",
+          url: previewMedia.url,
+          name: previewMedia.name,
+          size: previewMedia.size,
+          updatedAt: previewMedia.updatedAt,
+        }
+      : null,
     runNamespace,
     isolated: !!runNamespace,
     model: "",

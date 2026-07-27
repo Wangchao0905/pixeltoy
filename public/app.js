@@ -2040,6 +2040,30 @@ function bindExploreCanvasImageFallbacks(node) {
   });
 }
 
+function bindExploreProductionPreviewVideos(node) {
+  node.querySelectorAll("video[data-explore-project-preview]").forEach((video) => {
+    const play = () => video.play().catch(() => {});
+    const reset = () => {
+      video.pause();
+      try {
+        video.currentTime = 0;
+      } catch {}
+    };
+    video.addEventListener("mouseenter", play);
+    video.addEventListener("mouseleave", reset);
+    video.addEventListener("error", () => video.classList.add("is-broken"), { once: true });
+  });
+}
+
+function exploreProductionPreviewMarkup(project = {}) {
+  const preview = project.preview || null;
+  if (preview?.url && preview.type === "video") {
+    return `<video src="${escapeAttr(preview.url)}" poster="/infinity-3d.png" muted loop playsinline preload="metadata" data-explore-project-preview aria-label="${escapeAttr(displayProjectTitle(project))} 项目预览"></video>`;
+  }
+  if (preview?.url) return `<img src="${escapeAttr(preview.url)}" alt="" loading="lazy" decoding="async" />`;
+  return `<img src="/infinity-3d.png" alt="" loading="lazy" decoding="async" />`;
+}
+
 function renderExploreCanvasLibrary() {
   const node = $("#exploreCanvasGrid");
   if (!node) return;
@@ -2090,7 +2114,7 @@ function renderExploreCanvasLibrary() {
             <article class="explore-canvas-card">
               <button class="explore-canvas-card-open" type="button" data-explore-project="${escapeAttr(project.id)}">
                 <span class="explore-canvas-preview explore-production-preview">
-                  <img src="/infinity-3d.png" alt="" loading="lazy" />
+                  ${exploreProductionPreviewMarkup(project)}
                   <span>${escapeHtml(project.episodeSlug || "Production")}</span>
                 </span>
                 <strong>${escapeHtml(displayProjectTitle(project))}</strong>
@@ -2108,6 +2132,7 @@ function renderExploreCanvasLibrary() {
   node.innerHTML = `${quickStartCards}${blankCanvasCards}${productionCards}`;
   if (!node.children.length) node.innerHTML = `<span class="explore-canvas-empty">No canvases</span>`;
   bindExploreCanvasImageFallbacks(node);
+  bindExploreProductionPreviewVideos(node);
 }
 
 function centerExploreActiveNav() {

@@ -34,6 +34,8 @@ assert.match(lightweightProjectSummarySource, /plannedStoryboards: progressFacts
 assert.match(lightweightProjectSummarySource, /storyboards: storyboardCount/);
 assert.match(lightweightProjectSummarySource, /plannedShots: progressFacts\.plannedShots/);
 assert.doesNotMatch(lightweightProjectSummarySource, /walkFiles\(path\.join\(episodeRoot, "04_assets"/);
+assert.match(lightweightProjectSummarySource, /const rawVideoFiles = walkFiles/);
+assert.match(lightweightProjectSummarySource, /preview: previewMedia/);
 assert.doesNotMatch(lightweightProjectSummarySource, /ensureVideoConfigIsolation|writeWorkflowState/);
 assert.match(locateConfigSource, /function locateConfig\(episodeRoot, options = \{\}\)/);
 assert.match(locateConfigSource, /selectVideoConfigRecord\(files, \{/);

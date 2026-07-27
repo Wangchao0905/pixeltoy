@@ -1,7 +1,51 @@
 const assert = require("node:assert/strict");
 const { __test } = require("../server.js");
 
-const { buildOpenApiRequest, normalizeAssetResult, createAsset, getAsset, sanitizeState } = __test.arkVirtualPerson;
+const {
+  buildOpenApiRequest,
+  normalizeAssetResult,
+  createAsset,
+  getAsset,
+  sanitizeState,
+  isWorkflowArkAutoCertificationAsset,
+  isWorkflowArkPersonAutoCertificationAsset,
+} = __test.arkVirtualPerson;
+
+assert.equal(
+  isWorkflowArkAutoCertificationAsset({ source: "shared-asset-library", assetStylePreset: "photoreal" }),
+  false,
+  "shared library assets must not enter the automatic Ark path",
+);
+assert.equal(
+  isWorkflowArkAutoCertificationAsset({ source: "canvas-image", assetStylePreset: "photoreal" }),
+  false,
+  "standalone canvas images must not enter the automatic Ark path",
+);
+assert.equal(
+  isWorkflowArkAutoCertificationAsset({ source: "project", assetStylePreset: "photoreal" }),
+  true,
+  "workflow photoreal assets may enter the automatic Ark path",
+);
+assert.equal(
+  isWorkflowArkAutoCertificationAsset({ source: "project", assetStylePreset: "three_d" }),
+  true,
+  "workflow 3D aliases may enter the automatic Ark path",
+);
+assert.equal(
+  isWorkflowArkAutoCertificationAsset({ source: "project", assetStylePreset: "modern_anime_cel" }),
+  false,
+  "ordinary workflow styles must not enter the automatic Ark path",
+);
+assert.equal(
+  isWorkflowArkPersonAutoCertificationAsset({ source: "shared-asset-library", assetStylePreset: "cg_3d", type: "Character" }),
+  false,
+  "shared library character assets must remain manual-only on the canvas",
+);
+assert.equal(
+  isWorkflowArkPersonAutoCertificationAsset({ source: "project", assetStylePreset: "cg_3d", type: "Character" }),
+  true,
+  "workflow 3D character assets may be auto-certified",
+);
 const request = buildOpenApiRequest(
   "CreateAsset",
   {

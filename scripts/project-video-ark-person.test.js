@@ -77,6 +77,7 @@ function createFixture(name, options = {}) {
       name: "C001_DYLAN_CHARACTER_SHEET",
       manifestType: "Character",
       aiGenerated: true,
+      assetStylePreset: "cg_3d",
       url: "https://assets.test/c001.png",
     }],
     shots: options.shots || [{ name: "E01_V001", refs: ["C001_DYLAN_CHARACTER_SHEET"], prompt: "A character walks forward." }],

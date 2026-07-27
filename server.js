@@ -7274,7 +7274,8 @@ function isAssetActivationWaitFailure(message = "") {
 }
 
 function shotPhotorealReferencesAreActive(config = {}, shot = {}) {
-  const refs = projectShotUsableVideoReferenceAssets("", config, shot).filter(isArkPersonReferenceAsset);
+  const refs = projectShotUsableVideoReferenceAssets("", config, shot)
+    .filter((asset) => isWorkflowArkPersonAutoCertificationAsset(asset, { workflowContext: true }));
   if (!refs.length) return true;
   return refs.every((asset) => {
     const status = compactLine(asset.validationStatus || asset.status || "").toLowerCase();
@@ -10577,6 +10578,33 @@ function isCanvasPhotorealAsset(asset = {}) {
   return preset === "photoreal" || /超写实|photoreal|photo-real|hyperreal|hyper-real/i.test(label);
 }
 
+function normalizeArkAutoCertificationStyle(value = "") {
+  const aliases = {
+    "3d": "cg_3d",
+    "3d_cg": "cg_3d",
+    three_d: "cg_3d",
+    photoreal_3d: "cg_3d",
+  };
+  const key = compactLine(value).toLowerCase();
+  return aliases[key] || key;
+}
+
+function isWorkflowArkAutoCertificationAsset(asset = {}, options = {}) {
+  const source = compactLine(asset.source || "").toLowerCase();
+  const projectId = compactLine(asset.projectId || asset.sourceProjectId || "");
+  const workflowSource = options.workflowContext === true
+    || asset.workflowAsset === true
+    || ["project", "workflow", "project-reuse"].includes(source)
+    || !!projectId;
+  const preset = normalizeArkAutoCertificationStyle(asset.assetStylePreset || asset.stylePreset || "");
+  return workflowSource && (preset === "photoreal" || preset === "cg_3d");
+}
+
+function isWorkflowArkPersonAutoCertificationAsset(asset = {}, options = {}) {
+  return isWorkflowArkAutoCertificationAsset(asset, options)
+    && isArkPersonReferenceAsset(asset);
+}
+
 // AI 生成判定(不含画风约束):供“放宽到角色类”复用。
 function isCanvasAiGeneratedAsset(asset = {}) {
   if (asset.aiGenerated === true || compactLine(asset.verificationType || asset.verification_type) === "ai-generated") return true;
@@ -13059,7 +13087,7 @@ function arkPersonReferenceNames(episodeRoot, config = {}, names = [], shot = {}
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   return [...new Set((Array.isArray(names) ? names : []).map(compactLine).filter(Boolean))].filter((name) => {
     const asset = referenceAssetSource(episodeRoot, assetByName, name);
-    return asset && isArkPersonReferenceAsset(asset);
+    return asset && isWorkflowArkPersonAutoCertificationAsset(asset, { workflowContext: true });
   });
 }
 
@@ -13219,7 +13247,7 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
   // 超写实素材走火山虚拟人像轨(读 arkPersonAsset);person-reference 模型走 Gravitex 人物轨;其余公网轨。
   const arkPersonSet = new Set(usesGravitexPersonRef ? [] : names.filter((n) => {
     const a = referenceAssetSource(episodeRoot, byName, n);
-    return a && isArkPersonReferenceAsset(a);
+    return a && isWorkflowArkPersonAutoCertificationAsset(a, { workflowContext: true });
   }));
   const personTrack = usesGravitexPersonRef ? classifyReferenceAssets(names).personTrack : [];
   const items = names.map((name) => {
@@ -22551,6 +22579,8 @@ module.exports = {
       isArkPersonEligibleAsset,
       isCharacterRefAsset,
       isCanvasPhotorealAsset,
+      isWorkflowArkAutoCertificationAsset,
+      isWorkflowArkPersonAutoCertificationAsset,
     },
   },
 };

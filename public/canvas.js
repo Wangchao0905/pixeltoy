@@ -529,7 +529,9 @@ function sharedLibraryAssetToCanvasAsset(asset = {}) {
     // 保留素材库的各类地址，认证服务端会在旧 HTTP、HTTPS 和本地镜像之间择优。
     publicUrl: asset.publicUrl || asset.public_url || "",
     localUrl: asset.localUrl || asset.local_url || "",
-    source: asset.source || "asset-library",
+    // 素材库进入独立画布后始终保留独立来源,避免后续拖拽触发工作流自动认证。
+    source: "shared-asset-library",
+    librarySource: asset.source || "",
     prompt: asset.prompt || "",
     ratio: asset.ratio || "",
     resolution: asset.resolution || "",
@@ -614,7 +616,7 @@ function addSharedLibraryAsset(asset = {}, { node = true, point = null, silent =
   if (!converted.id || !converted.url) return toast("素材库图片地址不可用");
   addAssets([converted]);
   if (node) {
-    addAssetNodeAt(converted.id, point || nextAvailableAssetNodePoint(), { silent: true, autoCertify: true });
+    addAssetNodeAt(converted.id, point || nextAvailableAssetNodePoint(), { silent: true });
   }
   if (!silent) toast(`已将「${asset.name || "素材"}」加入画布`);
 }
@@ -681,6 +683,27 @@ function isPhotorealAsset(asset = {}) {
   return preset === "photoreal" || /超写实|photoreal|photo-real|hyperreal|hyper-real/i.test(label);
 }
 
+function normalizeArkAutoCertificationStyle(value = "") {
+  const aliases = {
+    "3d": "cg_3d",
+    "3d_cg": "cg_3d",
+    three_d: "cg_3d",
+    photoreal_3d: "cg_3d",
+  };
+  const key = String(value || "").trim().toLowerCase();
+  return aliases[key] || key;
+}
+
+function isWorkflowArkAutoCertificationAsset(asset = {}) {
+  const source = String(asset.source || "").trim().toLowerCase();
+  const projectId = String(asset.projectId || asset.sourceProjectId || "").trim();
+  const workflowSource = asset.workflowAsset === true
+    || ["project", "workflow", "project-reuse"].includes(source)
+    || !!projectId;
+  const preset = normalizeArkAutoCertificationStyle(asset.assetStylePreset || asset.stylePreset || "");
+  return workflowSource && (preset === "photoreal" || preset === "cg_3d");
+}
+
 function isArkPersonReferenceAsset(asset = {}) {
   const rawType = String(asset.manifestType || asset.assetType || asset.type || "").trim();
   if (/character|person|真人|人物|角色/i.test(rawType)) return true;
@@ -709,7 +732,9 @@ function isArkPersonCertificationEligible(asset = {}) {
 function isAutoArkPersonAsset(asset = {}) {
   const status = String(asset?.arkPersonAsset?.status || "").toLowerCase();
   if (!asset || isVideoAsset(asset) || asset.uploading || status === "processing" || isArkVirtualPersonCertified(asset)) return false;
-  return isArkPersonReferenceAsset(asset) && (isAiGeneratedPhotorealAsset(asset) || isAiGeneratedAsset(asset));
+  return isWorkflowArkAutoCertificationAsset(asset)
+    && isArkPersonReferenceAsset(asset)
+    && (isAiGeneratedPhotorealAsset(asset) || isAiGeneratedAsset(asset));
 }
 
 function arkPersonAssetUrl(asset = {}) {
@@ -974,6 +999,7 @@ function projectAssets() {
     verificationType: asset.verificationType || "",
     aiGenerated: asset.aiGenerated === true,
     source: "project",
+    projectId: canvasState.selectedId || "",
   }));
 }
 

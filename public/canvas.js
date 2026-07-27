@@ -6,6 +6,8 @@ const qsa = (selector) => [...document.querySelectorAll(selector)];
 const LAST_CHANNEL_ID_KEY = "pixelToys.lastChannelId";
 const DEFAULT_CHANNEL_ID = "81";
 const LAST_PROJECT_ID_KEY = "pixelToys.canvasProjectId";
+const CANVAS_AGENT_DEFAULT_MODEL = "claude-opus-5";
+const CANVAS_AGENT_MODELS = new Set(["claude-opus-5", "gpt-5.6-sol", "grok-4.5"]);
 
 function rememberedChannelId() {
   try {
@@ -147,6 +149,11 @@ const canvasState = {
   gestureScaleStart: 1,
   gestureLastScale: 1,
   gestureWheelBlockUntil: 0,
+  canvasAgentModel: CANVAS_AGENT_DEFAULT_MODEL,
+  canvasAgentMessages: [],
+  canvasAgentActivities: [],
+  canvasAgentController: null,
+  canvasAgentSending: false,
 };
 
 const VIDEO_NODE_DEFAULTS = {
@@ -1095,6 +1102,10 @@ function setStudioBackLink() {
 
 function renderProjectTitle() {
   setStudioBackLink();
+  const contextName = qs("#canvasAgentContextName");
+  if (contextName) {
+    contextName.textContent = canvasState.project?.title || canvasState.project?.episodeSlug || (canvasState.canvasId ? "独立画布" : "未命名画布");
+  }
 }
 
 function projectAssets() {
@@ -1223,12 +1234,12 @@ function createNode(kind, point = canvasState.menuPoint, options = {}) {
   const createPoint = { x: point?.x || 0, y: point?.y || 0 };
   const initialSettings = options.settings && typeof options.settings === "object" ? options.settings : {};
   const node = {
-    id: `node_${Date.now()}_${canvasState.nextNodeId++}`,
+    id: options.id || `node_${Date.now()}_${canvasState.nextNodeId++}`,
     kind,
     x: createPoint.x,
     y: createPoint.y,
-    assets: [],
-    prompt: "",
+    assets: Array.isArray(options.assets) ? options.assets.filter(Boolean) : [],
+    prompt: options.prompt || "",
     ...(kind === "asset" ? { width: ASSET_NODE_DEFAULT_WIDTH, height: ASSET_NODE_DEFAULT_HEIGHT } : {}),
     ...(kind === "image" ? { width: IMAGE_NODE_DEFAULT_WIDTH, height: IMAGE_NODE_DEFAULT_HEIGHT, ratioLayoutRatio: "", ratioManualSize: false, settings: { ...IMAGE_NODE_DEFAULTS, ...initialSettings }, status: "idle", statusMessage: "", imageUrl: "", taskId: "" } : {}),
     ...(kind === "video" ? { width: VIDEO_NODE_DEFAULT_WIDTH, height: VIDEO_NODE_DEFAULT_HEIGHT, ratioLayoutRatio: "", ratioManualSize: false, settings: { ...VIDEO_NODE_DEFAULTS, ...initialSettings }, liveness: { name: "真人A", description: "", status: "idle", assetUrl: "" }, status: "idle", statusMessage: "", videoUrl: "", taskId: "", taskProvider: "" } : {}),
@@ -5322,6 +5333,310 @@ async function boot() {
     }
   }
 }
+
+function canvasAgentCanvasSnapshot() {
+  return {
+    name: canvasState.project?.title || canvasState.project?.episodeSlug || (canvasState.canvasId ? "独立画布" : "未命名画布"),
+    projectId: canvasState.selectedId || "",
+    canvasId: canvasState.canvasId || canvasStorageProjectId(),
+    selectedNodeIds: [...canvasState.selectedNodeIds],
+    assets: canvasState.assets.slice(0, 300).map((asset) => ({
+      id: asset.id,
+      name: asset.name,
+      type: asset.type,
+      description: asset.description || asset.prompt || "",
+    })),
+    nodes: canvasState.nodes.slice(0, 100).map((node) => ({
+      id: node.id,
+      kind: node.kind,
+      x: node.x,
+      y: node.y,
+      prompt: node.prompt || "",
+      settings: node.settings || {},
+      assets: Array.isArray(node.assets) ? node.assets : [],
+      status: node.status || "idle",
+    })),
+    connections: canvasState.connections.slice(0, 300),
+  };
+}
+
+function canvasAgentSetStatus(message, busy = canvasState.canvasAgentSending) {
+  const status = qs("#canvasAgentStatus");
+  const footer = qs(".canvas-agent-panel-footer");
+  if (status) status.textContent = message;
+  footer?.classList.toggle("is-busy", Boolean(busy));
+}
+
+function renderCanvasAgentThread() {
+  const thread = qs("#canvasAgentThread");
+  if (!thread) return;
+  const messages = canvasState.canvasAgentMessages;
+  const activities = canvasState.canvasAgentActivities;
+  if (!messages.length && !activities.length) {
+    if (!thread.querySelector(".canvas-agent-empty")) {
+      thread.innerHTML = `<div class="canvas-agent-empty"><strong>把下一步交给 Agent</strong><p>描述节点、连线或提示词的目标，Agent 会直接操作当前画布。</p></div>`;
+    }
+    return;
+  }
+  const list = document.createElement("div");
+  list.className = "canvas-agent-message-list";
+  messages.forEach((message, index) => {
+    const bubble = document.createElement("div");
+    bubble.className = `canvas-agent-message ${message.role === "user" ? "user" : "assistant"}`;
+    if (canvasState.canvasAgentSending && index === messages.length - 1 && message.role === "assistant") {
+      bubble.classList.add("is-streaming");
+    }
+    bubble.textContent = message.content || (message.role === "assistant" ? "正在处理…" : "");
+    list.appendChild(bubble);
+  });
+  activities.slice(-24).forEach((activity) => {
+    const note = document.createElement("div");
+    note.className = "canvas-agent-action-note";
+    note.textContent = activity;
+    list.appendChild(note);
+  });
+  thread.replaceChildren(list);
+  requestAnimationFrame(() => {
+    thread.scrollTop = thread.scrollHeight;
+  });
+}
+
+function canvasAgentActionLabel(action = {}) {
+  if (action.type === "create_node") return `已创建${action.node?.kind === "video" ? "视频" : action.node?.kind === "asset" ? "资产" : "图片"}模块`;
+  if (action.type === "update_node") return "已更新模块配置和提示词";
+  if (action.type === "delete_node") return "已删除模块及其连接";
+  if (action.type === "connect_nodes") return "已建立模块连接";
+  if (action.type === "disconnect_nodes") return "已断开模块连接";
+  return "已执行画布动作";
+}
+
+function syncCanvasAgentNodeControls(node) {
+  const element = node ? qs(`[data-node-id="${CSS.escape(node.id)}"]`) : null;
+  if (!element || node.kind === "asset") return;
+  const prompt = element.querySelector(".node-prompt");
+  if (prompt) prompt.value = node.prompt || "";
+  const settings = node.kind === "video"
+    ? { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}) }
+    : { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) };
+  element.querySelectorAll("[data-node-field]").forEach((field) => {
+    const key = field.dataset.nodeField;
+    if (field.type === "checkbox") field.checked = settings[key] !== false;
+    else field.value = settings[key] ?? "";
+  });
+  if (node.kind === "image") syncImageModelControls(element, settings);
+  else syncVideoNodeShell(element, node);
+}
+
+function applyCanvasAgentAction(action = {}) {
+  if (!action || typeof action !== "object") return false;
+  if (action.type === "create_node") {
+    const source = action.node || {};
+    if (!source.id || !["image", "video", "asset"].includes(source.kind)) return false;
+    if (canvasState.nodes.some((node) => node.id === source.id)) return false;
+    const assetIds = Array.isArray(source.assets)
+      ? source.assets.filter((assetId) => canvasState.assets.some((asset) => asset.id === assetId))
+      : [];
+    createNode(source.kind, { x: Number(source.x) || 80, y: Number(source.y) || 80 }, {
+      id: source.id,
+      prompt: source.prompt || "",
+      assets: assetIds,
+      settings: source.settings || {},
+      render: false,
+      silent: true,
+    });
+    renderNodes();
+    renderLinks();
+    scheduleCanvasSave();
+  } else if (action.type === "update_node") {
+    const node = canvasState.nodes.find((item) => item.id === action.nodeId);
+    if (!node) return false;
+    const patch = action.patch && typeof action.patch === "object" ? action.patch : {};
+    if (Number.isFinite(Number(patch.x))) node.x = Number(patch.x);
+    if (Number.isFinite(Number(patch.y))) node.y = Number(patch.y);
+    if (typeof patch.prompt === "string" && node.kind !== "asset") node.prompt = patch.prompt;
+    if (patch.settings && typeof patch.settings === "object" && node.kind !== "asset") {
+      const defaults = node.kind === "video" ? VIDEO_NODE_DEFAULTS : IMAGE_NODE_DEFAULTS;
+      node.settings = { ...defaults, ...(node.settings || {}), ...patch.settings };
+    }
+    if (Array.isArray(patch.assets)) {
+      node.assets = patch.assets.filter((assetId) => canvasState.assets.some((asset) => asset.id === assetId));
+    }
+    clampNodePosition(node);
+    syncCanvasAgentNodeControls(node);
+    renderNodes();
+    renderLinks();
+    scheduleCanvasSave();
+  } else if (action.type === "delete_node") {
+    if (!canvasState.nodes.some((node) => node.id === action.nodeId)) return false;
+    removeNode(action.nodeId);
+  } else if (action.type === "connect_nodes") {
+    const source = canvasState.nodes.find((node) => node.id === action.from);
+    const target = canvasState.nodes.find((node) => node.id === action.to);
+    if (!source || !target || !connectNodes(source, target)) return false;
+  } else if (action.type === "disconnect_nodes") {
+    const index = canvasState.connections.findIndex((connection) => connection.from === action.from && connection.to === action.to);
+    if (index < 0) return false;
+    removeConnection(index);
+  } else {
+    return false;
+  }
+  canvasState.canvasAgentActivities.push(canvasAgentActionLabel(action));
+  canvasState.canvasAgentActivities = canvasState.canvasAgentActivities.slice(-24);
+  renderCanvasAgentThread();
+  return true;
+}
+
+async function readCanvasAgentStream(response, onEvent) {
+  if (!response.ok) {
+    const raw = await response.text();
+    let message = `Canvas Agent 请求失败（HTTP ${response.status}）`;
+    try {
+      const data = JSON.parse(raw);
+      message = data.message || message;
+    } catch {}
+    throw new Error(message);
+  }
+  if (!response.body) throw new Error("Canvas Agent 没有返回流");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  const processLine = (line) => {
+    if (!line.startsWith("data:")) return;
+    const raw = line.slice(5).trim();
+    if (!raw || raw === "[DONE]") return;
+    let payload;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (payload.error) throw new Error(payload.error);
+    onEvent(payload);
+  };
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      pending += decoder.decode();
+      break;
+    }
+    pending += decoder.decode(value, { stream: true });
+    const lines = pending.split(/\r?\n/);
+    pending = lines.pop() || "";
+    lines.forEach(processLine);
+  }
+  if (pending) processLine(pending);
+}
+
+function setCanvasAgentSending(sending) {
+  canvasState.canvasAgentSending = Boolean(sending);
+  const input = qs("#canvasAgentInput");
+  const button = qs("#canvasAgentSend");
+  if (input) input.disabled = canvasState.canvasAgentSending;
+  if (button) {
+    button.classList.toggle("is-stop", canvasState.canvasAgentSending);
+    button.setAttribute("aria-label", canvasState.canvasAgentSending ? "停止" : "发送");
+    button.title = canvasState.canvasAgentSending ? "停止当前请求" : "发送";
+    button.innerHTML = canvasState.canvasAgentSending
+      ? `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" /></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 4 16 8-16 8 3.1-7.1L14 12l-6.9-.9L4 4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>`;
+  }
+  canvasAgentSetStatus(canvasState.canvasAgentSending ? "Agent 正在执行…" : "就绪，可操作当前画布", canvasState.canvasAgentSending);
+  renderCanvasAgentThread();
+}
+
+async function submitCanvasAgentMessage(prompt) {
+  if (canvasState.canvasAgentSending) {
+    canvasState.canvasAgentController?.abort();
+    return;
+  }
+  const text = String(prompt || "").trim();
+  if (!text) return;
+  const model = CANVAS_AGENT_MODELS.has(canvasState.canvasAgentModel) ? canvasState.canvasAgentModel : CANVAS_AGENT_DEFAULT_MODEL;
+  const requestMessages = [...canvasState.canvasAgentMessages, { role: "user", content: text }];
+  const assistant = { role: "assistant", content: "" };
+  canvasState.canvasAgentMessages.push({ role: "user", content: text }, assistant);
+  canvasState.canvasAgentActivities = [];
+  const input = qs("#canvasAgentInput");
+  if (input) input.value = "";
+  setCanvasAgentSending(true);
+  const controller = new AbortController();
+  canvasState.canvasAgentController = controller;
+  try {
+    const response = await fetch("/api/canvas/agent/chat", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({
+        model,
+        messages: requestMessages,
+        canvasContext: canvasAgentCanvasSnapshot(),
+        projectId: canvasState.selectedId || "",
+      }),
+      signal: controller.signal,
+    });
+    await readCanvasAgentStream(response, (payload) => {
+      if (payload.delta) {
+        assistant.content += payload.delta;
+        renderCanvasAgentThread();
+      }
+      if (payload.toolStart?.name) canvasAgentSetStatus(`Agent 正在执行：${payload.toolStart.name}`, true);
+      if (payload.canvasAction) applyCanvasAgentAction(payload.canvasAction);
+      if (payload.toolResult?.error) canvasAgentSetStatus(payload.toolResult.summary || "动作未执行", true);
+    });
+    if (!assistant.content) assistant.content = "已完成画布操作。";
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      if (!assistant.content) assistant.content = "已停止当前请求。";
+    } else {
+      assistant.content = assistant.content ? `${assistant.content}\n\n${error.message}` : error.message;
+      canvasAgentSetStatus(error.message, false);
+    }
+  } finally {
+    canvasState.canvasAgentController = null;
+    setCanvasAgentSending(false);
+  }
+}
+
+function setCanvasAgentOpen(open) {
+  const toggle = qs("#canvasAgentToggle");
+  const panel = qs("#canvasAgentPanel");
+  if (!toggle || !panel) return;
+  const isOpen = Boolean(open);
+  panel.setAttribute("aria-hidden", String(!isOpen));
+  panel.toggleAttribute("inert", !isOpen);
+  panel.inert = !isOpen;
+  toggle.setAttribute("aria-expanded", String(isOpen));
+  toggle.setAttribute("aria-label", isOpen ? "收起 Canvas Agent" : "打开 Canvas Agent");
+  if (isOpen) requestAnimationFrame(() => qs("#canvasAgentInput")?.focus());
+}
+
+qs("#canvasAgentToggle")?.addEventListener("click", () => {
+  const panel = qs("#canvasAgentPanel");
+  setCanvasAgentOpen(panel?.getAttribute("aria-hidden") !== "false");
+});
+qs("#canvasAgentClose")?.addEventListener("click", () => setCanvasAgentOpen(false));
+qs("#canvasAgentModel")?.addEventListener("change", (event) => {
+  const value = event.currentTarget.value;
+  if (CANVAS_AGENT_MODELS.has(value)) canvasState.canvasAgentModel = value;
+});
+qs("#canvasAgentComposer")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  submitCanvasAgentMessage(qs("#canvasAgentInput")?.value || "").catch((error) => canvasAgentSetStatus(error.message, false));
+});
+qs("#canvasAgentInput")?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    submitCanvasAgentMessage(event.currentTarget.value).catch((error) => canvasAgentSetStatus(error.message, false));
+  }
+});
+qsa("[data-canvas-agent-suggestion]").forEach((button) => {
+  button.addEventListener("click", () => submitCanvasAgentMessage(button.dataset.canvasAgentSuggestion || "").catch((error) => canvasAgentSetStatus(error.message, false)));
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && qs("#canvasAgentPanel")?.getAttribute("aria-hidden") === "false") {
+    setCanvasAgentOpen(false);
+  }
+});
 
 qs("#blankCanvas").addEventListener("contextmenu", showContextMenu);
 qs("#blankCanvas").addEventListener("wheel", handleCanvasWheel, { passive: false });

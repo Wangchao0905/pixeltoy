@@ -13,8 +13,8 @@ assert.match(html, /<option value="agent">Agent<\/option>/);
 assert.doesNotMatch(html, /<option value="agent" disabled>/);
 const superPixelModelSelect = html.match(/<select id="superPixelModel"[\s\S]*?<\/select>/)?.[0] || "";
 assert.doesNotMatch(superPixelModelSelect, /value="claude-sonnet-5"/);
-assert.match(html, /styles\.css\?v=agent-mode-20260727/);
-assert.match(html, /app\.js\?v=agent-mode-20260727/);
+assert.match(html, /styles\.css\?v=img-ref-20260727/);
+assert.match(html, /app\.js\?v=img-ref-20260727/);
 assert.match(app, /async function submitSuperPixelChat\(prompt\)/);
 assert.match(app, /fetch\("\/api\/super-pixel\/chat"/);
 assert.match(app, /Accept: "text\/event-stream"/);
@@ -81,7 +81,9 @@ assert.match(app, /function startSuperPixelVideoPoll\(/);
 assert.match(app, /\/api\/canvas\/image-generations\/\$\{encodeURIComponent\(taskId\)\}/);
 assert.match(app, /\/api\/canvas\/video-generations\/\$\{encodeURIComponent\(taskId\)\}/);
 assert.match(app, /provider=\$\{encodeURIComponent\(provider\)\}/);
-assert.match(app, /body: JSON\.stringify\(\{\s*\.\.\.args, model: args\.videoModel\s*\}\)/);
+assert.match(app, /body: JSON\.stringify\(\{\s*\.\.\.args, model: args\.videoModel, assets\s*\}\)/);
+assert.match(app, /referenceImages[\s\S]*thumbnailUrl/);
+assert.match(app, /assets:[\s\S]*referenceImages/);
 assert.match(app, /function cancelSuperPixelVideoCard\(/);
 assert.match(app, /function stopSuperPixelPoll\(/);
 assert.match(app, /clearTimeout\(/);
@@ -149,11 +151,12 @@ assert.equal(canceledCard.status, "cancelled", "取消后的确认卡不得再�
 
   handleSuperPixelStreamEvent(
     "toolConfirm",
-    { kind: "video", callId: "c3", args: { prompt: "推近" } },
+    { kind: "video", callId: "c3", args: { prompt: "推近" }, referenceImages: [{ url: "https://cdn.example/ref.png", thumbnailUrl: "https://cdn.example/ref-thumb.png", name: "商品图" }] },
     assistant,
   );
   assert.equal(inserted[2].kind, "video");
   assert.equal(inserted[2].status, "confirming", "视频卡片必须先进入待确认态");
+  assert.equal(inserted[2].referenceImages[0].thumbnailUrl, "https://cdn.example/ref-thumb.png", "视频确认卡必须保留参考图缩略图");
   assert.equal(polled.length, 1, "视频确认前不得启动轮询");
 }
 

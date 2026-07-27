@@ -2784,6 +2784,26 @@ function renderSuperPixelVideoConfirmCard(message) {
   prompt.className = "super-pixel-tool-card-prompt";
   prompt.textContent = args.prompt || "未提供视频提示词";
   card.appendChild(prompt);
+  const referenceImages = Array.isArray(message.referenceImages) ? message.referenceImages.filter((reference) => reference?.url) : [];
+  if (referenceImages.length) {
+    const references = document.createElement("div");
+    references.className = "super-pixel-reference-images";
+    const label = document.createElement("span");
+    label.className = "super-pixel-reference-label";
+    label.textContent = "参考图";
+    references.appendChild(label);
+    const strip = document.createElement("div");
+    strip.className = "super-pixel-reference-strip";
+    for (const reference of referenceImages) {
+      const image = document.createElement("img");
+      image.src = reference.thumbnailUrl || reference.url;
+      image.alt = reference.name || "参考图";
+      image.loading = "lazy";
+      strip.appendChild(image);
+    }
+    references.appendChild(strip);
+    card.appendChild(references);
+  }
   const details = document.createElement("div");
   details.className = "super-pixel-tool-card-details";
   appendSuperPixelCardMeta(details, "模型", args.videoModel || "seedance-2-0");
@@ -2911,6 +2931,7 @@ function handleSuperPixelStreamEvent(type, data, assistant) {
       kind: "video",
       callId: data.callId || "",
       args: data.args || {},
+      referenceImages: Array.isArray(data.referenceImages) ? data.referenceImages : [],
       status: "confirming",
     };
     insertSuperPixelToolCard(card, assistant);
@@ -3033,9 +3054,12 @@ async function confirmSuperPixelVideoCard(card) {
   card.message = "正在提交视频任务";
   renderSuperPixelMessages();
   try {
+    const assets = Array.isArray(card.referenceImages)
+      ? card.referenceImages.map((reference) => ({ url: reference.url, name: reference.name || "参考图" })).filter((asset) => asset.url)
+      : (Array.isArray(args.referenceImages) ? args.referenceImages.map((url, index) => ({ url, name: `参考图${index + 1}` })).filter((asset) => asset.url) : []);
     const data = await api("/api/canvas/video-generations", {
       method: "POST",
-      body: JSON.stringify({ ...args, model: args.videoModel }),
+      body: JSON.stringify({ ...args, model: args.videoModel, assets }),
     });
     const result = data.result || {};
     if (result.videoUrl) {
@@ -3152,7 +3176,7 @@ async function addSuperPixelLocalFiles(fileList) {
     }
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      if (addSuperPixelAttachment({ url: dataUrl, preview: dataUrl, name: file.name })) added += 1;
+      if (addSuperPixelAttachment({ url: dataUrl, preview: dataUrl, name: file.name, source: "local" })) added += 1;
     } catch (error) {
       skipped.push(`${file.name}（${error.message}）`);
     }
@@ -3184,6 +3208,7 @@ function addSuperPixelLibraryAsset(assetId) {
     url,
     preview: libraryPreviewUrl(asset, 160),
     name: asset.name || "素材库图片",
+    source: "asset-library",
   });
   if (added) renderSuperPixelAttachments();
   return added;
@@ -3198,6 +3223,30 @@ function superPixelMessagePayload(message) {
   if (message.content) parts.push({ type: "text", text: message.content });
   for (const image of images) parts.push({ type: "image_url", image_url: { url: image.url } });
   return { role: message.role, content: parts };
+}
+
+function superPixelConversationImages() {
+  const images = [];
+  const seen = new Set();
+  const add = (image, fallbackSource = "conversation") => {
+    const url = String(image?.url || "").trim();
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    images.push({
+      url,
+      name: String(image?.name || "未命名图片").trim() || "未命名图片",
+      source: String(image?.source || fallbackSource).trim() || fallbackSource,
+    });
+  };
+  for (const message of state.superPixel.messages) {
+    if (Array.isArray(message?.images)) {
+      for (const image of message.images) add(image);
+    }
+    if (message?.kind === "image" && message.status === "completed" && message.url) {
+      add({ url: message.url, name: message.meta?.prompt || "Agent 生成图片", source: "agent-generated" });
+    }
+  }
+  return images;
 }
 
 async function submitSuperPixelChat(prompt) {
@@ -3218,17 +3267,19 @@ async function submitSuperPixelChat(prompt) {
   state.superPixel.controller = new AbortController();
   renderSuperPixelMessages();
   try {
+    const requestBody = {
+      model: state.superPixel.model,
+      mode: state.superPixel.mode,
+      scriptText: state.superPixel.scriptText,
+      messages: state.superPixel.messages
+        .map(superPixelMessagePayload)
+        .filter((item) => item && (Array.isArray(item.content) ? item.content.length : item.content)),
+    };
+    if (state.superPixel.mode === "agent") requestBody.conversationImages = superPixelConversationImages();
     const response = await fetch("/api/super-pixel/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({
-        model: state.superPixel.model,
-        mode: state.superPixel.mode,
-        scriptText: state.superPixel.scriptText,
-        messages: state.superPixel.messages
-          .map(superPixelMessagePayload)
-          .filter((item) => item && (Array.isArray(item.content) ? item.content.length : item.content)),
-      }),
+      body: JSON.stringify(requestBody),
       signal: state.superPixel.controller.signal,
     });
     if (!response.ok) {

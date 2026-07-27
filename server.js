@@ -10580,19 +10580,63 @@ async function localAssetFileToPublicUrl(localFile, name = "") {
   return createPublicCanvasAsset({ name: name || path.basename(localFile), dataUrl: fileToDataUrl(localFile) });
 }
 
+function canvasAssetSourceCandidates(asset = {}) {
+  const values = [
+    asset.publicUrl,
+    asset.public_url,
+    asset.url,
+    asset.previewUrl,
+    asset.preview_url,
+    asset.localUrl,
+    asset.local_url,
+    asset.localAssetUrl,
+    asset.local_asset_url,
+    asset.dataUrl,
+    asset.data_url,
+  ];
+  const unique = [];
+  const seen = new Set();
+  for (const value of values) {
+    const candidate = compactLine(value);
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    unique.push(candidate);
+  }
+  const rank = (value) => {
+    if (/^asset:\/\//i.test(value)) return 0;
+    if (/^https:\/\//i.test(value)) return 1;
+    if (/^data:(?:image|video)\//i.test(value)) return 2;
+    if (/^(?:\/|file:\/\/)/i.test(value)) return 3;
+    if (/^http:\/\//i.test(value)) return 4;
+    return 5;
+  };
+  return unique
+    .map((value, index) => ({ value, index, rank: rank(value) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ value }) => value);
+}
+
 async function canvasAssetToPublicUrl(asset = {}, index = 0) {
-  const raw = compactLine(asset.publicUrl || asset.public_url || asset.url || "");
-  if (/^https:\/\//i.test(raw)) return { url: raw, localUrl: compactLine(asset.previewUrl || ""), publicReady: true, message: "已是公网 HTTPS 地址" };
-  if (/^asset:\/\//i.test(raw)) return { url: raw, localUrl: compactLine(asset.previewUrl || ""), publicReady: true, message: "已是 asset:// 素材" };
-  if (/^data:image\//i.test(raw)) return createPublicCanvasAsset({ name: asset.name || `asset-${index + 1}.png`, dataUrl: raw });
-  if (/^data:video\//i.test(raw)) return canvasVideoToPublicUrlShape({ name: asset.name || `asset-${index + 1}.mp4`, dataUrl: raw });
-  const localFile = localMediaPathFromUrl(raw);
-  if (localFile) return localAssetFileToPublicUrl(localFile, asset.name);
-  const localUrlFile = localFilePathFromUrl(raw);
-  if (localUrlFile) return localAssetFileToPublicUrl(localUrlFile, asset.name);
-  const localPublicAsset = localPublicAssetPathFromUrl(raw || asset.previewUrl || asset.localUrl || "");
-  if (localPublicAsset) return localAssetFileToPublicUrl(localPublicAsset, asset.name);
-  if (/^http:\/\//i.test(raw)) throw new Error("Gravitex 素材库只接受 HTTPS 图片地址");
+  const candidates = canvasAssetSourceCandidates(asset);
+  let sawHttp = false;
+  for (const raw of candidates) {
+    if (/^https:\/\//i.test(raw)) {
+      return { url: raw, localUrl: compactLine(asset.previewUrl || asset.localUrl || ""), publicReady: true, message: "已是公网 HTTPS 地址" };
+    }
+    if (/^asset:\/\//i.test(raw)) {
+      return { url: raw, localUrl: compactLine(asset.previewUrl || asset.localUrl || ""), publicReady: true, message: "已是 asset:// 素材" };
+    }
+    if (/^data:image\//i.test(raw)) return createPublicCanvasAsset({ name: asset.name || `asset-${index + 1}.png`, dataUrl: raw });
+    if (/^data:video\//i.test(raw)) return canvasVideoToPublicUrlShape({ name: asset.name || `asset-${index + 1}.mp4`, dataUrl: raw });
+    const localFile = localMediaPathFromUrl(raw);
+    if (localFile) return localAssetFileToPublicUrl(localFile, asset.name);
+    const localUrlFile = localFilePathFromUrl(raw);
+    if (localUrlFile) return localAssetFileToPublicUrl(localUrlFile, asset.name);
+    const localPublicAsset = localPublicAssetPathFromUrl(raw);
+    if (localPublicAsset) return localAssetFileToPublicUrl(localPublicAsset, asset.name);
+    if (/^http:\/\//i.test(raw)) sawHttp = true;
+  }
+  if (sawHttp) throw new Error("Gravitex 素材库只接受 HTTPS 图片地址");
   throw new Error("无法生成公网 HTTPS 素材地址");
 }
 
@@ -20625,12 +20669,42 @@ function superPixelSystemPrompt(scriptText) {
   ].filter(Boolean).join("\n\n");
 }
 
-function superPixelAgentSystemPrompt(scriptText) {
+function superPixelConversationImageHandles(images = []) {
+  if (!Array.isArray(images)) return [];
+  return images
+    .map((image) => ({
+      url: compactLine(image?.url || ""),
+      name: compactLine(image?.name || "未命名图片") || "未命名图片",
+      source: compactLine(image?.source || "conversation") || "conversation",
+    }))
+    .filter((image) => image.url)
+    .slice(0, 64)
+    .map((image, index) => ({ ...image, handle: `image_${index + 1}` }));
+}
+
+function superPixelReferenceSourceLabel(source = "") {
+  if (source === "local" || source === "upload" || source === "user-upload") return "用户上传";
+  if (source === "asset-library" || source === "library") return "资产库";
+  if (source === "agent-generated" || source === "generated") return "你生成的图";
+  return "对话图片";
+}
+
+function superPixelReferencePromptLines(images = []) {
+  return (Array.isArray(images) ? images : [])
+    .map((image) => `${image.handle}（${superPixelReferenceSourceLabel(image.source)}：${image.name}）`)
+    .filter(Boolean);
+}
+
+function superPixelAgentSystemPrompt(scriptText, conversationImages = []) {
   const script = truncateSuperPixelScript(scriptText);
+  const referenceLines = superPixelReferencePromptLines(conversationImages);
   return [
     "You are Super Pixel in Agent mode.",
     "Use the available tools when the user asks you to create images, request a video, search assets, or inspect a project.",
     "Do not claim that a video was generated: generate_video only asks the user for confirmation.",
+    referenceLines.length
+      ? `The conversation reference images are available as handles. Use these exact handles in referenceImages; do not invent image URLs or handles. Do not use firstFrameUrl for ordinary reference-image requests.\n${referenceLines.join("\n")}`
+      : "There are no conversation reference images available. Do not invent image handles or URLs.",
     "After a tool result, answer the user concisely and accurately. Never invent task IDs, project changes, or completed work.",
     script ? `The user uploaded this screenplay for context:\n\n${script}` : "",
   ].filter(Boolean).join("\n\n");
@@ -20669,6 +20743,7 @@ const SUPER_PIXEL_TOOLS = [
           duration: { type: "number", minimum: 1, default: 5 },
           ratio: { type: "string", default: "9:16" },
           firstFrameUrl: { type: "string" },
+          referenceImages: { type: "array", items: { type: "string" }, maxItems: 9 },
         },
         required: ["prompt"],
         additionalProperties: false,
@@ -20719,6 +20794,46 @@ function parseSuperPixelToolArguments(rawArguments) {
   const parsed = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("工具参数必须是 JSON 对象");
   return parsed;
+}
+
+async function resolveSuperPixelReferenceImages(values = [], conversationImages = [], maxImages = 9) {
+  const requested = Array.isArray(values) ? values.map(compactLine).filter(Boolean) : [];
+  if (requested.length > maxImages) throw new Error(`参考图数量超过上限：最多 ${maxImages} 张。`);
+  const handles = new Map((Array.isArray(conversationImages) ? conversationImages : []).map((image) => [image.handle, image]));
+  const resolved = [];
+  for (const value of requested) {
+    const handleLike = /^image_\d+$/i.test(value);
+    const image = handleLike ? handles.get(value) : null;
+    if (handleLike && !image) throw new Error(`参考图句柄 ${value} 无法解析：当前对话没有这张图片。`);
+    const sourceUrl = image?.url || value;
+    const name = image?.name || `参考图${resolved.length + 1}`;
+    let url = "";
+    let thumbnailUrl = "";
+    if (isDataImageUrl(sourceUrl)) {
+      const publicAsset = await createPublicCanvasAsset({ name, dataUrl: sourceUrl });
+      url = compactLine(publicAsset.url || publicAsset.localUrl || "");
+      thumbnailUrl = compactLine(publicAsset.localUrl || publicAsset.url || "");
+    } else {
+      const localFile = localMediaPathFromUrl(sourceUrl) || localFilePathFromUrl(sourceUrl) || localPublicAssetPathFromUrl(sourceUrl);
+      if (localFile) {
+        const publicAsset = await createPublicCanvasAsset({ name, dataUrl: fileToDataUrl(localFile) });
+        url = compactLine(publicAsset.url || publicAsset.localUrl || "");
+        thumbnailUrl = compactLine(publicAsset.localUrl || publicAsset.url || "");
+      } else {
+        url = compactLine(await assetUrlToReferenceUrl(sourceUrl, { allowAssetUrl: true }));
+        thumbnailUrl = url;
+      }
+    }
+    if (!url || /^data:/i.test(url)) throw new Error(`参考图「${name}」无法解析为稳定 URL。`);
+    resolved.push({
+      handle: image?.handle || "",
+      url,
+      thumbnailUrl: thumbnailUrl || url,
+      name,
+      source: image?.source || "direct",
+    });
+  }
+  return resolved;
 }
 
 function superPixelProjectRoot(req, projectId = "") {
@@ -20780,9 +20895,15 @@ async function executeSuperPixelTool({ req, context, callId, name, rawArguments,
     if (name === "generate_image") {
       const prompt = compactLine(args.prompt || "");
       if (!prompt) throw new Error("缺少图片描述 prompt");
+      const referenceImages = await resolveSuperPixelReferenceImages(
+        args.referenceImages,
+        context.conversationImageHandles,
+        4,
+      );
       const result = await createCanvasImageGeneration({
         ...args,
         prompt,
+        referenceImages: referenceImages.map((reference) => reference.url),
         ownerUserId: context.userId,
       });
       const meta = {
@@ -20790,6 +20911,7 @@ async function executeSuperPixelTool({ req, context, callId, name, rawArguments,
         imageModel: result.imageModel || compactLine(args.imageModel || "gpt-image-2"),
         ratio: result.ratio || compactLine(args.ratio || "16:9"),
         resolution: result.resolution || compactLine(args.resolution || "1k"),
+        referenceImages,
       };
       emit({ toolCard: { kind: "image", callId, taskId: result.taskId, meta } });
       return `已提交出图任务 taskId=${result.taskId}，图片生成中并会自动显示在对话里。不要等待，继续回答用户。`;
@@ -20798,14 +20920,16 @@ async function executeSuperPixelTool({ req, context, callId, name, rawArguments,
       const prompt = compactLine(args.prompt || "");
       if (!prompt) throw new Error("缺少视频描述 prompt");
       const duration = Number(args.duration);
+      const referenceImages = await resolveSuperPixelReferenceImages(args.referenceImages, context.conversationImageHandles, 9);
       const videoArgs = {
         prompt,
         videoModel: compactLine(args.videoModel || "seedance-2-0") || "seedance-2-0",
         duration: Number.isFinite(duration) && duration > 0 ? duration : 5,
         ratio: compactLine(args.ratio || "9:16") || "9:16",
         firstFrameUrl: compactLine(args.firstFrameUrl || ""),
+        referenceImages: referenceImages.map((reference) => reference.url),
       };
-      emit({ toolConfirm: { kind: "video", callId, args: videoArgs } });
+      emit({ toolConfirm: { kind: "video", callId, args: videoArgs, referenceImages } });
       return "已向用户发出视频生成确认请求，等待用户点击确认。不要假设视频已生成。";
     }
     if (name === "search_assets") {
@@ -20964,6 +21088,7 @@ async function handleSuperPixelChat(req, res) {
   if (!messages.length || messages[messages.length - 1].role !== "user") {
     return fail(res, 400, "请输入对话内容");
   }
+  const conversationImageHandles = agentMode ? superPixelConversationImageHandles(body.conversationImages) : [];
   const controller = new AbortController();
   let clientClosed = false;
   const onClose = () => {
@@ -20985,6 +21110,7 @@ async function handleSuperPixelChat(req, res) {
   const context = {
     userId: adminUser.id,
     projectId: body.projectId || body.currentProjectId || body.selectedProjectId || "",
+    conversationImageHandles,
   };
   let streamStarted = false;
   let round = 0;
@@ -20999,7 +21125,7 @@ async function handleSuperPixelChat(req, res) {
         model,
         stream: true,
         temperature: 0.7,
-        messages: [{ role: "system", content: agentMode ? superPixelAgentSystemPrompt(body.scriptText) : superPixelSystemPrompt(body.scriptText) }, ...conversationMessages],
+        messages: [{ role: "system", content: agentMode ? superPixelAgentSystemPrompt(body.scriptText, conversationImageHandles) : superPixelSystemPrompt(body.scriptText) }, ...conversationMessages],
       };
       if (agentMode) requestBody.tools = SUPER_PIXEL_TOOLS;
       const upstream = await superPixelFetch(openAiCompatUrl("/v1/chat/completions", modelConfig.kind), {
@@ -22159,6 +22285,10 @@ module.exports = {
       messages: superPixelMessages,
       content: superPixelContent,
       resolveImages: superPixelResolveImages,
+      referenceHandles: superPixelConversationImageHandles,
+      agentPrompt: superPixelAgentSystemPrompt,
+      resolveReferences: resolveSuperPixelReferenceImages,
+      executeTool: executeSuperPixelTool,
       maxImages: SUPER_PIXEL_MAX_IMAGES_PER_MESSAGE,
     },
     draft: {
@@ -22258,6 +22388,10 @@ module.exports = {
     canvasImageRef: {
       localPublicAssetPathFromUrl,
       CANVAS_PUBLIC_ASSET_DIR,
+    },
+    canvasAsset: {
+      sourceCandidates: canvasAssetSourceCandidates,
+      toPublicUrl: canvasAssetToPublicUrl,
     },
     canvasImage: {
       normalizeCanvasImageModel,

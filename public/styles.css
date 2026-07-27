@@ -15854,6 +15854,31 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
   overflow-wrap: anywhere;
 }
 
+.super-pixel-reference-images {
+  display: grid;
+  gap: 6px;
+}
+
+.super-pixel-reference-label {
+  color: var(--sp-dim);
+  font-size: 10px;
+}
+
+.super-pixel-reference-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.super-pixel-reference-strip img {
+  width: 58px;
+  height: 58px;
+  object-fit: cover;
+  border: 1px solid var(--sp-line);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
 .super-pixel-tool-card-message {
   margin: 0;
   color: var(--sp-dim);

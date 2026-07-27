@@ -104,6 +104,14 @@ try {
   await agent.text();
   assert.equal(Array.isArray(calls.at(-1).body.tools), true, "Agent 模式请求体必须包含 tools");
   assert.equal(calls.at(-1).body.tools.length, 4, "Agent 模式必须声明四个工具");
+  const agentWithImage = await request({
+    ...body,
+    mode: "agent",
+    conversationImages: [{ url: "https://assets.example/product.png", name: "商品图.png", source: "local" }],
+  }, adminSession);
+  assert.equal(agentWithImage.status, 200);
+  await agentWithImage.text();
+  assert.match(calls.at(-1).body.messages[0].content, /image_1（用户上传：商品图\.png）/, "Agent 系统提示必须列出 conversationImages 句柄");
 
   const claude = await request(body, adminSession);
   assert.equal(claude.status, 200, "管理员必须返回 200");
@@ -111,6 +119,7 @@ try {
   assert.equal(claude.headers.get("x-accel-buffering"), "no");
   assert.match(await claude.text(), /Claude/);
   assert.equal("tools" in calls.at(-1).body, false, "Ask 模式请求体不得包含 tools");
+  assert.equal("conversationImages" in calls.at(-1).body, false, "Ask 模式请求体不得包含 conversationImages");
   assert.equal(calls.at(-1).url, "https://asset.example/v1/chat/completions");
   assert.equal(calls.at(-1).headers.Authorization, "Bearer test-super-pixel-asset-key");
 

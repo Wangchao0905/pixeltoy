@@ -84,7 +84,7 @@ assert.equal(chips.length, 0, "Super Pixel 不应再显示快捷场景按钮");
 assert.doesNotMatch(html, /super-pixel-chips|data-super-pixel-chip/, "快捷场景结构必须移除");
 
 // JS 接线
-assert.match(app, /\["image", "library", "superpixel"\]/, "setExploreView 必须接受 superpixel");
+assert.match(app, /EXPLORE_VIEW_VALUES = Object\.freeze\(\["canvas", "image", "library", "superpixel"\]\)/, "setExploreView 必须接受 superpixel");
 assert.match(app, /#superPixelView"\)\?\.classList\.toggle\("hidden"/, "必须切换视图容器可见性");
 assert.match(app, /#exploreHome"\)\?\.classList\.toggle\("is-superpixel", state\.exploreView === "superpixel"\)/, "进入 Super Pixel 时必须给 Explore 外壳加主题状态类");
 assert.match(app, /dataset\.exploreTool === "super-pixel"/, "导航高亮必须处理 super-pixel");
@@ -173,6 +173,7 @@ assert.match(entry[0], /class="hidden"/, "入口必须默认隐藏，避免鉴�
 assert.match(app, /superPixelEntry\?\.classList\.toggle\("hidden", data\.user\?\.role !== "admin"\)/, "登录态须按 admin 切换入口可见性");
 assert.match(app, /superPixelEntry\?\.classList\.add\("hidden"\)/, "未登录/鉴权失败须隐藏入口");
 assert.match(app, /tool === "super-pixel"[\s\S]{0,160}role !== "admin"\) return/, "openExploreTool 须对非管理员二次拦截");
+assert.match(app, /data\.user\?\.role !== "admin" && state\.exploreView === "superpixel"\) showExploreCanvasHome\(\)/, "直接访问 Super Pixel 路由时仍须遵守管理员权限");
 
 // 缓存戳必须与被改文件同步（不硬编码具体取值，只校验存在且一致）
 const cssStamp = html.match(/styles\.css\?v=([A-Za-z0-9._-]+)/)?.[1];

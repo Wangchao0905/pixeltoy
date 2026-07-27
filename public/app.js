@@ -11,6 +11,13 @@ const initialWorkspaceMode = "image";
 const WORKSPACE_DESIGN_WIDTH = 1840;
 const WORKSPACE_DESIGN_HEIGHT = 1160;
 const FIXED_WORKSPACE_LAYOUT = true;
+const EXPLORE_VIEW_VALUES = Object.freeze(["canvas", "image", "library", "superpixel"]);
+
+function normalizeExploreView(value) {
+  const view = String(value || "").trim();
+  return EXPLORE_VIEW_VALUES.includes(view) ? view : "canvas";
+}
+
 const IMAGE_EXPLORE_RATIO_VALUES = Object.freeze(["16:9", "4:3", "3:2", "21:9", "1:1", "4:5", "3:4", "2:3", "9:16"]);
 const PROJECT_REFRESH_ACTIVE_MS = 2000;
 const PROJECT_REFRESH_IDLE_MS = 30000;
@@ -28,6 +35,7 @@ const IMAGE_EXPLORE_POLL_MAX_ATTEMPTS = 3000;
 const IMAGE_EXPLORE_STORYBOARD_RECOVERY_LOOKBACK_MS = 36 * 60 * 60 * 1000;
 let initialProjectHandled = false;
 let teamProgressOpenToken = null;
+const INITIAL_EXPLORE_VIEW = normalizeExploreView(new URLSearchParams(window.location.search).get("view"));
 
 function imageExploreStorageKey(user = null) {
   const identity = user?.id || user?.username || "anonymous";
@@ -121,7 +129,7 @@ const state = {
   teamResourcePanelOpen: false,
   ui: { exploreEnabled: false },
   exploreEnabled: false,
-  exploreView: "canvas",
+  exploreView: INITIAL_EXPLORE_VIEW,
   // attachments: 待发送的资产图（从资产库或本地拖入），发出后并入该条 user 消息
   superPixel: { model: "claude-opus-5", mode: "ask", messages: [], scriptText: "", scriptName: "", sending: false, controller: null, uploading: 0, uploadError: "", attachments: [] },
   exploreProjectSearch: "",
@@ -520,6 +528,7 @@ async function syncAuthUser() {
     exploreRefresh?.classList.toggle("hidden", !data.user);
     exploreAccount?.classList.toggle("hidden", !data.user);
     canvasCard?.classList.toggle("hidden", !data.user?.canvasEnabled);
+    if (data.user?.role !== "admin" && state.exploreView === "superpixel") showExploreCanvasHome();
     if (data.user?.canvasEnabled) loadBlankCanvasList().catch(() => {});
     loadTeam().catch((error) => toast(error.message));
   } catch {
@@ -539,6 +548,7 @@ async function syncAuthUser() {
     exploreRefresh?.classList.add("hidden");
     exploreAccount?.classList.add("hidden");
     canvasCard?.classList.add("hidden");
+    if (state.exploreView === "superpixel") showExploreCanvasHome();
     state.team = null;
     renderTeamPanel();
   }
@@ -1387,7 +1397,6 @@ function showProjectHome() {
   document.body.classList.remove("is-studio-modern");
   document.body.classList.toggle("is-explore-ui", state.exploreEnabled);
   if (state.exploreEnabled) {
-    state.exploreView = "canvas";
     renderExploreHome();
     setupExploreVideoPlayback();
     if (state.authUser) loadBlankCanvasList().catch(() => {});
@@ -1561,10 +1570,26 @@ function syncProjectUrl(id = state.selectedId, { replace = true } = {}) {
   const nextId = String(id || "").trim();
   if (nextId) url.searchParams.set("project", nextId);
   else url.searchParams.delete("project");
+  if (nextId) url.searchParams.delete("view");
   const next = `${url.pathname}${url.search}${url.hash}`;
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (next === current) return;
   window.history[replace ? "replaceState" : "pushState"]({ projectId: nextId }, "", next);
+}
+
+function syncExploreViewUrl(view = state.exploreView, { replace = true } = {}) {
+  const normalized = normalizeExploreView(view);
+  const url = new URL(window.location.href);
+  if (normalized === "canvas") url.searchParams.delete("view");
+  else url.searchParams.set("view", normalized);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (next === current) return;
+  window.history[replace ? "replaceState" : "pushState"](
+    { ...(window.history.state || {}), exploreView: normalized },
+    "",
+    next,
+  );
 }
 
 function showStudio() {
@@ -2693,7 +2718,8 @@ function openAssetLibraryPreview(id) {
 }
 
 function setExploreView(view = "canvas") {
-  state.exploreView = ["image", "library", "superpixel"].includes(view) ? view : "canvas";
+  state.exploreView = normalizeExploreView(view);
+  syncExploreViewUrl(state.exploreView);
   if (state.exploreView !== "superpixel") stopSuperPixelGenerationPolls();
   $("#exploreHome")?.classList.toggle("is-superpixel", state.exploreView === "superpixel");
   $(".canvas-home")?.classList.toggle("hidden", state.exploreView !== "canvas");

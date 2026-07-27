@@ -84,6 +84,7 @@ assert.match(app, /function renderSuperPixelVideoConfirmCard\(/);
 assert.match(app, /function handleSuperPixelStreamEvent\(/);
 assert.match(app, /function superPixelAssistantFailureMessage\(/);
 assert.match(app, /function startSuperPixelImagePoll\(/);
+assert.match(app, /async function retrySuperPixelImageCard\(/);
 assert.match(app, /function startSuperPixelVideoPoll\(/);
 assert.match(app, /\/api\/canvas\/image-generations\/\$\{encodeURIComponent\(taskId\)\}/);
 assert.match(app, /\/api\/canvas\/video-generations\/\$\{encodeURIComponent\(taskId\)\}/);
@@ -182,5 +183,20 @@ assert.equal(
   "请求失败：流断开",
   "没有工具输出时仍应显示真实请求失败",
 );
+
+const retrySuperPixelImageCard = new Function(
+  "api",
+  "renderSuperPixelMessages",
+  "startSuperPixelImagePoll",
+  `${functionSource("retrySuperPixelImageCard")}; return retrySuperPixelImageCard;`,
+)(
+  async () => ({ result: { taskId: "retry-task-1", status: "running", message: "生成中" } }),
+  () => {},
+  () => {},
+);
+const retryCard = { kind: "image", status: "failed", message: "任务不存在或已过期，请重新生成", meta: { prompt: "城市夜景" } };
+await retrySuperPixelImageCard(retryCard);
+assert.equal(retryCard.status, "running", "过期图片卡点击重试后必须恢复生成中");
+assert.equal(retryCard.taskId, "retry-task-1", "过期图片卡必须替换为新的任务 ID");
 
 console.log("super pixel chat UI tests passed");

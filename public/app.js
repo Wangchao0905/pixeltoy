@@ -2797,7 +2797,7 @@ function renderSuperPixelToolCardHeader(card, kicker, title) {
   copy.append(kickerNode, titleNode);
   const statusNode = document.createElement("span");
   statusNode.className = "super-pixel-card-status";
-  statusNode.textContent = {
+  const statusLabel = {
     running: "生成中",
     submitting: "提交中",
     confirming: "待确认",
@@ -2805,6 +2805,7 @@ function renderSuperPixelToolCardHeader(card, kicker, title) {
     failed: "失败",
     cancelled: "已取消",
   }[card.status] || "处理中";
+  statusNode.textContent = card.status === "failed" && /任务不存在或已过期/.test(card.message || "") ? "已过期" : statusLabel;
   header.append(copy, statusNode);
   return header;
 }
@@ -2826,6 +2827,15 @@ function renderSuperPixelImageCard(message) {
     error.className = "super-pixel-tool-card-message is-error";
     error.textContent = message.message || "图片生成失败";
     card.appendChild(error);
+    const actions = document.createElement("div");
+    actions.className = "super-pixel-tool-card-actions";
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "super-pixel-tool-card-confirm";
+    retry.textContent = "重新生成";
+    retry.addEventListener("click", () => retrySuperPixelImageCard(message));
+    actions.appendChild(retry);
+    card.appendChild(actions);
   } else {
     const loading = document.createElement("div");
     loading.className = "super-pixel-tool-card-media is-loading";
@@ -3075,6 +3085,53 @@ function startSuperPixelImagePoll(card) {
       return false;
     },
   );
+}
+
+async function retrySuperPixelImageCard(card) {
+  if (!card || card.kind !== "image" || card.status !== "failed") return;
+  const meta = card.meta || {};
+  const prompt = String(meta.prompt || "").trim();
+  if (!prompt) {
+    card.message = "原始提示词已丢失，请重新发送图片请求";
+    renderSuperPixelMessages();
+    return;
+  }
+  card.status = "submitting";
+  card.message = "正在重新提交图片任务";
+  renderSuperPixelMessages();
+  try {
+    const referenceImages = Array.isArray(meta.referenceImages)
+      ? meta.referenceImages.map((reference) => typeof reference === "string" ? reference : reference?.url).filter(Boolean)
+      : [];
+    const data = await api("/api/canvas/image-generation", {
+      method: "POST",
+      body: JSON.stringify({
+        prompt,
+        imageModel: meta.imageModel || "gpt-image-2",
+        ratio: meta.ratio || "16:9",
+        resolution: meta.resolution || "1k",
+        referenceImages,
+      }),
+    });
+    const result = data.result || {};
+    if (result.status === "completed" && result.url) {
+      card.status = "completed";
+      card.url = result.url;
+      card.message = "";
+      renderSuperPixelMessages();
+      return;
+    }
+    if (!result.taskId) throw new Error(result.message || "图片接口没有返回 taskId");
+    card.taskId = result.taskId;
+    card.status = "running";
+    card.message = result.message || "图片生成中";
+    renderSuperPixelMessages();
+    startSuperPixelImagePoll(card);
+  } catch (error) {
+    card.status = "failed";
+    card.message = error.message || "图片重新生成失败";
+    renderSuperPixelMessages();
+  }
 }
 
 function startSuperPixelVideoPoll(card) {

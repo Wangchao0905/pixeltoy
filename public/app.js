@@ -1643,9 +1643,34 @@ function showWorkflowPreview() {
 }
 
 function openProjectModal() {
-  const modal = $("#projectCreateModal");
-  modal.classList.remove("hidden");
-  requestAnimationFrame(() => document.querySelector("input[name='projectName']")?.focus());
+  return createEmptyProject();
+}
+
+async function createEmptyProject() {
+  if (state.uiBusy.projectCreating) return;
+  state.uiBusy.projectCreating = true;
+  toast("正在创建空制作台");
+  try {
+    const data = await api("/api/projects", {
+      method: "POST",
+      body: JSON.stringify({
+        projectName: "Untitled",
+        episodeSlug: "e01",
+        title: "",
+        scriptText: "",
+        assetDescriptionText: "",
+        assetAnalyzerModel: state.assetAnalyzerModel,
+        dialogueLanguage: state.dialogueLanguage,
+        autoDraft: false,
+      }),
+    });
+    openProjectFromState(data);
+    loadProjects(false).catch((error) => toast(error.message));
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    state.uiBusy.projectCreating = false;
+  }
 }
 
 function closeProjectModal() {

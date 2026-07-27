@@ -49,6 +49,8 @@ assert.match(app, /function submitImageExploreGeneration/);
 assert.match(app, /function renderExploreCanvasLibrary/);
 assert.match(app, /function renderAssetInspector/);
 assert.match(app, /function openPersonalCenter/);
+assert.match(app, /function createEmptyProject\(\)[\s\S]*?projectName:\s*"Untitled"[\s\S]*?scriptText:\s*""/);
+assert.match(app, /function openProjectModal\(\)\s*\{\s*return createEmptyProject\(\);/);
 assert.match(app, /exploreLoginLink\?\.classList\.toggle\("hidden", !!data\.user\)/);
 assert.match(app, /function setupExploreVideoPlayback/);
 assert.match(styles, /\.video-showcase-six/);

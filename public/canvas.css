@@ -246,10 +246,10 @@ body.canvas-page {
   inset: 0;
   z-index: 0;
   background-image:
-    repeating-linear-gradient(0deg, rgba(85, 155, 240, 0.09) 0 1px, transparent 1px 24px),
-    repeating-linear-gradient(90deg, rgba(85, 155, 240, 0.09) 0 1px, transparent 1px 24px);
+    repeating-linear-gradient(0deg, rgba(85, 155, 240, 0.11) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(90deg, rgba(85, 155, 240, 0.11) 0 1px, transparent 1px 16px);
   background-position: 0 0;
-  background-size: 24px 24px;
+  background-size: 16px 16px;
   image-rendering: pixelated;
   pointer-events: none;
 }
@@ -3447,10 +3447,12 @@ body.canvas-page {
 .canvas-topbar {
   min-height: 44px;
   padding: 5px 10px;
-  border-bottom: 0;
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  border-bottom: 1px solid rgba(98, 183, 255, 0.22);
+  background:
+    linear-gradient(180deg, rgba(5, 9, 18, 0.96), rgba(7, 16, 30, 0.9));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .canvas-brand {

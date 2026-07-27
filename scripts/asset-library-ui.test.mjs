@@ -35,6 +35,8 @@ assert.match(canvas, /loadSharedAssetLibrary/);
 assert.match(canvas, /sharedLibraryAssetToCanvasAsset/);
 assert.match(canvas, /libraryAssetId/);
 assert.match(canvas, /asset\.scope === "team"/);
+assert.match(canvas, /function isCanvasLibraryImageAsset\(/);
+assert.doesNotMatch(canvas, /\.filter\(isImageGeneratedLibraryAsset\)/, "画布素材库不得只显示 Image 生成资产");
 assert.match(styles, /\.asset-library-view/);
 assert.match(styles, /\.workflow-asset-library/);
 assert.match(canvasCss, /\.shared-asset-library-panel/);

@@ -551,6 +551,12 @@ function isImageGeneratedLibraryAsset(asset = {}) {
   return /image-generation|canvas-image|gpt[-_ ]?image|image generation/i.test(source) || asset.aiGenerated === true;
 }
 
+function isCanvasLibraryImageAsset(asset = {}) {
+  const type = `${asset.type || ""} ${asset.source || ""}`.toLowerCase();
+  if (/video|mp4|mov|webm/.test(type)) return false;
+  return Boolean(asset.url || asset.publicUrl || asset.localUrl || asset.previewUrl);
+}
+
 function libraryPreviewUrl(asset = {}, width = 360) {
   const raw = String(asset.previewUrl || asset.url || "").trim();
   if (!raw) return "";
@@ -596,7 +602,7 @@ async function loadSharedAssetLibrary({ search = canvasState.sharedAssetLibrary.
   params.set("limit", "500");
   if (canvasState.sharedAssetLibrary.search) params.set("search", canvasState.sharedAssetLibrary.search);
   const data = await api(`/api/asset-library${params.toString() ? `?${params}` : ""}`);
-  canvasState.sharedAssetLibrary.assets = (Array.isArray(data.assets) ? data.assets : []).filter(isImageGeneratedLibraryAsset);
+  canvasState.sharedAssetLibrary.assets = (Array.isArray(data.assets) ? data.assets : []).filter(isCanvasLibraryImageAsset);
   canvasState.sharedAssetLibrary.loaded = true;
   renderSharedAssetLibrary();
   if (!silent) toast(`素材库已加载 ${canvasState.sharedAssetLibrary.assets.length} 个资产`);

@@ -6101,10 +6101,19 @@ body.canvas-page .canvas-topbar {
   padding: 9px 2px;
   border: 0;
   outline: 0;
+  box-shadow: none;
   background: transparent;
+  -webkit-appearance: none;
   color: rgba(245, 251, 255, 0.94);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.canvas-agent-composer textarea:focus,
+.canvas-agent-composer textarea:focus-visible {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
 }
 
 .canvas-agent-composer textarea::placeholder {
@@ -6124,9 +6133,9 @@ body.canvas-page .canvas-topbar {
   min-height: 34px;
   flex: 0 0 auto;
   padding: 0;
-  border: 1px solid rgba(129, 199, 255, 0.18);
+  border: 0;
   border-radius: 10px;
-  background: rgba(70, 160, 240, 0.12);
+  background: transparent;
   color: rgba(177, 220, 255, 0.86);
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
@@ -6134,14 +6143,12 @@ body.canvas-page .canvas-topbar {
 
 .canvas-agent-send:hover,
 .canvas-agent-send:focus-visible {
-  border-color: rgba(101, 196, 255, 0.56);
   background: rgba(70, 160, 240, 0.24);
   outline: none;
   transform: translateY(-1px);
 }
 
 .canvas-agent-send.is-stop {
-  border-color: rgba(255, 101, 120, 0.36);
   background: rgba(255, 82, 102, 0.12);
   color: #ff9ca8;
 }

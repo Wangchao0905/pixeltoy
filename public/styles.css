@@ -15673,8 +15673,7 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 
 /* 开聊后收掉首屏引导物，把高度让给对话 */
 .super-pixel-stage.is-chatting .super-pixel-logo,
-.super-pixel-stage.is-chatting .super-pixel-title,
-.super-pixel-stage.is-chatting .super-pixel-chips {
+.super-pixel-stage.is-chatting .super-pixel-title {
   display: none;
 }
 
@@ -16249,29 +16248,6 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 .super-pixel-send:hover { filter: brightness(1.12); }
 .super-pixel-send:active { transform: scale(0.94); }
 
-.super-pixel-chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 9px;
-}
-
-.super-pixel-chip {
-  border: 1px solid var(--sp-line);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--sp-dim);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  min-height: 0;
-  padding: 6px 12px;
-  cursor: pointer;
-  transition: color 140ms ease, border-color 140ms ease;
-}
-
-.super-pixel-chip:hover { color: var(--sp-ink); border-color: rgba(255, 110, 130, 0.3); }
-
 @media (max-width: 600px) {
   .super-pixel-view {
     height: auto;
@@ -16317,7 +16293,6 @@ body.is-studio .studio-tab-panel.is-active > .panel.final-cut-panel {
 
 @media (prefers-reduced-motion: reduce) {
   .super-pixel-send,
-  .super-pixel-chip,
   .super-pixel-tool,
   .super-pixel-select > select {
     transition: none;

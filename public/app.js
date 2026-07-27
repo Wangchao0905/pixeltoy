@@ -3777,14 +3777,6 @@ function bindSuperPixel() {
     event.preventDefault();
     await addSuperPixelLocalFiles(files);
   });
-  $$("[data-super-pixel-chip]").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      if (!input) return;
-      input.value = chip.dataset.superPixelChip;
-      input.dispatchEvent(new Event("input"));
-      input.focus();
-    });
-  });
 }
 
 function showExploreCanvasHome() {

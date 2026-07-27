@@ -80,7 +80,8 @@ assert.match(html, /id="superPixelSend"[^>]*aria-label="发送"/, "提交按钮�
 assert.match(html, /<select id="superPixelModel" aria-label="模型">/, "模型选择器需有 aria-label");
 assert.match(html, /<select id="superPixelMode" aria-label="模式">/, "模式选择器需有 aria-label");
 const chips = html.match(/<button class="super-pixel-chip" type="button"/g) || [];
-assert.equal(chips.length, 4, "场景 chips 必须是 4 个可聚焦 button");
+assert.equal(chips.length, 0, "Super Pixel 不应再显示快捷场景按钮");
+assert.doesNotMatch(html, /super-pixel-chips|data-super-pixel-chip/, "快捷场景结构必须移除");
 
 // JS 接线
 assert.match(app, /\["image", "library", "superpixel"\]/, "setExploreView 必须接受 superpixel");
@@ -99,6 +100,7 @@ assert.match(app, /data-manifest-asset-id=/, "侧栏资产卡片必须复用现�
 assert.match(app, /application\/x-pixel-toys-asset-type/, "composer 必须识别现有资产拖拽 MIME");
 assert.match(app, /state\.assetLibrary\.assets\.find\(\(asset\) => asset\.id === assetId\)/, "drop 后必须按 assetId 反查素材库图片");
 assert.match(app, /renderSuperPixelAssetRail\(\);/, "资产库更新后必须刷新侧栏");
+assert.doesNotMatch(app, /data-super-pixel-chip/, "快捷场景按钮的事件绑定必须一并移除");
 // dropEffect 必须跟源端 effectAllowed 匹配：资产卡片声明 "move"，写死 "copy" 会让
 // 浏览器回落 none、drop 不触发（真机拖拽弹回原位，合成事件测不出来）。
 assert.match(
@@ -120,6 +122,7 @@ assert.match(css, /\.explore-home\.is-superpixel[\s\S]*?data-explore-tool="super
 assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?super-pixel/, "必须有 reduced-motion 降级");
 assert.match(css, /\.super-pixel-asset-rail\s*\{/, "必须有资产侧栏样式");
 assert.match(css, /\.super-pixel-asset-card\s*\{/, "必须有可拖拽资产卡片样式");
+assert.doesNotMatch(css, /\.super-pixel-chips|\.super-pixel-chip/, "快捷场景按钮样式必须一并移除");
 assert.match(css, /\.super-pixel-asset-icon[\s\S]*?width:\s*17px[\s\S]*?height:\s*17px/, "素材库图标必须有稳定尺寸");
 assert.match(css, /\.super-pixel-select-menu\s*\{[\s\S]*?background:\s*rgba\(20,\s*7,\s*11,\s*0\.96\)/, "下拉菜单背景必须与对话框使用同一暗红色系");
 assert.match(css, /\.super-pixel-select-option\.is-selected[\s\S]*?background:\s*rgba\(217,\s*45,\s*69,\s*0\.28\)/, "下拉选中态必须使用 Super Pixel 暗红强调色");

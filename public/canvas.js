@@ -939,8 +939,7 @@ function endCanvasPan(event = {}) {
 }
 
 function setStudioBackLink() {
-  const hrefProjectId = canvasState.selectedId || initialProjectId || rememberedProjectId();
-  const href = hrefProjectId ? `/?project=${encodeURIComponent(hrefProjectId)}` : "/";
+  const href = "/";
   const link = qs("#canvasStudioBack");
   const brand = qs(".canvas-brand");
   if (link) link.href = href;

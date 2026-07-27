@@ -498,7 +498,8 @@ assert(canvasCss.includes(".canvas-brand-title"), "canvas brand title wrapper mu
 assert(canvasCss.includes(".canvas-brand-title {\n  display: flex;") && canvasCss.includes("align-items: center;"), "canvas text must align to the logo centerline");
 assert(canvasCss.includes(".canvas-topbar {\n  position: fixed;") && canvasCss.includes("z-index: 1200;"), "canvas topbar must stay fixed above the canvas");
 assert(canvasHtml.includes('class="canvas-button canvas-back-button"'), "canvas return-to-project action must live outside the crowded action group");
-assert(canvas.includes("function rememberedProjectId()") && canvas.includes("const hrefProjectId = canvasState.selectedId || initialProjectId || rememberedProjectId();"), "canvas return link must fall back to the last project id");
+assert.match(canvas, /function setStudioBackLink\(\)[\s\S]*const href = "\/";/, "canvas return link must always return to the project page root");
+assert.doesNotMatch(canvas, /setStudioBackLink\(\)[\s\S]*\?project=/, "canvas return link must not reopen the studio with a project query");
 assert(canvasCss.includes("#canvasStudioBack {\n  flex: 0 0 auto;") && canvasCss.includes("pointer-events: auto;"), "canvas return-to-project action must stay visible and clickable in compact layouts");
 const assetNodeTemplateHtml = sectionBetween(canvasHtml, 'id="assetNodeTemplate"', "</template>");
 assert(assetNodeTemplateHtml.includes("data-resize-handle"), "canvas asset node must expose a drag-resize handle");

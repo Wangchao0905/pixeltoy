@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=explore-route-persistence-20260728" />
+    <link rel="stylesheet" href="/styles.css?v=series-assets-explore-route-20260728" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -937,11 +937,12 @@
             <div class="modern-brand-copy"><span>v2</span></div>
           </header>
           <div id="modernProjectSwitcher" class="modern-project-switcher">
-            <div id="modernProjectContext" class="modern-series-context" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false">
+              <div id="modernProjectContext" class="modern-series-context" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false">
               <span class="modern-project-thumb" aria-hidden="true"></span>
               <div class="modern-project-copy"><span class="modern-eyebrow">PROJECT</span><h2 id="modernProjectTitle">选择或新建项目</h2><p id="modernProjectMeta">尚未加载项目</p></div>
               <i class="modern-project-chevron" aria-hidden="true">⌄</i>
-            </div>
+              </div>
+            <div id="modernEpisodeSwitcher" class="modern-episode-switcher" aria-label="分集切换器"></div>
             <div id="modernProjectMenu" class="modern-project-menu hidden" role="menu" aria-label="项目操作">
               <button id="modernNewProject" type="button" role="menuitem"><span aria-hidden="true">＋</span><span>新建项目</span></button>
               <button id="modernRenameProject" type="button" role="menuitem"><span aria-hidden="true">✎</span><span>修改项目名</span></button>
@@ -1079,7 +1080,7 @@
 
           <section id="modernAssetImagePanel" class="modern-asset-image-panel" aria-label="资产图展示">
             <header class="modern-asset-image-head">
-              <div><span class="modern-eyebrow">ASSET GALLERY</span><h2>资产图</h2><p>按人物、场景、道具分组，点击卡片可放大预览并编辑提示词。</p><span id="modernAssetGenerationStatus" class="modern-asset-generation-status" aria-live="polite">等待生成资产图</span></div>
+              <div><span class="modern-eyebrow">ASSET GALLERY</span><h2>资产图</h2><p>按人物、场景、道具分组，点击卡片可放大预览并编辑提示词。</p><small id="modernSeriesAssetNotice" class="modern-series-asset-notice">本剧共用，改动影响所有分集</small><span id="modernAssetGenerationStatus" class="modern-asset-generation-status" aria-live="polite">等待生成资产图</span></div>
               <div class="modern-asset-image-actions">
                 <label class="modern-asset-range-control" for="modernAssetGenerateRange" title="选择要生成的资产范围">
                   <span>生成范围</span>
@@ -1377,6 +1378,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=explore-route-persistence-20260728"></script>
+    <script src="/app.js?v=series-assets-explore-route-20260728"></script>
   </body>
 </html>

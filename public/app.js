@@ -1959,8 +1959,12 @@ async function loadProject(id, { openStudio = true, rescheduleRefresh = true } =
     renderWorkspace();
     if (openStudio) showStudio();
   }
-  const data = await api(`/api/project/${id}`);
+  const [data, episodeData] = await Promise.all([
+    api(`/api/project/${id}`),
+    api(`/api/project/${id}/episodes`),
+  ]);
   if (state.loadProjectToken !== token || state.selectedId !== id) return;
+  data.episodes = episodeData.episodes || data.episodes || [];
   setProjectState(data);
   reconcileOptimisticAssetJobs(data);
   renderProjectList();
@@ -5138,7 +5142,7 @@ function renderModernStudio(data = state.project) {
     assetStatus.textContent = assetSource.trim() ? "已载入" : "未保存";
     assetStatus.classList.toggle("is-saved", !!assetSource.trim());
   }
-  const project = data.project;
+  const project = { ...data.project, episodes: data.episodes || data.project.episodes || [] };
   const title = displayProjectTitle(project);
   const progress = data.videoProgress || {};
   const shots = modernShotRecords(data);
@@ -5367,10 +5371,58 @@ function renderModernAssetResults(data = state.project) {
 }
 
 function renderModernEpisodes(project, percent, total, completed) {
-  const node = $("#modernEpisodeList");
-  if (!node) return;
-  const label = project.episodeSlug || "当前项目";
-  node.innerHTML = `<button class="modern-episode-row is-active ${completed === total && total ? "is-complete" : ""}" type="button" aria-current="page"><span class="modern-episode-thumb" aria-hidden="true"></span><div><strong>${escapeHtml(label)}</strong><small>${total ? `${completed} / ${total} 镜完成` : "等待流程启动"}</small></div><i></i></button>`;
+  const episodes = Array.isArray(project?.episodes) && project.episodes.length
+    ? project.episodes
+    : [{ ...project, counts: { ...(project.counts || {}), rawClips: total } }];
+  const currentId = state.selectedId || project.id;
+  const episodeMarkup = (episode) => {
+    const active = episode.id === currentId;
+    const isCurrent = episode.id === project.id;
+    const label = episode.episodeLabel || episode.episodeCode || episode.episodeSlug || "当前项目";
+    const clipCount = Number(episode.counts?.rawClips || 0);
+    const subtitle = isCurrent
+      ? total ? `${completed} / ${total} 镜完成` : "等待流程启动"
+      : clipCount ? `${clipCount} 个视频片段` : "等待流程启动";
+    return `<button class="modern-episode-row${active ? " is-active" : ""}${isCurrent && completed === total && total ? " is-complete" : ""}" type="button" data-episode-id="${escapeAttr(episode.id || "")}"${active ? ' aria-current="page"' : ""}><span class="modern-episode-thumb" aria-hidden="true"></span><div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(subtitle)}</small></div><i></i></button>`;
+  };
+  const nav = $("#modernEpisodeList");
+  if (nav) nav.innerHTML = episodes.map((episode) => episodeMarkup(episode)).join("");
+  const switcher = $("#modernEpisodeSwitcher");
+  if (switcher) switcher.innerHTML = `${episodes.map((episode) => episodeMarkup(episode)).join("")}<button class="modern-episode-add" type="button" data-add-episode aria-label="添加分集" title="添加分集">＋</button>`;
+}
+
+function nextEpisodeSlug(episodes = []) {
+  const numbers = episodes
+    .map((episode) => Number(String(episode.episodeSlug || "").match(/e(\d+)/i)?.[1] || 0))
+    .filter((value) => Number.isFinite(value));
+  return `e${String(Math.max(0, ...numbers) + 1).padStart(2, "0")}`;
+}
+
+async function addSeriesEpisode() {
+  const project = state.project?.project;
+  if (!project?.projectDir) return toast("当前项目不是可添加分集的剧集");
+  const episodes = Array.isArray(state.project?.episodes) ? state.project.episodes : [];
+  const input = window.prompt("输入集数", nextEpisodeSlug(episodes));
+  if (!input) return;
+  const match = String(input).trim().match(/^(?:e(?:pisode)?\s*)?(\d{1,3})$/i);
+  if (!match) return toast("请输入有效集数，例如 E03");
+  const episodeSlug = `e${String(Number(match[1])).padStart(2, "0")}`;
+  const data = await api("/api/projects", {
+    method: "POST",
+    body: JSON.stringify({
+      projectName: project.seriesTitle || project.title || "untitled_project",
+      title: project.seriesTitle || project.title || episodeSlug,
+      episodeSlug,
+      projectDir: project.projectDir,
+      reuseExistingProject: true,
+      scriptText: "",
+      assetDescriptionText: "",
+      autoDraft: false,
+      dialogueLanguage: state.dialogueLanguage,
+    }),
+  });
+  openProjectFromState(data);
+  await loadProjects(false);
 }
 
 function modernShotMediaMarkup(data, shot, index) {
@@ -9244,6 +9296,21 @@ function bind() {
   $("#modernProjectSwitcher")?.addEventListener("click", (event) => {
     if (!event.target.closest("#modernProjectContext") && !event.target.closest("#modernProjectMenu")) return;
     event.stopPropagation();
+  });
+  $("#modernEpisodeSwitcher")?.addEventListener("click", (event) => {
+    const addButton = event.target.closest("[data-add-episode]");
+    if (addButton) {
+      addSeriesEpisode().catch((error) => toast(error.message));
+      return;
+    }
+    const episodeButton = event.target.closest("[data-episode-id]");
+    if (!episodeButton?.dataset.episodeId || episodeButton.dataset.episodeId === state.selectedId) return;
+    loadProject(episodeButton.dataset.episodeId).catch((error) => toast(error.message));
+  });
+  $("#modernEpisodeList")?.addEventListener("click", (event) => {
+    const episodeButton = event.target.closest("[data-episode-id]");
+    if (!episodeButton?.dataset.episodeId || episodeButton.dataset.episodeId === state.selectedId) return;
+    loadProject(episodeButton.dataset.episodeId).catch((error) => toast(error.message));
   });
   document.addEventListener("click", (event) => {
     if (!event.target.closest("#modernProjectSwitcher")) setModernProjectMenu(false);

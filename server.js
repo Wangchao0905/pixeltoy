@@ -49,6 +49,9 @@ const CODEX_DOCUMENTS_ROOT = path.join(HOME, "Documents/Codex");
 const VIDEO_PROMPTS_DIR = "05_video_prompts";
 const VIDEO_ASSET_UPLOAD_DIR = "07_video_asset_uploads";
 const VIDEO_TASK_DIR = "08_video_task_nodes";
+const SERIES_ASSET_DIR_NAME = "assets";
+const LEGACY_EPISODE_ASSET_DIR_NAME = "04_assets";
+const SERIES_ASSET_MANIFEST_NAME = "project_asset_manifest.json";
 const IMAGE_API_KEY_ENV_NAMES = [
   "PIXEL_TOYS_IMAGE_API_KEY",
   "IMAGE_GEN_API_KEY",
@@ -2802,6 +2805,30 @@ function projectDirForEpisode(episodeRoot) {
   return at === -1 ? path.dirname(episodeRoot) : episodeRoot.slice(0, at);
 }
 
+function resolveSeriesAssetDir(episodeRoot) {
+  return path.join(projectDirForEpisode(episodeRoot), SERIES_ASSET_DIR_NAME);
+}
+
+function resolveLegacyEpisodeAssetDir(episodeRoot) {
+  return path.join(episodeRoot, LEGACY_EPISODE_ASSET_DIR_NAME);
+}
+
+function resolveSeriesAssetManifestPath(episodeRoot) {
+  return path.join(projectDirForEpisode(episodeRoot), SERIES_ASSET_MANIFEST_NAME);
+}
+
+function legacyAssetRootsForEpisode(episodeRoot) {
+  const roots = [episodeRoot, ...projectEpisodeRoots(episodeRoot)];
+  return [...new Set(roots.map((root) => path.resolve(root)))];
+}
+
+function assetLogDirsForEpisode(episodeRoot) {
+  return [
+    path.join(resolveSeriesAssetDir(episodeRoot), "generation_logs"),
+    ...legacyAssetRootsForEpisode(episodeRoot).map((root) => path.join(resolveLegacyEpisodeAssetDir(root), "generation_logs")),
+  ];
+}
+
 function projectDisplayName(episodeRoot) {
   const name = path.basename(projectDirForEpisode(episodeRoot));
   return compactLine(name.replace(/[_-]+/g, " ")) || "未命名项目";
@@ -2980,28 +3007,35 @@ function uniqueEpisodeSlug(projectDir, slug) {
   const cleanSlug = safeSlug(slug || "e01", "e01");
   const outputsDir = path.join(projectDir, "outputs");
   const episodeRoot = path.join(outputsDir, cleanSlug);
-  if (!fs.existsSync(episodeRoot)) return cleanSlug;
-  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-  for (let index = 1; index <= 100; index += 1) {
-    const suffix = index === 1 ? stamp : `${stamp}_${index}`;
-    const candidate = `${cleanSlug}_${suffix}`;
-    if (!fs.existsSync(path.join(outputsDir, candidate))) return candidate;
+  if (fs.existsSync(episodeRoot)) {
+    const error = new Error(`集数 ${episodeCode(cleanSlug)} 已存在`);
+    error.code = "EEXIST";
+    error.statusCode = 409;
+    throw error;
   }
-  return `${cleanSlug}_${stamp}_${crypto.randomUUID().slice(0, 8)}`;
+  return cleanSlug;
 }
 
 function createEpisodeWorkspace(projectDir, slug, title = "") {
   const cleanSlug = safeSlug(slug || "e01", "e01");
   const episodeRoot = path.join(projectDir, "outputs", cleanSlug);
   const workDir = path.join(projectDir, "work", `${cleanSlug}_video_generation`);
+  fs.mkdirSync(path.dirname(episodeRoot), { recursive: true });
+  try {
+    fs.mkdirSync(episodeRoot);
+  } catch (error) {
+    if (error?.code === "EEXIST") {
+      const duplicate = new Error(`集数 ${episodeCode(cleanSlug)} 已存在`);
+      duplicate.code = "EEXIST";
+      duplicate.statusCode = 409;
+      throw duplicate;
+    }
+    throw error;
+  }
+  ensureSeriesAssetManifestForProject(projectDir);
   const dirs = [
     path.join(episodeRoot, "01_script"),
     path.join(episodeRoot, "02_storyboard"),
-    path.join(episodeRoot, "03_asset_prompts"),
-    path.join(episodeRoot, "04_assets", "characters"),
-    path.join(episodeRoot, "04_assets", "scenes"),
-    path.join(episodeRoot, "04_assets", "props"),
-    path.join(episodeRoot, "04_assets", "storyboards"),
     path.join(episodeRoot, VIDEO_PROMPTS_DIR),
     path.join(episodeRoot, "06_videos", "raw"),
     path.join(episodeRoot, VIDEO_ASSET_UPLOAD_DIR),
@@ -3015,29 +3049,11 @@ function createEpisodeWorkspace(projectDir, slug, title = "") {
   const projectTitle = cleanProjectDisplayTitle(title) || cleanSlug;
   const scriptPath = path.join(episodeRoot, "01_script", `${cleanSlug}_script.md`);
   const storyboardPath = path.join(episodeRoot, "02_storyboard", `${cleanSlug}_storyboard.md`);
-  const assetManifestPath = path.join(episodeRoot, "03_asset_prompts", `${cleanSlug}_asset_manifest.json`);
-  const assetPromptsPath = path.join(episodeRoot, "03_asset_prompts", `${cleanSlug}_asset_prompts.md`);
   const seedancePromptsPath = path.join(episodeRoot, VIDEO_PROMPTS_DIR, `${cleanSlug}_seedance_prompts.md`);
   const configPath = path.join(workDir, `${cleanSlug}_skill_config.json`);
 
   if (!fs.existsSync(scriptPath)) writeText(scriptPath, `# ${projectTitle}\n\n`);
   if (!fs.existsSync(storyboardPath)) writeText(storyboardPath, `# ${projectTitle} 分镜设计\n\n`);
-  if (!fs.existsSync(assetManifestPath)) {
-    writeText(
-      assetManifestPath,
-      `${JSON.stringify(
-        {
-          title: projectTitle,
-          episodeSlug: cleanSlug,
-          confirmed: false,
-          items: [],
-        },
-        null,
-        2,
-      )}\n`,
-    );
-  }
-  if (!fs.existsSync(assetPromptsPath)) writeText(assetPromptsPath, `# ${projectTitle} 资产提示词\n\n`);
   if (!fs.existsSync(seedancePromptsPath)) writeText(seedancePromptsPath, `# ${projectTitle} Seedance 视频提示词\n\n`);
   if (!fs.existsSync(configPath)) {
     writeText(
@@ -3079,6 +3095,20 @@ function createEpisodeWorkspace(projectDir, slug, title = "") {
     );
   }
   return { episodeRoot, workDir };
+}
+
+function assertProjectEpisodeAccess(projectDir, user) {
+  const outputsDir = path.join(projectDir, "outputs");
+  if (!fs.existsSync(outputsDir)) return;
+  const hasForeignEpisode = listDir(outputsDir)
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(outputsDir, entry.name))
+    .some((episodeRoot) => projectOwner(episodeRoot).ownerUserId && !userCanAccessProject(user, episodeRoot));
+  if (hasForeignEpisode) {
+    const error = new Error("project not found");
+    error.statusCode = 404;
+    throw error;
+  }
 }
 
 function protectedDeletePath(target) {
@@ -3138,7 +3168,7 @@ function defaultPaths(episodeRoot) {
     script: path.join(episodeRoot, "01_script", `${slug}_script.md`),
     storyboard: path.join(episodeRoot, "02_storyboard", `${slug}_storyboard.md`),
     modelShotPlan: path.join(episodeRoot, "02_storyboard", `${slug}_model_shot_plan.json`),
-    assetManifest: path.join(episodeRoot, "03_asset_prompts", `${slug}_asset_manifest.json`),
+    assetManifest: resolveSeriesAssetManifestPath(episodeRoot),
     assetPrompts: path.join(episodeRoot, "03_asset_prompts", `${slug}_asset_prompts.md`),
     seedancePrompts: path.join(episodeRoot, VIDEO_PROMPTS_DIR, `${slug}_seedance_prompts.md`),
     config: path.join(projectDirForEpisode(episodeRoot), "work", `${slug}_video_generation`, `${slug}_skill_config.json`),
@@ -3842,6 +3872,37 @@ function enforcedAssetPromptsPath(episodeRoot, style = null) {
   return out;
 }
 
+function findLegacyAssetManifest(episodeRoot) {
+  const folder = path.join(episodeRoot, "03_asset_prompts");
+  return firstFile(folder, (file) => /asset_manifest\.json$/i.test(file));
+}
+
+function ensureSeriesAssetManifestForProject(projectDir) {
+  const target = path.join(projectDir, SERIES_ASSET_MANIFEST_NAME);
+  if (fs.existsSync(target)) return target;
+  try {
+    const outputsDir = path.join(projectDir, "outputs");
+    for (const entry of listDir(outputsDir)) {
+      if (!entry.isDirectory()) continue;
+      const legacyFile = findLegacyAssetManifest(path.join(outputsDir, entry.name));
+      if (!legacyFile || !fs.existsSync(legacyFile)) continue;
+      let data;
+      try {
+        data = JSON.parse(fs.readFileSync(legacyFile, "utf8"));
+      } catch {
+        continue;
+      }
+      if (data?.confirmed !== true) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(legacyFile, target);
+      return target;
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
 function findProjectFile(episodeRoot, kind) {
   const defaults = defaultPaths(episodeRoot);
   if (fs.existsSync(defaults[kind])) return defaults[kind];
@@ -3853,7 +3914,7 @@ function findProjectFile(episodeRoot, kind) {
     seedancePrompts: VIDEO_PROMPTS_DIR,
   };
   if (kind === "assetManifest") {
-    const found = firstFile(path.join(episodeRoot, folders[kind]), (file) => /asset_manifest\.json$/i.test(file));
+    const found = findLegacyAssetManifest(episodeRoot);
     return found || defaults[kind];
   }
   if (folders[kind]) {
@@ -3879,7 +3940,7 @@ function isEpisodeOutputRoot(dir) {
       "01_script",
       "02_storyboard",
       "03_asset_prompts",
-      "04_assets",
+      LEGACY_EPISODE_ASSET_DIR_NAME,
       VIDEO_PROMPTS_DIR,
       "06_videos",
       VIDEO_TASK_DIR,
@@ -3948,22 +4009,23 @@ function isAssetMedia(media) {
 }
 
 function promptMetaForAsset(episodeRoot, assetName) {
-  const file = path.join(episodeRoot, "04_assets", "generation_logs", `${assetName}.prompt.json`);
-  if (!fs.existsSync(file)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return null;
+  for (const logsDir of assetLogDirsForEpisode(episodeRoot)) {
+    const file = path.join(logsDir, `${assetName}.prompt.json`);
+    if (!fs.existsSync(file)) continue;
+    try {
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {
+      return null;
+    }
   }
+  return null;
 }
 
 function assetGeneratedByPixelToys(episodeRoot, asset) {
   if (!isAssetMedia(asset)) return false;
   const meta = promptMetaForAsset(episodeRoot, asset.assetName);
   if (meta?.updatedAt) return true;
-  const logsDir = path.join(episodeRoot, "04_assets", "generation_logs");
-  const jsonLog = path.join(logsDir, `${asset.assetName}.json`);
-  return fs.existsSync(jsonLog);
+  return assetLogDirsForEpisode(episodeRoot).some((logsDir) => fs.existsSync(path.join(logsDir, `${asset.assetName}.json`)));
 }
 
 function recentlyCanceledAssetJobs(episodeRoot, options = {}) {
@@ -4091,7 +4153,6 @@ function currentAssetNameSet({ manifest = null, plannedAssetNames = [], configDa
 }
 
 function scanAssets(episodeRoot) {
-  const base = path.join(episodeRoot, "04_assets");
   const groups = [
     ["characters", "Character"],
     ["scenes", "Scene"],
@@ -4099,23 +4160,32 @@ function scanAssets(episodeRoot) {
     ["props", ""],
   ];
   const all = [];
-  for (const [folder, declaredType] of groups) {
-    const dir = path.join(base, folder);
-    for (const file of walkFiles(dir, (item) => /\.(png|jpg|jpeg|webp)$/i.test(item), 2).sort()) {
-      const item = mediaItem(file, episodeRoot);
-      item.assetName = path.basename(file).replace(/\.(png|jpg|jpeg|webp)$/i, "");
-      const identity = resolveAssetIdentity({ declaredType, assetName: item.assetName, filePath: file });
-      item.manifestType = identity.type;
-      item.type = identity.scanType;
-      item.usage = identity.usage;
-      item.assetIdentity = identity;
-      item.invalid = !identity.valid;
-      item.conflicts = identity.conflicts;
-      const promptMeta = promptMetaForAsset(episodeRoot, item.assetName) || {};
-      item.assetStylePreset = compactLine(promptMeta.assetStylePreset || "");
-      item.assetStyleLabel = compactLine(promptMeta.assetStyleLabel || "");
-      item.generationMode = compactLine(promptMeta.mode || "");
-      all.push(item);
+  const seenNames = new Set();
+  const assetRoots = [
+    resolveSeriesAssetDir(episodeRoot),
+    ...legacyAssetRootsForEpisode(episodeRoot).map(resolveLegacyEpisodeAssetDir),
+  ];
+  for (const base of assetRoots) {
+    for (const [folder, declaredType] of groups) {
+      const dir = path.join(base, folder);
+      for (const file of walkFiles(dir, (item) => /\.(png|jpg|jpeg|webp)$/i.test(item), 2).sort()) {
+        const item = mediaItem(file, episodeRoot);
+        item.assetName = path.basename(file).replace(/\.(png|jpg|jpeg|webp)$/i, "");
+        if (seenNames.has(item.assetName)) continue;
+        seenNames.add(item.assetName);
+        const identity = resolveAssetIdentity({ declaredType, assetName: item.assetName, filePath: file });
+        item.manifestType = identity.type;
+        item.type = identity.scanType;
+        item.usage = identity.usage;
+        item.assetIdentity = identity;
+        item.invalid = !identity.valid;
+        item.conflicts = identity.conflicts;
+        const promptMeta = promptMetaForAsset(episodeRoot, item.assetName) || {};
+        item.assetStylePreset = compactLine(promptMeta.assetStylePreset || "");
+        item.assetStyleLabel = compactLine(promptMeta.assetStyleLabel || "");
+        item.generationMode = compactLine(promptMeta.mode || "");
+        all.push(item);
+      }
     }
   }
   return all;
@@ -4659,10 +4729,11 @@ function deleteAssetImage(episodeRoot, body = {}) {
   if (!asset) throw new Error(`找不到资产图：${assetName}`);
   if (!allowedPath(asset.path)) throw new Error("资产路径不允许删除");
   fs.rmSync(asset.path, { force: true });
-  const logsDir = path.join(episodeRoot, "04_assets", "generation_logs");
-  for (const suffix of [".prompt.json", ".json", ".failed.json"]) {
-    const logFile = path.join(logsDir, `${assetName}${suffix}`);
-    if (allowedPath(logFile) && fs.existsSync(logFile)) fs.rmSync(logFile, { force: true });
+  for (const logsDir of assetLogDirsForEpisode(episodeRoot)) {
+    for (const suffix of [".prompt.json", ".json", ".failed.json"]) {
+      const logFile = path.join(logsDir, `${assetName}${suffix}`);
+      if (allowedPath(logFile) && fs.existsSync(logFile)) fs.rmSync(logFile, { force: true });
+    }
   }
   const rawManifest = readAssetManifest(episodeRoot)?.data;
   let removedFromManifest = false;
@@ -4677,7 +4748,7 @@ function deleteAssetImage(episodeRoot, body = {}) {
 }
 
 function clearAssetFailureLogs(episodeRoot, assetNames = []) {
-  const logsDir = path.join(episodeRoot, "04_assets", "generation_logs");
+  const logsDir = path.join(resolveSeriesAssetDir(episodeRoot), "generation_logs");
   for (const rawName of assetNames || []) {
     const assetName = compactLine(rawName);
     if (!assetName) continue;
@@ -4687,7 +4758,7 @@ function clearAssetFailureLogs(episodeRoot, assetNames = []) {
 }
 
 function clearAssetGeneratedMetadata(episodeRoot, assetNames = []) {
-  const logsDir = path.join(episodeRoot, "04_assets", "generation_logs");
+  const logsDir = path.join(resolveSeriesAssetDir(episodeRoot), "generation_logs");
   for (const rawName of assetNames || []) {
     const assetName = compactLine(rawName);
     if (!assetName) continue;
@@ -4739,7 +4810,7 @@ function activeAssetTargetsFromJobs(localJobs = []) {
 function failedAssetNames(episodeRoot, options = {}) {
   const runNamespace = currentRunNamespace(episodeRoot);
   const minFailedAt = Number(options.minFailedAt || 0);
-  const logsDir = path.join(episodeRoot, "04_assets", "generation_logs");
+  const logsDirs = assetLogDirsForEpisode(episodeRoot);
   const allowedNames = currentAssetNameSet(options);
   const currentAssets = Array.isArray(options.assets)
     ? options.assets
@@ -4749,7 +4820,7 @@ function failedAssetNames(episodeRoot, options = {}) {
       });
   const byName = new Map(currentAssets.map((asset) => [asset.assetName, asset]));
   const failed = new Set();
-  for (const file of walkFiles(logsDir, (item) => /\.failed\.json$/i.test(item), 1)) {
+  for (const file of logsDirs.flatMap((logsDir) => walkFiles(logsDir, (item) => /\.failed\.json$/i.test(item), 1))) {
     const name = path.basename(file).replace(/\.failed\.json$/i, "");
     if (!name) continue;
     if (allowedNames.size && !allowedNames.has(name)) continue;
@@ -4875,11 +4946,11 @@ function classifyImageGenFailure(detail) {
 // 收集本次 job 运行期间（failedAt >= sinceISO）产生的资产失败详情。
 // sinceISO 用 job.startedAt 过滤，避免把历史遗留的 .failed.json 算到本次任务头上。
 function jobAssetFailures(episodeRoot, sinceISO = "", options = {}) {
-  const logsDir = path.join(episodeRoot, "04_assets", "generation_logs");
+  const logsDirs = assetLogDirsForEpisode(episodeRoot);
   const since = sinceISO ? Date.parse(sinceISO) : 0;
   const runNamespace = normalizeRunNamespace(options.runNamespace || "");
   const targetNames = new Set((options.targetAssetNames || []).map(compactLine).filter(Boolean));
-  return walkFiles(logsDir, (file) => /\.failed\.json$/i.test(file), 1)
+  return logsDirs.flatMap((logsDir) => walkFiles(logsDir, (file) => /\.failed\.json$/i.test(file), 1))
     .map((file) => {
       let data;
       try {
@@ -5247,7 +5318,13 @@ function projectDialogueLanguage(episodeRoot, fallback = "en") {
 function persistProjectDialogueLanguage(episodeRoot, dialogueLanguage) {
   const normalized = normalizeDialogueLanguage(dialogueLanguage, "en");
   const manifestRecord = readAssetManifest(episodeRoot);
-  if (manifestRecord?.data) {
+  const seriesManifest = readSeriesAssetManifest(episodeRoot);
+  const canUpdateManifest = manifestRecord?.data && (
+    !!seriesManifest?.data ||
+    manifestRecord.data.confirmed === true ||
+    (Array.isArray(manifestRecord.data.items) && manifestRecord.data.items.length > 0)
+  );
+  if (canUpdateManifest) {
     writeAssetManifest(episodeRoot, {
       ...manifestRecord.data,
       dialogueLanguage: normalized,
@@ -6164,12 +6241,12 @@ function removeFileIfAllowed(file, removed = []) {
 
 function removeExistingBoundAssetFiles(episodeRoot, { assetId, dir, target, existingAsset, manifestNames = new Set() } = {}) {
   const removed = [];
-  const assetBase = path.join(episodeRoot, "04_assets");
+  const assetBases = [resolveSeriesAssetDir(episodeRoot), ...legacyAssetRootsForEpisode(episodeRoot).map(resolveLegacyEpisodeAssetDir)];
   for (const oldExt of UPLOAD_IMAGE_EXTENSIONS) {
     removeFileIfAllowed(path.join(dir, `${assetId}${oldExt}`), removed);
   }
   const existingPath = existingAsset?.path || "";
-  if (existingPath && isInside(assetBase, existingPath) && path.resolve(existingPath) !== path.resolve(target)) {
+  if (existingPath && assetBases.some((assetBase) => isInside(assetBase, existingPath)) && path.resolve(existingPath) !== path.resolve(target)) {
     const existingName = path.basename(existingPath).replace(/\.(png|jpg|jpeg|webp)$/i, "");
     if (existingAsset.recoveredFromInterruptedWorkflow || !manifestNames.has(existingName)) {
       removeFileIfAllowed(existingPath, removed);
@@ -6179,7 +6256,14 @@ function removeExistingBoundAssetFiles(episodeRoot, { assetId, dir, target, exis
 }
 
 function assetStyleReferenceDir(episodeRoot) {
-  return path.join(episodeRoot, "04_assets", "style_reference");
+  return path.join(resolveSeriesAssetDir(episodeRoot), "style_reference");
+}
+
+function assetStyleReferenceDirsForEpisode(episodeRoot) {
+  return [
+    assetStyleReferenceDir(episodeRoot),
+    ...legacyAssetRootsForEpisode(episodeRoot).map((root) => path.join(resolveLegacyEpisodeAssetDir(root), "style_reference")),
+  ];
 }
 
 function assetStyleReferenceMetaPath(episodeRoot) {
@@ -6187,19 +6271,26 @@ function assetStyleReferenceMetaPath(episodeRoot) {
 }
 
 function assetStyleReferenceFile(episodeRoot) {
-  const dir = assetStyleReferenceDir(episodeRoot);
-  return walkFiles(dir, (file) => /^asset_style_reference\.(png|jpg|jpeg|webp)$/i.test(path.basename(file)), 1)
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] || "";
+  for (const dir of assetStyleReferenceDirsForEpisode(episodeRoot)) {
+    const file = walkFiles(dir, (item) => /^asset_style_reference\.(png|jpg|jpeg|webp)$/i.test(path.basename(item)), 1).sort(
+      (a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs,
+    )[0];
+    if (file) return file;
+  }
+  return "";
 }
 
 function readAssetStyleReferenceMeta(episodeRoot) {
-  const file = assetStyleReferenceMetaPath(episodeRoot);
-  if (!fs.existsSync(file)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return {};
+  for (const dir of assetStyleReferenceDirsForEpisode(episodeRoot)) {
+    const file = path.join(dir, "asset_style_reference.json");
+    if (!fs.existsSync(file)) continue;
+    try {
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {
+      return {};
+    }
   }
+  return {};
 }
 
 function writeAssetStyleReferenceMeta(episodeRoot, meta) {
@@ -6232,11 +6323,13 @@ function readAssetStyleReference(episodeRoot) {
 
 function updateAssetStyleReference(episodeRoot, body = {}) {
   const dir = assetStyleReferenceDir(episodeRoot);
-  if (!isInside(path.join(episodeRoot, "04_assets"), dir)) throw new Error("风格参考图保存路径不安全");
+  if (!isInside(resolveSeriesAssetDir(episodeRoot), dir)) throw new Error("风格参考图保存路径不安全");
   fs.mkdirSync(dir, { recursive: true });
   if (body.remove === true) {
-    for (const file of walkFiles(dir, (item) => /^asset_style_reference\.(png|jpg|jpeg|webp)$/i.test(path.basename(item)) || path.basename(item) === "asset_style_reference.json", 1)) {
-      fs.rmSync(file, { force: true });
+    for (const referenceDir of assetStyleReferenceDirsForEpisode(episodeRoot)) {
+      for (const file of walkFiles(referenceDir, (item) => /^asset_style_reference\.(png|jpg|jpeg|webp)$/i.test(path.basename(item)) || path.basename(item) === "asset_style_reference.json", 1)) {
+        fs.rmSync(file, { force: true });
+      }
     }
     return { removed: true, styleReference: readAssetStyleReference(episodeRoot), message: "已移除资产风格参考图" };
   }
@@ -6252,7 +6345,7 @@ function updateAssetStyleReference(episodeRoot, body = {}) {
   }
   const { buffer, ext } = decodeUploadedImage(body);
   const target = path.join(dir, `asset_style_reference${ext}`);
-  if (!isInside(path.join(episodeRoot, "04_assets"), target)) throw new Error("风格参考图保存路径不安全");
+  if (!isInside(resolveSeriesAssetDir(episodeRoot), target)) throw new Error("风格参考图保存路径不安全");
   for (const oldExt of [".png", ".jpg", ".jpeg", ".webp"]) {
     const oldFile = path.join(dir, `asset_style_reference${oldExt}`);
     if (oldFile !== target && fs.existsSync(oldFile)) fs.rmSync(oldFile, { force: true });
@@ -6274,9 +6367,10 @@ function uploadBoundAsset(episodeRoot, body = {}) {
   if (!item) throw new Error(`资产解析中找不到：${assetId}`);
   const { buffer, ext } = decodeUploadedImage(body);
   const folder = assetFolderForManifestType(item.type);
-  const dir = path.join(episodeRoot, "04_assets", folder);
+  const assetBase = resolveSeriesAssetDir(episodeRoot);
+  const dir = path.join(assetBase, folder);
   const target = path.join(dir, `${assetId}${ext}`);
-  if (!isInside(path.join(episodeRoot, "04_assets"), target)) throw new Error("资产保存路径不安全");
+  if (!isInside(assetBase, target)) throw new Error("资产保存路径不安全");
   const identity = resolveAssetIdentity({ declaredType: item.type, assetName: assetId, filePath: target });
   if (!identity.valid) throw new Error(`上传资产类型冲突：${assetId}（${identity.conflicts.join("；")}）`);
   const existingAsset = projectProductionAssetsForState(episodeRoot, normalized, { minModifiedAt: currentRunStartMs(episodeRoot) }).find((asset) => asset.assetName === assetId);
@@ -6320,9 +6414,10 @@ function uploadStoryboardAsset(episodeRoot, body = {}) {
   const slot = slots.find((entry) => entry.id === storyboardId);
   if (!slot) throw new Error(`故事版槽位不存在：${storyboardId}`);
   const { buffer, ext } = decodeUploadedImage(body);
-  const dir = path.join(episodeRoot, "04_assets", assetFolderForType("Storyboard"));
+  const assetBase = resolveSeriesAssetDir(episodeRoot);
+  const dir = path.join(assetBase, assetFolderForType("Storyboard"));
   const target = path.join(dir, `${storyboardId}${ext}`);
-  if (!isInside(path.join(episodeRoot, "04_assets"), target)) throw new Error("故事版保存路径不安全");
+  if (!isInside(assetBase, target)) throw new Error("故事版保存路径不安全");
   fs.mkdirSync(dir, { recursive: true });
   for (const oldExt of [".png", ".jpg", ".jpeg", ".webp"]) {
     const oldFile = path.join(dir, `${storyboardId}${oldExt}`);
@@ -8470,6 +8565,10 @@ function lightweightProjectSummary(episodeRoot) {
   };
 }
 
+function projectEpisodeSummaries(episodeRoot) {
+  return projectEpisodeRoots(episodeRoot).map((root) => lightweightProjectSummary(root));
+}
+
 function scanEpisodeRoots() {
   const roots = new Set();
   const addIfEpisode = (dir) => {
@@ -8792,6 +8891,7 @@ function fullProjectState(episodeRoot) {
       mode: runNamespace ? "isolated-current-workflow" : "legacy",
     },
     project: projectSummary(episodeRoot),
+    episodes: projectEpisodeSummaries(episodeRoot),
     teamReferences: Array.isArray(workflow.teamReferences) ? workflow.teamReferences.map(publicTeamReference) : [],
     ...referenceKitState,
     files,
@@ -8890,6 +8990,7 @@ function projectStatusSnapshot(episodeRoot) {
     ok: true,
     runtime: runtimeStatus(),
     project: lightweightProjectSummary(episodeRoot),
+    episodes: projectEpisodeSummaries(episodeRoot),
     teamReferences: Array.isArray(workflow.teamReferences) ? workflow.teamReferences.map(publicTeamReference) : [],
     ...referenceKitState,
     videoProgress: progress,
@@ -19185,8 +19286,8 @@ function assetManifestFromAssets({ title, script, worldProfile, assets, analyzer
   };
 }
 
-function readAssetManifest(episodeRoot) {
-  const file = findProjectFile(episodeRoot, "assetManifest");
+function readSeriesAssetManifest(episodeRoot) {
+  const file = resolveSeriesAssetManifestPath(episodeRoot);
   if (!fs.existsSync(file)) return null;
   try {
     const data = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -19194,6 +19295,27 @@ function readAssetManifest(episodeRoot) {
   } catch {
     return { file, data: null };
   }
+}
+
+function readAssetManifest(episodeRoot) {
+  const seriesManifest = readSeriesAssetManifest(episodeRoot);
+  if (seriesManifest?.data) return seriesManifest;
+  const legacyFile = findLegacyAssetManifest(episodeRoot);
+  if (!legacyFile || !fs.existsSync(legacyFile)) return seriesManifest || null;
+  let legacyManifest;
+  try {
+    legacyManifest = { file: legacyFile, data: JSON.parse(fs.readFileSync(legacyFile, "utf8")) };
+  } catch {
+    return { file: legacyFile, data: null };
+  }
+  if (legacyManifest.data?.confirmed === true) {
+    const migrated = ensureSeriesAssetManifestForProject(projectDirForEpisode(episodeRoot));
+    if (migrated && fs.existsSync(migrated)) {
+      const upgraded = readSeriesAssetManifest(episodeRoot);
+      if (upgraded?.data) return upgraded;
+    }
+  }
+  return legacyManifest;
 }
 
 function normalizeManifestItem(item, index = 0) {
@@ -19528,7 +19650,13 @@ ${textToImagePrompt(asset)}
 
 function writeAssetManifest(episodeRoot, manifest) {
   const normalized = normalizeAssetManifest(manifest);
-  writeText(findProjectFile(episodeRoot, "assetManifest"), `${JSON.stringify(normalized, null, 2)}\n`);
+  const serialized = `${JSON.stringify(normalized, null, 2)}\n`;
+  try {
+    writeText(resolveSeriesAssetManifestPath(episodeRoot), serialized);
+  } catch {
+    const fallback = findLegacyAssetManifest(episodeRoot) || path.join(episodeRoot, "03_asset_prompts", `${episodeSlug(episodeRoot)}_asset_manifest.json`);
+    writeText(fallback, serialized);
+  }
   writeText(findProjectFile(episodeRoot, "assetPrompts"), assetPromptsFromManifest(normalized));
   return normalized;
 }
@@ -22548,19 +22676,7 @@ async function handleApi(req, res, url) {
     if (!allowedPath(projectDir)) throw new Error("projectDir is outside allowed roots");
     // 归属护栏:目标项目目录若已存在且含"他人拥有"的 episode,拒绝——防止用 projectDir/reuseExistingProject
     // 复用进他人项目从而越权读(fullProjectState)或写(脚本)。无主的遗留 episode 不拦(可被认领)。
-    const targetOutputsDir = path.join(projectDir, "outputs");
-    if (fs.existsSync(targetOutputsDir)) {
-      const hasForeignEpisode = fs
-        .readdirSync(targetOutputsDir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => path.join(targetOutputsDir, entry.name))
-        .some((er) => projectOwner(er).ownerUserId && !userCanAccessProject(user, er));
-      if (hasForeignEpisode) {
-        const error = new Error("project not found");
-        error.statusCode = 404;
-        throw error;
-      }
-    }
+    assertProjectEpisodeAccess(projectDir, user);
     const { episodeRoot } = createEpisodeWorkspace(projectDir, slug, body.title || slug);
     persistProjectOwner(episodeRoot, user);
     const hasScriptText = typeof body.scriptText === "string" && body.scriptText.trim();
@@ -22578,6 +22694,10 @@ async function handleApi(req, res, url) {
   if (!allowedPath(episodeRoot) || !fs.existsSync(episodeRoot)) return fail(res, 404, "project not found");
   assertUserCanAccessProject(req, episodeRoot);
   const action = projectMatch[2] || "";
+
+  if (req.method === "GET" && action === "episodes") {
+    return send(res, 200, { ok: true, episodes: projectEpisodeSummaries(episodeRoot) });
+  }
 
   if (req.method === "POST" && action !== "duplicate-personal") {
     const modifyingUser = currentUserFromRequest(req);
@@ -23187,6 +23307,18 @@ module.exports = {
     draft: {
       buildDraft,
       draftAssetManifestForEpisode,
+    },
+    seriesAssets: {
+      resolveSeriesAssetDir,
+      resolveSeriesAssetManifestPath,
+      readSeriesAssetManifest,
+      readAssetManifest,
+      writeAssetManifest,
+      createEpisodeWorkspace,
+      uniqueEpisodeSlug,
+      scanAssets,
+      projectEpisodeRoots,
+      assertProjectEpisodeAccess,
     },
     dialogue: {
       dialoguesForText,

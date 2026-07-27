@@ -1126,6 +1126,53 @@
               <div class="modern-shot-lineage"><span class="is-done">STORY</span><i></i><span id="modernStillLineage">STILL</span><i></i><span id="modernMotionLineage">MOTION</span></div>
             <button id="modernBuildConfig" class="modern-video-action modern-video-action-config" type="button">生成视频配置</button>
             </header>
+            <section id="modernVideoQueue" class="modern-video-queue" aria-labelledby="modernVideoQueueTitle">
+              <header class="modern-video-queue-head">
+                <div>
+                  <span class="modern-eyebrow">VIDEO TAKES</span>
+                  <h2 id="modernVideoQueueTitle">视频片段</h2>
+                  <p id="modernVideoQueueSummary">生成视频配置后，所有镜头会按顺序显示在这里。</p>
+                </div>
+                <div class="modern-video-queue-overview">
+                  <strong id="modernVideoQueueProgressLabel">0%</strong>
+                  <span id="modernVideoQueueCounts">0 个片段</span>
+                </div>
+              </header>
+              <div class="modern-video-queue-toolbar">
+                <div id="modernVideoQueueProgress" class="modern-video-queue-meter" aria-hidden="true"><span></span></div>
+                <div id="modernVideoQueueFilters" class="modern-video-queue-filters" role="tablist" aria-label="视频片段筛选">
+                  <button class="is-active" type="button" role="tab" aria-selected="true" data-modern-queue-filter="all">全部 <b data-modern-queue-filter-count="all">0</b></button>
+                  <button type="button" role="tab" aria-selected="false" data-modern-queue-filter="active">进行中 <b data-modern-queue-filter-count="active">0</b></button>
+                  <button type="button" role="tab" aria-selected="false" data-modern-queue-filter="complete">已完成 <b data-modern-queue-filter-count="complete">0</b></button>
+                  <button type="button" role="tab" aria-selected="false" data-modern-queue-filter="failed">失败 <b data-modern-queue-filter-count="failed">0</b></button>
+                </div>
+              </div>
+              <div id="modernVideoQueueGrid" class="modern-video-queue-grid" role="list" aria-live="polite"></div>
+              <aside id="modernVideoQueueInspector" class="modern-video-queue-inspector hidden" aria-label="视频片段编辑" aria-live="polite">
+                <header>
+                  <div><span class="modern-eyebrow">TAKE INSPECTOR</span><strong id="modernVideoQueueInspectorName">未选择片段</strong><small id="modernVideoQueueInspectorMeta"></small></div>
+                  <button id="modernVideoQueueInspectorClose" type="button" aria-label="关闭片段编辑">关闭</button>
+                </header>
+                <div class="modern-video-queue-inspector-body">
+                  <div class="modern-video-queue-inspector-preview"><video id="modernVideoQueueInspectorVideo" controls playsinline preload="metadata" class="hidden"></video><img id="modernVideoQueueInspectorPoster" src="" alt="当前视频片段预览" /><div id="modernVideoQueueInspectorEmpty">暂无视频片段</div></div>
+                  <div class="modern-video-queue-inspector-form">
+                    <label for="modernVideoQueuePrompt">视频提示词</label>
+                    <textarea id="modernVideoQueuePrompt" maxlength="8000" rows="11" placeholder="当前镜头的视频提示词"></textarea>
+                    <div class="modern-video-queue-inspector-meta"><span id="modernVideoQueuePromptStatus">已保存</span><span id="modernVideoQueuePromptCount">0 / 8000</span></div>
+                    <label for="modernVideoQueueModel">生成模型</label>
+                    <select id="modernVideoQueueModel">
+                      <option value="seedance-2-0">Seedance 2.0</option>
+                      <option value="seedance-2-0-fast">Seedance 2.0 Fast</option>
+                      <option value="seedance-2-0-mini">Seedance 2.0 Mini</option>
+                      <option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option>
+                      <option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option>
+                    </select>
+                    <p id="modernVideoQueueInspectorFailure"></p>
+                    <div class="modern-video-queue-inspector-actions"><button id="modernVideoQueueRestorePrompt" type="button">还原</button><button id="modernVideoQueueSavePrompt" type="button">保存修改</button><button id="modernVideoQueueGenerate" class="is-primary" type="button">生成视频</button></div>
+                  </div>
+                </div>
+              </aside>
+            </section>
             <div class="modern-stage-grid">
               <section class="modern-stage-pane" aria-labelledby="modernStoryTitle">
                 <header><span>01</span><div><small>STORY</small><h3 id="modernStoryTitle">剧情与提示词</h3></div><i id="modernStoryStatus">待确认</i></header>
@@ -1147,30 +1194,6 @@
                 <div class="modern-pane-actions"><button id="modernVideoEdit" type="button">修改视频提示词</button></div>
               </section>
             </div>
-          </section>
-
-          <section id="modernVideoQueue" class="modern-video-queue" aria-labelledby="modernVideoQueueTitle">
-            <header class="modern-video-queue-head">
-              <div>
-                <span class="modern-eyebrow">VIDEO TAKES</span>
-                <h2 id="modernVideoQueueTitle">视频片段</h2>
-                <p id="modernVideoQueueSummary">生成视频配置后，所有镜头会按顺序显示在这里。</p>
-              </div>
-              <div class="modern-video-queue-overview">
-                <strong id="modernVideoQueueProgressLabel">0%</strong>
-                <span id="modernVideoQueueCounts">0 个片段</span>
-              </div>
-            </header>
-            <div class="modern-video-queue-toolbar">
-              <div id="modernVideoQueueProgress" class="modern-video-queue-meter" aria-hidden="true"><span></span></div>
-              <div id="modernVideoQueueFilters" class="modern-video-queue-filters" role="tablist" aria-label="视频片段筛选">
-                <button class="is-active" type="button" role="tab" aria-selected="true" data-modern-queue-filter="all">全部 <b data-modern-queue-filter-count="all">0</b></button>
-                <button type="button" role="tab" aria-selected="false" data-modern-queue-filter="active">进行中 <b data-modern-queue-filter-count="active">0</b></button>
-                <button type="button" role="tab" aria-selected="false" data-modern-queue-filter="complete">已完成 <b data-modern-queue-filter-count="complete">0</b></button>
-                <button type="button" role="tab" aria-selected="false" data-modern-queue-filter="failed">失败 <b data-modern-queue-filter-count="failed">0</b></button>
-              </div>
-            </div>
-            <div id="modernVideoQueueGrid" class="modern-video-queue-grid" role="list" aria-live="polite"></div>
           </section>
 
           <section id="modernCutPanel" class="modern-cut-panel" aria-label="组装成片">

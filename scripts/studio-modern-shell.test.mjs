@@ -30,6 +30,9 @@ for (const id of [
   "modernVideoQueue",
   "modernVideoQueueGrid",
   "modernVideoQueueFilters",
+  "modernVideoQueueInspector",
+  "modernVideoQueuePrompt",
+  "modernVideoQueueGenerate",
   "modernVideoGenerate",
 ]) {
   assert.match(html, new RegExp(`id=\"${id}\"`), `modern shell missing ${id}`);
@@ -82,6 +85,9 @@ const modernCommandbarStart = html.indexOf('<header class="modern-shot-commandba
 const modernStageStart = html.indexOf('<div class="modern-stage-grid"', modernCommandbarStart);
 assert.ok(modernCommandbarStart >= 0 && modernStageStart > modernCommandbarStart, "modern workbench must expose the command bar before the three panes");
 assert.match(html.slice(modernCommandbarStart, modernStageStart), /id="modernBuildConfig"[^>]*class="[^"]*modern-video-action/, "video config must live beside the current-shot controls");
+const modernQueueStart = html.indexOf('<section id="modernVideoQueue"');
+assert.ok(modernQueueStart > modernCommandbarStart && modernQueueStart < modernStageStart, "video queue must sit directly below the command bar");
+assert.match(css, /\.modern-main\[data-modern-view="video"\] \.modern-stage-grid\s*\{[^}]*display:\s*none/, "video view must remove the standalone motion preview stage");
 assert.doesNotMatch(html.slice(modernMotionStart, modernCutStart), /id="modernBuildConfig"/, "video pane must not duplicate the video config action at the bottom");
 assert.doesNotMatch(html, /id="modernShotAction"/, "current-shot locator must be replaced by the video config action");
 assert.doesNotMatch(html, /id="modernStillGenerate"/, "storyboard pane must not expose a generate-storyboard action");
@@ -91,6 +97,8 @@ assert.match(js, /renderModernVideoQueue\(shots, selectedIndex, data\)/, "video 
 assert.match(js, /modernStudio\.queueFilter/, "video segment queue filter must persist during refreshes");
 assert.match(css, /\.modern-video-queue-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill/, "video segment queue must use a responsive card grid");
 assert.match(css, /\.modern-video-queue-card\.is-running[\s\S]*\.modern-video-queue-status/, "running queue cards must expose a visible status treatment");
+assert.match(js, /modernVideoQueueInspector[\s\S]*generateModernVideoQueueShot/, "queue cards must open a single-shot inspector with generation controls");
+assert.match(js, /saveVideoPrompt\(\)[\s\S]*generateVideoSegment\(shotName, \{ forceRegenerate \}\)/, "single-shot regeneration must save the edited prompt before submitting");
 assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");
 assert.match(js, /function bindModernAssetReference/, "modern shell must bind uploaded reference images to parsed assets");
 assert.match(js, /persistModernAssetStyleFromControls/, "modern shell must persist modern asset style controls");

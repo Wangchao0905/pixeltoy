@@ -4536,11 +4536,13 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
   if (!shots.length) {
     queue?.classList.add("is-empty");
     node.innerHTML = '<div class="modern-video-queue-empty"><span class="modern-video-queue-empty-mark">04</span><strong>生成视频配置后显示片段</strong><small>配置会把每个镜头拆成独立 Take，生成状态和预览都会保留在这里。</small></div>';
+    renderModernVideoQueueInspector(data);
     return;
   }
   queue?.classList.remove("is-empty");
   if (!visibleShots.length) {
     node.innerHTML = `<div class="modern-video-queue-filter-empty"><strong>没有符合条件的片段</strong><span>切换筛选查看全部镜头。</span></div>`;
+    renderModernVideoQueueInspector(data);
     return;
   }
   node.innerHTML = visibleShots.map(({ shot, index, status }) => `
@@ -4552,7 +4554,11 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
       ${status === "failed" && shot.failedReason ? `<p class="modern-video-queue-error" title="${escapeAttr(shot.failedReason)}">${escapeHtml(shot.failedReason)}</p>` : ""}
     </article>`).join("");
   node.querySelectorAll("[data-modern-queue-index]").forEach((button) => button.addEventListener("click", () => {
-    state.modernStudio.shotIndex = Number(button.dataset.modernQueueIndex) || 0;
+    const index = Number(button.dataset.modernQueueIndex) || 0;
+    state.modernStudio.shotIndex = index;
+    state.selectedVideoShotName = shots[index]?.name || "";
+    state.videoPromptInspectorOpen = true;
+    ensureVideoPromptDraft(state.selectedVideoShotName);
     renderModernStudio(state.project);
   }));
   node.querySelectorAll("[data-modern-queue-video]").forEach((video) => {
@@ -4563,6 +4569,65 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
       video.currentTime = 0;
     });
   });
+  renderModernVideoQueueInspector(data);
+}
+
+function renderModernVideoQueueInspector(data = state.project) {
+  const inspector = $("#modernVideoQueueInspector");
+  if (!inspector) return;
+  const shotName = state.selectedVideoShotName;
+  const shot = videoPromptShot(shotName);
+  const record = modernShotRecords(data).find((item) => item.name === shotName);
+  const visible = state.modernStudio.focus === "video" && state.videoPromptInspectorOpen && !!shotName && !!shot;
+  inspector.classList.toggle("hidden", !visible);
+  if (!visible) return;
+  const draft = ensureVideoPromptDraft(shotName);
+  const progressItem = (data?.videoProgress?.items || []).find((item) => item.name === shotName) || {};
+  const status = modernVideoQueueStatus(record || progressItem);
+  const mediaIndex = record ? Math.max(0, record.number - 1) : 0;
+  const videoUrl = modernMediaForShot(data, record || shot, mediaIndex, "video");
+  const stillUrl = modernMediaForShot(data, record || shot, mediaIndex, "storyboard");
+  const video = $("#modernVideoQueueInspectorVideo");
+  const poster = $("#modernVideoQueueInspectorPoster");
+  const empty = $("#modernVideoQueueInspectorEmpty");
+  $("#modernVideoQueueInspectorName").textContent = shotName;
+  $("#modernVideoQueueInspectorMeta").textContent = `${shot.duration || record?.duration || "-"}s · ${videoModelLabel(videoModelForShot(shot))} · ${modernStatusLabel(status)}`;
+  if (video) {
+    video.classList.toggle("hidden", !videoUrl);
+    if (videoUrl && video.src !== new URL(videoUrl, window.location.href).href) video.src = videoUrl;
+  }
+  if (poster) {
+    poster.src = videoUrl ? videoUrl : stillUrl;
+    poster.classList.toggle("hidden", !videoUrl && !stillUrl);
+  }
+  if (empty) empty.classList.toggle("hidden", !!videoUrl || !!stillUrl);
+  const input = $("#modernVideoQueuePrompt");
+  if (document.activeElement !== input) input.value = draft.value;
+  $("#modernVideoQueuePromptStatus").textContent = draft.dirty ? "已修改未保存" : "已保存";
+  $("#modernVideoQueuePromptCount").textContent = `${draft.value.length} / 8000`;
+  const model = $("#modernVideoQueueModel");
+  if (document.activeElement !== model) model.value = videoModelForShot(shot);
+  $("#modernVideoQueueInspectorFailure").textContent = progressItem.failedReason || (status === "failed" ? "当前片段生成失败，请修改提示词后重新生成。" : "修改提示词后保存，再提交当前片段生成。");
+  const generate = $("#modernVideoQueueGenerate");
+  if (generate) {
+    generate.disabled = ["running", "queued"].includes(status);
+    generate.textContent = status === "complete" || status === "failed" ? "重新生成视频" : "生成视频";
+  }
+}
+
+async function generateModernVideoQueueShot() {
+  const shotName = state.selectedVideoShotName;
+  if (!shotName) return;
+  const selectedModel = $("#modernVideoQueueModel")?.value || "";
+  const draft = ensureVideoPromptDraft(shotName);
+  if (draft.dirty) await saveVideoPrompt();
+  const record = modernShotRecords(state.project).find((item) => item.name === shotName);
+  const status = modernVideoQueueStatus(record);
+  const forceRegenerate = status === "complete" || status === "failed";
+  if (forceRegenerate && !window.confirm(`重新生成“${shotName}”？这会消耗额度。`)) return;
+  if (selectedModel && $("#modernVideoQueueModel")) $("#modernVideoQueueModel").value = selectedModel;
+  await saveVideoRetryModel();
+  await generateVideoSegment(shotName, { forceRegenerate });
 }
 
 function renderModernFinalCutTrack(shots = []) {
@@ -4801,7 +4866,9 @@ async function regenerateSelectedAssetFromInspector() {
 }
 
 function videoPromptShot(shotName = "") {
-  return (videoConfigDataFromProject()?.shots || []).find((shot) => shot.name === shotName) || null;
+  return (videoConfigDataFromProject()?.shots || []).find((shot) => shot.name === shotName)
+    || (state.project?.videoProgress?.items || []).find((shot) => shot.name === shotName)
+    || null;
 }
 
 function videoModelForShot(shot = {}, config = videoConfigDataFromProject()) {
@@ -4873,7 +4940,7 @@ async function saveVideoPrompt() {
 async function saveVideoRetryModel() {
   const shotName = state.selectedVideoShotName;
   const shot = videoPromptShot(shotName);
-  const input = $("#videoPromptInspectorModel");
+  const input = $("#modernVideoQueueModel") || $("#videoPromptInspectorModel");
   if (!state.selectedId || !shotName || !shot || !input) return false;
   const modelName = normalizeVideoModelName(input.value);
   if (modelName === videoModelForShot(shot)) return false;
@@ -8194,6 +8261,31 @@ function bind() {
     if (!button) return;
     state.modernStudio.queueFilter = button.dataset.modernQueueFilter || "all";
     renderModernStudio(state.project);
+  });
+  $("#modernVideoQueueInspectorClose")?.addEventListener("click", () => {
+    state.videoPromptInspectorOpen = false;
+    renderModernVideoQueueInspector(state.project);
+  });
+  $("#modernVideoQueuePrompt")?.addEventListener("input", (event) => {
+    const shotName = state.selectedVideoShotName;
+    if (!shotName) return;
+    const draft = ensureVideoPromptDraft(shotName);
+    draft.value = event.currentTarget.value;
+    draft.dirty = draft.value !== draft.original;
+    renderModernVideoQueueInspector(state.project);
+  });
+  $("#modernVideoQueueRestorePrompt")?.addEventListener("click", () => {
+    const draft = videoPromptDraft(state.selectedVideoShotName);
+    if (!draft) return;
+    draft.value = draft.original;
+    draft.dirty = false;
+    renderModernVideoQueueInspector(state.project);
+  });
+  $("#modernVideoQueueSavePrompt")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => saveVideoPrompt()).catch((error) => toast(error.message));
+  });
+  $("#modernVideoQueueGenerate")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => generateModernVideoQueueShot()).catch((error) => toast(error.message));
   });
   $("#modernVideoEdit")?.addEventListener("click", () => {
     focusModernPane("video");

@@ -140,10 +140,16 @@ assert.ok(sourcePanelStart >= 0 && kitBarStart > sourcePanelStart && assetWallSt
 const modernAssetImagePanel = html.match(/<section id="modernAssetImagePanel"[\s\S]*?<\/section>/)?.[0] || "";
 assert.ok(modernAssetImagePanel.includes('id="modernAssetWall"'), "资产图墙必须位于独立的资产图展示页");
 assert.ok(modernAssetImagePanel.includes('id="modernAssetGenerationStatus"'), "资产图模块必须有可见的生成状态提醒");
-for (const id of ["modernAssetGenerateAssets", "modernAssetPromptInspector", "modernAssetPromptInspectorPrompt", "modernAssetRegeneratePrompt"]) {
+for (const id of ["modernAssetGenerateRange", "modernAssetGenerateAssets", "modernAssetPromptInspector", "modernAssetPromptInspectorPrompt", "modernAssetRegeneratePrompt"]) {
   assert.match(html, new RegExp(`id="${id}"`), `资产图展示页缺少 ${id}`);
 }
+const modernAssetRange = html.match(/<select id="modernAssetGenerateRange"[\s\S]*?<\/select>/)?.[0] || "";
+for (const option of ["missing", "selected", "failed", "all"]) {
+  assert.match(modernAssetRange, new RegExp(`value="${option}"`), `新版资产图范围缺少 ${option} 选项`);
+}
 assert.match(js, /modernAssetGenerateAssets[\s\S]{0,700}\[data-job='assets'\]/, "资产图页生成入口必须代理现有资产生成任务");
+assert.match(js, /modernAssetRange[\s\S]{0,180}body\.assetRange = modernAssetRange\?\.value/, "资产图生成必须优先读取新版范围控件");
+assert.match(js, /modernAssetGenerateRange[\s\S]{0,220}legacyAssetRange\.value/, "新版范围变更必须同步旧版控件");
 assert.match(js, /function modernAssetGenerationStatus[\s\S]{0,1400}assetJob/, "资产图生成状态必须读取实际任务状态");
 assert.match(js, /const generation = modernAssetGenerationStatus\(data\)/, "资产图页面必须渲染生成状态提醒");
 assert.match(js, /data-modern-asset-action/, "资产图卡片必须提供单卡片生成或重新生成动作");

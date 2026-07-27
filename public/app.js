@@ -8421,7 +8421,10 @@ async function startJob(type) {
   const body = { type };
   if (type === "assets" || type === "assets-dry-run") {
     body.quality = $("#assetQuality").value;
-    body.assetRange = $("#assetGenerateRange")?.value || "missing";
+    const modernAssetRange = $("#modernAssetGenerateRange");
+    const legacyAssetRange = $("#assetGenerateRange");
+    body.assetRange = modernAssetRange?.value || legacyAssetRange?.value || "missing";
+    if (legacyAssetRange && modernAssetRange) legacyAssetRange.value = body.assetRange;
     Object.assign(body, assetStylePayload());
     if (body.assetRange === "selected") {
       body.assetNames = [...state.selectedAssetIds];
@@ -9245,6 +9248,14 @@ function bind() {
       if (target.disabled) return toast(target.title || "请先提取资产，再生成资产图");
       target.click();
     }).catch((error) => toast(error.message));
+  });
+  $("#modernAssetGenerateRange")?.addEventListener("change", (event) => {
+    const legacyAssetRange = $("#assetGenerateRange");
+    if (legacyAssetRange) legacyAssetRange.value = event.currentTarget.value;
+  });
+  $("#assetGenerateRange")?.addEventListener("change", (event) => {
+    const modernAssetRange = $("#modernAssetGenerateRange");
+    if (modernAssetRange) modernAssetRange.value = event.currentTarget.value;
   });
   $("#modernAssetGallery")?.addEventListener("click", (event) => {
     const action = event.target.closest("[data-modern-asset-action]");

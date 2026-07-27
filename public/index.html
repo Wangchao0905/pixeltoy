@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=project-menu-20260727" />
+    <link rel="stylesheet" href="/styles.css?v=asset-range-20260727" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -1056,7 +1056,18 @@
           <section id="modernAssetImagePanel" class="modern-asset-image-panel" aria-label="资产图展示">
             <header class="modern-asset-image-head">
               <div><span class="modern-eyebrow">ASSET GALLERY</span><h2>资产图</h2><p>按人物、场景、道具分组，点击卡片可放大预览并编辑提示词。</p><span id="modernAssetGenerationStatus" class="modern-asset-generation-status" aria-live="polite">等待生成资产图</span></div>
-              <button id="modernAssetGenerateAssets" class="modern-asset-image-action is-primary" type="button">生成资产图</button>
+              <div class="modern-asset-image-actions">
+                <label class="modern-asset-range-control" for="modernAssetGenerateRange">
+                  <span>生成范围</span>
+                  <select id="modernAssetGenerateRange">
+                    <option value="missing" selected>缺失</option>
+                    <option value="selected">选中</option>
+                    <option value="failed">失败</option>
+                    <option value="all">全部</option>
+                  </select>
+                </label>
+                <button id="modernAssetGenerateAssets" class="modern-asset-image-action is-primary" type="button">生成资产图</button>
+              </div>
             </header>
             <!-- 原本此处还有一层 .modern-asset-wall-head（ASSET BOARD / 资产图墙 /
                  按人物…分组展示）+ 右缘孤悬的 GENERATED ASSETS。整页即资产图,
@@ -1341,6 +1352,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=queue-count-20260727"></script>
+    <script src="/app.js?v=asset-range-20260727"></script>
   </body>
 </html>

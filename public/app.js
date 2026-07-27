@@ -273,6 +273,7 @@ function normalizeVideoModelName(value) {
   if (!raw) return "seedance-2-0-fast";
   if (VIDEO_MODEL_OPTIONS[raw]) return raw;
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0-person-reference";
+  if (/mini|迷你/.test(lower)) return "seedance-2-0-mini";
   if (/fast|快速/.test(lower)) return "seedance-2-0-fast";
   return "seedance-2-0";
 }

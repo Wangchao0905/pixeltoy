@@ -26,6 +26,7 @@ assert.deepEqual(selectOptions("modernParamModel"), selectOptions("configModel")
 assert.match(css, /\.modern-video-params\s*\{[^}]*display:\s*(?:inline-)?flex/, "video parameter module must use an inline compact layout");
 assert.match(css, /\.modern-video-params select\s*\{[^}]*min-width:/, "video parameter selects need a stable clickable width");
 assert.match(app, /function syncModernVideoParams/, "modern and legacy video params need a shared sync function");
+assert.match(app, /function normalizeVideoModelName\([\s\S]*?if \(\/mini\|迷你\/\.test\(lower\)/, "model normalization must preserve the Seedance 2.0 Mini option");
 assert.match(app, /function renderModernSelectedShot[\s\S]*modernParamRatio[\s\S]*modernParamResolution[\s\S]*modernParamModel/, "selected shot rendering must populate modern params");
 assert.match(app, /function refreshVideoConfig[\s\S]*modernParamRatio[\s\S]*modernParamResolution[\s\S]*modernParamModel/, "video config must read modern params first");
 
@@ -68,6 +69,13 @@ const elements = new Map(ids.map((id) => [id, new FakeElement(id)]));
 const requestLog = [];
 const context = {
   console,
+  VIDEO_MODEL_OPTIONS: {
+    "seedance-2-0": "Seedance 2.0",
+    "seedance-2-0-fast": "Seedance 2.0 Fast",
+    "seedance-2-0-mini": "Seedance 2.0 Mini",
+    "seedance-2-0-person-reference": "Seedance 2.0 人物素材参考",
+    "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
+  },
   document: {
     querySelector(selector) {
       return selector.startsWith("#") ? elements.get(selector.slice(1)) || null : null;
@@ -95,6 +103,18 @@ vm.createContext(context);
 for (const signature of ["function syncModernVideoParams(", "function hydrateConfigInputs(", "async function refreshVideoConfig("]) {
   vm.runInContext(extractFunction(app, signature), context, { filename: "public/app.js" });
 }
+vm.runInContext(extractFunction(app, "function normalizeVideoModelName("), context, { filename: "public/app.js" });
+context.normalizeVideoModelName = vm.runInContext("normalizeVideoModelName", context);
+assert.equal(
+  context.normalizeVideoModelName("Seedance 2.0 Mini"),
+  "seedance-2-0-mini",
+  "the displayed Mini model label must normalize back to the Mini model key",
+);
+assert.equal(
+  context.normalizeVideoModelName("seedance-2-0-mini"),
+  "seedance-2-0-mini",
+  "the Mini model key must remain stable when already normalized",
+);
 
 elements.get("configModel").value = "seedance-2-0-fast";
 elements.get("configResolution").value = "480p";

@@ -1194,13 +1194,6 @@ body.canvas-page {
   box-shadow: none;
 }
 
-/* Native video surfaces can flash a stale white compositor tile while their
-   transformed ancestor is being panned. Keep the dark preview shell visible
-   and restore the video as soon as the gesture settles. */
-.blank-canvas.is-viewport-moving .video-preview-slot video {
-  visibility: hidden;
-}
-
 /* 视频/图片生成结果统一的下载按钮：默认隐藏，鼠标悬停在节点上才淡入。 */
 .media-download-button {
   position: absolute;
@@ -5580,6 +5573,61 @@ body.canvas-page .canvas-topbar {
   overflow: hidden;
 }
 
+/* Graphite glass hierarchy: the prompt is the broadest surface, references
+   sit one step above it, and controls stay quiet so the action remains clear. */
+.video-node .video-composer {
+  border-color: rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(145deg, rgba(57, 61, 66, 0.88), rgba(15, 17, 20, 0.96)),
+    rgba(17, 19, 22, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -20px 36px rgba(0, 0, 0, 0.24),
+    0 16px 36px rgba(0, 0, 0, 0.34);
+  -webkit-backdrop-filter: blur(22px) saturate(110%);
+  backdrop-filter: blur(22px) saturate(110%);
+}
+
+.video-node .video-reference-assets .node-asset-chip {
+  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(135deg, rgba(68, 73, 79, 0.82), rgba(25, 28, 32, 0.9)),
+    rgba(19, 21, 24, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -10px 20px rgba(0, 0, 0, 0.2);
+  -webkit-backdrop-filter: blur(14px) saturate(110%);
+  backdrop-filter: blur(14px) saturate(110%);
+}
+
+.video-node .video-reference-assets .node-asset-chip.from-upstream {
+  border-color: rgba(255, 255, 255, 0.24);
+  background:
+    linear-gradient(135deg, rgba(87, 94, 102, 0.88), rgba(34, 38, 43, 0.92)),
+    rgba(24, 27, 30, 0.94);
+}
+
+.video-node .video-advanced-controls,
+.video-node .video-advanced-controls .video-audio-toggle {
+  border-color: rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(135deg, rgba(46, 50, 55, 0.82), rgba(15, 17, 20, 0.9)),
+    rgba(17, 19, 22, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -10px 22px rgba(0, 0, 0, 0.2);
+  -webkit-backdrop-filter: blur(16px) saturate(110%);
+  backdrop-filter: blur(16px) saturate(110%);
+}
+
+.video-node .video-advanced-controls .video-audio-toggle:hover,
+.video-node .video-advanced-controls .video-audio-toggle:focus-within {
+  border-color: rgba(255, 255, 255, 0.28);
+  background:
+    linear-gradient(135deg, rgba(61, 66, 72, 0.88), rgba(22, 25, 29, 0.94)),
+    rgba(20, 22, 25, 0.94);
+}
+
 .video-node .video-prompt {
   grid-row: 1;
   flex: 1 1 auto;
@@ -5606,7 +5654,7 @@ body.canvas-page .canvas-topbar {
   display: grid;
   /* Five controls share the action row. The previous sixth empty track
      squeezed the duration control and made the slider unreadable. */
-  grid-template-columns: minmax(92px, 0.95fr) minmax(92px, 0.95fr) minmax(180px, 1.8fr) 44px minmax(126px, 1.2fr);
+  grid-template-columns: minmax(92px, 0.95fr) minmax(92px, 0.95fr) 190px 44px minmax(126px, 1.2fr);
   grid-template-rows: 48px 50px;
   align-items: stretch;
   gap: 8px;
@@ -5653,42 +5701,62 @@ body.canvas-page .canvas-topbar {
   width: 126px;
 }
 
-/* Blue frosted controls keep the parameter row distinct from the dark canvas
-   without adding another heavy card around the video node. */
+/* Graphite frosted controls keep the parameter row distinct without adding
+   another heavy card around the video node. */
 .video-node .video-setting-row > .video-setting,
 .video-node .video-duration-field,
 .video-node .video-settings-button {
   box-sizing: border-box;
-  border: 1px solid rgba(110, 190, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   background:
-    linear-gradient(135deg, rgba(61, 153, 255, 0.24), rgba(19, 76, 145, 0.2)),
-    rgba(9, 35, 71, 0.52);
+    linear-gradient(135deg, rgba(54, 58, 63, 0.88), rgba(22, 24, 27, 0.94)),
+    rgba(20, 22, 25, 0.92);
   box-shadow:
-    inset 0 1px 0 rgba(215, 241, 255, 0.14),
-    inset 0 -12px 24px rgba(0, 35, 82, 0.16);
-  -webkit-backdrop-filter: blur(16px) saturate(145%);
-  backdrop-filter: blur(16px) saturate(145%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -12px 24px rgba(0, 0, 0, 0.22);
+  -webkit-backdrop-filter: blur(16px) saturate(110%);
+  backdrop-filter: blur(16px) saturate(110%);
 }
 
 .video-node .video-setting-row > .video-setting:hover,
 .video-node .video-duration-field:focus-within,
 .video-node .video-settings-button:hover,
 .video-node .video-settings-button:focus-visible {
-  border-color: rgba(133, 207, 255, 0.56);
+  border-color: rgba(255, 255, 255, 0.3);
   background:
-    linear-gradient(135deg, rgba(73, 169, 255, 0.32), rgba(25, 91, 169, 0.26)),
-    rgba(9, 42, 84, 0.58);
+    linear-gradient(135deg, rgba(66, 71, 77, 0.9), rgba(27, 30, 34, 0.94)),
+    rgba(22, 24, 27, 0.92);
 }
 
 .video-node .video-duration-field {
-  min-width: 180px;
-  grid-template-columns: auto 42px minmax(118px, 1fr);
-  gap: 8px;
-  padding: 7px 12px;
+  min-width: 190px;
+  grid-template-columns: auto 34px minmax(108px, 1fr);
+  gap: 4px;
+  padding: 6px 8px;
 }
 
 .video-node .video-duration-field input[type="range"] {
-  min-width: 118px;
+  min-width: 108px;
+}
+
+/* Keep native option lists in the same graphite visual world as the canvas. */
+.video-node .video-settings-strip select {
+  color-scheme: dark;
+}
+
+.video-node .video-settings-strip select option,
+.video-node .video-settings-strip select optgroup {
+  background: #15181c;
+  color: #f0f3f5;
+}
+
+.video-node .video-settings-strip select option:checked {
+  background: #3f464e;
+  color: #ffffff;
+}
+
+.video-node .video-duration-field input[type="range"] {
+  accent-color: #cbd2d8;
 }
 
 @container (max-width: 499px) {
@@ -5772,6 +5840,55 @@ body.canvas-page .canvas-topbar {
 .video-node > .node-port.output-port {
   right: auto !important;
   left: calc(var(--video-port-right, 100%) - 12px) !important;
+}
+
+/* Keep connection targets available to the canvas interaction layer, but do
+   not paint the blue endpoint dots over the video preview. */
+.video-node > .node-port.input-port,
+.video-node > .node-port.output-port {
+  opacity: 0 !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* The video module is self-explanatory in the canvas: remove its redundant
+   title, icon, and close-button row so the preview can start at the node edge. */
+.video-node .video-titlebar {
+  display: none !important;
+}
+
+.video-node .video-selection-handle {
+  display: none !important;
+  pointer-events: none;
+}
+
+/* The preview is the visual lead-in to the prompt surface. Preserve the
+   title-to-preview breathing room while removing the seam between preview and
+   the input module below it. */
+.video-node.is-composer-open {
+  row-gap: 0;
+}
+
+.video-node.is-composer-open .video-titlebar {
+  margin-bottom: 12px;
+}
+
+.video-node.is-composer-open .video-preview-frame {
+  margin-bottom: 0 !important;
+}
+
+.video-node.is-composer-open .video-composer {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Keep native video visible during viewport movement. A temporary compositor
+   layer avoids the blank-after-pan flash without reloading the media element. */
+.blank-canvas.is-viewport-moving .video-preview-slot video {
+  visibility: visible !important;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 /* Canvas Agent: a quiet, independent control layer over the infinite canvas. */

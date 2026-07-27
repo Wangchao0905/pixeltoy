@@ -5778,28 +5778,17 @@ body.canvas-page .canvas-topbar {
   width: 50px;
   height: 50px;
   padding: 0;
-  border: 1px solid rgba(151, 213, 255, 0.34);
-  border-radius: 16px;
-  background: linear-gradient(145deg, rgba(21, 49, 82, 0.94), rgba(8, 18, 35, 0.94));
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #dff3ff;
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42), 0 0 0 5px rgba(55, 160, 255, 0.08);
+  box-shadow: none;
   cursor: pointer;
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
-}
-
-.canvas-agent-launcher::before {
-  position: absolute;
-  inset: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  content: "";
-  pointer-events: none;
+  transition: transform 180ms ease, opacity 180ms ease;
 }
 
 .canvas-agent-launcher:hover,
 .canvas-agent-launcher:focus-visible {
-  border-color: rgba(255, 89, 108, 0.72);
-  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.48), 0 0 0 6px rgba(255, 73, 95, 0.11);
   outline: none;
   transform: translateY(-3px);
 }
@@ -6190,7 +6179,7 @@ body.canvas-page .canvas-topbar {
     bottom: 14px;
     width: 46px;
     height: 46px;
-    border-radius: 14px;
+    border-radius: 0;
   }
 
   .canvas-agent-logo {

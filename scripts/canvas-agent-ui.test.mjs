@@ -21,6 +21,8 @@ assert.match(html, /id="canvasAgentComposer"/);
 assert.match(html, /id="canvasAgentInput"[^>]*placeholder=/);
 
 assert.match(css, /\.canvas-agent-launcher\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:\s*22px;[\s\S]*?bottom:\s*22px;[\s\S]*?width:\s*50px;[\s\S]*?height:\s*50px;/);
+assert.match(css, /\.canvas-agent-launcher\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
+assert.doesNotMatch(css, /\.canvas-agent-launcher::before/);
 assert.match(css, /\.canvas-agent-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:\s*20px;[\s\S]*?width:\s*min\(402px/);
 assert.match(css, /\.canvas-agent-panel\[aria-hidden="true"\][\s\S]*?transform:\s*translateX\(calc\(100% \+ 28px\)\)/);
 assert.match(css, /\.canvas-agent-launcher\[aria-expanded="true"\][\s\S]*?visibility:\s*hidden;[\s\S]*?pointer-events:\s*none;/);

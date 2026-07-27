@@ -5039,10 +5039,11 @@ async function boot() {
   if (libraryAssetId) {
     try {
       const data = await api(`/api/asset-library/${encodeURIComponent(libraryAssetId)}`);
-      canvasState.sharedAssetLibrary.assets = [data.asset].filter(Boolean);
-      canvasState.sharedAssetLibrary.loaded = true;
-      renderSharedAssetLibrary();
-      addSharedLibraryAsset(data.asset);
+      // The deep-link asset is still added to the canvas, but it must not
+      // replace the library list. Keeping the full list makes refreshes of a
+      // `libraryAssetId` URL behave like a normal library view.
+      await loadSharedAssetLibrary({ silent: true });
+      if (data.asset) addSharedLibraryAsset(data.asset);
       toggleSharedAssetLibrary(true);
     } catch (error) {
       toast(error.message);

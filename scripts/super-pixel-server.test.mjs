@@ -38,19 +38,29 @@ function cookie(sessionId) {
 }
 
 const calls = [];
-__test.superPixel.setFetch(async (url, options) => {
-  calls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
-  const gpt = url.startsWith("https://storyboard.example");
-  const chunks = gpt
-    ? ["data: {\"choices\":[{\"text\":\"GPT\"}]}\n\n", "data: [DONE]\n\n"]
-    : ["data: {\"choices\":[{\"delta\":{\"content\":\"Claude\"}}]}\n\n", "data: [DONE]\n\n"];
+function sseResponse(chunks) {
   return new Response(new ReadableStream({
     start(controller) {
       for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
       controller.close();
     },
   }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
-});
+}
+
+function sseChunk(payload) {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+function defaultSuperPixelFetch(url, options) {
+  calls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+  const gpt = url.startsWith("https://storyboard.example");
+  const chunks = gpt
+    ? ["data: {\"choices\":[{\"text\":\"GPT\"}]}\n\n", "data: [DONE]\n\n"]
+    : ["data: {\"choices\":[{\"delta\":{\"content\":\"Claude\"}}]}\n\n", "data: [DONE]\n\n"];
+  return sseResponse(chunks);
+}
+
+__test.superPixel.setFetch(defaultSuperPixelFetch);
 
 function responseMock() {
   const chunks = [];
@@ -90,13 +100,17 @@ try {
   const regular = await request(body, regularSession);
   assert.equal(regular.status, 403, "普通用户必须返回 403");
   const agent = await request({ ...body, mode: "agent" }, adminSession);
-  assert.equal(agent.status, 400, "Agent 模式必须由服务端拒绝");
+  assert.equal(agent.status, 200, "Agent 模式必须返回流");
+  await agent.text();
+  assert.equal(Array.isArray(calls.at(-1).body.tools), true, "Agent 模式请求体必须包含 tools");
+  assert.equal(calls.at(-1).body.tools.length, 4, "Agent 模式必须声明四个工具");
 
   const claude = await request(body, adminSession);
   assert.equal(claude.status, 200, "管理员必须返回 200");
   assert.equal(claude.headers.get("content-type"), "text/event-stream; charset=utf-8");
   assert.equal(claude.headers.get("x-accel-buffering"), "no");
   assert.match(await claude.text(), /Claude/);
+  assert.equal("tools" in calls.at(-1).body, false, "Ask 模式请求体不得包含 tools");
   assert.equal(calls.at(-1).url, "https://asset.example/v1/chat/completions");
   assert.equal(calls.at(-1).headers.Authorization, "Bearer test-super-pixel-asset-key");
 
@@ -111,6 +125,75 @@ try {
   await scripted.text();
   assert.match(calls.at(-1).body.messages[0].content, /剧本过长，中间内容已截断/);
   assert.ok(calls.at(-1).body.messages[0].content.length < 25000);
+
+  calls.length = 0;
+  let splitRound = 0;
+  __test.superPixel.setFetch(async (url, options) => {
+    calls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+    splitRound += 1;
+    if (splitRound === 1) {
+      return sseResponse([
+        sseChunk({ choices: [{ delta: { tool_calls: [{ index: 1, id: "call-search", type: "function", function: { name: "search_assets", arguments: '{"search":"blue' } }] } }] }),
+        sseChunk({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call-video", type: "function", function: { name: "generate_video", arguments: '{"prompt":"sun' } }] } }] }),
+        sseChunk({ choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: ' assets"}' } }] } }] }),
+        sseChunk({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: ':set","duration":6}' } }] }, finish_reason: "tool_calls" }] }),
+        "data: [DONE]\n\n",
+      ]);
+    }
+    return sseResponse([
+      "data: {\"choices\":[{\"delta\":{\"content\":\"tools complete\"},\"finish_reason\":\"stop\"}]}\n\n",
+      "data: [DONE]\n\n",
+    ]);
+  });
+  const split = await request({ ...body, mode: "agent" }, adminSession);
+  assert.equal(split.status, 200);
+  const splitText = await split.text();
+  assert.match(splitText, /\"toolConfirm\"/);
+  assert.match(splitText, /\"toolResult\"/);
+  const followUp = calls[1].body.messages;
+  const assistantToolCall = followUp.find((message) => message.role === "assistant");
+  assert.deepEqual(assistantToolCall.tool_calls.map((call) => call.id), ["call-video", "call-search"], "tool_calls 必须按 index 排序");
+  assert.deepEqual(JSON.parse(assistantToolCall.tool_calls[0].function.arguments), { prompt: "sun:set", duration: 6 }, "index 0 参数必须跨分片拼接");
+  assert.deepEqual(JSON.parse(assistantToolCall.tool_calls[1].function.arguments), { search: "blue assets" }, "index 1 参数必须跨分片拼接");
+
+  calls.length = 0;
+  __test.superPixel.setFetch(async (url, options) => {
+    calls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+    return sseResponse([
+      "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-limit\",\"type\":\"function\",\"function\":{\"name\":\"generate_video\",\"arguments\":\"{\\\"prompt\\\":\\\"loop\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+      "data: [DONE]\n\n",
+    ]);
+  });
+  const limited = await request({ ...body, mode: "agent" }, adminSession);
+  assert.equal(limited.status, 200);
+  assert.match(await limited.text(), /轮数超过上限/);
+  assert.equal(calls.length, 5, "工具循环最多只能请求上游 5 轮");
+
+  calls.length = 0;
+  let videoGenerationFetches = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    videoGenerationFetches += 1;
+    throw new Error(`unexpected video generation fetch: ${args[0]}`);
+  };
+  __test.superPixel.setFetch(async (url, options) => {
+    calls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+    if (calls.length === 1) {
+      return sseResponse([
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-video-confirm\",\"type\":\"function\",\"function\":{\"name\":\"generate_video\",\"arguments\":\"{\\\"prompt\\\":\\\"confirm only\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+        "data: [DONE]\n\n",
+      ]);
+    }
+    return sseResponse(["data: {\"choices\":[{\"delta\":{\"content\":\"confirmed\"}}]}\n\ndata: [DONE]\n\n"]);
+  });
+  try {
+    const video = await request({ ...body, mode: "agent" }, adminSession);
+    assert.equal(video.status, 200);
+    assert.match(await video.text(), /\"toolConfirm\"/);
+    assert.equal(videoGenerationFetches, 0, "generate_video 不得调用视频生成接口");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 
   let resolveUpstreamReady;
   const upstreamReady = new Promise((resolve) => { resolveUpstreamReady = resolve; });

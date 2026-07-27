@@ -195,7 +195,10 @@ async function waitFor(predicate, timeoutMs = 1000) {
       try {
         const started = Date.now();
         const accepted = await generateProjectVideoShot(fixture.episodeRoot, { shotName: "E01_V001" });
-        assert.ok(Date.now() - started < 50, "HTTP-style single-shot generation must not wait for Ark polling");
+        // Deterministic proof instead of a wall-clock budget: if the call had waited for
+        // certification polling, at least one Ark status check would already be recorded.
+        assert.equal(arkGetCalls, 0, "HTTP-style single-shot generation must not wait for Ark polling");
+        assert.ok(Date.now() - started < 500, "HTTP-style single-shot generation should return promptly");
         assert.equal(accepted.waitingForAssets, true);
         await waitFor(() => {
           const saved = readConfig(fixture.configPath);
@@ -291,7 +294,10 @@ async function waitFor(predicate, timeoutMs = 1000) {
         fs.writeFileSync(fixture.configPath, `${JSON.stringify(config, null, 2)}\n`);
         const started = Date.now();
         const accepted = await generateProjectVideoShot(fixture.episodeRoot, { shotName: "E01_V002" });
-        assert.ok(Date.now() - started < 50, "tail-frame certification must not block the HTTP-style request");
+        // Deterministic proof instead of a wall-clock budget: if certification had blocked
+        // the request, the Ark create call would already be recorded by the time we return.
+        assert.equal(arkCreateCalls, 0, "tail-frame certification must not block the HTTP-style request");
+        assert.ok(Date.now() - started < 500, "tail-frame HTTP-style request should return promptly");
         assert.equal(accepted.waitingForAssets, true);
         await waitFor(() => {
           const saved = readConfig(fixture.configPath);

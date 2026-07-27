@@ -20625,6 +20625,219 @@ function superPixelSystemPrompt(scriptText) {
   ].filter(Boolean).join("\n\n");
 }
 
+function superPixelAgentSystemPrompt(scriptText) {
+  const script = truncateSuperPixelScript(scriptText);
+  return [
+    "You are Super Pixel in Agent mode.",
+    "Use the available tools when the user asks you to create images, request a video, search assets, or inspect a project.",
+    "Do not claim that a video was generated: generate_video only asks the user for confirmation.",
+    "After a tool result, answer the user concisely and accurately. Never invent task IDs, project changes, or completed work.",
+    script ? `The user uploaded this screenplay for context:\n\n${script}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+const SUPER_PIXEL_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "generate_image",
+      description: "Submit an image generation task immediately and continue the conversation without waiting for completion.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "The image description." },
+          imageModel: { type: "string", enum: ["gpt-image-2", "seedream-5-0-pro", "seedream-5-0-lite"], default: "gpt-image-2" },
+          ratio: { type: "string", enum: Object.keys(CANVAS_IMAGE_SIZE_TABLE), default: "16:9" },
+          resolution: { type: "string", enum: ["1k", "2k", "4k"], default: "1k" },
+          referenceImages: { type: "array", items: { type: "string" }, maxItems: 4 },
+        },
+        required: ["prompt"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_video",
+      description: "Ask the user to confirm a video generation request; this tool never submits a video task.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "The video description." },
+          videoModel: { type: "string", default: "seedance-2-0" },
+          duration: { type: "number", minimum: 1, default: 5 },
+          ratio: { type: "string", default: "9:16" },
+          firstFrameUrl: { type: "string" },
+        },
+        required: ["prompt"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_assets",
+      description: "Search the current user's asset library and return compact asset records.",
+      parameters: {
+        type: "object",
+        properties: {
+          search: { type: "string", description: "Keyword to search for." },
+          limit: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+        },
+        required: ["search"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_project",
+      description: "Read a compact summary of the selected project.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectId: { type: "string", description: "Optional encoded project ID; defaults to the current project." },
+          section: { type: "string", enum: ["script", "assets", "storyboard", "config", "all"], default: "all" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+];
+
+function superPixelToolSummary(value) {
+  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  return String(text || "").slice(0, 8000);
+}
+
+function parseSuperPixelToolArguments(rawArguments) {
+  if (rawArguments && typeof rawArguments === "object") return rawArguments;
+  const raw = String(rawArguments || "{}");
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("工具参数必须是 JSON 对象");
+  return parsed;
+}
+
+function superPixelProjectRoot(req, projectId = "") {
+  const user = currentUserFromRequest(req);
+  const cleanId = compactLine(projectId || "");
+  if (cleanId) {
+    const fromProjectId = episodeRootFromCanvasProjectId(cleanId);
+    const directPath = path.resolve(cleanId);
+    const root = fromProjectId || (allowedPath(directPath) && fs.existsSync(directPath) ? directPath : "");
+    if (!root || !userCanAccessProject(user, root)) throw new Error("项目不存在或无权访问");
+    return root;
+  }
+  return scanEpisodeRoots()
+    .filter((root) => userCanAccessProject(user, root))
+    .sort((a, b) => {
+      try {
+        return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
+      } catch {
+        return 0;
+      }
+    })[0] || "";
+}
+
+function superPixelProjectSummary(req, args, context) {
+  const root = superPixelProjectRoot(req, args.projectId || context.projectId);
+  if (!root) return "当前没有可读取的项目。";
+  const section = compactLine(args.section || "all").toLowerCase() || "all";
+  if (!["script", "assets", "storyboard", "config", "all"].includes(section)) throw new Error("项目读取 section 不正确");
+  const state = fullProjectState(root);
+  const manifest = readAssetManifest(root)?.data || state.assetManifest || null;
+  const config = readVideoConfig(root)?.data || null;
+  const project = state.project || { id: root };
+  const result = { project };
+  if (section === "script" || section === "all") result.script = state.contents?.script || "";
+  if (section === "assets" || section === "all") {
+    result.assetManifest = manifest;
+    result.assets = state.assets || [];
+  }
+  if (section === "storyboard" || section === "all") {
+    result.storyboard = state.contents?.storyboard || "";
+    result.storyboards = state.storyboards || [];
+  }
+  if (section === "config" || section === "all") result.config = config || state.contents?.config || "";
+  return superPixelToolSummary(result);
+}
+
+async function executeSuperPixelTool({ req, context, callId, name, rawArguments, emit }) {
+  let args = {};
+  try {
+    args = parseSuperPixelToolArguments(rawArguments);
+  } catch (error) {
+    const summary = superPixelToolSummary(error.message || "工具参数无效");
+    emit({ toolStart: { callId, name, args } });
+    emit({ toolResult: { callId, name, summary } });
+    return summary;
+  }
+  emit({ toolStart: { callId, name, args } });
+  try {
+    if (name === "generate_image") {
+      const prompt = compactLine(args.prompt || "");
+      if (!prompt) throw new Error("缺少图片描述 prompt");
+      const result = await createCanvasImageGeneration({
+        ...args,
+        prompt,
+        ownerUserId: context.userId,
+      });
+      const meta = {
+        prompt,
+        imageModel: result.imageModel || compactLine(args.imageModel || "gpt-image-2"),
+        ratio: result.ratio || compactLine(args.ratio || "16:9"),
+        resolution: result.resolution || compactLine(args.resolution || "1k"),
+      };
+      emit({ toolCard: { kind: "image", callId, taskId: result.taskId, meta } });
+      return `已提交出图任务 taskId=${result.taskId}，图片生成中并会自动显示在对话里。不要等待，继续回答用户。`;
+    }
+    if (name === "generate_video") {
+      const prompt = compactLine(args.prompt || "");
+      if (!prompt) throw new Error("缺少视频描述 prompt");
+      const duration = Number(args.duration);
+      const videoArgs = {
+        prompt,
+        videoModel: compactLine(args.videoModel || "seedance-2-0") || "seedance-2-0",
+        duration: Number.isFinite(duration) && duration > 0 ? duration : 5,
+        ratio: compactLine(args.ratio || "9:16") || "9:16",
+        firstFrameUrl: compactLine(args.firstFrameUrl || ""),
+      };
+      emit({ toolConfirm: { kind: "video", callId, args: videoArgs } });
+      return "已向用户发出视频生成确认请求，等待用户点击确认。不要假设视频已生成。";
+    }
+    if (name === "search_assets") {
+      const requestedLimit = Number(args.limit);
+      const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(50, Math.floor(requestedLimit))) : 20;
+      const assets = assetLibrary.list({
+        userId: assetLibraryUserId(req),
+        search: compactLine(args.search || ""),
+        limit,
+      }).map(publicAssetLibraryRecord).map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        type: asset.type,
+        url: asset.url,
+      }));
+      const summary = superPixelToolSummary({ count: assets.length, assets });
+      emit({ toolResult: { callId, name, summary } });
+      return summary;
+    }
+    if (name === "read_project") {
+      const summary = superPixelProjectSummary(req, args, context);
+      emit({ toolResult: { callId, name, summary } });
+      return summary;
+    }
+    throw new Error(`未知工具：${name}`);
+  } catch (error) {
+    const summary = superPixelToolSummary(error?.message || "工具执行失败");
+    emit({ toolResult: { callId, name, summary } });
+    return summary;
+  }
+}
+
 function superPixelDelta(data) {
   const choice = data?.choices?.[0] || {};
   const delta = choice.delta;
@@ -20669,13 +20882,80 @@ function removeUserSessions(userId) {
   writeAuthSessions(store);
 }
 
+async function readSuperPixelStream(upstream, emit) {
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  const toolCalls = new Map();
+  let pending = "";
+  let finishReason = "";
+  let content = "";
+  let upstreamDone = false;
+  const processLine = (line) => {
+    if (!line.startsWith("data:")) return;
+    const raw = line.slice(5).trim();
+    if (!raw || raw === "[DONE]") {
+      if (raw === "[DONE]") upstreamDone = true;
+      return;
+    }
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    const choice = data?.choices?.[0] || {};
+    if (choice.finish_reason) finishReason = choice.finish_reason;
+    const delta = choice.delta || {};
+    const text = superPixelDelta(data);
+    if (text) {
+      content += text;
+      emit({ delta: text });
+    }
+    for (const [fallbackIndex, call] of (Array.isArray(delta.tool_calls) ? delta.tool_calls : []).entries()) {
+      const index = Number.isInteger(call?.index) ? call.index : fallbackIndex;
+      const current = toolCalls.get(index) || {
+        index,
+        id: "",
+        type: "function",
+        function: { name: "", arguments: "" },
+      };
+      if (call?.id) current.id = call.id;
+      if (call?.type) current.type = call.type;
+      if (call?.function?.name) current.function.name += call.function.name;
+      if (call?.function?.arguments) current.function.arguments += call.function.arguments;
+      toolCalls.set(index, current);
+    }
+  };
+  while (!upstreamDone) {
+    const { done, value } = await reader.read();
+    if (done) {
+      pending += decoder.decode();
+      break;
+    }
+    pending += decoder.decode(value, { stream: true });
+    const lines = pending.split(/\r?\n/);
+    pending = lines.pop() || "";
+    for (const line of lines) processLine(line);
+  }
+  if (pending) processLine(pending);
+  return {
+    content,
+    finishReason,
+    toolCalls: [...toolCalls.entries()].sort(([left], [right]) => left - right).map(([, call]) => ({
+      ...call,
+      id: call.id || `call_${call.index}`,
+    })),
+  };
+}
+
 async function handleSuperPixelChat(req, res) {
   const adminUser = currentUserFromRequest(req);
   if (!adminUser || !isAdminUser(adminUser)) return fail(res, 403, "需要管理员权限");
   if (req.method !== "POST") return fail(res, 405, "method not allowed");
   const body = await readBody(req);
   const mode = compactLine(body.mode || "ask").toLowerCase();
-  if (mode !== "ask") return fail(res, 400, "Agent 模式暂未开放");
+  if (!["ask", "agent"].includes(mode)) return fail(res, 400, "不支持的 Super Pixel 模式");
+  const agentMode = mode === "agent";
   const model = compactLine(body.model || "");
   const modelConfig = superPixelModelConfig(model);
   if (!modelConfig) return fail(res, 400, "不支持的 Super Pixel 模型");
@@ -20701,71 +20981,99 @@ async function handleSuperPixelChat(req, res) {
   } catch (error) {
     return fail(res, 400, "对话图片处理失败", error?.message || String(error));
   }
-  const requestBody = {
-    model,
-    stream: true,
-    temperature: 0.7,
-    messages: [{ role: "system", content: superPixelSystemPrompt(body.scriptText) }, ...resolvedMessages],
+  let conversationMessages = resolvedMessages;
+  const context = {
+    userId: adminUser.id,
+    projectId: body.projectId || body.currentProjectId || body.selectedProjectId || "",
   };
+  let streamStarted = false;
+  let round = 0;
+  let emit = () => {};
   try {
-    const upstream = await superPixelFetch(openAiCompatUrl("/v1/chat/completions", modelConfig.kind), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${modelConfig.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-    if (!upstream.ok) {
-      const raw = await upstream.text();
-      if (!clientClosed) return fail(res, upstream.status, `Super Pixel 模型返回 HTTP ${upstream.status}`, raw.slice(0, 600));
-      return;
-    }
-    if (!upstream.body) throw new Error("Super Pixel 模型未返回流");
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    });
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder();
-    let pending = "";
-    let upstreamDone = false;
-    const emit = (payload) => {
+    emit = (payload) => {
       if (!clientClosed && !res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
-    while (!upstreamDone) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      pending += decoder.decode(value, { stream: true });
-      const lines = pending.split(/\r?\n/);
-      pending = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const raw = line.slice(5).trim();
-        if (raw === "[DONE]") {
-          upstreamDone = true;
-          break;
-        }
-        try {
-          const delta = superPixelDelta(JSON.parse(raw));
-          if (delta) emit({ delta });
-        } catch {
-          // Ignore malformed provider chunks and keep the stream alive.
-        }
+    while (round < 5) {
+      round += 1;
+      const requestBody = {
+        model,
+        stream: true,
+        temperature: 0.7,
+        messages: [{ role: "system", content: agentMode ? superPixelAgentSystemPrompt(body.scriptText) : superPixelSystemPrompt(body.scriptText) }, ...conversationMessages],
+      };
+      if (agentMode) requestBody.tools = SUPER_PIXEL_TOOLS;
+      const upstream = await superPixelFetch(openAiCompatUrl("/v1/chat/completions", modelConfig.kind), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${modelConfig.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+      if (!upstream.ok) {
+        const raw = await upstream.text();
+        if (clientClosed) return;
+        const message = `Super Pixel 模型返回 HTTP ${upstream.status}`;
+        if (!res.headersSent) return fail(res, upstream.status, message, raw.slice(0, 600));
+        emit({ error: message });
+        res.end();
+        return;
       }
-    }
-    if (!clientClosed && !res.writableEnded) {
+      if (!upstream.body) throw new Error("Super Pixel 模型未返回流");
+      if (!streamStarted) {
+        streamStarted = true;
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+      }
+      const streamed = await readSuperPixelStream(upstream, emit);
+      if (agentMode && streamed.finishReason === "tool_calls") {
+        if (!streamed.toolCalls.length) {
+          emit({ error: "Super Pixel 模型返回了空工具调用" });
+          res.end();
+          return;
+        }
+        conversationMessages = [
+          ...conversationMessages,
+          {
+            role: "assistant",
+            content: streamed.content || null,
+            tool_calls: streamed.toolCalls.map(({ index, ...call }) => call),
+          },
+        ];
+        for (const call of streamed.toolCalls) {
+          const summary = await executeSuperPixelTool({
+            req,
+            context,
+            callId: call.id,
+            name: call.function?.name || "",
+            rawArguments: call.function?.arguments || "{}",
+            emit,
+          });
+          conversationMessages.push({ role: "tool", tool_call_id: call.id, content: summary });
+        }
+        if (round >= 5) {
+          emit({ error: "Super Pixel 工具调用轮数超过上限" });
+          res.end();
+          return;
+        }
+        continue;
+      }
       emit({ done: true });
       res.end();
+      return;
     }
+    emit({ error: "Super Pixel 工具调用轮数超过上限" });
+    if (!res.writableEnded) res.end();
   } catch (error) {
     if (clientClosed || error?.name === "AbortError") return;
     if (!res.headersSent) return fail(res, 502, "Super Pixel 流式请求失败", error.message);
     if (!res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ error: "Super Pixel 流式请求失败" })}\n\n`);
+      emit({ error: "Super Pixel 流式请求失败" });
       res.end();
     }
   } finally {
@@ -21814,16 +22122,21 @@ server.on("clientError", (err, socket) => {
   if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
 });
 
-// 最后一道防线:任何未捕获异常/未处理 Promise 只记录,绝不让进程崩溃。
-// 视频生成队列存活在内存中,一次崩溃重启会清空整批进行中的任务(本次事故根因)。
-process.on("uncaughtException", (err) => {
-  console.error("[uncaughtException]", err && err.stack ? err.stack : err);
-});
-process.on("unhandledRejection", (reason) => {
-  console.error("[unhandledRejection]", reason && reason.stack ? reason.stack : reason);
-});
-
 if (require.main === module) {
+  // 最后一道防线:任何未捕获异常/未处理 Promise 只记录,绝不让进程崩溃。
+  // 视频生成队列存活在内存中,一次崩溃重启会清空整批进行中的任务(一次事故的根因)。
+  //
+  // 必须留在 require.main 守卫内。放在模块顶层时,所有 require 本文件的测试都会
+  // 继承这个处理器:异步断言失败被它吞掉只打日志,进程正常结束、退出码 0,
+  // npm test 的 && 链照常往下走 —— 17 个 import server.js 的测试文件里的断言
+  // 全变成装饰品(2026-07-27 实测:把工具循环上限从 5 改成 3,断言报错但退出码仍为 0)。
+  process.on("uncaughtException", (err) => {
+    console.error("[uncaughtException]", err && err.stack ? err.stack : err);
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error("[unhandledRejection]", reason && reason.stack ? reason.stack : reason);
+  });
+
   server.listen(PORT, () => {
     console.log(`Pixel Toys running at http://localhost:${PORT}`);
     console.log(`Workspace: ${APP_ROOT}`);

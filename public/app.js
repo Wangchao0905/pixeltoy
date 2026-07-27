@@ -2979,6 +2979,7 @@ function handleSuperPixelStreamEvent(type, data, assistant) {
     return;
   }
   if (type === "toolCard" && data?.kind === "image") {
+    assistant.toolOutputEmitted = true;
     const card = {
       role: "tool",
       kind: "image",
@@ -2993,6 +2994,7 @@ function handleSuperPixelStreamEvent(type, data, assistant) {
     return;
   }
   if (type === "toolConfirm" && data?.kind === "video") {
+    assistant.toolOutputEmitted = true;
     const card = {
       role: "tool",
       kind: "video",
@@ -3421,6 +3423,15 @@ function superPixelConversationImages() {
   return images;
 }
 
+function superPixelAssistantFailureMessage(assistant, error) {
+  const detail = error?.message || "网络错误";
+  if (!assistant?.toolOutputEmitted) return `请求失败：${detail}`;
+  const notice = "生成任务已提交，结果会在生成卡片中更新。后续回复连接中断，但任务仍会继续。";
+  const current = String(assistant.content || "").trim();
+  if (!current) return notice;
+  return current.includes(notice) ? current : `${current}\n\n${notice}`;
+}
+
 async function submitSuperPixelChat(prompt) {
   const text = String(prompt || "").trim();
   const images = state.superPixel.attachments.slice();
@@ -3477,7 +3488,7 @@ async function submitSuperPixelChat(prompt) {
     );
     assistant.pending = false;
   } catch (error) {
-    if (error?.name !== "AbortError") assistant.content = `请求失败：${error.message || "网络错误"}`;
+    if (error?.name !== "AbortError") assistant.content = superPixelAssistantFailureMessage(assistant, error);
     assistant.pending = false;
   } finally {
     state.superPixel.sending = false;

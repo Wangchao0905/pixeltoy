@@ -82,6 +82,7 @@ await assert.rejects(
 assert.match(app, /function renderSuperPixelImageCard\(/);
 assert.match(app, /function renderSuperPixelVideoConfirmCard\(/);
 assert.match(app, /function handleSuperPixelStreamEvent\(/);
+assert.match(app, /function superPixelAssistantFailureMessage\(/);
 assert.match(app, /function startSuperPixelImagePoll\(/);
 assert.match(app, /function startSuperPixelVideoPoll\(/);
 assert.match(app, /\/api\/canvas\/image-generations\/\$\{encodeURIComponent\(taskId\)\}/);
@@ -149,6 +150,7 @@ assert.equal(canceledCard.status, "cancelled", "取消后的确认卡不得再�
   assert.equal(inserted[0].kind, "image");
   assert.equal(inserted[0].status, "running");
   assert.equal(polled.length, 1, "带 taskId 的图片卡片必须启动轮询");
+  assert.equal(assistant.toolOutputEmitted, true, "图片生成卡片已发出后必须标记工具输出");
 
   // 缺 taskId 时不能假装在生成,也不能启动轮询。
   handleSuperPixelStreamEvent("toolCard", { kind: "image", callId: "c2" }, assistant);
@@ -164,6 +166,21 @@ assert.equal(canceledCard.status, "cancelled", "取消后的确认卡不得再�
   assert.equal(inserted[2].status, "confirming", "视频卡片必须先进入待确认态");
   assert.equal(inserted[2].referenceImages[0].thumbnailUrl, "https://cdn.example/ref-thumb.png", "视频确认卡必须保留参考图缩略图");
   assert.equal(polled.length, 1, "视频确认前不得启动轮询");
+  assert.equal(assistant.toolOutputEmitted, true, "视频确认卡已发出后必须标记工具输出");
 }
+
+const superPixelAssistantFailureMessage = new Function(
+  `${functionSource("superPixelAssistantFailureMessage")}; return superPixelAssistantFailureMessage;`,
+)();
+assert.equal(
+  superPixelAssistantFailureMessage({ toolOutputEmitted: true, content: "" }, new Error("流断开")),
+  "生成任务已提交，结果会在生成卡片中更新。后续回复连接中断，但任务仍会继续。",
+  "生成卡片已发出后不能再把流式中断显示成请求失败",
+);
+assert.equal(
+  superPixelAssistantFailureMessage({ toolOutputEmitted: false, content: "" }, new Error("流断开")),
+  "请求失败：流断开",
+  "没有工具输出时仍应显示真实请求失败",
+);
 
 console.log("super pixel chat UI tests passed");

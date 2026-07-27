@@ -4649,12 +4649,13 @@ function renderModernStudio(data = state.project) {
   const generatedAssetCount = Array.isArray(data.assets) ? data.assets.filter((asset) => asset?.url).length : 0;
   const videoConfigExists = Boolean(data.videoConfigStatus?.exists && total);
   const storyboardReady = Boolean(data.storyboards?.length);
+  const finalCutReady = finalCutOutputReady(data.finalCut);
   const pipelineComplete = [
     Boolean(manifest.confirmed),
     Boolean(confirmedAssetCount > 0 && generatedAssetCount >= confirmedAssetCount),
     storyboardReady || videoConfigExists,
     Boolean(total && completed === total),
-    Boolean(data.finalCut?.url),
+    finalCutReady,
   ];
   const currentPipelineIndex = pipelineComplete.findIndex((done) => !done);
   const pipelineCurrentIndex = currentPipelineIndex === -1 ? pipelineComplete.length - 1 : currentPipelineIndex;
@@ -4691,7 +4692,7 @@ function renderModernStudio(data = state.project) {
   $("#modernAssetImageStep").textContent = confirmedAssetCount ? `${Math.min(generatedAssetCount, confirmedAssetCount)}/${confirmedAssetCount} 已生成` : "等待确认资产";
   $("#modernBoardStep").textContent = storyboardReady ? `${data.storyboards.length} 个故事板已生成` : videoConfigExists ? "可选 · 已跳过" : "可选 · 未生成";
   $("#modernVideoStep").textContent = data.videoConfigStatus?.ready ? `${total} 个镜头已配置` : "等待配置";
-  $("#modernCutStep").textContent = data.finalCut?.url ? "成片已组装" : "等待片段";
+  $("#modernCutStep").textContent = finalCutReady ? "成片已组装" : "等待片段";
   $("#modernKitShot").textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")}` : "当前镜头";
   $("#modernKitNames").textContent = selected?.assets?.length ? selected.assets.join(" · ") : "等待故事板分配";
   $("#modernKitStatus").textContent = selected?.assets?.length ? "已引用" : "待确认";
@@ -4879,6 +4880,19 @@ function modernVideoQueueMediaMarkup(data, shot, index, status) {
   return `<span class="modern-video-queue-placeholder is-${status}" aria-hidden="true"><i></i><b>${escapeHtml(status === "failed" ? "重试" : status === "running" ? "生成中" : "待生成")}</b></span>`;
 }
 
+function modernVideoQueueCardSignature(data, shot, index, status) {
+  return [
+    shot.name || index,
+    shot.number || index + 1,
+    shot.duration || "",
+    shot.model || "",
+    status,
+    modernMediaForShot(data, shot, index, "video"),
+    modernMediaForShot(data, shot, index, "storyboard"),
+    shot.failedReason || "",
+  ].join("|");
+}
+
 function renderModernVideoQueue(shots, selectedIndex, data) {
   const node = $("#modernVideoQueueGrid");
   if (!node) return;
@@ -4922,40 +4936,73 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
     .filter(({ status }) => filter === "all" || (filter === "active" ? ["running", "queued"].includes(status) : status === filter));
   if (!shots.length) {
     queue?.classList.add("is-empty");
-    node.innerHTML = '<div class="modern-video-queue-empty"><span class="modern-video-queue-empty-mark">04</span><strong>生成视频配置后显示片段</strong><small>配置会把每个镜头拆成独立 Take，生成状态和预览都会保留在这里。</small></div>';
+    if (node.dataset.queueState !== "empty") {
+      node.dataset.queueState = "empty";
+      node.innerHTML = '<div class="modern-video-queue-empty"><span class="modern-video-queue-empty-mark">04</span><strong>生成视频配置后显示片段</strong><small>配置会把每个镜头拆成独立 Take，生成状态和预览都会保留在这里。</small></div>';
+    }
     renderModernVideoQueueInspector(data);
     return;
   }
   queue?.classList.remove("is-empty");
   if (!visibleShots.length) {
-    node.innerHTML = `<div class="modern-video-queue-filter-empty"><strong>没有符合条件的片段</strong><span>切换筛选查看全部镜头。</span></div>`;
+    if (node.dataset.queueState !== "filter-empty") {
+      node.dataset.queueState = "filter-empty";
+      node.innerHTML = '<div class="modern-video-queue-filter-empty"><strong>没有符合条件的片段</strong><span>切换筛选查看全部镜头。</span></div>';
+    }
     renderModernVideoQueueInspector(data);
     return;
   }
-  node.innerHTML = visibleShots.map(({ shot, index, status }) => `
-    <article class="modern-video-queue-card is-${status} ${index === selectedIndex ? "is-active" : ""}" role="listitem">
-      <button class="modern-video-queue-select" type="button" data-modern-queue-index="${index}" aria-label="查看镜头 ${escapeAttr(String(shot.number).padStart(2, "0"))} ${escapeAttr(shot.name)}" aria-pressed="${index === selectedIndex ? "true" : "false"}">
-        <span class="modern-video-queue-frame">${modernVideoQueueMediaMarkup(data, shot, index, status)}<b class="modern-video-queue-number">${String(shot.number).padStart(2, "0")}</b><em class="modern-video-queue-status"><i></i>${escapeHtml(modernStatusLabel(status))}</em><small class="modern-video-queue-duration">${escapeHtml(String(shot.duration))}s</small>${status === "complete" ? '<span class="modern-video-queue-play" aria-hidden="true">▶</span>' : ""}<span class="modern-video-queue-progress"><i style="width:${status === "complete" ? 100 : Math.max(0, Math.min(100, Number(shot.progress) || 0))}%"></i></span></span>
+  node.dataset.queueState = "cards";
+  const buildCard = ({ shot, index, status }) => {
+    const card = document.createElement("article");
+    card.className = `modern-video-queue-card is-${status}`;
+    card.setAttribute("role", "listitem");
+    card.innerHTML = `
+      <button class="modern-video-queue-select" type="button" data-modern-queue-index="${index}" aria-label="查看镜头 ${escapeAttr(String(shot.number).padStart(2, "0"))} ${escapeAttr(shot.name)}" aria-pressed="false">
+        <span class="modern-video-queue-frame">${modernVideoQueueMediaMarkup(data, shot, index, status)}<b class="modern-video-queue-number">${String(shot.number).padStart(2, "0")}</b><em class="modern-video-queue-status"><i></i>${escapeHtml(modernStatusLabel(status))}</em><small class="modern-video-queue-duration">${escapeHtml(String(shot.duration))}s</small>${status === "complete" ? '<span class="modern-video-queue-play" aria-hidden="true">▶</span>' : ""}<span class="modern-video-queue-progress"><i></i></span></span>
         <span class="modern-video-queue-copy"><strong>${escapeHtml(shot.name)}</strong><small>${escapeHtml(shot.model || "模型未配置")}</small></span>
       </button>
       ${status === "failed" && shot.failedReason ? `<p class="modern-video-queue-error" title="${escapeAttr(shot.failedReason)}">${escapeHtml(shot.failedReason)}</p>` : ""}
-    </article>`).join("");
-  node.querySelectorAll("[data-modern-queue-index]").forEach((button) => button.addEventListener("click", () => {
-    const index = Number(button.dataset.modernQueueIndex) || 0;
-    state.modernStudio.shotIndex = index;
-    state.selectedVideoShotName = shots[index]?.name || "";
-    state.videoPromptInspectorOpen = true;
-    ensureVideoPromptDraft(state.selectedVideoShotName);
-    renderModernStudio(state.project);
-  }));
-  node.querySelectorAll("[data-modern-queue-video]").forEach((video) => {
-    const card = video.closest(".modern-video-queue-card");
-    card?.addEventListener("mouseenter", () => video.play().catch(() => {}));
-    card?.addEventListener("mouseleave", () => {
-      video.pause();
-      video.currentTime = 0;
+    `;
+    const button = card.querySelector("[data-modern-queue-index]");
+    button?.addEventListener("click", () => {
+      const nextIndex = Number(button.dataset.modernQueueIndex) || 0;
+      state.modernStudio.shotIndex = nextIndex;
+      state.selectedVideoShotName = button.dataset.modernQueueName || "";
+      state.videoPromptInspectorOpen = true;
+      ensureVideoPromptDraft(state.selectedVideoShotName);
+      renderModernStudio(state.project);
     });
-  });
+    const video = card.querySelector("[data-modern-queue-video]");
+    if (video) {
+      card.addEventListener("mouseenter", () => video.play().catch(() => {}));
+      card.addEventListener("mouseleave", () => {
+        video.pause();
+        video.currentTime = 0;
+      });
+    }
+    return card;
+  };
+  const specs = visibleShots.map((entry) => ({
+    key: `${entry.shot.name || entry.index}:${entry.index}`,
+    sig: modernVideoQueueCardSignature(data, entry.shot, entry.index, entry.status),
+    ...entry,
+  }));
+  reconcileKeyedCards(node, specs, buildCard);
+  const cardsByKey = new Map(Array.from(node.children).map((card) => [card.dataset.cardKey, card]));
+  for (const { shot, index, status } of visibleShots) {
+    const card = cardsByKey.get(`${shot.name || index}:${index}`);
+    if (!card) continue;
+    card.classList.toggle("is-active", index === selectedIndex);
+    const button = card.querySelector("[data-modern-queue-index]");
+    if (button) {
+      button.dataset.modernQueueIndex = String(index);
+      button.dataset.modernQueueName = shot.name || "";
+      button.setAttribute("aria-pressed", index === selectedIndex ? "true" : "false");
+    }
+    const progressBar = card.querySelector(".modern-video-queue-progress i");
+    if (progressBar) progressBar.style.width = `${status === "complete" ? 100 : Math.max(0, Math.min(100, Number(shot.progress) || 0))}%`;
+  }
   renderModernVideoQueueInspector(data);
 }
 

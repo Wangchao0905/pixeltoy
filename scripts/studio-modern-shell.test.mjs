@@ -101,6 +101,9 @@ assert.doesNotMatch(html, /id="modernStillGenerate"/, "storyboard pane must not 
 assert.doesNotMatch(js, /modernShotAction|modernStillGenerate/, "removed modern actions must not remain wired in runtime");
 assert.match(js, /function renderModernVideoQueue\([\s\S]*modernVideoQueueGrid/, "modern shell must render the video segment queue");
 assert.match(js, /renderModernVideoQueue\(shots, selectedIndex, data\)/, "video segment queue must hydrate with all shot records");
+const modernQueueRenderer = js.slice(js.indexOf("function renderModernVideoQueue("), js.indexOf("function renderModernVideoQueueInspector("));
+assert.match(modernQueueRenderer, /reconcileKeyedCards\(node, specs, buildCard\)/, "video queue refreshes must reuse unchanged cards and media nodes");
+assert.doesNotMatch(modernQueueRenderer, /node\.innerHTML = visibleShots\.map/, "video queue refreshes must not teardown every preview video");
 assert.match(js, /function modernMediaForShot\([\s\S]*asset\?\.file\?\.url/, "completed video media must unwrap the server media object URL");
 assert.match(js, /modernStudio\.queueFilter/, "video segment queue filter must persist during refreshes");
 assert.match(css, /\.modern-video-queue-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill/, "video segment queue must use a responsive card grid");

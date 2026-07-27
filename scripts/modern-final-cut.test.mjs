@@ -34,6 +34,13 @@ for (const id of ["finalCutStatus", "finalCutPreview", "assembleFinalCutBtn"]) {
   assert.ok(cutPanel.includes(`id="${id}"`), `成片面板应包含 ${id}（renderFinalCut 依赖这些 ID）`);
 }
 
+const modernStudioRenderer = js.slice(js.indexOf("function renderModernStudio("), js.indexOf("function renderModernAssetGenerationControls("));
+assert.match(js, /function finalCutOutputReady\(finalCut\)[\s\S]*?return !!finalCut\?\.output\?\.url;/, "CUT must use the real final output instead of object presence");
+assert.match(modernStudioRenderer, /const finalCutReady = finalCutOutputReady\(data\.finalCut\);/, "modern pipeline must use the final output readiness helper");
+assert.match(modernStudioRenderer, /Boolean\(total && completed === total\),\s*finalCutReady,/, "completed pipeline must include the actual assembled output");
+assert.match(modernStudioRenderer, /\$\("#modernCutStep"\)\.textContent = finalCutReady \? "成片已组装"/, "assembled output must turn the cut step green with the ready label");
+assert.doesNotMatch(modernStudioRenderer, /Boolean\(data\.finalCut\?\.url\)/, "modern pipeline must not read the obsolete top-level finalCut.url field");
+
 // 入口判据必须是「片段是否齐」。原先写成 finalCutOutputReady() 时条件是反的：
 // 只有成片已生成才给出组装入口，首次组装永远拿不到，服务端 ffmpeg 拼接成死代码。
 const videoBranch = js.match(/if \(mode === "video"\) \{[\s\S]*?\n  \}/)?.[0] || "";

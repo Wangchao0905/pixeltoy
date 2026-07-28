@@ -5910,10 +5910,13 @@ function effectiveAssetPrompt(assetName) {
   const item = assetPromptItem(assetName);
   if (!item) return "";
   const saved = String(item.textToImagePrompt || "").trim();
-  if (saved && /[\u4e00-\u9fff]/.test(saved)) return saved;
+  const globalStyle = String(item.globalStyle || "").trim();
+  const styleLine = globalStyle && !saved.includes(globalStyle) ? `全局视觉风格（来自资产文档）：${globalStyle}` : "";
+  if (saved && /[\u4e00-\u9fff]/.test(saved)) return [styleLine, saved].filter(Boolean).join("\n");
   const facts = [
     `资产类型：${assetTypeLabel(item.type)}`,
     item.label ? `资产主体：${item.label}` : "",
+    styleLine,
     item.evidence ? `剧本依据：${item.evidence}` : "",
     item.visual ? `视觉解析：${item.visual}` : "",
     "以上资产文档事实是生图内容唯一来源；固定画幅、白底和视图规格由系统规则单独约束。",

@@ -70,6 +70,24 @@ const generatedMarkdown = `## New Character Asset: C003_GENERATED_CHARACTER_SHEE
 const [generatedAsset] = parseAssets(generatedMarkdown);
 assert.match(generatedAsset.prompt, /恶搞之家风格/);
 assert.match(promptFor(generatedAsset), /恶搞之家风格/);
+
+const topLevelStyleMarkdown = `# Asset prompts
+
+全局视觉风格：恶搞之家风格的二维动画，粗黑外轮廓，平涂色块。
+
+## New Character Asset: C004_TOP_LEVEL_STYLE_CHARACTER_SHEET
+
+剧本解析对象：一名父亲
+视觉解析：白衬衫，短棕发。
+
+资产文档生图提示词（中文事实源，提交给生图模型）：
+\`\`\`text
+一名父亲，白衬衫，短棕发。
+\`\`\`
+`;
+const [topLevelStyleAsset] = parseAssets(topLevelStyleMarkdown);
+assert.match(topLevelStyleAsset.prompt, /恶搞之家风格/, "top-level document style must be injected into each asset prompt");
+assert.match(promptFor(topLevelStyleAsset), /恶搞之家风格/, "final image prompt must retain top-level document style");
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /STYLE REFERENCE INPUT RULES \(HARD CONSTRAINT\)/);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /for STYLE ONLY/i);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /according to the visual style/i);

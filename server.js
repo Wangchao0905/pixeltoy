@@ -15889,7 +15889,7 @@ function assetMatchCode(type, name = "", index = 0) {
 
 function extractGlobalStyleGuidance(source = "") {
   const lines = String(source || "").split(/\r?\n/);
-  const headingPattern = /^(?:[◆◇]\s*)?(?:全局画风锚|全局画风|整体画风|视觉风格|风格锚点|核心美学|调色板逻辑)(?:\s*[：:]\s*(.*))?$/u;
+  const headingPattern = /^(?:[◆◇]\s*)?(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|整体画风|艺术风格|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格)(?:\s*[（(][^）)]*[）)])?(?:\s*[：:]\s*(.*))?$/u;
   let collecting = false;
   const collected = [];
   for (const rawLine of lines) {
@@ -15898,8 +15898,8 @@ function extractGlobalStyleGuidance(source = "") {
     const heading = line.match(headingPattern);
     if (!collecting) {
       if (!heading) continue;
+      if (heading[1]) return compactLine(heading[1]).slice(0, 1600);
       collecting = true;
-      if (heading[1]) collected.push(heading[1]);
       continue;
     }
     if (/^◆|^◇/.test(line) || structuredAssetType(line) || /^#{1,2}\s+/.test(line)) break;
@@ -19423,7 +19423,7 @@ function withGlobalStylePrompt(prompt, globalStyle) {
 
 function assetDocumentPromptFor(asset) {
   const storedPrompt = String(asset?.textToImagePromptOverride || "").trim();
-  const globalStyle = compactLine(asset?.globalStyle || "");
+  const globalStyle = compactLine(asset?.globalStyle || extractGlobalStyleGuidance(storedPrompt));
   // 已落盘的 manifest 保存的是完整中文事实提示词，直接复用，避免二次拼接造成内容漂移。
   if (/^资产文档事实（/.test(storedPrompt)) {
     return withGlobalStylePrompt(storedPrompt, globalStyle);
@@ -19618,7 +19618,7 @@ function hydrateManifestGlobalStyle(rawManifest, source = "") {
 }
 
 function refreshManifestGlobalStyleFromSource(episodeRoot, rawManifest) {
-  const source = readAssetDescription(episodeRoot) || readText(findProjectFile(episodeRoot, "script"));
+  const source = [readAssetDescription(episodeRoot), readText(findProjectFile(episodeRoot, "script"))].filter(Boolean).join("\n\n");
   const manifest = normalizeAssetManifest(rawManifest || {});
   const hydrated = hydrateManifestGlobalStyle(manifest, source);
   const changed = manifest.items.some((item, index) => {

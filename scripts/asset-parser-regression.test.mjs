@@ -86,6 +86,8 @@ const globalStyleAssetDescription = `
 · 外观：黑色塑料外壳，按键磨损。
 `;
 assert.match(parser.extractGlobalStyleGuidance(globalStyleAssetDescription), /恶搞之家风格/);
+assert.match(parser.extractGlobalStyleGuidance("全局视觉风格：恶搞之家风格的二维动画"), /恶搞之家风格/, "inline 全局视觉风格 field must be recognized");
+assert.match(parser.extractGlobalStyleGuidance("全局视觉风格（来自资产文档）：恶搞之家风格的二维动画"), /恶搞之家风格/, "annotated 全局视觉风格 field must be recognized");
 const styledRulePlan = parser.buildRuleAssets(
   globalStyleAssetDescription,
   parser.inferWorldProfile(globalStyleAssetDescription),

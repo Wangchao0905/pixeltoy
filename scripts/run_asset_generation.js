@@ -111,24 +111,50 @@ function readAssetReferenceMap(filePath = "") {
   return map;
 }
 
+function extractGlobalStyleFromMarkdown(markdown = "") {
+  const lines = String(markdown || "").split(/\r?\n/).map((line) => line.trim());
+  const label = "(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|整体画风|艺术风格|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格)";
+  const inlinePattern = new RegExp(`^(?:[◆◇]\\s*)?${label}(?:\\s*[（(][^）)]*[）)])?\\s*[：:]\\s*(.+)$`, "u");
+  const headingPattern = new RegExp(`^(?:[◆◇]\\s*)?${label}(?:\\s*[（(][^）)]*[）)])?\\s*$`, "u");
+  for (const line of lines) {
+    const match = line.match(inlinePattern);
+    if (match?.[1]) return match[1].replace(/\\s+/g, " ").trim();
+  }
+  const headingIndex = lines.findIndex((line) => headingPattern.test(line));
+  if (headingIndex < 0) return "";
+  const collected = [];
+  for (const line of lines.slice(headingIndex + 1)) {
+    if (!line) continue;
+    if (/^(?:[◆◇]|##?\s+|剧本(?:人物|场景|道具)|New\s+)/u.test(line)) break;
+    collected.push(line.replace(/^[-•*·]\s*/, ""));
+  }
+  return collected.join(" ").replace(/\s+/g, " ").trim();
+}
+
 function parseAssets(markdown) {
   const re = /^## New (Character|Scene|Prop|Insert|Storyboard) Asset:\s+([^\r\n]+?)\s*$/gm;
   const matches = [...markdown.matchAll(re)];
+  const documentGlobalStyle = extractGlobalStyleFromMarkdown(markdown);
   const assets = matches.map((match, index) => {
     const start = match.index + match[0].length;
     const end = index + 1 < matches.length ? matches[index + 1].index : markdown.length;
     const section = markdown.slice(start, end).trim();
     const manualPrompt = isExplicitManualAssetPrompt(section) ? extractTextToImagePrompt(section) : "";
     const documentPrompt = extractTextToImagePrompt(section);
-    const documentFacts = extractAssetDocumentFacts(section);
+    const sectionGlobalStyle = section.match(/^全局视觉风格[（(]?[^）)]*[）)]?\s*[:：]\s*(.+)$/mu)?.[1]?.trim() || documentGlobalStyle;
+    const documentFacts = extractAssetDocumentFacts(section, sectionGlobalStyle);
     const canonicalPrompt = /^资产文档事实（/.test(documentPrompt) ? documentPrompt : "";
-    const prompt = match[1] === "Storyboard"
+    const basePrompt = match[1] === "Storyboard"
       ? [documentPrompt, documentFacts].filter(Boolean).join("\n\n")
       : manualPrompt || canonicalPrompt || documentFacts;
+    const prompt = sectionGlobalStyle && !basePrompt.includes(sectionGlobalStyle)
+      ? [`全局视觉风格：${sectionGlobalStyle}`, basePrompt].filter(Boolean).join("\n")
+      : basePrompt;
     return {
       type: match[1],
       name: match[2],
       prompt,
+      globalStyle: sectionGlobalStyle,
       order: index,
     };
   });
@@ -146,7 +172,7 @@ function isExplicitManualAssetPrompt(section) {
   return /^解析来源[:：]\s*用户提供资产生图提示词\s*$/m.test(String(section || ""));
 }
 
-function extractAssetDocumentFacts(section) {
+function extractAssetDocumentFacts(section, fallbackGlobalStyle = "") {
   const field = (label) => {
     const match = String(section || "").match(new RegExp(`^${label}[:：]\\s*(.+)$`, "m"));
     return (match?.[1] || "").trim();
@@ -154,7 +180,7 @@ function extractAssetDocumentFacts(section) {
   const subject = field("剧本解析对象");
   const evidence = field("剧本依据");
   const visual = field("视觉解析");
-  const globalStyle = field("全局视觉风格");
+  const globalStyle = field("全局视觉风格") || field("视觉风格") || fallbackGlobalStyle;
   if (!subject && !evidence && !visual && !globalStyle) return "";
   return [
     "资产文档事实（中文，生图内容唯一来源）：",

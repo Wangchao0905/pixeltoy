@@ -10,6 +10,7 @@ const server = require("../server.js");
 const parser = server.__test?.assetParser;
 assert.equal(typeof parser?.buildRuleAssets, "function", "asset parser test hook must expose buildRuleAssets");
 assert.equal(typeof parser?.extractGlobalStyleGuidance, "function", "asset parser test hook must expose extractGlobalStyleGuidance");
+assert.equal(typeof parser?.hydrateManifestGlobalStyle, "function", "asset parser test hook must expose hydrateManifestGlobalStyle");
 assert.equal(typeof parser?.parseDocxDocumentXml, "function", "asset parser test hook must expose parseDocxDocumentXml");
 assert.equal(typeof parser?.parseStructuredAssetDescriptions, "function", "asset parser test hook must expose parseStructuredAssetDescriptions");
 assert.equal(typeof parser?.inferWorldProfile, "function", "asset parser test hook must expose inferWorldProfile");
@@ -101,6 +102,13 @@ const styledManifest = parser.assetManifestFromAssets({
 });
 assert.ok(styledManifest.items.every((asset) => asset.globalStyle.includes("恶搞之家风格")), "manifest must persist global style");
 assert.match(styledManifest.items[0].textToImagePrompt, /全局视觉风格.*恶搞之家风格/);
+const legacyManifest = {
+  ...styledManifest,
+  items: styledManifest.items.map(({ globalStyle, textToImagePrompt, ...item }) => item),
+};
+const hydratedLegacyManifest = parser.hydrateManifestGlobalStyle(legacyManifest, globalStyleAssetDescription);
+assert.ok(hydratedLegacyManifest.items.every((asset) => asset.globalStyle.includes("恶搞之家风格")), "legacy manifests must receive global style from the source document");
+assert.match(hydratedLegacyManifest.items[0].textToImagePrompt, /全局视觉风格.*恶搞之家风格/);
 
 const modelPromptManifest = parser.assetManifestFromAssets({
   title: "Model prompt retention regression",

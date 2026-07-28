@@ -19593,6 +19593,42 @@ function normalizeManifestItem(item, index = 0) {
   };
 }
 
+function hydrateManifestGlobalStyle(rawManifest, source = "") {
+  const manifest = normalizeAssetManifest(rawManifest || {});
+  const globalStyle = extractGlobalStyleGuidance(source);
+  if (!globalStyle || !manifest.items.length) return manifest;
+  const items = manifest.items.map((item) => {
+    const asset = {
+      type: item.type,
+      name: item.id,
+      label: item.label,
+      evidence: item.evidence,
+      visual: item.visual,
+      globalStyle,
+      analyzerSource: item.source,
+      textToImagePromptOverride: item.textToImagePrompt,
+    };
+    return {
+      ...item,
+      globalStyle,
+      textToImagePrompt: assetDocumentPromptFor(asset),
+    };
+  });
+  return { ...manifest, items };
+}
+
+function refreshManifestGlobalStyleFromSource(episodeRoot, rawManifest) {
+  const source = readAssetDescription(episodeRoot) || readText(findProjectFile(episodeRoot, "script"));
+  const manifest = normalizeAssetManifest(rawManifest || {});
+  const hydrated = hydrateManifestGlobalStyle(manifest, source);
+  const changed = manifest.items.some((item, index) => {
+    const next = hydrated.items[index];
+    return item.globalStyle !== next?.globalStyle || item.textToImagePrompt !== next?.textToImagePrompt;
+  });
+  if (changed) writeAssetManifest(episodeRoot, hydrated);
+  return hydrated;
+}
+
 function manifestItemCompatibleWithType(item) {
   const label = compactLine(item?.label || item?.id || "");
   if (!label) return false;
@@ -19763,14 +19799,14 @@ function manifestItemsToAssets(manifest) {
 }
 
 function draftAssetManifestForEpisode(episodeRoot) {
-  const localManifest = readAssetManifest(episodeRoot)?.data || {};
+  const localManifest = refreshManifestGlobalStyleFromSource(episodeRoot, readAssetManifest(episodeRoot)?.data || {});
   if (Array.isArray(localManifest.items) && localManifest.items.length) return localManifest;
 
   const projectItems = [];
   const seenKeys = new Set();
   let firstProjectManifest = null;
   for (const projectEpisodeRoot of projectEpisodeRoots(episodeRoot)) {
-    const projectManifest = readAssetManifest(projectEpisodeRoot)?.data || {};
+    const projectManifest = refreshManifestGlobalStyleFromSource(projectEpisodeRoot, readAssetManifest(projectEpisodeRoot)?.data || {});
     const items = Array.isArray(projectManifest.items) ? projectManifest.items : [];
     if (!items.length) continue;
     if (!firstProjectManifest) firstProjectManifest = projectManifest;
@@ -21467,7 +21503,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
     const isDryRun = type === "assets-dry-run" || type === "asset-regenerate-dry-run" || type === "asset-edit-dry-run";
     const isRegenerate = type === "asset-regenerate" || type === "asset-regenerate-dry-run";
     const isEdit = type === "asset-edit" || type === "asset-edit-dry-run";
-    const manifest = readAssetManifest(episodeRoot)?.data;
+    const manifest = refreshManifestGlobalStyleFromSource(episodeRoot, readAssetManifest(episodeRoot)?.data || {});
     if (!manifest?.items?.length) throw new Error("还没有资产解析结果，请先提取资产再生成");
     if (!manifest.confirmed) throw new Error("资产解析尚未确认，请先确认分类再生图");
     if (!isDryRun && !imageApiKey()) {
@@ -23654,6 +23690,7 @@ module.exports = {
       assetManifestFromAssets,
       buildRuleAssets,
       extractGlobalStyleGuidance,
+      hydrateManifestGlobalStyle,
       parseDocxDocumentXml,
       parseStructuredAssetDescriptions,
       correctAssetRolesFromEvidence,

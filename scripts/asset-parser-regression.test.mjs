@@ -5,9 +5,11 @@ import os from "node:os";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
+const root = path.resolve(new URL("..", import.meta.url).pathname);
 const server = require("../server.js");
 
 const parser = server.__test?.assetParser;
+const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 assert.equal(typeof parser?.buildRuleAssets, "function", "asset parser test hook must expose buildRuleAssets");
 assert.equal(typeof parser?.extractGlobalStyleGuidance, "function", "asset parser test hook must expose extractGlobalStyleGuidance");
 assert.equal(typeof parser?.hydrateManifestGlobalStyle, "function", "asset parser test hook must expose hydrateManifestGlobalStyle");
@@ -19,6 +21,10 @@ assert.equal(typeof parser?.correctAssetRolesFromEvidence, "function", "asset pa
 assert.equal(typeof parser?.mergeAnalyzerAssets, "function", "asset parser test hook must expose mergeAnalyzerAssets");
 assert.equal(typeof parser?.isModelAssetLabelUsable, "function", "asset parser test hook must expose isModelAssetLabelUsable");
 assert.equal(typeof parser?.mergeTypedAnalyzerResults, "function", "asset parser test hook must expose mergeTypedAnalyzerResults");
+const fullProjectStateSource = serverSource.slice(serverSource.indexOf("function fullProjectState("), serverSource.indexOf("function fullProjectStateForUser("));
+const projectStatusSource = serverSource.slice(serverSource.indexOf("function projectStatusSnapshot("), serverSource.indexOf("function fullProjectStateForUser("));
+assert.match(fullProjectStateSource, /refreshManifestGlobalStyleFromSource\(episodeRoot/);
+assert.match(projectStatusSource, /refreshManifestGlobalStyleFromSource\(episodeRoot/);
 
 const blackHarborScript = `
 杰克·沃尔夫 Jack Wolfe
@@ -103,14 +109,36 @@ const styledManifest = parser.assetManifestFromAssets({
   modelName: "rules",
 });
 assert.ok(styledManifest.items.every((asset) => asset.globalStyle.includes("恶搞之家风格")), "manifest must persist global style");
-assert.match(styledManifest.items[0].textToImagePrompt, /全局视觉风格.*恶搞之家风格/);
+assert.match(styledManifest.items[0].textToImagePrompt, /视觉风格：恶搞之家风格/);
+assert.doesNotMatch(styledManifest.items[0].textToImagePrompt, /资产文档事实|资产类型|剧本依据|视觉解析|唯一来源/);
+const conciseCharacterManifest = parser.assetManifestFromAssets({
+  title: "Concise character prompt regression",
+  script: "",
+  worldProfile: {},
+  assets: [{
+    type: "Character",
+    name: "C001_HAOXUE_CHARACTER_SHEET",
+    label: "P01 郝雪",
+    evidence: "24岁女，郝家大姐；荧光橙外卖骑手棉服套旧军绿棉袄。",
+    visual: "24岁中国东北女性，中等身高、身材结实，钉子盘发，冻裂红斑。",
+    globalStyle: "恶搞之家风格的二维动画，粗黑外轮廓，平涂色块。",
+  }],
+  analyzerResult: { ok: false, model: "rules" },
+  modelName: "rules",
+});
+const conciseCharacterPrompt = conciseCharacterManifest.items[0].textToImagePrompt;
+assert.match(conciseCharacterPrompt, /视觉风格：恶搞之家风格/);
+assert.match(conciseCharacterPrompt, /主体：郝雪/);
+assert.match(conciseCharacterPrompt, /钉子盘发/);
+assert.doesNotMatch(conciseCharacterPrompt, /24岁女，郝家大姐/);
 const legacyManifest = {
   ...styledManifest,
   items: styledManifest.items.map(({ globalStyle, textToImagePrompt, ...item }) => item),
 };
 const hydratedLegacyManifest = parser.hydrateManifestGlobalStyle(legacyManifest, globalStyleAssetDescription);
 assert.ok(hydratedLegacyManifest.items.every((asset) => asset.globalStyle.includes("恶搞之家风格")), "legacy manifests must receive global style from the source document");
-assert.match(hydratedLegacyManifest.items[0].textToImagePrompt, /全局视觉风格.*恶搞之家风格/);
+assert.match(hydratedLegacyManifest.items[0].textToImagePrompt, /视觉风格：恶搞之家风格/);
+assert.doesNotMatch(hydratedLegacyManifest.items[0].textToImagePrompt, /资产文档事实|资产类型|剧本依据|视觉解析|唯一来源/);
 
 const modelPromptManifest = parser.assetManifestFromAssets({
   title: "Model prompt retention regression",

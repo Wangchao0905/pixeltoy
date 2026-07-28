@@ -9035,7 +9035,9 @@ function fullProjectState(episodeRoot) {
     syncProjectShotsToCanvasState(episodeRoot, config.data, config.data.shots);
   }
   const assetManifest = readAssetManifest(episodeRoot);
-  const normalizedAssetManifest = assetManifest?.data ? normalizeAssetManifest(assetManifest.data) : null;
+  const normalizedAssetManifest = assetManifest?.data
+    ? refreshManifestGlobalStyleFromSource(episodeRoot, assetManifest.data)
+    : null;
   const plannedAssetNames = parseAssetsFromPromptNames(readText(files.assetPrompts));
   const allAssets = scanAssets(episodeRoot);
   const productionAssets = projectProductionAssetsForState(episodeRoot, normalizedAssetManifest, {
@@ -9141,7 +9143,9 @@ function projectStatusSnapshot(episodeRoot) {
   const config = ensureVideoConfigIsolation(episodeRoot, configRecord);
   // 轮询也带上资产清单/资产/资产槽 + 故事板/故事板槽,让生成完的资产图与 Production Board 不必手动刷新就显示。
   const assetManifestRec = readAssetManifest(episodeRoot);
-  const normalizedAssetManifest = assetManifestRec?.data ? normalizeAssetManifest(assetManifestRec.data) : null;
+  const normalizedAssetManifest = assetManifestRec?.data
+    ? refreshManifestGlobalStyleFromSource(episodeRoot, assetManifestRec.data)
+    : null;
   const plannedAssetNames = parseAssetsFromPromptNames(readText(findProjectFile(episodeRoot, "assetPrompts")));
   const productionAssets = projectProductionAssetsForState(episodeRoot, normalizedAssetManifest, {
     plannedAssetNames,
@@ -19418,28 +19422,87 @@ function withGlobalStylePrompt(prompt, globalStyle) {
   const text = String(prompt || "").trim();
   const style = compactLine(globalStyle || "");
   if (!text || !style || text.includes(style)) return text;
-  return [`全局视觉风格（来自资产文档）：${style}`, text].join("\n");
+  return [`视觉风格：${style}`, text].join("\n");
+}
+
+function assetPromptSubject(value = "") {
+  return compactLine(value)
+    .replace(/^(?:[A-Z]{1,3}\d{1,4})(?:[_\s-]+|$)/i, "")
+    .replace(/_(?:CHARACTER_SHEET|WIDE_ESTABLISHING|PROP|INSERT|STORYBOARD).*$/i, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+}
+
+function conciseAssetPromptText(prompt = "") {
+  const lines = String(prompt || "")
+    .split(/\r?\n/)
+    .map((line) => compactLine(line))
+    .filter(Boolean);
+  const output = [];
+  const push = (value) => {
+    const text = compactLine(value);
+    if (!text || output.includes(text)) return;
+    output.push(text);
+  };
+  for (const line of lines) {
+    if (/^资产文档事实(?:（[^）]*）)?[：:]?$/u.test(line)) continue;
+    if (/^(?:固定制作规格|资产类型|资产用途|解析来源|匹配暗号|只根据以上资产文档事实|不得把资产编号)/u.test(line)) continue;
+    if (/^(?:全局视觉风格|视觉风格)(?:（[^）]*）)?[：:]/u.test(line)) continue;
+    let match = line.match(/^(?:资产主体|剧本解析对象)[：:]\s*(.+)$/u);
+    if (match) {
+      push(`主体：${assetPromptSubject(match[1])}`);
+      continue;
+    }
+    match = line.match(/^剧本依据[：:]\s*(.+)$/u);
+    if (match) {
+      push(match[1]);
+      continue;
+    }
+    match = line.match(/^视觉解析[：:]\s*(.+)$/u);
+    if (match) {
+      push(match[1]);
+      continue;
+    }
+    match = line.match(/^(?:资产解析模型提示词|中文资产文档提示词)[：:]\s*(.+)$/u);
+    if (match) {
+      push(match[1].replace(/^中文资产文档提示词[：:]\s*/u, ""));
+      continue;
+    }
+    push(line);
+  }
+  return output.join("\n");
+}
+
+function assetDocumentFactsPrompt(asset = {}) {
+  const subject = assetPromptSubject(asset.label || asset.name || "");
+  const visual = compactLine(asset.visual || "");
+  const evidence = compactLine(asset.evidence || "");
+  const description = visual && !/^使用剧本依据和本地规则生成[。.]?$/u.test(visual) ? visual : evidence;
+  return [
+    subject ? `主体：${subject}` : "",
+    !/^用户提供资产生图提示词[：:]/u.test(description) ? description : "",
+  ]
+    .map(compactLine)
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .join("\n");
+}
+
+function isLegacyAssetPrompt(prompt = "") {
+  return /资产文档事实|资产类型[：:]|资产用途[：:]|解析来源[：:]|匹配暗号[：:]|只根据以上资产文档事实|固定制作规格/u.test(String(prompt || ""));
 }
 
 function assetDocumentPromptFor(asset) {
   const storedPrompt = String(asset?.textToImagePromptOverride || "").trim();
   const globalStyle = compactLine(asset?.globalStyle || extractGlobalStyleGuidance(storedPrompt));
-  // 已落盘的 manifest 保存的是完整中文事实提示词，直接复用，避免二次拼接造成内容漂移。
-  if (/^资产文档事实（/.test(storedPrompt)) {
-    return withGlobalStylePrompt(storedPrompt, globalStyle);
-  }
-  if (asset?.analyzerSource === "manual" && storedPrompt) {
-    return withGlobalStylePrompt(storedPrompt, globalStyle);
-  }
+  const cleanedStoredPrompt = conciseAssetPromptText(storedPrompt);
+  const storedIsChinese = /[\u4e00-\u9fff]/u.test(cleanedStoredPrompt);
+  const content = storedPrompt && !isLegacyAssetPrompt(storedPrompt) && (storedIsChinese || asset?.analyzerSource === "manual")
+    ? cleanedStoredPrompt
+    : assetDocumentFactsPrompt(asset);
   return [
-    "资产文档事实（生图内容唯一来源）：",
-    globalStyle ? `全局视觉风格（来自资产文档）：${globalStyle}` : "",
-    storedPrompt ? `资产解析模型提示词：${storedPrompt}` : "",
-    `资产类型：${asset?.type === "Character" ? "人物" : asset?.type === "Scene" ? "场景" : asset?.type === "Insert" ? "插入镜头" : "道具"}`,
-    asset?.label ? `资产主体：${asset.label}` : "",
-    asset?.evidence ? `剧本依据：${asset.evidence}` : "",
-    asset?.visual ? `视觉解析：${asset.visual}` : "",
-    "只根据以上资产文档事实生成主体内容，不得把资产编号、英文模板或其他参考图内容当成主体描述。",
+    globalStyle ? `视觉风格：${globalStyle}` : "",
+    content,
   ].filter(Boolean).join("\n");
 }
 
@@ -19596,22 +19659,26 @@ function normalizeManifestItem(item, index = 0) {
 function hydrateManifestGlobalStyle(rawManifest, source = "") {
   const manifest = normalizeAssetManifest(rawManifest || {});
   const globalStyle = extractGlobalStyleGuidance(source);
-  if (!globalStyle || !manifest.items.length) return manifest;
+  if (!manifest.items.length) return manifest;
   const items = manifest.items.map((item) => {
+    const effectiveGlobalStyle = globalStyle || item.globalStyle || extractGlobalStyleGuidance(item.textToImagePrompt);
     const asset = {
       type: item.type,
       name: item.id,
       label: item.label,
       evidence: item.evidence,
       visual: item.visual,
-      globalStyle,
+      globalStyle: effectiveGlobalStyle,
       analyzerSource: item.source,
       textToImagePromptOverride: item.textToImagePrompt,
     };
+    const shouldCleanPrompt = !item.textToImagePrompt || isLegacyAssetPrompt(item.textToImagePrompt);
     return {
       ...item,
-      globalStyle,
-      textToImagePrompt: assetDocumentPromptFor(asset),
+      globalStyle: effectiveGlobalStyle,
+      textToImagePrompt: shouldCleanPrompt
+        ? assetDocumentPromptFor(asset)
+        : withGlobalStylePrompt(item.textToImagePrompt, effectiveGlobalStyle),
     };
   });
   return { ...manifest, items };

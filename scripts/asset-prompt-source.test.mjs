@@ -27,15 +27,17 @@ ASSET DOCUMENT PROMPT: a generic English prompt that must not replace the Chines
 `;
 
 const [asset] = parseAssets(markdown);
-assert.ok(asset.prompt.startsWith("资产文档事实（中文，生图内容唯一来源）："), "Chinese asset facts must be the primary prompt");
+assert.ok(asset.prompt.startsWith("主体："), "asset document facts must remain the primary prompt");
 assert.doesNotMatch(asset.prompt, /ASSET DOCUMENT PROMPT/);
 assert.match(asset.prompt, /荧光橙外套/);
+assert.doesNotMatch(asset.prompt, /资产类型|剧本依据|视觉解析|唯一来源/);
 
 const prompt = promptFor(asset);
 assert.ok(prompt.startsWith(asset.prompt), "the asset document prompt must remain the primary prompt");
 assert.match(prompt, /16:9 横版画幅/);
 assert.match(prompt, /纯白背景/);
 assert.match(prompt, /全身正面.*全身侧面.*全身背面.*面部特写/);
+assert.doesNotMatch(prompt, /资产文档事实|资产类型|剧本依据|视觉解析|唯一来源/);
 assert.doesNotMatch(prompt, /selected visual style|Production-grade reference asset|English prompt/i);
 
 const manualMarkdown = `## New Prop Asset: P002_MANUAL_PROP
@@ -70,6 +72,7 @@ const generatedMarkdown = `## New Character Asset: C003_GENERATED_CHARACTER_SHEE
 const [generatedAsset] = parseAssets(generatedMarkdown);
 assert.match(generatedAsset.prompt, /恶搞之家风格/);
 assert.match(promptFor(generatedAsset), /恶搞之家风格/);
+assert.match(promptFor(generatedAsset), /视觉风格：恶搞之家风格/);
 
 const topLevelStyleMarkdown = `# Asset prompts
 
@@ -87,7 +90,7 @@ const topLevelStyleMarkdown = `# Asset prompts
 `;
 const [topLevelStyleAsset] = parseAssets(topLevelStyleMarkdown);
 assert.match(topLevelStyleAsset.prompt, /恶搞之家风格/, "top-level document style must be injected into each asset prompt");
-assert.match(promptFor(topLevelStyleAsset), /恶搞之家风格/, "final image prompt must retain top-level document style");
+assert.match(promptFor(topLevelStyleAsset), /视觉风格：恶搞之家风格/, "final image prompt must retain top-level document style");
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /STYLE REFERENCE INPUT RULES \(HARD CONSTRAINT\)/);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /for STYLE ONLY/i);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /according to the visual style/i);

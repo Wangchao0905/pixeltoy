@@ -5911,15 +5911,18 @@ function effectiveAssetPrompt(assetName) {
   if (!item) return "";
   const saved = String(item.textToImagePrompt || "").trim();
   const globalStyle = String(item.globalStyle || "").trim();
-  const styleLine = globalStyle && !saved.includes(globalStyle) ? `全局视觉风格（来自资产文档）：${globalStyle}` : "";
-  if (saved && /[\u4e00-\u9fff]/.test(saved)) return [styleLine, saved].filter(Boolean).join("\n");
+  const styleLine = globalStyle && !saved.includes(globalStyle) ? `视觉风格：${globalStyle}` : "";
+  const legacyPrompt = /资产文档事实|资产类型[：:]|资产用途[：:]|解析来源[：:]|匹配暗号[：:]|只根据以上资产文档事实|固定制作规格/.test(saved);
+  if (saved && /[\u4e00-\u9fff]/.test(saved) && !legacyPrompt) return [styleLine, saved].filter(Boolean).join("\n");
+  const subject = String(item.label || assetName)
+    .replace(/^(?:[A-Z]{1,3}\d{1,4})(?:[_\s-]+|$)/i, "")
+    .replace(/_(?:CHARACTER_SHEET|WIDE_ESTABLISHING|PROP|INSERT|STORYBOARD).*$/i, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
   const facts = [
-    `资产类型：${assetTypeLabel(item.type)}`,
-    item.label ? `资产主体：${item.label}` : "",
     styleLine,
-    item.evidence ? `剧本依据：${item.evidence}` : "",
-    item.visual ? `视觉解析：${item.visual}` : "",
-    "以上资产文档事实是生图内容唯一来源；固定画幅、白底和视图规格由系统规则单独约束。",
+    subject ? `主体：${subject}` : "",
+    item.visual || item.evidence || "",
   ].filter(Boolean);
   return facts.length > 1 ? facts.join("\n") : saved;
 }

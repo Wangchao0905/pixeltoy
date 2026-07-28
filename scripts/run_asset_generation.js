@@ -118,7 +118,7 @@ function extractGlobalStyleFromMarkdown(markdown = "") {
   const headingPattern = new RegExp(`^(?:[◆◇]\\s*)?${label}(?:\\s*[（(][^）)]*[）)])?\\s*$`, "u");
   for (const line of lines) {
     const match = line.match(inlinePattern);
-    if (match?.[1]) return match[1].replace(/\\s+/g, " ").trim();
+    if (match?.[1]) return match[1].replace(/\s+/g, " ").trim();
   }
   const headingIndex = lines.findIndex((line) => headingPattern.test(line));
   if (headingIndex < 0) return "";
@@ -131,6 +131,53 @@ function extractGlobalStyleFromMarkdown(markdown = "") {
   return collected.join(" ").replace(/\s+/g, " ").trim();
 }
 
+function assetPromptSubject(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(?:[A-Z]{1,3}\d{1,4})(?:[_\s-]+|$)/i, "")
+    .replace(/_(?:CHARACTER_SHEET|WIDE_ESTABLISHING|PROP|INSERT|STORYBOARD).*$/i, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+}
+
+function conciseAssetPromptText(prompt = "") {
+  const output = [];
+  const push = (value) => {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (text && !output.includes(text)) output.push(text);
+  };
+  for (const rawLine of String(prompt || "").split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+/g, " ").trim();
+    if (!line) continue;
+    if (/^资产文档事实(?:（[^）]*）)?[：:]?$/u.test(line)) continue;
+    if (/^(?:固定制作规格|资产类型|资产用途|解析来源|匹配暗号|只根据以上资产文档事实|不得把资产编号)/u.test(line)) continue;
+    if (/^(?:全局视觉风格|视觉风格)(?:（[^）]*）)?[：:]/u.test(line)) continue;
+    let match = line.match(/^(?:资产主体|剧本解析对象)[：:]\s*(.+)$/u);
+    if (match) {
+      push(`主体：${assetPromptSubject(match[1])}`);
+      continue;
+    }
+    match = line.match(/^剧本依据[：:]\s*(.+)$/u);
+    if (match) {
+      push(match[1]);
+      continue;
+    }
+    match = line.match(/^视觉解析[：:]\s*(.+)$/u);
+    if (match) {
+      push(match[1]);
+      continue;
+    }
+    match = line.match(/^(?:资产解析模型提示词|中文资产文档提示词)[：:]\s*(.+)$/u);
+    if (match) {
+      push(match[1].replace(/^中文资产文档提示词[：:]\s*/u, ""));
+      continue;
+    }
+    push(line);
+  }
+  return output.join("\n");
+}
+
 function parseAssets(markdown) {
   const re = /^## New (Character|Scene|Prop|Insert|Storyboard) Asset:\s+([^\r\n]+?)\s*$/gm;
   const matches = [...markdown.matchAll(re)];
@@ -141,12 +188,12 @@ function parseAssets(markdown) {
     const section = markdown.slice(start, end).trim();
     const manualPrompt = isExplicitManualAssetPrompt(section) ? extractTextToImagePrompt(section) : "";
     const documentPrompt = extractTextToImagePrompt(section);
-    const sectionGlobalStyle = section.match(/^全局视觉风格[（(]?[^）)]*[）)]?\s*[:：]\s*(.+)$/mu)?.[1]?.trim() || documentGlobalStyle;
+    const sectionGlobalStyle = section.match(/^全局视觉风格(?:[（(][^）)]*[）)])?\s*[:：]\s*(.+)$/mu)?.[1]?.trim() || documentGlobalStyle;
     const documentFacts = extractAssetDocumentFacts(section, sectionGlobalStyle);
-    const canonicalPrompt = /^资产文档事实（/.test(documentPrompt) ? documentPrompt : "";
+    const usableDocumentPrompt = /[\u4e00-\u9fff]/u.test(documentPrompt) ? conciseAssetPromptText(documentPrompt) : "";
     const basePrompt = match[1] === "Storyboard"
       ? [documentPrompt, documentFacts].filter(Boolean).join("\n\n")
-      : manualPrompt || canonicalPrompt || documentFacts;
+      : manualPrompt || usableDocumentPrompt || documentFacts;
     const prompt = sectionGlobalStyle && !basePrompt.includes(sectionGlobalStyle)
       ? [`全局视觉风格：${sectionGlobalStyle}`, basePrompt].filter(Boolean).join("\n")
       : basePrompt;
@@ -182,13 +229,11 @@ function extractAssetDocumentFacts(section, fallbackGlobalStyle = "") {
   const visual = field("视觉解析");
   const globalStyle = field("全局视觉风格") || field("视觉风格") || fallbackGlobalStyle;
   if (!subject && !evidence && !visual && !globalStyle) return "";
+  const description = visual && !/^使用剧本依据和本地规则生成[。.]?$/u.test(visual) ? visual : evidence;
   return [
-    "资产文档事实（中文，生图内容唯一来源）：",
-    globalStyle ? `全局视觉风格：${globalStyle}` : "",
-    subject ? `剧本解析对象：${subject}` : "",
-    evidence ? `剧本依据：${evidence}` : "",
-    visual ? `视觉解析：${visual}` : "",
-    "只根据以上资产文档事实生成主体内容，不得使用英文模板、资产编号或其他参考图内容替换人物、场景、道具、服装和事件。",
+    globalStyle ? `视觉风格：${globalStyle}` : "",
+    subject ? `主体：${assetPromptSubject(subject)}` : "",
+    !/^用户提供资产生图提示词[：:]/u.test(description) ? description : "",
   ].filter(Boolean).join("\n");
 }
 

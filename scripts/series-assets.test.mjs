@@ -104,14 +104,19 @@ async function run() {
       assert.ok(!confirmed || description, `${name} must not show confirmed assets with a blank description box`);
     }
 
-    // 旧项目：描述还在分集级 01_script 下，读到时提升为剧集级且不删原文件
+    // 旧项目：描述只写在第一集的旧路径下，用户打开的却是第二集。
+    // 提升必须扫同剧所有分集，只看当前这一集会读出空串。
     const legacyProject = fs.mkdtempSync(path.join(root, ".series-desc-test-"));
-    const legacyEpisode = path.join(legacyProject, "outputs", "e01");
-    const legacyDescFile = path.join(legacyEpisode, "01_script", "e01_asset_description.md");
+    const legacyE01 = path.join(legacyProject, "outputs", "e01");
+    const legacyE02 = path.join(legacyProject, "outputs", "e02");
+    const legacyDescFile = path.join(legacyE01, "01_script", "e01_asset_description.md");
     fs.mkdirSync(path.dirname(legacyDescFile), { recursive: true });
+    fs.mkdirSync(path.join(legacyE02, "01_script"), { recursive: true });
     fs.writeFileSync(legacyDescFile, "旧项目的资产描述", "utf8");
     try {
-      assert.equal(series.readAssetDescription(legacyEpisode), "旧项目的资产描述", "legacy episode descriptions stay readable");
+      // 先从第二集读——这是真实症状发生的顺序
+      assert.equal(series.readAssetDescription(legacyE02), "旧项目的资产描述", "a sibling episode's legacy description must be promoted for other episodes");
+      assert.equal(series.readAssetDescription(legacyE01), "旧项目的资产描述", "legacy episode descriptions stay readable");
       assert.ok(fs.existsSync(path.join(legacyProject, "project_asset_description.md")), "legacy descriptions are promoted to the series root");
       assert.ok(fs.existsSync(legacyDescFile), "legacy description promotion must copy, not move");
     } finally {

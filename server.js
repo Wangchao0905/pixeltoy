@@ -3644,24 +3644,45 @@ function assetDescriptionPath(episodeRoot) {
   return seriesAssetDescriptionPath(episodeRoot);
 }
 
-// 读:剧集级优先。旧项目的描述还在分集级 01_script 下，首次读到就提升为剧集级(复制不移动)，
-// 让同剧其他分集也能看到同一份源文档；提升失败直接沿用旧内容，不阻断。
+// 提升必须扫同剧所有分集，不能只看当前这一集:描述通常只写在第一集的旧路径下，
+// 而用户打开的是第二集——只看自己那集会读出空串(症状:第二集"已确认却无源文档")。
+// 与 ensureSeriesAssetManifestForProject 同一套路:复制不移动，失败返回空不阻断。
+function ensureSeriesAssetDescriptionForProject(projectDir) {
+  const target = path.join(projectDir, SERIES_ASSET_DESCRIPTION_NAME);
+  if (fs.existsSync(target) && String(readText(target) || "").trim()) return target;
+  try {
+    const outputsDir = path.join(projectDir, "outputs");
+    for (const entry of listDir(outputsDir)) {
+      if (!entry.isDirectory()) continue;
+      const legacyFile = legacyAssetDescriptionPath(path.join(outputsDir, entry.name));
+      if (!fs.existsSync(legacyFile)) continue;
+      const legacyText = readText(legacyFile);
+      if (!String(legacyText || "").trim()) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, legacyText, "utf8");
+      return target;
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+// 读:剧集级优先，缺失时从同剧任一分集的旧路径提升上来。
 function readAssetDescription(episodeRoot) {
   const seriesFile = seriesAssetDescriptionPath(episodeRoot);
   if (fs.existsSync(seriesFile)) {
     const seriesText = readText(seriesFile);
     if (String(seriesText || "").trim()) return seriesText;
   }
-  const legacyFile = legacyAssetDescriptionPath(episodeRoot);
-  if (!fs.existsSync(legacyFile)) return fs.existsSync(seriesFile) ? readText(seriesFile) : "";
-  const legacyText = readText(legacyFile);
-  if (String(legacyText || "").trim() && !fs.existsSync(seriesFile)) {
-    try {
-      fs.mkdirSync(path.dirname(seriesFile), { recursive: true });
-      fs.writeFileSync(seriesFile, legacyText, "utf8");
-    } catch {}
+  const promoted = ensureSeriesAssetDescriptionForProject(projectDirForEpisode(episodeRoot));
+  if (promoted && fs.existsSync(promoted)) {
+    const promotedText = readText(promoted);
+    if (String(promotedText || "").trim()) return promotedText;
   }
-  return legacyText;
+  const legacyFile = legacyAssetDescriptionPath(episodeRoot);
+  if (fs.existsSync(legacyFile)) return readText(legacyFile);
+  return fs.existsSync(seriesFile) ? readText(seriesFile) : "";
 }
 
 function writeAssetDescription(episodeRoot, text) {

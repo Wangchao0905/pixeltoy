@@ -81,6 +81,43 @@ async function run() {
     assert.ok(scanned.some((item) => item.assetName === seriesAsset), "series asset scanning must include series-level images");
     assert.ok(scanned.some((item) => item.assetName === asset), "series asset scanning must include legacy episode images");
 
+    // 状态药丸读 readAssetManifest()、粘贴框读 findProjectFile("assetManifest")，
+    // 两者必须指向同一份文件，否则"显示已确认、粘贴框却是空的"。
+    assert.equal(typeof series?.findProjectFile, "function", "project file resolver must be exposed for focused tests");
+    for (const [name, root] of [["e01", e01], ["e02", e02]]) {
+      const resolved = series.findProjectFile(root, "assetManifest");
+      assert.equal(resolved, seriesManifest, `${name} manifest file resolution must point at the series manifest`);
+      assert.equal(resolved, series.readAssetManifest(root).file, `${name} status and textarea must read the same manifest file`);
+      assert.ok(fs.existsSync(resolved), `${name} resolved manifest file must exist so the textarea is not blank`);
+    }
+
+    // 资产描述是产出全剧资产的源文档，必须跟清单同级。否则第二集显示「已确认」、
+    // 而资产描述粘贴框是空的——状态和源文档对不上。
+    assert.equal(typeof series?.readAssetDescription, "function", "asset description reader must be exposed for focused tests");
+    assert.equal(typeof series?.writeAssetDescription, "function", "asset description writer must be exposed for focused tests");
+    const descText = "林小雨：二十五岁女性，长发，米色针织衫。";
+    series.writeAssetDescription(e01, descText);
+    assert.equal(series.readAssetDescription(e02), descText, "every episode must read the same series asset description");
+    for (const [name, root] of [["e01", e01], ["e02", e02]]) {
+      const confirmed = series.readAssetManifest(root).data?.confirmed === true;
+      const description = String(series.readAssetDescription(root) || "").trim();
+      assert.ok(!confirmed || description, `${name} must not show confirmed assets with a blank description box`);
+    }
+
+    // 旧项目：描述还在分集级 01_script 下，读到时提升为剧集级且不删原文件
+    const legacyProject = fs.mkdtempSync(path.join(root, ".series-desc-test-"));
+    const legacyEpisode = path.join(legacyProject, "outputs", "e01");
+    const legacyDescFile = path.join(legacyEpisode, "01_script", "e01_asset_description.md");
+    fs.mkdirSync(path.dirname(legacyDescFile), { recursive: true });
+    fs.writeFileSync(legacyDescFile, "旧项目的资产描述", "utf8");
+    try {
+      assert.equal(series.readAssetDescription(legacyEpisode), "旧项目的资产描述", "legacy episode descriptions stay readable");
+      assert.ok(fs.existsSync(path.join(legacyProject, "project_asset_description.md")), "legacy descriptions are promoted to the series root");
+      assert.ok(fs.existsSync(legacyDescFile), "legacy description promotion must copy, not move");
+    } finally {
+      fs.rmSync(legacyProject, { recursive: true, force: true });
+    }
+
     writeJson(path.join(projectDir, "work", "e01_video_generation", "pixel_toys_workflow.json"), { ownerUserId: "owner-user" });
     assert.throws(
       () => series.assertProjectEpisodeAccess(projectDir, { id: "other-user" }),

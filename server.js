@@ -52,6 +52,7 @@ const VIDEO_TASK_DIR = "08_video_task_nodes";
 const SERIES_ASSET_DIR_NAME = "assets";
 const LEGACY_EPISODE_ASSET_DIR_NAME = "04_assets";
 const SERIES_ASSET_MANIFEST_NAME = "project_asset_manifest.json";
+const SERIES_ASSET_DESCRIPTION_NAME = "project_asset_description.md";
 const IMAGE_API_KEY_ENV_NAMES = [
   "PIXEL_TOYS_IMAGE_API_KEY",
   "IMAGE_GEN_API_KEY",
@@ -3629,13 +3630,38 @@ function writeScriptWithWorkflowIsolation(episodeRoot, scriptText, reason = "scr
 
 // 「资产描述」独立输入:与剧情剧本分开存放,只用于资产解析(人物/场景/道具),不参与剧情节拍/分镜。
 // 专用文件名,避免与 01_script 里的剧本 .md 冲突(findProjectFile 的 script 走 defaults 优先,不会误取)。
-function assetDescriptionPath(episodeRoot) {
+// 资产描述文档是产出全剧资产的源文档，必须和资产清单同级(剧集级)。否则第二集会继承到
+// 「已确认」的资产状态、而资产描述粘贴框是空的——状态和源文档对不上。
+function seriesAssetDescriptionPath(episodeRoot) {
+  return path.join(projectDirForEpisode(episodeRoot), SERIES_ASSET_DESCRIPTION_NAME);
+}
+
+function legacyAssetDescriptionPath(episodeRoot) {
   return path.join(episodeRoot, "01_script", `${episodeSlug(episodeRoot)}_asset_description.md`);
 }
 
+function assetDescriptionPath(episodeRoot) {
+  return seriesAssetDescriptionPath(episodeRoot);
+}
+
+// 读:剧集级优先。旧项目的描述还在分集级 01_script 下，首次读到就提升为剧集级(复制不移动)，
+// 让同剧其他分集也能看到同一份源文档；提升失败直接沿用旧内容，不阻断。
 function readAssetDescription(episodeRoot) {
-  const file = assetDescriptionPath(episodeRoot);
-  return fs.existsSync(file) ? readText(file) : "";
+  const seriesFile = seriesAssetDescriptionPath(episodeRoot);
+  if (fs.existsSync(seriesFile)) {
+    const seriesText = readText(seriesFile);
+    if (String(seriesText || "").trim()) return seriesText;
+  }
+  const legacyFile = legacyAssetDescriptionPath(episodeRoot);
+  if (!fs.existsSync(legacyFile)) return fs.existsSync(seriesFile) ? readText(seriesFile) : "";
+  const legacyText = readText(legacyFile);
+  if (String(legacyText || "").trim() && !fs.existsSync(seriesFile)) {
+    try {
+      fs.mkdirSync(path.dirname(seriesFile), { recursive: true });
+      fs.writeFileSync(seriesFile, legacyText, "utf8");
+    } catch {}
+  }
+  return legacyText;
 }
 
 function writeAssetDescription(episodeRoot, text) {
@@ -23320,6 +23346,9 @@ module.exports = {
       writeAssetManifest,
       createEpisodeWorkspace,
       uniqueEpisodeSlug,
+      findProjectFile,
+      readAssetDescription,
+      writeAssetDescription,
       scanAssets,
       projectEpisodeRoots,
       assertProjectEpisodeAccess,

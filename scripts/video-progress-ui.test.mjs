@@ -17,9 +17,12 @@ assert.doesNotMatch(
   "video queue cards should not render long status descriptions as visible pills",
 );
 assert.match(appJs, /segment-state-button/, "queued and running cards should use a visual state button");
+assert.match(appJs, /segment-download-button/, "completed video segments should expose a download link");
+assert.match(appJs, /segmentIsComplete && segmentVideoUrl[\s\S]*segment-download-button/, "segment downloads should require a completed item and a source URL");
 assert.match(appCss, /#videoProgressList \.segment-status-indicator[\s\S]*animation:/, "status indicators should animate without changing progress data");
 assert.match(appCss, /#videoProgressList \.segment-state-queued[\s\S]*background:/, "queued state should have a distinct color");
 assert.match(appCss, /#videoProgressList \.segment-state-running[\s\S]*border:/, "running state should have a distinct ring");
+assert.match(appCss, /\.segment-download-button\s*\{[\s\S]*border-radius:\s*50%/, "segment downloads should use the compact action style");
 
 assert.match(canvasJs, /画面正在拼装/, "running video UI should use the approved assembly copy");
 assert.match(canvasJs, /video-tetris-rain/, "running video UI should render the falling block layer");

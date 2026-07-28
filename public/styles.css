@@ -3229,10 +3229,45 @@ h1 {
   gap: 8px;
 }
 
+.segment-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .segment-actions button {
   min-height: 28px;
   min-width: 72px;
   padding: 0 10px;
+}
+
+.segment-download-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border: 1px solid rgba(166, 184, 210, 0.34);
+  border-radius: 50%;
+  background: rgba(166, 184, 210, 0.08);
+  color: inherit;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.segment-download-button:hover {
+  border-color: var(--accent, #2f9bff);
+  background: rgba(47, 155, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.segment-download-button:focus-visible {
+  outline: 2px solid var(--accent, #2f9bff);
+  outline-offset: 2px;
+}
+
+.segment-download-button svg {
+  display: block;
 }
 
 .meter,
@@ -17428,7 +17463,7 @@ body.is-studio-modern .modern-kit-bar { margin: 16px 26px 0; border-radius: 5px;
 .modern-video-queue-filters button b { margin-left: 3px; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; font-weight: 500; }
 .modern-video-queue-filters button.is-active b { color: var(--mv-tx); }
 .modern-video-queue-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 12px; margin-top: 14px; }
-.modern-video-queue-card { min-width: 0; overflow: hidden; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s2); box-shadow: var(--mv-hi); }
+.modern-video-queue-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s2); box-shadow: var(--mv-hi); }
 .modern-video-queue-card:hover { border-color: var(--mv-line-2); }
 .modern-video-queue-card.is-active { border-color: rgba(217,45,69,.64); box-shadow: 0 0 0 2px rgba(217,45,69,.22), var(--mv-e1); }
 .modern-video-queue-select { display: block; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--mv-tx); text-align: left; cursor: pointer; }
@@ -17456,6 +17491,10 @@ body.is-studio-modern .modern-kit-bar { margin: 16px 26px 0; border-radius: 5px;
 .modern-video-queue-duration { right: 8px; bottom: 9px; color: var(--mv-tx); font-size: 8.5px; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
 .modern-video-queue-play { top: 50%; left: 50%; display: grid; place-items: center; width: 30px; height: 30px; transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,.35); border-radius: 50%; background: rgba(11,11,15,.54); color: #fff; font-size: 10px; opacity: .84; transition: transform 140ms ease, opacity 140ms ease; }
 .modern-video-queue-card:hover .modern-video-queue-play { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+.modern-video-queue-download { position: absolute; top: 8px; right: 8px; z-index: 4; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid rgba(255,255,255,.28); border-radius: 50%; background: rgba(11,11,15,.62); color: var(--mv-tx); box-shadow: 0 4px 12px rgba(0,0,0,.28); transition: border-color 140ms ease, background 140ms ease, transform 140ms ease; }
+.modern-video-queue-download:hover { border-color: var(--mv-line-2); background: var(--mv-vio); color: #fff; transform: translateY(-1px); }
+.modern-video-queue-download:focus-visible { outline: 2px solid var(--mv-line-2); outline-offset: 2px; }
+.modern-video-queue-download svg { display: block; }
 .modern-video-queue-progress { position: absolute; right: 8px; bottom: 3px; left: 8px; z-index: 3; height: 2px; overflow: hidden; background: rgba(255,255,255,.18); }
 .modern-video-queue-progress i { display: block; width: 0; height: 100%; background: var(--modern-signal); transition: width 220ms ease; }
 .modern-video-queue-copy { display: grid; gap: 3px; min-width: 0; padding: 8px 9px 9px; }

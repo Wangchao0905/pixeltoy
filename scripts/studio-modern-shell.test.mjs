@@ -114,9 +114,12 @@ const modernQueueRenderer = js.slice(js.indexOf("function renderModernVideoQueue
 assert.match(modernQueueRenderer, /reconcileKeyedCards\(node, specs, buildCard\)/, "video queue refreshes must reuse unchanged cards and media nodes");
 assert.doesNotMatch(modernQueueRenderer, /node\.innerHTML = visibleShots\.map/, "video queue refreshes must not teardown every preview video");
 assert.match(js, /function modernMediaForShot\([\s\S]*asset\?\.file\?\.url/, "completed video media must unwrap the server media object URL");
+assert.match(modernQueueRenderer, /modern-video-queue-download/, "completed modern queue cards should expose a download link");
+assert.match(modernQueueRenderer, /status === "complete" && videoUrl[\s\S]*modern-video-queue-download/, "modern queue downloads should require a completed card and a source URL");
 assert.match(js, /modernStudio\.queueFilter/, "video segment queue filter must persist during refreshes");
 assert.match(css, /\.modern-video-queue-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill/, "video segment queue must use a responsive card grid");
 assert.match(css, /\.modern-video-queue-card\.is-running[\s\S]*\.modern-video-queue-status/, "running queue cards must expose a visible status treatment");
+assert.match(css, /\.modern-video-queue-download\s*\{[\s\S]*position:\s*absolute/, "modern queue downloads should sit on the media frame");
 assert.match(js, /modernVideoQueueInspector[\s\S]*generateModernVideoQueueShot/, "queue cards must open a single-shot inspector with generation controls");
 assert.match(js, /saveVideoPrompt\(\)[\s\S]*generateVideoSegment\(shotName, \{ forceRegenerate \}\)/, "single-shot regeneration must save the edited prompt before submitting");
 assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");

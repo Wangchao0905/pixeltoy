@@ -5660,11 +5660,19 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
     const card = document.createElement("article");
     card.className = `modern-video-queue-card is-${status}`;
     card.setAttribute("role", "listitem");
+    const videoUrl = modernMediaForShot(data, shot, index, "video");
+    const segmentNumber = String(shot.number || index + 1).padStart(2, "0");
+    const download = status === "complete" && videoUrl
+      ? `<a class="modern-video-queue-download" href="${escapeAttr(videoUrl)}" download="pixel-toy-segment-${segmentNumber}.mp4" aria-label="下载片段 ${segmentNumber}" title="下载片段 ${segmentNumber}">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </a>`
+      : "";
     card.innerHTML = `
       <button class="modern-video-queue-select" type="button" data-modern-queue-index="${index}" aria-label="查看镜头 ${escapeAttr(String(shot.number).padStart(2, "0"))} ${escapeAttr(shot.name)}" aria-pressed="false">
         <span class="modern-video-queue-frame">${modernVideoQueueMediaMarkup(data, shot, index, status)}<b class="modern-video-queue-number">${String(shot.number).padStart(2, "0")}</b><em class="modern-video-queue-status"><i></i>${escapeHtml(modernStatusLabel(status))}</em><small class="modern-video-queue-duration">${escapeHtml(String(shot.duration))}s</small>${status === "complete" ? '<span class="modern-video-queue-play" aria-hidden="true">▶</span>' : ""}<span class="modern-video-queue-progress"><i></i></span></span>
         <span class="modern-video-queue-copy"><strong>${escapeHtml(shot.name)}</strong><small>${escapeHtml(shot.model || "模型未配置")}</small></span>
       </button>
+      ${download}
       ${status === "failed" && shot.failedReason ? `<p class="modern-video-queue-error" title="${escapeAttr(shot.failedReason)}">${escapeHtml(shot.failedReason)}</p>` : ""}
     `;
     const button = card.querySelector("[data-modern-queue-index]");
@@ -8487,6 +8495,18 @@ function renderVideoProgress(progress) {
     const progressWidth = hasProgress ? Math.max(0, Math.min(100, Number(item.progress))) : 0;
     // 已生成片段的预览入口统一收敛到下方主操作按钮(见 action),这里不再重复放「预览」字样。
     const segmentIsComplete = item.status === "complete" && !!item.file;
+    const segmentVideoUrl = item.file?.url
+      || (typeof item.file === "string" ? item.file : "")
+      || (typeof item.url === "string" ? item.url : "")
+      || (typeof item.videoUrl === "string" ? item.videoUrl : "")
+      || item.output?.url
+      || item.output?.file?.url
+      || "";
+    const segmentDownload = segmentIsComplete && segmentVideoUrl
+      ? `<a class="segment-download-button" href="${escapeAttr(segmentVideoUrl)}" download="pixel-toy-segment-${String(item.index).padStart(2, "0")}.mp4" aria-label="下载片段 ${escapeAttr(item.name || item.index)}" title="下载片段">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </a>`
+      : "";
     const lastJob = item.lastJobStatus && item.status !== "running" ? `<span>${statusText(item.lastJobStatus)}</span>` : "";
     const taskMeta = item.taskId
       ? `<span class="segment-task-id" title="${escapeAttr(item.taskId)}">任务 ${escapeHtml(shortUuid(item.taskId))}</span>`
@@ -8511,7 +8531,7 @@ function renderVideoProgress(progress) {
     const action = item.status === "running" || item.status === "queued"
       ? `<button class="segment-state-button" type="button" disabled aria-label="${escapeAttr(stateLabel)}"><span aria-hidden="true"></span></button>`
       : segmentIsComplete
-        ? `<button class="primary small" type="button" data-segment-preview="${escapeAttr(item.name)}">预览</button>`
+        ? `<div class="segment-action-group"><button class="primary small" type="button" data-segment-preview="${escapeAttr(item.name)}">预览</button>${segmentDownload}</div>`
         : item.status === "failed"
           ? `<button class="ghost small" type="button" data-segment-edit-prompt="${escapeAttr(item.name)}">修改提示词</button>`
         : `<button class="primary small" type="button" data-segment-generate="${escapeAttr(item.name)}">生成</button>`;

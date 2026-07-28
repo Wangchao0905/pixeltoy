@@ -6018,9 +6018,6 @@ function renderModernAssetPromptInspector() {
   $("#modernAssetPromptMeta").textContent = `${assetTypeLabel(item.type)} · ${$("#assetQuality")?.value || "1k"}`;
   const input = $("#modernAssetPromptInspectorPrompt");
   if (document.activeElement !== input) input.value = draft.value;
-  $("#modernAssetPromptDraftStatus").textContent = draft.dirty ? "已修改未保存" : "已保存";
-  $("#modernAssetPromptCount").textContent = `${draft.value.length} / 4000`;
-  $("#modernAssetPromptPolicy").textContent = [item.usage, item.note, "风格只来自资产文档提示词；参考图仅提供风格，不替换主体内容。"].filter(Boolean).join("\n");
   const assetRunning = isAssetExtracting() || ["running", "queued"].includes(String(state.project?.assetJob?.status || "").toLowerCase());
   $("#modernAssetRestorePrompt").disabled = assetRunning;
   $("#modernAssetSavePrompt").disabled = assetRunning;

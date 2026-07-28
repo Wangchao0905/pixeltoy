@@ -17202,7 +17202,7 @@ body.is-studio-modern ::-webkit-scrollbar-corner { background: transparent; }
 .modern-asset-card-action:disabled { cursor: not-allowed; opacity: .58; }
 .modern-asset-card.is-generating { border-color: rgba(228,173,100,.5); }
 .modern-asset-card.is-failed { border-color: rgba(242,122,91,.55); }
-.modern-asset-prompt-inspector { display: grid; gap: 10px; min-width: 0; padding: 16px 18px; border: 1px solid var(--mv-line); border-radius: var(--mv-r); background: var(--mv-s1); box-shadow: var(--mv-e1), var(--mv-hi); }
+.modern-asset-prompt-inspector { display: grid; gap: 7px; min-width: 0; padding: 10px 14px; border: 1px solid var(--mv-line); border-radius: var(--mv-r); background: var(--mv-s1); box-shadow: var(--mv-e1), var(--mv-hi); }
 .modern-asset-prompt-inspector.hidden { display: none; }
 .modern-asset-prompt-inspector > header { display: flex; align-items: start; justify-content: space-between; gap: 14px; }
 .modern-asset-prompt-inspector > header > div { display: grid; gap: 4px; min-width: 0; }
@@ -17211,13 +17211,8 @@ body.is-studio-modern ::-webkit-scrollbar-corner { background: transparent; }
 .modern-asset-prompt-inspector > header button { min-height: 28px; padding: 0 9px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); font-size: 12px; cursor: pointer; }
 .modern-asset-prompt-inspector > header button:hover { border-color: var(--mv-line-2); color: var(--mv-tx); }
 .modern-asset-prompt-inspector > label { color: var(--mv-mut); font-size: 10.5px; }
-.modern-asset-prompt-inspector > textarea { width: 100%; min-height: 150px; resize: vertical; padding: 11px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); outline: 0; background: var(--mv-bg); color: var(--mv-tx); font-size: 13px; line-height: 1.6; }
+.modern-asset-prompt-inspector > textarea { width: 100%; min-height: 112px; resize: vertical; padding: 9px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); outline: 0; background: var(--mv-bg); color: var(--mv-tx); font-size: 13px; line-height: 1.5; }
 .modern-asset-prompt-inspector > textarea:focus { border-color: var(--mv-line-2); box-shadow: var(--mv-hi); }
-.modern-asset-prompt-draft { display: flex; justify-content: space-between; gap: 10px; color: var(--mv-qt); font-family: var(--mono); font-size: 11px; }
-.modern-asset-prompt-draft span:first-child { color: var(--mv-mut); }
-.modern-asset-prompt-policy { border-top: 1px solid var(--mv-line); padding-top: 9px; }
-.modern-asset-prompt-policy summary { color: var(--mv-mut); font-size: 12px; cursor: pointer; }
-.modern-asset-prompt-policy pre { max-height: 120px; margin: 8px 0 0; overflow: auto; white-space: pre-wrap; color: var(--mv-qt); font-family: inherit; font-size: 12px; line-height: 1.5; }
 .modern-asset-prompt-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 /* With the image wall removed, the document step can give both source text and parsed assets real room. */

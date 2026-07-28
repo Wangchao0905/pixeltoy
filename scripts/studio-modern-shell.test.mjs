@@ -161,6 +161,11 @@ assert.match(js, /const generation = modernAssetGenerationStatus\(data\)/, "资�
 assert.match(js, /data-modern-asset-action/, "资产图卡片必须提供单卡片生成或重新生成动作");
 assert.match(js, /modernAssetPromptInspectorPrompt[\s\S]{0,700}ensureAssetPromptDraft[\s\S]{0,500}draft\.dirty/, "资产图页提示词编辑必须复用草稿机制");
 assert.match(js, /modernAssetRegeneratePrompt[\s\S]{0,500}regenerateSelectedAssetFromInspector/, "资产图页重新生成必须复用检查器链路");
+assert.match(html, /id="modernAssetPromptInspectorPrompt"[^>]*rows="5"[^>]*aria-label=/, "资产提示词编辑器必须使用紧凑高度并保留无障碍名称");
+assert.doesNotMatch(html, /modern-asset-prompt-draft|modern-asset-prompt-policy|现代资产提示词提示/, "资产提示词检查器不得显示冗余说明行");
+assert.doesNotMatch(css, /\.modern-asset-prompt-draft|\.modern-asset-prompt-policy/, "资产提示词检查器不得保留已删除说明的样式");
+assert.match(css, /\.modern-asset-prompt-inspector\s*\{[^}]*gap:\s*7px[^}]*padding:\s*10px 14px/, "资产提示词检查器需要压缩模块留白");
+assert.match(css, /\.modern-asset-prompt-inspector > textarea\s*\{[^}]*min-height:\s*112px/, "资产提示词文本框需要缩短默认高度");
 // 只取 .modern-asset-image-* 自己的规则做柠檬色检查。此前写成
 // css.slice(css.indexOf(...))：类名不存在时 indexOf 返回 -1、slice(-1) 拿到
 // 最后一个字符,assert.ok 恒真——断言永远不会失败(实测改坏 3 处类名仍通过);

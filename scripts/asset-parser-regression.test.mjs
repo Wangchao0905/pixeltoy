@@ -874,8 +874,8 @@ try {
   await assert.rejects(
     () =>
       parser.extractAssetManifest(unavailableModelRoot, {
-        scriptText: "人物\nP01 卡伦 Caelen",
-        assetDescriptionText: "人物\nP01 卡伦 Caelen",
+        scriptText: "这里没有可由本地规则识别的明确资产，只有待模型解析的自然语言描述。",
+        assetDescriptionText: "这里没有可由本地规则识别的明确资产，只有待模型解析的自然语言描述。",
         assetAnalyzerModel: "rules",
       }),
     (error) => /资产解析模型不可用或超时/.test(error?.message) && /未调用外部资产解析模型/.test(error?.message),
@@ -883,6 +883,28 @@ try {
   );
 } finally {
   fs.rmSync(unavailableModelRoot, { recursive: true, force: true });
+}
+
+// 外部解析模型超时/断供时，已有独立资产描述仍应使用本地规则完成落盘，不能把整条流程判死。
+const rulesFallbackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixel-toys-asset-parser-rules-fallback-"));
+try {
+  const rulesFallbackDescription = `
+人物：林夏，27岁，短银发女法医，黑色风衣。
+场景：废弃玻璃温室，暴雨深夜，破碎玻璃和积水，无人物。
+道具：带血的黄铜怀表，表盖刻着海鸥图案。
+`;
+  const rulesFallbackResult = await parser.extractAssetManifest(rulesFallbackRoot, {
+    scriptText: rulesFallbackDescription,
+    assetDescriptionText: rulesFallbackDescription,
+    assetAnalyzerModel: "rules",
+  });
+  assert.equal(rulesFallbackResult.analyzer.ok, false, "规则兜底应明确标记外部 analyzer 未成功");
+  assert.match(rulesFallbackResult.analyzer.reason, /规则兜底/);
+  assert.deepEqual(rulesFallbackResult.extracted.characters, ["林夏"]);
+  assert.deepEqual(rulesFallbackResult.extracted.scenes, ["废弃玻璃温室"]);
+  assert.ok(fs.existsSync(rulesFallbackResult.assetManifest), "规则兜底仍必须写入资产 manifest");
+} finally {
+  fs.rmSync(rulesFallbackRoot, { recursive: true, force: true });
 }
 
 console.log("asset parser regression tests passed.");

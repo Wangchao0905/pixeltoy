@@ -8724,7 +8724,13 @@ async function extractAssets() {
     });
     setProjectState(data.state);
     const extracted = data.result?.extracted || {};
-    toast(`已提取人物 ${extracted.characters?.length || 0} 个，场景 ${extracted.scenes?.length || 0} 个`);
+    const analyzer = data.result?.analyzer || {};
+    const usedRulesFallback = analyzer.ok === false && /规则兜底/.test(analyzer.reason || "");
+    toast(
+      usedRulesFallback
+        ? `已完成资产解析（模型暂时不可用，已按资产文档兜底）人物 ${extracted.characters?.length || 0} 个，场景 ${extracted.scenes?.length || 0} 个`
+        : `已提取人物 ${extracted.characters?.length || 0} 个，场景 ${extracted.scenes?.length || 0} 个`,
+    );
   } finally {
     state.uiBusy.assetExtracting = false;
     setWorkspaceMode("assets");

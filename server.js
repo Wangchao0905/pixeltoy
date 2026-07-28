@@ -16287,8 +16287,8 @@ async function callAssetAnalyzerModel({ script, fallbackAssets, worldProfile, mo
   // 主模型(默认 opus)一旦超时 / 网关抽风(fetch failed / 5xx / 429),立刻切换到备用模型 claude-sonnet-5,
   // 而不是死磕同一个抽风模型再摔回本地傻规则(导致垃圾资产:undefined 名字 / 缺场景)。
   // 注意:api.apikey.fun 是 Claude-only 模型组(只有 claude-opus/sonnet/haiku 各版本),填 gpt 名会 404。
-  const FALLBACK_MODEL = "claude-sonnet-5";
-  const candidates = primary === FALLBACK_MODEL ? [primary] : [primary, FALLBACK_MODEL];
+  const FALLBACK_MODELS = ["claude-sonnet-5", "claude-haiku-4-5"];
+  const candidates = [...new Set([primary, ...FALLBACK_MODELS])];
   // 单个焦点:opus 失败(超时/网关抽风)立刻切 sonnet;鉴权类致命错(401/403)直接放弃。
   const runFocus = async (focus) => {
     let lastReason = "";
@@ -20133,14 +20133,26 @@ async function extractAssetManifest(episodeRoot, options = {}) {
   const title = titleFromScript(plotScript || assetSourceScript || script, slug, options.title);
   const worldProfile = inferWorldProfile(assetAnalysisSource);
   const rulePlan = buildRuleAssets(assetAnalysisSource, worldProfile);
-  const analyzerResult = await callAssetAnalyzerModel({
+  let analyzerResult = await callAssetAnalyzerModel({
     script: assetAnalysisSource,
     fallbackAssets: rulePlan.assets,
     worldProfile,
     modelName: options.assetAnalyzerModel,
   });
   if (!analyzerResult?.ok) {
-    throw new Error(`资产解析模型不可用或超时，请重试或检查 API Key。${analyzerResult?.reason || "未知失败原因"}`);
+    const hasDocumentBackedAssets = rulePlan.assets.some((asset) => asset.lockedStructured || asset.lockedManual);
+    const hasIndependentAssetDescription = Boolean(String(assetDescription || "").trim());
+    if (rulePlan.assets.length && (hasDocumentBackedAssets || hasIndependentAssetDescription)) {
+      const reason = analyzerResult?.reason || "未知失败原因";
+      console.error(`[assetAnalyzer] 模型不可用，保留资产文档规则结果：${reason}`);
+      analyzerResult = {
+        ok: false,
+        model: "rules",
+        reason: `资产解析模型不可用，已使用资产文档规则兜底：${reason}`,
+      };
+    } else {
+      throw new Error(`资产解析模型不可用或超时，请重试或检查 API Key。${analyzerResult?.reason || "未知失败原因"}`);
+    }
   }
   let assets = correctAssetRolesFromEvidence(mergeAnalyzerAssets(rulePlan.assets, analyzerResult, worldProfile, assetAnalysisSource));
   const coverageResult = await ensureAssetCoverage({

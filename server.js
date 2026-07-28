@@ -19363,7 +19363,26 @@ function englishCue(value, fallback = "screenplay-derived subject") {
   return text || fallback;
 }
 
+function canonicalAssetDocumentFactsPrompt(asset) {
+  const subject = compactLine(asset?.label || "");
+  const evidence = compactLine(asset?.evidence || "");
+  const visual = compactLine(asset?.visual || "");
+  if (!subject && !evidence && !visual) return "";
+  return [
+    "CANONICAL ASSET DOCUMENT FACTS (HARD CONTENT SOURCE):",
+    subject ? `资产文档主体：${subject}` : "",
+    evidence ? `资产文档剧本依据：${evidence}` : "",
+    visual ? `资产文档视觉解析：${visual}` : "",
+    "以上资产文档事实优先于上方英文模板中缺失、泛化或矛盾的描述；不得改成其他人物、地点、物件、服装或事件。",
+  ].filter(Boolean).join("\n");
+}
+
 function textToImagePrompt(asset) {
+  const prompt = baseTextToImagePrompt(asset);
+  return [prompt, canonicalAssetDocumentFactsPrompt(asset)].filter(Boolean).join("\n\n");
+}
+
+function baseTextToImagePrompt(asset) {
   if (asset.textToImagePromptOverride) return withAssetMatchRule(asset.textToImagePromptOverride, asset);
   const object = englishCue(asset.label, asset.type === "Scene" ? "screenplay-derived location" : asset.type === "Character" ? "screenplay character" : "screenplay prop or insert detail");
   const evidence = englishCue(asset.evidence, object);

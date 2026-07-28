@@ -118,7 +118,7 @@ function parseAssets(markdown) {
     const start = match.index + match[0].length;
     const end = index + 1 < matches.length ? matches[index + 1].index : markdown.length;
     const section = markdown.slice(start, end).trim();
-    const prompt = extractTextToImagePrompt(section);
+    const prompt = [extractTextToImagePrompt(section), extractAssetDocumentFacts(section)].filter(Boolean).join("\n\n");
     return {
       type: match[1],
       name: match[2],
@@ -134,6 +134,24 @@ function extractTextToImagePrompt(section) {
   const re = /文生图提示词(?:[^\n：:]*?)[:：]\s*```(?:text|txt|markdown|md)?\s*([\s\S]*?)```/i;
   const match = section.match(re);
   return (match?.[1] || section).trim();
+}
+
+function extractAssetDocumentFacts(section) {
+  const field = (label) => {
+    const match = String(section || "").match(new RegExp(`^${label}[:：]\\s*(.+)$`, "m"));
+    return (match?.[1] || "").trim();
+  };
+  const subject = field("剧本解析对象");
+  const evidence = field("剧本依据");
+  const visual = field("视觉解析");
+  if (!subject && !evidence && !visual) return "";
+  return [
+    "CANONICAL ASSET DOCUMENT FACTS (HARD CONTENT SOURCE):",
+    subject ? `Subject from the asset document: ${subject}` : "",
+    evidence ? `Screenplay evidence from the asset document: ${evidence}` : "",
+    visual ? `Visual design from the asset document: ${visual}` : "",
+    "These asset-document facts override any generic, missing, or contradictory subject details in the English prompt above. Do not invent a different person, place, object, costume, or event.",
+  ].filter(Boolean).join("\n");
 }
 
 function outputPath(root, asset) {
@@ -376,6 +394,7 @@ function styleReferenceGuidance(styleReferenceImage = "") {
     "STYLE REFERENCE INPUT RULES (HARD CONSTRAINT):",
     "The supplied style reference image is for STYLE ONLY. It is NOT a character identity reference, NOT a scene/location reference, NOT a prop reference, NOT a composition reference, and NOT a content reference.",
     "Generate the asset according to the visual style of the supplied style reference image.",
+    "The model receives an abstracted style swatch derived from the uploaded image; use it only to infer style and never reconstruct its source subject or composition.",
     "Borrow only: line weight, edge treatment, cel-shading/rendering language, color palette, saturation level, contrast, texture, lighting mood, surface finish, and overall art direction.",
     "Do not copy or import any person, face, body, clothing, pose, object, architecture, background, logo, text, layout, framing, or story content from the style reference image.",
     "The generated asset subject, identity, costume, prop, scene, layout contract, and screenplay evidence must come only from the current asset prompt.",
@@ -418,6 +437,7 @@ function referenceRoleFor(asset, mode = "generate", options = {}) {
 function styleReferenceRole() {
   return [
     "STYLE-ONLY reference image.",
+    "This input is an abstracted style swatch with recognizable subject content removed.",
     "Use this image only for art direction: line weight, outline style, cel-shading or rendering quality, color palette, saturation, contrast, texture, surface finish, lighting mood, and general visual language.",
     "Do not use it for identity, face, body, clothing, pose, object design, location, architecture, background, composition, readable text, logos, or story content.",
     "The output content must follow the text prompt and current asset type only.",
@@ -443,11 +463,71 @@ function styleReferenceAnchorPath(size, logsDir) {
   return anchor;
 }
 
+function styleReferenceSwatchPath(size, styleReferenceImage, logsDir) {
+  const match = String(size || "1280x720").match(/^(\d+)x(\d+)$/);
+  const width = Number(match?.[1] || 1280);
+  const height = Number(match?.[2] || 720);
+  const scale = Math.min(1, 1280 / width, 1280 / height);
+  const renderWidth = Math.max(256, Math.round(width * scale));
+  const renderHeight = Math.max(256, Math.round(height * scale));
+  let fingerprint = "style";
+  try {
+    const stat = fs.statSync(styleReferenceImage);
+    fingerprint = crypto
+      .createHash("sha1")
+      .update(`${path.resolve(styleReferenceImage)}:${stat.size}:${stat.mtimeMs}`)
+      .digest("hex")
+      .slice(0, 12);
+  } catch {
+    fingerprint = crypto.createHash("sha1").update(path.resolve(styleReferenceImage)).digest("hex").slice(0, 12);
+  }
+  const swatch = path.join(
+    logsDir || os.tmpdir(),
+    `.pixel-toys-style-swatch-${fingerprint}-${renderWidth}x${renderHeight}.png`,
+  );
+  if (fs.existsSync(swatch) && fs.statSync(swatch).size > 1000) return swatch;
+  const py = [
+    "from PIL import Image, ImageDraw, ImageFilter, ImageOps",
+    "import sys",
+    "source_path, output_path = sys.argv[1], sys.argv[2]",
+    "width, height = int(sys.argv[3]), int(sys.argv[4])",
+    "source = Image.open(source_path).convert('RGB')",
+    "small = ImageOps.fit(source, (8, 6), method=Image.Resampling.LANCZOS)",
+    "mood = small.resize((width, height), Image.Resampling.BICUBIC)",
+    "mood = mood.filter(ImageFilter.GaussianBlur(radius=max(18, min(width, height) // 16)))",
+    "mood = ImageOps.posterize(mood, 4)",
+    "palette_image = source.resize((64, 64), Image.Resampling.LANCZOS).quantize(colors=8, method=Image.Quantize.MEDIANCUT)",
+    "raw_palette = palette_image.getpalette()",
+    "colors = [tuple(raw_palette[index * 3:index * 3 + 3]) for count, index in sorted(palette_image.getcolors(64 * 64), reverse=True)[:8]]",
+    "draw = ImageDraw.Draw(mood)",
+    "bar_top = int(height * 0.82)",
+    "draw.rectangle((0, bar_top, width, height), fill=(245, 245, 245))",
+    "gap = max(2, width // 240)",
+    "swatch_width = max(1, (width - gap * 9) // max(1, len(colors)))",
+    "for index, color in enumerate(colors):",
+    "    left = gap + index * (swatch_width + gap)",
+    "    draw.rectangle((left, bar_top + gap, left + swatch_width, height - gap), fill=color)",
+    "mood.save(output_path, 'PNG', optimize=True)",
+  ].join("\n");
+  try {
+    fs.mkdirSync(path.dirname(swatch), { recursive: true });
+    execFileSync(
+      "python3",
+      ["-c", py, styleReferenceImage, swatch, String(renderWidth), String(renderHeight)],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 },
+    );
+  } catch (error) {
+    throw new Error(`cannot create abstract style-reference swatch: ${error.message}`);
+  }
+  return swatch;
+}
+
 function imageInputsFor(size, referenceImages = [], styleReferenceImage = "", logsDir = os.tmpdir()) {
   const refs = (referenceImages || []).filter(Boolean);
   const primaryReference = refs[0] || (styleReferenceImage ? styleReferenceAnchorPath(size, logsDir) : "");
+  const styleReferenceInput = styleReferenceImage ? styleReferenceSwatchPath(size, styleReferenceImage, logsDir) : "";
   return primaryReference
-    ? [primaryReference, ...(styleReferenceImage ? [styleReferenceImage] : []), ...refs.slice(refs[0] ? 1 : 0)]
+    ? [primaryReference, ...(styleReferenceInput ? [styleReferenceInput] : []), ...refs.slice(refs[0] ? 1 : 0)]
     : [];
 }
 
@@ -1601,7 +1681,8 @@ async function runEdit(asset, outPath, size, editInstruction, logsDir, reference
   };
   try {
     const primaryTimeoutSeconds = timeoutSecondsFor(asset, "primary");
-    const extraReferenceImages = [...(styleReferenceImage ? [styleReferenceImage] : []), ...referenceImages];
+    const styleReferenceInput = styleReferenceImage ? styleReferenceSwatchPath(size, styleReferenceImage, logsDir) : "";
+    const extraReferenceImages = [...(styleReferenceInput ? [styleReferenceInput] : []), ...referenceImages];
     const extraReferenceRoles = [
       ...(styleReferenceImage ? [styleReferenceRole()] : []),
       ...referenceImages.map((image) => referenceRoleFor(asset, "edit", {

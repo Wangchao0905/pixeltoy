@@ -15893,7 +15893,7 @@ function assetMatchCode(type, name = "", index = 0) {
 
 function extractGlobalStyleGuidance(source = "") {
   const lines = String(source || "").split(/\r?\n/);
-  const headingPattern = /^(?:[◆◇]\s*)?(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|整体画风|艺术风格|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格)(?:\s*[（(][^）)]*[）)])?(?:\s*[：:]\s*(.*))?$/u;
+  const headingPattern = /^(?:[◆◇]\s*)?(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格)(?:\s*[（(][^）)]*[）)])?(?:\s*[：:]\s*(.*))?$/u;
   let collecting = false;
   const collected = [];
   for (const rawLine of lines) {
@@ -15912,8 +15912,47 @@ function extractGlobalStyleGuidance(source = "") {
   return compactLine(collected.join(" ")).slice(0, 1600);
 }
 
+const ASSET_STYLE_IGNORE_RE = /待正式资产图生成并绑定后确定|最终画风由资产风格选择控制|不预设画风|selected\s+asset\s+style|leave\s+final\s+rendering\s+style|final\s+rendering\s+style\s+to\s+the\s+selected\s+asset\s+style/iu;
+const ASSET_STYLE_SIGNAL_RE = /风格|画风|美术|渲染|动画|插画|漫画|卡通|动漫|写实|电影感|赛璐璐|平涂|轮廓|线条|色调|色彩|光影|材质|质感|胶片|像素|水彩|油画|三维|二维|3D|CG|定格|低多边形|黏土|霓虹|复古|极简|style|rendering|animation|illustration|comic|cartoon|realistic|cinematic|cel[- ]?shad|linework|palette|lighting|texture|film/iu;
+const ASSET_STYLE_FIELD_RE = /^(?:[◆◇]\s*)?(全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|风格锚点|核心美学|调色板逻辑|视觉解析|视觉描述|视觉分析|渲染风格|渲染语言)(?:\s*[（(][^）)]*[）)])?\s*[：:]\s*(.+)$/u;
+
+function assetStyleClauses(value = "") {
+  return String(value || "")
+    .split(/[，,；;。.!！?？\n]/u)
+    .map((part) => compactLine(part).replace(/^[-•*·]\s*/, ""))
+    .filter((part) => part && !ASSET_STYLE_IGNORE_RE.test(part) && ASSET_STYLE_SIGNAL_RE.test(part));
+}
+
+function extractAssetStyleGuidance(source = "") {
+  const text = String(source || "");
+  const explicit = extractGlobalStyleGuidance(text);
+  const candidates = [];
+  if (explicit && !ASSET_STYLE_IGNORE_RE.test(explicit)) candidates.push(explicit);
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = compactLine(rawLine);
+    if (!line) continue;
+    const field = line.match(ASSET_STYLE_FIELD_RE);
+    if (field) {
+      const label = field[1];
+      const value = field[2];
+      if (/视觉解析|视觉描述|视觉分析|渲染语言/.test(label)) candidates.push(...assetStyleClauses(value));
+      else if (!ASSET_STYLE_IGNORE_RE.test(value)) candidates.push(compactLine(value));
+      continue;
+    }
+    if (ASSET_STYLE_SIGNAL_RE.test(line) && !ASSET_STYLE_IGNORE_RE.test(line)) candidates.push(...assetStyleClauses(line));
+  }
+  return [...new Set(candidates.map((candidate) => compactLine(candidate)).filter(Boolean))].join("，").slice(0, 1600);
+}
+
+function assetStylePromptLine(globalStyle = "") {
+  const style = compactLine(globalStyle);
+  return style
+    ? `视觉风格：${style}`
+    : "视觉风格约束：严格遵循资产文档中明确的画风、线条、色彩、材质和光影，不得自行转换为其他风格。";
+}
+
 function buildRuleAssets(script, worldProfile) {
-  const globalStyle = extractGlobalStyleGuidance(script);
+  const globalStyle = extractAssetStyleGuidance(script);
   const manualBlocks = extractManualAssetPromptBlocks(script);
   const structuredDescriptions = parseStructuredAssetDescriptions(script);
   const structuredTypes = new Set(structuredDescriptions.map((asset) => asset.type));
@@ -16495,7 +16534,7 @@ function isModelAssetLabelUsable(label) {
 
 function buildModelDiscoveredAssets(analyzerResult, existingAssets, worldProfile, script = "") {
   if (!analyzerResult?.ok) return [];
-  const globalStyle = extractGlobalStyleGuidance(script);
+  const globalStyle = extractAssetStyleGuidance(script);
   const discovered = [];
   const existingIds = new Set(existingAssets.map((asset) => asset.name));
   for (const entry of allAnalyzerItems(analyzerResult.data)) {
@@ -16785,7 +16824,7 @@ function isCoverageItemCompatible(type, item) {
 
 function buildCoverageAssets(coverageResult, existingAssets, worldProfile, script = "") {
   if (!coverageResult?.ok) return [];
-  const globalStyle = extractGlobalStyleGuidance(script);
+  const globalStyle = extractAssetStyleGuidance(script);
   const data = coverageResult.data || {};
   const discovered = [];
   const entries = [
@@ -19421,8 +19460,11 @@ function seedancePromptForShot(shot, index, dialogueLanguage) {
 function withGlobalStylePrompt(prompt, globalStyle) {
   const text = String(prompt || "").trim();
   const style = compactLine(globalStyle || "");
-  if (!text || !style || text.includes(style)) return text;
-  return [`视觉风格：${style}`, text].join("\n");
+  const styleLine = assetStylePromptLine(style);
+  if (!text) return styleLine;
+  if (style && text.includes(`视觉风格：${style}`)) return text;
+  if (!style && /视觉风格(?:约束)?[：:]/u.test(text)) return text;
+  return [styleLine, text].join("\n");
 }
 
 function assetPromptSubject(value = "") {
@@ -19489,21 +19531,23 @@ function assetDocumentFactsPrompt(asset = {}) {
 }
 
 function isLegacyAssetPrompt(prompt = "") {
-  return /资产文档事实|资产类型[：:]|资产用途[：:]|解析来源[：:]|匹配暗号[：:]|只根据以上资产文档事实|固定制作规格/u.test(String(prompt || ""));
+  return /资产文档事实|资产类型[：:]|资产用途[：:]|解析来源[：:]|匹配暗号[：:]|只根据以上资产文档事实|固定制作规格|Production matching code|Character identity sheet|Text-to-image task|Rendering style|selected\s+asset\s+style|leave\s+final\s+rendering\s+style|Screenplay evidence cue|Negative constraints|do not hardcode[\s\S]{0,80}style/iu.test(String(prompt || ""));
 }
 
 function assetDocumentPromptFor(asset) {
   const storedPrompt = String(asset?.textToImagePromptOverride || "").trim();
-  const globalStyle = compactLine(asset?.globalStyle || extractGlobalStyleGuidance(storedPrompt));
+  const globalStyle = compactLine(
+    asset?.globalStyle ||
+      extractAssetStyleGuidance(asset?.visual) ||
+      extractAssetStyleGuidance(asset?.evidence) ||
+      extractAssetStyleGuidance(storedPrompt),
+  );
   const cleanedStoredPrompt = conciseAssetPromptText(storedPrompt);
   const storedIsChinese = /[\u4e00-\u9fff]/u.test(cleanedStoredPrompt);
   const content = storedPrompt && !isLegacyAssetPrompt(storedPrompt) && (storedIsChinese || asset?.analyzerSource === "manual")
     ? cleanedStoredPrompt
     : assetDocumentFactsPrompt(asset);
-  return [
-    globalStyle ? `视觉风格：${globalStyle}` : "",
-    content,
-  ].filter(Boolean).join("\n");
+  return withGlobalStylePrompt(content, globalStyle);
 }
 
 function textToImagePrompt(asset) {
@@ -19658,10 +19702,15 @@ function normalizeManifestItem(item, index = 0) {
 
 function hydrateManifestGlobalStyle(rawManifest, source = "") {
   const manifest = normalizeAssetManifest(rawManifest || {});
-  const globalStyle = extractGlobalStyleGuidance(source);
+  const globalStyle = extractAssetStyleGuidance(source);
   if (!manifest.items.length) return manifest;
   const items = manifest.items.map((item) => {
-    const effectiveGlobalStyle = globalStyle || item.globalStyle || extractGlobalStyleGuidance(item.textToImagePrompt);
+    const effectiveGlobalStyle =
+      globalStyle ||
+      item.globalStyle ||
+      extractAssetStyleGuidance(item.visual) ||
+      extractAssetStyleGuidance(item.evidence) ||
+      extractAssetStyleGuidance(item.textToImagePrompt);
     const asset = {
       type: item.type,
       name: item.id,
@@ -23757,6 +23806,7 @@ module.exports = {
       assetManifestFromAssets,
       buildRuleAssets,
       extractGlobalStyleGuidance,
+      extractAssetStyleGuidance,
       hydrateManifestGlobalStyle,
       parseDocxDocumentXml,
       parseStructuredAssetDescriptions,

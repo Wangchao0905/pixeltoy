@@ -113,7 +113,7 @@ function readAssetReferenceMap(filePath = "") {
 
 function extractGlobalStyleFromMarkdown(markdown = "") {
   const lines = String(markdown || "").split(/\r?\n/).map((line) => line.trim());
-  const label = "(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|整体画风|艺术风格|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格)";
+  const label = "(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格)";
   const inlinePattern = new RegExp(`^(?:[◆◇]\\s*)?${label}(?:\\s*[（(][^）)]*[）)])?\\s*[：:]\\s*(.+)$`, "u");
   const headingPattern = new RegExp(`^(?:[◆◇]\\s*)?${label}(?:\\s*[（(][^）)]*[）)])?\\s*$`, "u");
   for (const line of lines) {
@@ -129,6 +129,35 @@ function extractGlobalStyleFromMarkdown(markdown = "") {
     collected.push(line.replace(/^[-•*·]\s*/, ""));
   }
   return collected.join(" ").replace(/\s+/g, " ").trim();
+}
+
+const ASSET_STYLE_IGNORE_RE = /待正式资产图生成并绑定后确定|最终画风由资产风格选择控制|不预设画风|selected\s+asset\s+style|leave\s+final\s+rendering\s+style|final\s+rendering\s+style\s+to\s+the\s+selected\s+asset\s+style/iu;
+const ASSET_STYLE_SIGNAL_RE = /风格|画风|美术|渲染|动画|插画|漫画|卡通|动漫|写实|电影感|赛璐璐|平涂|轮廓|线条|色调|色彩|光影|材质|质感|胶片|像素|水彩|油画|三维|二维|3D|CG|定格|低多边形|黏土|霓虹|复古|极简|style|rendering|animation|illustration|comic|cartoon|realistic|cinematic|cel[- ]?shad|linework|palette|lighting|texture|film/iu;
+
+function assetStyleClauses(value = "") {
+  return String(value || "")
+    .split(/[，,；;。.!！?？\n]/u)
+    .map((part) => part.replace(/\s+/g, " ").trim().replace(/^[-•*·]\s*/, ""))
+    .filter((part) => part && !ASSET_STYLE_IGNORE_RE.test(part) && ASSET_STYLE_SIGNAL_RE.test(part));
+}
+
+function extractAssetStyleGuidanceFromMarkdown(markdown = "") {
+  const explicit = extractGlobalStyleFromMarkdown(markdown);
+  const candidates = [];
+  if (explicit && !ASSET_STYLE_IGNORE_RE.test(explicit)) candidates.push(explicit);
+  const fieldPattern = /^(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|视觉解析|视觉描述|视觉分析|渲染风格|渲染语言)\s*[（(]?[^）)]*[）)]?\s*[：:]\s*(.+)$/u;
+  for (const rawLine of String(markdown || "").split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+/g, " ").trim();
+    if (!line) continue;
+    const field = line.match(fieldPattern);
+    if (field) {
+      if (/视觉解析|视觉描述|视觉分析|渲染语言/u.test(line.split(/[：:]/u, 1)[0])) candidates.push(...assetStyleClauses(field[1]));
+      else if (!ASSET_STYLE_IGNORE_RE.test(field[1])) candidates.push(field[1]);
+      continue;
+    }
+    if (ASSET_STYLE_SIGNAL_RE.test(line) && !ASSET_STYLE_IGNORE_RE.test(line)) candidates.push(...assetStyleClauses(line));
+  }
+  return [...new Set(candidates.map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean))].join("，").slice(0, 1600);
 }
 
 function assetPromptSubject(value = "") {
@@ -152,7 +181,7 @@ function conciseAssetPromptText(prompt = "") {
     if (!line) continue;
     if (/^资产文档事实(?:（[^）]*）)?[：:]?$/u.test(line)) continue;
     if (/^(?:固定制作规格|资产类型|资产用途|解析来源|匹配暗号|只根据以上资产文档事实|不得把资产编号)/u.test(line)) continue;
-    if (/^(?:全局视觉风格|视觉风格)(?:（[^）]*）)?[：:]/u.test(line)) continue;
+    if (/^(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风)(?:（[^）]*）)?[：:]/u.test(line)) continue;
     let match = line.match(/^(?:资产主体|剧本解析对象)[：:]\s*(.+)$/u);
     if (match) {
       push(`主体：${assetPromptSubject(match[1])}`);
@@ -181,14 +210,14 @@ function conciseAssetPromptText(prompt = "") {
 function parseAssets(markdown) {
   const re = /^## New (Character|Scene|Prop|Insert|Storyboard) Asset:\s+([^\r\n]+?)\s*$/gm;
   const matches = [...markdown.matchAll(re)];
-  const documentGlobalStyle = extractGlobalStyleFromMarkdown(markdown);
+  const documentGlobalStyle = extractAssetStyleGuidanceFromMarkdown(markdown);
   const assets = matches.map((match, index) => {
     const start = match.index + match[0].length;
     const end = index + 1 < matches.length ? matches[index + 1].index : markdown.length;
     const section = markdown.slice(start, end).trim();
     const manualPrompt = isExplicitManualAssetPrompt(section) ? extractTextToImagePrompt(section) : "";
     const documentPrompt = extractTextToImagePrompt(section);
-    const sectionGlobalStyle = section.match(/^全局视觉风格(?:[（(][^）)]*[）)])?\s*[:：]\s*(.+)$/mu)?.[1]?.trim() || documentGlobalStyle;
+    const sectionGlobalStyle = extractAssetStyleGuidanceFromMarkdown(section) || documentGlobalStyle;
     const documentFacts = extractAssetDocumentFacts(section, sectionGlobalStyle);
     const usableDocumentPrompt = /[\u4e00-\u9fff]/u.test(documentPrompt) ? conciseAssetPromptText(documentPrompt) : "";
     const basePrompt = match[1] === "Storyboard"
@@ -227,7 +256,7 @@ function extractAssetDocumentFacts(section, fallbackGlobalStyle = "") {
   const subject = field("剧本解析对象");
   const evidence = field("剧本依据");
   const visual = field("视觉解析");
-  const globalStyle = field("全局视觉风格") || field("视觉风格") || fallbackGlobalStyle;
+  const globalStyle = field("全局视觉风格") || field("视觉风格") || extractAssetStyleGuidanceFromMarkdown(section) || fallbackGlobalStyle;
   if (!subject && !evidence && !visual && !globalStyle) return "";
   const description = visual && !/^使用剧本依据和本地规则生成[。.]?$/u.test(visual) ? visual : evidence;
   return [
@@ -294,7 +323,16 @@ function fixedAssetPromptFor(asset) {
 }
 
 function promptFor(asset) {
-  return [asset.prompt, fixedAssetPromptFor(asset)].filter(Boolean).join("\n\n");
+  const style = asset.globalStyle || extractAssetStyleGuidanceFromMarkdown(asset.prompt);
+  const styleLine = style
+    ? `视觉风格：${style}`
+    : "视觉风格约束：严格遵循资产文档中明确的画风、线条、色彩、材质和光影，不得自行转换为其他风格。";
+  const prompt = String(asset.prompt || "").trim();
+  return [
+    prompt,
+    prompt.includes(styleLine) || (!style && /视觉风格约束：/.test(prompt)) ? "" : styleLine,
+    fixedAssetPromptFor(asset),
+  ].filter(Boolean).join("\n\n");
 }
 
 function referenceTypeFromName(imagePath = "") {

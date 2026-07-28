@@ -94,6 +94,16 @@ const globalStyleAssetDescription = `
 assert.match(parser.extractGlobalStyleGuidance(globalStyleAssetDescription), /恶搞之家风格/);
 assert.match(parser.extractGlobalStyleGuidance("全局视觉风格：恶搞之家风格的二维动画"), /恶搞之家风格/, "inline 全局视觉风格 field must be recognized");
 assert.match(parser.extractGlobalStyleGuidance("全局视觉风格（来自资产文档）：恶搞之家风格的二维动画"), /恶搞之家风格/, "annotated 全局视觉风格 field must be recognized");
+assert.match(
+  parser.extractAssetStyleGuidance("视觉解析：恶搞之家风格的二维动画，粗黑轮廓，平涂色块，荧光橙外卖服装。"),
+  /恶搞之家风格.*粗黑轮廓.*平涂色块/,
+  "inline visual analysis must contribute the actual style cues",
+);
+assert.doesNotMatch(
+  parser.extractAssetStyleGuidance("视觉解析：待正式资产图生成并绑定后确定，最终画风由资产风格选择控制。"),
+  /待正式|selected asset style|最终画风由/u,
+  "placeholder style instructions must not become an asset style",
+);
 const styledRulePlan = parser.buildRuleAssets(
   globalStyleAssetDescription,
   parser.inferWorldProfile(globalStyleAssetDescription),
@@ -139,6 +149,37 @@ const hydratedLegacyManifest = parser.hydrateManifestGlobalStyle(legacyManifest,
 assert.ok(hydratedLegacyManifest.items.every((asset) => asset.globalStyle.includes("恶搞之家风格")), "legacy manifests must receive global style from the source document");
 assert.match(hydratedLegacyManifest.items[0].textToImagePrompt, /视觉风格：恶搞之家风格/);
 assert.doesNotMatch(hydratedLegacyManifest.items[0].textToImagePrompt, /资产文档事实|资产类型|剧本依据|视觉解析|唯一来源/);
+
+const inlineVisualStyleManifest = parser.hydrateManifestGlobalStyle(
+  {
+    items: [{
+      id: "C001_HAOXUE_CHARACTER_SHEET",
+      type: "Character",
+      label: "P01 郝雪",
+      visual: "视觉解析：恶搞之家风格的二维动画，粗黑轮廓，平涂色块。",
+      evidence: "24岁女，荧光橙外卖骑手棉服。",
+      textToImagePrompt: "主体：郝雪\n24岁女，荧光橙外卖骑手棉服。",
+    }],
+  },
+  "",
+);
+assert.match(inlineVisualStyleManifest.items[0].globalStyle, /恶搞之家风格/);
+assert.match(inlineVisualStyleManifest.items[0].textToImagePrompt, /视觉风格：恶搞之家风格/);
+
+const englishLegacyManifest = parser.hydrateManifestGlobalStyle(
+  {
+    items: [{
+      id: "C002_ENGLISH_LEGACY_CHARACTER_SHEET",
+      type: "Character",
+      label: "郝雪",
+      visual: "恶搞之家风格的二维动画，粗黑轮廓。",
+      textToImagePrompt: "Production matching code: PT-C002\nCharacter identity sheet\nRendering style: leave final rendering style to the selected asset style\nText-to-image task: generic character",
+    }],
+  },
+  "",
+);
+assert.match(englishLegacyManifest.items[0].textToImagePrompt, /视觉风格：恶搞之家风格/);
+assert.doesNotMatch(englishLegacyManifest.items[0].textToImagePrompt, /Production matching code|selected asset style/i);
 
 const modelPromptManifest = parser.assetManifestFromAssets({
   title: "Model prompt retention regression",

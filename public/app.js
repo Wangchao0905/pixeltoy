@@ -5906,14 +5906,35 @@ function assetPromptDraft(assetName) {
   return state.assetPromptDrafts.get(assetName) || null;
 }
 
+function assetStyleGuidanceFromText(value = "") {
+  const ignored = /待正式资产图生成并绑定后确定|最终画风由资产风格选择控制|不预设画风|selected\s+asset\s+style|leave\s+final\s+rendering\s+style/iu;
+  const signals = /风格|画风|美术|渲染|动画|插画|漫画|卡通|动漫|写实|电影感|赛璐璐|平涂|轮廓|线条|色调|色彩|光影|材质|质感|胶片|像素|水彩|油画|三维|二维|3D|CG|定格|低多边形|黏土|霓虹|复古|极简|style|rendering|animation|illustration|comic|cartoon|realistic|cinematic|linework|palette|lighting|texture|film/iu;
+  const candidates = [];
+  for (const rawLine of String(value || "").split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+/g, " ").trim();
+    if (!line || ignored.test(line)) continue;
+    const field = line.match(/^(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|视觉解析|视觉描述|视觉分析|渲染风格|渲染语言)\s*[（(]?[^）)]*[）)]?\s*[：:]\s*(.+)$/u);
+    const source = field?.[1] || line;
+    const explicit = !!field && !/视觉解析|视觉描述|视觉分析|渲染语言/u.test(field[0]);
+    const parts = explicit ? [source] : source.split(/[，,；;。.!！?？]/u);
+    for (const part of parts) {
+      const style = part.trim();
+      if (style && !ignored.test(style) && signals.test(style) && !candidates.includes(style)) candidates.push(style);
+    }
+  }
+  return candidates.join("，").slice(0, 1600);
+}
+
 function effectiveAssetPrompt(assetName) {
   const item = assetPromptItem(assetName);
   if (!item) return "";
   const saved = String(item.textToImagePrompt || "").trim();
-  const globalStyle = String(item.globalStyle || "").trim();
-  const styleLine = globalStyle && !saved.includes(globalStyle) ? `视觉风格：${globalStyle}` : "";
-  const legacyPrompt = /资产文档事实|资产类型[：:]|资产用途[：:]|解析来源[：:]|匹配暗号[：:]|只根据以上资产文档事实|固定制作规格/.test(saved);
-  if (saved && /[\u4e00-\u9fff]/.test(saved) && !legacyPrompt) return [styleLine, saved].filter(Boolean).join("\n");
+  const globalStyle = String(item.globalStyle || assetStyleGuidanceFromText(item.visual) || assetStyleGuidanceFromText(item.evidence) || assetStyleGuidanceFromText(saved)).trim();
+  const styleLine = globalStyle
+    ? `视觉风格：${globalStyle}`
+    : "视觉风格约束：严格遵循资产文档中明确的画风、线条、色彩、材质和光影，不得自行转换为其他风格。";
+  const legacyPrompt = /资产文档事实|资产类型[：:]|资产用途[：:]|解析来源[：:]|匹配暗号[：:]|只根据以上资产文档事实|固定制作规格|Production matching code|Character identity sheet|Text-to-image task|Rendering style|selected\s+asset\s+style|leave\s+final\s+rendering\s+style|Screenplay evidence cue|Negative constraints/iu.test(saved);
+  if (saved && /[\u4e00-\u9fff]/.test(saved) && !legacyPrompt) return [saved.includes(styleLine) ? "" : styleLine, saved].filter(Boolean).join("\n");
   const subject = String(item.label || assetName)
     .replace(/^(?:[A-Z]{1,3}\d{1,4})(?:[_\s-]+|$)/i, "")
     .replace(/_(?:CHARACTER_SHEET|WIDE_ESTABLISHING|PROP|INSERT|STORYBOARD).*$/i, "")

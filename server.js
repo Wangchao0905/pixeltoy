@@ -15887,7 +15887,29 @@ function assetMatchCode(type, name = "", index = 0) {
   return `PT-${prefix}${number}`;
 }
 
+function extractGlobalStyleGuidance(source = "") {
+  const lines = String(source || "").split(/\r?\n/);
+  const headingPattern = /^(?:[◆◇]\s*)?(?:全局画风锚|全局画风|整体画风|视觉风格|风格锚点|核心美学|调色板逻辑)(?:\s*[：:]\s*(.*))?$/u;
+  let collecting = false;
+  const collected = [];
+  for (const rawLine of lines) {
+    const line = compactLine(rawLine);
+    if (!line) continue;
+    const heading = line.match(headingPattern);
+    if (!collecting) {
+      if (!heading) continue;
+      collecting = true;
+      if (heading[1]) collected.push(heading[1]);
+      continue;
+    }
+    if (/^◆|^◇/.test(line) || structuredAssetType(line) || /^#{1,2}\s+/.test(line)) break;
+    collected.push(line.replace(/^[-•*·]\s*/, ""));
+  }
+  return compactLine(collected.join(" ")).slice(0, 1600);
+}
+
 function buildRuleAssets(script, worldProfile) {
+  const globalStyle = extractGlobalStyleGuidance(script);
   const manualBlocks = extractManualAssetPromptBlocks(script);
   const structuredDescriptions = parseStructuredAssetDescriptions(script);
   const structuredTypes = new Set(structuredDescriptions.map((asset) => asset.type));
@@ -15946,7 +15968,7 @@ function buildRuleAssets(script, worldProfile) {
       return asset.lockedStructured ? sameAssetLabel(item.label, asset.label) : assetLabelConflict(item.label, asset.label);
     });
     if (duplicate) return;
-    assets.push(asset);
+    assets.push(globalStyle && !asset.globalStyle ? { ...asset, globalStyle } : asset);
   };
   for (const block of manualBlocks) {
     const typeIndex = assets.filter((asset) => asset.type === block.type).length + 1;
@@ -16007,7 +16029,7 @@ function buildRuleAssets(script, worldProfile) {
       });
     });
   }
-  return { assets, characters, locations, propCandidates };
+  return { assets, characters, locations, propCandidates, globalStyle };
 }
 
 function stripJsonFence(value) {
@@ -16469,6 +16491,7 @@ function isModelAssetLabelUsable(label) {
 
 function buildModelDiscoveredAssets(analyzerResult, existingAssets, worldProfile, script = "") {
   if (!analyzerResult?.ok) return [];
+  const globalStyle = extractGlobalStyleGuidance(script);
   const discovered = [];
   const existingIds = new Set(existingAssets.map((asset) => asset.name));
   for (const entry of allAnalyzerItems(analyzerResult.data)) {
@@ -16499,6 +16522,7 @@ function buildModelDiscoveredAssets(analyzerResult, existingAssets, worldProfile
         evidence,
         visual,
         textToImagePromptOverride: prompt,
+        globalStyle,
         worldProfile,
         analyzerSource: prompt || visual || evidence ? "model" : "rules",
         analyzerNote: prompt ? `资产解析模型：${analyzerResult.model}` : `模型新增资产，提示词使用本地规则补齐：${analyzerResult.model}`,
@@ -16757,6 +16781,7 @@ function isCoverageItemCompatible(type, item) {
 
 function buildCoverageAssets(coverageResult, existingAssets, worldProfile, script = "") {
   if (!coverageResult?.ok) return [];
+  const globalStyle = extractGlobalStyleGuidance(script);
   const data = coverageResult.data || {};
   const discovered = [];
   const entries = [
@@ -16785,6 +16810,7 @@ function buildCoverageAssets(coverageResult, existingAssets, worldProfile, scrip
       evidence,
       visual,
       textToImagePromptOverride: prompt,
+      globalStyle,
       worldProfile,
       analyzerSource: "model",
       analyzerNote: prompt ? `资产覆盖补漏模型：${coverageResult.model}` : `覆盖补漏模型发现缺失资产，提示词使用本地规则补齐：${coverageResult.model}`,
@@ -19388,12 +19414,27 @@ function seedancePromptForShot(shot, index, dialogueLanguage) {
   return seedancePromptBlock(shot, index, dialogueLanguage);
 }
 
+function withGlobalStylePrompt(prompt, globalStyle) {
+  const text = String(prompt || "").trim();
+  const style = compactLine(globalStyle || "");
+  if (!text || !style || text.includes(style)) return text;
+  return [`全局视觉风格（来自资产文档）：${style}`, text].join("\n");
+}
+
 function assetDocumentPromptFor(asset) {
-  if (asset?.analyzerSource === "manual" && asset?.textToImagePromptOverride) {
-    return String(asset.textToImagePromptOverride).trim();
+  const storedPrompt = String(asset?.textToImagePromptOverride || "").trim();
+  const globalStyle = compactLine(asset?.globalStyle || "");
+  // 已落盘的 manifest 保存的是完整中文事实提示词，直接复用，避免二次拼接造成内容漂移。
+  if (/^资产文档事实（/.test(storedPrompt)) {
+    return withGlobalStylePrompt(storedPrompt, globalStyle);
+  }
+  if (asset?.analyzerSource === "manual" && storedPrompt) {
+    return withGlobalStylePrompt(storedPrompt, globalStyle);
   }
   return [
     "资产文档事实（生图内容唯一来源）：",
+    globalStyle ? `全局视觉风格（来自资产文档）：${globalStyle}` : "",
+    storedPrompt ? `资产解析模型提示词：${storedPrompt}` : "",
     `资产类型：${asset?.type === "Character" ? "人物" : asset?.type === "Scene" ? "场景" : asset?.type === "Insert" ? "插入镜头" : "道具"}`,
     asset?.label ? `资产主体：${asset.label}` : "",
     asset?.evidence ? `剧本依据：${asset.evidence}` : "",
@@ -19424,6 +19465,7 @@ function assetManifestFromAssets({ title, script, worldProfile, assets, analyzer
               : "只作道具参考",
       evidence: asset.evidence || "",
       visual: asset.visual || "",
+      globalStyle: asset.globalStyle || "",
       source: asset.analyzerSource === "model" ? "model" : asset.analyzerSource === "manual" ? "manual" : "rules",
       note: asset.analyzerNote || "",
       textToImagePrompt: textToImagePrompt(asset),
@@ -19541,6 +19583,7 @@ function normalizeManifestItem(item, index = 0) {
     usage: compactLine(item?.usage || ""),
     evidence: compactLine(item?.evidence || ""),
     visual: compactLine(item?.visual || ""),
+    globalStyle: compactLine(item?.globalStyle || "").slice(0, 1600),
     source: item?.source === "model" ? "model" : item?.source === "manual" ? "manual" : "rules",
     note: compactLine(item?.note || ""),
     textToImagePrompt: String(item?.textToImagePrompt || "").trim().slice(0, 4000),
@@ -19709,6 +19752,7 @@ function manifestItemsToAssets(manifest) {
     matchCode: item.matchCode || assetMatchCode(item.type, item.id),
     evidence: item.evidence,
     visual: item.visual,
+    globalStyle: item.globalStyle,
     worldProfile: manifest.worldProfile || {},
     analyzerSource: item.source,
     analyzerNote: item.note,
@@ -19775,6 +19819,7 @@ function assetPromptsFromManifest(manifest) {
       : asset.analyzerSource === "model"
         ? `资产解析模型：${manifest.analyzer?.model || ""}`
         : asset.analyzerNote || "本地规则解析";
+  const globalStyleLine = (asset) => asset.globalStyle ? `全局视觉风格：${asset.globalStyle}` : "";
 
   return `# ${title} 资产提示词
 
@@ -19821,6 +19866,7 @@ ${orderedAssets
 资产用途：人物身份参考图，用于后续图生视频保持角色一致。
 剧本依据：${asset.evidence}
 视觉解析：${asset.visual || "使用剧本依据和本地规则生成。"}
+${globalStyleLine(asset)}
 解析来源：${sourceText(asset)}
 匹配暗号：${asset.matchCode || assetMatchCode(asset.type, asset.name)}（用于故事版和视频提示词绑定，不要求画进资产图）
 
@@ -19836,6 +19882,7 @@ ${assetDocumentPromptFor(asset)}
 资产用途：场景/空间参考图，只用于环境、光线和空间结构。
 剧本依据：${asset.evidence}
 视觉解析：${asset.visual || "使用剧本依据和本地规则生成。"}
+${globalStyleLine(asset)}
 解析来源：${sourceText(asset)}
 匹配暗号：${asset.matchCode || assetMatchCode(asset.type, asset.name)}（用于故事版和视频提示词绑定，不要求画进资产图）
 
@@ -19850,6 +19897,7 @@ ${assetDocumentPromptFor(asset)}
 资产用途：特定镜头中的${asset.type === "Insert" ? "插入/证据细节参考" : "道具参考"}。
 剧本依据：${asset.evidence}
 视觉解析：${asset.visual || "使用剧本依据和本地规则生成。"}
+${globalStyleLine(asset)}
 解析来源：${sourceText(asset)}
 匹配暗号：${asset.matchCode || assetMatchCode(asset.type, asset.name)}（用于故事版和视频提示词绑定，不要求画进资产图）
 
@@ -23605,6 +23653,7 @@ module.exports = {
     assetParser: {
       assetManifestFromAssets,
       buildRuleAssets,
+      extractGlobalStyleGuidance,
       parseDocxDocumentXml,
       parseStructuredAssetDescriptions,
       correctAssetRolesFromEvidence,

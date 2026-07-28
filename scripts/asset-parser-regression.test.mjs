@@ -9,6 +9,7 @@ const server = require("../server.js");
 
 const parser = server.__test?.assetParser;
 assert.equal(typeof parser?.buildRuleAssets, "function", "asset parser test hook must expose buildRuleAssets");
+assert.equal(typeof parser?.extractGlobalStyleGuidance, "function", "asset parser test hook must expose extractGlobalStyleGuidance");
 assert.equal(typeof parser?.parseDocxDocumentXml, "function", "asset parser test hook must expose parseDocxDocumentXml");
 assert.equal(typeof parser?.parseStructuredAssetDescriptions, "function", "asset parser test hook must expose parseStructuredAssetDescriptions");
 assert.equal(typeof parser?.inferWorldProfile, "function", "asset parser test hook must expose inferWorldProfile");
@@ -66,6 +67,58 @@ const manifestLabels = parser
     modelName: "rules",
   })
   .items.map((asset) => `${asset.type}:${asset.label}`);
+
+const globalStyleAssetDescription = `
+◆ 全局画风锚
+恶搞之家风格的二维动画，粗黑外轮廓，平涂色块，夸张但克制的表情。
+
+◆ 人物卡 CHARACTERS
+① Peter（中年父亲）
+· 外观：中年男性，短棕发，白衬衫，绿色长裤。
+
+◆ 场景卡 SCENES
+① 客厅（家庭室内）
+· 外观：普通美式家庭客厅，暖色灯光。
+
+◆ 道具卡 PROPS
+① 遥控器（电视遥控器）
+· 外观：黑色塑料外壳，按键磨损。
+`;
+assert.match(parser.extractGlobalStyleGuidance(globalStyleAssetDescription), /恶搞之家风格/);
+const styledRulePlan = parser.buildRuleAssets(
+  globalStyleAssetDescription,
+  parser.inferWorldProfile(globalStyleAssetDescription),
+);
+assert.ok(styledRulePlan.assets.length >= 3, "global style fixture must produce the declared assets");
+assert.ok(styledRulePlan.assets.every((asset) => asset.globalStyle.includes("恶搞之家风格")), "global style must attach to every declared asset");
+const styledManifest = parser.assetManifestFromAssets({
+  title: "Global style regression",
+  script: globalStyleAssetDescription,
+  worldProfile: parser.inferWorldProfile(globalStyleAssetDescription),
+  assets: styledRulePlan.assets,
+  analyzerResult: { ok: false, model: "rules", reason: "test" },
+  modelName: "rules",
+});
+assert.ok(styledManifest.items.every((asset) => asset.globalStyle.includes("恶搞之家风格")), "manifest must persist global style");
+assert.match(styledManifest.items[0].textToImagePrompt, /全局视觉风格.*恶搞之家风格/);
+
+const modelPromptManifest = parser.assetManifestFromAssets({
+  title: "Model prompt retention regression",
+  script: "",
+  worldProfile: {},
+  assets: [{
+    type: "Character",
+    name: "C001_PETER_CHARACTER_SHEET",
+    label: "Peter",
+    evidence: "剧本中的父亲角色。",
+    visual: "中年男性，白衬衫。",
+    analyzerSource: "model",
+    textToImagePromptOverride: "中文资产文档提示词：恶搞之家风格的二维动画角色，保留明确的粗黑轮廓和平涂色块。",
+  }],
+  analyzerResult: { ok: true, model: "test-model" },
+  modelName: "test-model",
+});
+assert.match(modelPromptManifest.items[0].textToImagePrompt, /恶搞之家风格/);
 
 const audioCueScript = `
 【场景】宅·厨房

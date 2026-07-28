@@ -119,10 +119,12 @@ function parseAssets(markdown) {
     const end = index + 1 < matches.length ? matches[index + 1].index : markdown.length;
     const section = markdown.slice(start, end).trim();
     const manualPrompt = isExplicitManualAssetPrompt(section) ? extractTextToImagePrompt(section) : "";
+    const documentPrompt = extractTextToImagePrompt(section);
     const documentFacts = extractAssetDocumentFacts(section);
+    const canonicalPrompt = /^资产文档事实（/.test(documentPrompt) ? documentPrompt : "";
     const prompt = match[1] === "Storyboard"
-      ? [extractTextToImagePrompt(section), documentFacts].filter(Boolean).join("\n\n")
-      : manualPrompt || documentFacts;
+      ? [documentPrompt, documentFacts].filter(Boolean).join("\n\n")
+      : manualPrompt || canonicalPrompt || documentFacts;
     return {
       type: match[1],
       name: match[2],
@@ -152,9 +154,11 @@ function extractAssetDocumentFacts(section) {
   const subject = field("剧本解析对象");
   const evidence = field("剧本依据");
   const visual = field("视觉解析");
-  if (!subject && !evidence && !visual) return "";
+  const globalStyle = field("全局视觉风格");
+  if (!subject && !evidence && !visual && !globalStyle) return "";
   return [
     "资产文档事实（中文，生图内容唯一来源）：",
+    globalStyle ? `全局视觉风格：${globalStyle}` : "",
     subject ? `剧本解析对象：${subject}` : "",
     evidence ? `剧本依据：${evidence}` : "",
     visual ? `视觉解析：${visual}` : "",

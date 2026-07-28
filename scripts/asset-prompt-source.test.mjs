@@ -52,6 +52,24 @@ const manualMarkdown = `## New Prop Asset: P002_MANUAL_PROP
 `;
 const [manualAsset] = parseAssets(manualMarkdown);
 assert.equal(manualAsset.prompt, "木质旧收音机，暖棕色外壳，旋钮磨损，保留用户指定的复古质感。", "only explicitly marked manual prompts may bypass document facts");
+
+const generatedMarkdown = `## New Character Asset: C003_GENERATED_CHARACTER_SHEET
+
+剧本解析对象：一名父亲
+剧本依据：家庭客厅中的父亲。
+视觉解析：白衬衫，短棕发。
+全局视觉风格：恶搞之家风格的二维动画，粗黑外轮廓，平涂色块。
+
+资产文档生图提示词（中文事实源，提交给生图模型）：
+\`\`\`text
+资产文档事实（生图内容唯一来源）：
+全局视觉风格（来自资产文档）：恶搞之家风格的二维动画，粗黑外轮廓，平涂色块。
+资产解析模型提示词：中文资产文档提示词：恶搞之家风格的二维动画角色，白衬衫，短棕发。
+\`\`\`
+`;
+const [generatedAsset] = parseAssets(generatedMarkdown);
+assert.match(generatedAsset.prompt, /恶搞之家风格/);
+assert.match(promptFor(generatedAsset), /恶搞之家风格/);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /STYLE REFERENCE INPUT RULES \(HARD CONSTRAINT\)/);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /for STYLE ONLY/i);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /according to the visual style/i);

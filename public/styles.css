@@ -16410,9 +16410,14 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-episode-add { flex: 0 0 29px; min-height: 29px; border: 1px dashed var(--mv-line-2); border-radius: 4px; background: transparent; color: var(--mv-lime); font-size: 17px; line-height: 1; }
 .modern-episode-add:hover { border-color: var(--mv-line-2); }
 .modern-project-menu { display: grid; gap: 3px; margin: 6px 14px 0; padding: 4px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s1); box-shadow: var(--mv-e1); }
-.modern-project-menu button { display: flex; gap: 8px; align-items: center; width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--mv-mut); text-align: left; font-size: 11px; }
+.modern-project-menu button { display: flex; gap: 8px; align-items: center; width: 100%; min-height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--mv-mut); text-align: left; font-size: 11px; }
 .modern-project-menu button:hover, .modern-project-menu button:focus-visible { background: var(--mv-s3); color: var(--mv-tx); outline: 0; }
+.modern-project-menu button.is-active, .modern-project-menu button[aria-checked="true"] { border-color: rgba(200,255,46,.22); background: linear-gradient(90deg, rgba(200,255,46,.10), rgba(200,255,46,.02)); box-shadow: inset 2px 0 var(--mv-lime); color: var(--mv-tx); }
 .modern-project-menu button > span:first-child { width: 14px; color: var(--mv-lime); font-size: 14px; text-align: center; }
+.modern-project-menu button[data-duration-mode] > span:first-child { color: var(--mv-qt); }
+.modern-project-menu button.is-active > span:first-child, .modern-project-menu button[aria-checked="true"] > span:first-child { color: var(--mv-lime); }
+.modern-project-menu-divider { height: 1px; margin: 3px 4px; background: var(--mv-line); }
+.modern-project-menu-label { padding: 4px 8px 1px; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
 .modern-project-rename-form { display: grid; gap: 6px; margin: 6px 14px 0; padding: 9px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s1); box-shadow: var(--mv-e1); }
 .modern-project-rename-form label { color: var(--mv-qt); font-family: var(--mono); font-size: 10px; }
 .modern-project-rename-form input { width: 100%; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--mv-line-2); border-radius: 5px; background: var(--mv-bg); color: var(--mv-tx); font-size: 11px; }

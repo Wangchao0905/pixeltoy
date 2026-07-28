@@ -5010,6 +5010,8 @@ function renderModernDurationMode(data = state.project) {
     const selected = button.dataset.durationMode === mode;
     button.setAttribute("aria-checked", String(selected));
     button.classList.toggle("is-active", selected);
+    const icon = button.querySelector(".modern-duration-mode-icon");
+    if (icon) icon.textContent = selected ? "◉" : "◌";
   });
 }
 

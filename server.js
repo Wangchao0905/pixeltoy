@@ -17522,10 +17522,20 @@ function preferLongFreeShotDurations(count, target) {
   return durations;
 }
 
+function freeShotCountForTarget({ beats = [], targetDuration = 0, script = "" } = {}) {
+  const requested = Number(targetDuration);
+  const target = Number.isFinite(requested) && requested > 0
+    ? requested
+    : scriptTimecodeTotalSeconds(script || beats.join("\n")) || estimatedFreeDurationForBeats(beats);
+  return Math.max(1, Math.min(8, Math.ceil(target / VIDEO_MAX_SECONDS)));
+}
+
 function planEpisodeDuration({ shotCount, beats = [], targetDuration = 0, rawDurations = [], durationMode = DURATION_MODE_TK, script = "" } = {}) {
   const mode = normalizeDurationMode(durationMode);
   const minimumCount = mode === DURATION_MODE_FREE ? 1 : Math.ceil(VIDEO_MIN_EPISODE_SECONDS / VIDEO_MAX_SECONDS);
-  const count = Math.max(minimumCount, Math.min(8, Number(shotCount) || beats.length || minimumCount));
+  const count = mode === DURATION_MODE_FREE
+    ? freeShotCountForTarget({ beats, targetDuration, script })
+    : Math.max(minimumCount, Math.min(8, Number(shotCount) || beats.length || minimumCount));
   const normalizedBeats = Array.from({ length: count }, (_, index) => compactLine(beats[index] || ""));
   const target = targetDurationForBeats(count, normalizedBeats, targetDuration, mode, script);
   const weights = normalizedBeats.map((beat, index) => beatDurationWeight(beat, index, normalizedBeats, rawDurations[index]));
@@ -18744,6 +18754,10 @@ function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCoun
   );
   const freeMinAllowed = plannedShotCount * VIDEO_MIN_SECONDS;
   const freeMaxAllowed = Math.min(VIDEO_MAX_EPISODE_SECONDS, plannedShotCount * VIDEO_MAX_SECONDS);
+  const freeTarget = Number(durationPlan?.target) > 0 ? Number(durationPlan.target) : freeMinAllowed;
+  const freeRangePadding = 5;
+  const freeTargetMinAllowed = Math.max(freeMinAllowed, freeTarget - freeRangePadding);
+  const freeTargetMaxAllowed = Math.min(freeMaxAllowed, freeTarget + freeRangePadding);
   const durationRule = durationMode === DURATION_MODE_FREE
     ? `目标总时长 ≈ ${durationPlan?.target || 0} 秒，允许 ±1 秒对齐到整秒。每个镜头必须 4–15 秒。优先在转场和镜头切换处分段 —— 空间变了、时间跳了、动作单元结束了，就该切。这个优先级高于把镜头凑满 15 秒：如果第 13 秒就有转场，就切在 13 秒，不要硬拖到 15。没有转场可依据时，才尽量用满 15 秒以减少镜头数。只允许使用剧本已有内容，不要为了凑时长增补事件。`
     : "这是后端按剧情复杂度和剧情权重计算的参考时长。可以在 70-90 秒内微调，但不要平均分配，不要全部 12 秒；优先把完整剧情段落设计成接近 15 秒，每段必须 4-15 秒。只允许使用剧本已有剧情，信息不足时不要为了凑时长增补事件。";
@@ -18757,7 +18771,7 @@ function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCoun
             targetDuration: durationPlan.target,
             suggestedDurations: durationPlan.durations,
             allowedTotalRange: durationMode === DURATION_MODE_FREE
-              ? `${freeMinAllowed}-${freeMaxAllowed}s`
+              ? `${freeTargetMinAllowed}-${freeTargetMaxAllowed}s`
               : `${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS}s`,
             rule: durationRule,
           }
@@ -23555,6 +23569,8 @@ module.exports = {
       normalizeDurationMode,
       projectDurationMode,
       persistProjectDurationMode,
+      fullProjectState,
+      fullProjectStateForUser,
       scriptTimecodeTotalSeconds,
       preferredShotCount,
       targetDurationForBeats,

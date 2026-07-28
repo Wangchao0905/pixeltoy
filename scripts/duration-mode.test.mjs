@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import vm from "node:vm";
 
 const require = createRequire(import.meta.url);
 const serverSource = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
@@ -31,6 +32,9 @@ try {
   assert.equal(config.durationMode, FREE, "free mode must be stored in video config");
   assert.equal(config.settings.durationMode, FREE, "free mode must be stored in video config settings");
   assert.equal(duration.projectDurationMode(episodeRoot), FREE, "stored free mode must be read back");
+  assert.equal(duration.fullProjectState(episodeRoot).durationMode, FREE, "full project state must reflect the persisted free mode");
+  duration.persistProjectDurationMode(episodeRoot, TK);
+  assert.equal(duration.fullProjectState(episodeRoot).durationMode, TK, "full project state must reflect a persisted TK mode change");
 } finally {
   fs.rmSync(persistenceRoot, { recursive: true, force: true });
 }
@@ -57,6 +61,19 @@ assert.equal(
   duration.preferredShotCount(gudongScript, Array.from({ length: 6 }, () => "咕咚继续完成动作。"), FREE),
   4,
   "free preferred shot count must be the minimum count needed for a 49 second target at 15 seconds per shot",
+);
+const twentyBeats = Array.from({ length: 20 }, (_, index) => `咕咚完成第 ${index + 1} 个连续动作节拍。`);
+const freePlanWithTwentyBeats = duration.planEpisodeDuration({
+  shotCount: twentyBeats.length || duration.preferredShotCount(gudongScript, twentyBeats, FREE),
+  beats: twentyBeats,
+  durationMode: FREE,
+  script: gudongScript,
+});
+assert.equal(freePlanWithTwentyBeats.shotCount, 4, "free shot count must follow the 49 second target instead of beats.length");
+assert.deepEqual(
+  freePlanWithTwentyBeats.durations,
+  [15, 15, 15, 4],
+  "free mode must greedily fill four target-driven shots even when the script has twenty beats",
 );
 assert.equal(duration.targetDurationForBeats(5, beats, 49, TK, gudongScript), 70, "TK mode must retain the 70 second target floor");
 
@@ -146,11 +163,13 @@ assert.match(freePrompt.durationGuidance.rule, /优先在转场和镜头切换�
 assert.match(freePrompt.durationGuidance.rule, /13 秒.*转场.*15/, "free prompt must prefer a transition at 13 seconds over filling 15 seconds");
 assert.match(freePrompt.durationGuidance.rule, /只允许使用剧本已有内容/, "free prompt must forbid invented events");
 assert.doesNotMatch(freePrompt.durationGuidance.allowedTotalRange, /70/, "free prompt range must not retain the TK 70 second floor");
-assert.equal(freePrompt.durationGuidance.allowedTotalRange, "16-60s", "free prompt range must use four shots times 4-15 seconds and cap at 90 seconds");
+assert.equal(freePrompt.durationGuidance.allowedTotalRange, "44-54s", "free prompt range must stay within a narrow window around the 49 second target");
 const freeRange = freePrompt.durationGuidance.allowedTotalRange.match(/^(\d+)-(\d+)s$/);
 assert.ok(freeRange, "free prompt must expose a numeric allowed total range");
 assert.ok(Number(freeRange[1]) <= freePrompt.durationGuidance.targetDuration, "free prompt range lower bound must include the target duration");
 assert.ok(Number(freeRange[2]) >= freePrompt.durationGuidance.targetDuration, "free prompt range upper bound must include the target duration");
+assert.ok(Number(freeRange[1]) >= 4 * 4, "free prompt range lower bound must not undercut four shots at four seconds each");
+assert.ok(Number(freeRange[2]) <= 60, "free prompt range upper bound must be materially below the 90 second theoretical maximum");
 assert.doesNotMatch(tkPrompt.durationGuidance.rule, /优先在转场和镜头切换处分段/, "TK prompt must retain the existing duration rule");
 assert.equal(tkPrompt.durationGuidance.allowedTotalRange, "70-90s", "TK prompt must retain its 70-90 second allowed range");
 
@@ -173,6 +192,42 @@ assert.match(html, /id="modernDurationModeTk"[^>]*role="menuitemradio"/, "projec
 assert.match(html, /id="modernDurationModeFree"[^>]*role="menuitemradio"/, "project menu must expose free mode radio item");
 assert.match(appSource, /function projectDurationModeFrom\(/, "frontend must read the persisted project duration mode");
 assert.match(appSource, /function renderModernDurationMode[\s\S]*aria-checked/, "frontend must reflect the current mode in the menu");
+const renderModernDurationModeSource = appSource.slice(
+  appSource.indexOf("function renderModernDurationMode("),
+  appSource.indexOf("\nasync function persistProjectDurationMode(")
+);
+const modeButtons = ["tk", "free"].map((durationMode) => {
+  const attributes = new Map();
+  const icon = { textContent: "" };
+  const button = {
+    dataset: { durationMode },
+    classList: { toggle() {} },
+    querySelector(selector) {
+      return selector === ".modern-duration-mode-icon" ? icon : null;
+    },
+    setAttribute(name, value) {
+      attributes.set(name, value);
+    },
+  };
+  return { button, attributes, icon };
+});
+const renderContext = vm.createContext({
+  state: { durationMode: TK },
+  document: { querySelectorAll: () => modeButtons.map(({ button }) => button) },
+  normalizeDurationMode: (mode) => mode === FREE ? FREE : TK,
+  projectDurationModeFrom: (data) => data?.durationMode,
+});
+vm.runInContext(`${renderModernDurationModeSource}; globalThis.renderModernDurationMode = renderModernDurationMode;`, renderContext);
+renderContext.renderModernDurationMode({ durationMode: FREE });
+assert.notEqual(modeButtons[0].icon.textContent, modeButtons[1].icon.textContent, "selected and unselected duration modes must use different icons");
+assert.equal(modeButtons[1].icon.textContent, "◉", "free mode must show the selected icon after switching to free");
+assert.doesNotMatch(html, /data-duration-mode="(?:tk|free)"[^>]*>\s*<span[^>]*>◉|data-duration-mode="(?:tk|free)"[^>]*>\s*<span[^>]*>◌/, "duration mode icons must not be hardcoded in HTML");
+assert.match(html, /<div class="modern-project-menu-label">时长模式<\/div>/, "duration mode items must be grouped in the project menu");
+assert.match(
+  fs.readFileSync(new URL("../public/styles.css", import.meta.url), "utf8"),
+  /\.modern-project-menu button\.is-active,\s*\.modern-project-menu button\[aria-checked="true"\]\s*\{[^}]*var\(--mv-lime\)/,
+  "selected duration mode menu items must use the existing lime selection color",
+);
 assert.match(appSource, /modernProjectMenu[\s\S]*persistProjectDurationMode/, "project menu must bind mode changes");
 assert.match(appSource, /persistProjectDurationMode[\s\S]*\/duration-mode/, "frontend must write duration mode back to the server");
 assert.equal((appSource.match(/durationMode:\s*state\.durationMode/g) || []).length, 2, "draft and config requests must carry duration mode");

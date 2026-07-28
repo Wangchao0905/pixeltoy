@@ -190,7 +190,7 @@ const state = {
   loadProjectToken: null,
   activeWindowZ: Number(localStorage.getItem(layoutStorageKey(WINDOW_Z_KEY)) || 20),
   activeStudioTab: "assets",
-  modernStudio: { shotIndex: 0, copyTab: "story", queueFilter: "all", focus: "video", detailsOpen: false },
+  modernStudio: { shotIndex: 0, copyTab: "story", queueFilter: "all", focus: "video", detailsOpen: false, assetManageMode: false },
 };
 localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
 
@@ -1390,6 +1390,7 @@ async function runReferenceUploadWorkers(references, files, worker) {
 function showProjectHome() {
   stopSuperPixelGenerationPolls();
   state.modernStudio.detailsOpen = false;
+  state.modernStudio.assetManageMode = false;
   $("#exploreHome")?.classList.toggle("hidden", !state.exploreEnabled);
   $("#projectHome").classList.toggle("hidden", state.exploreEnabled);
   $("#studioModernShell")?.classList.add("hidden");
@@ -1887,6 +1888,7 @@ function resetProjectScopedUiState() {
   state.activeJobId = "";
   state.referenceKitEditingId = "";
   state.referenceKitDraft = null;
+  state.modernStudio.assetManageMode = false;
   state.selectedAssetId = "";
   state.assetPromptDrafts.clear();
   state.assetInspectorOpen = false;
@@ -5214,6 +5216,14 @@ function renderModernStudio(data = state.project) {
   $("#modernKitShot").textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")}` : "当前镜头";
   $("#modernKitNames").textContent = selected?.assets?.length ? selected.assets.join(" · ") : "等待故事板分配";
   $("#modernKitStatus").textContent = selected?.assets?.length ? "已引用" : "待确认";
+  const modernKitButton = $("#modernKitButton");
+  if (modernKitButton) {
+    const managingAssets = state.modernStudio.assetManageMode === true;
+    modernKitButton.textContent = managingAssets ? "完成管理" : "管理与修改";
+    modernKitButton.classList.toggle("is-active", managingAssets);
+    modernKitButton.setAttribute("aria-pressed", managingAssets ? "true" : "false");
+    modernKitButton.title = managingAssets ? "退出资产管理模式" : "进入资产管理模式，可删除解析资产";
+  }
   renderModernEpisodes(project, pct, total, completed);
   renderModernAssetResults(data);
   renderModernVideoQueue(shots, selectedIndex, data);
@@ -5299,6 +5309,7 @@ function renderModernAssetResults(data = state.project) {
   const items = Array.isArray(manifest.items) ? manifest.items : [];
   const confirmed = manifest.confirmed === true;
   const extracting = isAssetExtracting();
+  const manageMode = state.modernStudio.assetManageMode === true;
   const slots = data?.assetSlots || buildAssetSlots(manifest, data?.assets || []);
   const assetsByName = new Map((data?.assets || []).map((asset) => [asset.assetName || asset.name, asset]));
   const groups = [
@@ -5317,22 +5328,30 @@ function renderModernAssetResults(data = state.project) {
   status.textContent = extracting
     ? "模型正在分析资产文档…"
     : confirmed
-      ? `${items.length} 项已确认，可继续生成资产图`
+      ? manageMode ? `${items.length} 项已确认 · 管理模式：点击减号删除资产` : `${items.length} 项已确认，可继续生成资产图`
       : items.length
-        ? `${items.length} 项待确认分类`
+        ? manageMode ? `${items.length} 项待确认 · 管理模式：点击减号删除资产` : `${items.length} 项待确认分类`
         : "提交资产文档后，解析结果会显示在这里。";
   confirmButton.disabled = extracting || !items.length || confirmed;
   confirmButton.textContent = confirmed ? "已确认" : extracting ? "解析中…" : "确认分类";
+  const modernAssetChipHtml = (item) => {
+    const label = item.label || item.id || "未命名资产";
+    return `<span class="modern-asset-chip ${item.generate === false ? "is-skipped" : ""}${manageMode ? " is-manage-mode" : ""}" title="${escapeAttr(item.usage || item.note || "")}">
+      <span class="modern-asset-chip-label">${escapeHtml(label)}</span>
+      ${manageMode ? `<button class="modern-asset-chip-remove" type="button" data-modern-remove-asset="${escapeAttr(item.id)}" aria-label="删除资产 ${escapeAttr(label)}" title="删除 ${escapeAttr(label)}">−</button>` : ""}
+    </span>`;
+  };
   overview.innerHTML = groups
     .filter(([, list]) => list.length)
     .map(([label, list]) => `
       <section class="modern-asset-group">
         <header><span>${label}</span><strong>${list.length}</strong></header>
         <div class="modern-asset-chip-list">
-          ${list.map((item) => `<span class="modern-asset-chip ${item.generate === false ? "is-skipped" : ""}" title="${escapeAttr(item.usage || item.note || "")}">${escapeHtml(item.label || item.id || "未命名资产")}</span>`).join("")}
+          ${list.map(modernAssetChipHtml).join("")}
         </div>
       </section>`)
     .join("") || `<div class="modern-asset-manifest-empty">尚未解析资产。请在左侧输入或上传独立资产描述文档，然后点击“解析资产”。</div>`;
+  bindModernParsedAssetControls(overview);
 
   const galleryGroups = [
     ["人物", "CHARACTER", ["Character"]],
@@ -5368,6 +5387,41 @@ function renderModernAssetResults(data = state.project) {
         <div class="modern-asset-wall-grid">${list.map(renderModernAssetCard).join("")}</div>
       </section>`).join("")
     : `<div class="modern-asset-manifest-empty">确认资产分类后，生成的资产图会按人物、场景、道具显示在这里。</div>`;
+}
+
+function bindModernParsedAssetControls(root) {
+  root.querySelectorAll("[data-modern-remove-asset]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      button.disabled = true;
+      deleteModernParsedAsset(button.dataset.modernRemoveAsset).catch((error) => {
+        button.disabled = false;
+        toast(error.message);
+      });
+    });
+  });
+}
+
+async function deleteModernParsedAsset(assetId) {
+  if (!state.selectedId) return;
+  const id = String(assetId || "").trim();
+  const manifest = JSON.parse(JSON.stringify(state.project?.assetManifest || {}));
+  if (!Array.isArray(manifest.items)) throw new Error("还没有资产解析结果");
+  const item = manifest.items.find((entry) => entry.id === id);
+  if (!item) throw new Error(`找不到资产：${id}`);
+  manifest.items = manifest.items.filter((entry) => entry.id !== id);
+  if (!manifest.items.length) {
+    manifest.confirmed = false;
+    manifest.confirmedAt = "";
+  }
+  state.selectedAssetIds.delete(id);
+  const data = await api(`/api/project/${state.selectedId}/asset-manifest`, {
+    method: "POST",
+    body: JSON.stringify({ manifest, confirm: false }),
+  });
+  setProjectState(data);
+  renderWorkspace();
+  toast(`已删除解析资产“${item.label || id}”`);
 }
 
 function renderModernEpisodes(project, percent, total, completed) {
@@ -9321,6 +9375,7 @@ function bind() {
       : ["assetimg", "storyboard", "video", "cut"].includes(focus)
         ? focus
         : "assets";
+    if (nextFocus !== "assets") state.modernStudio.assetManageMode = false;
     state.modernStudio.focus = nextFocus;
     renderModernStudio(state.project);
     const target = nextFocus === "assets"
@@ -9347,7 +9402,9 @@ function bind() {
     toast("已定位到资产与风格规则");
   });
   $("#modernKitButton")?.addEventListener("click", () => {
+    state.modernStudio.assetManageMode = !state.modernStudio.assetManageMode;
     focusModernPane("kit");
+    toast(state.modernStudio.assetManageMode ? "已进入资产管理模式，点击资产旁的减号删除" : "已退出资产管理模式");
   });
   $$('[data-modern-focus]').forEach((button) => button.addEventListener("click", () => {
     const focus = button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus;

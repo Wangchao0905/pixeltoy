@@ -159,17 +159,23 @@ function typeCounts(assets) {
   }, {});
 }
 
+function fixedAssetPromptFor(asset) {
+  if (asset.type === "Storyboard") {
+    return "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel outer boundary is a portrait 9:16 cell with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Render real cinematic panel imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. Reserve the lower 40 percent of every panel as clean off-white paper; a deterministic post-process will typeset the Production Tab there with P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion, and visible reference thumbnails. Preserve the production-tab and visible-reference layout during generation and edits. Use the upper 60 percent as the cinematic vertical frame. Do not render your own dialogue, production fields, tables, or technical notes. Do NOT add a header, footer, metadata table, caption band outside a panel, or any content outside the nine story panels.";
+  }
+  if (asset.type === "Character") {
+    return [
+      "Fixed production constraints:",
+      "16:9 landscape frame.",
+      "Pure white background.",
+      "One single identity-sheet image containing the same person in full-body front, full-body side, full-body back, and one face close-up view.",
+    ].join("\n");
+  }
+  return "Fixed production constraint: 16:9 landscape frame.";
+}
+
 function promptFor(asset) {
-  const storyboardRule =
-    asset.type === "Storyboard"
-      ? "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel outer boundary is a portrait 9:16 cell with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Render real cinematic panel imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. Reserve the lower 40 percent of every panel as clean off-white paper; a deterministic post-process will typeset the Production Tab there with P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion, and visible reference thumbnails. Use the upper 60 percent as the cinematic vertical frame. Do not render your own dialogue, production fields, tables, or technical notes. Do NOT add a header, footer, metadata table, caption band outside a panel, or any content outside the nine story panels."
-      : "";
-  return [
-    "Production-grade reference asset. Follow the selected visual style, layout, identity, and safety constraints exactly.",
-    "This is a production-grade reference asset for a short-drama video workflow.",
-    storyboardRule,
-    asset.prompt,
-  ].filter(Boolean).join("\n\n");
+  return [asset.prompt, fixedAssetPromptFor(asset)].filter(Boolean).join("\n\n");
 }
 
 function referenceTypeFromName(imagePath = "") {
@@ -367,11 +373,13 @@ function referenceGuidanceFor(asset, referenceImages = [], mode = "generate", op
 function styleReferenceGuidance(styleReferenceImage = "") {
   if (!styleReferenceImage) return "";
   return [
-    "Style reference image rules:",
-    "The style reference image is a style-only art-direction sample. It is NOT a character identity reference, NOT a scene/location reference, NOT a prop reference, and NOT a composition reference.",
+    "STYLE REFERENCE INPUT RULES (HARD CONSTRAINT):",
+    "The supplied style reference image is for STYLE ONLY. It is NOT a character identity reference, NOT a scene/location reference, NOT a prop reference, NOT a composition reference, and NOT a content reference.",
+    "Generate the asset according to the visual style of the supplied style reference image.",
     "Borrow only: line weight, edge treatment, cel-shading/rendering language, color palette, saturation level, contrast, texture, lighting mood, surface finish, and overall art direction.",
     "Do not copy or import any person, face, body, clothing, pose, object, architecture, background, logo, text, layout, framing, or story content from the style reference image.",
     "The generated asset subject, identity, costume, prop, scene, layout contract, and screenplay evidence must come only from the current asset prompt.",
+    "If the style image conflicts with the asset prompt, ignore the style image's subject and composition completely; the asset prompt always wins for content.",
     `Style reference image: ${path.basename(styleReferenceImage)}`,
   ].join("\n");
 }
@@ -414,6 +422,33 @@ function styleReferenceRole() {
     "Do not use it for identity, face, body, clothing, pose, object design, location, architecture, background, composition, readable text, logos, or story content.",
     "The output content must follow the text prompt and current asset type only.",
   ].join(" ");
+}
+
+function styleReferenceAnchorPath(size, logsDir) {
+  const match = String(size || "1280x720").match(/^(\d+)x(\d+)$/);
+  const width = Number(match?.[1] || 1280);
+  const height = Number(match?.[2] || 720);
+  const anchor = path.join(logsDir || os.tmpdir(), `.pixel-toys-style-anchor-${width}x${height}.png`);
+  if (fs.existsSync(anchor) && fs.statSync(anchor).size > 1000) return anchor;
+  const py = [
+    "from PIL import Image",
+    `Image.new(\"RGB\", (${width}, ${height}), (255, 255, 255)).save(${JSON.stringify(anchor)})`,
+  ].join("\n");
+  try {
+    fs.mkdirSync(path.dirname(anchor), { recursive: true });
+    execFileSync("python3", ["-c", py], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 });
+  } catch (error) {
+    throw new Error(`cannot create neutral style-reference anchor: ${error.message}`);
+  }
+  return anchor;
+}
+
+function imageInputsFor(size, referenceImages = [], styleReferenceImage = "", logsDir = os.tmpdir()) {
+  const refs = (referenceImages || []).filter(Boolean);
+  const primaryReference = refs[0] || (styleReferenceImage ? styleReferenceAnchorPath(size, logsDir) : "");
+  return primaryReference
+    ? [primaryReference, ...(styleReferenceImage ? [styleReferenceImage] : []), ...refs.slice(refs[0] ? 1 : 0)]
+    : [];
 }
 
 function targetImageRoleFor(asset, mode = "generate") {
@@ -972,22 +1007,12 @@ function rescueStoryboardPromptFor(asset, referenceImages = []) {
 }
 
 function editPromptFor(asset, instruction, referenceImages = [], styleReferenceImage = "", options = {}) {
-  const typeRule =
-    asset.type === "Character"
-      ? "Keep this as one 16:9 pure-white-background character identity-sheet image with the same single character across full-body front view, full-body side view, full-body back view, and one half-body close-up portrait."
-      : asset.type === "Scene"
-        ? "Keep this as one 16:9 wide establishing environment reference image with absolutely no people, no silhouettes, no crowds, and no human figures."
-        : asset.type === "Storyboard"
-        ? "Keep this as one 9:16 vertical Production Board made only of exactly 9 equal-size vertical 9:16 storyboard panels in a 3-column grid. P1 must remain an ordinary top-left cell; no panel may span rows or columns. Preserve the production-tab and visible-reference layout: the upper 60 percent of every cell is the cinematic frame and the lower 40 percent remains clean paper for deterministic typesetting of plot, dialogue, production fields and visible reference thumbnails. Do not render handwritten dialogue, technical glyphs, arrows, camera-frame overlays, or an extra asset strip."
-          : asset.type === "Prop"
-            ? "Keep this as one 16:9 pure-white-background prop turnaround reference sheet with the same single prop shown in front view, side view, and back view."
-            : "Keep this as one 16:9 realistic cinematic insert or evidence-detail reference image with the main subject clear and physically believable.";
   return [
     "Image edit task: revise the provided existing asset image while preserving all parts that are already correct.",
     "Visible revision mandate: the requested change must be clearly visible in the final image at thumbnail size. Do not return a near-identical re-render. If the request changes armor, clothing, props, colors, silhouette, material, or held objects, make those edited regions visually obvious while keeping the production layout intact.",
     "Before/after delta requirement: identify the user's requested changed elements and actively alter those exact visible elements; preserve identity and format, not the old costume/prop state.",
     "Apply the user's revision request precisely. If the request is written in Chinese, interpret it accurately and implement it visually.",
-    typeRule,
+    fixedAssetPromptFor(asset),
     "Do not change the asset identity, filename meaning, screenplay role, aspect ratio, or required production-reference format.",
     "Original asset prompt for context:",
     asset.prompt,
@@ -1485,7 +1510,10 @@ async function runOne(asset, outPath, size, referenceImages = [], logsDir = os.t
   }
   try {
     const primaryTimeoutSeconds = timeoutSecondsFor(asset, "primary");
-    const imageInputs = [...(styleReferenceImage ? [styleReferenceImage] : []), ...referenceImages];
+    // A style reference is an auxiliary art-direction sample. Keep a real content
+    // reference (or a neutral white anchor) in the primary slot so the style image
+    // cannot become the generated asset's subject and composition.
+    const imageInputs = imageInputsFor(size, referenceImages, styleReferenceImage, logsDir);
     const primaryIsHiddenSceneReference = !styleReferenceImage && options.hiddenSceneReferences instanceof Set && options.hiddenSceneReferences.has(imageInputs[0]);
     const imageArgs = imageInputs.length
       ? [
@@ -1861,5 +1889,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  fixedAssetPromptFor,
+  imageInputsFor,
+  parseAssets,
+  promptFor,
+  styleReferenceGuidance,
   stampStoryboardProductionTabs,
 };

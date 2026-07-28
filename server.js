@@ -21441,7 +21441,10 @@ async function startToolJob(episodeRoot, type, body = {}) {
       throw new Error("缺少 OPENAI_API_KEY：请在启动 Pixel Toys 的终端或项目 .env.local 中配置 api.apikey.fun 的 OpenAI 兼容 API Key，然后重启服务。");
     }
     const assetStyle = assetStyleFromBody(body);
-    const basePrompts = enforcedAssetPromptsPath(episodeRoot, assetStyle);
+    // The asset document's text-to-image blocks are the source of truth. Keep
+    // the selected style/reference controls as separate inputs; do not rewrite
+    // or clean the document prompt before it reaches the image runner.
+    const basePrompts = findProjectFile(episodeRoot, "assetPrompts");
     if (!fs.existsSync(basePrompts)) throw new Error("asset prompts file is missing");
     const assetName = compactLine(body.assetName || "");
     const editInstruction = compactLine(body.editInstruction || "");
@@ -21503,8 +21506,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
     }
     const targetAssetNames = isRegenerate || isEdit ? [assetName] : selectedAssetNames;
     if (!isDryRun) clearAssetFailureLogs(episodeRoot, targetAssetNames);
-    const filteredPrompts = isRegenerate || isEdit ? basePrompts : partialAssetPromptsPath(episodeRoot, basePrompts, selectedAssetNames);
-    const prompts = styledAssetPromptsPath(episodeRoot, filteredPrompts, assetStyle);
+    const prompts = isRegenerate || isEdit ? basePrompts : partialAssetPromptsPath(episodeRoot, basePrompts, selectedAssetNames);
     const args = [prompts, episodeRoot];
     if (isDryRun) args.push("--dry-run");
     if (isRegenerate || isEdit) args.push("--asset-name", assetName, "--force");

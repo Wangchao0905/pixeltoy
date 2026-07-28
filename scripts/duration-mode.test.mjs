@@ -42,6 +42,23 @@ const twentyBeats = Array.from({ length: 20 }, (_, index) => `咕咚完成第 ${
 
 assert.equal(duration.normalizeDurationMode(), TK, "duration mode must default to TK");
 assert.equal(duration.scriptTimecodeTotalSeconds(gudongScript), 49, "48.5 seconds must round to a 49 second target");
+assert.equal(typeof duration.modelPlanningScript, "function", "video-config plan rebuild must expose its script preparation path");
+const configPlanningScript = duration.modelPlanningScript(gudongScript);
+assert.equal(
+  duration.freeDurationSourceBeats(configPlanningScript, twentyBeats).length,
+  18,
+  "video-config plan rebuild must preserve all eighteen timecode lines",
+);
+assert.equal(
+  duration.planEpisodeDuration({
+    shotCount: twentyBeats.length,
+    beats: twentyBeats,
+    durationMode: FREE,
+    script: configPlanningScript,
+  }).target,
+  49,
+  "video-config plan rebuild must derive 49 seconds from the prepared script",
+);
 const multilineSource = duration.freeDurationSourceBeats(
   "01｜0:00—0:02.5\n\n景别/运镜：外景大全景\n画面内容：清晨薄雾中的森林小屋。\n\n02｜0:02.5—0:05\n\n画面内容：咕咚在卧室醒来。",
   [],
@@ -90,6 +107,31 @@ const completeDesign = {
   voice_over: "无",
   sound: "室内环境声与动作声",
 };
+const guardRoot = fs.mkdtempSync(path.join(process.cwd(), ".duration-mode-plan-guard-test-"));
+try {
+  const { episodeRoot } = series.createEpisodeWorkspace(guardRoot, "e01", "自由模式写入保护");
+  assert.throws(
+    () => duration.writeStoryboardModelPlan(episodeRoot, {
+      model: "test-model",
+      script: gudongScript,
+      dialogueLanguage: "zh",
+      durationMode: FREE,
+      shots: [{
+        id: "E01_V001_BAD",
+        title: "错误单镜头",
+        beat: "错误地把完整剧本压成一镜。",
+        duration: 4,
+        refs: ["SCENE"],
+        dialogues: [],
+        videoDesign: completeDesign,
+      }],
+    }),
+    /要求 4 镜头 \/ 49 秒，实际 1 镜头 \/ 4 秒/,
+    "free-mode persistence must reject a collapsed one-shot plan",
+  );
+} finally {
+  fs.rmSync(guardRoot, { recursive: true, force: true });
+}
 const rawShots = [4, 90, 4, 90].map((modelDuration, index) => ({
   title: `镜头 ${index + 1}`,
   duration: modelDuration,

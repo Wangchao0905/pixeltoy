@@ -3185,6 +3185,7 @@ const MODEL_SHOT_PLAN_VERSION = 1;
 
 function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage, durationMode = "tk", shots } = {}) {
   const path = defaultPaths(episodeRoot).modelShotPlan;
+  const normalizedDurationMode = durationMode === "free" ? "free" : "tk";
   const plannedShots = (Array.isArray(shots) ? shots : []).map((shot) => ({
     id: compactLine(shot?.id),
     title: compactLine(shot?.title),
@@ -3197,6 +3198,20 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
   if (!plannedShots.length || plannedShots.some((shot) => !shot.id || !shot.beat || !shot.refs.length || !hasCompleteSeedanceDesign(shot.design))) {
     throw new Error("视频分镜模型返回的导演设计不完整，未写入草稿，请重新生成分镜草稿。");
   }
+  if (normalizedDurationMode === "free") {
+    const planningScript = modelPlanningScript(script);
+    const sourceBeats = freeDurationSourceBeats(planningScript, scriptBeatCandidates(planningScript));
+    const durationPlan = planEpisodeDuration({
+      shotCount: sourceBeats.length,
+      beats: sourceBeats.map((beat) => beat.text),
+      durationMode: normalizedDurationMode,
+      script: planningScript,
+    });
+    const totalDuration = plannedShots.reduce((sum, shot) => sum + shot.duration, 0);
+    if (plannedShots.length !== durationPlan.shotCount || totalDuration !== durationPlan.target) {
+      throw new Error(`自由模式计划写入被拒绝：要求 ${durationPlan.shotCount} 镜头 / ${durationPlan.target} 秒，实际 ${plannedShots.length} 镜头 / ${totalDuration} 秒`);
+    }
+  }
   writeText(
     path,
     `${JSON.stringify(
@@ -3206,7 +3221,7 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
         model: compactLine(model),
         scriptFingerprint: sha1Text(script),
         dialogueLanguage: dialogueLanguage === "zh" ? "zh" : "en",
-        durationMode: durationMode === "free" ? "free" : "tk",
+        durationMode: normalizedDurationMode,
         createdAt: new Date().toISOString(),
         shots: plannedShots,
       },
@@ -3244,9 +3259,13 @@ function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk") {
 
 // 视频配置修复只需要补齐模型导演计划。重建完整草稿会重置后续流程状态，
 // 也会让一次临时失败错误地阻断配置保存。
+function modelPlanningScript(script) {
+  return scriptForVideoBeats(cleanStoryScriptForDraft(String(script || "")));
+}
+
 async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode = projectDurationMode(episodeRoot) } = {}) {
-  const videoScript = compactLine(script);
-  if (!videoScript) throw new Error("剧本为空，无法生成模型导演设计。");
+  const videoScript = modelPlanningScript(script);
+  if (!compactLine(videoScript)) throw new Error("剧本为空，无法生成模型导演设计。");
   const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
   const assets = manifestItemsToAssets(manifest);
   if (!assets.length) throw new Error("请先完成「资产提取」，再生成视频配置");
@@ -23744,6 +23763,8 @@ module.exports = {
       normalizeDurationMode,
       projectDurationMode,
       persistProjectDurationMode,
+      modelPlanningScript,
+      writeStoryboardModelPlan,
       scriptTimecodeTotalSeconds,
       scriptBeatCandidates,
       consolidateContinuousBeats,

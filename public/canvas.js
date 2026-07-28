@@ -3213,6 +3213,9 @@ function refreshVideoNodeElement(nodeId) {
     const previewSig = JSON.stringify({
       kind: node.kind,
       videoUrl: node.videoUrl || "",
+      // Some project providers keep the same media URL across generations.
+      // The task identity must still force the player to adopt the new result.
+      taskId: node.taskId || "",
       status: node.status || "",
       tailFrameUrl: node.tailFrameUrl || "",
       tailFrameCaptureStatus: node.tailFrameCaptureStatus || "",
@@ -3753,6 +3756,7 @@ async function generateVideoNode(nodeId, options = {}) {
         body: JSON.stringify({
           projectId: projectEpisodeIdFromCanvasStorage(),
           shotName: projectShotName,
+          forceRegenerate: true,
         }),
       });
       if (!videoOperationIsCurrent(nodeId, { generationToken })) return;

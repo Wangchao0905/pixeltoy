@@ -9,7 +9,7 @@ const css = fs.readFileSync(path.join(root, "public/canvas.css"), "utf8");
 
 assert.match(html, /styles\.css\?v=canvas-shell-visual-20260727/);
 assert.match(html, /canvas\.css\?v=canvas-assembly-background-20260728/);
-assert.match(html, /canvas\.js\?v=canvas-navigation-performance-20260728/);
+assert.match(html, /canvas\.js\?v=canvas-video-regeneration-20260728/);
 assert.match(css, /\.canvas-topbar\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*1200;/);
 assert.match(css, /body\.canvas-page \.canvas-topbar\s*\{[\s\S]*?display:\s*flex\s*!important;[\s\S]*?visibility:\s*visible/s,
   "canvas navigation must stay visible in the final canvas style layer");

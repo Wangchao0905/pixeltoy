@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -58,6 +59,25 @@ assert.equal(
   }).target,
   49,
   "video-config plan rebuild must derive 49 seconds from the prepared script",
+);
+const gudongFingerprint = crypto.createHash("sha1").update(gudongScript).digest("hex");
+assert.equal(
+  duration.modelShotPlanNeedsRefresh({
+    scriptFingerprint: gudongFingerprint,
+    durationMode: FREE,
+    shots: [{ duration: 4 }],
+  }, gudongScript, FREE),
+  true,
+  "a cached one-shot/four-second free-mode plan must be invalidated even when its mode and script fingerprint match",
+);
+assert.equal(
+  duration.modelShotPlanNeedsRefresh({
+    scriptFingerprint: gudongFingerprint,
+    durationMode: FREE,
+    shots: [13, 13, 10, 13].map((duration) => ({ duration })),
+  }, gudongScript, FREE),
+  false,
+  "a cached free-mode plan must remain reusable only when count and total match the selected script-duration rule",
 );
 const multilineSource = duration.freeDurationSourceBeats(
   "01｜0:00—0:02.5\n\n景别/运镜：外景大全景\n画面内容：清晨薄雾中的森林小屋。\n\n02｜0:02.5—0:05\n\n画面内容：咕咚在卧室醒来。",

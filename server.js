@@ -3254,7 +3254,19 @@ function modelPlanDialogueLanguageForConfig(modelPlan, script, requestedLanguage
 function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk") {
   const expectedMode = durationMode === "free" ? "free" : "tk";
   const plannedMode = plan?.durationMode === "free" ? "free" : "tk";
-  return !plan || plan.scriptFingerprint !== sha1Text(script) || plannedMode !== expectedMode;
+  if (!plan || plan.scriptFingerprint !== sha1Text(script) || plannedMode !== expectedMode) return true;
+  if (expectedMode !== "free") return false;
+  const planningScript = modelPlanningScript(script);
+  const sourceBeats = freeDurationSourceBeats(planningScript, scriptBeatCandidates(planningScript));
+  const durationPlan = planEpisodeDuration({
+    shotCount: sourceBeats.length,
+    beats: sourceBeats.map((beat) => beat.text),
+    durationMode: expectedMode,
+    script: planningScript,
+  });
+  const plannedShots = Array.isArray(plan.shots) ? plan.shots : [];
+  const totalDuration = plannedShots.reduce((sum, shot) => sum + Number(shot?.duration || 0), 0);
+  return plannedShots.length !== durationPlan.shotCount || totalDuration !== durationPlan.target;
 }
 
 // 视频配置修复只需要补齐模型导演计划。重建完整草稿会重置后续流程状态，
@@ -23764,6 +23776,7 @@ module.exports = {
       projectDurationMode,
       persistProjectDurationMode,
       modelPlanningScript,
+      modelShotPlanNeedsRefresh,
       writeStoryboardModelPlan,
       scriptTimecodeTotalSeconds,
       scriptBeatCandidates,

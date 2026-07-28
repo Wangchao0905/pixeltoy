@@ -3237,7 +3237,9 @@ function modelPlanDialogueLanguageForConfig(modelPlan, script, requestedLanguage
 }
 
 function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk") {
-  return !plan || plan.scriptFingerprint !== sha1Text(script) || (plan.durationMode || "tk") !== durationMode;
+  const expectedMode = durationMode === "free" ? "free" : "tk";
+  const plannedMode = plan?.durationMode === "free" ? "free" : "tk";
+  return !plan || plan.scriptFingerprint !== sha1Text(script) || plannedMode !== expectedMode;
 }
 
 // 视频配置修复只需要补齐模型导演计划。重建完整草稿会重置后续流程状态，
@@ -3254,9 +3256,14 @@ async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLangua
   const normalizedDurationMode = normalizeDurationMode(durationMode);
   const targetShotCount = preferredShotCount(videoScript, continuityBeats, normalizedDurationMode);
   const normalizedDialogueLanguage = dialogueLanguage === "zh" ? "zh" : "en";
-  const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, {
-    dialogueLanguage: normalizedDialogueLanguage,
-  });
+  const sourceBeats = normalizedDurationMode === DURATION_MODE_FREE
+    ? freeDurationSourceBeats(videoScript, continuityBeats)
+    : [];
+  const beats = normalizedDurationMode === DURATION_MODE_FREE
+    ? sourceBeats.map((beat) => beat.text)
+    : fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, {
+        dialogueLanguage: normalizedDialogueLanguage,
+      });
   const durationPlan = planEpisodeDuration({
     shotCount: beats.length || targetShotCount,
     beats,
@@ -3271,6 +3278,7 @@ async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLangua
     targetShotCount,
     code: episodeCode(episodeSlug(episodeRoot)),
     beats,
+    sourceBeats,
     durationPlan,
   });
   if (!result.ok) {
@@ -3293,13 +3301,12 @@ async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLangua
   return readStoryboardModelPlan(episodeRoot);
 }
 
-async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode } = {}) {
-  const mode = durationMode || "tk";
+async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode = "tk" } = {}) {
   let plan = readStoryboardModelPlan(episodeRoot);
-  if (!modelShotPlanNeedsRefresh(plan, script, mode)) return plan;
-  await buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode: mode });
+  if (!modelShotPlanNeedsRefresh(plan, script, durationMode)) return plan;
+  await buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode });
   plan = readStoryboardModelPlan(episodeRoot);
-  if (modelShotPlanNeedsRefresh(plan, script, mode)) {
+  if (modelShotPlanNeedsRefresh(plan, script, durationMode)) {
     throw new Error("模型导演设计生成失败，请稍后重新提交视频配置。");
   }
   return plan;
@@ -5917,7 +5924,9 @@ function fallbackStoryboardSegmentsFromScript(episodeRoot, dialogueLanguage = "e
   const rawBeats = scriptBeatCandidates(script);
   const continuityBeats = consolidateContinuousBeats(rawBeats);
   const targetShotCount = preferredShotCount(script, continuityBeats, durationMode);
-  const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, { dialogueLanguage });
+  const beats = durationMode === DURATION_MODE_FREE
+    ? fitBeatsToCount(freeDurationSourceBeats(script, continuityBeats).map((beat) => beat.text), targetShotCount)
+    : fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, { dialogueLanguage });
   const durationPlan = planEpisodeDuration({
     shotCount: beats.length || targetShotCount,
     beats,
@@ -17331,21 +17340,19 @@ function fitBeatsToCount(beats, targetCount) {
 }
 
 function preferredShotCount(script, beats, durationMode = DURATION_MODE_TK) {
-  const mode = normalizeDurationMode(durationMode);
-  if (mode === DURATION_MODE_FREE) {
-    const target = scriptTimecodeTotalSeconds(script) || estimatedFreeDurationForBeats(Array.isArray(beats) ? beats : []);
+  if (normalizeDurationMode(durationMode) === DURATION_MODE_FREE) {
+    const target = freeTargetDuration({ script, beats });
     return Math.max(1, Math.min(8, Math.ceil(target / VIDEO_MAX_SECONDS)));
   }
   const clean = cleanScriptForDraft(script);
   const contentWeight = Math.max(1, Math.ceil(clean.length / 760));
   const beatCount = Array.isArray(beats) ? beats.length : 0;
   const dialogueCount = parseSpeakerDialogues(clean).length;
-  const naturalMinimum = mode === DURATION_MODE_FREE ? 1 : 5;
   const natural =
     beatCount <= 6
-      ? Math.max(naturalMinimum, beatCount, contentWeight + 3, Math.ceil(dialogueCount / 2) + 4)
-      : Math.max(naturalMinimum, Math.round((beatCount + contentWeight + Math.ceil(dialogueCount / 2)) / 2));
-  const minimum = mode === DURATION_MODE_FREE ? 1 : Math.ceil(VIDEO_MIN_EPISODE_SECONDS / VIDEO_MAX_SECONDS);
+      ? Math.max(5, beatCount, contentWeight + 3, Math.ceil(dialogueCount / 2) + 4)
+      : Math.max(5, Math.round((beatCount + contentWeight + Math.ceil(dialogueCount / 2)) / 2));
+  const minimum = Math.ceil(VIDEO_MIN_EPISODE_SECONDS / VIDEO_MAX_SECONDS);
   return Math.max(minimum, Math.min(8, natural || minimum));
 }
 
@@ -17355,43 +17362,125 @@ function clampShotDuration(value, fallback = 8) {
   return Math.max(VIDEO_MIN_SECONDS, Math.min(VIDEO_MAX_SECONDS, Math.round(base)));
 }
 
-function scriptTimecodeTotalSeconds(script) {
+function parseScriptTimestamp(minutes, seconds) {
+  const mins = Number(minutes);
+  const secs = Number(seconds);
+  if (!Number.isFinite(mins) || !Number.isFinite(secs) || mins < 0 || secs < 0 || secs >= 60) return NaN;
+  return mins * 60 + secs;
+}
+
+function scriptTimecodeBeats(script) {
   const source = String(script || "");
-  const timecodePattern = /(?:^|\n)\s*\d{1,3}\s*[|｜]\s*\d{1,2}:\d{2}(?:\.\d+)?\s*[—–-]\s*(\d{1,2}):(\d{2}(?:\.\d+)?)/g;
-  let total = 0;
-  for (const match of source.matchAll(timecodePattern)) {
-    const minutes = Number(match[1]);
-    const seconds = Number(match[2]);
-    if (Number.isFinite(minutes) && Number.isFinite(seconds)) total = Math.max(total, minutes * 60 + seconds);
+  const beats = [];
+  const pattern = /^\s*(?:\d{1,3}\s*[|｜]\s*)?(\d{1,3}):(\d{1,2}(?:\.\d+)?)\s*[—–-]\s*(\d{1,3}):(\d{1,2}(?:\.\d+)?)([^\r\n]*)$/gm;
+  const matches = [...source.matchAll(pattern)];
+  for (let index = 0; index < matches.length; index += 1) {
+    const match = matches[index];
+    const start = parseScriptTimestamp(match[1], match[2]);
+    const end = parseScriptTimestamp(match[3], match[4]);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+    const bodyStart = (match.index || 0) + match[0].length;
+    const bodyEnd = index + 1 < matches.length ? matches[index + 1].index : source.length;
+    const text = compactLine(`${match[5] || ""} ${source.slice(bodyStart, bodyEnd)}`)
+      .replace(/^[|｜:：\s]+/, "") || `时间码 ${match[1]}:${match[2]}-${match[3]}:${match[4]}`;
+    beats.push({ index: beats.length + 1, start, end, text });
   }
+  return beats;
+}
+
+function scriptTimecodeTotalSeconds(script) {
+  const total = scriptTimecodeBeats(script).reduce((max, beat) => Math.max(max, beat.end), 0);
   return Math.round(total);
 }
 
 function estimatedFreeDurationForBeats(beats = []) {
   const clean = beats.map(compactLine).filter(Boolean);
-  if (!clean.length) return episodeTargetDurationForBeats(beats);
+  if (!clean.length) return VIDEO_DEFAULT_EPISODE_SECONDS;
   const text = clean.join(" ");
   const dialogueText = parseSpeakerDialogues(text).map((item) => item.text).join(" ");
   const source = compactLine(dialogueText || text);
-  return Math.max(1, Math.ceil(source.replace(/[^\p{L}\p{N}]/gu, "").length / 4));
+  return Math.max(VIDEO_MIN_SECONDS, Math.ceil(source.replace(/[^\p{L}\p{N}]/gu, "").length / 4));
+}
+
+function freeTargetDuration({ script = "", beats = [], requestedTarget = 0 } = {}) {
+  const requested = Number(requestedTarget);
+  const sourceTarget = Number.isFinite(requested) && requested > 0
+    ? requested
+    : scriptTimecodeTotalSeconds(script) || estimatedFreeDurationForBeats(beats);
+  return Math.max(VIDEO_MIN_SECONDS, Math.min(8 * VIDEO_MAX_SECONDS, Math.round(sourceTarget)));
+}
+
+function freeDurationSourceBeats(script, fallbackBeats = []) {
+  const timed = scriptTimecodeBeats(script);
+  if (timed.length) return timed;
+  return fallbackBeats.map(compactLine).filter(Boolean).map((text, index, source) => ({
+    index: index + 1,
+    start: index / source.length,
+    end: (index + 1) / source.length,
+    relative: true,
+    text,
+  }));
+}
+
+function preferLongFreeShotDurations(count, target) {
+  const shotCount = Math.max(1, Math.min(8, Number(count) || 1));
+  const total = Math.max(shotCount * VIDEO_MIN_SECONDS, Math.min(shotCount * VIDEO_MAX_SECONDS, Math.round(Number(target) || 0)));
+  const durations = [];
+  let remaining = total;
+  for (let index = 0; index < shotCount; index += 1) {
+    const remainingMinimum = (shotCount - index - 1) * VIDEO_MIN_SECONDS;
+    const duration = Math.min(VIDEO_MAX_SECONDS, remaining - remainingMinimum);
+    durations.push(Math.max(VIDEO_MIN_SECONDS, duration));
+    remaining -= durations[index];
+  }
+  return durations;
+}
+
+function lockFreeDurationsFromCuts({ targetDuration, shotCount, sourceBeats = [], cutAfterBeatIndices = [] } = {}) {
+  const count = Math.max(1, Math.min(8, Number(shotCount) || 1));
+  const target = freeTargetDuration({ requestedTarget: targetDuration });
+  if (target < count * VIDEO_MIN_SECONDS || target > count * VIDEO_MAX_SECONDS) {
+    throw new Error(`自由模式目标时长 ${target}s 无法分配到 ${count} 个 4-15s 镜头`);
+  }
+  if (sourceBeats.length < count || cutAfterBeatIndices.length !== count) {
+    throw new Error(`自由模式镜头数量与切分点不一致：要求 ${count} 个切分点`);
+  }
+  const normalizedCuts = cutAfterBeatIndices.map((value) => Math.round(Number(value)));
+  if (normalizedCuts.some((value) => !Number.isFinite(value) || value < 1 || value > sourceBeats.length)) {
+    throw new Error("自由模式切分点超出剧本节拍范围");
+  }
+  if (normalizedCuts.some((value, index) => index > 0 && value <= normalizedCuts[index - 1]) || normalizedCuts.at(-1) !== sourceBeats.length) {
+    throw new Error("自由模式切分点必须严格递增，且最后一个切分点必须覆盖剧本结尾");
+  }
+  const timelineTotal = Number(sourceBeats.at(-1)?.end) || 1;
+  const cumulative = [];
+  let previous = 0;
+  for (let index = 0; index < count - 1; index += 1) {
+    const source = sourceBeats[normalizedCuts[index] - 1];
+    const ratio = source?.relative ? Number(source.end) : Number(source?.end) / timelineTotal;
+    const proposed = Math.round(Math.max(0, Math.min(1, ratio)) * target);
+    const remaining = count - index - 1;
+    const minimum = Math.max(previous + VIDEO_MIN_SECONDS, target - remaining * VIDEO_MAX_SECONDS);
+    const maximum = Math.min(previous + VIDEO_MAX_SECONDS, target - remaining * VIDEO_MIN_SECONDS);
+    const cut = Math.max(minimum, Math.min(maximum, proposed));
+    cumulative.push(cut);
+    previous = cut;
+  }
+  cumulative.push(target);
+  return cumulative.map((cut, index) => cut - (index ? cumulative[index - 1] : 0));
 }
 
 function targetDurationForBeats(count, beats = [], requestedTarget = 0, durationMode = DURATION_MODE_TK, script = "") {
-  const mode = normalizeDurationMode(durationMode);
+  if (normalizeDurationMode(durationMode) === DURATION_MODE_FREE) {
+    const target = freeTargetDuration({ script, beats, requestedTarget });
+    return Math.max(count * VIDEO_MIN_SECONDS, Math.min(count * VIDEO_MAX_SECONDS, target));
+  }
   const minPossible = count * VIDEO_MIN_SECONDS;
-  const maxPossible = Math.min(VIDEO_MAX_EPISODE_SECONDS, count * VIDEO_MAX_SECONDS);
+  const maxPossible = count * VIDEO_MAX_SECONDS;
   const clampTarget = (value) => Math.max(minPossible, Math.min(maxPossible, Math.round(value)));
   const requested = Number(requestedTarget);
   if (Number.isFinite(requested) && requested > 0) {
-    return clampTarget(
-      mode === DURATION_MODE_FREE
-        ? requested
-        : Math.max(VIDEO_MIN_EPISODE_SECONDS, Math.min(VIDEO_MAX_EPISODE_SECONDS, requested)),
-    );
-  }
-  if (mode === DURATION_MODE_FREE) {
-    const timecodeTotal = scriptTimecodeTotalSeconds(script || beats.join("\n"));
-    return clampTarget(timecodeTotal || estimatedFreeDurationForBeats(beats));
+    return clampTarget(Math.max(VIDEO_MIN_EPISODE_SECONDS, Math.min(VIDEO_MAX_EPISODE_SECONDS, requested)));
   }
   return clampTarget(episodeTargetDurationForBeats(beats));
 }
@@ -17508,40 +17597,24 @@ function preferLongShotDurations(durations = [], weights = [], target = 0) {
   return next;
 }
 
-function preferLongFreeShotDurations(count, target) {
-  const shotCount = Math.max(1, Number(count) || 1);
-  const total = Math.max(shotCount * VIDEO_MIN_SECONDS, Math.min(shotCount * VIDEO_MAX_SECONDS, Math.round(Number(target) || 0)));
-  const durations = [];
-  let remaining = total;
-  for (let index = 0; index < shotCount; index += 1) {
-    const remainingMinimum = (shotCount - index - 1) * VIDEO_MIN_SECONDS;
-    const duration = Math.min(VIDEO_MAX_SECONDS, remaining - remainingMinimum);
-    durations.push(Math.max(VIDEO_MIN_SECONDS, duration));
-    remaining -= durations[index];
-  }
-  return durations;
-}
-
-function freeShotCountForTarget({ beats = [], targetDuration = 0, script = "" } = {}) {
-  const requested = Number(targetDuration);
-  const target = Number.isFinite(requested) && requested > 0
-    ? requested
-    : scriptTimecodeTotalSeconds(script || beats.join("\n")) || estimatedFreeDurationForBeats(beats);
-  return Math.max(1, Math.min(8, Math.ceil(target / VIDEO_MAX_SECONDS)));
-}
-
 function planEpisodeDuration({ shotCount, beats = [], targetDuration = 0, rawDurations = [], durationMode = DURATION_MODE_TK, script = "" } = {}) {
   const mode = normalizeDurationMode(durationMode);
-  const minimumCount = mode === DURATION_MODE_FREE ? 1 : Math.ceil(VIDEO_MIN_EPISODE_SECONDS / VIDEO_MAX_SECONDS);
-  const count = mode === DURATION_MODE_FREE
-    ? freeShotCountForTarget({ beats, targetDuration, script })
-    : Math.max(minimumCount, Math.min(8, Number(shotCount) || beats.length || minimumCount));
-  const normalizedBeats = Array.from({ length: count }, (_, index) => compactLine(beats[index] || ""));
-  const target = targetDurationForBeats(count, normalizedBeats, targetDuration, mode, script);
-  const weights = normalizedBeats.map((beat, index) => beatDurationWeight(beat, index, normalizedBeats, rawDurations[index]));
   if (mode === DURATION_MODE_FREE) {
-    return { target, shotCount: count, durations: preferLongFreeShotDurations(count, target), weights, durationMode: mode };
+    const target = freeTargetDuration({ script, beats, requestedTarget: targetDuration });
+    const count = Math.max(1, Math.min(8, Math.ceil(target / VIDEO_MAX_SECONDS)));
+    return {
+      target,
+      shotCount: count,
+      durations: preferLongFreeShotDurations(count, target),
+      weights: Array.from({ length: count }, () => 1),
+      durationMode: mode,
+    };
   }
+  const minimumCount = Math.ceil(VIDEO_MIN_EPISODE_SECONDS / VIDEO_MAX_SECONDS);
+  const count = Math.max(minimumCount, Math.min(8, Number(shotCount) || beats.length || minimumCount));
+  const normalizedBeats = Array.from({ length: count }, (_, index) => compactLine(beats[index] || ""));
+  const target = targetDurationForBeats(count, normalizedBeats, targetDuration);
+  const weights = normalizedBeats.map((beat, index) => beatDurationWeight(beat, index, normalizedBeats, rawDurations[index]));
   const durations = preferLongShotDurations(distributeDurationsByWeights(weights, target), weights, target);
   return { target, shotCount: count, durations, weights, durationMode: mode };
 }
@@ -18697,7 +18770,45 @@ ${seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage)}
 \`\`\``;
 }
 
-function storyboardSystemPrompt() {
+function storyboardSystemPrompt(durationMode = DURATION_MODE_TK) {
+  if (normalizeDurationMode(durationMode) === DURATION_MODE_FREE) {
+    return `你是短剧视频分镜和 Seedance 2.0 提示词拆解模型。自由模式下，后端已经锁定总时长和镜头数量；你只负责识别最合理的剧情切分点，并为每段设计完整镜头。
+
+必须遵守：
+- 只返回服务端可读取的结构化镜头计划，不输出 Markdown、散文提示词或解释。
+- 严格返回指定数量的 shots。每个 shot 必须返回 endBeatIndex，表示该镜头覆盖到 sourceBeats 中第几个节拍；它必须严格递增，最后一个必须等于 sourceBeats 总数。
+- 不要决定总时长，不要用 duration 或 targetDuration 改写后端目标；即使返回这些字段，服务端也会忽略。
+- 优先在场景转换、时间跳跃、镜头切换或完整动作单元结束处切分。若第 13 秒存在转场，应选 13 秒切点，优先级高于凑满 15 秒；没有明显转场时才接近 15 秒分段。
+- 只能使用 sourceBeats 和原剧本已有内容，不得增加人物、地点、道具或事件。
+- refs 只能使用给定 assets 中的 name；每镜必须包含中文 title、beat、purpose、refs、dialogueLines 和完整 design。
+- dialogueLines 必须使用「说话人：台词」格式；结构化字段和 design 使用中文。
+- 相邻镜头保持人物站位、视线、动作方向、道具和光线连续，并使用不同的镜头目的。
+
+${SEEDANCE_DIRECTOR_SYSTEM_ZH}
+
+返回对象结构：
+{
+  "shots": [
+    {
+      "endBeatIndex": 4,
+      "title": "镜头中文标题",
+      "beat": "对应 sourceBeats 范围内的剧本依据",
+      "purpose": "分镜目标",
+      "refs": ["S001_example", "C001_example"],
+      "dialogueLines": ["SPEAKER：目标语言台词"],
+      "design": {
+        "shot_size": "双人侧面半身中近景",
+        "camera_lens": "50mm 标准定焦",
+        "camera_movement": "具体运镜、速度、幅度和持续时间",
+        "camera_angle": "侧前方微仰 15° 视角",
+        "visual": "空间、站位、一个可见动作及终点、构图裁切和可信光源",
+        "voice_over": "人声 OS；没有时写 无",
+        "sound": "具体音效、环境底噪与声音延续"
+      }
+    }
+  ]
+}`;
+  }
   return `你是短剧视频分镜和 Seedance 2.0 提示词拆解模型。你的任务是根据剧本和已确认资产解析，输出可直接进入视频生成配置的镜头列表。
 
 必须遵守：
@@ -18746,21 +18857,39 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
 }`;
 }
 
-function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, durationPlan = null }) {
+function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, beats = [], sourceBeats = [], durationPlan = null }) {
   const durationMode = normalizeDurationMode(durationPlan?.durationMode);
-  const plannedShotCount = Math.max(
-    1,
-    Number(durationPlan?.shotCount) || durationPlan?.durations?.length || Number(targetShotCount) || 1,
-  );
-  const freeMinAllowed = plannedShotCount * VIDEO_MIN_SECONDS;
-  const freeMaxAllowed = Math.min(VIDEO_MAX_EPISODE_SECONDS, plannedShotCount * VIDEO_MAX_SECONDS);
-  const freeTarget = Number(durationPlan?.target) > 0 ? Number(durationPlan.target) : freeMinAllowed;
-  const freeRangePadding = 5;
-  const freeTargetMinAllowed = Math.max(freeMinAllowed, freeTarget - freeRangePadding);
-  const freeTargetMaxAllowed = Math.min(freeMaxAllowed, freeTarget + freeRangePadding);
-  const durationRule = durationMode === DURATION_MODE_FREE
-    ? `目标总时长 ≈ ${durationPlan?.target || 0} 秒，允许 ±1 秒对齐到整秒。每个镜头必须 4–15 秒。优先在转场和镜头切换处分段 —— 空间变了、时间跳了、动作单元结束了，就该切。这个优先级高于把镜头凑满 15 秒：如果第 13 秒就有转场，就切在 13 秒，不要硬拖到 15。没有转场可依据时，才尽量用满 15 秒以减少镜头数。只允许使用剧本已有内容，不要为了凑时长增补事件。`
-    : "这是后端按剧情复杂度和剧情权重计算的参考时长。可以在 70-90 秒内微调，但不要平均分配，不要全部 12 秒；优先把完整剧情段落设计成接近 15 秒，每段必须 4-15 秒。只允许使用剧本已有剧情，信息不足时不要为了凑时长增补事件。";
+  if (durationMode === DURATION_MODE_FREE) {
+    return JSON.stringify({
+      task: "识别剧本转场切点，并为每个后端锁定的镜头设计完整导演方案。",
+      dialogueLanguage: dialogueLanguage === "zh" ? "zh" : "en",
+      durationGuidance: {
+        targetDuration: durationPlan.target,
+        shotCount: durationPlan.shotCount,
+        authority: "总时长和每镜秒数由后端计算，模型不得修改。",
+        rule: "只标记切分点，不填写或决定时长。转场优先级高于凑满 15 秒：第 13 秒有转场就切在 13 秒，不要拖到 15 秒；无转场时才尽量接近 15 秒。",
+      },
+      sourceBeats: sourceBeats.map((beat, index) => ({
+        index: index + 1,
+        start: Number.isFinite(Number(beat.start)) ? Number(beat.start) : undefined,
+        end: Number.isFinite(Number(beat.end)) ? Number(beat.end) : undefined,
+        text: compactLine(beat.text || beats[index] || ""),
+      })),
+      outputContract: {
+        shots: `必须恰好 ${durationPlan.shotCount} 个`,
+        endBeatIndex: "严格递增；最后一个等于 sourceBeats 数量",
+        duration: "不要返回；服务端忽略",
+      },
+      assets: assets.map((asset) => ({
+        name: asset.name,
+        type: asset.type,
+        label: asset.label,
+        evidence: asset.evidence,
+        visual: asset.visual || "",
+      })),
+      screenplay: script.slice(0, 30000),
+    }, null, 2);
+  }
   return JSON.stringify(
     {
       task: "根据剧本和资产解析拆解视频分镜，并为 Seedance 2.0 生成中文视频提示词。",
@@ -18770,10 +18899,8 @@ function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCoun
         ? {
             targetDuration: durationPlan.target,
             suggestedDurations: durationPlan.durations,
-            allowedTotalRange: durationMode === DURATION_MODE_FREE
-              ? `${freeTargetMinAllowed}-${freeTargetMaxAllowed}s`
-              : `${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS}s`,
-            rule: durationRule,
+            allowedTotalRange: `${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS}s`,
+            rule: "这是后端按剧情复杂度和剧情权重计算的参考时长。可以在 70-90 秒内微调，但不要平均分配，不要全部 12 秒；优先把完整剧情段落设计成接近 15 秒，每段必须 4-15 秒。只允许使用剧本已有剧情，信息不足时不要为了凑时长增补事件。",
           }
         : undefined,
       assets: assets.map((asset) => ({
@@ -18792,7 +18919,11 @@ function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCoun
 
 function normalizeStoryboardShot(raw, index, context) {
   if (!raw || typeof raw !== "object") return null;
-  const duration = clampShotDuration(Number(raw.duration || 0) || context.durationPlan.durations[index] || 9, context.durationPlan.durations[index] || 9);
+  const durationMode = normalizeDurationMode(context.durationMode || context.durationPlan?.durationMode);
+  const plannedDuration = context.durationPlan.durations[index] || 9;
+  const duration = durationMode === DURATION_MODE_FREE
+    ? plannedDuration
+    : clampShotDuration(Number(raw.duration || 0) || plannedDuration, plannedDuration);
   const title = compactLine(raw.title || raw.name || raw.beat || `分镜 ${index + 1}`).slice(0, 80);
   const beat = compactLine(raw.beat || raw.evidence || raw.purpose || title).slice(0, 1200);
   const purpose = compactLine(raw.purpose || `还原剧本节拍：${beat || title}`).slice(0, 600);
@@ -18826,16 +18957,16 @@ function normalizeStoryboardShot(raw, index, context) {
     beat,
     videoDesign,
     assetLookup,
+    endBeatIndex: Math.round(Number(raw.endBeatIndex || 0)) || 0,
   };
 }
 
-function shouldRebalanceShotDurations(shots = [], durationMode = DURATION_MODE_TK) {
-  const mode = normalizeDurationMode(durationMode);
+function shouldRebalanceShotDurations(shots = []) {
   const durations = shots.map((shot) => Number(shot.duration || 0)).filter((duration) => duration > 0);
   if (durations.length <= 1) return false;
   const total = durations.reduce((sum, duration) => sum + duration, 0);
   const unique = new Set(durations);
-  if (total < (mode === DURATION_MODE_FREE ? shots.length * VIDEO_MIN_SECONDS : VIDEO_MIN_EPISODE_SECONDS)) return true;
+  if (total < VIDEO_MIN_EPISODE_SECONDS) return true;
   if (durations.some((duration) => duration < VIDEO_MIN_SECONDS || duration > VIDEO_MAX_SECONDS)) return true;
   if (unique.size === 1) return true;
   if (unique.size <= Math.max(1, Math.floor(durations.length / 4))) return true;
@@ -18852,7 +18983,6 @@ function rebalanceShotDurations(shots = [], options = {}) {
     beats,
     targetDuration,
     rawDurations,
-    durationMode: options.durationMode,
   });
   return shots.map((shot, index) => ({
     ...shot,
@@ -18913,22 +19043,38 @@ function removeTailFrameContinuityFromStoryboardPrompt(prompt) {
 }
 
 function normalizeStoryboardPlan(data, context) {
-  const durationMode = normalizeDurationMode(context.durationMode);
+  const durationMode = normalizeDurationMode(context.durationMode || context.durationPlan?.durationMode);
   const rawShots = Array.isArray(data?.shots) ? data.shots : [];
+  if (durationMode === DURATION_MODE_FREE && rawShots.length !== context.durationPlan.shotCount) {
+    throw new Error(`自由模式镜头数量异常：模型返回 ${rawShots.length}，要求 ${context.durationPlan.shotCount}`);
+  }
   let shots = rawShots.map((shot, index) => normalizeStoryboardShot(shot, index, context)).filter(Boolean);
   if (!shots.length) throw new Error("视频分镜模型没有返回有效 shots");
-  if (shouldRebalanceShotDurations(shots, durationMode)) {
+  if (durationMode === DURATION_MODE_FREE) {
+    const durations = lockFreeDurationsFromCuts({
+      targetDuration: context.durationPlan.target,
+      shotCount: context.durationPlan.shotCount,
+      sourceBeats: context.sourceBeats,
+      cutAfterBeatIndices: shots.map((shot) => shot.endBeatIndex),
+    });
+    shots = shots.map((shot, index) => ({
+      ...shot,
+      duration: durations[index],
+      durationReason: "自由模式：大模型标记转场，后端锁定秒数",
+    }));
+  } else if (shouldRebalanceShotDurations(shots)) {
     shots = rebalanceShotDurations(shots, {
       durationPlan: context.durationPlan,
       targetDuration: Number(data?.targetDuration || 0),
-      durationMode,
     });
   }
   const total = shots.reduce((sum, shot) => sum + shot.duration, 0);
-  const minAllowed = durationMode === DURATION_MODE_FREE ? shots.length * VIDEO_MIN_SECONDS : VIDEO_MIN_EPISODE_SECONDS;
+  if (durationMode === DURATION_MODE_FREE && total !== context.durationPlan.target) {
+    throw new Error(`自由模式后端时长分配异常：${total}s，目标 ${context.durationPlan.target}s`);
+  }
   const maxAllowed = Math.min(VIDEO_MAX_EPISODE_SECONDS, shots.length * VIDEO_MAX_SECONDS);
-  if (total < minAllowed || total > maxAllowed) {
-    throw new Error(`视频分镜模型返回总时长异常：${total}s，要求 ${minAllowed}-${maxAllowed}s`);
+  if (durationMode !== DURATION_MODE_FREE && (total < VIDEO_MIN_EPISODE_SECONDS || total > maxAllowed)) {
+    throw new Error(`视频分镜模型返回总时长异常：${total}s，要求 ${VIDEO_MIN_EPISODE_SECONDS}-${maxAllowed}s`);
   }
   return {
     ok: true,
@@ -18938,7 +19084,7 @@ function normalizeStoryboardPlan(data, context) {
   };
 }
 
-async function callStoryboardModel({ script, assets, dialogueLanguage, modelName, targetShotCount, code, beats, durationPlan }) {
+async function callStoryboardModel({ script, assets, dialogueLanguage, modelName, targetShotCount, code, beats, sourceBeats = [], durationPlan }) {
   const model = normalizeStoryboardModel(modelName);
   if (model === "rules") return { ok: false, model, reason: "使用本地规则拆解，未调用外部分镜模型" };
   const apiKey = storyboardApiKey();
@@ -18954,8 +19100,8 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
       temperature: 0.35,
       ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
       messages: [
-        { role: "system", content: storyboardSystemPrompt() },
-        { role: "user", content: storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, durationPlan }) },
+        { role: "system", content: storyboardSystemPrompt(durationPlan?.durationMode) },
+        { role: "user", content: storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, beats, sourceBeats, durationPlan }) },
       ],
     });
     const post = (withJsonMode) =>
@@ -18987,6 +19133,7 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
         dialogueLanguage,
         code,
         beats,
+        sourceBeats,
         durationPlan,
         durationMode: durationPlan?.durationMode,
       });
@@ -20066,7 +20213,12 @@ async function buildDraft(episodeRoot, options = {}) {
   const rawBeats = scriptBeatCandidates(videoScript);
   const continuityBeats = consolidateContinuousBeats(rawBeats);
   const targetShotCount = preferredShotCount(videoScript, continuityBeats, durationMode);
-  const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, { dialogueLanguage });
+  const sourceBeats = durationMode === DURATION_MODE_FREE
+    ? freeDurationSourceBeats(videoScript, continuityBeats)
+    : [];
+  const beats = durationMode === DURATION_MODE_FREE
+    ? sourceBeats.map((beat) => beat.text)
+    : fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, { dialogueLanguage });
   const durationPlan = planEpisodeDuration({
     shotCount: beats.length || targetShotCount,
     beats,
@@ -20082,6 +20234,7 @@ async function buildDraft(episodeRoot, options = {}) {
     targetShotCount,
     code,
     beats,
+    sourceBeats,
     durationPlan,
   });
   if (!storyboardModelResult.ok) {
@@ -20094,6 +20247,7 @@ async function buildDraft(episodeRoot, options = {}) {
     model: storyboardModelResult.model,
     script: videoScript,
     dialogueLanguage,
+    durationMode,
     shots,
   };
   const characterAssets = assets.filter((asset) => asset.type === "Character");
@@ -23590,15 +23744,20 @@ module.exports = {
       normalizeDurationMode,
       projectDurationMode,
       persistProjectDurationMode,
-      fullProjectState,
-      fullProjectStateForUser,
       scriptTimecodeTotalSeconds,
+      scriptBeatCandidates,
+      consolidateContinuousBeats,
+      freeDurationSourceBeats,
+      lockFreeDurationsFromCuts,
       preferredShotCount,
       targetDurationForBeats,
       planEpisodeDuration,
       shouldRebalanceShotDurations,
       normalizeStoryboardPlan,
+      storyboardSystemPrompt,
       storyboardUserPrompt,
+      fullProjectState,
+      fullProjectStateForUser,
     },
     seriesAssets: {
       resolveSeriesAssetDir,

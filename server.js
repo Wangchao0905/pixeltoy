@@ -10065,34 +10065,8 @@ function manualAssetTypeFromText(value) {
   return "Prop";
 }
 
-function englishPromptFromManualPrompt(value, assetType, label) {
-  const source = englishCue(value, "");
-  const chunks = String(source || "")
-    .replace(/[，；。]/g, ",")
-    .replace(/[：]/g, ":")
-    .split(/[,\n]+/)
-    .map((part) => compactLine(part))
-    .filter((part) => /[A-Za-z0-9]/.test(part))
-    .filter((part) => !/[\u4e00-\u9fff]/.test(part))
-    .filter((part) => !/^[-–—]+$/.test(part));
-  const deduped = [];
-  for (const chunk of chunks) {
-    if (!deduped.some((item) => item.toLowerCase() === chunk.toLowerCase())) deduped.push(chunk);
-  }
-  const base = deduped.join(", ") || `screenplay-provided visual direction for ${label}`;
-  const typeRule =
-    assetType === "Scene"
-      ? "16:9 landscape frame, wide establishing environment reference, no people, no human silhouettes, final rendering style controlled by the selected asset style"
-      : assetType === "Prop"
-        ? "16:9 landscape frame, pure white background, front view, side view, back view, same prop three-view reference sheet, final rendering style controlled by the selected asset style"
-        : assetType === "Insert"
-          ? "16:9 landscape frame, insert-shot evidence detail, clear centered subject, final rendering style controlled by the selected asset style"
-          : "16:9 landscape frame, pure white background, full body three-view character sheet, front view, side view, back view, half-body close-up portrait, same character identity across all views, final rendering style controlled by the selected asset style";
-  const negative =
-    assetType === "Scene"
-      ? "Negative constraints: no people, no crowds, no human silhouettes, no readable random text, no watermark, no unrelated style override."
-      : "Negative constraints: no watermark, no random text, no extra people, no unrelated props, no unrelated style override, no default Chinese or East Asian face unless explicitly required.";
-  return `Text-to-image task: Generate one production-grade ${assetType.toLowerCase()} reference asset for "${label}". ${base}. Required specification: ${typeRule}. ${negative}`.trim();
+function manualPromptFromUserPrompt(value) {
+  return compactLine(value).slice(0, 4000);
 }
 
 function extractManualAssetPromptBlocks(script) {
@@ -10117,7 +10091,7 @@ function extractManualAssetPromptBlocks(script) {
       heading: compactLine(match[2]),
       descriptor: compactLine(match[3]),
       prompt,
-      textToImagePrompt: englishPromptFromManualPrompt(prompt, type, label),
+      textToImagePrompt: manualPromptFromUserPrompt(prompt),
     });
   }
   return blocks;
@@ -15913,29 +15887,6 @@ function assetMatchCode(type, name = "", index = 0) {
   return `PT-${prefix}${number}`;
 }
 
-function assetMatchRuleForPrompt(asset) {
-  const code = asset.matchCode || assetMatchCode(asset.type, asset.name || asset.id || asset.label);
-  const type = normalizeAssetType(asset.type || inferAssetTypeFromName(asset.name || asset.id), "Prop");
-  if (type === "Character") {
-    return `Production matching code: ${code}. This code links this character asset to storyboard silhouette labels and video prompts. Do not render any readable code, label, watermark, UI mark, caption, or text inside the image.`;
-  }
-  if (type === "Scene") {
-    return `Production matching code: ${code}. This code links this location asset to storyboard scene-zone labels and video prompts. Do not render any readable code, label, signage, watermark, UI mark, caption, or text unless exact signage is explicitly required by the screenplay.`;
-  }
-  if (type === "Prop" || type === "Insert") {
-    return `Production matching code: ${code}. This code links this prop or insert asset to storyboard prop labels and video prompts. Do not render any readable code, label, watermark, UI mark, caption, or extra text inside the image.`;
-  }
-  return `Production matching code: ${code}. Use this as workflow metadata only; do not render the code inside the image.`;
-}
-
-function withAssetMatchRule(prompt, asset) {
-  const text = String(prompt || "").trim();
-  if (!text) return text;
-  const code = asset.matchCode || assetMatchCode(asset.type, asset.name || asset.id || asset.label);
-  if (text.includes(code) || /Production matching code:/i.test(text)) return text;
-  return `${assetMatchRuleForPrompt({ ...asset, matchCode: code })}\n${text}`;
-}
-
 function buildRuleAssets(script, worldProfile) {
   const manualBlocks = extractManualAssetPromptBlocks(script);
   const structuredDescriptions = parseStructuredAssetDescriptions(script);
@@ -16099,7 +16050,7 @@ function assetAnalyzerSystemPrompt() {
 
 必须遵守：
 - 只输出 JSON，不输出 Markdown，不输出解释。
-- 所有 JSON 字段内容使用中文，只有 textToImagePrompt 字段必须使用英文。
+- 所有 JSON 字段内容使用中文，textToImagePrompt 也必须使用中文。
 - 严格根据剧本证据设计，不得凭空添加剧本没有的人物、地点、怪物、武器或事件。
 - 你会收到 fallbackCandidates。优先逐项修正这些候选资产；每个修正项必须填写 sourceId，且 sourceId 必须原样等于候选资产里的 sourceId。
 - 不得依靠数组顺序匹配资产；必须用 sourceId 和 label 明确指向资产。
@@ -16110,11 +16061,11 @@ function assetAnalyzerSystemPrompt() {
 - 人物 label 只能是人物、群体角色或怪物实体名称；不得把地点、时间、组织、文件、镜头说明当成人物。
 - 场景必须解析地点、时代、国家/地域感、时间、天气、光线、空间结构和剧情痕迹；场景图必须无人物。
 - 场景 label 只能是地点/环境/空间名称；不得把人物、对白、道具、文件标题当成场景。
-- 人物资产图规格：16:9、纯白背景、同一人物四视图：全身正面、全身侧面、全身背面、半身特写。不要在资产解析阶段固定超写实；最终画风由界面资产风格选择控制。
-- 场景资产图规格：16:9、无人物、全景或大全景。不要在资产解析阶段固定超写实；最终画风由界面资产风格选择控制。
+- 人物资产图规格：16:9、纯白背景、同一人物四视图：全身正面、全身侧面、全身背面、半身特写。视觉风格只能写入中文资产文档提示词，不得等待界面选择或另行注入。
+- 场景资产图规格：16:9、无人物、全景或大全景。视觉风格只能写入中文资产文档提示词，不得等待界面选择或另行注入。
 - 道具 Prop 资产图规格：16:9、纯白背景、同一道具三视图：正面、侧面、背面。不要做成生活场景图。
 - 插入 Insert 资产保持证据特写/微距细节，不使用道具三视图规则。
-- textToImagePrompt 必须是英文，且可以直接提交给 gpt-image-2 文生图模型；必须包含该资产的具体剧本对象、外观差异、材质、时代/地域、构图规则和 negative constraints。
+- textToImagePrompt 必须是中文，直接使用资产文档中的剧本对象、剧本依据、视觉解析和其中明确写出的风格描述；不得翻译、改写成英文或添加界面风格。
 
 输出 JSON 结构：
 {
@@ -16125,7 +16076,7 @@ function assetAnalyzerSystemPrompt() {
       "label": "人物名，保留剧本人名",
       "evidence": "剧本依据，必须简短引用/概括",
       "visual": "中文视觉设计，包含年龄、族裔/地域、身材、脸、发型、服装、材质、职业痕迹、独特区分点",
-      "textToImagePrompt": "English prompt for one 16:9 pure-white-background full-body front/side/back plus half-body close-up character identity sheet. Do not hardcode photorealism; describe identity, costume, materials and layout only."
+      "textToImagePrompt": "中文资产文档提示词：根据剧本对象、剧本依据和视觉解析生成；固定16:9、纯白背景、同一人物全身正面/侧面/背面和面部特写。"
     }
   ],
   "scenes": [
@@ -16134,7 +16085,7 @@ function assetAnalyzerSystemPrompt() {
       "label": "场景名",
       "evidence": "剧本依据",
       "visual": "中文场景设计，包含地点、时间、光线、空间、年代、地域细节、剧情痕迹",
-      "textToImagePrompt": "English prompt for one 16:9 wide establishing environment image with no people"
+      "textToImagePrompt": "中文资产文档提示词：根据剧本对象、剧本依据和视觉解析生成；固定16:9无人物全景或大全景。"
     }
   ],
   "props": [
@@ -16144,7 +16095,7 @@ function assetAnalyzerSystemPrompt() {
       "label": "道具或插入镜头主体",
       "evidence": "剧本依据",
       "visual": "中文视觉设计",
-      "textToImagePrompt": "English prompt. If type is Prop, prompt must create one 16:9 pure-white-background front/side/back three-view prop reference sheet. If type is Insert, prompt must create one 16:9 insert/evidence detail image. Do not hardcode photorealism; final rendering style is selected later by the UI."
+      "textToImagePrompt": "中文资产文档提示词：根据剧本对象、剧本依据和视觉解析生成；道具固定16:9纯白背景三视图，插入镜头固定16:9证据细节图。"
     }
   ]
 }`;
@@ -16162,7 +16113,7 @@ function assetAnalyzerUserPrompt({ script, fallbackAssets, worldProfile }) {
   }));
   return JSON.stringify(
     {
-      task: "根据剧本生成更准确的资产视觉解析和英文文生图提示词。",
+      task: "根据剧本生成更准确的资产视觉解析和中文资产文档生图提示词。",
       requiredProcess: [
         "如果 fallbackCandidates 中 lockedManual 为 true，必须保留该候选的 sourceId、type、label 和 textToImagePrompt，不得改成群体角色或其他人物。",
         "先阅读 screenplay，确认人物、场景、道具/插入镜头。",
@@ -16180,21 +16131,8 @@ function assetAnalyzerUserPrompt({ script, fallbackAssets, worldProfile }) {
 }
 
 function validateAnalyzerPrompt(asset, prompt) {
-  const text = compactLine(prompt);
-  if (text.length < 120) return "";
-  if (/[\u4e00-\u9fff]/.test(text)) return "";
-  const lower = text.toLowerCase();
-  const hasAny = (terms) => terms.some((term) => lower.includes(term));
-  const groups =
-    asset.type === "Character"
-      ? [["16:9"], ["pure white", "white background"], ["front"], ["side"], ["back"], ["half-body", "half body", "portrait"]]
-      : asset.type === "Scene"
-        ? [["16:9"], ["wide", "establishing"], ["no people", "without people", "empty environment", "no human"]]
-        : asset.type === "Prop"
-          ? [["16:9"], ["pure white", "white background"], ["front"], ["side"], ["back"]]
-          : [["16:9"]];
-  if (!groups.every(hasAny)) return "";
-  return prompt.trim();
+  const text = String(prompt || "").trim();
+  return text ? text.slice(0, 4000) : "";
 }
 
 // 分批解析:整份文档一次性解析要吐 ~1万 tokens、200-300秒常超时;超时由资产提取流程硬失败,
@@ -16686,14 +16624,14 @@ function assetCoverageSystemPrompt() {
 
 必须遵守：
 - 只输出 JSON，不输出 Markdown，不输出解释。
-- 所有 JSON 字段内容使用中文，只有 textToImagePrompt 字段必须使用英文。
+- 所有 JSON 字段内容使用中文，textToImagePrompt 也必须使用中文。
 - 只能补缺口：existingAssets 已覆盖的人物、场景、道具不得重复输出。
 - 严格根据 screenplay 和 storyboardShots 的证据判断，不得凭空添加剧本没有的人物、地点、怪物、武器或事件。
 - 如果分镜中出现某个人物、地点、关键道具，但 existingAssets 没有对应资产，必须输出为 missing。
 - 人物 label 只能是人物、群体角色或怪物实体名称；不得把地点、时间、组织、文件、镜头说明当成人物。
 - 场景 label 只能是地点/环境/空间名称；不得把人物、对白、道具、文件标题当成场景。
 - 道具 Prop 是需要在多个镜头保持外观的物件，必须 16:9 纯白背景三视图；Insert 是证据细节/微距特写。
-- textToImagePrompt 必须是英文，可直接提交给 gpt-image-2；人物必须 16:9 纯白背景全身正侧背三视图加半身特写；场景必须 16:9 无人物大全景；Prop 必须 16:9 纯白背景三视图。
+- textToImagePrompt 必须是中文资产文档提示词，可直接提交给 gpt-image-2；人物必须 16:9 纯白背景全身正侧背三视图加半身特写；场景必须 16:9 无人物大全景；Prop 必须 16:9 纯白背景三视图。
 
 输出 JSON 结构：
 {
@@ -16703,7 +16641,7 @@ function assetCoverageSystemPrompt() {
       "label": "缺失人物名",
       "evidence": "剧本或分镜依据",
       "visual": "中文视觉设计",
-      "textToImagePrompt": "English prompt"
+      "textToImagePrompt": "中文资产文档提示词"
     }
   ],
   "missingScenes": [
@@ -16711,7 +16649,7 @@ function assetCoverageSystemPrompt() {
       "label": "缺失场景名",
       "evidence": "剧本或分镜依据",
       "visual": "中文场景设计",
-      "textToImagePrompt": "English prompt"
+      "textToImagePrompt": "中文资产文档提示词"
     }
   ],
   "missingProps": [
@@ -16720,7 +16658,7 @@ function assetCoverageSystemPrompt() {
       "label": "缺失道具或插入镜头主体",
       "evidence": "剧本或分镜依据",
       "visual": "中文视觉设计",
-      "textToImagePrompt": "English prompt"
+      "textToImagePrompt": "中文资产文档提示词"
     }
   ]
 }`;
@@ -19450,176 +19388,22 @@ function seedancePromptForShot(shot, index, dialogueLanguage) {
   return seedancePromptBlock(shot, index, dialogueLanguage);
 }
 
-const ENGLISH_CUE_TRANSLATIONS = [
-  ["PROJECT GRAYLIGHT 机密文件夹", "classified PROJECT GRAYLIGHT folder"],
-  ["灰化中空牲畜尸体法医特写", "forensic close-up of an ash-gray hollow livestock carcass"],
-  ["2005年泛黄档案照片", "yellowed archival photograph from 2005"],
-  ["未知号码电话插入镜头", "unknown-number phone call insert"],
-  ["2103年新港市地铁列车车厢与隧道", "Newport City metro train carriage and tunnel in 2103"],
-  ["暗紫色应急灯下震颤的地铁车厢", "shaking metro carriage under dark purple emergency lights"],
-  ["灾变后狼藉血腥的地铁车厢", "bloodied disaster-struck metro carriage after the mutation outbreak"],
-  ["Peterson农场牧场围栏清晨", "Peterson farm pasture fence at early morning"],
-  ["警长巡逻车内", "inside the sheriff patrol car"],
-  ["小镇学校方向", "toward the small-town school"],
-  ["伊森·凯恩 Ω核心战甲形态", "Ethan Kane in activated Omega-core black bio-armor form"],
-  ["维修工程师伊森·凯恩", "Ethan Kane, maintenance engineer"],
-  ["伊森·凯恩", "Ethan Kane"],
-  ["上班族乘客", "office worker passenger"],
-  ["异化中年男人", "mutating middle-aged male passenger"],
-  ["女乘客", "female passenger"],
-  ["畸变怪物", "mutated humanoid monster"],
-  ["Ω核心激活蓝色能量纹路", "activated Omega core with blue energy veins"],
-  ["蓝色能量刃", "blue energy blade"],
-  ["设备检修单据", "maintenance inspection paperwork"],
-  ["外景", "exterior"],
-  ["内景", "interior"],
-  ["牧场", "ranch pasture"],
-  ["农场", "farm"],
-  ["新港市", "Newport City"],
-  ["地铁", "metro"],
-  ["车厢", "train carriage"],
-  ["隧道", "tunnel"],
-  ["列车", "train"],
-  ["晚高峰", "rush hour"],
-  ["晚秋", "late autumn"],
-  ["学校", "school"],
-  ["巡逻车", "patrol car"],
-  ["手套箱", "glove compartment"],
-  ["围栏", "fence"],
-  ["清晨", "early morning"],
-  ["夜晚", "night"],
-  ["白天", "daytime"],
-  ["黄昏", "dusk"],
-  ["灰化", "ash-gray calcified"],
-  ["中空", "hollow"],
-  ["牲畜", "livestock"],
-  ["牛", "cattle"],
-  ["尸体", "carcass"],
-  ["照片", "photograph"],
-  ["文件夹", "folder"],
-  ["电话", "phone call"],
-  ["手机", "cell phone"],
-  ["检修单据", "inspection paperwork"],
-  ["生物装甲", "bio-armor"],
-  ["战甲", "armor suit"],
-  ["能量刃", "energy blade"],
-  ["蓝色能量", "blue energy"],
-  ["暗紫色", "dark purple"],
-  ["频闪", "flickering"],
-  ["电流爆破", "electrical blast"],
-  ["畸变", "mutated"],
-  ["异化", "mutation"],
-  ["怪物", "monster"],
-  ["利爪", "claws"],
-  ["工装", "workwear"],
-  ["机油", "machine oil"],
-  ["公文包", "briefcase"],
-  ["未知号码", "unknown number"],
-  ["机密", "classified"],
-  ["裂缝", "rift"],
-  ["灰蓝光", "gray-blue glow"],
-  ["副警长", "deputy sheriff"],
-  ["警长", "sheriff"],
-  ["博士", "doctor"],
-];
-
-function englishCue(value, fallback = "screenplay-derived subject") {
-  let text = compactLine(value)
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/[·]/g, " ")
-    .replace(/[，、]/g, ", ")
-    .replace(/[。]/g, ". ")
-    .replace(/[：]/g, ": ")
-    .replace(/[；]/g, "; ")
-    .replace(/[！？]/g, ". ");
-  for (const [source, target] of ENGLISH_CUE_TRANSLATIONS) {
-    text = text.replace(new RegExp(source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), target);
+function assetDocumentPromptFor(asset) {
+  if (asset?.analyzerSource === "manual" && asset?.textToImagePromptOverride) {
+    return String(asset.textToImagePromptOverride).trim();
   }
-  text = text.replace(/[\u4e00-\u9fff]+/g, " ");
-  text = text.replace(/\s*\/\s*/g, " / ").replace(/\s+/g, " ").trim();
-  return text || fallback;
-}
-
-function canonicalAssetDocumentFactsPrompt(asset) {
-  const subject = compactLine(asset?.label || "");
-  const evidence = compactLine(asset?.evidence || "");
-  const visual = compactLine(asset?.visual || "");
-  if (!subject && !evidence && !visual) return "";
   return [
-    "CANONICAL ASSET DOCUMENT FACTS (HARD CONTENT SOURCE):",
-    subject ? `资产文档主体：${subject}` : "",
-    evidence ? `资产文档剧本依据：${evidence}` : "",
-    visual ? `资产文档视觉解析：${visual}` : "",
-    "以上资产文档事实优先于上方英文模板中缺失、泛化或矛盾的描述；不得改成其他人物、地点、物件、服装或事件。",
+    "资产文档事实（生图内容唯一来源）：",
+    `资产类型：${asset?.type === "Character" ? "人物" : asset?.type === "Scene" ? "场景" : asset?.type === "Insert" ? "插入镜头" : "道具"}`,
+    asset?.label ? `资产主体：${asset.label}` : "",
+    asset?.evidence ? `剧本依据：${asset.evidence}` : "",
+    asset?.visual ? `视觉解析：${asset.visual}` : "",
+    "只根据以上资产文档事实生成主体内容，不得把资产编号、英文模板或其他参考图内容当成主体描述。",
   ].filter(Boolean).join("\n");
 }
 
 function textToImagePrompt(asset) {
-  const prompt = baseTextToImagePrompt(asset);
-  return [prompt, canonicalAssetDocumentFactsPrompt(asset)].filter(Boolean).join("\n\n");
-}
-
-function baseTextToImagePrompt(asset) {
-  if (asset.textToImagePromptOverride) return withAssetMatchRule(asset.textToImagePromptOverride, asset);
-  const object = englishCue(asset.label, asset.type === "Scene" ? "screenplay-derived location" : asset.type === "Character" ? "screenplay character" : "screenplay prop or insert detail");
-  const evidence = englishCue(asset.evidence, object);
-  const visual = englishCue(asset.visual, "");
-  const profile = asset.worldProfile || {};
-  const storyWorld = profile.settingPrompt || "screenplay-specific story world";
-  const castingRule = profile.humanCastingPrompt || "Casting must follow the screenplay context exactly; do not default to any unrelated ethnicity.";
-  const localeRule = profile.sceneLocalePrompt || "The environment must follow the screenplay location exactly; do not add unrelated regional visual defaults.";
-  if (asset.type === "Character") {
-    return `Text-to-image task: Generate one production-grade character reference asset based on the screenplay-parsed subject "${object}".
-Story world: ${storyWorld}.
-Screenplay evidence cue: ${evidence}
-Parsed visual design cue: ${visual || "use only the screenplay evidence and avoid generic casting"}
-Image specification: 16:9 landscape frame, pure white background, one single identity-sheet image containing four views: full-body front view, full-body side view, full-body back view, and one half-body close-up portrait.
-Casting and ethnicity rule: ${castingRule}
-Character design: infer the character's age range, professional presence, body condition, clothing, hairstyle, facial features, and restrained expression only from the screenplay evidence. Do not create a generic unrelated person.
-Rendering style: leave final rendering style to the selected asset style in Pixel Toys. This base prompt describes only identity, costume, materials, layout, and story evidence.
-Lighting: premium neutral presentation lighting appropriate to the selected asset style, clear facial identity, readable costume/material details, not overly theatrical.
-Composition: clean character turnaround identity-sheet layout; all four views must be complete and visibly the same person, not four different people.
-Negative constraints: no readable text, no watermark, no action pose, no dramatic scene background, no extra props, no random decoration, no sunglasses unless explicitly required by the screenplay, no default Chinese or East Asian face unless explicitly written in the screenplay.`;
-  }
-  if (asset.type === "Scene") {
-    return `Text-to-image task: Generate one production-grade environment reference asset based on the screenplay-parsed location "${object}".
-Story world: ${storyWorld}.
-Screenplay evidence cue: ${evidence}
-Parsed visual design cue: ${visual || "use only the screenplay evidence and avoid generic locations"}
-Image specification: 16:9 landscape frame, cinematic wide establishing shot or extreme wide establishing shot.
-Locale rule: ${localeRule}
-Scene design: infer the location, period, time of day, weather, lighting, spatial structure, ground material, background elements, and story-relevant traces only from the screenplay evidence. Do not create a generic unrelated location.
-Content rule: absolutely no people, no character silhouettes, no crowds, no human shadows, and no visible human figures. Show environment and space only.
-Rendering style: leave final rendering style to the selected asset style in Pixel Toys. This base prompt describes only location identity, spatial structure, materials, light direction, and story evidence.
-Composition: wide-angle establishing composition with complete foreground, midground, and background; preserve usable negative space for later character generation and video camera movement. Do not crop into a close-up.
-Atmosphere: truthful suspense and pressure implied by the screenplay, without cheap horror filters.
-Negative constraints: no people, no human silhouettes, no pure white background, no random readable text, no unrelated animals or vehicles unless explicitly required by the screenplay, no Chinese signage or Chinese metro visual defaults unless explicitly written in the screenplay.`;
-  }
-  if (asset.type === "Prop") {
-    return `Text-to-image task: Generate one production-grade prop reference asset based on the screenplay-parsed subject "${object}".
-Story world: ${storyWorld}.
-Screenplay evidence cue: ${evidence}
-Parsed visual design cue: ${visual || "use only the screenplay evidence and avoid generic props"}
-Image specification: 16:9 landscape frame, pure white background, one single prop turnaround sheet containing three views of the exact same prop: front view, side view, and back view.
-Subject design: the main subject must be ${object}. Infer material, period, wear, condition, placement, and story meaning only from the screenplay evidence. Do not create a generic unrelated object.
-Rendering style: leave final rendering style to the selected asset style in Pixel Toys. This base prompt describes only object identity, material logic, construction, wear, and reference-sheet layout.
-Composition: clean prop turnaround layout; all three views must show the same object identity, full object silhouette visible, evenly spaced, no scene background, no hands, no people, no extra objects.
-Lighting: premium neutral studio lighting on pure white, clear edges and material detail, not overly theatrical.
-Text rule: if readable text is necessary, use only exact text explicitly present in the screenplay; do not invent extra text.
-Negative constraints: no watermark, no random logos, no extra people, no hands, no lifestyle scene, no table clutter, no cartoon style, no CG look, no three different props.`;
-  }
-  return `Text-to-image task: Generate one production-grade insert-shot / evidence-detail reference asset based on the screenplay-parsed subject "${object}".
-Story world: ${storyWorld}.
-Screenplay evidence cue: ${evidence}
-Parsed visual design cue: ${visual || "use only the screenplay evidence and avoid generic insert details"}
-Image specification: 16:9 landscape frame, clear insert-shot / evidence-detail reference image.
-Subject design: the main subject must be ${object}. Infer material, period, wear, condition, placement, and story meaning only from the screenplay evidence. Do not create a generic unrelated object.
-Rendering style: leave final rendering style to the selected asset style in Pixel Toys. This base prompt describes only subject identity, material logic, evidence detail, and composition.
-Composition: keep the subject clear and centered for later image-to-video reference; macro forensic evidence composition is allowed, and the relevant detail must be clear.
-Lighting: restrained evidence lighting or truthful practical location light, tense suspense atmosphere, not overly theatrical.
-Text rule: if readable text is necessary, use only exact text explicitly present in the screenplay; do not invent extra text.
-Negative constraints: no watermark, no random logos, no extra people, no cartoon style, no CG look.`;
+  return assetDocumentPromptFor(asset);
 }
 
 function assetManifestFromAssets({ title, script, worldProfile, assets, analyzerResult, modelName, coverage = null, audit = null }) {
@@ -20018,9 +19802,9 @@ ${propList}
 - 资产解析来源：${analyzerText}。
 - 资产覆盖校验：${coverageText}。
 - 人物资产：C###，16:9，纯白背景，一张图内必须包含全身正面、全身侧面、全身背面、半身特写。
-- 人物质感：由界面中的“资产风格”选择决定；只有选择“超写实”时才使用真人电影质感、真实皮肤、毛孔、皱纹、细小瑕疵等写实描述。
+- 人物视觉风格：只使用资产文档提示词中的明确描述；不再从界面选择或注入风格。
 - 场景资产：S###，16:9，必须是无人物的全景/大全景环境图，不得出现人影、群众、角色剪影，不得使用纯白背景。
-- 场景质感：由界面中的“资产风格”选择决定；只有选择“超写实”时才使用电影场景照/实拍摄影描述，空间信息必须完整并保留后续角色生成可用的留白。
+- 场景视觉风格：只使用资产文档提示词中的明确描述；不再从界面选择或注入风格。
 - 命名规则：每个资产名必须包含可识别的人物名称、场景名称、道具名称或插入镜头主体，避免画布连线时混淆。
 - 道具资产：P###，16:9，纯白背景，同一道具三视图（正面、侧面、背面），清晰、实拍感、物件主导。
 - 插入镜头资产：I###，法医细节、微距、证据特写。
@@ -20040,9 +19824,9 @@ ${orderedAssets
 解析来源：${sourceText(asset)}
 匹配暗号：${asset.matchCode || assetMatchCode(asset.type, asset.name)}（用于故事版和视频提示词绑定，不要求画进资产图）
 
-文生图提示词（英文，提交给生图模型）：
+资产文档生图提示词（中文事实源，提交给生图模型）：
 \`\`\`text
-${textToImagePrompt(asset)}
+${assetDocumentPromptFor(asset)}
 \`\`\``;
     }
     if (asset.type === "Scene") {
@@ -20055,9 +19839,9 @@ ${textToImagePrompt(asset)}
 解析来源：${sourceText(asset)}
 匹配暗号：${asset.matchCode || assetMatchCode(asset.type, asset.name)}（用于故事版和视频提示词绑定，不要求画进资产图）
 
-文生图提示词（英文，提交给生图模型）：
+资产文档生图提示词（中文事实源，提交给生图模型）：
 \`\`\`text
-${textToImagePrompt(asset)}
+${assetDocumentPromptFor(asset)}
 \`\`\``;
     }
     return `## New ${asset.type} Asset: ${asset.name}
@@ -20069,9 +19853,9 @@ ${textToImagePrompt(asset)}
 解析来源：${sourceText(asset)}
 匹配暗号：${asset.matchCode || assetMatchCode(asset.type, asset.name)}（用于故事版和视频提示词绑定，不要求画进资产图）
 
-文生图提示词（英文，提交给生图模型）：
+资产文档生图提示词（中文事实源，提交给生图模型）：
 \`\`\`text
-${textToImagePrompt(asset)}
+${assetDocumentPromptFor(asset)}
 \`\`\``;
   })
   .join("\n\n")}
@@ -20386,9 +20170,9 @@ ${propList}
 
 - 资产解析来源：${analyzerResult.ok ? `已使用资产解析模型 ${analyzerResult.model}` : `已回退本地规则解析；尝试模型：${analyzerResult.model || normalizeAssetAnalyzerModel(options.assetAnalyzerModel)}；原因：${analyzerResult.reason || "未知"}`}。
 - 人物资产：C###，16:9，纯白背景，一张图内必须包含全身正面、全身侧面、全身背面、半身特写。
-- 人物质感：由界面中的“资产风格”选择决定；只有选择“超写实”时才使用真人电影质感、真实皮肤、毛孔、皱纹、细小瑕疵等写实描述。
+- 人物视觉风格：只使用资产文档提示词中的明确描述；不再从界面选择或注入风格。
 - 场景资产：S###，16:9，必须是无人物的全景/大全景环境图，不得出现人影、群众、角色剪影，不得使用纯白背景。
-- 场景质感：由界面中的“资产风格”选择决定；只有选择“超写实”时才使用电影场景照/实拍摄影描述，空间信息完整，保留可用于后续角色生成的留白。
+- 场景视觉风格：只使用资产文档提示词中的明确描述；不再从界面选择或注入风格。
 - 命名规则：每个资产名必须包含可识别的人物名称、场景名称、道具名称或插入镜头主体，避免画布连线时混淆。
 - 道具资产：P###，16:9，纯白背景，同一道具三视图（正面、侧面、背面），清晰、实拍感、物件主导。
 - 插入镜头资产：I###，法医细节、微距、证据特写。
@@ -20407,9 +20191,9 @@ ${orderedAssets
 视觉解析：${asset.visual || "使用剧本依据和本地规则生成。"}
 解析来源：${asset.analyzerNote || "本地规则解析"}
 
-文生图提示词（英文，提交给生图模型）：
+资产文档生图提示词（中文事实源，提交给生图模型）：
 \`\`\`text
-${textToImagePrompt(asset)}
+${assetDocumentPromptFor(asset)}
 \`\`\``;
     }
     if (asset.type === "Scene") {
@@ -20421,9 +20205,9 @@ ${textToImagePrompt(asset)}
 视觉解析：${asset.visual || "使用剧本依据和本地规则生成。"}
 解析来源：${asset.analyzerNote || "本地规则解析"}
 
-文生图提示词（英文，提交给生图模型）：
+资产文档生图提示词（中文事实源，提交给生图模型）：
 \`\`\`text
-${textToImagePrompt(asset)}
+${assetDocumentPromptFor(asset)}
 \`\`\``;
     }
     return `## New ${asset.type} Asset: ${asset.name}
@@ -20434,9 +20218,9 @@ ${textToImagePrompt(asset)}
 视觉解析：${asset.visual || "使用剧本依据和本地规则生成。"}
 解析来源：${asset.analyzerNote || "本地规则解析"}
 
-文生图提示词（英文，提交给生图模型）：
+资产文档生图提示词（中文事实源，提交给生图模型）：
 \`\`\`text
-${textToImagePrompt(asset)}
+${assetDocumentPromptFor(asset)}
 \`\`\``;
   })
   .join("\n\n")}
@@ -20672,7 +20456,7 @@ ${storyboardPanelGuideText(slot.panels || [], slot.dialogueLanguage || dialogueL
   .map((line) => `- ${line}`)
   .join("\n")}
 
-文生图提示词（英文，提交给生图模型）：
+故事板提示词（中文，提交给生图模型）：
 \`\`\`text
 ${storyboardPromptForSlot({ ...slot, dialogueLanguage: slot.dialogueLanguage || dialogueLanguage })}
 \`\`\``)
@@ -20832,12 +20616,9 @@ function normalizeAssetStylePreset(value) {
 
 function assetStyleFromBody(body = {}) {
   const preset = normalizeAssetStylePreset(body.assetStylePreset || "cg_3d");
-  const custom = compactLine(body.assetStyleCustom || "").replace(/```+/g, "'''").slice(0, 700);
   return {
     preset,
-    custom,
     label: ASSET_IMAGE_STYLE_PRESETS[preset].label,
-    prompt: ASSET_IMAGE_STYLE_PRESETS[preset].prompt,
   };
 }
 

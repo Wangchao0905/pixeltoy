@@ -20,7 +20,6 @@ for (const id of [
   "modernExtractAssets",
   "modernAssetWall",
   "modernAssetGenerationControls",
-  "modernAssetStylePreset",
   "modernAssetStyleReferenceFile",
   "modernAssetReferenceTarget",
   "modernAssetReferenceBind",
@@ -43,6 +42,7 @@ for (const id of [
 assert.doesNotMatch(html, /id="studioShell"/, "legacy editor must be removed from the document");
 assert.doesNotMatch(html, /class="studio-shell hidden"/, "legacy editor shell must be removed from the document");
 assert.doesNotMatch(html, /id="modernDetailsButton"/, "modern shell must not expose the legacy editor entry");
+assert.doesNotMatch(html, /id="modernAssetStylePreset"|id="modernAssetStyleCustom"/, "modern asset generation must not expose style preset or custom style controls");
 assert.match(css, /body\.is-studio-modern[\s\S]*--modern-signal/, "modern palette must be scoped to modern studio");
 assert.doesNotMatch(css, /body\.is-studio-modern\s+#studioShell/, "modern shell must not depend on a hidden legacy editor");
 assert.match(css, /modern-brand-logo\.pixel-toys-wordmark::before[\s\S]*animation:[^;]+!important/, "modern logo rotor must override the studio thermal guard");
@@ -121,7 +121,7 @@ assert.match(js, /modernVideoQueueInspector[\s\S]*generateModernVideoQueueShot/,
 assert.match(js, /saveVideoPrompt\(\)[\s\S]*generateVideoSegment\(shotName, \{ forceRegenerate \}\)/, "single-shot regeneration must save the edited prompt before submitting");
 assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");
 assert.match(js, /function bindModernAssetReference/, "modern shell must bind uploaded reference images to parsed assets");
-assert.match(js, /persistModernAssetStyleFromControls/, "modern shell must persist modern asset style controls");
+assert.doesNotMatch(js, /persistModernAssetStyleFromControls|modernAssetStylePreset|modernAssetStyleCustom/, "modern shell must not persist removed asset style controls");
 assert.match(js, /workflowEditorElement/, "modern source inputs must use shared workflow persistence");
 assert.doesNotMatch(js, /modernDetailsButton/, "modern shell must not wire a legacy editor handoff");
 assert.doesNotMatch(js, /detailsOpen\s*=\s*true/, "modern actions must not switch to the legacy editor");
@@ -227,7 +227,8 @@ assert.match(css, /\.modern-core\s*\{[^}]*overflow-x:\s*hidden[^}]*overflow-y:\s
 // 改动 4：资产参数控件共享 96px 标签列，原生 select 仍保留并采用 seg 外观。
 assert.match(html, /modern-asset-form-row/, "asset controls must expose the aligned form rows");
 assert.match(css, /\.modern-asset-generation-row\s*\{[^}]*grid-template-columns:\s*96px\s+minmax\(0,1fr\)/, "asset form rows must share a 96px label column");
-assert.match(html, /<select class="seg" id="modernAssetStylePreset"/, "style preset select must remain and use seg styling");
+assert.doesNotMatch(html, /id="modernAssetStylePreset"|id="modernAssetStyleCustom"/, "asset generation must leave style selection in the prompt document");
+assert.match(html, /id="modernAssetStyleReferenceFile"/, "style reference upload must remain available");
 assert.match(html, /<select class="seg" id="modernAssetReferenceTarget"/, "reference target select must remain and use seg styling");
 assert.match(css, /\.modern-asset-generation-controls\s+select\.seg[^}]*border-radius:\s*999px/, "native selects must receive the pill seg appearance");
 

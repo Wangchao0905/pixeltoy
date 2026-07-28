@@ -535,28 +535,7 @@
                         </div>
                         <button id="teamResourceButton" class="ghost small hidden" type="button">Team resources</button>
                       </div>
-                      <div class="asset-style-console asset-generation-only" aria-label="资产图风格控制">
-                        <label>
-                          <span>资产风格</span>
-                          <select id="assetStylePreset">
-                            <option value="photoreal">超写实</option>
-                            <option value="cg_3d" selected>3D 渲染 / CG 质感</option>
-                            <option value="pixar_3d">皮克斯 / 迪士尼 3D</option>
-                            <option value="ghibli_miyazaki">宫崎骏 / 吉卜力</option>
-                            <option value="retro_american_cel">复古美式赛璐璐</option>
-                            <option value="american_bold_toon">美式粗线条</option>
-                            <option value="modern_anime_cel">日式动漫赛璐璐</option>
-                            <option value="american_painterly">美式厚涂插画</option>
-                            <option value="claymation">定格动画 / 黏土</option>
-                            <option value="chinese_ink">水墨 / 国风</option>
-                            <option value="pixel_art">复古像素</option>
-                            <option value="custom">自定义</option>
-                          </select>
-                        </label>
-                        <label class="asset-style-custom">
-                          <span>风格补充</span>
-                          <input id="assetStyleCustom" placeholder="例如：冷调赛博西部，硬边轮廓，低饱和胶片颗粒" />
-                        </label>
+                      <div class="asset-style-console asset-generation-only" aria-label="资产图风格参考">
                         <div class="style-reference-row">
                           <div class="asset-file-row">
                             <input id="assetStyleReferenceFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
@@ -1106,31 +1085,6 @@
               <details class="modern-asset-generation-disclosure">
                 <summary>生图参数</summary>
                 <section id="modernAssetGenerationControls" class="modern-asset-generation-controls" aria-label="资产图生图参数">
-                  <div class="modern-asset-generation-row modern-asset-form-row">
-                    <label for="modernAssetStylePreset">风格选择</label>
-                    <div class="modern-asset-form-control">
-                      <select class="seg" id="modernAssetStylePreset">
-                      <option value="photoreal">超写实</option>
-                      <option value="cg_3d">3D 渲染 / CG 质感</option>
-                      <option value="pixar_3d">皮克斯 / 迪士尼 3D</option>
-                      <option value="ghibli_miyazaki">宫崎骏 / 吉卜力</option>
-                      <option value="retro_american_cel">复古美式赛璐璐</option>
-                      <option value="american_bold_toon">美式粗线条</option>
-                      <option value="modern_anime_cel">日式动漫赛璐璐</option>
-                      <option value="american_painterly">美式厚涂插画</option>
-                      <option value="claymation">定格动画 / 黏土</option>
-                      <option value="chinese_ink">水墨 / 国风</option>
-                      <option value="pixel_art">复古像素</option>
-                      <option value="custom">自定义</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div class="modern-asset-generation-row modern-asset-form-row">
-                    <label for="modernAssetStyleCustom">风格补充</label>
-                    <div class="modern-asset-form-control">
-                      <input id="modernAssetStyleCustom" placeholder="补充色彩、材质、光影或镜头质感" />
-                    </div>
-                  </div>
                   <div class="modern-asset-generation-row modern-asset-form-row modern-asset-reference-row">
                     <label for="modernAssetStyleReferenceFile">风格参考图</label>
                     <div class="modern-asset-form-control">
@@ -1158,7 +1112,7 @@
                 <div><span class="modern-eyebrow">PROMPT INSPECTOR</span><strong id="modernAssetPromptName">未选择资产</strong><small id="modernAssetPromptMeta"></small></div>
                 <button id="modernAssetClosePrompt" type="button" aria-label="关闭提示词编辑">关闭</button>
               </header>
-              <label for="modernAssetPromptInspectorPrompt">生成提示词</label>
+              <label for="modernAssetPromptInspectorPrompt">资产文档提示词（中文事实源）</label>
               <textarea id="modernAssetPromptInspectorPrompt" maxlength="4000" rows="7"></textarea>
               <div class="modern-asset-prompt-draft"><span id="modernAssetPromptDraftStatus">已保存</span><span id="modernAssetPromptCount">0 / 4000</span></div>
               <details class="modern-asset-prompt-policy"><summary>风格锁与负向约束</summary><pre id="modernAssetPromptPolicy"></pre></details>
@@ -1304,7 +1258,7 @@
         <input id="scriptUpload" type="file" /><span id="scriptUploadName"></span><input id="workflowScriptUpload" type="file" /><span id="workflowScriptUploadName"></span><input id="assetDescriptionUpload" type="file" /><span id="assetDescriptionUploadName"></span>
         <input type="radio" name="draftDialogueLanguage" value="en" checked /><input type="radio" name="draftDialogueLanguage" value="zh" /><input id="draftAssumeEnglishDialogue" type="checkbox" /><input type="radio" name="assetAnalyzerModel" value="claude-opus-4-8" checked /><input type="radio" name="assetAnalyzerModel" value="gpt-5.5-thinking" />
         <div id="assetManifestOverview"></div><span id="assetManifestStatus"></span><button id="confirmAssetManifestBtn" type="button"></button><button id="draftBtn" type="button"></button><div id="assetGallery"></div><span id="assetCount"></span><div id="assetJobStatus"></div>
-        <select id="assetQuality"><option value="1k">1K</option></select><select id="assetGenerateRange"><option value="missing">缺失</option></select><button data-job="assets" type="button"></button><select id="assetStylePreset"><option value="cg_3d">3D</option></select><input id="assetStyleCustom" /><div id="assetStylePreview"></div><input id="assetStyleReferenceFile" type="file" /><span id="assetStyleReferenceName"></span><input id="assetStyleReferenceEnabled" type="checkbox" checked /><button id="assetStyleReferenceRemove" type="button"></button>
+        <select id="assetQuality"><option value="1k">1K</option></select><select id="assetGenerateRange"><option value="missing">缺失</option></select><button data-job="assets" type="button"></button><input id="assetStyleReferenceFile" type="file" /><span id="assetStyleReferenceName"></span><input id="assetStyleReferenceEnabled" type="checkbox" checked /><button id="assetStyleReferenceRemove" type="button"></button>
         <div id="assetInspector"><span id="assetInspectorName"></span><span id="assetInspectorMeta"></span><textarea id="assetInspectorPrompt"></textarea><span id="assetInspectorDraftStatus"></span><span id="assetInspectorPromptCount"></span><span id="assetInspectorPolicy"></span><button id="closeAssetInspector" type="button"></button><button id="restoreAssetPrompt" type="button"></button><button id="saveAssetPrompt" type="button"></button><button id="regenerateAssetFromInspector" type="button"></button></div>
         <div id="referenceKitPanel"><form id="referenceKitForm"></form><button id="newReferenceKit" type="button"></button><button id="referenceKitCancel" type="button"></button><div id="referenceKitList"></div></div>
         <div id="storyboardGridGallery"></div><span id="storyboardGridCount"></span><div id="storyboardJobStatus"></div><select id="storyboardGenerateRange"><option value="missing">缺失</option></select><button data-job="storyboards" type="button"></button>

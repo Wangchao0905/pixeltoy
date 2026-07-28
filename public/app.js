@@ -172,8 +172,6 @@ const state = {
   activeWorkspaceMode: initialWorkspaceMode,
   activeJobId: "",
   assetAnalyzerModel: normalizeAssetAnalyzerModel(localStorage.getItem("pixelToys.assetAnalyzerModel")),
-  assetStylePreset: localStorage.getItem("pixelToys.assetStylePreset") || "cg_3d",
-  assetStyleCustom: localStorage.getItem("pixelToys.assetStyleCustom") || "",
   selectedAssetId: "",
   assetPromptDrafts: new Map(),
   assetInspectorOpen: false,
@@ -311,57 +309,6 @@ const DEFAULT_WINDOWS = {
   video: { left: 1506, top: 24, width: 310, height: 620 },
   storyboards: { left: 24, top: 672, width: 874, height: 420 },
 };
-const ASSET_STYLE_PRESETS = {
-  photoreal: {
-    label: "超写实",
-    cue: "真实摄影、真人电影质感、自然材质和真实镜头",
-  },
-  cg_3d: {
-    label: "3D 渲染 / CG 质感",
-    cue: "3D渲染风格的游戏人物角色，后续按资产细节描述执行",
-  },
-  pixar_3d: {
-    label: "皮克斯 / 迪士尼 3D",
-    cue: "温润圆润、富有情感的合家欢 3D 质感",
-  },
-  ghibli_miyazaki: {
-    label: "宫崎骏 / 吉卜力",
-    cue: "手绘水彩、自然光、怀旧治愈的 2D 动画质感",
-  },
-  retro_american_cel: {
-    label: "复古美式赛璐璐",
-    cue: "80s-90s 卡通、粗描边、复古印刷颗粒",
-  },
-  american_bold_toon: {
-    label: "美式粗线条",
-    cue: "3D卡通渲染、赛璐璐阴影、粗线条角色、科技蓝点缀、非写实",
-  },
-  modern_anime_cel: {
-    label: "日式动漫赛璐璐",
-    cue: "现代 TV 动画、干净线稿、二分阴影和高光",
-  },
-  american_painterly: {
-    label: "美式厚涂插画",
-    cue: "游戏原画、厚笔触、电影光影和史诗氛围",
-  },
-  claymation: {
-    label: "定格动画 / 黏土",
-    cue: "手工黏土、微缩布景、触感材质和轻微瑕疵",
-  },
-  chinese_ink: {
-    label: "水墨 / 国风",
-    cue: "留白、写意、宣纸纹理和流动墨韵",
-  },
-  pixel_art: {
-    label: "复古像素",
-    cue: "8-bit / 16-bit 游戏感、有限调色板和清晰像素网格",
-  },
-  custom: {
-    label: "自定义",
-    cue: "完全按自定义风格补充执行",
-  },
-};
-
 const VIDEO_MODEL_OPTIONS = {
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
@@ -5368,21 +5315,15 @@ function renderModernStudio(data = state.project) {
 }
 
 function renderModernAssetGenerationControls(data = state.project) {
-  const presetInput = $("#modernAssetStylePreset");
-  const customInput = $("#modernAssetStyleCustom");
   const stylePreview = $("#modernAssetStylePreview");
   const referenceName = $("#modernAssetStyleReferenceName");
   const referenceToggle = $("#modernAssetStyleReferenceEnabled");
   const referenceRemove = $("#modernAssetStyleReferenceRemove");
   const referencePreview = $("#modernAssetStyleReferencePreview");
   const targetSelect = $("#modernAssetReferenceTarget");
-  if (!presetInput || !customInput || !stylePreview || !targetSelect) return;
-
-  const style = assetStyleState();
+  if (!targetSelect) return;
   const styleReference = data?.assetStyleReference || {};
   const styleReferenceAsset = styleReference.asset || null;
-  presetInput.value = style.preset;
-  customInput.value = style.custom;
   if (referenceName) referenceName.textContent = styleReferenceAsset ? styleReference.originalFilename || styleReferenceAsset.name || "已上传参考图" : "未上传";
   if (referenceToggle) {
     referenceToggle.checked = styleReference.enabled !== false && !!styleReferenceAsset;
@@ -5394,7 +5335,11 @@ function renderModernAssetGenerationControls(data = state.project) {
       ? `<img src="${escapeAttr(styleReferenceAsset.url)}" alt="当前风格参考图" loading="lazy" />`
       : "";
   }
-  stylePreview.innerHTML = `<span>${escapeHtml(style.label)}</span><small>${escapeHtml(style.cue)}</small>${style.custom ? `<b>${escapeHtml(style.custom)}</b>` : ""}`;
+  if (stylePreview) {
+    stylePreview.innerHTML = styleReferenceAsset
+      ? "风格由资产文档提示词决定；参考图只提供线条、色彩、材质、光影和整体质感。"
+      : "风格由资产文档提示词决定；可选上传一张风格参考图。";
+  }
 
   const items = Array.isArray(data?.assetManifest?.items) ? data.assetManifest.items : [];
   const previousTarget = state.assetUploadTargetId || targetSelect.value || "";
@@ -5954,7 +5899,18 @@ function assetPromptDraft(assetName) {
 }
 
 function effectiveAssetPrompt(assetName) {
-  return String(assetPromptItem(assetName)?.textToImagePrompt || "");
+  const item = assetPromptItem(assetName);
+  if (!item) return "";
+  const saved = String(item.textToImagePrompt || "").trim();
+  if (saved && /[\u4e00-\u9fff]/.test(saved)) return saved;
+  const facts = [
+    `资产类型：${assetTypeLabel(item.type)}`,
+    item.label ? `资产主体：${item.label}` : "",
+    item.evidence ? `剧本依据：${item.evidence}` : "",
+    item.visual ? `视觉解析：${item.visual}` : "",
+    "以上资产文档事实是生图内容唯一来源；固定画幅、白底和视图规格由系统规则单独约束。",
+  ].filter(Boolean);
+  return facts.length > 1 ? facts.join("\n") : saved;
 }
 
 function ensureAssetPromptDraft(assetName) {
@@ -5998,12 +5954,12 @@ function renderAssetInspector() {
   }
   const draft = ensureAssetPromptDraft(assetName);
   $("#assetInspectorName").textContent = item.label || assetName;
-  $("#assetInspectorMeta").textContent = `${assetTypeLabel(item.type)} · ${asset?.assetStyleLabel || state.assetStylePreset} · ${$("#assetQuality")?.value || "1k"}`;
+  $("#assetInspectorMeta").textContent = `${assetTypeLabel(item.type)} · ${$("#assetQuality")?.value || "1k"}`;
   const input = $("#assetInspectorPrompt");
   if (document.activeElement !== input) input.value = draft.value;
   $("#assetInspectorDraftStatus").textContent = draft.dirty ? "未保存修改" : "已保存";
   $("#assetInspectorPromptCount").textContent = `${draft.value.length} / 4000`;
-  $("#assetInspectorPolicy").textContent = [item.usage, item.note, "风格锁由当前项目资产风格控制。"].filter(Boolean).join("\n");
+  $("#assetInspectorPolicy").textContent = [item.usage, item.note, "风格只来自资产文档提示词；参考图仅提供风格，不替换主体内容。"].filter(Boolean).join("\n");
   renderModernAssetPromptInspector();
 }
 
@@ -6018,12 +5974,12 @@ function renderModernAssetPromptInspector() {
   if (!visible) return;
   const draft = ensureAssetPromptDraft(assetName);
   $("#modernAssetPromptName").textContent = item.label || assetName;
-  $("#modernAssetPromptMeta").textContent = `${assetTypeLabel(item.type)} · ${asset?.assetStyleLabel || state.assetStylePreset} · ${$("#assetQuality")?.value || "1k"}`;
+  $("#modernAssetPromptMeta").textContent = `${assetTypeLabel(item.type)} · ${$("#assetQuality")?.value || "1k"}`;
   const input = $("#modernAssetPromptInspectorPrompt");
   if (document.activeElement !== input) input.value = draft.value;
   $("#modernAssetPromptDraftStatus").textContent = draft.dirty ? "已修改未保存" : "已保存";
   $("#modernAssetPromptCount").textContent = `${draft.value.length} / 4000`;
-  $("#modernAssetPromptPolicy").textContent = [item.usage, item.note, "风格锁由当前项目资产风格控制。"].filter(Boolean).join("\n");
+  $("#modernAssetPromptPolicy").textContent = [item.usage, item.note, "风格只来自资产文档提示词；参考图仅提供风格，不替换主体内容。"].filter(Boolean).join("\n");
   const assetRunning = isAssetExtracting() || ["running", "queued"].includes(String(state.project?.assetJob?.status || "").toLowerCase());
   $("#modernAssetRestorePrompt").disabled = assetRunning;
   $("#modernAssetSavePrompt").disabled = assetRunning;
@@ -6192,36 +6148,8 @@ function assetTypeLabel(type) {
   return map[type] || type || "资产";
 }
 
-function normalizeAssetStylePreset(value) {
-  const aliases = {
-    three_d: "cg_3d",
-    photoreal_3d: "cg_3d",
-    american_retro: "retro_american_cel",
-    american_bold_line: "american_bold_toon",
-    美式粗线条: "american_bold_toon",
-    cel: "modern_anime_cel",
-    pixar_like: "pixar_3d",
-  };
-  const key = aliases[value] || value;
-  return ASSET_STYLE_PRESETS[key] ? key : "photoreal";
-}
-
-function assetStyleState() {
-  const preset = normalizeAssetStylePreset(state.assetStylePreset);
-  const custom = String(state.assetStyleCustom || "").trim();
-  return {
-    preset,
-    custom,
-    label: ASSET_STYLE_PRESETS[preset].label,
-    cue: ASSET_STYLE_PRESETS[preset].cue,
-  };
-}
-
 function assetStylePayload() {
-  const style = assetStyleState();
   return {
-    assetStylePreset: style.preset,
-    assetStyleCustom: style.custom,
     assetStyleReferenceEnabled: $("#assetStyleReferenceEnabled")?.checked !== false,
   };
 }
@@ -6231,87 +6159,24 @@ function assetForName(assetName = "") {
   return (state.project?.assets || []).find((asset) => asset.assetName === clean || asset.name === clean) || null;
 }
 
-function boundStyleForAsset(asset = null) {
-  const preset = normalizeAssetStylePreset(asset?.assetStylePreset || "");
-  if (!asset?.assetStylePreset && !asset?.assetStyleLabel) return null;
-  return {
-    preset,
-    custom: "",
-  };
-}
-
-function applyAssetBoundStyle(asset = null) {
-  const bound = boundStyleForAsset(asset);
-  if (!bound) return false;
-  state.assetStylePreset = bound.preset;
-  state.assetStyleCustom = bound.custom;
-  localStorage.setItem("pixelToys.assetStylePreset", bound.preset);
-  localStorage.setItem("pixelToys.assetStyleCustom", bound.custom);
-  renderAssetStyleControls();
-  return true;
-}
-
-function stylePayloadForAsset(assetName = "") {
-  const bound = boundStyleForAsset(assetForName(assetName));
-  if (!bound) return assetStylePayload();
-  return {
-    assetStylePreset: bound.preset,
-    assetStyleCustom: bound.custom,
-    assetStyleReferenceEnabled: $("#assetStyleReferenceEnabled")?.checked !== false,
-  };
-}
-
 function renderAssetStyleControls() {
-  const presetInput = $("#assetStylePreset");
-  const customInput = $("#assetStyleCustom");
   const preview = $("#assetStylePreview");
   const refName = $("#assetStyleReferenceName");
   const refToggle = $("#assetStyleReferenceEnabled");
   const removeButton = $("#assetStyleReferenceRemove");
-  if (!presetInput || !customInput || !preview) return;
-  const style = assetStyleState();
   const styleReference = state.project?.assetStyleReference || {};
   const styleReferenceAsset = styleReference.asset || null;
-  presetInput.value = style.preset;
-  customInput.value = style.custom;
   if (refName) refName.textContent = styleReferenceAsset ? styleReference.originalFilename || styleReferenceAsset.name || "已上传风格参考" : "未上传";
   if (refToggle) {
     refToggle.checked = styleReference.enabled !== false && !!styleReferenceAsset;
     refToggle.disabled = !styleReferenceAsset;
   }
   if (removeButton) removeButton.disabled = !styleReferenceAsset;
-  preview.innerHTML = `
-    <span class="style-chip">${escapeHtml(style.label)}</span>
-    <span>${escapeHtml(style.cue)}</span>
-    ${style.custom ? `<strong>${escapeHtml(style.custom)}</strong>` : ""}
-    ${styleReferenceAsset ? `<span class="style-chip ${styleReference.enabled ? "ok" : "muted"}">风格参考图：${styleReference.enabled ? "启用" : "停用"}</span>` : ""}
-    ${styleReferenceAsset ? `<span>只借线条、色彩、渲染质感和光影，不借人物/场景内容。</span>` : ""}
-  `;
-}
-
-function persistAssetStyleFromControls() {
-  const preset = normalizeAssetStylePreset($("#assetStylePreset")?.value || state.assetStylePreset);
-  const custom = String($("#assetStyleCustom")?.value || "").trim();
-  state.assetStylePreset = preset;
-  state.assetStyleCustom = custom;
-  localStorage.setItem("pixelToys.assetStylePreset", preset);
-  localStorage.setItem("pixelToys.assetStyleCustom", custom);
-  renderAssetStyleControls();
-}
-
-function persistModernAssetStyleFromControls() {
-  const preset = normalizeAssetStylePreset($("#modernAssetStylePreset")?.value || state.assetStylePreset);
-  const custom = String($("#modernAssetStyleCustom")?.value || "").trim();
-  state.assetStylePreset = preset;
-  state.assetStyleCustom = custom;
-  localStorage.setItem("pixelToys.assetStylePreset", preset);
-  localStorage.setItem("pixelToys.assetStyleCustom", custom);
-  const legacyPreset = $("#assetStylePreset");
-  const legacyCustom = $("#assetStyleCustom");
-  if (legacyPreset) legacyPreset.value = preset;
-  if (legacyCustom) legacyCustom.value = custom;
-  renderAssetStyleControls();
-  renderModernAssetGenerationControls(state.project);
+  if (preview) {
+    preview.textContent = styleReferenceAsset
+      ? "风格由资产文档提示词决定；参考图只提供视觉风格，不替换主体内容。"
+      : "风格由资产文档提示词决定；可选上传风格参考图。";
+  }
 }
 
 function renderAssetUploadTargets(manifest, assets) {
@@ -7420,7 +7285,6 @@ function renderAssets(slots, assets = [], jobs = null) {
     }
     card.addEventListener("click", (event) => {
       if (event.target.closest(".asset-tools, a, button, select, textarea, input, label")) return;
-      applyAssetBoundStyle(assetForName(assetName));
       if (asset && assetPromptInspectorWorkspace()) selectAssetForInspector(assetName);
       else toggleAssetSelection(assetName);
     });
@@ -7861,7 +7725,7 @@ async function regenerateAsset(assetName, options = {}) {
       assetRange: jobType === "assets" ? "selected" : undefined,
       assetNames: jobType === "assets" && assetName ? [assetName] : undefined,
       quality: $("#assetQuality")?.value || "1k",
-      ...stylePayloadForAsset(assetName),
+      ...assetStylePayload(),
     }),
   });
   state.activeJobId = data.job.id;
@@ -9867,8 +9731,6 @@ function bind() {
     const asset = assetForName(name);
     if (asset?.url) openLightbox(asset);
   });
-  $("#modernAssetStylePreset")?.addEventListener("change", persistModernAssetStyleFromControls);
-  $("#modernAssetStyleCustom")?.addEventListener("input", persistModernAssetStyleFromControls);
   $("#modernAssetStyleReferenceFile")?.addEventListener("change", (event) => uploadAssetStyleReferenceFile(event.target.files?.[0], event.target).catch((error) => toast(error.message)));
   $("#modernAssetStyleReferenceEnabled")?.addEventListener("change", (event) => setAssetStyleReferenceEnabled(event.target.checked).catch((error) => toast(error.message)));
   $("#modernAssetStyleReferenceRemove")?.addEventListener("click", () => removeAssetStyleReference().catch((error) => toast(error.message)));
@@ -9998,8 +9860,6 @@ function bind() {
       localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
     });
   });
-  $("#assetStylePreset")?.addEventListener("change", persistAssetStyleFromControls);
-  $("#assetStyleCustom")?.addEventListener("input", persistAssetStyleFromControls);
   $("#assetGenerateRange")?.addEventListener("change", (event) => {
     syncAssetGenerationRange(event.currentTarget.value);
     updateAssetGenerateButtonHint();

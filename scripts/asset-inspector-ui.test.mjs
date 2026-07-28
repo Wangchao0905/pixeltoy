@@ -32,6 +32,8 @@ assert.doesNotMatch(app, /label: "Run: 资产提取", selector: "#draftBtn"/);
 assert.match(app, /function selectAssetForInspector\(assetName\)[\s\S]*?state\.selectedAssetId = assetName;[\s\S]*?ensureAssetPromptDraft\(assetName\);/);
 assert.match(app, /function assetPromptInspectorWorkspace\(\)[\s\S]*?state\.activeWorkspaceMode === "assets"[\s\S]*?state\.activeWorkspaceMode === "image"/);
 assert.match(app, /const visible = assetPromptInspectorWorkspace\(\) && !!assetName && !!item && state\.assetInspectorOpen;/);
+assert.match(app, /function effectiveAssetPrompt\(assetName\)[\s\S]*?资产文档事实是生图内容唯一来源/);
+assert.match(html, /资产文档提示词（中文事实源）/);
 assert.match(app, /if \(asset && assetPromptInspectorWorkspace\(\)\) selectAssetForInspector\(assetName\);/);
 
 const cardRenderer = app.slice(app.indexOf("const buildAssetCard = (slot) => {"), app.indexOf("function renderStoryboards("));

@@ -20,7 +20,6 @@ assert.match(html, /id="assetDocumentStatus"/, "the asset description must be th
 assert.match(html, /id="assetWorkflowMode"/, "asset extraction needs an explicit professional versus quick mode");
 assert.match(html, /禁止从剧情创建正式资产/, "professional mode must forbid silent asset creation from plot text");
 assert.match(html, /id="undefinedAssetList"/, "plot cross-check findings need a visible unresolved queue");
-assert.match(html, /id="assetStylePresetPreview"/, "asset generation must retain the existing style preset selector");
 assert.match(html, /id="assetStyleReferenceControl"/, "asset generation must retain style reference controls");
 assert.match(html, /id="assetBindMode"/, "asset uploads must retain bind and replace behavior");
 assert.match(html, /id="assetPreviewDialog"/, "asset images need an enlarged preview dialog");

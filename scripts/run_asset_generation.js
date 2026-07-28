@@ -118,7 +118,11 @@ function parseAssets(markdown) {
     const start = match.index + match[0].length;
     const end = index + 1 < matches.length ? matches[index + 1].index : markdown.length;
     const section = markdown.slice(start, end).trim();
-    const prompt = [extractTextToImagePrompt(section), extractAssetDocumentFacts(section)].filter(Boolean).join("\n\n");
+    const manualPrompt = isExplicitManualAssetPrompt(section) ? extractTextToImagePrompt(section) : "";
+    const documentFacts = extractAssetDocumentFacts(section);
+    const prompt = match[1] === "Storyboard"
+      ? [extractTextToImagePrompt(section), documentFacts].filter(Boolean).join("\n\n")
+      : manualPrompt || documentFacts;
     return {
       type: match[1],
       name: match[2],
@@ -131,9 +135,13 @@ function parseAssets(markdown) {
 }
 
 function extractTextToImagePrompt(section) {
-  const re = /文生图提示词(?:[^\n：:]*?)[:：]\s*```(?:text|txt|markdown|md)?\s*([\s\S]*?)```/i;
+  const re = /(?:文)?生图提示词(?:[^\n：:]*?)[:：]\s*```(?:text|txt|markdown|md)?\s*([\s\S]*?)```/i;
   const match = section.match(re);
-  return (match?.[1] || section).trim();
+  return (match?.[1] || "").trim();
+}
+
+function isExplicitManualAssetPrompt(section) {
+  return /^解析来源[:：]\s*用户提供资产生图提示词\s*$/m.test(String(section || ""));
 }
 
 function extractAssetDocumentFacts(section) {
@@ -146,11 +154,11 @@ function extractAssetDocumentFacts(section) {
   const visual = field("视觉解析");
   if (!subject && !evidence && !visual) return "";
   return [
-    "CANONICAL ASSET DOCUMENT FACTS (HARD CONTENT SOURCE):",
-    subject ? `Subject from the asset document: ${subject}` : "",
-    evidence ? `Screenplay evidence from the asset document: ${evidence}` : "",
-    visual ? `Visual design from the asset document: ${visual}` : "",
-    "These asset-document facts override any generic, missing, or contradictory subject details in the English prompt above. Do not invent a different person, place, object, costume, or event.",
+    "资产文档事实（中文，生图内容唯一来源）：",
+    subject ? `剧本解析对象：${subject}` : "",
+    evidence ? `剧本依据：${evidence}` : "",
+    visual ? `视觉解析：${visual}` : "",
+    "只根据以上资产文档事实生成主体内容，不得使用英文模板、资产编号或其他参考图内容替换人物、场景、道具、服装和事件。",
   ].filter(Boolean).join("\n");
 }
 
@@ -183,13 +191,31 @@ function fixedAssetPromptFor(asset) {
   }
   if (asset.type === "Character") {
     return [
-      "Fixed production constraints:",
-      "16:9 landscape frame.",
-      "Pure white background.",
-      "One single identity-sheet image containing the same person in full-body front, full-body side, full-body back, and one face close-up view.",
+      "固定制作规格：",
+      "16:9 横版画幅。",
+      "纯白背景。",
+      "一张图内呈现同一人物的全身正面、全身侧面、全身背面和一张面部特写。",
     ].join("\n");
   }
-  return "Fixed production constraint: 16:9 landscape frame.";
+  if (asset.type === "Scene") {
+    return [
+      "固定制作规格：",
+      "16:9 横版画幅。",
+      "全景或大全景环境图，不出现人物、人影、群众或角色剪影。",
+    ].join("\n");
+  }
+  if (asset.type === "Prop") {
+    return [
+      "固定制作规格：",
+      "16:9 横版画幅。",
+      "纯白背景，同一道具的正面、侧面和背面三视图。",
+    ].join("\n");
+  }
+  return [
+    "固定制作规格：",
+    "16:9 横版画幅。",
+    "清晰的插入镜头或证据细节参考图，主体明确可辨。",
+  ].join("\n");
 }
 
 function promptFor(asset) {

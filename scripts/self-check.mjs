@@ -119,11 +119,11 @@ assert(server.includes("变异章鱼怪") && server.includes('pushUnique(charact
 assert(server.includes("function fetchAssetAnalyzer"), "asset analyzer calls must have a dedicated timeout wrapper");
 assert(server.includes("ASSET_ANALYZER_TIMEOUT_MS"), "asset analyzer timeout must be configurable");
 assert(server.includes("includeReusableAssets") && server.includes("projectReusableAssetsForManifest(episodeRoot, manifest, options) : []"), "current project asset state must not reuse other-episode assets unless explicitly requested");
-assert(app.includes("function stylePayloadForAsset"), "single-asset generation must prefer the asset's bound original style");
-assert(app.includes("function applyAssetBoundStyle"), "selecting a generated asset must restore its bound style controls");
+assert(app.includes("function assetStylePayload"), "single-asset generation must preserve the optional style-reference payload");
+assert(!app.includes("function stylePayloadForAsset") && !app.includes("function applyAssetBoundStyle"), "single-asset generation must not restore removed style selectors");
 assert(app.includes("function selectAssetForInspector") && app.includes("state.assetInspectorOpen = true") && app.includes("ensureAssetPromptDraft(assetName);"), "selecting an asset must open its dedicated prompt inspector");
-assert(app.includes("applyAssetBoundStyle(assetForName(assetName))"), "clicking a generated asset must restore the asset's original style after refresh");
-assert(app.includes("...stylePayloadForAsset(assetName),"), "single-asset regenerate requests must send the bound style payload");
+assert(!app.includes("applyAssetBoundStyle(assetForName(assetName))"), "clicking a generated asset must not restore removed style selectors");
+assert(app.includes("...assetStylePayload(),"), "single-asset regenerate requests must send the optional style-reference payload");
 for (const [name, pageHtml] of [
   ["index", html],
   ["auth", authHtml],
@@ -653,11 +653,12 @@ assert(server.includes("shotStemFromName(s).toUpperCase()"), "storyboard matchin
 assert(server.includes("matchStoryboardAssetForSlot(slot, storyboardCandidates"), "storyboardSlotsForState must use stable-key matching instead of literal byName.get(slot.id)");
 assert(server.includes("partialCoverage"), "storyboard slots must flag partial coverage so users can choose to regenerate");
 
-// Default asset style must be stylized (cg_3d), not photoreal — silent photoreal generates real-person images that trip the video API content filter.
-assert(server.includes('normalizeAssetStylePreset(body.assetStylePreset || "cg_3d")'), "asset style must default to cg_3d, not photoreal");
-assert(html.includes('<option value="cg_3d" selected>'), "asset style selector must default to cg_3d");
-assert(!html.includes('<option value="photoreal" selected>'), "photoreal must not be the default selected asset style");
-assert(app.includes('"pixelToys.assetStylePreset") || "cg_3d"'), "frontend asset style state must default to cg_3d");
+// Asset rendering style is authored in the document prompt. The UI keeps only an optional style reference image.
+assert(server.includes("function assetStyleFromBody"), "asset generation must retain the style-reference request path");
+assert(html.includes('id="assetStyleReferenceFile"'), "legacy asset generation must retain style reference upload");
+assert(html.includes('id="modernAssetStyleReferenceFile"'), "modern asset generation must retain style reference upload");
+assert(!html.includes('id="assetStylePreset"') && !html.includes('id="assetStyleCustom"'), "legacy asset generation must not expose style selectors");
+assert(!html.includes('id="modernAssetStylePreset"') && !html.includes('id="modernAssetStyleCustom"'), "modern asset generation must not expose style selectors");
 
 // Video (Seedance) prompt must carry a mandatory style law from the asset style, and realistic light/skin cues must be photoreal-only.
 assert(server.includes("function seedanceStyleLawForPreset"), "seedance prompt must derive a mandatory style law from the asset style preset");

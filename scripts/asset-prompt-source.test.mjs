@@ -20,26 +20,38 @@ const markdown = `# Asset prompts
 剧本依据：她在结冰的急流勇进水槽边等待，警惕而疲惫。
 视觉解析：24岁女性，荧光橙外套，生锈钉子盘发，磨损灰围巾。
 
-文生图提示词（英文，提交给生图模型）：
+资产文档生图提示词（中文事实源，提交给生图模型）：
 \`\`\`text
-ASSET DOCUMENT PROMPT: a specific woman with a bright orange coat, rusty nail bun, tired alert expression, and worn gray scarf.
+ASSET DOCUMENT PROMPT: a generic English prompt that must not replace the Chinese facts.
 \`\`\`
 `;
 
 const [asset] = parseAssets(markdown);
-assert.ok(
-  asset.prompt.startsWith("ASSET DOCUMENT PROMPT: a specific woman with a bright orange coat, rusty nail bun, tired alert expression, and worn gray scarf."),
-  "the runner must keep the document prompt as the primary prompt",
-);
-assert.match(asset.prompt, /CANONICAL ASSET DOCUMENT FACTS/);
+assert.ok(asset.prompt.startsWith("资产文档事实（中文，生图内容唯一来源）："), "Chinese asset facts must be the primary prompt");
+assert.doesNotMatch(asset.prompt, /ASSET DOCUMENT PROMPT/);
 assert.match(asset.prompt, /荧光橙外套/);
 
 const prompt = promptFor(asset);
 assert.ok(prompt.startsWith(asset.prompt), "the asset document prompt must remain the primary prompt");
-assert.match(prompt, /16:9 landscape frame/i);
-assert.match(prompt, /pure white background/i);
-assert.match(prompt, /full-body front.*full-body side.*full-body back.*face close-up/i);
-assert.doesNotMatch(prompt, /Production-grade reference asset\. Follow the selected visual style/i);
+assert.match(prompt, /16:9 横版画幅/);
+assert.match(prompt, /纯白背景/);
+assert.match(prompt, /全身正面.*全身侧面.*全身背面.*面部特写/);
+assert.doesNotMatch(prompt, /selected visual style|Production-grade reference asset|English prompt/i);
+
+const manualMarkdown = `## New Prop Asset: P002_MANUAL_PROP
+
+剧本解析对象：旧收音机
+剧本依据：桌上唯一的旧收音机。
+视觉解析：木质外壳，旋钮磨损，暖棕色。
+解析来源：用户提供资产生图提示词
+
+资产文档生图提示词（中文事实源，提交给生图模型）：
+\`\`\`text
+木质旧收音机，暖棕色外壳，旋钮磨损，保留用户指定的复古质感。
+\`\`\`
+`;
+const [manualAsset] = parseAssets(manualMarkdown);
+assert.equal(manualAsset.prompt, "木质旧收音机，暖棕色外壳，旋钮磨损，保留用户指定的复古质感。", "only explicitly marked manual prompts may bypass document facts");
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /STYLE REFERENCE INPUT RULES \(HARD CONSTRAINT\)/);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /for STYLE ONLY/i);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /according to the visual style/i);

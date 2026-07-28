@@ -5277,9 +5277,15 @@ function renderModernStudio(data = state.project) {
   $("#modernCompletedCount").textContent = `${pct}%`;
   $("#modernSeriesProgress").style.width = `${pct}%`;
   $("#modernSeriesProgressLabel").textContent = `${pct}%`;
-  $("#modernQueueLabel").textContent = `队列 ${queueCount}`;
+  $("#modernQueueLabel").textContent = queueCount ? `生成中 ${queueCount}` : "";
   const queueButton = $("#modernQueueButton");
-  if (queueButton) queueButton.title = queueCount ? `查看视频队列，剩余 ${queueCount} 个任务` : "查看视频生成队列";
+  if (queueButton) {
+    const hasActiveQueue = queueCount > 0;
+    queueButton.hidden = !hasActiveQueue;
+    queueButton.setAttribute("aria-hidden", hasActiveQueue ? "false" : "true");
+    queueButton.setAttribute("aria-label", hasActiveQueue ? `查看正在生成的 ${queueCount} 个视频片段` : "视频生成队列");
+    queueButton.title = hasActiveQueue ? `查看正在生成的 ${queueCount} 个视频片段` : "";
+  }
   $("#modernHeroShotCount").textContent = String(total || 0);
   const totalDuration = shots.reduce((sum, shot) => sum + (Number(shot.duration) || 0), 0);
   $("#modernHeroDuration").textContent = `00:${String(Math.round(totalDuration)).padStart(2, "0")}`;

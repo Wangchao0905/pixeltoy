@@ -62,6 +62,9 @@ assert.match(js, /modernRenameProject[\s\S]*openModernProjectRename/, "modern pr
 assert.match(js, /function persistProjectDisplayName[\s\S]*\/display-name/, "modern rename must reuse the project display-name API");
 assert.match(js, /function modernVideoQueueCount[\s\S]*progress\.queue[\s\S]*queue\.total/, "queue count must include the active batch queue");
 assert.match(js, /const queueCount = modernVideoQueueCount\(progress\)[\s\S]*modernQueueLabel/, "queue label must use the real queue count");
+assert.match(html, /id="modernQueueButton"[^>]*hidden[^>]*aria-hidden="true"/, "an idle queue must not show a meaningless zero button");
+assert.match(js, /const hasActiveQueue = queueCount > 0[\s\S]*queueButton\.hidden = !hasActiveQueue/, "queue entry must only appear when video work is active");
+assert.match(js, /\$\("#modernQueueLabel"\)\.textContent = queueCount \? `生成中 \$\{queueCount\}`/, "active queue entry must explain what the count represents");
 assert.match(js, /modernScriptUpload/, "modern shell must wire script upload");
 assert.match(js, /modernAssetDescriptionUpload/, "modern shell must wire asset document upload");
 assert.match(js, /modernExtractAssets/, "modern shell must expose asset extraction");

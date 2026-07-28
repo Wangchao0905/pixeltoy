@@ -8,7 +8,8 @@ const js = fs.readFileSync(path.join(root, "public", "canvas.js"), "utf8");
 
 assert.match(js, /function isWorkflowArkAutoCertificationAsset\(asset = \{\}\)/, "automatic certification must identify workflow assets");
 assert.match(js, /\["project", "workflow", "project-reuse"\]/, "workflow sources must be explicit");
-assert.match(js, /preset === "photoreal" \|\| preset === "cg_3d"/, "automatic certification must allow only photoreal and CG 3D styles");
+assert.match(js, /preset === "photoreal"/, "automatic certification must be limited to photoreal styles");
+assert.doesNotMatch(js, /return workflowSource && \(preset === "photoreal" \|\| preset === "cg_3d"\)/, "CG 3D assets must not enter the automatic certification path");
 assert.match(js, /source: "shared-asset-library"/, "shared library assets must keep a non-workflow source");
 assert.match(js, /function autoCertifyCanvasGeneratedAsset\(asset\)/, "canvas drops must have an automatic certification entry point");
 assert.match(js, /addAssetNodeAt\(assetId, point, \{ autoCertify: true \}\)/, "asset drops must opt into automatic certification");

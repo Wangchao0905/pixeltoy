@@ -1,5 +1,5 @@
-// 回归:放宽“进人像库”判据到 AI 生成角色后,锁住边界——
-// 角色可进、道具/场景不进、手动导入不进、原写实路径不变。
+// 回归:只有明确标记为 AI 生成的超写实人物才进人像库；
+// 卡通/CG 角色、道具/场景和手动导入图都走普通公网参考图。
 const assert = require("node:assert/strict");
 const { __test } = require("../server.js");
 const { isArkPersonEligibleAsset, isCharacterRefAsset, isCanvasPhotorealAsset } = __test.arkVirtualPerson;
@@ -19,8 +19,8 @@ const manualChar = { name: "C003_X_CHARACTER_SHEET" }; // 无 AI 标记 = 手动
 const aiProp = { name: "P004_手枪_PROP_REF", aiGenerated: true };
 const aiScene = { name: "S002_厨房_WIDE_ESTABLISHING", aiGenerated: true };
 
-assert.equal(isArkPersonEligibleAsset(aiChar), true, "AI 角色可进");
-assert.equal(isArkPersonEligibleAsset(aiCharStylized), true, "AI 风格化角色可进(核心诉求)");
+assert.equal(isArkPersonEligibleAsset(aiChar), false, "未标记超写实的 AI 角色不可进");
+assert.equal(isArkPersonEligibleAsset(aiCharStylized), false, "AI 风格化角色不可进");
 assert.equal(isArkPersonEligibleAsset(aiPhotoreal), true, "AI 写实仍可进(原路径不变)");
 assert.equal(isArkPersonEligibleAsset(manualChar), false, "手动导入角色不进(挡误收)");
 assert.equal(isArkPersonEligibleAsset(aiProp), false, "AI 道具不进");

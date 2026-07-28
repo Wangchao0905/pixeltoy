@@ -35,8 +35,8 @@ assert.equal(ratioWidthRules.length, 0,
 
 assert.match(css, /\.canvas-node\.video-node\.is-composer-open[\s\S]*?width:\s*var\(--video-node-width\)/s,
   "the open video editor should keep one explicit shell width");
-assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?aspect-ratio:\s*var\(--video-preview-ratio[\s\S]*?border:\s*0[\s\S]*?border-radius:\s*0/s,
-  "the preview surface should own the selected video ratio without a frame");
+assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?aspect-ratio:\s*var\(--video-preview-ratio[\s\S]*?border:\s*0/s,
+  "the preview surface should own the selected video ratio without a painted border");
 assert.doesNotMatch(css, /--video-preview-frame-height/,
   "the preview must not be constrained by the old fixed stage");
 assert.match(css, /\.video-node \.video-composer[\s\S]*?flex:\s*0 0 auto[\s\S]*?height:\s*var\(--video-composer-height/s,
@@ -51,8 +51,8 @@ assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?width:\s*min\(100%, 
   "preview width should be capped independently from the editor shell");
 assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?max-width:\s*68%/s,
   "every preview should remain visibly narrower than the prompt composer");
-assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?border:\s*0\s*!important[\s\S]*?border-radius:\s*0\s*!important[\s\S]*?background:\s*transparent\s*!important/s,
-  "the video preview must remain completely frameless");
+assert.match(css, /\.video-node \.video-preview-slot[\s\S]*?aspect-ratio:\s*var\(--video-preview-ratio,\s*16\s*\/\s*9\)[\s\S]*?border:\s*0\s*!important[\s\S]*?border-radius:\s*18px\s*!important[\s\S]*?background:[\s\S]*?rgba\(18,\s*52,\s*94,\s*0\.82\)\s*!important/s,
+  "the video preview must use a ratio-aware blue frosted card without a painted border");
 assert.match(css, /\.canvas-node\.video-node[\s\S]*?background:\s*transparent\s*!important[\s\S]*?box-shadow:\s*none\s*!important/s,
   "the video node shell must not become a second card around the composer");
 assert.match(css, /\.video-node\[data-video-ratio="16:9"\] \.video-preview-slot[\s\S]*?--video-preview-width:\s*420px/s,

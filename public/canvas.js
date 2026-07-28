@@ -844,13 +844,12 @@ function isWorkflowArkAutoCertificationAsset(asset = {}) {
     || ["project", "workflow", "project-reuse"].includes(source)
     || !!projectId;
   const preset = normalizeArkAutoCertificationStyle(asset.assetStylePreset || asset.stylePreset || "");
-  return workflowSource && (preset === "photoreal" || preset === "cg_3d");
+  return workflowSource && preset === "photoreal";
 }
 
 function isArkPersonReferenceAsset(asset = {}) {
   const rawType = String(asset.manifestType || asset.assetType || asset.type || "").trim();
-  if (/character|person|真人|人物|角色/i.test(rawType)) return true;
-  if (!isPhotorealAsset(asset)) return false;
+  if (!isAiGeneratedPhotorealAsset(asset)) return false;
   return !(rawType && /scene|environment|location|场景|环境|prop|object|item|道具|insert|插入/i.test(rawType));
 }
 
@@ -861,23 +860,16 @@ function isAiGeneratedPhotorealAsset(asset = {}) {
   return /canvas-image|image-generation|ai[-_ ]?generated|gpt[-_ ]?image/i.test(source);
 }
 
-function isAiGeneratedAsset(asset = {}) {
-  if (asset.aiGenerated === true || asset.verificationType === "ai-generated") return true;
-  const source = `${asset.source || ""} ${asset.generationMode || ""}`;
-  return /canvas-image|image-generation|ai[-_ ]?generated|gpt[-_ ]?image/i.test(source);
-}
-
 function isArkPersonCertificationEligible(asset = {}) {
   if (!asset || isVideoAsset(asset)) return false;
-  return isArkPersonReferenceAsset(asset) && (isAiGeneratedPhotorealAsset(asset) || isAiGeneratedAsset(asset));
+  return isArkPersonReferenceAsset(asset);
 }
 
 function isAutoArkPersonAsset(asset = {}) {
   const status = String(asset?.arkPersonAsset?.status || "").toLowerCase();
   if (!asset || isVideoAsset(asset) || asset.uploading || status === "processing" || isArkVirtualPersonCertified(asset)) return false;
   return isWorkflowArkAutoCertificationAsset(asset)
-    && isArkPersonReferenceAsset(asset)
-    && (isAiGeneratedPhotorealAsset(asset) || isAiGeneratedAsset(asset));
+    && isArkPersonReferenceAsset(asset);
 }
 
 function arkPersonAssetUrl(asset = {}) {

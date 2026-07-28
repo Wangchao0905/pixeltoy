@@ -40,6 +40,7 @@ const arkPerson = {
     enabled: true,
     assetUrl: "asset://person-1",
     assetId: "person-1",
+    status: "active",
   },
 };
 
@@ -139,5 +140,22 @@ process.env.CANVAS_VIDEO_PROVIDER = "ark";
     assets: [{ id: "ai-person", name: "AI 写实人物", assetStylePreset: "photoreal", url: "https://preview.example/ai-person.png" }],
   });
   assert.equal(unverifiedPhotorealPayload.content[1].image_url.url, "https://preview.example/ai-person.png");
+  const cartoonUploadPayload = await buildSeedanceGenerationPayload({
+    prompt: "剧情动作：卡通角色向前走。",
+    model: "seedance-2-0",
+    assets: [{
+      id: "cartoon-upload",
+      name: "C001_CARTOON_CHARACTER",
+      type: "Character",
+      source: "local",
+      assetStylePreset: "cg_3d",
+      url: "https://preview.example/cartoon-character.png",
+    }],
+  });
+  assert.equal(
+    cartoonUploadPayload.content[1].image_url.url,
+    "https://preview.example/cartoon-character.png",
+    "cartoon uploads must use the ordinary public reference path without Ark certification",
+  );
   console.log("canvas Ark video tests passed.");
 })();

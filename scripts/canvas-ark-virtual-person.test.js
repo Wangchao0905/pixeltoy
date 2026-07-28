@@ -28,8 +28,8 @@ assert.equal(
 );
 assert.equal(
   isWorkflowArkAutoCertificationAsset({ source: "project", assetStylePreset: "three_d" }),
-  true,
-  "workflow 3D aliases may enter the automatic Ark path",
+  false,
+  "workflow 3D aliases must not enter the automatic Ark path",
 );
 assert.equal(
   isWorkflowArkAutoCertificationAsset({ source: "project", assetStylePreset: "modern_anime_cel" }),
@@ -43,8 +43,18 @@ assert.equal(
 );
 assert.equal(
   isWorkflowArkPersonAutoCertificationAsset({ source: "project", assetStylePreset: "cg_3d", type: "Character" }),
+  false,
+  "workflow 3D character assets must stay on the ordinary reference path",
+);
+assert.equal(
+  isWorkflowArkPersonAutoCertificationAsset({ source: "project", assetStylePreset: "photoreal", type: "Character", aiGenerated: true }),
   true,
-  "workflow 3D character assets may be auto-certified",
+  "explicitly AI-generated photoreal characters may be auto-certified",
+);
+assert.equal(
+  isWorkflowArkPersonAutoCertificationAsset({ source: "project", assetStylePreset: "photoreal", type: "Character" }),
+  false,
+  "unmarked photoreal uploads must not be auto-certified",
 );
 const request = buildOpenApiRequest(
   "CreateAsset",

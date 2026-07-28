@@ -5492,15 +5492,24 @@ body.canvas-page .canvas-topbar {
   box-shadow: 0 0 0 1px rgba(104, 183, 255, 0.32);
 }
 
-/* Final video composer layout: transparent media above one orderly prompt
-   surface. The preview itself never carries a border, radius, fill, or shadow. */
+/* Final video composer layout: a ratio-aware blue frosted preview card above
+   one orderly prompt surface. The outer node stays frameless. */
 .video-node .video-preview-slot {
   width: min(100%, var(--video-preview-width, 100%));
   max-width: 68%;
+  aspect-ratio: var(--video-preview-ratio, 16 / 9);
   border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
+  border-radius: 18px !important;
+  background:
+    linear-gradient(145deg, rgba(77, 166, 255, 0.3), rgba(28, 86, 153, 0.2)),
+    rgba(18, 52, 94, 0.82) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(190, 231, 255, 0.25),
+    inset 0 -22px 40px rgba(4, 25, 55, 0.26),
+    0 16px 36px rgba(2, 24, 54, 0.28) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  backdrop-filter: blur(22px) saturate(140%);
+  color: rgba(228, 242, 255, 0.76);
 }
 
 .video-node .video-preview-slot video {
@@ -5513,8 +5522,9 @@ body.canvas-page .canvas-topbar {
 /* Keep the assembly state readable instead of exposing the canvas grid through it. */
 .video-node[data-video-status="running"] .video-preview-slot {
   background:
-    radial-gradient(circle at 50% 22%, rgba(45, 116, 211, 0.2), transparent 48%),
-    linear-gradient(180deg, #0d2036 0%, #071323 58%, #040a13 100%) !important;
+    radial-gradient(circle at 50% 22%, rgba(122, 202, 255, 0.22), transparent 48%),
+    linear-gradient(145deg, rgba(77, 166, 255, 0.34), rgba(28, 86, 153, 0.24)),
+    rgba(18, 52, 94, 0.88) !important;
 }
 
 /* The canvas node is only the layout anchor. Its surface should not become a
@@ -5818,12 +5828,26 @@ body.canvas-page .canvas-topbar {
   -webkit-backdrop-filter: none !important;
 }
 
-.video-node .video-preview-frame,
-.video-node .video-preview-slot {
+.video-node .video-preview-frame {
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
+}
+
+.video-node .video-preview-slot {
+  aspect-ratio: var(--video-preview-ratio, 16 / 9);
+  border: 0 !important;
+  border-radius: 18px !important;
+  background:
+    linear-gradient(145deg, rgba(77, 166, 255, 0.3), rgba(28, 86, 153, 0.2)),
+    rgba(18, 52, 94, 0.82) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(190, 231, 255, 0.25),
+    inset 0 -22px 40px rgba(4, 25, 55, 0.26),
+    0 16px 36px rgba(2, 24, 54, 0.28) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  backdrop-filter: blur(22px) saturate(140%);
 }
 
 .video-node > .node-port.input-port,

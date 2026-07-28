@@ -11111,7 +11111,7 @@ function isWorkflowArkAutoCertificationAsset(asset = {}, options = {}) {
     || ["project", "workflow", "project-reuse"].includes(source)
     || !!projectId;
   const preset = normalizeArkAutoCertificationStyle(asset.assetStylePreset || asset.stylePreset || "");
-  return workflowSource && (preset === "photoreal" || preset === "cg_3d");
+  return workflowSource && preset === "photoreal";
 }
 
 function isWorkflowArkPersonAutoCertificationAsset(asset = {}, options = {}) {
@@ -11131,8 +11131,8 @@ function isCanvasAiGeneratedPhotorealAsset(asset = {}) {
   return isCanvasAiGeneratedAsset(asset);
 }
 
-// 角色类参考判定(按声明类型或命名 C\d{3}_ / _CHARACTER_SHEET)。用于放宽“进人像库”的画风限制:
-// 被平台误判真人的风格化角色也应能走人像库认证成 asset://,而道具/场景不纳入。
+// 人物参考判定：只有明确标记为 AI 生成的超写实人物才进入私域人像库；
+// 卡通/CG 角色、本地上传图、道具和场景均走普通公网参考图。
 function isCharacterRefAsset(asset = {}) {
   const declared = compactLine(asset.manifestType || asset.assetType || "");
   if (/^Character$/i.test(declared)) return true;
@@ -11140,11 +11140,9 @@ function isCharacterRefAsset(asset = {}) {
   return name ? inferAssetTypeFromName(name) === "Character" : false;
 }
 
-// 进人像库资格:超写实(AI 生成),或 AI 生成的角色类素材。保留“AI 生成”硬约束以挡掉手动导入图;
-// 角色约束挡掉道具/场景。批量链路认证阶段会强制 aiGenerated,画布手动认证走此判据防误收。
+// 进人像库资格：只接受 AI 生成的超写实人物。
 function isArkPersonEligibleAsset(asset = {}) {
-  if (isCanvasAiGeneratedPhotorealAsset(asset)) return true;
-  return isCharacterRefAsset(asset) && isCanvasAiGeneratedAsset(asset);
+  return isArkPersonReferenceAsset(asset);
 }
 
 function isArkPersonTargetModel(value = "") {
@@ -11165,8 +11163,7 @@ function arkPersonAssetReadyUrl(asset = {}) {
 
 function isArkPersonReferenceAsset(asset = {}) {
   const rawType = compactLine(asset.manifestType || asset.assetType || asset.type || "");
-  if (/character|person|真人|人物|角色/i.test(rawType)) return true;
-  if (!isCanvasPhotorealAsset(asset)) return false;
+  if (!isCanvasAiGeneratedPhotorealAsset(asset)) return false;
   // Explicit scene/prop/insert assets are ordinary visual references, even when rendered photorealistically.
   if (rawType && /scene|environment|location|场景|环境|prop|object|item|道具|insert|插入/i.test(rawType)) return false;
   return true;

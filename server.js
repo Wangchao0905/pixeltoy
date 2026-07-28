@@ -15891,9 +15891,23 @@ function assetMatchCode(type, name = "", index = 0) {
   return `PT-${prefix}${number}`;
 }
 
+const GLOBAL_STYLE_LABEL_SOURCE = "全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格";
+const GLOBAL_STYLE_INLINE_STOP_RE = /用法\s*[（(]?[^）)]*硬规[^）)]*[）)]?|(?:文生图提示词|资产文档生图提示词|资产解析模型提示词|中文资产文档提示词)|(?:资产主体|剧本解析对象|剧本依据|视觉解析|固定(?:输出|制作)规格)\s*[：:]/iu;
+
+function trimGlobalStyleValue(value = "") {
+  const text = compactLine(value);
+  if (!text) return "";
+  const stop = text.search(GLOBAL_STYLE_INLINE_STOP_RE);
+  const trimmed = stop >= 0 ? text.slice(0, stop) : text;
+  return compactLine(trimmed)
+    .replace(/^(?:供美术\s*\/\s*出图\s*\/\s*视频生成直接取用[，,]\s*)?(?:[〇○0]\s*[、.]\s*)?画风总纲(?:\s*[（(][^）)]*[）)])?[，,]?\s*/u, "")
+    .replace(/[，,；;、:：]\s*$/u, "")
+    .slice(0, 1600);
+}
+
 function extractGlobalStyleGuidance(source = "") {
   const lines = String(source || "").split(/\r?\n/);
-  const headingPattern = /^(?:[◆◇]\s*)?(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格)(?:\s*[（(][^）)]*[）)])?(?:\s*[：:]\s*(.*))?$/u;
+  const headingPattern = new RegExp(`^(?:[◆◇]\\s*)?(?:${GLOBAL_STYLE_LABEL_SOURCE})(?:\\s*[（(][^）)]*[）)])?(?:\\s*[：:]\\s*(.*))?$`, "u");
   let collecting = false;
   const collected = [];
   for (const rawLine of lines) {
@@ -15902,19 +15916,26 @@ function extractGlobalStyleGuidance(source = "") {
     const heading = line.match(headingPattern);
     if (!collecting) {
       if (!heading) continue;
-      if (heading[1]) return compactLine(heading[1]).slice(0, 1600);
+      if (heading[1]) return trimGlobalStyleValue(heading[1]);
       collecting = true;
       continue;
     }
-    if (/^◆|^◇/.test(line) || structuredAssetType(line) || /^#{1,2}\s+/.test(line)) break;
-    collected.push(line.replace(/^[-•*·]\s*/, ""));
+    if (
+      /^◆|^◇/.test(line) ||
+      structuredAssetType(line) ||
+      /^#{1,2}\s+/.test(line) ||
+      GLOBAL_STYLE_INLINE_STOP_RE.test(line) ||
+      /^(?:人物|角色|场景|环境|地点|道具|物件|插入|细节|特写)\s*(?:卡|段|列表|设定)?(?:\s|$)/iu.test(line)
+    ) break;
+    const value = trimGlobalStyleValue(line.replace(/^[-•*·]\s*/, ""));
+    if (value) collected.push(value);
   }
   return compactLine(collected.join(" ")).slice(0, 1600);
 }
 
 const ASSET_STYLE_IGNORE_RE = /待正式资产图生成并绑定后确定|最终画风由资产风格选择控制|不预设画风|selected\s+asset\s+style|leave\s+final\s+rendering\s+style|final\s+rendering\s+style\s+to\s+the\s+selected\s+asset\s+style/iu;
 const ASSET_STYLE_SIGNAL_RE = /风格|画风|美术|渲染|动画|插画|漫画|卡通|动漫|写实|电影感|赛璐璐|平涂|轮廓|线条|色调|色彩|光影|材质|质感|胶片|像素|水彩|油画|三维|二维|3D|CG|定格|低多边形|黏土|霓虹|复古|极简|style|rendering|animation|illustration|comic|cartoon|realistic|cinematic|cel[- ]?shad|linework|palette|lighting|texture|film/iu;
-const ASSET_STYLE_FIELD_RE = /^(?:[◆◇]\s*)?(全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|风格锚点|核心美学|调色板逻辑|视觉解析|视觉描述|视觉分析|渲染风格|渲染语言)(?:\s*[（(][^）)]*[）)])?\s*[：:]\s*(.+)$/u;
+const ASSET_STYLE_FIELD_RE = new RegExp(`^(?:[◆◇]\\s*)?(${GLOBAL_STYLE_LABEL_SOURCE}|视觉解析|视觉描述|视觉分析|渲染风格|渲染语言)(?:\\s*[（(][^）)]*[）)])?\\s*[：:]\\s*(.+)$`, "u");
 
 function assetStyleClauses(value = "") {
   return String(value || "")
@@ -15928,7 +15949,11 @@ function extractAssetStyleGuidance(source = "") {
   const explicit = extractGlobalStyleGuidance(text);
   const candidates = [];
   if (explicit && !ASSET_STYLE_IGNORE_RE.test(explicit)) candidates.push(explicit);
-  for (const rawLine of text.split(/\r?\n/)) {
+  const lines = text.split(/\r?\n/).map(compactLine).filter(Boolean);
+  // 一旦存在全剧风格锚，只使用它。扫描同一文档的其他行会把资产事实
+  // （人物服装、场景材质、道具色调）错误提升为全局风格。
+  if (explicit) return [...new Set(candidates)].join("，").slice(0, 1600);
+  for (const rawLine of lines) {
     const line = compactLine(rawLine);
     if (!line) continue;
     const field = line.match(ASSET_STYLE_FIELD_RE);
@@ -15937,9 +15962,10 @@ function extractAssetStyleGuidance(source = "") {
       const value = field[2];
       if (/视觉解析|视觉描述|视觉分析|渲染语言/.test(label)) candidates.push(...assetStyleClauses(value));
       else if (!ASSET_STYLE_IGNORE_RE.test(value)) candidates.push(compactLine(value));
-      continue;
+    } else if (lines.length <= 3 && text.length <= 2000 && ASSET_STYLE_SIGNAL_RE.test(line) && !ASSET_STYLE_IGNORE_RE.test(line)) {
+      // 保留对单个资产 visual/evidence 字段的兼容，但不再对长文档逐行猜测。
+      candidates.push(...assetStyleClauses(line));
     }
-    if (ASSET_STYLE_SIGNAL_RE.test(line) && !ASSET_STYLE_IGNORE_RE.test(line)) candidates.push(...assetStyleClauses(line));
   }
   return [...new Set(candidates.map((candidate) => compactLine(candidate)).filter(Boolean))].join("，").slice(0, 1600);
 }
@@ -19702,15 +19728,16 @@ function normalizeManifestItem(item, index = 0) {
 
 function hydrateManifestGlobalStyle(rawManifest, source = "") {
   const manifest = normalizeAssetManifest(rawManifest || {});
-  const globalStyle = extractAssetStyleGuidance(source);
+  const globalStyle = trimGlobalStyleValue(extractGlobalStyleGuidance(source) || extractAssetStyleGuidance(source));
   if (!manifest.items.length) return manifest;
   const items = manifest.items.map((item) => {
+    const storedGlobalStyle = trimGlobalStyleValue(item.globalStyle);
     const effectiveGlobalStyle =
       globalStyle ||
-      item.globalStyle ||
+      storedGlobalStyle ||
       extractAssetStyleGuidance(item.visual) ||
       extractAssetStyleGuidance(item.evidence) ||
-      extractAssetStyleGuidance(item.textToImagePrompt);
+      trimGlobalStyleValue(extractAssetStyleGuidance(item.textToImagePrompt));
     const asset = {
       type: item.type,
       name: item.id,
@@ -19721,7 +19748,10 @@ function hydrateManifestGlobalStyle(rawManifest, source = "") {
       analyzerSource: item.source,
       textToImagePromptOverride: item.textToImagePrompt,
     };
-    const shouldCleanPrompt = !item.textToImagePrompt || isLegacyAssetPrompt(item.textToImagePrompt);
+    const shouldCleanPrompt =
+      !item.textToImagePrompt ||
+      isLegacyAssetPrompt(item.textToImagePrompt) ||
+      /(?:用法\s*[（(]?[^）)]*硬规|文生图提示词|资产文档生图提示词|资产解析模型提示词)/iu.test(item.textToImagePrompt);
     return {
       ...item,
       globalStyle: effectiveGlobalStyle,

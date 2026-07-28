@@ -91,6 +91,20 @@ const topLevelStyleMarkdown = `# Asset prompts
 const [topLevelStyleAsset] = parseAssets(topLevelStyleMarkdown);
 assert.match(topLevelStyleAsset.prompt, /恶搞之家风格/, "top-level document style must be injected into each asset prompt");
 assert.match(promptFor(topLevelStyleAsset), /视觉风格：恶搞之家风格/, "final image prompt must retain top-level document style");
+const layeredStyleMarkdown = `# Asset prompts
+
+视觉风格：供美术 / 出图 / 视频生成直接取用，〇、画风总纲（全剧统一），参考坐标：《恶搞之家》（Family Guy）美式电视动画风格，粗细均匀的黑色描边，纯平涂赛璐璐上色，不做渐变、不做写实光影，统一禁止项：写实渲染、3D质感、景深虚化。用法（硬规）：画风描述已直接写进每一条文生图提示词。文生图提示词：巨型卡通老虎雕像，灰粉色摩天轮，24岁中国东北女性。
+
+## New Character Asset: C005_LAYERED_CHARACTER_SHEET
+
+剧本解析对象：郝雪
+视觉解析：24岁中国东北女性，荧光橙外卖骑手棉服，钉子盘发。
+`;
+const [layeredAsset] = parseAssets(layeredStyleMarkdown);
+assert.match(layeredAsset.globalStyle, /恶搞之家.*美式电视动画风格/);
+assert.doesNotMatch(layeredAsset.globalStyle, /用法|文生图提示词|老虎雕像|摩天轮|24岁中国东北女性/);
+assert.match(promptFor(layeredAsset), /荧光橙外卖骑手棉服/);
+assert.doesNotMatch(promptFor(layeredAsset), /老虎雕像|摩天轮/);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /STYLE REFERENCE INPUT RULES \(HARD CONSTRAINT\)/);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /for STYLE ONLY/i);
 assert.match(styleReferenceGuidance("/tmp/style-reference.jpg"), /according to the visual style/i);

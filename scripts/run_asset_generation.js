@@ -119,22 +119,42 @@ function readAssetReferenceMap(filePath = "") {
   return map;
 }
 
+const GLOBAL_STYLE_LABEL_SOURCE = "全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格";
+const GLOBAL_STYLE_INLINE_STOP_RE = /用法\s*[（(]?[^）)]*硬规[^）)]*[）)]?|(?:文生图提示词|资产文档生图提示词|资产解析模型提示词|中文资产文档提示词)|(?:资产主体|剧本解析对象|剧本依据|视觉解析|固定(?:输出|制作)规格)\s*[：:]/iu;
+
+function trimGlobalStyleValue(value = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const stop = text.search(GLOBAL_STYLE_INLINE_STOP_RE);
+  const trimmed = stop >= 0 ? text.slice(0, stop) : text;
+  return trimmed
+    .replace(/^(?:供美术\s*\/\s*出图\s*\/\s*视频生成直接取用[，,]\s*)?(?:[〇○0]\s*[、.]\s*)?画风总纲(?:\s*[（(][^）)]*[）)])?[，,]?\s*/u, "")
+    .replace(/[，,；;、:：]\s*$/u, "")
+    .trim()
+    .slice(0, 1600);
+}
+
 function extractGlobalStyleFromMarkdown(markdown = "") {
   const lines = String(markdown || "").split(/\r?\n/).map((line) => line.trim());
-  const label = "(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|风格锚点|核心美学|调色板逻辑|风格)";
+  const label = `(?:${GLOBAL_STYLE_LABEL_SOURCE})`;
   const inlinePattern = new RegExp(`^(?:[◆◇]\\s*)?${label}(?:\\s*[（(][^）)]*[）)])?\\s*[：:]\\s*(.+)$`, "u");
   const headingPattern = new RegExp(`^(?:[◆◇]\\s*)?${label}(?:\\s*[（(][^）)]*[）)])?\\s*$`, "u");
   for (const line of lines) {
     const match = line.match(inlinePattern);
-    if (match?.[1]) return match[1].replace(/\s+/g, " ").trim();
+    if (match?.[1]) return trimGlobalStyleValue(match[1]);
   }
   const headingIndex = lines.findIndex((line) => headingPattern.test(line));
   if (headingIndex < 0) return "";
   const collected = [];
   for (const line of lines.slice(headingIndex + 1)) {
     if (!line) continue;
-    if (/^(?:[◆◇]|##?\s+|剧本(?:人物|场景|道具)|New\s+)/u.test(line)) break;
-    collected.push(line.replace(/^[-•*·]\s*/, ""));
+    if (
+      /^(?:[◆◇]|##?\s+|剧本(?:人物|场景|道具)|New\s+)/u.test(line) ||
+      GLOBAL_STYLE_INLINE_STOP_RE.test(line) ||
+      /^(?:人物|角色|场景|环境|地点|道具|物件|插入|细节|特写)\s*(?:卡|段|列表|设定)?(?:\s|$)/iu.test(line)
+    ) break;
+    const value = trimGlobalStyleValue(line.replace(/^[-•*·]\s*/, ""));
+    if (value) collected.push(value);
   }
   return collected.join(" ").replace(/\s+/g, " ").trim();
 }
@@ -153,9 +173,11 @@ function extractAssetStyleGuidanceFromMarkdown(markdown = "") {
   const explicit = extractGlobalStyleFromMarkdown(markdown);
   const candidates = [];
   if (explicit && !ASSET_STYLE_IGNORE_RE.test(explicit)) candidates.push(explicit);
+  // 有全局风格锚时，不能把后面的资产视觉字段再次合并进全局风格。
+  if (explicit) return [...new Set(candidates)].join("，").slice(0, 1600);
+  const lines = String(markdown || "").split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
   const fieldPattern = /^(?:全局视觉风格|资产文档视觉风格|全局画风锚|全局画风|全片画风|统一风格|统一画风|整体画风|整体风格|艺术风格|美术风格|视觉基调|画面风格|风格要求|风格约束|视觉风格|画风|视觉解析|视觉描述|视觉分析|渲染风格|渲染语言)\s*[（(]?[^）)]*[）)]?\s*[：:]\s*(.+)$/u;
-  for (const rawLine of String(markdown || "").split(/\r?\n/)) {
-    const line = rawLine.replace(/\s+/g, " ").trim();
+  for (const line of lines) {
     if (!line) continue;
     const field = line.match(fieldPattern);
     if (field) {
@@ -163,7 +185,7 @@ function extractAssetStyleGuidanceFromMarkdown(markdown = "") {
       else if (!ASSET_STYLE_IGNORE_RE.test(field[1])) candidates.push(field[1]);
       continue;
     }
-    if (ASSET_STYLE_SIGNAL_RE.test(line) && !ASSET_STYLE_IGNORE_RE.test(line)) candidates.push(...assetStyleClauses(line));
+    if (lines.length <= 3 && line.length <= 2000 && ASSET_STYLE_SIGNAL_RE.test(line) && !ASSET_STYLE_IGNORE_RE.test(line)) candidates.push(...assetStyleClauses(line));
   }
   return [...new Set(candidates.map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean))].join("，").slice(0, 1600);
 }

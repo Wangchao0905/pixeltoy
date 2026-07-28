@@ -94,6 +94,29 @@ const globalStyleAssetDescription = `
 assert.match(parser.extractGlobalStyleGuidance(globalStyleAssetDescription), /恶搞之家风格/);
 assert.match(parser.extractGlobalStyleGuidance("全局视觉风格：恶搞之家风格的二维动画"), /恶搞之家风格/, "inline 全局视觉风格 field must be recognized");
 assert.match(parser.extractGlobalStyleGuidance("全局视觉风格（来自资产文档）：恶搞之家风格的二维动画"), /恶搞之家风格/, "annotated 全局视觉风格 field must be recognized");
+const layeredStyleDocument = `视觉风格：供美术 / 出图 / 视频生成直接取用，〇、画风总纲（全剧统一），参考坐标：《恶搞之家》（Family Guy）美式电视动画风格，粗细均匀的黑色描边，纯平涂赛璐璐上色，不做渐变、不做写实光影，色彩：中低饱和平面色块，统一禁止项：写实渲染、3D质感、景深虚化。用法（硬规）：画风描述已直接写进每一条「文生图提示词」的开头。文生图提示词：《恶搞之家》式美式电视动画风格，巨型卡通老虎雕像，灰粉色摩天轮，24岁中国东北女性。`;
+const layeredGlobalStyle = parser.extractGlobalStyleGuidance(layeredStyleDocument);
+assert.match(layeredGlobalStyle, /恶搞之家.*美式电视动画风格/);
+assert.match(layeredGlobalStyle, /粗细均匀的黑色描边.*平涂赛璐璐.*统一禁止项/);
+assert.doesNotMatch(layeredGlobalStyle, /供美术|画风总纲|用法|文生图提示词|老虎雕像|摩天轮|24岁中国东北女性/);
+assert.equal(parser.extractAssetStyleGuidance(layeredStyleDocument), layeredGlobalStyle, "a document-level style anchor must be the only global style source");
+const pollutedLayeredManifest = parser.hydrateManifestGlobalStyle(
+  {
+    items: [{
+      id: "C001_HAOXUE_CHARACTER_SHEET",
+      type: "Character",
+      label: "P01 郝雪",
+      evidence: "24岁女，荧光橙外卖骑手棉服。",
+      visual: "24岁中国东北女性，钉子盘发，冻裂红斑。",
+      globalStyle: "恶搞之家风格，巨型卡通老虎雕像，灰粉色摩天轮。",
+      textToImagePrompt: "视觉风格：恶搞之家风格，巨型卡通老虎雕像，灰粉色摩天轮。用法（硬规）：文生图提示词：24岁中国东北女性。",
+    }],
+  },
+  layeredStyleDocument,
+);
+assert.doesNotMatch(pollutedLayeredManifest.items[0].globalStyle, /老虎雕像|摩天轮/);
+assert.doesNotMatch(pollutedLayeredManifest.items[0].textToImagePrompt, /用法|文生图提示词|老虎雕像|摩天轮/);
+assert.match(pollutedLayeredManifest.items[0].textToImagePrompt, /主体：郝雪/);
 assert.match(
   parser.extractAssetStyleGuidance("视觉解析：恶搞之家风格的二维动画，粗黑轮廓，平涂色块，荧光橙外卖服装。"),
   /恶搞之家风格.*粗黑轮廓.*平涂色块/,

@@ -1,4 +1,6 @@
 const DEFAULT_ASSET_ANALYZER_MODEL = "claude-opus-4-8";
+const DURATION_MODE_TK = "tk";
+const DURATION_MODE_FREE = "free";
 const WORKSPACE_LAYOUT_VERSION = "green-flow-v5-no-map";
 const WORKSPACE_SCALE_KEY = `pixelToys.workspaceScale.${WORKSPACE_LAYOUT_VERSION}`;
 const STUDIO_TAB_KEY = `pixelToys.activeStudioTab.${WORKSPACE_LAYOUT_VERSION}`;
@@ -184,6 +186,7 @@ const state = {
   selectedAssetIds: new Set(),
   optimisticAssetJobs: new Map(),
   dialogueLanguage: localStorage.getItem("pixelToys.dialogueLanguage") || "en",
+  durationMode: DURATION_MODE_TK,
   assumeEnglishDialogue: localStorage.getItem("pixelToys.assumeEnglishDialogue") === "1",
   workspaceScale: initialWorkspaceScale(),
   assetUploadTargetId: "",
@@ -1746,6 +1749,22 @@ function projectDialogueLanguageFrom(data) {
   return "";
 }
 
+function normalizeDurationMode(value, fallback = DURATION_MODE_TK) {
+  if (value === DURATION_MODE_FREE || value === "自由模式") return DURATION_MODE_FREE;
+  if (value === DURATION_MODE_TK || value === "TK 模式") return DURATION_MODE_TK;
+  return fallback === DURATION_MODE_FREE ? DURATION_MODE_FREE : DURATION_MODE_TK;
+}
+
+function projectDurationModeFrom(data) {
+  const value =
+    data?.durationMode ||
+    data?.assetManifest?.durationMode ||
+    data?.assetManifest?.production?.durationMode ||
+    data?.videoConfigStatus?.durationMode ||
+    "";
+  return value === DURATION_MODE_FREE || value === DURATION_MODE_TK ? value : "";
+}
+
 function setProjectState(data) {
   state.project = data;
   const dialogueLanguage = projectDialogueLanguageFrom(data);
@@ -1753,6 +1772,8 @@ function setProjectState(data) {
     state.dialogueLanguage = dialogueLanguage;
     localStorage.setItem("pixelToys.dialogueLanguage", dialogueLanguage);
   }
+  const durationMode = projectDurationModeFrom(data);
+  if (durationMode) state.durationMode = normalizeDurationMode(durationMode);
   updateGenerationCanvasLinks();
 }
 
@@ -1899,6 +1920,7 @@ function openProjectFromState(data) {
 
 function resetProjectScopedUiState() {
   state.activeJobId = "";
+  state.durationMode = DURATION_MODE_TK;
   state.referenceKitEditingId = "";
   state.referenceKitDraft = null;
   state.modernStudio.assetManageMode = false;
@@ -4981,6 +5003,36 @@ function setModernProjectMenu(open) {
   context.setAttribute("aria-expanded", String(nextOpen));
 }
 
+function renderModernDurationMode(data = state.project) {
+  const mode = normalizeDurationMode(projectDurationModeFrom(data) || state.durationMode);
+  state.durationMode = mode;
+  document.querySelectorAll("[data-duration-mode]").forEach((button) => {
+    const selected = button.dataset.durationMode === mode;
+    button.setAttribute("aria-checked", String(selected));
+    button.classList.toggle("is-active", selected);
+  });
+}
+
+async function persistProjectDurationMode(durationMode) {
+  if (!state.selectedId) throw new Error("请先打开一个项目");
+  const nextMode = normalizeDurationMode(durationMode);
+  const previous = state.durationMode;
+  state.durationMode = nextMode;
+  renderModernDurationMode({ durationMode: nextMode });
+  try {
+    const data = await api(`/api/project/${state.selectedId}/duration-mode`, {
+      method: "POST",
+      body: JSON.stringify({ durationMode: nextMode }),
+    });
+    setProjectState(data);
+    renderWorkspace();
+  } catch (error) {
+    state.durationMode = previous;
+    renderModernDurationMode(state.project);
+    throw error;
+  }
+}
+
 function closeModernProjectRename() {
   $("#modernProjectRenameForm")?.classList.add("hidden");
 }
@@ -5173,6 +5225,7 @@ function modernMediaForShot(data, shot, index, kind) {
 function renderModernStudio(data = state.project) {
   const root = $("#studioModernShell");
   if (!root || !data?.project) return;
+  renderModernDurationMode(data);
   const modernFocus = ["assets", "assetimg", "storyboard", "video", "cut"].includes(state.modernStudio.focus)
     ? state.modernStudio.focus
     : "assets";
@@ -8974,7 +9027,7 @@ async function generateDraft() {
     await saveFileQuiet("script");
     const data = await api(`/api/project/${state.selectedId}/draft`, {
       method: "POST",
-      body: JSON.stringify({ dialogueLanguage, assetAnalyzerModel: state.assetAnalyzerModel }),
+      body: JSON.stringify({ dialogueLanguage, durationMode: state.durationMode, assetAnalyzerModel: state.assetAnalyzerModel }),
     });
     setProjectState(data.state);
     toast("分镜和提示词草稿已生成");
@@ -9062,6 +9115,7 @@ async function refreshVideoConfig({ silent } = { silent: false }) {
       promptMode: $("#configPromptMode")?.value || "prompt",
       assetAnalyzerModel: state.assetAnalyzerModel,
       dialogueLanguage: state.dialogueLanguage,
+      durationMode: state.durationMode,
       enableStoryboards: ($("#configPromptMode")?.value || "prompt") === "production_board",
       tailFrameContinuity: ($("#configPromptMode")?.value || "prompt") !== "production_board",
     }),
@@ -9432,6 +9486,11 @@ function bind() {
     openProjectModal();
   });
   $("#modernRenameProject")?.addEventListener("click", openModernProjectRename);
+  $("#modernProjectMenu")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-duration-mode]");
+    if (!button) return;
+    persistProjectDurationMode(button.dataset.durationMode).catch((error) => toast(error.message));
+  });
   $("#modernProjectRenameForm")?.addEventListener("submit", (event) => saveModernProjectDisplayName(event).catch((error) => toast(error.message)));
   $("#modernCancelProjectRename")?.addEventListener("click", closeModernProjectRename);
   $("#modernProjectSwitcher")?.addEventListener("click", (event) => {

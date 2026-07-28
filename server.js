@@ -978,6 +978,8 @@ const VIDEO_MIN_EPISODE_SECONDS = 70;
 const VIDEO_MAX_EPISODE_SECONDS = 90;
 const VIDEO_DEFAULT_EPISODE_SECONDS = 75;
 const VIDEO_TARGET_SECONDS = VIDEO_DEFAULT_EPISODE_SECONDS;
+const DURATION_MODE_TK = "tk";
+const DURATION_MODE_FREE = "free";
 
 function normalizeAssetType(type, fallback = "Prop") {
   const raw = compactLine(type || "");
@@ -3067,10 +3069,12 @@ function createEpisodeWorkspace(projectDir, slug, title = "") {
           modelName: DEFAULT_VIDEO_CONFIG_MODEL,
           modelAliases: [DEFAULT_VIDEO_CONFIG_MODEL],
           dialogueLanguage: "en",
+          durationMode: DURATION_MODE_TK,
           settings: {
             ratio: "9:16",
             resolution: "480p",
             dialogueLanguage: "en",
+            durationMode: DURATION_MODE_TK,
             enableSound: "on",
             count: 1,
             search_enabled: 0,
@@ -3179,7 +3183,7 @@ function defaultPaths(episodeRoot) {
 
 const MODEL_SHOT_PLAN_VERSION = 1;
 
-function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage, shots } = {}) {
+function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage, durationMode = "tk", shots } = {}) {
   const path = defaultPaths(episodeRoot).modelShotPlan;
   const plannedShots = (Array.isArray(shots) ? shots : []).map((shot) => ({
     id: compactLine(shot?.id),
@@ -3202,6 +3206,7 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
         model: compactLine(model),
         scriptFingerprint: sha1Text(script),
         dialogueLanguage: dialogueLanguage === "zh" ? "zh" : "en",
+        durationMode: durationMode === "free" ? "free" : "tk",
         createdAt: new Date().toISOString(),
         shots: plannedShots,
       },
@@ -3231,13 +3236,13 @@ function modelPlanDialogueLanguageForConfig(modelPlan, script, requestedLanguage
   return normalizeDialogueLanguage(modelPlan.dialogueLanguage, requested);
 }
 
-function modelShotPlanNeedsRefresh(plan, script) {
-  return !plan || plan.scriptFingerprint !== sha1Text(script);
+function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk") {
+  return !plan || plan.scriptFingerprint !== sha1Text(script) || (plan.durationMode || "tk") !== durationMode;
 }
 
 // 视频配置修复只需要补齐模型导演计划。重建完整草稿会重置后续流程状态，
 // 也会让一次临时失败错误地阻断配置保存。
-async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage } = {}) {
+async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode = projectDurationMode(episodeRoot) } = {}) {
   const videoScript = compactLine(script);
   if (!videoScript) throw new Error("剧本为空，无法生成模型导演设计。");
   const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
@@ -3246,12 +3251,18 @@ async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLangua
 
   const rawBeats = scriptBeatCandidates(videoScript);
   const continuityBeats = consolidateContinuousBeats(rawBeats);
-  const targetShotCount = preferredShotCount(videoScript, continuityBeats);
+  const normalizedDurationMode = normalizeDurationMode(durationMode);
+  const targetShotCount = preferredShotCount(videoScript, continuityBeats, normalizedDurationMode);
   const normalizedDialogueLanguage = dialogueLanguage === "zh" ? "zh" : "en";
   const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, {
     dialogueLanguage: normalizedDialogueLanguage,
   });
-  const durationPlan = planEpisodeDuration({ shotCount: beats.length || targetShotCount, beats });
+  const durationPlan = planEpisodeDuration({
+    shotCount: beats.length || targetShotCount,
+    beats,
+    durationMode: normalizedDurationMode,
+    script: videoScript,
+  });
   const result = await callStoryboardModel({
     script: videoScript,
     assets,
@@ -3276,17 +3287,19 @@ async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLangua
     model: result.model,
     script,
     dialogueLanguage: normalizedDialogueLanguage,
+    durationMode: normalizedDurationMode,
     shots: result.shots,
   });
   return readStoryboardModelPlan(episodeRoot);
 }
 
-async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage } = {}) {
+async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode } = {}) {
+  const mode = durationMode || "tk";
   let plan = readStoryboardModelPlan(episodeRoot);
-  if (!modelShotPlanNeedsRefresh(plan, script)) return plan;
-  await buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage });
+  if (!modelShotPlanNeedsRefresh(plan, script, mode)) return plan;
+  await buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode: mode });
   plan = readStoryboardModelPlan(episodeRoot);
-  if (modelShotPlanNeedsRefresh(plan, script)) {
+  if (modelShotPlanNeedsRefresh(plan, script, mode)) {
     throw new Error("模型导演设计生成失败，请稍后重新提交视频配置。");
   }
   return plan;
@@ -5363,6 +5376,64 @@ function projectDialogueLanguage(episodeRoot, fallback = "en") {
   return normalizeDialogueLanguage(configured, fallback);
 }
 
+function normalizeDurationMode(value, fallback = DURATION_MODE_TK) {
+  if (value === DURATION_MODE_FREE || value === "自由模式") return DURATION_MODE_FREE;
+  if (value === DURATION_MODE_TK || value === "TK 模式") return DURATION_MODE_TK;
+  return fallback === DURATION_MODE_FREE ? DURATION_MODE_FREE : DURATION_MODE_TK;
+}
+
+function projectDurationMode(episodeRoot, fallback = DURATION_MODE_TK) {
+  const config = readVideoConfig(episodeRoot, { allowEmptyShots: true })?.data;
+  const manifest = readAssetManifest(episodeRoot)?.data;
+  const configured =
+    config?.durationMode ||
+    config?.settings?.durationMode ||
+    manifest?.durationMode ||
+    manifest?.production?.durationMode ||
+    "";
+  return normalizeDurationMode(configured, fallback);
+}
+
+function persistProjectDurationMode(episodeRoot, durationMode) {
+  const normalized = normalizeDurationMode(durationMode);
+  const manifestRecord = readAssetManifest(episodeRoot);
+  const seriesManifest = readSeriesAssetManifest(episodeRoot);
+  const canUpdateManifest = manifestRecord?.data && (
+    !!seriesManifest?.data ||
+    manifestRecord.data.confirmed === true ||
+    (Array.isArray(manifestRecord.data.items) && manifestRecord.data.items.length > 0)
+  );
+  if (canUpdateManifest) {
+    writeAssetManifest(episodeRoot, {
+      ...manifestRecord.data,
+      durationMode: normalized,
+      production: {
+        ...(manifestRecord.data.production || {}),
+        durationMode: normalized,
+      },
+    });
+  }
+  const configRecord = readVideoConfig(episodeRoot, { allowEmptyShots: true });
+  if (configRecord?.file && configRecord?.data) {
+    writeText(
+      configRecord.file,
+      `${JSON.stringify(
+        {
+          ...configRecord.data,
+          durationMode: normalized,
+          settings: {
+            ...(configRecord.data.settings || {}),
+            durationMode: normalized,
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  }
+  return normalized;
+}
+
 function persistProjectDialogueLanguage(episodeRoot, dialogueLanguage) {
   const normalized = normalizeDialogueLanguage(dialogueLanguage, "en");
   const manifestRecord = readAssetManifest(episodeRoot);
@@ -5842,11 +5913,17 @@ function storyboardSegmentsFromStoryboardMarkdown(episodeRoot, dialogueLanguage 
 function fallbackStoryboardSegmentsFromScript(episodeRoot, dialogueLanguage = "en") {
   const script = scriptForVideoBeats(readText(findProjectFile(episodeRoot, "script")));
   if (!script.trim()) return [];
+  const durationMode = projectDurationMode(episodeRoot);
   const rawBeats = scriptBeatCandidates(script);
   const continuityBeats = consolidateContinuousBeats(rawBeats);
-  const targetShotCount = preferredShotCount(script, continuityBeats);
+  const targetShotCount = preferredShotCount(script, continuityBeats, durationMode);
   const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, { dialogueLanguage });
-  const durationPlan = planEpisodeDuration({ shotCount: beats.length || targetShotCount, beats });
+  const durationPlan = planEpisodeDuration({
+    shotCount: beats.length || targetShotCount,
+    beats,
+    durationMode,
+    script,
+  });
   let cursor = 0;
   return beats.map((beat, index) => {
     const duration = clampStoryboardDuration(durationPlan.durations[index], 10);
@@ -7648,6 +7725,7 @@ function defaultGroupName(episodeRoot) {
 function configReadiness(episodeRoot, configData = null) {
   const config = configData || readVideoConfig(episodeRoot)?.data || null;
   const dialogueLanguage = projectDialogueLanguage(episodeRoot, "en");
+  const durationMode = normalizeDurationMode(config?.durationMode || config?.settings?.durationMode || projectDurationMode(episodeRoot));
   const runStart = currentRunStartMs(episodeRoot, config);
   const missing = [];
   if (!config) {
@@ -7667,6 +7745,7 @@ function configReadiness(episodeRoot, configData = null) {
       shots: 0,
       totalDuration: 0,
       dialogueLanguage,
+      durationMode,
       enableStoryboards: false,
       promptMode: "prompt",
       tailFrameContinuity: true,
@@ -7743,6 +7822,7 @@ function configReadiness(episodeRoot, configData = null) {
     shots: shots.length,
     totalDuration: shots.reduce((sum, shot) => sum + Number(shot.duration || 0), 0),
     dialogueLanguage: config.dialogueLanguage || config.settings?.dialogueLanguage || dialogueLanguage,
+    durationMode,
     enableStoryboards: config.settings?.enableStoryboards === true,
     promptMode,
     tailFrameContinuity: config.settings?.tailFrameContinuity !== false,
@@ -8932,11 +9012,13 @@ function fullProjectState(episodeRoot) {
   const assetSlots = normalizedAssetManifest ? assetSlotsForState(episodeRoot, normalizedAssetManifest, visibleAssets, { minFailedAt: runStart, minModifiedAt: runStart }) : [];
   const storyboardSlots = storyboardSlotsForState(episodeRoot, normalizedAssetManifest || null, storyboardAssets, { configData: config?.data });
   const dialogueLanguage = projectDialogueLanguage(episodeRoot, "en");
+  const durationMode = projectDurationMode(episodeRoot);
   const referenceKitState = projectReferenceKitState(workflow, config?.data || {});
   return {
     ok: true,
     runtime: runtimeStatus(),
     dialogueLanguage,
+    durationMode,
     isolation: {
       runNamespace,
       runStartedAt: runStart ? new Date(runStart).toISOString() : "",
@@ -9038,6 +9120,7 @@ function projectStatusSnapshot(episodeRoot) {
     configData: config?.data,
   });
   const referenceKitState = projectReferenceKitState(workflow, config?.data || {});
+  const durationMode = projectDurationMode(episodeRoot);
   return {
     ok: true,
     runtime: runtimeStatus(),
@@ -9046,6 +9129,7 @@ function projectStatusSnapshot(episodeRoot) {
     teamReferences: Array.isArray(workflow.teamReferences) ? workflow.teamReferences.map(publicTeamReference) : [],
     ...referenceKitState,
     videoProgress: progress,
+    durationMode,
     videoConfigStatus: configReadiness(episodeRoot, config?.data),
     assetJob: jobSummary(latestVisibleAssetJob(localJobs)),
     storyboardJob: jobSummary(latestJobForTypes(localJobs, ["storyboards", "storyboard-regenerate"])),
@@ -17246,16 +17330,22 @@ function fitBeatsToCount(beats, targetCount) {
   return fitted;
 }
 
-function preferredShotCount(script, beats) {
+function preferredShotCount(script, beats, durationMode = DURATION_MODE_TK) {
+  const mode = normalizeDurationMode(durationMode);
+  if (mode === DURATION_MODE_FREE) {
+    const target = scriptTimecodeTotalSeconds(script) || estimatedFreeDurationForBeats(Array.isArray(beats) ? beats : []);
+    return Math.max(1, Math.min(8, Math.ceil(target / VIDEO_MAX_SECONDS)));
+  }
   const clean = cleanScriptForDraft(script);
   const contentWeight = Math.max(1, Math.ceil(clean.length / 760));
   const beatCount = Array.isArray(beats) ? beats.length : 0;
   const dialogueCount = parseSpeakerDialogues(clean).length;
+  const naturalMinimum = mode === DURATION_MODE_FREE ? 1 : 5;
   const natural =
     beatCount <= 6
-      ? Math.max(5, beatCount, contentWeight + 3, Math.ceil(dialogueCount / 2) + 4)
-      : Math.max(5, Math.round((beatCount + contentWeight + Math.ceil(dialogueCount / 2)) / 2));
-  const minimum = Math.ceil(VIDEO_MIN_EPISODE_SECONDS / VIDEO_MAX_SECONDS);
+      ? Math.max(naturalMinimum, beatCount, contentWeight + 3, Math.ceil(dialogueCount / 2) + 4)
+      : Math.max(naturalMinimum, Math.round((beatCount + contentWeight + Math.ceil(dialogueCount / 2)) / 2));
+  const minimum = mode === DURATION_MODE_FREE ? 1 : Math.ceil(VIDEO_MIN_EPISODE_SECONDS / VIDEO_MAX_SECONDS);
   return Math.max(minimum, Math.min(8, natural || minimum));
 }
 
@@ -17265,13 +17355,43 @@ function clampShotDuration(value, fallback = 8) {
   return Math.max(VIDEO_MIN_SECONDS, Math.min(VIDEO_MAX_SECONDS, Math.round(base)));
 }
 
-function targetDurationForBeats(count, beats = [], requestedTarget = 0) {
+function scriptTimecodeTotalSeconds(script) {
+  const source = String(script || "");
+  const timecodePattern = /(?:^|\n)\s*\d{1,3}\s*[|｜]\s*\d{1,2}:\d{2}(?:\.\d+)?\s*[—–-]\s*(\d{1,2}):(\d{2}(?:\.\d+)?)/g;
+  let total = 0;
+  for (const match of source.matchAll(timecodePattern)) {
+    const minutes = Number(match[1]);
+    const seconds = Number(match[2]);
+    if (Number.isFinite(minutes) && Number.isFinite(seconds)) total = Math.max(total, minutes * 60 + seconds);
+  }
+  return Math.round(total);
+}
+
+function estimatedFreeDurationForBeats(beats = []) {
+  const clean = beats.map(compactLine).filter(Boolean);
+  if (!clean.length) return episodeTargetDurationForBeats(beats);
+  const text = clean.join(" ");
+  const dialogueText = parseSpeakerDialogues(text).map((item) => item.text).join(" ");
+  const source = compactLine(dialogueText || text);
+  return Math.max(1, Math.ceil(source.replace(/[^\p{L}\p{N}]/gu, "").length / 4));
+}
+
+function targetDurationForBeats(count, beats = [], requestedTarget = 0, durationMode = DURATION_MODE_TK, script = "") {
+  const mode = normalizeDurationMode(durationMode);
   const minPossible = count * VIDEO_MIN_SECONDS;
-  const maxPossible = count * VIDEO_MAX_SECONDS;
+  const maxPossible = Math.min(VIDEO_MAX_EPISODE_SECONDS, count * VIDEO_MAX_SECONDS);
   const clampTarget = (value) => Math.max(minPossible, Math.min(maxPossible, Math.round(value)));
   const requested = Number(requestedTarget);
   if (Number.isFinite(requested) && requested > 0) {
-    return clampTarget(Math.max(VIDEO_MIN_EPISODE_SECONDS, Math.min(VIDEO_MAX_EPISODE_SECONDS, requested)));
+    return clampTarget(
+      mode === DURATION_MODE_FREE
+        ? requested
+        : Math.max(VIDEO_MIN_EPISODE_SECONDS, Math.min(VIDEO_MAX_EPISODE_SECONDS, requested)),
+    );
+  }
+  if (mode === DURATION_MODE_FREE) {
+    const timecodeTotal = scriptTimecodeTotalSeconds(script || beats.join("\n"));
+    return clampTarget(timecodeTotal || estimatedFreeDurationForBeats(beats));
   }
   return clampTarget(episodeTargetDurationForBeats(beats));
 }
@@ -17388,14 +17508,32 @@ function preferLongShotDurations(durations = [], weights = [], target = 0) {
   return next;
 }
 
-function planEpisodeDuration({ shotCount, beats = [], targetDuration = 0, rawDurations = [] } = {}) {
-  const minimumCount = Math.ceil(VIDEO_MIN_EPISODE_SECONDS / VIDEO_MAX_SECONDS);
+function preferLongFreeShotDurations(count, target) {
+  const shotCount = Math.max(1, Number(count) || 1);
+  const total = Math.max(shotCount * VIDEO_MIN_SECONDS, Math.min(shotCount * VIDEO_MAX_SECONDS, Math.round(Number(target) || 0)));
+  const durations = [];
+  let remaining = total;
+  for (let index = 0; index < shotCount; index += 1) {
+    const remainingMinimum = (shotCount - index - 1) * VIDEO_MIN_SECONDS;
+    const duration = Math.min(VIDEO_MAX_SECONDS, remaining - remainingMinimum);
+    durations.push(Math.max(VIDEO_MIN_SECONDS, duration));
+    remaining -= durations[index];
+  }
+  return durations;
+}
+
+function planEpisodeDuration({ shotCount, beats = [], targetDuration = 0, rawDurations = [], durationMode = DURATION_MODE_TK, script = "" } = {}) {
+  const mode = normalizeDurationMode(durationMode);
+  const minimumCount = mode === DURATION_MODE_FREE ? 1 : Math.ceil(VIDEO_MIN_EPISODE_SECONDS / VIDEO_MAX_SECONDS);
   const count = Math.max(minimumCount, Math.min(8, Number(shotCount) || beats.length || minimumCount));
   const normalizedBeats = Array.from({ length: count }, (_, index) => compactLine(beats[index] || ""));
-  const target = targetDurationForBeats(count, normalizedBeats, targetDuration);
+  const target = targetDurationForBeats(count, normalizedBeats, targetDuration, mode, script);
   const weights = normalizedBeats.map((beat, index) => beatDurationWeight(beat, index, normalizedBeats, rawDurations[index]));
+  if (mode === DURATION_MODE_FREE) {
+    return { target, shotCount: count, durations: preferLongFreeShotDurations(count, target), weights, durationMode: mode };
+  }
   const durations = preferLongShotDurations(distributeDurationsByWeights(weights, target), weights, target);
-  return { target, shotCount: count, durations, weights };
+  return { target, shotCount: count, durations, weights, durationMode: mode };
 }
 
 function scriptBeatCandidates(script) {
@@ -18599,6 +18737,16 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
 }
 
 function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, durationPlan = null }) {
+  const durationMode = normalizeDurationMode(durationPlan?.durationMode);
+  const plannedShotCount = Math.max(
+    1,
+    Number(durationPlan?.shotCount) || durationPlan?.durations?.length || Number(targetShotCount) || 1,
+  );
+  const freeMinAllowed = plannedShotCount * VIDEO_MIN_SECONDS;
+  const freeMaxAllowed = Math.min(VIDEO_MAX_EPISODE_SECONDS, plannedShotCount * VIDEO_MAX_SECONDS);
+  const durationRule = durationMode === DURATION_MODE_FREE
+    ? `目标总时长 ≈ ${durationPlan?.target || 0} 秒，允许 ±1 秒对齐到整秒。每个镜头必须 4–15 秒。优先在转场和镜头切换处分段 —— 空间变了、时间跳了、动作单元结束了，就该切。这个优先级高于把镜头凑满 15 秒：如果第 13 秒就有转场，就切在 13 秒，不要硬拖到 15。没有转场可依据时，才尽量用满 15 秒以减少镜头数。只允许使用剧本已有内容，不要为了凑时长增补事件。`
+    : "这是后端按剧情复杂度和剧情权重计算的参考时长。可以在 70-90 秒内微调，但不要平均分配，不要全部 12 秒；优先把完整剧情段落设计成接近 15 秒，每段必须 4-15 秒。只允许使用剧本已有剧情，信息不足时不要为了凑时长增补事件。";
   return JSON.stringify(
     {
       task: "根据剧本和资产解析拆解视频分镜，并为 Seedance 2.0 生成中文视频提示词。",
@@ -18608,8 +18756,10 @@ function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCoun
         ? {
             targetDuration: durationPlan.target,
             suggestedDurations: durationPlan.durations,
-            allowedTotalRange: `${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS}s`,
-            rule: "这是后端按剧情复杂度和剧情权重计算的参考时长。可以在 70-90 秒内微调，但不要平均分配，不要全部 12 秒；优先把完整剧情段落设计成接近 15 秒，每段必须 4-15 秒。只允许使用剧本已有剧情，信息不足时不要为了凑时长增补事件。",
+            allowedTotalRange: durationMode === DURATION_MODE_FREE
+              ? `${freeMinAllowed}-${freeMaxAllowed}s`
+              : `${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS}s`,
+            rule: durationRule,
           }
         : undefined,
       assets: assets.map((asset) => ({
@@ -18665,12 +18815,13 @@ function normalizeStoryboardShot(raw, index, context) {
   };
 }
 
-function shouldRebalanceShotDurations(shots = []) {
+function shouldRebalanceShotDurations(shots = [], durationMode = DURATION_MODE_TK) {
+  const mode = normalizeDurationMode(durationMode);
   const durations = shots.map((shot) => Number(shot.duration || 0)).filter((duration) => duration > 0);
   if (durations.length <= 1) return false;
   const total = durations.reduce((sum, duration) => sum + duration, 0);
   const unique = new Set(durations);
-  if (total < VIDEO_MIN_EPISODE_SECONDS) return true;
+  if (total < (mode === DURATION_MODE_FREE ? shots.length * VIDEO_MIN_SECONDS : VIDEO_MIN_EPISODE_SECONDS)) return true;
   if (durations.some((duration) => duration < VIDEO_MIN_SECONDS || duration > VIDEO_MAX_SECONDS)) return true;
   if (unique.size === 1) return true;
   if (unique.size <= Math.max(1, Math.floor(durations.length / 4))) return true;
@@ -18687,6 +18838,7 @@ function rebalanceShotDurations(shots = [], options = {}) {
     beats,
     targetDuration,
     rawDurations,
+    durationMode: options.durationMode,
   });
   return shots.map((shot, index) => ({
     ...shot,
@@ -18747,19 +18899,22 @@ function removeTailFrameContinuityFromStoryboardPrompt(prompt) {
 }
 
 function normalizeStoryboardPlan(data, context) {
+  const durationMode = normalizeDurationMode(context.durationMode);
   const rawShots = Array.isArray(data?.shots) ? data.shots : [];
   let shots = rawShots.map((shot, index) => normalizeStoryboardShot(shot, index, context)).filter(Boolean);
   if (!shots.length) throw new Error("视频分镜模型没有返回有效 shots");
-  if (shouldRebalanceShotDurations(shots)) {
+  if (shouldRebalanceShotDurations(shots, durationMode)) {
     shots = rebalanceShotDurations(shots, {
       durationPlan: context.durationPlan,
       targetDuration: Number(data?.targetDuration || 0),
+      durationMode,
     });
   }
   const total = shots.reduce((sum, shot) => sum + shot.duration, 0);
+  const minAllowed = durationMode === DURATION_MODE_FREE ? shots.length * VIDEO_MIN_SECONDS : VIDEO_MIN_EPISODE_SECONDS;
   const maxAllowed = Math.min(VIDEO_MAX_EPISODE_SECONDS, shots.length * VIDEO_MAX_SECONDS);
-  if (total < VIDEO_MIN_EPISODE_SECONDS || total > maxAllowed) {
-    throw new Error(`视频分镜模型返回总时长异常：${total}s，要求 ${VIDEO_MIN_EPISODE_SECONDS}-${maxAllowed}s`);
+  if (total < minAllowed || total > maxAllowed) {
+    throw new Error(`视频分镜模型返回总时长异常：${total}s，要求 ${minAllowed}-${maxAllowed}s`);
   }
   return {
     ok: true,
@@ -18812,7 +18967,15 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
       const data = JSON.parse(raw);
       const content = data.choices?.[0]?.message?.content || "";
       const parsed = JSON.parse(stripJsonFence(content));
-      return normalizeStoryboardPlan(parsed, { model: candidate, assets, dialogueLanguage, code, beats, durationPlan });
+      return normalizeStoryboardPlan(parsed, {
+        model: candidate,
+        assets,
+        dialogueLanguage,
+        code,
+        beats,
+        durationPlan,
+        durationMode: durationPlan?.durationMode,
+      });
     } catch (error) {
       attempted.push(`${candidate}: ${error?.message || String(error)}`);
     }
@@ -19429,6 +19592,7 @@ function normalizeAssetManifest(raw) {
   const items = Array.isArray(raw?.items) ? sanitizeManifestItems(raw.items.map(normalizeManifestItem)) : [];
   const rawDialogueLanguage = raw?.dialogueLanguage || raw?.production?.dialogueLanguage || "";
   const dialogueLanguage = rawDialogueLanguage ? normalizeDialogueLanguage(rawDialogueLanguage, "en") : "";
+  const durationMode = normalizeDurationMode(raw?.durationMode || raw?.production?.durationMode);
   return {
     version: 1,
     title: compactLine(raw?.title || ""),
@@ -19436,9 +19600,11 @@ function normalizeAssetManifest(raw) {
     confirmedAt: raw?.confirmedAt || "",
     confirmed: !!raw?.confirmed,
     dialogueLanguage,
+    durationMode,
     production: {
       ...(raw?.production && typeof raw.production === "object" ? raw.production : {}),
       dialogueLanguage,
+      durationMode,
     },
     worldProfile: raw?.worldProfile || {},
     analyzer: raw?.analyzer || {},
@@ -19848,6 +20014,7 @@ async function buildDraft(episodeRoot, options = {}) {
   if (!script.trim()) throw new Error("script is empty");
   const dialogueLanguage = options.dialogueLanguage === "zh" ? "zh" : "en";
   persistProjectDialogueLanguage(episodeRoot, dialogueLanguage);
+  const durationMode = persistProjectDurationMode(episodeRoot, options.durationMode || projectDurationMode(episodeRoot));
   const dialogueRule =
     dialogueLanguage === "zh"
       ? "中文描述摄影、场景、动作、声音；对白翻译成自然中文，只针对对白部分使用中文。"
@@ -19865,9 +20032,14 @@ async function buildDraft(episodeRoot, options = {}) {
   const analyzerResult = { ok: true, model: sourceAssetManifest.analyzer?.model || "资产提取结果" };
   const rawBeats = scriptBeatCandidates(videoScript);
   const continuityBeats = consolidateContinuousBeats(rawBeats);
-  const targetShotCount = preferredShotCount(videoScript, continuityBeats);
+  const targetShotCount = preferredShotCount(videoScript, continuityBeats, durationMode);
   const beats = fitBeatsToCountWithoutDuplicateTranslation(continuityBeats, targetShotCount, { dialogueLanguage });
-  const durationPlan = planEpisodeDuration({ shotCount: beats.length || targetShotCount, beats });
+  const durationPlan = planEpisodeDuration({
+    shotCount: beats.length || targetShotCount,
+    beats,
+    durationMode,
+    script: videoScript,
+  });
   const storyboardModelCaller = typeof options.callStoryboardModel === "function" ? options.callStoryboardModel : callStoryboardModel;
   const storyboardModelResult = await storyboardModelCaller({
     script: videoScript,
@@ -20774,11 +20946,16 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     body.dialogueLanguage || currentConfig.dialogueLanguage || currentConfig.settings?.dialogueLanguage || currentManifest.dialogueLanguage || currentManifest.production?.dialogueLanguage || "",
     projectDialogueLanguage(episodeRoot, "en"),
   );
+  const requestedDurationMode = persistProjectDurationMode(
+    episodeRoot,
+    body.durationMode || projectDurationMode(episodeRoot),
+  );
   // 7 月 23 日前创建的项目没有持久化模型导演计划。这里按当前剧本补建，
   // 仍由相同的大模型输出完整设计，不会从旧 Markdown 或手写提示词反推。
   const modelPlan = await ensureModelShotPlanForConfig(episodeRoot, {
     script,
     dialogueLanguage: requestedDialogueLanguage,
+    durationMode: requestedDurationMode,
     assetAnalyzerModel: body.assetAnalyzerModel,
   });
   const slug = episodeSlug(episodeRoot);
@@ -20980,10 +21157,12 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     modelName: normalizeVideoConfigModelName(body.modelName || previous.modelName || DEFAULT_VIDEO_CONFIG_MODEL),
     modelAliases: previous.modelAliases || [DEFAULT_VIDEO_CONFIG_MODEL],
     dialogueLanguage,
+    durationMode: requestedDurationMode,
     settings: {
       ratio: body.ratio || previous.settings?.ratio || "9:16",
       resolution: body.resolution || previous.settings?.resolution || "480p",
       dialogueLanguage,
+      durationMode: requestedDurationMode,
       enableSound: previous.settings?.enableSound || "on",
       count: Number(previous.settings?.count || 1),
       search_enabled: Number(previous.settings?.search_enabled || 0),
@@ -22937,6 +23116,12 @@ async function handleApi(req, res, url) {
     return send(res, 200, fullProjectState(episodeRoot));
   }
 
+  if (req.method === "POST" && action === "duration-mode") {
+    const body = await readBody(req);
+    persistProjectDurationMode(episodeRoot, body.durationMode);
+    return send(res, 200, fullProjectState(episodeRoot));
+  }
+
   if (req.method === "POST" && action === "file") {
     const body = await readBody(req);
     const key = body.key;
@@ -23363,6 +23548,20 @@ module.exports = {
     draft: {
       buildDraft,
       draftAssetManifestForEpisode,
+    },
+    durationMode: {
+      DURATION_MODE_TK,
+      DURATION_MODE_FREE,
+      normalizeDurationMode,
+      projectDurationMode,
+      persistProjectDurationMode,
+      scriptTimecodeTotalSeconds,
+      preferredShotCount,
+      targetDurationForBeats,
+      planEpisodeDuration,
+      shouldRebalanceShotDurations,
+      normalizeStoryboardPlan,
+      storyboardUserPrompt,
     },
     seriesAssets: {
       resolveSeriesAssetDir,

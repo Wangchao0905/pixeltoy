@@ -52,6 +52,7 @@ const VIDEO_TASK_DIR = "08_video_task_nodes";
 const SERIES_ASSET_DIR_NAME = "assets";
 const LEGACY_EPISODE_ASSET_DIR_NAME = "04_assets";
 const SERIES_ASSET_MANIFEST_NAME = "project_asset_manifest.json";
+const SERIES_ASSET_DESCRIPTION_NAME = "project_asset_description.md";
 const IMAGE_API_KEY_ENV_NAMES = [
   "PIXEL_TOYS_IMAGE_API_KEY",
   "IMAGE_GEN_API_KEY",
@@ -3629,13 +3630,59 @@ function writeScriptWithWorkflowIsolation(episodeRoot, scriptText, reason = "scr
 
 // 「资产描述」独立输入:与剧情剧本分开存放,只用于资产解析(人物/场景/道具),不参与剧情节拍/分镜。
 // 专用文件名,避免与 01_script 里的剧本 .md 冲突(findProjectFile 的 script 走 defaults 优先,不会误取)。
-function assetDescriptionPath(episodeRoot) {
+// 资产描述文档是产出全剧资产的源文档，必须和资产清单同级(剧集级)。否则第二集会继承到
+// 「已确认」的资产状态、而资产描述粘贴框是空的——状态和源文档对不上。
+function seriesAssetDescriptionPath(episodeRoot) {
+  return path.join(projectDirForEpisode(episodeRoot), SERIES_ASSET_DESCRIPTION_NAME);
+}
+
+function legacyAssetDescriptionPath(episodeRoot) {
   return path.join(episodeRoot, "01_script", `${episodeSlug(episodeRoot)}_asset_description.md`);
 }
 
+function assetDescriptionPath(episodeRoot) {
+  return seriesAssetDescriptionPath(episodeRoot);
+}
+
+// 提升必须扫同剧所有分集，不能只看当前这一集:描述通常只写在第一集的旧路径下，
+// 而用户打开的是第二集——只看自己那集会读出空串(症状:第二集"已确认却无源文档")。
+// 与 ensureSeriesAssetManifestForProject 同一套路:复制不移动，失败返回空不阻断。
+function ensureSeriesAssetDescriptionForProject(projectDir) {
+  const target = path.join(projectDir, SERIES_ASSET_DESCRIPTION_NAME);
+  if (fs.existsSync(target) && String(readText(target) || "").trim()) return target;
+  try {
+    const outputsDir = path.join(projectDir, "outputs");
+    for (const entry of listDir(outputsDir)) {
+      if (!entry.isDirectory()) continue;
+      const legacyFile = legacyAssetDescriptionPath(path.join(outputsDir, entry.name));
+      if (!fs.existsSync(legacyFile)) continue;
+      const legacyText = readText(legacyFile);
+      if (!String(legacyText || "").trim()) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, legacyText, "utf8");
+      return target;
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+// 读:剧集级优先，缺失时从同剧任一分集的旧路径提升上来。
 function readAssetDescription(episodeRoot) {
-  const file = assetDescriptionPath(episodeRoot);
-  return fs.existsSync(file) ? readText(file) : "";
+  const seriesFile = seriesAssetDescriptionPath(episodeRoot);
+  if (fs.existsSync(seriesFile)) {
+    const seriesText = readText(seriesFile);
+    if (String(seriesText || "").trim()) return seriesText;
+  }
+  const promoted = ensureSeriesAssetDescriptionForProject(projectDirForEpisode(episodeRoot));
+  if (promoted && fs.existsSync(promoted)) {
+    const promotedText = readText(promoted);
+    if (String(promotedText || "").trim()) return promotedText;
+  }
+  const legacyFile = legacyAssetDescriptionPath(episodeRoot);
+  if (fs.existsSync(legacyFile)) return readText(legacyFile);
+  return fs.existsSync(seriesFile) ? readText(seriesFile) : "";
 }
 
 function writeAssetDescription(episodeRoot, text) {
@@ -22686,6 +22733,9 @@ async function handleApi(req, res, url) {
     // 「资产描述」独立输入(只做资产解析,不影响剧情/分镜);建项目时一并落盘。
     if (typeof body.assetDescriptionText === "string") writeAssetDescription(episodeRoot, body.assetDescriptionText);
     if (requestedDisplayName) persistProjectDisplayName(episodeRoot, requestedDisplayName);
+    if (body.responseMode === "summary") {
+      return send(res, 200, { ok: true, loading: true, project: lightweightProjectSummary(episodeRoot) });
+    }
     return send(res, 200, fullProjectState(episodeRoot));
   }
 
@@ -23317,6 +23367,9 @@ module.exports = {
       writeAssetManifest,
       createEpisodeWorkspace,
       uniqueEpisodeSlug,
+      findProjectFile,
+      readAssetDescription,
+      writeAssetDescription,
       scanAssets,
       projectEpisodeRoots,
       assertProjectEpisodeAccess,

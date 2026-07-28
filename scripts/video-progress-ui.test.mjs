@@ -30,6 +30,11 @@ assert.match(canvasJs, /shape-l/, "falling block layer should include an L piece
 assert.match(canvasJs, /shape-s/, "falling block layer should include an S piece");
 assert.match(canvasCss, /@keyframes video-tetris-fall/, "CSS should animate blocks from top to bottom");
 assert.match(canvasCss, /\.video-tetris-piece/, "CSS should style tiny falling pixel pieces");
+assert.match(
+  canvasCss,
+  /\.video-node\[data-video-status="running"\] \.video-preview-slot[\s\S]*?background:[\s\S]*?!important;/,
+  "running video previews should use an opaque assembly background",
+);
 
 assert.match(
   canvasJs,

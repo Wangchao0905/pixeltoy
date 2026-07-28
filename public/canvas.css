@@ -5510,6 +5510,13 @@ body.canvas-page .canvas-topbar {
   box-shadow: none;
 }
 
+/* Keep the assembly state readable instead of exposing the canvas grid through it. */
+.video-node[data-video-status="running"] .video-preview-slot {
+  background:
+    radial-gradient(circle at 50% 22%, rgba(45, 116, 211, 0.2), transparent 48%),
+    linear-gradient(180deg, #0d2036 0%, #071323 58%, #040a13 100%) !important;
+}
+
 /* The canvas node is only the layout anchor. Its surface should not become a
    second card around the media and composer. */
 .canvas-node.video-node,

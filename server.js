@@ -6614,8 +6614,12 @@ function addManualAsset(episodeRoot, body = {}) {
   const binding = shouldConfirm
     ? bindManualAssetToConfig(episodeRoot, manualAsset)
     : { updated: false, boundShots: [], reason: "资产分类尚未确认" };
+  // 落盘后必须能找回新条目。找不到说明它在规范化环节被过滤掉了——这里要明确报出来，
+  // 不能返回 undefined 让调用方读 .id 崩成无意义的 500(用户只看到"上传失败")。
+  const persisted = normalized.items.find((item) => item.id === id);
+  if (!persisted) throw new Error(`资产「${label}」未能写入清单，请换一个更明确的名称（例如加上「内景」「外景」或具体地点）后重试`);
   return {
-    asset: normalized.items.find((item) => item.id === id),
+    asset: persisted,
     binding,
     manifest: normalized,
   };
@@ -9754,7 +9758,7 @@ function isLikelyLocationOrTimeLabel(value) {
   if (!line) return true;
   if (isSceneHeadingLine(line)) return true;
   if (/\d{3,4}年\s*[·\-]/.test(line) || /年\s*[·\-]/.test(line)) return true;
-  return /(外景|内景|地点条|地点|场景|环境|农场|牧场|围栏|巡逻车|车厢|隧道|地铁|列车|学校|总部|办公室|实验室|走廊|房间|厨房|街道|小巷|咖啡店|吧台|裂缝|虚空|城市|藏地|扎西岗|神山|寺庙|雪坡|雪原|土路|经幡|山顶|荒原|清晨|早晨|上午|下午|傍晚|黄昏|夜晚|深夜|黎明|日落|日出|暴雨夜)/.test(line);
+  return /(外景|内景|地点条|地点|场景|环境|农场|牧场|围栏|巡逻车|车厢|隧道|地铁|列车|学校|总部|办公室|实验室|走廊|房间|卧室|客厅|书房|餐厅|浴室|卫生间|阁楼|地下室|储藏室|仓库|车库|院子|庭院|天台|屋顶|楼梯|门口|木屋|小屋|茅屋|帐篷|山洞|洞穴|厨房|街道|小巷|咖啡店|吧台|裂缝|虚空|城市|藏地|扎西岗|神山|寺庙|雪坡|雪原|土路|经幡|山顶|荒原|清晨|早晨|上午|下午|傍晚|黄昏|夜晚|深夜|黎明|日落|日出|暴雨夜)/.test(line);
 }
 
 function isNonVisualAudioCueLabel(value) {
@@ -10318,7 +10322,7 @@ function shouldSuppressRuleCharacter(label, manualBlocks) {
 const NON_CHARACTER_ASSET_LABEL_RE =
   /(?:镜界|冻结现象|时间冻结|现实吞噬|黑日|超自然力场|地点条|场景|环境|画面|镜头|声音|女声|男声|旁白|画外音|耳麦失真|音效|字幕|运镜|光影|灯光|照片|文件|文件夹|画册|速写本|自行车|电话|手机|屏幕|纹路|装置|手指|胸口|瞳孔|嘴角|伤口|视线|神山|寺庙|雪坡|雪原|土路|经幡|车厢|隧道|地铁|列车|房间|厨房|走廊|街道|小巷|咖啡店|吧台|总部|办公室|实验室|农场|牧场|围栏|裂缝|虚空)/;
 const SCENE_ASSET_EVIDENCE_RE =
-  /(?:外景|内景|外部|内部|地点|场景|环境|空间|房间|厨房|走廊|街道|小巷|咖啡店|吧台|总部|办公室|实验室|农场|牧场|围栏|巡逻车|押运车|车厢|隧道|地铁|列车|高架桥|桥面|港口|指挥室|学校|城市|藏地|扎西岗|神山|寺庙|雪坡|雪原|土路|经幡|裂缝|虚空|清晨|早晨|上午|下午|傍晚|黄昏|夜晚|深夜|黎明|日落|日出|暴雨|wide establishing|environment|location|interior|exterior|no people|empty environment)/i;
+  /(?:外景|内景|外部|内部|地点|场景|环境|空间|房间|卧室|客厅|书房|餐厅|浴室|卫生间|阁楼|地下室|储藏室|仓库|车库|院子|庭院|天台|屋顶|楼梯|门口|木屋|小屋|茅屋|帐篷|山洞|洞穴|厨房|走廊|街道|小巷|咖啡店|吧台|总部|办公室|实验室|农场|牧场|围栏|巡逻车|押运车|车厢|隧道|地铁|列车|高架桥|桥面|港口|指挥室|学校|城市|藏地|扎西岗|神山|寺庙|雪坡|雪原|土路|经幡|裂缝|虚空|清晨|早晨|上午|下午|傍晚|黄昏|夜晚|深夜|黎明|日落|日出|暴雨|wide establishing|environment|location|interior|exterior|no people|empty environment)/i;
 const PROP_ASSET_EVIDENCE_RE =
   /(?:道具|物件|物体|文件|文件夹|照片|相片|画册|速写本|自行车|电话|手机|屏幕|纸条|单据|检修单|钥匙|饰品|项链|武器|枪|手枪|步枪|手雷|弹匣|消音器|刀|匕首|能量刃|核心|装置|押运车|装甲车|手铐|按钮|三视图|front view|side view|back view|prop|object|item|folder|photo|phone|paperwork|weapon|blade|gun|pistol|rifle|firearm|silencer)/i;
 const INSERT_ASSET_EVIDENCE_RE =
@@ -19395,6 +19399,10 @@ function manifestItemCompatibleWithType(item) {
   const label = compactLine(item?.label || item?.id || "");
   if (!label) return false;
   if (isNonVisualAudioCueLabel(label)) return false;
+  // 这套启发式是用来清洗模型输出的，不能拿去否决用户明确指定的资产:用户已经选了类型、
+  // 填了名字。此前「小屋卧室」这类名字命中不了场景关键词表，落盘时被静默丢掉，
+  // addManualAsset 随后 find 不到新条目 → 报 undefined.id 的 500，用户只看到"上传失败"。
+  if (item?.source === "manual") return true;
   // 人物候选已经由结构化分段 / 模型解析和角色纠偏处理过；这里不能再套用旧的
   // “至少两字”的粗筛，否则昼、绯、阙、砾等合法单字角色会在落盘时被静默删掉。
   // 仍保留地点、音频提示和纯 production 字段的拦截。

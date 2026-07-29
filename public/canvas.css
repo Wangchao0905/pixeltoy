@@ -6476,3 +6476,514 @@ body.canvas-page .canvas-topbar {
     transition: none;
   }
 }
+
+/* Canvas Agent conversation surface: the command stays at the top, while the
+   conversation remains a separate, independently scrollable work history. */
+.canvas-agent-panel {
+  top: 72px;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  width: min(440px, calc(100vw - 36px));
+  border: 1px solid rgba(169, 215, 247, 0.24);
+  border-radius: 26px;
+  background: rgba(8, 15, 25, 0.91);
+  box-shadow: 0 26px 72px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(28px) saturate(1.18);
+  -webkit-backdrop-filter: blur(28px) saturate(1.18);
+}
+
+.canvas-agent-panel-header {
+  padding: 19px 18px 13px;
+  border-bottom: 0;
+}
+
+.canvas-agent-panel-identity {
+  gap: 0;
+}
+
+.canvas-agent-panel-identity div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.canvas-agent-panel-kicker,
+.canvas-agent-compose-kicker {
+  margin-bottom: 5px;
+  color: rgba(133, 201, 239, 0.66) !important;
+  font-size: 9px !important;
+  font-weight: 760 !important;
+  letter-spacing: 0.16em !important;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.canvas-agent-panel-identity strong {
+  color: rgba(247, 251, 255, 0.97);
+  font-size: 16px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.canvas-agent-panel-identity div > span:last-child {
+  margin-top: 5px;
+  color: rgba(196, 219, 241, 0.48);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.canvas-agent-panel-actions {
+  gap: 7px;
+}
+
+.canvas-agent-model-picker select {
+  width: 128px;
+  min-height: 34px;
+  padding: 0 28px 0 12px;
+  border: 1px solid rgba(169, 215, 247, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(234, 246, 255, 0.88);
+  font-size: 10px;
+}
+
+.canvas-agent-close {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border: 1px solid rgba(196, 219, 241, 0.17);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(222, 239, 255, 0.7);
+  cursor: pointer;
+}
+
+.canvas-agent-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.canvas-agent-close:hover,
+.canvas-agent-close:focus-visible {
+  border-color: rgba(169, 215, 247, 0.52);
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+  outline: none;
+}
+
+.canvas-agent-composer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 11px;
+  margin: 0 14px;
+  padding: 14px;
+  border: 1px solid rgba(169, 215, 247, 0.3);
+  border-radius: 20px;
+  background: rgba(3, 9, 17, 0.66);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 12px 30px rgba(0, 0, 0, 0.14);
+}
+
+.canvas-agent-composer:focus-within {
+  border-color: rgba(101, 196, 255, 0.64);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 3px rgba(101, 196, 255, 0.08);
+}
+
+.canvas-agent-compose-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-agent-compose-kicker {
+  margin: 0 !important;
+}
+
+.canvas-agent-compose-caption,
+.canvas-agent-compose-hint {
+  color: rgba(196, 219, 241, 0.36);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.canvas-agent-composer textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 150px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgba(247, 251, 255, 0.96);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.canvas-agent-composer textarea::placeholder {
+  color: rgba(196, 219, 241, 0.38);
+}
+
+.canvas-agent-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 0;
+  margin: 0;
+}
+
+.canvas-agent-attachment {
+  position: relative;
+  display: block;
+  width: 62px;
+  height: 58px;
+  padding: 0;
+  overflow: visible;
+  border: 1px solid rgba(133, 199, 255, 0.3);
+  border-radius: 12px;
+  background: rgba(80, 166, 255, 0.1);
+}
+
+.canvas-agent-attachment[data-error="true"] {
+  border-color: rgba(255, 117, 131, 0.72);
+}
+
+.canvas-agent-attachment[data-uploading="true"]::after,
+.canvas-agent-attachment[data-error="true"]::after {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  padding: 3px 2px;
+  border-radius: 5px;
+  background: rgba(3, 9, 17, 0.72);
+  color: rgba(241, 249, 255, 0.88);
+  font-size: 8px;
+  line-height: 1;
+  text-align: center;
+}
+
+.canvas-agent-attachment[data-uploading="true"]::after {
+  content: "上传中";
+}
+
+.canvas-agent-attachment[data-error="true"]::after {
+  content: "失败";
+  color: #ffb1ba;
+}
+
+.canvas-agent-attachment img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 11px;
+  object-fit: cover;
+}
+
+.canvas-agent-attachment span {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  z-index: 1;
+  overflow: hidden;
+  padding: 3px 2px;
+  border-radius: 5px;
+  background: rgba(3, 9, 17, 0.68);
+  color: rgba(241, 249, 255, 0.8);
+  font-size: 8px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-attachment[data-uploading="true"] span,
+.canvas-agent-attachment[data-error="true"] span {
+  opacity: 0;
+}
+
+.canvas-agent-attachment button {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: 1px solid rgba(169, 215, 247, 0.28);
+  border-radius: 50%;
+  background: #142437;
+  color: rgba(224, 241, 255, 0.76);
+  cursor: pointer;
+}
+
+.canvas-agent-attachment button svg {
+  width: 11px;
+  height: 11px;
+}
+
+.canvas-agent-attachment button:hover,
+.canvas-agent-attachment button:focus-visible {
+  border-color: rgba(255, 117, 131, 0.72);
+  background: #263445;
+  color: #fff;
+  outline: none;
+}
+
+.canvas-agent-compose-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.canvas-agent-image-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid rgba(133, 199, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(91, 174, 255, 0.08);
+  color: rgba(223, 243, 255, 0.82);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.canvas-agent-image-pick svg {
+  width: 15px;
+  height: 15px;
+}
+
+.canvas-agent-image-pick:hover,
+.canvas-agent-image-pick:focus-visible {
+  border-color: rgba(101, 196, 255, 0.58);
+  background: rgba(91, 174, 255, 0.16);
+  color: #fff;
+  outline: none;
+}
+
+.canvas-agent-compose-hint {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-send {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #b9e6ff;
+  color: #09243a;
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.canvas-agent-send:hover,
+.canvas-agent-send:focus-visible {
+  background: #e1f5ff;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.canvas-agent-send.is-stop {
+  background: rgba(255, 105, 122, 0.18);
+  color: #ff9ca8;
+}
+
+.canvas-agent-send.is-stop:hover,
+.canvas-agent-send.is-stop:focus-visible {
+  background: rgba(255, 105, 122, 0.3);
+}
+
+.canvas-agent-send svg {
+  width: 17px;
+  height: 17px;
+}
+
+.canvas-agent-context {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 14px 19px 0;
+  padding: 0 1px 11px;
+  border: 0;
+  border-bottom: 1px solid rgba(169, 215, 247, 0.12);
+  border-radius: 0;
+  background: transparent;
+  color: rgba(196, 219, 241, 0.42);
+  font-size: 10px;
+}
+
+.canvas-agent-context-label {
+  letter-spacing: 0.05em;
+}
+
+.canvas-agent-context strong {
+  margin-left: 2px;
+  color: rgba(232, 244, 255, 0.78);
+  font-size: 10px;
+}
+
+.canvas-agent-thread {
+  min-height: 0;
+  padding: 18px 19px 16px;
+  scrollbar-color: rgba(169, 215, 247, 0.24) transparent;
+  scrollbar-width: thin;
+}
+
+.canvas-agent-message-list {
+  gap: 18px;
+}
+
+.canvas-agent-message {
+  max-width: 91%;
+  padding: 10px 12px;
+  border-radius: 16px 16px 5px 16px;
+  color: rgba(232, 244, 255, 0.88);
+  font-size: 12px;
+  line-height: 1.62;
+}
+
+.canvas-agent-message.user {
+  border-color: rgba(101, 196, 255, 0.25);
+  background: rgba(65, 157, 226, 0.16);
+}
+
+.canvas-agent-message.assistant {
+  max-width: 96%;
+  padding: 5px 0 5px 13px;
+  border: 0;
+  border-left: 2px solid rgba(101, 196, 255, 0.62);
+  border-radius: 0;
+  background: transparent;
+}
+
+.canvas-agent-message-images {
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.canvas-agent-message-images img {
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  border: 1px solid rgba(169, 215, 247, 0.18);
+}
+
+.canvas-agent-action-note {
+  padding-left: 15px;
+  color: rgba(133, 201, 239, 0.7);
+  font-size: 10px;
+}
+
+.canvas-agent-empty {
+  align-items: flex-start;
+  justify-content: flex-start;
+  min-height: 100%;
+  padding: 38px 2px 24px;
+  text-align: left;
+}
+
+.canvas-agent-empty > strong {
+  color: rgba(247, 251, 255, 0.96);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.canvas-agent-empty > p {
+  max-width: 310px;
+  margin: 9px 0 20px;
+  color: rgba(196, 219, 241, 0.52);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.canvas-agent-suggestions {
+  justify-content: flex-start;
+  gap: 7px;
+}
+
+.canvas-agent-suggestions button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(169, 215, 247, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(196, 219, 241, 0.62);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.canvas-agent-suggestions button:hover,
+.canvas-agent-suggestions button:focus-visible {
+  border-color: rgba(101, 196, 255, 0.5);
+  background: rgba(101, 196, 255, 0.1);
+  color: rgba(232, 244, 255, 0.9);
+  outline: none;
+}
+
+.canvas-agent-panel-footer {
+  min-height: 38px;
+  padding: 0 20px 11px;
+  color: rgba(196, 219, 241, 0.38);
+  font-size: 10px;
+}
+
+@media (max-width: 640px) {
+  .canvas-agent-panel {
+    top: 56px;
+    right: 9px;
+    bottom: 9px;
+    left: 9px;
+    width: auto;
+    border-radius: 22px;
+  }
+
+  .canvas-agent-panel-header {
+    padding: 16px 15px 11px;
+  }
+
+  .canvas-agent-composer {
+    margin: 0 10px;
+    padding: 12px;
+  }
+
+  .canvas-agent-context {
+    margin-right: 15px;
+    margin-left: 15px;
+  }
+
+  .canvas-agent-thread {
+    padding-right: 15px;
+    padding-left: 15px;
+  }
+
+  .canvas-agent-compose-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-agent-send {
+    transition: none;
+  }
+}

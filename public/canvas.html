@@ -6,7 +6,7 @@
     <title>canvas</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/styles.css?v=canvas-shell-visual-20260727" />
-    <link rel="stylesheet" href="/canvas.css?v=canvas-agent-image-drop-20260729" />
+    <link rel="stylesheet" href="/canvas.css?v=canvas-agent-conversation-redesign-20260729" />
   </head>
   <body class="canvas-page hide-liveness-library-ui">
     <div id="canvasApp" class="generation-canvas-shell">
@@ -40,8 +40,9 @@
         <header class="canvas-agent-panel-header">
           <div class="canvas-agent-panel-identity">
             <div>
+              <span class="canvas-agent-panel-kicker">CANVAS / AGENT</span>
               <strong id="canvasAgentTitle">Canvas Agent</strong>
-              <span>画布协作助手</span>
+              <span>操作节点、连线与提示词</span>
             </div>
           </div>
           <div class="canvas-agent-panel-actions">
@@ -53,13 +54,35 @@
                 <option value="grok-4.5">Grok 4.5</option>
               </select>
             </label>
-            <button id="canvasAgentClose" class="canvas-agent-close" type="button" aria-label="收起 Canvas Agent" title="收起">×</button>
+            <button id="canvasAgentClose" class="canvas-agent-close" type="button" aria-label="收起 Canvas Agent" title="收起">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+            </button>
           </div>
         </header>
 
+        <form id="canvasAgentComposer" class="canvas-agent-composer">
+          <div class="canvas-agent-compose-heading">
+            <span class="canvas-agent-compose-kicker">从这里开始</span>
+            <span class="canvas-agent-compose-caption">文字或参考图</span>
+          </div>
+          <div id="canvasAgentAttachments" class="canvas-agent-attachments" aria-live="polite"></div>
+          <textarea id="canvasAgentInput" rows="3" placeholder="告诉 Agent 你要完成什么…" aria-label="Canvas Agent 输入"></textarea>
+          <div class="canvas-agent-compose-row">
+            <button id="canvasAgentImagePick" class="canvas-agent-image-pick" type="button" aria-label="添加参考图片" title="添加参考图片">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.6" /><circle cx="8.5" cy="9" r="1.4" fill="currentColor" /><path d="m5.5 17 4.3-4.3a1.5 1.5 0 0 1 2.1 0l1.8 1.8 1.1-1.1a1.5 1.5 0 0 1 2.1 0l1.6 1.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              <span>参考图</span>
+            </button>
+            <input id="canvasAgentImageUpload" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+            <span class="canvas-agent-compose-hint">拖入图片可直接引用</span>
+            <button id="canvasAgentSend" class="canvas-agent-send" type="submit" aria-label="发送" title="发送">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 4 16 8-16 8 3.1-7.1L14 12l-6.9-.9L4 4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+            </button>
+          </div>
+        </form>
+
         <div class="canvas-agent-context">
           <span class="canvas-agent-context-dot" aria-hidden="true"></span>
-          <span>当前画布</span>
+          <span class="canvas-agent-context-label">当前画布</span>
           <strong id="canvasAgentContextName">未命名画布</strong>
         </div>
 
@@ -73,18 +96,6 @@
             </div>
           </div>
         </div>
-
-        <form id="canvasAgentComposer" class="canvas-agent-composer">
-          <div id="canvasAgentAttachments" class="canvas-agent-attachments" aria-live="polite"></div>
-          <div class="canvas-agent-compose-row">
-            <button id="canvasAgentImagePick" class="canvas-agent-image-pick" type="button" aria-label="添加参考图片" title="添加参考图片">+</button>
-            <input id="canvasAgentImageUpload" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
-            <textarea id="canvasAgentInput" rows="1" placeholder="拖入图片，或描述你想在画布中完成的事" aria-label="Canvas Agent 输入"></textarea>
-            <button id="canvasAgentSend" class="canvas-agent-send" type="submit" aria-label="发送" title="发送">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 4 16 8-16 8 3.1-7.1L14 12l-6.9-.9L4 4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
-            </button>
-          </div>
-        </form>
         <footer class="canvas-agent-panel-footer"><span id="canvasAgentStatusDot" class="canvas-agent-footer-dot"></span><span id="canvasAgentStatus">就绪，可操作当前画布</span></footer>
       </aside>
 

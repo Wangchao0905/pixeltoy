@@ -5557,8 +5557,9 @@ function renderCanvasAgentAttachments() {
     label.textContent = image.name;
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.textContent = "×";
     remove.setAttribute("aria-label", `移除 ${image.name}`);
+    remove.title = `移除 ${image.name}`;
+    remove.innerHTML = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>`;
     remove.addEventListener("click", () => {
       if (/^blob:/i.test(image.preview || "")) URL.revokeObjectURL(image.preview);
       canvasState.canvasAgentAttachments.splice(index, 1);

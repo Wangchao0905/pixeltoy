@@ -17,9 +17,17 @@ assert.doesNotMatch(launcher, /Pixel Toys|pixel-toys-wordmark/i, "launcher icon 
 assert.doesNotMatch(html, /canvas-agent-panel-icon|canvas-agent-empty-mark|canvas-agent-robot|canvas-agent-propeller/);
 assert.match(html, /id="canvasAgentPanel"[^>]*aria-hidden="true"[^>]*inert/);
 assert.match(html, /id="canvasAgentClose"/);
+assert.match(html, /id="canvasAgentClose"[\s\S]*?<svg/);
 assert.match(html, /id="canvasAgentThread"/);
 assert.match(html, /id="canvasAgentComposer"/);
-assert.match(html, /id="canvasAgentInput"[^>]*placeholder=/);
+assert.match(html, /id="canvasAgentInput"[^>]*rows="3"[^>]*placeholder=/);
+const panelHeaderIndex = html.indexOf('class="canvas-agent-panel-header"');
+const composerIndex = html.indexOf('id="canvasAgentComposer"');
+const contextIndex = html.indexOf('class="canvas-agent-context"');
+const threadIndex = html.indexOf('id="canvasAgentThread"');
+assert.ok(panelHeaderIndex >= 0 && composerIndex > panelHeaderIndex && contextIndex > composerIndex && threadIndex > contextIndex, "Canvas Agent should start with the composer");
+assert.match(html, /id="canvasAgentImagePick"[\s\S]*?<svg[\s\S]*?<span>参考图<\/span>/);
+assert.doesNotMatch(html, /id="canvasAgentPanel"[\s\S]*?canvas-agent-source-logo/, "expanded Agent panel must not repeat the launcher logo");
 
 assert.match(css, /\.canvas-agent-launcher\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:\s*22px;[\s\S]*?bottom:\s*22px;[\s\S]*?width:\s*50px;[\s\S]*?height:\s*50px;/);
 assert.match(css, /\.canvas-agent-launcher\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
@@ -34,6 +42,10 @@ assert.match(css, /\.canvas-agent-source-logo\s*\{[\s\S]*?width:\s*100%;[\s\S]*?
 assert.doesNotMatch(css, /\.canvas-agent-source-logo\s*\{[\s\S]*?left:\s*-141px;/, "mobile styles must not use the old cropped wordmark offset");
 assert.ok(fs.existsSync(path.join(root, "public/pixel-toys-logo-agent.gif")), "transparent launcher logo asset must exist");
 assert.doesNotMatch(css, /canvas-agent-propeller|canvasAgentPropellerSpin|canvas-agent-robot/);
+assert.match(css, /\.canvas-agent-composer\s*\{[\s\S]*?flex-direction:\s*column;/);
+assert.match(css, /\.canvas-agent-panel\s*\{[\s\S]*?grid-template-rows:\s*auto auto auto minmax\(0, 1fr\) auto;/);
+assert.match(css, /\.canvas-agent-message\.assistant\s*\{[\s\S]*?border-left:\s*2px/);
+assert.match(css, /\.canvas-agent-attachment\[data-uploading="true"\]::after/);
 
 assert.match(js, /function setCanvasAgentOpen\(open\)/);
 assert.match(js, /panel\.setAttribute\("aria-hidden", String\(!isOpen\)\)/);
@@ -46,7 +58,7 @@ assert.match(js, /canvasAgentContextName/);
 assert.match(css, /\.canvas-agent-composer\s*\{[\s\S]*?border:\s*1px\s+solid/);
 assert.match(css, /\.canvas-agent-composer textarea\s*\{[\s\S]*?border:\s*0;[\s\S]*?outline:\s*0;[\s\S]*?box-shadow:\s*none;/);
 assert.match(css, /\.canvas-agent-send\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;/);
-assert.match(html, /canvas\.css\?v=canvas-agent-image-drop-20260729/);
+assert.match(html, /canvas\.css\?v=canvas-agent-conversation-redesign-20260729/);
 assert.match(html, /canvas\.js\?v=canvas-agent-upload-fast-20260729/);
 
 console.log("canvas agent UI tests passed");

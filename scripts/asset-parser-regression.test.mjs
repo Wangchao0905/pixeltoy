@@ -144,6 +144,25 @@ const styledManifest = parser.assetManifestFromAssets({
 assert.ok(styledManifest.items.every((asset) => asset.globalStyle.includes("恶搞之家风格")), "manifest must persist global style");
 assert.match(styledManifest.items[0].textToImagePrompt, /视觉风格：恶搞之家风格/);
 assert.doesNotMatch(styledManifest.items[0].textToImagePrompt, /资产文档事实|资产类型|剧本依据|视觉解析|唯一来源/);
+const sourceStyleWinsManifest = parser.assetManifestFromAssets({
+  title: "Canonical style wins",
+  script: globalStyleAssetDescription,
+  worldProfile: parser.inferWorldProfile(globalStyleAssetDescription),
+  assets: [{
+    type: "Character",
+    name: "C001_PETER_CHARACTER_SHEET",
+    label: "Peter",
+    evidence: "中年父亲。",
+    visual: "白衬衫，短棕发。",
+    globalStyle: "超写实真人摄影",
+    textToImagePromptOverride: "超写实真人摄影角色，白衬衫。",
+  }],
+  analyzerResult: { ok: true, model: "user-selected-model" },
+});
+assert.match(sourceStyleWinsManifest.items[0].globalStyle, /恶搞之家风格/);
+assert.doesNotMatch(sourceStyleWinsManifest.items[0].globalStyle, /超写实真人摄影/);
+assert.match(sourceStyleWinsManifest.items[0].textToImagePrompt, /视觉风格：恶搞之家风格/);
+assert.doesNotMatch(sourceStyleWinsManifest.items[0].textToImagePrompt, /超写实真人摄影角色/);
 const conciseCharacterManifest = parser.assetManifestFromAssets({
   title: "Concise character prompt regression",
   script: "",
@@ -857,9 +876,23 @@ try {
   assert.equal(auditRequestCount, 1, "完整结构化计划必须后台调用 audit 模型");
   assert.equal(mockedResult.analyzer.ok, true, "mock analyzer 应成功");
   assert.notEqual(mockedResult.analyzer.model, "rules", "完整结构化计划不得把 analyzer 标成 rules");
-  assert.equal(mockedResult.extracted.characters.length, 5, "模型成功时用户列出的人物不能因漏项被删除");
-  assert.equal(mockedResult.extracted.scenes.length, 5, "模型成功时用户列出的场景不能因漏项被删除");
-} finally {
+    assert.equal(mockedResult.extracted.characters.length, 5, "模型成功时用户列出的人物不能因漏项被删除");
+    assert.equal(mockedResult.extracted.scenes.length, 5, "模型成功时用户列出的场景不能因漏项被删除");
+    const requestCountBeforeReuse = { analyzer: analyzerRequestCount, coverage: coverageRequestCount, audit: auditRequestCount };
+    const reusedResult = await parser.extractAssetManifest(mockedModelRoot, {
+      scriptText: numberedStructuredAssetDescription,
+      assetDescriptionText: numberedStructuredAssetDescription,
+      // 浏览器可以提交不同的旧模型选择，但生产解析结果必须命中同一份规范化 manifest。
+      assetAnalyzerModel: "gpt-5.5-thinking",
+      assetAuditModel: "claude-haiku-4-5",
+    });
+    assert.equal(reusedResult.reusedCanonicalManifest, true, "同一源文档的重复解析必须复用规范化资产清单");
+    assert.deepEqual(
+      { analyzer: analyzerRequestCount, coverage: coverageRequestCount, audit: auditRequestCount },
+      requestCountBeforeReuse,
+      "同一源文档重复解析不得因用户模型选择不同而重新调用模型覆盖提示词",
+    );
+  } finally {
   globalThis.fetch = previousFetch;
   if (previousAnalyzerKey === undefined) delete process.env.ASSET_ANALYZER_API_KEY;
   else process.env.ASSET_ANALYZER_API_KEY = previousAnalyzerKey;

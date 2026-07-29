@@ -53,6 +53,7 @@ const SERIES_ASSET_DIR_NAME = "assets";
 const LEGACY_EPISODE_ASSET_DIR_NAME = "04_assets";
 const SERIES_ASSET_MANIFEST_NAME = "project_asset_manifest.json";
 const SERIES_ASSET_DESCRIPTION_NAME = "project_asset_description.md";
+const ASSET_PARSER_VERSION = "asset-parser-v3-canonical-document-style";
 const IMAGE_API_KEY_ENV_NAMES = [
   "PIXEL_TOYS_IMAGE_API_KEY",
   "IMAGE_GEN_API_KEY",
@@ -2255,6 +2256,13 @@ function normalizeAssetAnalyzerModel(value) {
   return ASSET_ANALYZER_MODEL_ALIASES[raw] || raw;
 }
 
+// 资产提示词必须是项目级生产结果，不能由每个浏览器保存的模型选择决定。
+// 仅保留 rules 作为显式测试/离线兜底入口；正常请求统一使用服务端模型。
+function canonicalAssetAnalyzerModel(value = "") {
+  if (normalizeAssetAnalyzerModel(value) === "rules") return "rules";
+  return normalizeAssetAnalyzerModel(process.env.ASSET_ANALYZER_MODEL || FALLBACK_ASSET_ANALYZER_MODEL);
+}
+
 function defaultStoryboardModel() {
   return process.env.STORYBOARD_MODEL || FALLBACK_STORYBOARD_MODEL;
 }
@@ -3650,6 +3658,16 @@ function resetWorkflowForContentChange(episodeRoot, reason = "content changed") 
 
 function scriptDigestFromText(text) {
   return sha1Text(cleanScriptForDraft(text || ""));
+}
+
+function assetSourceFingerprint(source = "") {
+  const normalized = String(source || "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/g, ""))
+    .join("\n")
+    .trim();
+  return crypto.createHash("sha256").update(`${ASSET_PARSER_VERSION}\n${normalized}`).digest("hex");
 }
 
 // 覆写剧本前把当前内容存进 01_script/.script_history/,便于事故回滚。best-effort,失败不阻断主流程。
@@ -15970,11 +15988,57 @@ function extractAssetStyleGuidance(source = "") {
   return [...new Set(candidates.map((candidate) => compactLine(candidate)).filter(Boolean))].join("，").slice(0, 1600);
 }
 
+function canonicalAssetGlobalStyle(source = "") {
+  return trimGlobalStyleValue(extractGlobalStyleGuidance(source) || extractAssetStyleGuidance(source));
+}
+
+function documentStyleIsNonPhotoreal(globalStyle = "") {
+  const style = compactLine(globalStyle);
+  if (!style) return false;
+  const nonPhotoreal = /恶搞之家|family\s*guy|美式电视动画|二维动画|卡通|漫画|插画|动漫|赛璐璐|平涂|粗黑(?:色)?描边|toon|cartoon|comic|illustration|cel[-\s]?shad|2d\s+animation/iu.test(style);
+  const explicitPhotoreal = /超写实|写实摄影|真人摄影|实拍感|photoreal(?:istic)?|photo[-\s]?real|live[-\s]?action/iu.test(style) &&
+    !/(?:禁止|不做|不得|避免|不要)[^。；;，,]{0,16}(?:超写实|写实摄影|真人摄影|实拍感|photoreal|photo[-\s]?real|live[-\s]?action)/iu.test(style);
+  return nonPhotoreal && !explicitPhotoreal;
+}
+
+function assetDocumentStyleLock(globalStyle = "") {
+  const style = compactLine(globalStyle);
+  if (!documentStyleIsNonPhotoreal(style)) return "";
+  return "视觉风格硬约束：必须保持上述二维/卡通/动画风格；禁止超写实、真人摄影、照片质感、写实皮肤与写实材质，禁止 3D、CG、游戏角色渲染、PBR、景深虚化和电影级写实打光。";
+}
+
+function promptHasPositivePhotorealCue(prompt = "") {
+  const text = compactLine(prompt);
+  if (!text) return false;
+  const cue = /超写实|写实摄影|真人摄影|实拍感|photoreal(?:istic)?|photo[-\s]?real|live[-\s]?action|3D\s*(?:CG|渲染|render)|CG\s*(?:质感|渲染|render)|PBR/iu.test(text);
+  const negated = /(?:禁止|不做|不得|避免|不要|非)[^。；;，,]{0,16}(?:超写实|写实摄影|真人摄影|实拍感|photoreal|photo[-\s]?real|live[-\s]?action|3D|CG|PBR)/iu.test(text);
+  return cue && !negated;
+}
+
 function assetStylePromptLine(globalStyle = "") {
   const style = compactLine(globalStyle);
-  return style
-    ? `视觉风格：${style}`
-    : "视觉风格约束：严格遵循资产文档中明确的画风、线条、色彩、材质和光影，不得自行转换为其他风格。";
+  return [
+    style
+      ? `视觉风格：${style}`
+      : "视觉风格约束：严格遵循资产文档中明确的画风、线条、色彩、材质和光影，不得自行转换为其他风格。",
+    assetDocumentStyleLock(style),
+  ].filter(Boolean).join("\n");
+}
+
+function applyCanonicalAssetDocumentStyle(assets = [], source = "") {
+  const documentStyle = canonicalAssetGlobalStyle(source);
+  return (assets || []).map((asset) => {
+    const ownStyle = trimGlobalStyleValue(
+      asset?.globalStyle ||
+        extractAssetStyleGuidance(asset?.visual) ||
+        extractAssetStyleGuidance(asset?.evidence) ||
+        extractAssetStyleGuidance(asset?.textToImagePromptOverride),
+    );
+    return {
+      ...asset,
+      globalStyle: documentStyle || ownStyle,
+    };
+  });
 }
 
 function buildRuleAssets(script, worldProfile) {
@@ -16156,6 +16220,8 @@ function assetAnalyzerSystemPrompt() {
 - 场景资产图规格：16:9、无人物、全景或大全景。视觉风格只能写入中文资产文档提示词，不得等待界面选择或另行注入。
 - 道具 Prop 资产图规格：16:9、纯白背景、同一道具三视图：正面、侧面、背面。不要做成生活场景图。
 - 插入 Insert 资产保持证据特写/微距细节，不使用道具三视图规则。
+- 如果用户文档提供了 canonicalGlobalStyle，它是全剧唯一风格来源；每个 textToImagePrompt 必须在开头完整保留它，不得替换成超写实、真人摄影、3D 或其他默认风格。
+- 对于恶搞之家、Family Guy、美式电视动画、二维动画、卡通、漫画、插画、赛璐璐或平涂等风格，必须在每个 textToImagePrompt 中明确写出该风格，并明确禁止超写实、真人摄影和 3D/CG 渲染。
 - textToImagePrompt 必须是中文，直接使用资产文档中的剧本对象、剧本依据、视觉解析和其中明确写出的风格描述；不得翻译、改写成英文或添加界面风格。
 
 输出 JSON 结构：
@@ -16213,6 +16279,7 @@ function assetAnalyzerUserPrompt({ script, fallbackAssets, worldProfile }) {
         "输出只允许 JSON；不要输出规则说明。",
       ],
       worldProfile,
+      canonicalGlobalStyle: canonicalAssetGlobalStyle(script),
       fallbackCandidates: candidates,
       screenplay: script.slice(0, 26000),
     },
@@ -16270,7 +16337,7 @@ async function callAssetAnalyzerModel({ script, fallbackAssets, worldProfile, mo
   if (!apiKey) return { ok: false, model: primary, reason: "未配置资产解析模型 API Key" };
   const requestBody = (model, withJsonMode, focus) => ({
     model,
-    temperature: 0.25,
+    temperature: 0,
     ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
     messages: [
       { role: "system", content: focus ? assetAnalyzerSystemPromptForFocus(focus.instruction) : assetAnalyzerSystemPrompt() },
@@ -16725,6 +16792,7 @@ function assetCoverageSystemPrompt() {
 - 场景 label 只能是地点/环境/空间名称；不得把人物、对白、道具、文件标题当成场景。
 - 道具 Prop 是需要在多个镜头保持外观的物件，必须 16:9 纯白背景三视图；Insert 是证据细节/微距特写。
 - textToImagePrompt 必须是中文资产文档提示词，可直接提交给 gpt-image-2；人物必须 16:9 纯白背景全身正侧背三视图加半身特写；场景必须 16:9 无人物大全景；Prop 必须 16:9 纯白背景三视图。
+- 如果 screenplay 提供全剧视觉风格，所有补漏资产必须完整继承该风格；恶搞之家/Family Guy/二维卡通等风格必须明确禁止超写实、真人摄影和 3D/CG 渲染。
 
 输出 JSON 结构：
 {
@@ -16783,6 +16851,7 @@ function assetCoverageUserPrompt({ script, assets, shots, worldProfile }) {
         "如果没有缺失，三个 missing 数组必须为空。",
       ],
       worldProfile,
+      canonicalGlobalStyle: canonicalAssetGlobalStyle(script),
       existingAssets,
       storyboardShots,
       screenplay: script.slice(0, 30000),
@@ -18757,7 +18826,7 @@ function seedanceStyleLawForPreset(preset = "") {
   const raw = compactLine(preset || "");
   if (!raw) return "视觉风格：待正式资产图生成并绑定后确定；当前只按剧本规划镜头，不预设写实、动画或任何画风。";
   const key = normalizeAssetStylePreset(raw);
-  const label = ASSET_IMAGE_STYLE_PRESETS[key]?.label || "指定风格";
+  const label = ASSET_STYLE_LABELS[key] || "指定风格";
   if (key === "photoreal") {
     return "全片强制超写实真人电影实拍质感：真实皮肤、毛孔、自然光影与真实材质，写实人体比例。";
   }
@@ -19487,10 +19556,13 @@ function withGlobalStylePrompt(prompt, globalStyle) {
   const text = String(prompt || "").trim();
   const style = compactLine(globalStyle || "");
   const styleLine = assetStylePromptLine(style);
+  const hardLock = assetDocumentStyleLock(style);
   if (!text) return styleLine;
-  if (style && text.includes(`视觉风格：${style}`)) return text;
-  if (!style && /视觉风格(?:约束)?[：:]/u.test(text)) return text;
-  return [styleLine, text].join("\n");
+  const prefixes = [];
+  if (style && !text.includes(`视觉风格：${style}`)) prefixes.push(styleLine);
+  if (hardLock && !text.includes(hardLock)) prefixes.push(hardLock);
+  if (!style && !/视觉风格(?:约束)?[：:]/u.test(text)) prefixes.push(styleLine);
+  return [...prefixes, text].filter(Boolean).join("\n");
 }
 
 function assetPromptSubject(value = "") {
@@ -19570,7 +19642,8 @@ function assetDocumentPromptFor(asset) {
   );
   const cleanedStoredPrompt = conciseAssetPromptText(storedPrompt);
   const storedIsChinese = /[\u4e00-\u9fff]/u.test(cleanedStoredPrompt);
-  const content = storedPrompt && !isLegacyAssetPrompt(storedPrompt) && (storedIsChinese || asset?.analyzerSource === "manual")
+  const storedConflictsWithDocumentStyle = documentStyleIsNonPhotoreal(globalStyle) && promptHasPositivePhotorealCue(cleanedStoredPrompt);
+  const content = storedPrompt && !isLegacyAssetPrompt(storedPrompt) && !storedConflictsWithDocumentStyle && (storedIsChinese || asset?.analyzerSource === "manual")
     ? cleanedStoredPrompt
     : assetDocumentFactsPrompt(asset);
   return withGlobalStylePrompt(content, globalStyle);
@@ -19582,7 +19655,8 @@ function textToImagePrompt(asset) {
 
 function assetManifestFromAssets({ title, script, worldProfile, assets, analyzerResult, modelName, coverage = null, audit = null }) {
   const byTypeOrder = { Character: 0, Scene: 1, Prop: 2, Insert: 3 };
-  const items = assets
+  const canonicalAssets = applyCanonicalAssetDocumentStyle(assets, script);
+  const items = canonicalAssets
     .map((asset, index) => ({
       id: asset.name,
       type: asset.type,
@@ -19664,6 +19738,8 @@ function assetManifestFromAssets({ title, script, worldProfile, assets, analyzer
       "资产 ID 是否包含人物/场景/道具名，避免后续画布连线混淆。",
     ],
     sourceScriptDigest: crypto.createHash("sha1").update(script).digest("hex"),
+    sourceFingerprint: assetSourceFingerprint(script),
+    parserVersion: ASSET_PARSER_VERSION,
     items,
   };
 }
@@ -19867,6 +19943,8 @@ function normalizeAssetManifest(raw) {
     },
     checklist: Array.isArray(raw?.checklist) ? raw.checklist : [],
     sourceScriptDigest: raw?.sourceScriptDigest || "",
+    sourceFingerprint: raw?.sourceFingerprint || "",
+    parserVersion: raw?.parserVersion || "",
     items,
   };
 }
@@ -20033,7 +20111,7 @@ ${propList}
 - 场景资产：S###，16:9，必须是无人物的全景/大全景环境图，不得出现人影、群众、角色剪影，不得使用纯白背景。
 - 场景视觉风格：只使用资产文档提示词中的明确描述；不再从界面选择或注入风格。
 - 命名规则：每个资产名必须包含可识别的人物名称、场景名称、道具名称或插入镜头主体，避免画布连线时混淆。
-- 道具资产：P###，16:9，纯白背景，同一道具三视图（正面、侧面、背面），清晰、实拍感、物件主导。
+- 道具资产：P###，16:9，纯白背景，同一道具三视图（正面、侧面、背面），清晰、物件主导；具体画风只取资产文档。
 - 插入镜头资产：I###，法医细节、微距、证据特写。
 - 严禁混用角色、场景、道具、插入镜头身份。
 - 每个资产段落中的“文生图提示词”代码块，才是真正交给 APIKEY.FUN image-gen 的输入。
@@ -20162,12 +20240,48 @@ async function extractAssetManifest(episodeRoot, options = {}) {
   );
   const title = titleFromScript(plotScript || assetSourceScript || script, slug, options.title);
   const worldProfile = inferWorldProfile(assetAnalysisSource);
+  const analyzerModel = canonicalAssetAnalyzerModel(options.assetAnalyzerModel);
+  const sourceFingerprint = assetSourceFingerprint(assetAnalysisSource);
+  const previousRecord = readAssetManifest(episodeRoot);
+  const previous = previousRecord?.data || {};
+  // 资产是全剧共享的生产基线。同一源文档已经按当前解析器生成过时，
+  // 后续用户不能因为浏览器里的模型选择不同而再次覆盖它。
+  if (
+    previous.sourceFingerprint === sourceFingerprint &&
+    previous.parserVersion === ASSET_PARSER_VERSION &&
+    Array.isArray(previous.items) &&
+    previous.items.length
+  ) {
+    const refreshed = hydrateManifestGlobalStyle(previous, assetAnalysisSource);
+    const normalized = writeAssetManifest(episodeRoot, {
+      ...refreshed,
+      title: refreshed.title || title,
+      dialogueLanguage,
+      production: { ...(refreshed.production || {}), dialogueLanguage },
+      sourceFingerprint,
+      parserVersion: ASSET_PARSER_VERSION,
+    });
+    return {
+      assetManifest: findProjectFile(episodeRoot, "assetManifest"),
+      assetPrompts: findProjectFile(episodeRoot, "assetPrompts"),
+      analyzer: normalized.analyzer,
+      extracted: {
+        characters: normalized.items.filter((item) => item.type === "Character").map((item) => item.label),
+        scenes: normalized.items.filter((item) => item.type === "Scene").map((item) => item.label),
+      },
+      reusedCanonicalManifest: true,
+      previousConfirmed: !!normalized.confirmed,
+      downstreamInvalidated: false,
+      staleVideoDerivatives: false,
+      invalidation: null,
+    };
+  }
   const rulePlan = buildRuleAssets(assetAnalysisSource, worldProfile);
   let analyzerResult = await callAssetAnalyzerModel({
     script: assetAnalysisSource,
     fallbackAssets: rulePlan.assets,
     worldProfile,
-    modelName: options.assetAnalyzerModel,
+    modelName: analyzerModel,
   });
   if (!analyzerResult?.ok) {
     const hasDocumentBackedAssets = rulePlan.assets.some((asset) => asset.lockedStructured || asset.lockedManual);
@@ -20190,18 +20304,17 @@ async function extractAssetManifest(episodeRoot, options = {}) {
     assets,
     shots: [],
     worldProfile,
-    modelName: options.assetAnalyzerModel,
+    modelName: analyzerModel,
   });
-  assets = correctAssetRolesFromEvidence(coverageResult.assets);
+  assets = applyCanonicalAssetDocumentStyle(correctAssetRolesFromEvidence(coverageResult.assets), assetAnalysisSource);
   const audit = { ok: false, model: "", checkedCount: 0, flippedCount: 0, flips: [], flagged: [], reason: "审核进行中", pending: true };
-  const previous = readAssetManifest(episodeRoot)?.data || {};
   const manifest = assetManifestFromAssets({
     title,
     script: assetAnalysisSource,
     worldProfile,
     assets,
     analyzerResult,
-    modelName: options.assetAnalyzerModel,
+    modelName: analyzerModel,
     coverage: coverageResult.coverage,
     audit,
   });
@@ -20216,13 +20329,15 @@ async function extractAssetManifest(episodeRoot, options = {}) {
       dialogueLanguage,
     },
     generatedAt: new Date().toISOString(),
+    sourceFingerprint,
+    parserVersion: ASSET_PARSER_VERSION,
     confirmed: false,
     confirmedAt: "",
   });
   runAssetAuditInBackground(episodeRoot, {
     assets,
     script: assetAnalysisSource,
-    modelName: options.assetAuditModel,
+    modelName: options.assetAuditModel || analyzerModel,
   }).catch((error) => console.error(`[assetAudit] 后台写回异常: ${error?.message || String(error)}`));
   return {
     assetManifest: findProjectFile(episodeRoot, "assetManifest"),
@@ -20730,116 +20845,21 @@ function storyboardPromptsPath(episodeRoot, slots, selectedNames = []) {
   return file;
 }
 
-const ASSET_IMAGE_STYLE_PRESETS = {
-  photoreal: {
-    label: "超写实",
-    prompt: [
-      "Ultra-realistic live-action cinematic photography, natural human proportions, authentic real-world materials,",
-      "hyper-detailed skin texture, pores, hair, fabric fibers, realistic reflections,",
-      "physically plausible practical lighting, natural color grading, documentary-level realism,",
-      "shot on Arri Alexa, 85mm lens, shallow depth of field, sharp focus, high detail.",
-      "Style anchors: live-action photography, natural proportions, real materials, cinematic camera optics, realistic skin texture.",
-    ].join(" "),
-  },
-  cg_3d: {
-    label: "3D 渲染 / CG 质感",
-    prompt: "3D rendered game character style.",
-  },
-  pixar_3d: {
-    label: "皮克斯 / 迪士尼 3D",
-    prompt: [
-      "Pixar-style and Disney-style 3D render, soft rounded character design, oversized expressive eyes,",
-      "subsurface scattering skin, warm cinematic lighting, gentle global illumination,",
-      "appealing stylized proportions, smooth subsurface materials, shallow depth of field,",
-      "high detail, family-friendly, rendered in RenderMan, 8k.",
-      "Style anchors: subsurface scattering, oversized expressive eyes, soft global illumination, appealing proportions.",
-    ].join(" "),
-  },
-  ghibli_miyazaki: {
-    label: "宫崎骏 / 吉卜力",
-    prompt: [
-      "Studio Ghibli and Miyazaki-inspired 2D animation aesthetic, hand-painted watercolor background, soft natural lighting,",
-      "lush detailed scenery, gentle pastel color palette, nostalgic atmosphere,",
-      "fluffy clouds, anime cel character on painterly background, warm and serene.",
-      "Style anchors: hand-painted watercolor, lush scenery, pastel palette, nostalgic atmosphere, painterly background.",
-    ].join(" "),
-  },
-  retro_american_cel: {
-    label: "复古美式赛璐璐",
-    prompt: [
-      "Retro American cel animation, 1980s-1990s cartoon style, bold black ink outlines,",
-      "flat cel-shaded colors, limited color palette, vintage print grain,",
-      "halftone texture, hand-inked lines, saturated retro tones,",
-      "Saturday-morning cartoon aesthetic, screen-printed look.",
-      "Style anchors: bold ink outlines, flat cel-shaded colors, halftone texture, print grain, limited palette, vintage.",
-    ].join(" "),
-  },
-  american_bold_toon: {
-    label: "美式粗线条",
-    prompt: [
-      "3D toon-rendered animation still, stylized cartoon shading, clean cel-shaded look,",
-      "soft global illumination with hard-edged toon shadows, subtle outline / line art on characters,",
-      "Pixar-meets-Rick-and-Morty proportions, exaggerated but clean character design,",
-      "low-saturation silver-white environment, tech-blue accent lighting,",
-      "matte finish, smooth surfaces, shallow depth of field,",
-      "vertical 9:16 composition, subject centered upper-two-thirds, clean negative space at bottom,",
-      "high detail on face and hands, modern clean lab/apartment setting,",
-      "cinematic but bright lighting, no photorealism",
-    ].join(" "),
-  },
-  modern_anime_cel: {
-    label: "日式动漫赛璐璐",
-    prompt: [
-      "Modern anime cel shading, clean lineart, two-tone flat shading,",
-      "vibrant saturated colors, sharp highlights, glossy hair rendering,",
-      "detailed anime eyes, Kyoto Animation style, crisp digital cel look,",
-      "soft rim light, 2D animation key visual.",
-      "Style anchors: two-tone flat shading, clean lineart, detailed anime eyes, soft rim light.",
-    ].join(" "),
-  },
-  american_painterly: {
-    label: "美式厚涂插画",
-    prompt: [
-      "Painterly digital illustration, thick brushstrokes, semi-realistic stylized rendering,",
-      "dramatic cinematic lighting, rich color grading, dynamic composition,",
-      "concept art quality, Blizzard and Riot Games splash art style,",
-      "detailed rendering, epic atmosphere, ArtStation trending.",
-      "Style anchors: thick brushstrokes, semi-realistic stylized rendering, splash art, cinematic lighting.",
-    ].join(" "),
-  },
-  claymation: {
-    label: "定格动画 / 黏土",
-    prompt: [
-      "Stop-motion claymation style, handcrafted clay figures, visible fingerprint texture,",
-      "miniature set, tactile felt and fabric materials, soft practical lighting,",
-      "shallow depth of field, Laika studio aesthetic, slight imperfections,",
-      "tilt-shift macro, physical puppet look.",
-      "Style anchors: handcrafted clay, fingerprint texture, miniature set, tactile materials.",
-    ].join(" "),
-  },
-  chinese_ink: {
-    label: "水墨 / 国风",
-    prompt: [
-      "Traditional Chinese ink wash painting, sumi-e, flowing brushwork,",
-      "ink splash and gradient washes, abundant negative space, minimalist composition,",
-      "rice paper texture, monochrome black ink with subtle accent color,",
-      "elegant and poetic, shan shui landscape aesthetic.",
-      "Style anchors: ink wash, negative space, rice paper texture, flowing brushwork.",
-    ].join(" "),
-  },
-  pixel_art: {
-    label: "复古像素",
-    prompt: [
-      "Pixel art, 16-bit retro game style, limited color palette, crisp pixel grid,",
-      "dithering shading, sprite art, isometric or side-scroller view,",
-      "nostalgic SNES aesthetic, clean pixel clusters, no anti-aliasing.",
-      "Style anchors: 16-bit, limited palette, dithering, crisp pixel grid, no anti-aliasing.",
-    ].join(" "),
-  },
-  custom: {
-    label: "自定义",
-    prompt: "Use the user-specified custom visual style exactly as the primary art-direction layer.",
-  },
+// 资产生图不再从 preset 生成提示词。这里仅保留历史资产/视频配置需要的显示名，
+// 不能把界面选项当成资产图的视觉来源。
+const ASSET_STYLE_LABELS = {
+  photoreal: "超写实",
+  cg_3d: "3D 渲染 / CG 质感",
+  pixar_3d: "皮克斯 / 迪士尼 3D",
+  ghibli_miyazaki: "宫崎骏 / 吉卜力",
+  retro_american_cel: "复古美式赛璐璐",
+  american_bold_toon: "美式粗线条",
+  modern_anime_cel: "日式动漫赛璐璐",
+  american_painterly: "美式厚涂插画",
+  claymation: "定格动画 / 黏土",
+  chinese_ink: "水墨 / 国风",
+  pixel_art: "复古像素",
+  custom: "自定义",
 };
 
 function normalizeAssetStylePreset(value) {
@@ -20853,15 +20873,7 @@ function normalizeAssetStylePreset(value) {
     pixar_like: "pixar_3d",
   };
   const key = aliases[value] || value;
-  return ASSET_IMAGE_STYLE_PRESETS[key] ? key : "cg_3d";
-}
-
-function assetStyleFromBody(body = {}) {
-  const preset = normalizeAssetStylePreset(body.assetStylePreset || "cg_3d");
-  return {
-    preset,
-    label: ASSET_IMAGE_STYLE_PRESETS[preset].label,
-  };
+  return ASSET_STYLE_LABELS[key] ? key : "cg_3d";
 }
 
 function videoStylePresetFromProductionAssets(productionAssets = [], body = {}) {
@@ -20872,225 +20884,7 @@ function videoStylePresetFromProductionAssets(productionAssets = [], body = {}) 
   return mode === "manual" && manualPreset ? normalizeAssetStylePreset(manualPreset) : "";
 }
 
-function assetStyleNeedsOverride(style) {
-  return !!style?.preset;
-}
-
-function assetStyleDirective(style) {
-  const custom = style.custom
-    ? `\nUser custom style note: ${style.custom}\nIf the note is not English, interpret it as visual art direction and preserve its meaning.`
-    : "";
-  const lines = [
-    `Selected visual style, the only active renderer: ${style.prompt}${custom}`,
-    "Compatible quality add-ons: highly detailed, sharp focus, masterpiece; use resolution, lighting, and camera cues only when they fit the selected style.",
-    "Universal negative prompt: blurry, lowres, bad anatomy, extra fingers, watermark, text, jpeg artifacts.",
-  ];
-  if (style.preset === "photoreal") {
-    lines.push(
-      "Photoreal permission: because the selected style is 超写实, live-action cinematic photography, realistic skin texture, visible pores, wrinkles, hair detail, fabric fibers, real-world material detail, and camera optics are allowed and should be used when relevant.",
-      "Photoreal negative (critical): the image must NOT look like a 3D render, CGI, 3D game character, Pixar/Disney 3D, cartoon, anime, cel shading, illustration, concept art, digital painting, or any stylized art. No plastic, waxy, glossy, or smooth CG skin; no 3D-model turnaround/T-pose render look; no rendered-shader surfaces. It must read as authentic real-world photographs of real subjects with genuine photographic skin, fabric, and lighting.",
-    );
-  } else {
-    lines.push(
-      `Style lock: render only in ${style.label}. Use this selected art direction as the sole renderer for characters, scenes, props, materials, lighting, and surfaces.`,
-    );
-  }
-  lines.push(
-    "Style firewall: ignore any legacy rendering-style wording that appears in older asset text. Use old text only for identity, costume, props, setting, era, mood, and story evidence.",
-    "Preserve all asset identity details, type-specific layouts, 16:9 format, character/prop white-background rules, scene no-people rules, readable-text limits, and safety constraints.",
-    "Do not copy any protected character, studio, logo, brand, or existing IP.",
-  );
-  return lines.join("\n");
-}
-
-function assetLayoutContract(assetType) {
-  if (assetType === "Character") {
-    return [
-      "Layout contract: 16:9 landscape frame, pure white background.",
-      "Create one character identity-sheet image containing full-body front view, full-body side view, full-body back view, and one half-body close-up portrait.",
-      "All views must clearly be the same single character with consistent face, body, hair, clothing, and key props.",
-    ].join(" ");
-  }
-  if (assetType === "Scene") {
-    return [
-      "Layout contract: 16:9 landscape frame, wide establishing or extreme-wide establishing environment image.",
-      "Show complete foreground, midground, and background with usable negative space for later character placement.",
-      "No people, no human silhouettes, no crowds, no human shadows, and no visible human figures.",
-    ].join(" ");
-  }
-  if (assetType === "Prop") {
-    return [
-      "Layout contract: 16:9 landscape frame, pure white background.",
-      "Create one prop turnaround sheet containing front view, side view, and back view of the same single prop.",
-      "Show the full object silhouette clearly, evenly spaced, with no hands, no scene background, and no extra unrelated objects.",
-    ].join(" ");
-  }
-  return [
-    "Layout contract: 16:9 landscape frame.",
-    "Create one clear insert-shot or evidence-detail reference image with the main subject centered and readable as a production reference.",
-    "Keep the subject identity precise and avoid turning it into a full scene unless the asset itself is a scene.",
-  ].join(" ");
-}
-
-function assetNegativeContract(assetType) {
-  const common = "Negative constraints: no watermark, no random logos, no random readable text, no JPEG artifacts, no unrelated decorative graphic design.";
-  if (assetType === "Character") {
-    return `${common} No extra people, no action pose, no dramatic scene background, no unrelated props, no sunglasses unless explicitly required, no default Chinese or East Asian face unless explicitly written in the screenplay.`;
-  }
-  if (assetType === "Scene") {
-    return `${common} No people, no human silhouettes, no crowds, no human shadows, no pure white background, no unrelated animals or vehicles unless explicitly required, no Chinese signage or Chinese regional defaults unless explicitly written in the screenplay.`;
-  }
-  if (assetType === "Prop") {
-    return `${common} No extra people, no hands, no lifestyle scene, no table clutter, no three different props, no invented readable text.`;
-  }
-  return `${common} No extra people, no unrelated props, no invented readable text.`;
-}
-
-function styleFinalLock(style) {
-  if (style.preset === "photoreal") {
-    return "Final style lock: the final image must read as ultra-realistic live-action cinematic photography with authentic real-world materials and natural camera optics — a real photograph, absolutely not a 3D render, CGI, game-character render, or any stylized/cartoon/illustration look.";
-  }
-  if (style.preset === "cg_3d") {
-    return "Final CG style lock: keep the image in 3D rendered game character style, then follow the asset identity, costume, materials, silhouette, and story-specific details.";
-  }
-  if (style.preset === "american_bold_toon") {
-    return "Final style lock: the final image must be a non-photoreal 3D toon-rendered animation still with stylized cartoon shading, clean cel-shaded look, subtle outline line art, and exaggerated clean character design.";
-  }
-  return `Final style lock: the final image must visibly follow ${style.label} as the only renderer.`;
-}
-
-const LEGACY_STYLE_LINE_RE = /^(?:Global visual style override|Selected visual style|Universal quality|Compatible quality|Universal lighting|Universal camera|Universal negative|Style priority|Style firewall|Preserve all asset|Do not copy|Final .*?style lock|Final CG style lock|Rendering style|Realism|Lighting and camera|Atmosphere|Required specification|Negative constraints|Image specification|Casting and ethnicity rule|Locale rule|Character design|Scene design|Subject design|Content rule|Composition|Text rule)\s*:/i;
-const LEGACY_STYLE_CLAUSE_RE = /(?:\b(?:ultra[-\s]?realistic|hyper[-\s]?realistic|hyper[-\s]?detailed|photoreal(?:istic)?|photo[-\s]?real(?:ism)?|live[-\s]?action|real[-\s]?person|real\s+human|documentary|practical photography|photography|arri|alexa|imax|85mm|depth of field|camera optics|studio lighting|cinematic(?:\s+\w+)?\s+lighting|lighting\b|soft rim light|golden hour|volumetric|ray[-\s]?traced|global illumination|subsurface|pbr|octane|unreal|blender|renderman|render(?:ed|er|ing)?|shader|cg\b|3d animation|semi[-\s]?realistic style|realistic skin|skin texture|skin pores|pores|visible pores|realistic fabric|fabric weave|fabric texture|realistic materials|physically believable|physically plausible|masterpiece|8k|ultra detailed|sharp focus|style anchors|style\b|aesthetic\b|anime\b|cel\b|cartoon\b|watercolor|painterly|pixel art|claymation|concept art|artstation|pixar|disney|ghibli|miyazaki|kyoto animation|riot games|blizzard|natural skin tone|anatomically natural|wrinkles|subtle scars|subtle blemishes|moist eye reflections|clear facial identity|sharp but not plastic|illustration look|material detail|restrained color grade)\b|(?:3D\s*动画|3D\s*渲染|CG\s*质感|半写实|超写实|写实|真人|电影质感|实拍感|赛璐璐|像素|水墨|厚涂|定格动画|黏土|吉卜力|宫崎骏|皮克斯|迪士尼|风格|动画角色设计))/i;
-
-function legacyStyleFreeIdentityText(prompt, style = null) {
-  const source = String(prompt || "")
-    .replace(/```(?:text|txt|markdown|md)?/gi, "")
-    .replace(/```/g, "")
-    .replace(/\r/g, "\n")
-    .replace(/\bRequired specification:[\s\S]*$/i, "")
-    .replace(/\bNegative constraints:[\s\S]*$/i, "");
-  const clauseRe = isPhotorealAssetStyle(style)
-    ? /(?:\b(?:style anchors|style\b|aesthetic\b|anime\b|cel\b|cartoon\b|watercolor|painterly|pixel art|claymation|concept art|artstation|pixar|disney|ghibli|miyazaki|kyoto animation|riot games|blizzard|illustration look|cg\b|3d animation|octane|unreal|blender|renderman|shader)\b|(?:3D\s*动画|3D\s*渲染|CG\s*质感|赛璐璐|像素|水墨|厚涂|定格动画|黏土|吉卜力|宫崎骏|皮克斯|迪士尼|风格|动画角色设计))/i
-    : LEGACY_STYLE_CLAUSE_RE;
-  const lines = source
-    .split(/\n+/)
-    .map((line) => compactLine(line))
-    .filter(Boolean)
-    .filter((line) => !LEGACY_STYLE_LINE_RE.test(line));
-  const clauses = lines
-    .join(", ")
-    .split(/\s*,\s*/)
-    .map((clause) => compactLine(clause))
-    .filter(Boolean)
-    .filter((clause) => !clauseRe.test(clause));
-  const deduped = [];
-  for (const clause of clauses) {
-    const key = clause.toLowerCase();
-    if (!deduped.some((item) => item.toLowerCase() === key)) deduped.push(clause);
-  }
-  return deduped.join(", ").replace(/\s+/g, " ").trim().slice(0, 4500);
-}
-
-function compileAssetPromptForStyle(prompt, style, assetType = "", assetName = "") {
-  const type = normalizeAssetType(assetType, "Prop");
-  const identity = legacyStyleFreeIdentityText(prompt, style) || "Use the screenplay-parsed asset identity and visual evidence from this asset section.";
-  return [
-    assetStyleDirective(style),
-    `Target asset: ${assetName || "current asset"}. Asset type: ${type}.`,
-    "Legacy style firewall: the identity source below may come from older prompts. Treat all rendering-style terms in that source as inactive metadata. Only preserve subject identity, costume, props, materials as story objects, setting, era, composition intent, and narrative evidence.",
-    `Asset identity source: ${identity}`,
-    assetLayoutContract(type),
-    assetNegativeContract(type),
-    styleFinalLock(style),
-  ].join("\n\n");
-}
-
-function cleanAssetPromptForStyle(prompt, style) {
-  let result = String(prompt || "").trim();
-  if (!style?.preset || style.preset === "photoreal") return result;
-  const renderingLine = "Rendering style: follow the Global visual style override above as the primary visual renderer while preserving the asset identity, physical clarity, and required reference-sheet layout.";
-  result = result
-    .replace(/Realism:\s*ultra-realistic live-action cinematic reference image,[^\n]*\n?/gi, `${renderingLine}\n`)
-    .replace(/Realism:\s*ultra-realistic live-action cinematic location still,[^\n]*\n?/gi, `${renderingLine}\n`)
-    .replace(/Realism:\s*ultra-realistic practical photography,[^\n]*\n?/gi, `${renderingLine}\n`)
-    .replace(/Lighting and camera:\s*([^\n]*?)no illustration look,\s*no CG look\./gi, "Lighting and camera: $1style-consistent rendered finish, no cheap plastic look.")
-    .replace(/,\s*no plastic CG look/gi, "")
-    .replace(/,\s*no CG look/gi, "");
-  result = result
-    .replace(/,\s*no cartoon style/gi, "")
-    .replace(/,\s*no illustration look/gi, "");
-  if (style.preset === "cg_3d") {
-    result = result
-      .replace(/\bultra[-\s]?realistic live[-\s]?action production still\b/gi, "cinematic 3D CG environment render")
-      .replace(/\bultra[-\s]?realistic live[-\s]?action\b/gi, "cinematic 3D CG")
-      .replace(/\blive[-\s]?action\b/gi, "3D CG")
-      .replace(/\bpractical photography\b/gi, "CG render")
-      .replace(/\bphotorealistic\b/gi, "high-quality 3D CG")
-      .replace(/\bultra[-\s]?realistic skin texture\b/gi, "high-detail stylized CG skin shader")
-      .replace(/\brealistic skin texture\b/gi, "stylized CG skin material")
-      .replace(/\bdetailed skin texture\b/gi, "detailed CG skin shader")
-      .replace(/\bhyper[-\s]?detailed skin texture\b/gi, "high-detail CG skin shader")
-      .replace(/\bvisible pores\b/gi, "subtle stylized CG skin surface detail")
-      .replace(/\bsemi[-\s]?realistic style\b/gi, "stylized 3D animation style")
-      .replace(/\brealistic fabric folds\b/gi, "modeled fabric folds with CG cloth shading")
-      .replace(/\brealistic materials and reflections\b/gi, "game-character materials and rendered reflections")
-      .replace(/\brealistic materials\b/gi, "game-character materials")
-      .replace(/\bphysically believable materials\b/gi, "game-character materials")
-      .replace(/\bauthentic real-world materials\b/gi, "game-character materials")
-      .replace(/\breal[-\s]?person photo texture\b/gi, "non-photographic CG character texture")
-      .replace(/\bdocumentary camera realism\b/gi, "cinematic CG camera language")
-      .replace(/\bshot on Arri Alexa\b/gi, "rendered with a cinematic virtual camera");
-    result += "\n\nFinal CG style lock: keep the image in 3D rendered game character style, then follow the asset identity, costume, materials, silhouette, and story-specific details.";
-  } else {
-    result = result
-      .replace(/\bultra[-\s]?realistic live[-\s]?action production still\b/gi, "style-consistent production reference image")
-      .replace(/\bultra[-\s]?realistic live[-\s]?action\b/gi, "style-consistent")
-      .replace(/\bphotorealistic\b/gi, "style-consistent")
-      .replace(/\bultra[-\s]?realistic skin texture\b/gi, "style-consistent character surface detail")
-      .replace(/\brealistic skin texture\b/gi, "style-consistent character surface detail")
-      .replace(/\bdetailed skin texture\b/gi, "style-consistent character surface detail")
-      .replace(/\brealistic fabric folds\b/gi, "style-consistent fabric shapes")
-      .replace(/\brealistic materials\b/gi, "style-consistent materials")
-      .replace(/\bphysically believable materials\b/gi, "style-consistent materials");
-    result += "\n\nFinal style lock: the final image must follow the selected visual style above as the only renderer.";
-  }
-  return result.replace(/\s+,/g, ",").replace(/,\s*\./g, ".").replace(/\n{3,}/g, "\n\n");
-}
-
-function applyAssetStyleToMarkdown(markdown, style) {
-  if (!assetStyleNeedsOverride(style)) return markdown;
-  let count = 0;
-  const sectionStyled = String(markdown || "").replace(
-    /(^## New (Character|Scene|Prop|Insert) Asset:\s+([^\r\n]+)[\s\S]*?文生图提示词[^\n]*：\s*\n```text\s*\n)([\s\S]*?)(\n```)/gm,
-    (_, prefix, assetType, assetName, prompt, suffix) => {
-      count += 1;
-      return `${prefix}${compileAssetPromptForStyle(prompt, style, assetType, compactLine(assetName))}\n${suffix}`;
-    },
-  );
-  if (count) return sectionStyled;
-  const directive = assetStyleDirective(style).trim();
-  return String(markdown || "").replace(/(```text\s*\n)([\s\S]*?)(\n```)/g, (_, prefix, prompt, suffix) => {
-    count += 1;
-    return `${prefix}${directive}\n\n${cleanAssetPromptForStyle(prompt, style)}\n${suffix}`;
-  });
-}
-
-function styledAssetPromptsPath(episodeRoot, promptsPath, style) {
-  if (!assetStyleNeedsOverride(style)) return promptsPath;
-  const dir = path.join(episodeRoot, "03_asset_prompts", ".partial");
-  fs.mkdirSync(dir, { recursive: true });
-  const source = readText(promptsPath);
-  const styled = applyAssetStyleToMarkdown(source, style);
-  const hash = crypto
-    .createHash("sha1")
-    .update([promptsPath, style.preset, style.custom, styled].join("\n"))
-    .digest("hex")
-    .slice(0, 12);
-  const file = path.join(dir, `${episodeSlug(episodeRoot)}_asset_style_${style.preset}_${hash}.md`);
-  writeText(file, styled);
-  return file;
-}
-
+// 资产图提示词只由 manifest 中的资产文档提示词生成；不再存在 preset 覆盖器。
 function refsFromPromptSection(section, referenceNames, assetLookup = null) {
   const known = new Set(referenceNames);
   const refs = [];
@@ -21667,10 +21461,9 @@ async function startToolJob(episodeRoot, type, body = {}) {
     if (!isDryRun && !imageApiKey()) {
       throw new Error("缺少 OPENAI_API_KEY：请在启动 Pixel Toys 的终端或项目 .env.local 中配置 api.apikey.fun 的 OpenAI 兼容 API Key，然后重启服务。");
     }
-    const assetStyle = assetStyleFromBody(body);
     // The asset document's text-to-image blocks are the source of truth. Keep
-    // the selected style/reference controls as separate inputs; do not rewrite
-    // or clean the document prompt before it reaches the image runner.
+    // the optional style-reference image as a separate input; never inject a
+    // UI preset such as the old default cg_3d into the document prompt.
     const basePrompts = findProjectFile(episodeRoot, "assetPrompts");
     if (!fs.existsSync(basePrompts)) throw new Error("asset prompts file is missing");
     const assetName = compactLine(body.assetName || "");
@@ -21740,7 +21533,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
     if (isEdit) args.push("--edit-instruction", editInstruction);
     for (const referenceAsset of referenceAssets) args.push("--reference-image", referenceAsset.path);
     const hiddenSceneReferenceMap = !isEdit
-      ? await buildHiddenSceneReferenceMap(episodeRoot, manifestForRefs, targetAssetNames, assetStyle)
+      ? await buildHiddenSceneReferenceMap(episodeRoot, manifestForRefs, targetAssetNames, null)
       : null;
     if (hiddenSceneReferenceMap?.mapPath) args.push("--asset-reference-map", hiddenSceneReferenceMap.mapPath);
     const styleReference = readAssetStyleReference(episodeRoot);
@@ -21754,8 +21547,8 @@ async function startToolJob(episodeRoot, type, body = {}) {
       args: [ASSET_GENERATOR_SCRIPT, ...args],
       meta: {
         runNamespace: currentRunNamespace(episodeRoot),
-        assetStylePreset: assetStyle.preset,
-        assetStyleLabel: assetStyle.label,
+        assetStylePreset: "",
+        assetStyleLabel: "资产文档风格",
         assetStyleReferenceEnabled: !!useStyleReference,
         assetStyleReferenceName: useStyleReference ? styleReference.asset.name : "",
         hiddenSceneReferenceEnabled: !!hiddenSceneReferenceMap?.mapPath,

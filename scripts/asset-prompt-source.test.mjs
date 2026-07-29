@@ -10,6 +10,7 @@ const {
   parseAssets,
   promptFor,
   styleReferenceGuidance,
+  referencePromptFor,
 } = require("./run_asset_generation.js");
 
 const markdown = `# Asset prompts
@@ -73,6 +74,26 @@ const [generatedAsset] = parseAssets(generatedMarkdown);
 assert.match(generatedAsset.prompt, /恶搞之家风格/);
 assert.match(promptFor(generatedAsset), /恶搞之家风格/);
 assert.match(promptFor(generatedAsset), /视觉风格：恶搞之家风格/);
+assert.match(promptFor(generatedAsset), /视觉风格硬约束/);
+assert.match(promptFor(generatedAsset), /禁止超写实/);
+assert.doesNotMatch(promptFor(generatedAsset), /Selected visual style|Final CG style lock|Style firewall|photorealistic|3D rendered game character/i);
+assert.match(referencePromptFor(generatedAsset), /恶搞之家风格/);
+assert.doesNotMatch(referencePromptFor(generatedAsset), /Selected visual style|Final CG style lock|photorealistic/i);
+
+const conflictingLegacyMarkdown = `## New Character Asset: C006_CONFLICTING_STYLE
+
+剧本解析对象：郝雪
+视觉解析：荧光橙外卖骑手棉服，钉子盘发。
+视觉风格：恶搞之家风格的二维动画，粗黑轮廓，平涂色块。
+
+资产文档生图提示词：
+\`\`\`text
+超写实真人摄影角色，真实皮肤，3D CG 渲染。
+\`\`\`
+`;
+const [conflictingLegacyAsset] = parseAssets(conflictingLegacyMarkdown);
+assert.doesNotMatch(promptFor(conflictingLegacyAsset), /超写实真人摄影角色|3D CG 渲染/);
+assert.match(promptFor(conflictingLegacyAsset), /恶搞之家风格|视觉风格硬约束/);
 
 const topLevelStyleMarkdown = `# Asset prompts
 

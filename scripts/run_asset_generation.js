@@ -190,6 +190,38 @@ function extractAssetStyleGuidanceFromMarkdown(markdown = "") {
   return [...new Set(candidates.map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean))].join("，").slice(0, 1600);
 }
 
+function documentStyleIsNonPhotoreal(globalStyle = "") {
+  const style = String(globalStyle || "").replace(/\s+/g, " ").trim();
+  if (!style) return false;
+  const nonPhotoreal = /恶搞之家|family\s*guy|美式电视动画|二维动画|卡通|漫画|插画|动漫|赛璐璐|平涂|粗黑(?:色)?描边|toon|cartoon|comic|illustration|cel[-\s]?shad|2d\s+animation/iu.test(style);
+  const explicitPhotoreal = /超写实|写实摄影|真人摄影|实拍感|photoreal(?:istic)?|photo[-\s]?real|live[-\s]?action/iu.test(style) &&
+    !/(?:禁止|不做|不得|避免|不要)[^。；;，,]{0,16}(?:超写实|写实摄影|真人摄影|实拍感|photoreal|photo[-\s]?real|live[-\s]?action)/iu.test(style);
+  return nonPhotoreal && !explicitPhotoreal;
+}
+
+function assetDocumentStyleLock(globalStyle = "") {
+  if (!documentStyleIsNonPhotoreal(globalStyle)) return "";
+  return "视觉风格硬约束：必须保持上述二维/卡通/动画风格；禁止超写实、真人摄影、照片质感、写实皮肤与写实材质，禁止 3D、CG、游戏角色渲染、PBR、景深虚化和电影级写实打光。";
+}
+
+function promptHasPositivePhotorealCue(prompt = "") {
+  const text = String(prompt || "").replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  const cue = /超写实|写实摄影|真人摄影|实拍感|photoreal(?:istic)?|photo[-\s]?real|live[-\s]?action|3D\s*(?:CG|渲染|render)|CG\s*(?:质感|渲染|render)|PBR/iu.test(text);
+  const negated = /(?:禁止|不做|不得|避免|不要|非)[^。；;，,]{0,16}(?:超写实|写实摄影|真人摄影|实拍感|photoreal|photo[-\s]?real|live[-\s]?action|3D|CG|PBR)/iu.test(text);
+  return cue && !negated;
+}
+
+function removeConflictingPhotorealCues(prompt = "") {
+  return String(prompt || "")
+    .split(/\r?\n/)
+    .filter((line) => !promptHasPositivePhotorealCue(line))
+    .join("\n")
+    .replace(/[，,]\s*[，,]/g, "，")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function assetPromptSubject(value = "") {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -357,10 +389,13 @@ function promptFor(asset) {
   const styleLine = style
     ? `视觉风格：${style}`
     : "视觉风格约束：严格遵循资产文档中明确的画风、线条、色彩、材质和光影，不得自行转换为其他风格。";
-  const prompt = String(asset.prompt || "").trim();
+  const styleLock = assetDocumentStyleLock(style);
+  const rawPrompt = String(asset.prompt || "").trim();
+  const prompt = documentStyleIsNonPhotoreal(style) ? removeConflictingPhotorealCues(rawPrompt) : rawPrompt;
   return [
     prompt,
     prompt.includes(styleLine) || (!style && /视觉风格约束：/.test(prompt)) ? "" : styleLine,
+    styleLock && !prompt.includes(styleLock) ? styleLock : "",
     fixedAssetPromptFor(asset),
   ].filter(Boolean).join("\n\n");
 }
@@ -2139,10 +2174,12 @@ if (require.main === module) {
 }
 
 module.exports = {
+  assetDocumentStyleLock,
   fixedAssetPromptFor,
   imageInputsFor,
   parseAssets,
   promptFor,
+  referencePromptFor,
   styleReferenceGuidance,
   stampStoryboardProductionTabs,
 };

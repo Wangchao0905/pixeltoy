@@ -41,9 +41,14 @@ function sectionBetween(source, startNeedle, endNeedle) {
   return source.slice(start, end);
 }
 
-const cgPreset = sectionBetween(server, "  cg_3d: {", "  pixar_3d: {");
-assert(cgPreset.includes('prompt: "3D rendered game character style."'), "cg_3d prompt must stay concise");
-assert(!/PBR|ray[-\s]?traced|Blender|Unreal|Octane/i.test(cgPreset), "cg_3d preset must not reintroduce heavy renderer terms");
+assert(server.includes("const ASSET_STYLE_LABELS"), "video compatibility labels must remain available");
+const assetStyleLabels = sectionBetween(server, "const ASSET_STYLE_LABELS", "function normalizeAssetStylePreset");
+assert(!assetStyleLabels.includes("prompt:"), "asset style compatibility labels must not contain rendering prompt text");
+assert(!server.includes("const ASSET_IMAGE_STYLE_PRESETS"), "asset image preset prompt table must be removed");
+assert(!server.includes("function assetStyleFromBody"), "asset generation must not have a UI style-preset request path");
+assert(!server.includes("function applyAssetStyleToMarkdown"), "asset generation must not rewrite document prompts through a style preset");
+assert(!server.includes("function styledAssetPromptsPath"), "asset generation must not create styled prompt shadow files");
+assert(!server.includes("Ultra-realistic live-action cinematic photography"), "legacy English asset style prompt must be removed");
 const storyboardJobRoute = sectionBetween(
   server,
   'if (["storyboards", "storyboards-dry-run", "storyboard-regenerate", "storyboard-regenerate-dry-run"].includes(type))',
@@ -654,7 +659,7 @@ assert(server.includes("matchStoryboardAssetForSlot(slot, storyboardCandidates")
 assert(server.includes("partialCoverage"), "storyboard slots must flag partial coverage so users can choose to regenerate");
 
 // Asset rendering style is authored in the document prompt. The UI keeps only an optional style reference image.
-assert(server.includes("function assetStyleFromBody"), "asset generation must retain the style-reference request path");
+assert(!server.includes("assetStyleFromBody"), "asset generation must not read a style preset from the request");
 assert(html.includes('id="assetStyleReferenceFile"'), "legacy asset generation must retain style reference upload");
 assert(html.includes('id="modernAssetStyleReferenceFile"'), "modern asset generation must retain style reference upload");
 assert(!html.includes('id="assetStylePreset"') && !html.includes('id="assetStyleCustom"'), "legacy asset generation must not expose style selectors");

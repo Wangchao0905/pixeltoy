@@ -5022,6 +5022,19 @@ async function saveModernProjectDisplayName(event) {
   }
 }
 
+// 新版制作台的对白语言选中态。旧控件留在隐藏的 legacy 布局里够不着,
+// 默认 en 一直生效,导致中文剧本被强制翻成英文且无法调整。
+function renderModernDialogueLanguage() {
+  const group = $("#modernDialogueLanguage");
+  if (!group) return;
+  const mode = state.dialogueLanguage === "zh" ? "zh" : "en";
+  const disabled = !state.selectedId;
+  group.querySelectorAll("[data-dialogue-language]").forEach((button) => {
+    button.setAttribute("aria-checked", String(button.dataset.dialogueLanguage === mode));
+    button.disabled = disabled;
+  });
+}
+
 function renderWorkspace() {
   const data = state.project;
   const hasProject = !!data?.project;
@@ -5072,6 +5085,7 @@ function renderWorkspace() {
   }
   const dialogueInput = document.querySelector(`input[name='draftDialogueLanguage'][value='${CSS.escape(state.dialogueLanguage)}']`);
   if (dialogueInput) dialogueInput.checked = true;
+  renderModernDialogueLanguage();
   const assumeEnglishInput = $("#draftAssumeEnglishDialogue");
   if (assumeEnglishInput) assumeEnglishInput.checked = state.assumeEnglishDialogue === true;
   hydrateConfigInputs(data.contents.config || "");
@@ -9979,6 +9993,13 @@ function bind() {
   });
   $$("input[name='draftDialogueLanguage']").forEach((input) => {
     input.addEventListener("change", () => changeDialogueLanguage(input.value).catch((error) => toast(error.message)));
+  });
+  $("#modernDialogueLanguage")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-dialogue-language]");
+    if (!button || button.disabled) return;
+    const next = button.dataset.dialogueLanguage;
+    if (next === state.dialogueLanguage) return;
+    changeDialogueLanguage(next).catch((error) => toast(error.message));
   });
   $("#draftAssumeEnglishDialogue")?.addEventListener("change", (event) => {
     state.assumeEnglishDialogue = event.currentTarget.checked === true;

@@ -1,10 +1,23 @@
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
+import assert from "node:assert/strict";
 
 const root = path.resolve(new URL("..", import.meta.url).pathname);
 const imageGen = fs.readFileSync(path.join(root, "scripts/vendor/image-gen.js"), "utf8");
 const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+
+function extractAsyncFunction(source, name) {
+  const start = source.indexOf(`async function ${name}`);
+  if (start < 0) throw new Error(`missing async ${name}`);
+  const bodyStart = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}" && --depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`unterminated async ${name}`);
+}
 
 if (!imageGen.includes('require("node:dns")') || !imageGen.includes('dns.setDefaultResultOrder("ipv4first")')) {
   throw new Error("image-gen child must prefer IPv4 for provider requests");
@@ -24,6 +37,17 @@ if (!server.includes('PIXEL_TOYS_IMAGE_CONCURRENCY || "4"') || !server.includes(
 if (!imageGen.includes('Accept: "application/json"') || !imageGen.includes("stream: false")) {
   throw new Error("text image generation must support the standard non-streaming JSON response");
 }
+if (!imageGen.includes("return image;") || !imageGen.includes('Accept: "text/event-stream"')) {
+  throw new Error("reference image generation must pass public HTTPS URLs through the streaming Responses request");
+}
+if (!server.includes("const referenceRecords = await Promise.all") || !server.includes("localAssetFileToPublicUrl(localPath")) {
+  throw new Error("canvas reference images must be publicized before the upstream image request");
+}
+const referenceContext = {};
+vm.createContext(referenceContext);
+vm.runInContext(`${extractAsyncFunction(imageGen, "imageToInputUrl")}; globalThis.imageToInputUrl = imageToInputUrl;`, referenceContext);
+const publicReference = "https://cdn.example.test/pixel-toys/reference.png";
+assert.equal(await referenceContext.imageToInputUrl(publicReference), publicReference, "public references must not be converted to data URLs");
 if (!imageGen.includes("function buildTextResponsesRequest") || !imageGen.includes("function shouldFallbackToResponses")) {
   throw new Error("text image generation must fall back to the Responses image tool when the direct route is rejected");
 }

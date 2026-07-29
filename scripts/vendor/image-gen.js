@@ -125,8 +125,9 @@ async function fetchImageUrl(url) {
 
 async function imageToInputUrl(image) {
   if (/^https?:\/\//i.test(image)) {
-    const source = await fetchImageUrl(image);
-    return `data:${source.contentType};base64,${Buffer.from(source.bytes).toString("base64")}`;
+    // api.apikey.fun can fetch a public reference URL, but its Responses
+    // gateway times out when the same image is embedded as a data URL.
+    return image;
   }
   if (/^data:/i.test(image)) return image;
   await assertLocalImageReadable(image);

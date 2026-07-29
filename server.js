@@ -13582,23 +13582,39 @@ async function createCanvasImageGeneration(body = {}) {
   if (modelConfig.provider === "grok" && requestedReferences.length) {
     throw new Error("Grok 出图当前不支持参考图，请移除参考图后重试。");
   }
-  const references = (await Promise.all(requestedReferences.map(resolveCanvasImageReferenceToLocalPath))).filter(Boolean);
-  if (requestedReferences.length && references.length !== requestedReferences.length) {
-    throw new Error(`参考图解析失败：要求 ${requestedReferences.length} 张，实际解析到 ${references.length} 张。请重新上传或导入参考图。`);
-  }
+  const referenceRecords = await Promise.all(requestedReferences.map(async (source, index) => {
+    const localPath = await resolveCanvasImageReferenceToLocalPath(source);
+    if (!localPath) return { error: "文件无法读取" };
+    // The upstream Responses gateway accepts public URLs reliably. Keep a
+    // local copy for task recovery, while uploading local-only references
+    // through the existing public-asset storage path before submission.
+    if (/^https:\/\//i.test(source)) return { input: source, localPath };
+    try {
+      const publicAsset = await localAssetFileToPublicUrl(localPath, `canvas-image-ref-${index + 1}${path.extname(localPath)}`);
+      const publicUrl = compactLine(publicAsset?.url || "");
+      if (!/^https:\/\//i.test(publicUrl)) return { error: "没有可供上游访问的公网 HTTPS 地址" };
+      return { input: publicUrl, localPath };
+    } catch (error) {
+      return { error: compactLine(error?.message || "公网上传失败") };
+    }
+  }));
+  const failedReference = referenceRecords.find((record) => record?.error);
+  if (failedReference) throw new Error(`参考图准备失败：${failedReference.error}。请重新上传或检查公网素材存储配置。`);
+  const references = referenceRecords.map((record) => record.localPath);
+  const referenceInputs = referenceRecords.map((record) => record.input);
   const timeout = String(Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10));
   let args;
   if (modelConfig.provider === "gpt") {
     if (references.length) {
       args = [
         IMAGE_GEN_SKILL_SCRIPT, "--mode", "image",
-        "--image", references[0],
+        "--image", referenceInputs[0],
         "--prompt", prompt, "--size", providerSize,
         "--model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini",
         "--image-model", modelConfig.model,
         "--out", outPath, "--timeout", timeout,
       ];
-      if (references.length > 1) args.push("--reference-image", references.slice(1).join(path.delimiter));
+      if (referenceInputs.length > 1) args.push("--reference-image", referenceInputs.slice(1).join(path.delimiter));
     } else {
       args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--out", outPath, "--timeout", timeout];
     }

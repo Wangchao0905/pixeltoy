@@ -10763,6 +10763,20 @@ body {
   gap: 3px 8px;
   font-size: 11px;
 }
+#videoProgressList .segment-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+#videoProgressList .segment-actions button {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.2;
+}
+#videoProgressList .segment-actions .segment-state-button {
+  flex: 0 0 34px;
+}
 
 /* 片段状态只用色彩和动效表达，避免长文案撑高卡片或干扰队列进度。 */
 #videoProgressList .segment-status-indicator {

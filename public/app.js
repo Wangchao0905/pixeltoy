@@ -5778,6 +5778,12 @@ function renderModernVideoQueueInspector(data = state.project) {
     generate.disabled = ["running", "queued"].includes(status);
     generate.textContent = status === "complete" || status === "failed" ? "重新生成视频" : "生成视频";
   }
+  const configButton = $("#modernVideoQueueConfig");
+  if (configButton) {
+    const blocked = ["running", "queued"].includes(status);
+    configButton.disabled = blocked;
+    configButton.title = blocked ? "视频生成中，暂不可重新生成配置" : "只更新当前片段的视频配置，不影响其他片段";
+  }
 }
 
 async function generateModernVideoQueueShot() {
@@ -8437,6 +8443,27 @@ async function generateVideoSegment(shotName = "", { forceRegenerate = false } =
   scheduleProjectRefresh();
 }
 
+async function generateVideoConfigForSegment(shotName = "") {
+  if (!state.selectedId) return toast("请先打开一个项目");
+  const cleanShotName = String(shotName || "").trim();
+  if (!cleanShotName) return toast("缺少视频片段");
+  toast(`正在重新生成 ${cleanShotName} 的视频配置`);
+  const data = await api(`/api/project/${state.selectedId}/video-config-shot`, {
+    method: "POST",
+    body: JSON.stringify({
+      shotName: cleanShotName,
+      dialogueLanguage: state.dialogueLanguage,
+      assetAnalyzerModel: state.assetAnalyzerModel,
+    }),
+  });
+  setProjectState(data.state);
+  state.videoPromptDrafts.delete(cleanShotName);
+  renderWorkspace();
+  setStudioTab("video", { persist: false });
+  scheduleProjectRefresh();
+  toast(`已更新 ${cleanShotName} 的视频配置，其他片段未改动`);
+}
+
 async function generateAllVideoSegments() {
   if (!state.selectedId) return toast("请先打开一个项目");
   const configStatus = state.project?.videoConfigStatus || {};
@@ -8624,6 +8651,9 @@ function renderVideoProgress(progress) {
         ? `<div class="segment-error" title="${escapeAttr(item.failedReason)}">${escapeHtml(item.failedReason)}</div>`
         : "";
     const stateIndicator = `<span class="segment-status-indicator" role="img" aria-label="${escapeAttr(stateLabel)}"></span>`;
+    const configAction = item.status === "running" || item.status === "queued"
+      ? `<button class="ghost small" type="button" data-segment-config="${escapeAttr(item.name)}" disabled title="视频生成中，暂不可重新生成配置">生成视频配置</button>`
+      : `<button class="ghost small" type="button" data-segment-config="${escapeAttr(item.name)}">生成视频配置</button>`;
     const action = item.status === "running" || item.status === "queued"
       ? `<button class="segment-state-button" type="button" disabled aria-label="${escapeAttr(stateLabel)}"><span aria-hidden="true"></span></button>`
       : segmentIsComplete
@@ -8646,9 +8676,17 @@ function renderVideoProgress(progress) {
         <i style="width:${progressWidth}%"></i>
       </div>
       <div class="segment-actions">
+        ${configAction}
         ${action}
       </div>
     `;
+    card.querySelector("[data-segment-config]")?.addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      withStudioButtonFeedback(button, () => generateVideoConfigForSegment(item.name)).catch((error) => {
+        toast(error.message);
+        if (state.selectedId) loadProject(state.selectedId, { openStudio: false }).catch(() => {});
+      });
+    });
     card.querySelector("[data-segment-generate]")?.addEventListener("click", (event) => {
       const button = event.currentTarget;
       withStudioButtonFeedback(button, () => generateVideoSegment(item.name)).catch((error) => {
@@ -9590,6 +9628,10 @@ function bind() {
   });
   $("#modernVideoQueueGenerate")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, () => generateModernVideoQueueShot()).catch((error) => toast(error.message));
+  });
+  $("#modernVideoQueueConfig")?.addEventListener("click", (event) => {
+    const shotName = state.selectedVideoShotName;
+    withStudioButtonFeedback(event.currentTarget, () => generateVideoConfigForSegment(shotName)).catch((error) => toast(error.message));
   });
   $("#modernVideoEdit")?.addEventListener("click", () => {
     focusModernPane("video");

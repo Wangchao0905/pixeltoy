@@ -31,6 +31,7 @@ for (const id of [
   "modernVideoQueueFilters",
   "modernVideoQueueInspector",
   "modernVideoQueuePrompt",
+  "modernVideoQueueConfig",
   "modernVideoQueueGenerate",
   "modernVideoGenerate",
   "modernProjectContext",

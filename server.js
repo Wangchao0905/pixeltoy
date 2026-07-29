@@ -21334,6 +21334,106 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   return { configPath, config };
 }
 
+// 仅重建一个视频片段的配置。与整集配置不同，这里不调用
+// resetVideoGenerationStateForNewConfig，避免已生成或正在生成的其他片段被清空。
+async function buildVideoConfigForShot(episodeRoot, body = {}) {
+  const shotName = compactLine(body.shotName || body.name || "");
+  if (!shotName) throw new Error("缺少要配置的视频片段");
+
+  const configRecord = ensureVideoConfigIsolation(episodeRoot);
+  const previous = configRecord?.data || {};
+  const previousShots = Array.isArray(previous.shots) ? previous.shots : [];
+  const shotIndex = previousShots.findIndex((shot) => compactLine(shot?.name || "") === shotName);
+  if (shotIndex < 0) throw new Error(`视频配置中找不到片段：${shotName}`);
+  if (!configRecord?.file) throw new Error("视频配置文件不存在，请先生成整集视频配置");
+
+  const rawScript = readText(findProjectFile(episodeRoot, "script"));
+  const script = scriptForVideoBeats(cleanStoryScriptForDraft(rawScript));
+  if (!script.trim()) throw new Error("剧本为空，无法生成单片段视频配置。");
+
+  const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const dialogueLanguage = normalizeDialogueLanguage(
+    body.dialogueLanguage || previous.dialogueLanguage || previous.settings?.dialogueLanguage || manifest.dialogueLanguage || "",
+    projectDialogueLanguage(episodeRoot, "en"),
+  );
+  const modelPlan = await ensureModelShotPlanForConfig(episodeRoot, {
+    script,
+    dialogueLanguage,
+    assetAnalyzerModel: body.assetAnalyzerModel,
+  });
+  const resolvedDialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, dialogueLanguage);
+  const configAssets = Array.isArray(previous.assets) && previous.assets.length ? previous.assets : manifestItemsToAssets(manifest);
+  const videoStylePreset = compactLine(previousShots[shotIndex]?.videoStylePreset || "") || videoStylePresetFromProductionAssets(configAssets, body);
+  const promptMode = compactLine(previous.settings?.promptMode || previous.promptMode || "").toLowerCase();
+  const storyboardsActive =
+    promptMode === "production_board" ||
+    promptMode === "storyboard" ||
+    previous.settings?.enableStoryboards === true ||
+    previous.enableStoryboards === true;
+  const { shots: modelShots } = modelShotPlanForConfig({
+    episodeRoot,
+    modelPlan,
+    script,
+    dialogueLanguage: resolvedDialogueLanguage,
+    assets: configAssets,
+    videoStylePreset,
+  });
+  const modelShot = modelShots.find((shot) => shot.name === shotName);
+  if (!modelShot) throw new Error(`模型导演设计中找不到片段：${shotName}`);
+
+  const previousShot = previousShots[shotIndex];
+  const nextShot = {
+    ...previousShot,
+    ...modelShot,
+    name: previousShot.name,
+    promptSection: previousShot.promptSection || modelShot.promptSection,
+    storyboardRefs: Array.isArray(previousShot.storyboardRefs) ? previousShot.storyboardRefs : [],
+    storyboardGuidance: previousShot.storyboardGuidance || null,
+    promptSource: "model_director",
+    videoConfigUpdatedAt: new Date().toISOString(),
+  };
+  if (storyboardsActive) {
+    nextShot.videoPromptMode = "production_board";
+    nextShot.prompt = storyboardSeedancePrompt(nextShot, shotIndex, resolvedDialogueLanguage);
+    nextShot.useTailFrame = false;
+    delete nextShot.tailFrameSource;
+    delete nextShot.startFrameUrl;
+    nextShot.continuityNote = "已启用 Production Board：按当前片段故事板参考生成";
+  } else {
+    nextShot.videoPromptMode = "prompt";
+    nextShot.prompt = cleanVideoPromptForSubmission(seedanceNaturalLanguagePromptForShot(nextShot, shotIndex, resolvedDialogueLanguage));
+    const assetLookup = nextShot.assetLookup;
+    const previousShotForContinuity = shotIndex > 0 ? previousShots[shotIndex - 1] : null;
+    const continuityDecision = previousShotForContinuity
+      ? tailFrameContinuityDecision(nextShot, previousShotForContinuity, assetLookup)
+      : { useTailFrame: false, sharedScene: false, reason: "第一段视频：无上一片段尾帧" };
+    const allowTailFrameContinuity = previous.settings?.tailFrameContinuity !== false;
+    nextShot.continuityDecision = continuityDecision;
+    nextShot.sharedSceneContinuity = !!continuityDecision.sharedScene;
+    nextShot.useTailFrame = allowTailFrameContinuity && continuityDecision.useTailFrame;
+    if (nextShot.useTailFrame && previousShotForContinuity) {
+      nextShot.tailFrameSource = previousShotForContinuity.name;
+      nextShot.continuityNote = continuityDecision.reason;
+    } else {
+      delete nextShot.tailFrameSource;
+      nextShot.continuityNote = continuityDecision.reason;
+    }
+  }
+
+  const config = {
+    ...previous,
+    shots: previousShots.map((shot, index) => (index === shotIndex ? nextShot : shot)),
+    updatedAt: new Date().toISOString(),
+    lastSingleShotConfig: {
+      shotName,
+      updatedAt: nextShot.videoConfigUpdatedAt,
+    },
+  };
+  writeVideoConfigRecord(configRecord, config);
+  syncProjectShotsToCanvasState(episodeRoot, config, [nextShot], { forcePrompt: true });
+  return { configPath: configRecord.file, config, shotName };
+}
+
 function clearVideoArtifactsForNewCanvas(episodeRoot) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const rawDir = path.join(episodeRoot, "06_videos", "raw");
@@ -23388,6 +23488,12 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && action === "config") {
     ensureWorkflowNamespace(episodeRoot, "config request");
     const result = await buildVideoConfig(episodeRoot, await readBody(req));
+    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "video-config-shot") {
+    ensureWorkflowNamespace(episodeRoot, "single-shot config request");
+    const result = await buildVideoConfigForShot(episodeRoot, await readBody(req));
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
   }
 

@@ -17,7 +17,7 @@ assert.match(
 );
 assert.match(
   html,
-  /canvas\.js\?v=canvas-video-regeneration-20260728/,
+  /canvas\.js\?v=canvas-agent-image-drop-20260729/,
   "canvas video regeneration fix must invalidate the browser script cache",
 );
 

@@ -156,6 +156,7 @@ const canvasState = {
   canvasAgentModel: CANVAS_AGENT_DEFAULT_MODEL,
   canvasAgentMessages: [],
   canvasAgentActivities: [],
+  canvasAgentAttachments: [],
   canvasAgentController: null,
   canvasAgentSending: false,
 };
@@ -3445,7 +3446,7 @@ function renderImagePreview(node) {
         : "";
     const downloadHref = imageDownloadHref(node);
     return certificationBadge +
-      `<img class="image-preview-img" draggable="false" src="${escapeHtml(thumbUrl(node.imageUrl, 640))}" alt="生成结果" loading="lazy" decoding="async" />` +
+      `<img class="image-preview-img" draggable="true" src="${escapeHtml(thumbUrl(node.imageUrl, 640))}" alt="生成结果" loading="lazy" decoding="async" />` +
       `<div class="media-action-cluster">` +
         `<button type="button" class="media-download-button media-regen-button" data-image-action="regenerate" aria-label="重新生成" title="重新生成">↻<span>重新生成</span></button>` +
         (downloadHref
@@ -4008,7 +4009,7 @@ function syncAssetNodeElement(element, node) {
       if (visual) visual.replaceWith(img);
       else element.insertBefore(img, element.querySelector(".asset-node-caption"));
     }
-    img.setAttribute("draggable", "false");
+    img.setAttribute("draggable", "true");
     img.alt = asset.name || "";
     img.loading = "lazy";
     img.decoding = "async";
@@ -4111,6 +4112,11 @@ function renderNodes({ preserveExisting = false } = {}) {
     if (node.kind === "asset") {
       syncAssetNodeElement(element, node);
       element.addEventListener("contextmenu", (event) => showAssetContextMenu(event, node.id));
+      element.setAttribute("draggable", "true");
+      element.addEventListener("dragstart", (event) => beginCanvasAgentNodeDrag(event, node.id));
+      element.addEventListener("dragend", endCanvasAgentNodeDrag);
+      element.querySelector(".asset-node-image")?.addEventListener("dragstart", (event) => beginCanvasAgentNodeDrag(event, node.id));
+      element.querySelector(".asset-node-image")?.addEventListener("dragend", endCanvasAgentNodeDrag);
     } else {
       element.querySelector(".node-flow-summary").textContent = upstreamSummary(node);
       element.querySelector(".node-assets").innerHTML = renderNodeAssets(node);
@@ -4127,6 +4133,8 @@ function renderNodes({ preserveExisting = false } = {}) {
     const imagePreview = element.querySelector(".image-preview-slot");
     if (imagePreview && node.kind === "image") {
       imagePreview.addEventListener("contextmenu", (event) => showAssetContextMenu(event, node.id));
+      imagePreview.querySelector(".image-preview-img")?.addEventListener("dragstart", (event) => beginCanvasAgentNodeDrag(event, node.id));
+      imagePreview.querySelector(".image-preview-img")?.addEventListener("dragend", endCanvasAgentNodeDrag);
       imagePreview.style.setProperty("--image-preview-ratio", VIDEO_PREVIEW_RATIOS[node.settings?.ratio] || "16 / 9");
       imagePreview.dataset.previewSig = imagePreviewSig(node);
       imagePreview.innerHTML = renderImagePreview(node);
@@ -5408,7 +5416,9 @@ function canvasAgentCanvasSnapshot() {
       id: asset.id,
       name: asset.name,
       type: asset.type,
+      mediaType: asset.mediaType || "image",
       description: asset.description || asset.prompt || "",
+      hasImage: Boolean(assetPreviewUrl(asset) || asset.url || asset.publicUrl || asset.localUrl),
     })),
     nodes: canvasState.nodes.slice(0, 100).map((node) => ({
       id: node.id,
@@ -5431,6 +5441,202 @@ function canvasAgentSetStatus(message, busy = canvasState.canvasAgentSending) {
   footer?.classList.toggle("is-busy", Boolean(busy));
 }
 
+function canvasAgentReferenceForNode(nodeId) {
+  const node = canvasState.nodes.find((item) => item.id === nodeId);
+  if (!node) return null;
+  if (node.kind === "asset") {
+    const asset = primaryAssetForNode(node);
+    const url = asset?.url || asset?.publicUrl || asset?.localUrl || assetPreviewUrl(asset || {});
+    if (!url) return null;
+    return { url, preview: assetPreviewUrl(asset || {}) || url, name: asset.name || "画布图片", source: "canvas-asset" };
+  }
+  if (node.kind === "image" && node.imageUrl) {
+    return { url: node.imageUrl, preview: node.imageUrl, name: `图片模块 ${node.id}`, source: "canvas-generated" };
+  }
+  return null;
+}
+
+function beginCanvasAgentNodeDrag(event, nodeId) {
+  const reference = canvasAgentReferenceForNode(nodeId);
+  if (!reference || !event.dataTransfer) return;
+  event.stopPropagation();
+  event.dataTransfer.effectAllowed = "copy";
+  const payload = { type: "pixel-toys-canvas-agent-image", image: reference };
+  event.dataTransfer.setData("application/x-pixel-toys-canvas-agent-image", JSON.stringify(reference));
+  event.dataTransfer.setData("application/json", JSON.stringify(payload));
+  event.dataTransfer.setData("text/plain", reference.url);
+  event.currentTarget.classList.add("is-agent-dragging");
+}
+
+function endCanvasAgentNodeDrag(event) {
+  event.currentTarget?.classList.remove("is-agent-dragging");
+}
+
+function canvasAgentReferenceForAsset(asset, fallbackSource = "canvas-asset") {
+  const url = asset?.url || asset?.publicUrl || asset?.localUrl || assetPreviewUrl(asset || {});
+  if (!url || isVideoAsset(asset)) return null;
+  return { url, preview: assetPreviewUrl(asset || {}) || url, name: asset.name || "画布图片", source: asset.source || fallbackSource };
+}
+
+function canvasAgentReferenceFromDataTransfer(dataTransfer) {
+  if (!dataTransfer) return null;
+  try {
+    const raw = dataTransfer.getData("application/x-pixel-toys-canvas-agent-image");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  try {
+    const payload = JSON.parse(dataTransfer.getData("application/json") || "{}");
+    if (payload?.type === "pixel-toys-canvas-agent-image") return payload.image || null;
+    if (payload?.type === "pixel-toys-asset" && payload.assetId) {
+      const asset = canvasState.assets.find((item) => item.id === payload.assetId);
+      return asset ? canvasAgentReferenceForAsset(asset) : null;
+    }
+    if (payload?.type === "pixel-toys-shared-asset" && payload.assetId) {
+      const asset = canvasState.sharedAssetLibrary.assets.find((item) => item.id === payload.assetId);
+      return asset ? canvasAgentReferenceForAsset(asset, "asset-library") : null;
+    }
+  } catch {}
+  const assetId = dataTransfer.getData("application/x-pixel-toys-asset-id");
+  if (assetId) {
+    const asset = canvasState.assets.find((item) => item.id === assetId);
+    if (asset) return canvasAgentReferenceForAsset(asset);
+  }
+  const sharedId = dataTransfer.getData("application/x-pixel-toys-shared-asset-id");
+  if (sharedId) {
+    const asset = canvasState.sharedAssetLibrary.assets.find((item) => item.id === sharedId);
+    if (asset) return canvasAgentReferenceForAsset(asset, "asset-library");
+  }
+  const url = String(dataTransfer.getData("text/uri-list") || dataTransfer.getData("text/plain") || "").split(/\r?\n/)[0].trim();
+  return /^https?:\/\//i.test(url) || /^\/public-assets\//.test(url) || /^\/media\?/.test(url)
+    ? { url, preview: url, name: "拖入的图片", source: "conversation" }
+    : null;
+}
+
+function addCanvasAgentAttachment(image) {
+  const url = String(image?.url || "").trim();
+  if (!url || isVideoAsset(image)) return false;
+  if (canvasState.canvasAgentAttachments.length >= CANVAS_AGENT_MAX_ATTACHMENTS) {
+    toast(`Canvas Agent 单次最多引用 ${CANVAS_AGENT_MAX_ATTACHMENTS} 张图片`);
+    return false;
+  }
+  if (canvasState.canvasAgentAttachments.some((item) => item.url === url)) return false;
+  canvasState.canvasAgentAttachments.push({
+    url,
+    preview: String(image.preview || image.previewUrl || url),
+    name: String(image.name || "未命名图片").trim() || "未命名图片",
+    source: String(image.source || "conversation").trim() || "conversation",
+  });
+  renderCanvasAgentAttachments();
+  canvasAgentSetStatus(`已添加参考图：${image.name || "图片"}`, false);
+  return true;
+}
+
+function renderCanvasAgentAttachments() {
+  const tray = qs("#canvasAgentAttachments");
+  if (!tray) return;
+  tray.replaceChildren();
+  canvasState.canvasAgentAttachments.forEach((image, index) => {
+    const chip = document.createElement("div");
+    chip.className = "canvas-agent-attachment";
+    const preview = document.createElement("img");
+    preview.src = image.preview || image.url;
+    preview.alt = image.name;
+    preview.loading = "lazy";
+    const label = document.createElement("span");
+    label.textContent = image.name;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", `移除 ${image.name}`);
+    remove.addEventListener("click", () => {
+      canvasState.canvasAgentAttachments.splice(index, 1);
+      renderCanvasAgentAttachments();
+    });
+    chip.append(preview, label, remove);
+    tray.appendChild(chip);
+  });
+}
+
+async function uploadCanvasAgentImages(files) {
+  const list = [...(files || [])].filter((file) => /^image\/(png|jpeg|jpg|webp)$/i.test(file.type));
+  if (!list.length) return;
+  for (const file of list) {
+    if (file.size > 8 * 1024 * 1024) {
+      toast(`「${file.name}」超过 8MB，已跳过`);
+      continue;
+    }
+    try {
+      canvasAgentSetStatus(`正在上传：${file.name}`, true);
+      const dataUrl = await fileToDataUrl(file);
+      const data = await api("/api/canvas/public-assets", {
+        method: "POST",
+        body: JSON.stringify({ name: file.name, dataUrl }),
+      });
+      const result = data.result || {};
+      const url = result.url || result.publicUrl || result.localUrl || "";
+      if (!url) throw new Error("上传没有返回图片地址");
+      addCanvasAgentAttachment({ url, preview: result.localUrl || url, name: file.name, source: "local" });
+    } catch (error) {
+      toast(`「${file.name}」上传失败：${error.message}`);
+    }
+  }
+  canvasAgentSetStatus("就绪，可操作当前画布", false);
+}
+
+function canvasAgentConversationImages() {
+  const images = [];
+  const seen = new Set();
+  const add = (image) => {
+    const url = String(image?.url || "").trim();
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    images.push({
+      url,
+      name: String(image.name || "未命名图片").trim() || "未命名图片",
+      source: String(image.source || "conversation").trim() || "conversation",
+    });
+  };
+  for (const message of canvasState.canvasAgentMessages) (message.images || []).forEach(add);
+  canvasState.canvasAgentAttachments.forEach(add);
+  return images.slice(0, CANVAS_AGENT_MAX_ATTACHMENTS);
+}
+
+function canvasAgentMessagePayload(message) {
+  if (!message || !["user", "assistant"].includes(message.role)) return null;
+  const images = Array.isArray(message.images) ? message.images : [];
+  if (!images.length) return { role: message.role, content: message.content || "" };
+  const parts = [];
+  if (message.content) parts.push({ type: "text", text: message.content });
+  images.forEach((image) => {
+    if (image?.url) parts.push({ type: "image_url", image_url: { url: image.url } });
+  });
+  return { role: message.role, content: parts };
+}
+
+function ensureCanvasAgentReferenceAsset(handle) {
+  const match = String(handle || "").match(/^image_(\d+)$/i);
+  const image = match ? canvasAgentConversationImages()[Number(match[1]) - 1] : null;
+  if (!image?.url) return "";
+  const existing = canvasState.assets.find((asset) => asset.source === "canvas-agent-reference" && asset.url === image.url);
+  if (existing) return existing.id;
+  const asset = {
+    id: `agent_ref_${match[1]}_${Date.now().toString(36)}`,
+    name: image.name || `参考图 ${match[1]}`,
+    type: "Reference",
+    url: image.url,
+    previewUrl: image.preview || image.url,
+    publicUrl: /^https:\/\//i.test(image.url) ? image.url : "",
+    source: "canvas-agent-reference",
+    aiGenerated: false,
+  };
+  addAssets([asset]);
+  return asset.id;
+}
+
+function canvasAgentReferenceAssetIds(handles = []) {
+  return (Array.isArray(handles) ? handles : []).map(ensureCanvasAgentReferenceAsset).filter(Boolean);
+}
+
 function renderCanvasAgentThread() {
   const thread = qs("#canvasAgentThread");
   if (!thread) return;
@@ -5450,7 +5656,19 @@ function renderCanvasAgentThread() {
     if (canvasState.canvasAgentSending && index === messages.length - 1 && message.role === "assistant") {
       bubble.classList.add("is-streaming");
     }
-    bubble.textContent = message.content || (message.role === "assistant" ? "正在处理…" : "");
+    if (message.content) bubble.appendChild(document.createTextNode(message.content));
+    if (message.images?.length) {
+      const imageRow = document.createElement("div");
+      imageRow.className = "canvas-agent-message-images";
+      message.images.forEach((image) => {
+        const img = document.createElement("img");
+        img.src = image.preview || image.url;
+        img.alt = image.name || "参考图";
+        imageRow.appendChild(img);
+      });
+      bubble.appendChild(imageRow);
+    }
+    if (!message.content && !message.images?.length && message.role === "assistant") bubble.textContent = "正在处理…";
     list.appendChild(bubble);
   });
   activities.slice(-24).forEach((activity) => {
@@ -5500,10 +5718,11 @@ function applyCanvasAgentAction(action = {}) {
     const assetIds = Array.isArray(source.assets)
       ? source.assets.filter((assetId) => canvasState.assets.some((asset) => asset.id === assetId))
       : [];
+    const referenceAssetIds = canvasAgentReferenceAssetIds(source.referenceImages);
     createNode(source.kind, { x: Number(source.x) || 80, y: Number(source.y) || 80 }, {
       id: source.id,
       prompt: source.prompt || "",
-      assets: assetIds,
+      assets: [...new Set([...assetIds, ...referenceAssetIds])],
       settings: source.settings || {},
       render: false,
       silent: true,
@@ -5524,6 +5743,9 @@ function applyCanvasAgentAction(action = {}) {
     }
     if (Array.isArray(patch.assets)) {
       node.assets = patch.assets.filter((assetId) => canvasState.assets.some((asset) => asset.id === assetId));
+    }
+    if (Array.isArray(patch.referenceImages)) {
+      node.assets = [...new Set([...(node.assets || []), ...canvasAgentReferenceAssetIds(patch.referenceImages)])];
     }
     clampNodePosition(node);
     syncCanvasAgentNodeControls(node);
@@ -5614,11 +5836,15 @@ async function submitCanvasAgentMessage(prompt) {
     return;
   }
   const text = String(prompt || "").trim();
-  if (!text) return;
+  const images = canvasState.canvasAgentAttachments.slice();
+  if (!text && !images.length) return;
   const model = CANVAS_AGENT_MODELS.has(canvasState.canvasAgentModel) ? canvasState.canvasAgentModel : CANVAS_AGENT_DEFAULT_MODEL;
-  const requestMessages = [...canvasState.canvasAgentMessages, { role: "user", content: text }];
+  const userMessage = { role: "user", content: text, images };
+  const requestMessages = [...canvasState.canvasAgentMessages, userMessage].map(canvasAgentMessagePayload).filter(Boolean);
   const assistant = { role: "assistant", content: "" };
-  canvasState.canvasAgentMessages.push({ role: "user", content: text }, assistant);
+  canvasState.canvasAgentMessages.push(userMessage, assistant);
+  canvasState.canvasAgentAttachments = [];
+  renderCanvasAgentAttachments();
   canvasState.canvasAgentActivities = [];
   const input = qs("#canvasAgentInput");
   if (input) input.value = "";
@@ -5633,6 +5859,7 @@ async function submitCanvasAgentMessage(prompt) {
       body: JSON.stringify({
         model,
         messages: requestMessages,
+        conversationImages: canvasAgentConversationImages(),
         canvasContext: canvasAgentCanvasSnapshot(),
         projectId: canvasState.selectedId || "",
       }),
@@ -5687,6 +5914,42 @@ qs("#canvasAgentComposer")?.addEventListener("submit", (event) => {
   event.preventDefault();
   submitCanvasAgentMessage(qs("#canvasAgentInput")?.value || "").catch((error) => canvasAgentSetStatus(error.message, false));
 });
+qs("#canvasAgentImagePick")?.addEventListener("click", () => qs("#canvasAgentImageUpload")?.click());
+qs("#canvasAgentImageUpload")?.addEventListener("change", async (event) => {
+  await uploadCanvasAgentImages(event.currentTarget.files);
+  event.currentTarget.value = "";
+});
+const canvasAgentComposer = qs("#canvasAgentComposer");
+if (canvasAgentComposer) {
+  const isImageDrag = (event) => {
+    const types = [...(event.dataTransfer?.types || [])];
+    return types.includes("Files")
+      || types.includes("application/x-pixel-toys-canvas-agent-image")
+      || types.includes("application/x-pixel-toys-asset-id")
+      || types.includes("application/x-pixel-toys-shared-asset-id")
+      || types.includes("application/json");
+  };
+  canvasAgentComposer.addEventListener("dragover", (event) => {
+    if (!isImageDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    canvasAgentComposer.classList.add("is-dragover");
+  });
+  canvasAgentComposer.addEventListener("dragleave", (event) => {
+    if (!canvasAgentComposer.contains(event.relatedTarget)) canvasAgentComposer.classList.remove("is-dragover");
+  });
+  canvasAgentComposer.addEventListener("drop", async (event) => {
+    if (!isImageDrag(event)) return;
+    event.preventDefault();
+    canvasAgentComposer.classList.remove("is-dragover");
+    if (event.dataTransfer.files?.length) {
+      await uploadCanvasAgentImages(event.dataTransfer.files);
+      return;
+    }
+    const reference = canvasAgentReferenceFromDataTransfer(event.dataTransfer);
+    if (reference) addCanvasAgentAttachment(reference);
+  });
+}
 qs("#canvasAgentInput")?.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();

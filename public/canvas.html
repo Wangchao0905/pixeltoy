@@ -6,7 +6,7 @@
     <title>canvas</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/styles.css?v=canvas-shell-visual-20260727" />
-    <link rel="stylesheet" href="/canvas.css?v=canvas-agent-transparent-20260728" />
+    <link rel="stylesheet" href="/canvas.css?v=canvas-agent-image-drop-20260729" />
   </head>
   <body class="canvas-page hide-liveness-library-ui">
     <div id="canvasApp" class="generation-canvas-shell">
@@ -66,7 +66,7 @@
         <div id="canvasAgentThread" class="canvas-agent-thread" aria-live="polite">
           <div class="canvas-agent-empty">
             <strong>把下一步交给 Agent</strong>
-            <p>连接模型后，可直接分析节点、整理引用关系和规划生成步骤。</p>
+            <p>拖入画布图片或描述目标，Agent 会分析参考图并操作当前画布。</p>
             <div class="canvas-agent-suggestions" aria-label="建议操作">
               <button type="button" data-canvas-agent-suggestion="检查当前画布的节点关系，并修复明显的连接问题">检查画布关系</button>
               <button type="button" data-canvas-agent-suggestion="整理当前画布的生成顺序，并为缺少提示词的模块补充提示词">整理生成顺序</button>
@@ -75,10 +75,15 @@
         </div>
 
         <form id="canvasAgentComposer" class="canvas-agent-composer">
-          <textarea id="canvasAgentInput" rows="1" placeholder="描述你想在画布中完成的事" aria-label="Canvas Agent 输入"></textarea>
-          <button id="canvasAgentSend" class="canvas-agent-send" type="submit" aria-label="发送" title="发送">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 4 16 8-16 8 3.1-7.1L14 12l-6.9-.9L4 4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
-          </button>
+          <div id="canvasAgentAttachments" class="canvas-agent-attachments" aria-live="polite"></div>
+          <div class="canvas-agent-compose-row">
+            <button id="canvasAgentImagePick" class="canvas-agent-image-pick" type="button" aria-label="添加参考图片" title="添加参考图片">+</button>
+            <input id="canvasAgentImageUpload" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+            <textarea id="canvasAgentInput" rows="1" placeholder="拖入图片，或描述你想在画布中完成的事" aria-label="Canvas Agent 输入"></textarea>
+            <button id="canvasAgentSend" class="canvas-agent-send" type="submit" aria-label="发送" title="发送">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 4 16 8-16 8 3.1-7.1L14 12l-6.9-.9L4 4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+            </button>
+          </div>
         </form>
         <footer class="canvas-agent-panel-footer"><span id="canvasAgentStatusDot" class="canvas-agent-footer-dot"></span><span id="canvasAgentStatus">就绪，可操作当前画布</span></footer>
       </aside>
@@ -460,6 +465,6 @@
     </template>
 
     <div id="canvasToast" class="toast hidden"></div>
-    <script src="/canvas.js?v=canvas-video-regeneration-20260728"></script>
+    <script src="/canvas.js?v=canvas-agent-image-drop-20260729"></script>
   </body>
 </html>

@@ -23392,9 +23392,6 @@ async function handleApi(req, res, url) {
     const configRecord = ensureVideoConfigIsolation(episodeRoot);
     if (!configRecord?.data || !Array.isArray(configRecord.data.shots)) throw new Error("请先生成视频配置");
     const shotName = compactLine(body.shotName || body.name);
-    const runNamespace = currentRunNamespace(episodeRoot, configRecord.data);
-    const snapshot = snapshotStatusForShot(episodeRoot, shotName, { runNamespace });
-    if (!snapshot?.failed && Number(snapshot?.statusCode) !== 3) throw new Error("仅生成失败的片段可以切换模型重试");
     const config = updateVideoModelForShotInConfig(configRecord.data, shotName, body.modelName || body.model);
     const shot = config.shots.find((item) => item.name === shotName);
     writeVideoConfigRecord(configRecord, config);

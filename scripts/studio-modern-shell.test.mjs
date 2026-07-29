@@ -125,6 +125,9 @@ assert.match(css, /\.modern-video-queue-grid\s*\{[^}]*grid-template-columns:\s*r
 assert.match(css, /\.modern-video-queue-card\.is-running[\s\S]*\.modern-video-queue-status/, "running queue cards must expose a visible status treatment");
 assert.match(css, /\.modern-video-queue-download\s*\{[\s\S]*position:\s*absolute/, "modern queue downloads should sit on the media frame");
 assert.match(js, /modernVideoQueueInspector[\s\S]*generateModernVideoQueueShot/, "queue cards must open a single-shot inspector with generation controls");
+assert.doesNotMatch(html, /id="modernVideoQueueModel"/, "the take inspector must not duplicate the current-shot model control");
+assert.match(js, /modernParamModel[\s\S]*saveVideoRetryModel\(\)/, "changing the current-shot model must update only the selected shot");
+assert.match(css, /\.modern-video-queue-inspector-actions\s*\{[^}]*justify-content:\s*center/, "take inspector actions must be centered");
 assert.match(js, /saveVideoPrompt\(\)[\s\S]*generateVideoSegment\(shotName, \{ forceRegenerate \}\)/, "single-shot regeneration must save the edited prompt before submitting");
 assert.match(js, /modern-asset-wall-group/, "modern asset wall must group cards by asset type");
 assert.match(js, /function bindModernAssetReference/, "modern shell must bind uploaded reference images to parsed assets");

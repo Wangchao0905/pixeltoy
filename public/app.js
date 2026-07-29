@@ -5251,6 +5251,7 @@ function renderModernStudio(data = state.project) {
   const selectedIndex = Math.max(0, Math.min(state.modernStudio.shotIndex, Math.max(0, shots.length - 1)));
   state.modernStudio.shotIndex = selectedIndex;
   const selected = shots[selectedIndex] || null;
+  if (selected?.name && !state.selectedVideoShotName) state.selectedVideoShotName = selected.name;
   const ratio = videoConfigDataFromProject()?.settings?.ratio || "9:16";
   const pct = total ? Math.round((completed / total) * 100) : 0;
   const projectName = project.seriesTitle || project.title || project.scriptTitle || title;
@@ -5770,8 +5771,6 @@ function renderModernVideoQueueInspector(data = state.project) {
   if (document.activeElement !== input) input.value = draft.value;
   $("#modernVideoQueuePromptStatus").textContent = draft.dirty ? "已修改未保存" : "已保存";
   $("#modernVideoQueuePromptCount").textContent = `${draft.value.length} / 8000`;
-  const model = $("#modernVideoQueueModel");
-  if (document.activeElement !== model) model.value = videoModelForShot(shot);
   $("#modernVideoQueueInspectorFailure").textContent = progressItem.failedReason || (status === "failed" ? "当前片段生成失败，请修改提示词后重新生成。" : "修改提示词后保存，再提交当前片段生成。");
   const generate = $("#modernVideoQueueGenerate");
   if (generate) {
@@ -5789,14 +5788,12 @@ function renderModernVideoQueueInspector(data = state.project) {
 async function generateModernVideoQueueShot() {
   const shotName = state.selectedVideoShotName;
   if (!shotName) return;
-  const selectedModel = $("#modernVideoQueueModel")?.value || "";
   const draft = ensureVideoPromptDraft(shotName);
   if (draft.dirty) await saveVideoPrompt();
   const record = modernShotRecords(state.project).find((item) => item.name === shotName);
   const status = modernVideoQueueStatus(record);
-  const forceRegenerate = status === "complete" || status === "failed";
+  const forceRegenerate = !["running", "queued"].includes(status);
   if (forceRegenerate && !window.confirm(`重新生成“${shotName}”？这会消耗额度。`)) return;
-  if (selectedModel && $("#modernVideoQueueModel")) $("#modernVideoQueueModel").value = selectedModel;
   await saveVideoRetryModel();
   await generateVideoSegment(shotName, { forceRegenerate });
 }
@@ -6198,7 +6195,9 @@ async function saveVideoPrompt() {
 async function saveVideoRetryModel() {
   const shotName = state.selectedVideoShotName;
   const shot = videoPromptShot(shotName);
-  const input = $("#modernVideoQueueModel") || $("#videoPromptInspectorModel");
+  const input = document.body.classList.contains("is-studio-modern")
+    ? $("#modernParamModel")
+    : $("#videoPromptInspectorModel");
   if (!state.selectedId || !shotName || !shot || !input) return false;
   const modelName = normalizeVideoModelName(input.value);
   if (modelName === videoModelForShot(shot)) return false;
@@ -6217,7 +6216,7 @@ async function regenerateSelectedVideoFromInspector() {
   const draft = videoPromptDraft(shotName);
   if (!shotName || !draft) return;
   const progressItem = (state.project?.videoProgress?.items || []).find((item) => item.name === shotName);
-  if (progressItem?.status !== "failed") throw new Error("仅生成失败的片段可以切换模型重试");
+  if (["running", "queued"].includes(progressItem?.status)) throw new Error("当前片段正在生成，请等待完成后再重新生成");
   const confirmed = window.confirm(`重新提交“${shotName}”？这会消耗额度。`);
   if (!confirmed) return;
   if (draft.dirty) await saveVideoPrompt();
@@ -10069,11 +10068,15 @@ function bind() {
       refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
     });
   });
-  ["modernParamRatio", "modernParamResolution", "modernParamModel"].forEach((id) => {
+  ["modernParamRatio", "modernParamResolution"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernVideoParams("modern");
       refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
     });
+  });
+  $("#modernParamModel")?.addEventListener("change", () => {
+    syncModernVideoParams("modern");
+    saveVideoRetryModel().catch((error) => toast(error.message));
   });
   ["configDialectEnabled", "configDialectStyle"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {

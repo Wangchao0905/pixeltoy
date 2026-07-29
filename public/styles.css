@@ -17568,7 +17568,7 @@ body.is-studio-modern .modern-kit-bar { margin: 16px 26px 0; border-radius: 5px;
 .modern-video-queue-inspector-meta { display: flex; justify-content: space-between; gap: 10px; color: var(--mv-qt); font-family: var(--mono); font-size: 9.5px; }
 .modern-video-queue-inspector-meta span:first-child { color: var(--mv-mut); }
 .modern-video-queue-inspector-form > p { min-height: 16px; margin: 0; color: var(--mv-qt); font-size: 10px; line-height: 1.4; }
-.modern-video-queue-inspector-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+.modern-video-queue-inspector-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
 .modern-video-queue-inspector-actions button { min-height: 29px; padding: 0 10px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); font-size: 10.5px; cursor: pointer; }
 .modern-video-queue-inspector-actions button:hover:not(:disabled) { border-color: var(--mv-line-2); background: var(--mv-s2); color: var(--mv-tx); }
 .modern-video-queue-inspector-actions button.is-primary { border-color: var(--modern-signal); background: var(--modern-signal); color: #fff; box-shadow: 0 7px 20px -12px rgba(217,45,69,.9); }

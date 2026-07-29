@@ -15,6 +15,7 @@ assert.equal(typeof videoPrompt?.injectVideoDialectPrompt, "function");
 assert.equal(typeof videoPrompt?.normalizeVideoSfxStyle, "function");
 assert.equal(typeof videoPrompt?.videoSfxPromptDirective, "function");
 assert.equal(typeof videoPrompt?.injectVideoSfxPrompt, "function");
+assert.equal(typeof server.__test?.videoSettings?.applyVideoPromptDirectives, "function");
 
 for (const [id, options] of [
   ["configDialectEnabled", null],
@@ -33,6 +34,14 @@ for (const [id, options] of [
   }
 }
 assert.doesNotMatch(html, /搞笑无厘头/, "the visible SFX style list must use the shorter 搞笑 label");
+assert.ok(html.indexOf('id="configDialectStyle"') < html.indexOf('id="configSfxStyle"'), "legacy SFX controls must follow dialect controls");
+assert.ok(html.indexOf('id="modernDialectStyle"') < html.indexOf('id="modernSfxStyle"'), "modern SFX controls must follow dialect controls");
+assert.match(html, /class="video-setting-toggle"[\s\S]*id="configDialectEnabled"/, "legacy dialect must use the redesigned toggle button");
+assert.match(html, /class="video-setting-toggle"[\s\S]*id="configSfxEnabled"/, "legacy SFX must use the redesigned toggle button");
+assert.match(html, /class="modern-dialect-toggle"[\s\S]*id="modernDialectEnabled"/, "modern dialect must use the redesigned toggle button");
+assert.match(html, /class="modern-dialect-toggle"[\s\S]*id="modernSfxEnabled"/, "modern SFX must use the redesigned toggle button");
+assert.match(fs.readFileSync(new URL("public/styles.css", root), "utf8"), /\.video-setting-toggle input\s*\{[^}]*opacity:\s*0/);
+assert.match(fs.readFileSync(new URL("public/styles.css", root), "utf8"), /body\.is-studio-modern \.modern-dialect-toggle input\s*\{[^}]*opacity:\s*0/);
 
 assert.equal(videoPrompt.normalizeVideoDialectStyle(""), "none");
 assert.equal(videoPrompt.normalizeVideoDialectStyle("东北话"), "northeastern");
@@ -60,6 +69,18 @@ for (const [style, label] of [["mystery", "悬疑"], ["epic", "史诗"], ["palac
   assert.equal(videoPrompt.injectVideoSfxPrompt(prompt, style), prompt, "SFX directive must not duplicate");
 }
 assert.equal(videoPrompt.injectVideoSfxPrompt(sourcePrompt, "none"), sourcePrompt, "disabled SFX must not change the prompt");
+const styledPrompt = server.__test.videoSettings.applyVideoPromptDirectives(sourcePrompt, "northeastern", "comedy");
+assert.match(styledPrompt, /^声音设计风格：搞笑/);
+assert.match(styledPrompt, /方言对白风格：东北话/);
+assert.equal(
+  server.__test.videoSettings.applyVideoPromptDirectives(styledPrompt, "cantonese", "mystery").match(/^声音设计风格：([^\n]+)/)?.[1],
+  "悬疑",
+  "changing SFX must replace the previous directive instead of stacking it",
+);
+assert.match(
+  server.__test.videoSettings.applyVideoPromptDirectives(styledPrompt, "cantonese", "mystery"),
+  /方言对白风格：粤语/,
+);
 
 assert.match(app, /function selectedVideoDialectStyle\(/);
 assert.match(app, /dialectStyle:\s*selectedVideoDialectStyle\(\)/);
@@ -68,5 +89,9 @@ assert.match(app, /sfxStyle:\s*selectedVideoSfxStyle\(\)/);
 assert.match(app, /function hydrateConfigInputs[\s\S]*setVideoDialectControls\(/);
 assert.match(app, /function hydrateConfigInputs[\s\S]*setVideoSfxControls\(/);
 assert.match(fs.readFileSync(new URL("server.js", root), "utf8"), /injectVideoSfxPrompt\(injectVideoDialectPrompt\(shot\.prompt, requestedDialectStyle\), requestedSfxStyle\)/);
+assert.match(app, /generateVideoSegment\([\s\S]*sfxStyle: selectedVideoSfxStyle\(\)/);
+assert.match(app, /generateVideoConfigForSegment\([\s\S]*sfxStyle: selectedVideoSfxStyle\(\)/);
+assert.match(app, /video-generate-all[\s\S]*sfxStyle: selectedVideoSfxStyle\(\)/);
+assert.match(fs.readFileSync(new URL("server.js", root), "utf8"), /function buildVideoConfigForShot[\s\S]*nextShot.prompt = applyVideoPromptDirectives/);
 
 console.log("video dialect prompt tests passed");

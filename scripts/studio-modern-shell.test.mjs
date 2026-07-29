@@ -104,7 +104,7 @@ assert.match(modernCommandbarHtml, /class="modern-command-status"/, "command bar
 assert.match(modernCommandbarHtml, /id="modernSelectedShotTitle"[^>]*class="[^"]*modern-shot-title-compat/, "shot title must remain only as a hidden runtime compatibility node");
 assert.match(css, /body\.is-studio-modern \.modern-shot-title-compat,[\s\S]*display:\s*none/, "shot title must not occupy the command bar visually");
 assert.match(css, /body\.is-studio-modern \.modern-shot-commandbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\s+auto/, "command bar must use a compact four-part layout");
-assert.match(css, /body\.is-studio-modern \.modern-video-param-controls\s*\{[^}]*grid-template-columns:\s*minmax\(80px,\s*\.45fr\)/, "video params must use compact aligned control units");
+assert.match(css, /body\.is-studio-modern \.modern-video-param-controls\s*\{[^}]*grid-template-columns:\s*minmax\(72px,\s*\.42fr\)[^;]*minmax\(78px,\s*\.48fr\)[^;]*minmax\(150px,\s*1\.2fr\)[^;]*minmax\(142px,\s*\.95fr\)[^;]*minmax\(142px,\s*\.95fr\)/, "video params must use five compact aligned control units");
 const modernQueueStart = html.indexOf('<section id="modernVideoQueue"');
 assert.ok(modernQueueStart > modernCommandbarStart && modernQueueStart < modernStageStart, "video queue must sit directly below the command bar");
 assert.match(css, /\.modern-main\[data-modern-view="video"\] \.modern-stage-grid\s*\{[^}]*display:\s*none/, "video view must remove the standalone motion preview stage");
@@ -113,6 +113,10 @@ assert.doesNotMatch(html, /id="modernShotAction"/, "current-shot locator must be
 assert.doesNotMatch(html, /id="modernStillGenerate"/, "storyboard pane must not expose a generate-storyboard action");
 assert.doesNotMatch(js, /modernShotAction|modernStillGenerate/, "removed modern actions must not remain wired in runtime");
 assert.match(js, /function renderModernVideoQueue\([\s\S]*modernVideoQueueGrid/, "modern shell must render the video segment queue");
+assert.match(js, /generateVideoSegment\(shotName, \{ forceRegenerate \}\)/, "the bottom inspector must submit only the selected video segment");
+const modernQueueInspector = js.slice(js.indexOf("function renderModernVideoQueueInspector("), js.indexOf("async function generateModernVideoQueueShot("));
+assert.match(modernQueueInspector, /generate\.textContent = status === "complete" \|\| status === "failed" \? "重新生成当前片段" : "生成当前片段"/, "the bottom action must be labeled as a current-segment action");
+assert.match(js, /modernVideoGenerate[\s\S]*generateAllVideoSegments\(\)/, "the top action must keep the full-episode generation path");
 assert.match(js, /renderModernVideoQueue\(shots, selectedIndex, data\)/, "video segment queue must hydrate with all shot records");
 const modernQueueRenderer = js.slice(js.indexOf("function renderModernVideoQueue("), js.indexOf("function renderModernVideoQueueInspector("));
 assert.match(modernQueueRenderer, /reconcileKeyedCards\(node, specs, buildCard\)/, "video queue refreshes must reuse unchanged cards and media nodes");

@@ -63,5 +63,12 @@ const disabled = __test.videoSettings.updateVideoSettingsInConfig(next, { dialec
 assert.equal(disabled.dialectStyle, "none", "disabling dialect must clear the top-level setting");
 assert.equal(disabled.settings.dialectStyle, "none", "disabling dialect must clear the settings value");
 assert.equal(disabled.shots[0].prompt, "completed shot prompt", "disabling dialect must restore the underlying prompt");
+const sfxEnabled = __test.videoSettings.updateVideoSettingsInConfig(original, { sfxStyle: "comedy" });
+assert.equal(sfxEnabled.sfxStyle, "comedy", "the selected SFX style must be persisted");
+assert.equal(sfxEnabled.settings.sfxStyle, "comedy", "the selected SFX style must be persisted in settings");
+assert.match(sfxEnabled.shots[0].prompt, /^声音设计风格：搞笑/, "the selected SFX style must be injected into existing shot prompts");
+const sfxDisabled = __test.videoSettings.updateVideoSettingsInConfig(sfxEnabled, { sfxStyle: "none" });
+assert.equal(sfxDisabled.sfxStyle, "none", "disabling SFX must clear the top-level setting");
+assert.equal(sfxDisabled.shots[0].prompt, "completed shot prompt", "disabling SFX must restore the underlying prompt");
 
 console.log("video settings preservation tests passed");

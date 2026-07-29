@@ -5534,6 +5534,29 @@ function injectVideoSfxPrompt(prompt = "", style = "none") {
   return `${directive}\n\n${text}`.trim();
 }
 
+function stripVideoPromptDirectives(prompt = "") {
+  let text = String(prompt || "").trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const heading of ["方言对白风格：", "声音设计风格："]) {
+      if (!text.startsWith(heading)) continue;
+      const separator = text.indexOf("\n\n");
+      text = separator >= 0 ? text.slice(separator + 2).trim() : "";
+      changed = true;
+      break;
+    }
+  }
+  return text;
+}
+
+function applyVideoPromptDirectives(prompt = "", dialectStyle = "none", sfxStyle = "none") {
+  const basePrompt = stripVideoPromptDirectives(prompt);
+  return cleanVideoPromptForSubmission(
+    injectVideoSfxPrompt(injectVideoDialectPrompt(basePrompt, dialectStyle), sfxStyle),
+  );
+}
+
 function projectDialogueLanguage(episodeRoot, fallback = "en") {
   const config = readVideoConfig(episodeRoot)?.data;
   const manifest = readAssetManifest(episodeRoot)?.data;
@@ -15426,10 +15449,19 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     config = { ...(fallback?.config || config), shots: [shot] };
   }
   const tailFrameRequired = !isProductionBoardMode(config, shot);
-  const cleanedPrompt = cleanVideoPromptForSubmission(shot.prompt || shot.videoPrompt || "");
-  if (cleanedPrompt && cleanedPrompt !== shot.prompt) {
-    shot.prompt = cleanedPrompt;
-    writeVideoConfigRecord(configRecord, config);
+  const requestedDialectStyle = normalizeVideoDialectStyle(
+    body.dialectStyle || config.dialectStyle || config.settings?.dialectStyle || "none",
+  );
+  const requestedSfxStyle = normalizeVideoSfxStyle(
+    body.sfxStyle || config.sfxStyle || config.settings?.sfxStyle || "none",
+  );
+  const styledPrompt = applyVideoPromptDirectives(shot.prompt || shot.videoPrompt || "", requestedDialectStyle, requestedSfxStyle);
+  if (styledPrompt !== shot.prompt || config.dialectStyle !== requestedDialectStyle || config.sfxStyle !== requestedSfxStyle) {
+    shot.prompt = styledPrompt;
+    config.dialectStyle = requestedDialectStyle;
+    config.sfxStyle = requestedSfxStyle;
+    config.settings = { ...(config.settings || {}), dialectStyle: requestedDialectStyle, sfxStyle: requestedSfxStyle };
+    if (configRecord?.file) writeVideoConfigRecord(configRecord, config);
   }
   const runNamespace = currentRunNamespace(episodeRoot, config);
   const forceRegenerate = body.forceRegenerate === true || body.force === true;
@@ -20137,10 +20169,7 @@ function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
 }
 
 function stripVideoDialectPromptDirective(prompt = "") {
-  const text = String(prompt || "").trim();
-  if (!text.startsWith("方言对白风格：")) return text;
-  const separator = text.indexOf("\n\n");
-  return separator >= 0 ? text.slice(separator + 2).trim() : "";
+  return stripVideoPromptDirectives(prompt);
 }
 
 // 更新视频提交参数，但不重建配置运行空间。生成中的任务、已完成快照和画布视频节点必须继续沿用原身份。
@@ -20152,13 +20181,15 @@ function updateVideoSettingsInConfig(rawConfig = {}, body = {}) {
   const dialectStyle = normalizeVideoDialectStyle(
     body.dialectStyle ?? rawConfig.dialectStyle ?? previousSettings.dialectStyle ?? "none",
   );
+  const sfxStyle = normalizeVideoSfxStyle(
+    body.sfxStyle ?? rawConfig.sfxStyle ?? previousSettings.sfxStyle ?? "none",
+  );
   const shots = Array.isArray(rawConfig.shots)
     ? rawConfig.shots.map((shot) => {
         if (!shot || typeof shot !== "object") return shot;
         const hasPrompt = typeof shot.prompt === "string" || typeof shot.videoPrompt === "string";
         if (!hasPrompt) return { ...shot };
-        const basePrompt = stripVideoDialectPromptDirective(shot.prompt || shot.videoPrompt || "");
-        const nextPrompt = cleanVideoPromptForSubmission(injectVideoDialectPrompt(basePrompt, dialectStyle));
+        const nextPrompt = applyVideoPromptDirectives(shot.prompt || shot.videoPrompt || "", dialectStyle, sfxStyle);
         return {
           ...shot,
           ...(typeof shot.prompt === "string" ? { prompt: nextPrompt } : {}),
@@ -20170,12 +20201,14 @@ function updateVideoSettingsInConfig(rawConfig = {}, body = {}) {
     ...rawConfig,
     modelName,
     dialectStyle,
+    sfxStyle,
     settings: {
       ...previousSettings,
       modelName,
       ratio,
       resolution,
       dialectStyle,
+      sfxStyle,
     },
     shots,
     videoSettingsUpdatedAt: new Date().toISOString(),
@@ -21480,6 +21513,12 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     body.dialogueLanguage || previous.dialogueLanguage || previous.settings?.dialogueLanguage || manifest.dialogueLanguage || "",
     projectDialogueLanguage(episodeRoot, "en"),
   );
+  const requestedDialectStyle = normalizeVideoDialectStyle(
+    body.dialectStyle || previous.dialectStyle || previous.settings?.dialectStyle || "none",
+  );
+  const requestedSfxStyle = normalizeVideoSfxStyle(
+    body.sfxStyle || previous.sfxStyle || previous.settings?.sfxStyle || "none",
+  );
   const modelPlan = await ensureModelShotPlanForConfig(episodeRoot, {
     script,
     dialogueLanguage,
@@ -21543,9 +21582,18 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
       nextShot.continuityNote = continuityDecision.reason;
     }
   }
+  nextShot.prompt = applyVideoPromptDirectives(nextShot.prompt, requestedDialectStyle, requestedSfxStyle);
 
   const config = {
     ...previous,
+    dialectStyle: requestedDialectStyle,
+    sfxStyle: requestedSfxStyle,
+    settings: {
+      ...(previous.settings || {}),
+      dialogueLanguage: resolvedDialogueLanguage,
+      dialectStyle: requestedDialectStyle,
+      sfxStyle: requestedSfxStyle,
+    },
     shots: previousShots.map((shot, index) => (index === shotIndex ? nextShot : shot)),
     updatedAt: new Date().toISOString(),
     lastSingleShotConfig: {
@@ -23985,6 +24033,8 @@ module.exports = {
     videoSettings: {
       updateVideoSettingsInConfig,
       stripVideoDialectPromptDirective,
+      stripVideoPromptDirectives,
+      applyVideoPromptDirectives,
     },
     videoRetry: {
       updateVideoModelForShotInConfig,

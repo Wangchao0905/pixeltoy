@@ -5222,11 +5222,11 @@ function renderModernStudio(data = state.project) {
     const configGenerating = configButton?.dataset.studioFeedbackBusy === "true";
     const configMissing = Array.isArray(data.videoConfigStatus?.missing) ? data.videoConfigStatus.missing.filter(Boolean).join("、") : "";
     videoGenerateButton.disabled = configGenerating || videoRunning || !videoConfigAvailable;
-    videoGenerateButton.textContent = videoRunning ? "生成中..." : "生成视频";
+    videoGenerateButton.textContent = videoRunning ? "生成中..." : "生成全部视频";
     videoGenerateButton.title = videoRunning
-      ? "视频片段生成中"
+      ? "全部视频片段生成中"
       : videoConfigReady
-        ? "提交视频生成任务"
+        ? "提交全部视频片段生成任务"
         : videoConfigAvailable
           ? `配置已生成，但还缺：${configMissing || "参考图校验"}`
           : "请先生成视频配置";
@@ -5787,7 +5787,10 @@ function renderModernVideoQueueInspector(data = state.project) {
   const generate = $("#modernVideoQueueGenerate");
   if (generate) {
     generate.disabled = ["running", "queued"].includes(status);
-    generate.textContent = status === "complete" || status === "failed" ? "重新生成视频" : "生成视频";
+    generate.textContent = status === "complete" || status === "failed" ? "重新生成当前片段" : "生成当前片段";
+    generate.title = status === "complete" || status === "failed"
+      ? "只重新生成当前选中的视频片段"
+      : "只生成当前选中的视频片段";
   }
   const configButton = $("#modernVideoQueueConfig");
   if (configButton) {
@@ -8498,7 +8501,12 @@ async function generateVideoSegment(shotName = "", { forceRegenerate = false } =
   toast(userHasCanvasPermission() ? "已发送到画布并提交视频生成，留在操作台等待结果" : "已提交视频生成，留在操作台等待结果");
   const data = await api(`/api/project/${state.selectedId}/video-generate`, {
     method: "POST",
-    body: JSON.stringify({ shotName: cleanShotName, forceRegenerate }),
+    body: JSON.stringify({
+      shotName: cleanShotName,
+      forceRegenerate,
+      dialectStyle: selectedVideoDialectStyle(),
+      sfxStyle: selectedVideoSfxStyle(),
+    }),
   });
   setProjectState(data.state);
   renderWorkspace();
@@ -8517,6 +8525,8 @@ async function generateVideoConfigForSegment(shotName = "") {
       shotName: cleanShotName,
       dialogueLanguage: state.dialogueLanguage,
       assetAnalyzerModel: state.assetAnalyzerModel,
+      dialectStyle: selectedVideoDialectStyle(),
+      sfxStyle: selectedVideoSfxStyle(),
     }),
   });
   setProjectState(data.state);
@@ -8540,7 +8550,10 @@ async function generateAllVideoSegments() {
   toast(userHasCanvasPermission() ? "已发送全部片段到画布，正在启动顺序生成队列" : "正在启动顺序生成队列");
   const data = await api(`/api/project/${state.selectedId}/video-generate-all`, {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({
+      dialectStyle: selectedVideoDialectStyle(),
+      sfxStyle: selectedVideoSfxStyle(),
+    }),
   });
   setProjectState(data.state);
   renderWorkspace();
@@ -9219,7 +9232,7 @@ async function refreshVideoConfig({ silent } = { silent: false }) {
   }
 }
 
-async function saveVideoSettings({ silent = true, modelName = "", ratio = "", resolution = "", dialectStyle = "" } = {}) {
+async function saveVideoSettings({ silent = true, modelName = "", ratio = "", resolution = "", dialectStyle = "", sfxStyle = "" } = {}) {
   if (!state.selectedId) return;
   const existingConfig = videoConfigDataFromProject();
   if (!Array.isArray(existingConfig.shots) || !existingConfig.shots.length) {
@@ -9237,6 +9250,7 @@ async function saveVideoSettings({ silent = true, modelName = "", ratio = "", re
       resolution: globalResolution,
       ratio: globalRatio,
       dialectStyle: dialectStyle || selectedVideoDialectStyle(),
+      sfxStyle: sfxStyle || selectedVideoSfxStyle(),
     }),
   });
   setProjectState(data.state);
@@ -10198,13 +10212,13 @@ function bind() {
   ["configSfxEnabled", "configSfxStyle"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernSfxParams("legacy");
-      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+      saveVideoSettings({ silent: true }).catch((error) => toast(error.message));
     });
   });
   ["modernSfxEnabled", "modernSfxStyle"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernSfxParams("modern");
-      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+      saveVideoSettings({ silent: true }).catch((error) => toast(error.message));
     });
   });
 }

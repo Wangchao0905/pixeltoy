@@ -8958,6 +8958,9 @@ function finalCutJobKey(episodeRoot) {
 function finalCutOutputFile(episodeRoot) {
   return path.join(episodeRoot, FINAL_CUT_DIR, "rough_cut.mp4");
 }
+function finalCutManifestFile(episodeRoot) {
+  return path.join(episodeRoot, FINAL_CUT_DIR, "rough_cut.meta.json");
+}
 function ffprobeClipHasAudio(file) {
   try {
     const out = execFileSync("ffprobe", ["-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_type", "-of", "csv=p=0", file], { encoding: "utf8", timeout: 20000 });
@@ -9023,8 +9026,25 @@ function collectFinalCutClips(episodeRoot, config) {
   }
   return { clips, missing, total: shots.length };
 }
-function finalCutOutputIsCurrent({ outputMtime = 0, clips = [], missing = [], total = 0 } = {}) {
+function finalCutClipSignature(clips = []) {
+  return clips
+    .map((clip) => `${clip.name}:${clip.version || `${clip.mtimeMs || 0}:${clip.size || 0}`}`)
+    .sort()
+    .join("|");
+}
+function readFinalCutManifest(episodeRoot) {
+  const file = finalCutManifestFile(episodeRoot);
+  if (!fs.existsSync(file)) return null;
+  try {
+    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+    return data && typeof data.signature === "string" ? data : null;
+  } catch {
+    return null;
+  }
+}
+function finalCutOutputIsCurrent({ outputMtime = 0, outputSignature = "", clips = [], missing = [], total = 0 } = {}) {
   if (!Number(outputMtime) || !Number(total) || missing.length || clips.length !== Number(total)) return false;
+  if (outputSignature) return outputSignature === finalCutClipSignature(clips);
   return clips.every((clip) => Number(clip?.mtimeMs || 0) <= Number(outputMtime));
 }
 function finalCutStatus(episodeRoot) {
@@ -9034,7 +9054,14 @@ function finalCutStatus(episodeRoot) {
   const outputStat = exists ? fs.statSync(out) : null;
   const config = readVideoConfig(episodeRoot)?.data || {};
   const { clips, missing, total } = collectFinalCutClips(episodeRoot, config);
-  const outputCurrent = !!outputStat && finalCutOutputIsCurrent({ outputMtime: outputStat.mtimeMs, clips, missing, total });
+  const manifest = readFinalCutManifest(episodeRoot);
+  const outputCurrent = !!outputStat && finalCutOutputIsCurrent({
+    outputMtime: outputStat.mtimeMs,
+    outputSignature: manifest?.signature || "",
+    clips,
+    missing,
+    total,
+  });
   const stale = exists && !outputCurrent;
   let output = null;
   if (outputCurrent) {
@@ -9102,12 +9129,28 @@ async function runFinalCutAssembly(episodeRoot, job) {
     if (fs.existsSync(out)) {
       const archive = path.join(episodeRoot, FINAL_CUT_DIR, "archive");
       fs.mkdirSync(archive, { recursive: true });
+      const archiveStamp = Date.now();
       try {
-        fs.renameSync(out, path.join(archive, `rough_cut_${Date.now()}.mp4`));
+        fs.renameSync(out, path.join(archive, `rough_cut_${archiveStamp}.mp4`));
       } catch {}
+      const manifest = finalCutManifestFile(episodeRoot);
+      if (fs.existsSync(manifest)) {
+        try {
+          fs.renameSync(manifest, path.join(archive, `rough_cut_${archiveStamp}.meta.json`));
+        } catch {}
+      }
     }
     await runFfmpegAssembly(["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", "-movflags", "+faststart", out]);
     if (!fs.existsSync(out) || fs.statSync(out).size < 1024) throw new Error("成片输出为空，拼接失败");
+    const manifest = finalCutManifestFile(episodeRoot);
+    const manifestTemp = path.join(tmpDir, "rough_cut.meta.json");
+    fs.writeFileSync(manifestTemp, `${JSON.stringify({
+      version: 1,
+      signature: finalCutClipSignature(clips),
+      clips: clips.map(({ name, version, mtimeMs, size }) => ({ name, version, mtimeMs, size })),
+      assembledAt: new Date().toISOString(),
+    }, null, 2)}\n`, "utf8");
+    fs.renameSync(manifestTemp, manifest);
     job.done = clips.length;
     job.progress = 100;
     job.status = "ready";
@@ -9139,7 +9182,7 @@ function startFinalCutAssembly(episodeRoot) {
   return { running: true, total: clips.length, message: "已开始组装成片" };
 }
 
-// 自动成片:全部片段就绪后自动触发组装,无需手动点击。用"片段集签名"(名字+mtime)守卫,
+// 自动成片:全部片段就绪后自动触发组装,无需手动点击。用"片段集签名"守卫,
 // 同一套片段只自动拼一次;某片段重生成(签名变化)才自动重拼;已在组装或成片已比片段新则跳过。
 const autoFinalCutSignatures = new Map();
 function maybeAutoAssembleFinalCut(episodeRoot) {
@@ -9149,14 +9192,12 @@ function maybeAutoAssembleFinalCut(episodeRoot) {
     if (!total || missing.length || clips.length !== total) return; // 尚未全部完成
     const key = finalCutJobKey(episodeRoot);
     if (finalCutJobs.get(key)?.running) return; // 正在组装
-    const signature = clips
-      .map((clip) => `${clip.name}:${clip.version || `${clip.mtimeMs}:${clip.size}`}`)
-      .sort()
-      .join("|");
+    const signature = finalCutClipSignature(clips);
     if (autoFinalCutSignatures.get(key) === signature) return; // 这套片段已自动拼过
     const out = finalCutOutputFile(episodeRoot);
     const outMtime = fs.existsSync(out) ? fs.statSync(out).mtimeMs : 0;
-    if (finalCutOutputIsCurrent({ outputMtime: outMtime, clips, missing, total })) return;
+    const manifest = readFinalCutManifest(episodeRoot);
+    if (finalCutOutputIsCurrent({ outputMtime: outMtime, outputSignature: manifest?.signature || "", clips, missing, total })) return;
     autoFinalCutSignatures.set(key, signature);
     startFinalCutAssembly(episodeRoot);
   } catch {
@@ -24057,6 +24098,7 @@ module.exports = {
       applyVideoPromptDirectives,
     },
     finalCut: {
+      finalCutClipSignature,
       finalCutOutputIsCurrent,
       finalCutStatus,
     },

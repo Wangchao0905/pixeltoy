@@ -15,12 +15,12 @@ assert.match(app, /\/video-settings/, "client must persist lightweight video set
 assert.match(app, /function saveVideoSettings\(/, "client must have a lightweight settings saver");
 assert.match(
   app,
-  /\["configRatio", "configResolution", "configModel"\][\s\S]*?saveVideoSettings\(\)/,
+  /\["configRatio", "configResolution", "configModel"\][\s\S]*?saveVideoSettings\(\{/,
   "legacy model and format controls must not rebuild the full video config",
 );
 assert.match(
   app,
-  /\["configDialectEnabled", "configDialectStyle"\][\s\S]*?saveVideoSettings\(\)/,
+  /\["configDialectEnabled", "configDialectStyle"\][\s\S]*?saveVideoSettings\(\{ dialectStyle: selectedVideoDialectStyle\(\) \}\)/,
   "legacy dialect controls must not rebuild the full video config",
 );
 

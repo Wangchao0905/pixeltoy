@@ -9207,7 +9207,7 @@ async function refreshVideoConfig({ silent } = { silent: false }) {
   }
 }
 
-async function saveVideoSettings({ silent = true } = {}) {
+async function saveVideoSettings({ silent = true, modelName = "", ratio = "", resolution = "", dialectStyle = "" } = {}) {
   if (!state.selectedId) return;
   const existingConfig = videoConfigDataFromProject();
   if (!Array.isArray(existingConfig.shots) || !existingConfig.shots.length) {
@@ -9215,16 +9215,16 @@ async function saveVideoSettings({ silent = true } = {}) {
     return;
   }
   const project = state.project?.project || {};
-  const modelInput = $("#modernParamModel") || $("#configModel");
-  const resolutionInput = $("#modernParamResolution") || $("#configResolution");
-  const ratioInput = $("#modernParamRatio") || $("#configRatio");
+  const globalModel = modelName || existingConfig.modelName || $("#configModel")?.value || project.model || "seedance-2-0-fast";
+  const globalResolution = resolution || existingConfig.settings?.resolution || $("#configResolution")?.value || "480p";
+  const globalRatio = ratio || existingConfig.settings?.ratio || $("#configRatio")?.value || "9:16";
   const data = await api(`/api/project/${state.selectedId}/video-settings`, {
     method: "POST",
     body: JSON.stringify({
-      modelName: normalizeVideoModelName(modelInput?.value || project.model),
-      resolution: resolutionInput?.value || "480p",
-      ratio: ratioInput?.value || "9:16",
-      dialectStyle: selectedVideoDialectStyle(),
+      modelName: normalizeVideoModelName(globalModel),
+      resolution: globalResolution,
+      ratio: globalRatio,
+      dialectStyle: dialectStyle || selectedVideoDialectStyle(),
     }),
   });
   setProjectState(data.state);
@@ -10146,13 +10146,20 @@ function bind() {
   ["configRatio", "configResolution", "configModel"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernVideoParams("legacy");
-      saveVideoSettings().catch((error) => toast(error.message));
+      saveVideoSettings({
+        modelName: id === "configModel" ? $("#configModel")?.value : "",
+        ratio: id === "configRatio" ? $("#configRatio")?.value : "",
+        resolution: id === "configResolution" ? $("#configResolution")?.value : "",
+      }).catch((error) => toast(error.message));
     });
   });
   ["modernParamRatio", "modernParamResolution"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernVideoParams("modern");
-      saveVideoSettings().catch((error) => toast(error.message));
+      saveVideoSettings({
+        ratio: id === "modernParamRatio" ? $("#modernParamRatio")?.value : "",
+        resolution: id === "modernParamResolution" ? $("#modernParamResolution")?.value : "",
+      }).catch((error) => toast(error.message));
     });
   });
   $("#modernParamModel")?.addEventListener("change", () => {
@@ -10162,13 +10169,13 @@ function bind() {
   ["configDialectEnabled", "configDialectStyle"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernDialectParams("legacy");
-      saveVideoSettings().catch((error) => toast(error.message));
+      saveVideoSettings({ dialectStyle: selectedVideoDialectStyle() }).catch((error) => toast(error.message));
     });
   });
   ["modernDialectEnabled", "modernDialectStyle"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernDialectParams("modern");
-      saveVideoSettings().catch((error) => toast(error.message));
+      saveVideoSettings({ dialectStyle: selectedVideoDialectStyle() }).catch((error) => toast(error.message));
     });
   });
   ["configSfxEnabled", "configSfxStyle"].forEach((id) => {

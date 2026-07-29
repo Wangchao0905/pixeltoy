@@ -5512,22 +5512,28 @@ function canvasAgentReferenceFromDataTransfer(dataTransfer) {
     : null;
 }
 
-function addCanvasAgentAttachment(image) {
+function addCanvasAgentAttachment(image, options = {}) {
   const url = String(image?.url || "").trim();
-  if (!url || isVideoAsset(image)) return false;
+  const preview = String(image?.preview || image?.previewUrl || url).trim();
+  if ((!url && !preview) || isVideoAsset(image)) return false;
   if (canvasState.canvasAgentAttachments.length >= CANVAS_AGENT_MAX_ATTACHMENTS) {
     toast(`Canvas Agent 单次最多引用 ${CANVAS_AGENT_MAX_ATTACHMENTS} 张图片`);
     return false;
   }
-  if (canvasState.canvasAgentAttachments.some((item) => item.url === url)) return false;
+  if (url && canvasState.canvasAgentAttachments.some((item) => item.url === url)) return false;
+  const id = String(image?.id || options.id || `canvas_agent_ref_${Date.now()}_${canvasState.canvasAgentAttachments.length}`);
+  if (canvasState.canvasAgentAttachments.some((item) => item.id === id)) return false;
   canvasState.canvasAgentAttachments.push({
+    id,
     url,
-    preview: String(image.preview || image.previewUrl || url),
+    preview,
     name: String(image.name || "未命名图片").trim() || "未命名图片",
     source: String(image.source || "conversation").trim() || "conversation",
+    uploading: image.uploading === true,
+    uploadError: String(image.uploadError || "").trim(),
   });
   renderCanvasAgentAttachments();
-  canvasAgentSetStatus(`已添加参考图：${image.name || "图片"}`, false);
+  if (!options.silent) canvasAgentSetStatus(`已添加参考图：${image.name || "图片"}`, false);
   return true;
 }
 
@@ -5538,10 +5544,14 @@ function renderCanvasAgentAttachments() {
   canvasState.canvasAgentAttachments.forEach((image, index) => {
     const chip = document.createElement("div");
     chip.className = "canvas-agent-attachment";
+    chip.dataset.uploading = image.uploading ? "true" : "false";
+    chip.dataset.error = image.uploadError ? "true" : "false";
+    chip.title = image.uploadError || (image.uploading ? "正在上传参考图" : image.name);
     const preview = document.createElement("img");
     preview.src = image.preview || image.url;
     preview.alt = image.name;
-    preview.loading = "lazy";
+    preview.loading = "eager";
+    preview.decoding = "async";
     const label = document.createElement("span");
     label.textContent = image.name;
     const remove = document.createElement("button");
@@ -5549,6 +5559,7 @@ function renderCanvasAgentAttachments() {
     remove.textContent = "×";
     remove.setAttribute("aria-label", `移除 ${image.name}`);
     remove.addEventListener("click", () => {
+      if (/^blob:/i.test(image.preview || "")) URL.revokeObjectURL(image.preview);
       canvasState.canvasAgentAttachments.splice(index, 1);
       renderCanvasAgentAttachments();
     });
@@ -5560,27 +5571,57 @@ function renderCanvasAgentAttachments() {
 async function uploadCanvasAgentImages(files) {
   const list = [...(files || [])].filter((file) => /^image\/(png|jpeg|jpg|webp)$/i.test(file.type));
   if (!list.length) return;
+  const jobs = [];
   for (const file of list) {
     if (file.size > 8 * 1024 * 1024) {
       toast(`「${file.name}」超过 8MB，已跳过`);
       continue;
     }
+    const previewUrl = URL.createObjectURL(file);
+    const attachment = {
+      id: `canvas_agent_upload_${Date.now()}_${jobs.length}`,
+      url: "",
+      preview: previewUrl,
+      name: file.name,
+      source: "local",
+      uploading: true,
+      uploadError: "",
+    };
+    if (canvasState.canvasAgentAttachments.length >= CANVAS_AGENT_MAX_ATTACHMENTS) {
+      URL.revokeObjectURL(previewUrl);
+      toast(`Canvas Agent 单次最多引用 ${CANVAS_AGENT_MAX_ATTACHMENTS} 张图片`);
+      break;
+    }
+    canvasState.canvasAgentAttachments.push(attachment);
+    jobs.push({ file, attachment, previewUrl });
+  }
+  if (!jobs.length) return;
+  renderCanvasAgentAttachments();
+  canvasAgentSetStatus(`正在上传 ${jobs.length} 张参考图…`, true);
+  await Promise.all(jobs.map(async ({ file, attachment, previewUrl }) => {
     try {
-      canvasAgentSetStatus(`正在上传：${file.name}`, true);
       const dataUrl = await fileToDataUrl(file);
       const data = await api("/api/canvas/public-assets", {
         method: "POST",
-        body: JSON.stringify({ name: file.name, dataUrl }),
+        body: JSON.stringify({ name: file.name, dataUrl, localOnly: true }),
       });
       const result = data.result || {};
       const url = result.url || result.publicUrl || result.localUrl || "";
       if (!url) throw new Error("上传没有返回图片地址");
-      addCanvasAgentAttachment({ url, preview: result.localUrl || url, name: file.name, source: "local" });
+      attachment.url = url;
+      attachment.preview = result.localUrl || url;
+      attachment.uploading = false;
+      if (attachment.preview !== previewUrl) URL.revokeObjectURL(previewUrl);
     } catch (error) {
-      toast(`「${file.name}」上传失败：${error.message}`);
+      attachment.uploading = false;
+      attachment.uploadError = error.message || "上传失败";
+      toast(`「${file.name}」上传失败：${attachment.uploadError}`);
+    } finally {
+      renderCanvasAgentAttachments();
     }
-  }
-  canvasAgentSetStatus("就绪，可操作当前画布", false);
+  }));
+  const failed = canvasState.canvasAgentAttachments.filter((item) => item.uploadError).length;
+  canvasAgentSetStatus(failed ? `${failed} 张参考图上传失败，请移除后重试` : "就绪，可操作当前画布", false);
 }
 
 function canvasAgentConversationImages() {
@@ -5836,7 +5877,19 @@ async function submitCanvasAgentMessage(prompt) {
     return;
   }
   const text = String(prompt || "").trim();
-  const images = canvasState.canvasAgentAttachments.slice();
+  const pending = canvasState.canvasAgentAttachments.filter((item) => item.uploading);
+  if (pending.length) {
+    canvasAgentSetStatus("参考图仍在上传，请稍候", true);
+    toast("参考图仍在上传，请稍候");
+    return;
+  }
+  const failed = canvasState.canvasAgentAttachments.filter((item) => item.uploadError);
+  if (failed.length) {
+    canvasAgentSetStatus("有参考图上传失败，请移除后重试", false);
+    toast("有参考图上传失败，请移除后重试");
+    return;
+  }
+  const images = canvasState.canvasAgentAttachments.filter((item) => item.url);
   if (!text && !images.length) return;
   const model = CANVAS_AGENT_MODELS.has(canvasState.canvasAgentModel) ? canvasState.canvasAgentModel : CANVAS_AGENT_DEFAULT_MODEL;
   const userMessage = { role: "user", content: text, images };

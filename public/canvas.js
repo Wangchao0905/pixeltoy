@@ -8,6 +8,7 @@ const DEFAULT_CHANNEL_ID = "81";
 const LAST_PROJECT_ID_KEY = "pixelToys.canvasProjectId";
 const CANVAS_AGENT_DEFAULT_MODEL = "claude-opus-5";
 const CANVAS_AGENT_MODELS = new Set(["claude-opus-5", "gpt-5.6-sol", "grok-4.5"]);
+const CANVAS_AGENT_MAX_ATTACHMENTS = 8;
 
 function rememberedChannelId() {
   try {

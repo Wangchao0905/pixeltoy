@@ -18,6 +18,7 @@ assert.match(canvas, /conversationImages:\s*canvasAgentConversationImages\(\)/);
 assert.match(canvas, /application\/x-pixel-toys-canvas-agent-image/);
 assert.match(canvas, /function ensureCanvasAgentReferenceAsset/);
 assert.match(canvas, /referenceImages/);
+assert.match(canvas, /const CANVAS_AGENT_MAX_ATTACHMENTS = 8/);
 assert.match(canvas, /URL\.createObjectURL\(file\)/, "Canvas Agent 必须先使用本地 blob 显示即时预览");
 assert.match(canvas, /Promise\.all\(jobs\.map/, "Canvas Agent 图片上传必须并行执行");
 assert.match(canvas, /localOnly: true/, "Canvas Agent 参考图上传应先走本地快速存储");

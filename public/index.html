@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=navigation-performance-20260728" />
+    <link rel="stylesheet" href="/styles.css?v=dialogue-language-tabs-20260729" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -993,7 +993,13 @@
           <section id="modernSourcePanel" class="modern-source-panel" aria-label="剧本与资产文档">
             <header class="modern-source-head">
               <div><span class="modern-eyebrow">INPUT SOURCES</span><strong>剧本与资产描述</strong><small>先提供剧情，再用独立资产文档锁定人物、场景和道具。</small></div>
-              <span class="modern-source-order">01 / 02</span>
+              <div class="modern-source-head-aside">
+                <div id="modernDialogueLanguage" class="modern-lang-tabs" role="radiogroup" aria-label="对白语言">
+                  <button type="button" role="radio" data-dialogue-language="zh" aria-checked="false">中文对白</button>
+                  <button type="button" role="radio" data-dialogue-language="en" aria-checked="false">英文对白</button>
+                </div>
+                <span class="modern-source-order">01 / 02</span>
+              </div>
             </header>
             <div class="modern-source-grid">
               <section class="modern-source-field" aria-labelledby="modernScriptSourceTitle">
@@ -1336,6 +1342,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=navigation-performance-20260728"></script>
+    <script src="/app.js?v=dialogue-language-tabs-20260729"></script>
   </body>
 </html>

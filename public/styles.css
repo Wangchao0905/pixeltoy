@@ -16578,6 +16578,15 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-source-head strong { font-size: 15px; }
 .modern-source-head small { color: var(--modern-muted); font-size: 11px; }
 .modern-source-order { color: var(--mv-qt); font-family: var(--mono); font-size: 11px; }
+/* 对白语言选择:改版时漏搬的旧控件。沿用 .modern-copy-tabs 的分段按钮观感。
+   父选择器要用 .modern-source-head > .modern-source-head-aside,否则被上面
+   .modern-source-head > div { display: grid } 按特异度盖掉,布局只是碰巧成立。 */
+.modern-source-head > .modern-source-head-aside { display: flex; flex: none; gap: 10px; align-items: center; }
+.modern-lang-tabs { display: flex; gap: 5px; }
+.modern-lang-tabs button { min-height: 26px; padding: 0 9px; border: 1px solid var(--modern-line); border-radius: 3px; background: transparent; color: var(--modern-quiet); font-size: 11px; }
+.modern-lang-tabs button:hover:not(:disabled) { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
+.modern-lang-tabs button[aria-checked="true"] { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); box-shadow: var(--mv-hi); }
+.modern-lang-tabs button:disabled { opacity: .5; cursor: not-allowed; }
 .modern-source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; }
 .modern-source-field { min-width: 0; padding: 13px 14px 12px; }
 .modern-source-field + .modern-source-field { border-left: 1px solid var(--modern-line); }

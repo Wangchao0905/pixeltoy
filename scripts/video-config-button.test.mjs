@@ -26,6 +26,8 @@ function extractFunction(source, signature) {
 class FakeElement {
   constructor(id) {
     this.id = id;
+    this.type = id.toLowerCase().includes("enabled") ? "checkbox" : "select";
+    this.checked = false;
     this.value = "";
     this.listeners = new Map();
   }
@@ -36,7 +38,7 @@ class FakeElement {
 }
 
 const elements = new Map(
-  ["buildConfigBtn", "seedanceText", "configGroup", "configModel", "configResolution", "configRatio", "configPromptMode", "modernParamModel", "modernParamResolution", "modernParamRatio"].map(
+  ["buildConfigBtn", "seedanceText", "configGroup", "configModel", "configResolution", "configRatio", "configPromptMode", "configDialectEnabled", "configDialectStyle", "modernDialectEnabled", "modernDialectStyle", "modernParamModel", "modernParamResolution", "modernParamRatio"].map(
     (id) => [id, new FakeElement(id)],
   ),
 );
@@ -54,6 +56,7 @@ const localStorage = {
 };
 const context = {
   console,
+  VIDEO_DIALECT_STYLE_OPTIONS: ["northeastern", "sichuan", "cantonese"],
   document: {
     querySelector(selector) {
       return selector.startsWith("#") ? elements.get(selector.slice(1)) || null : null;
@@ -100,6 +103,11 @@ for (const signature of [
   "async function refreshVideoConfig(",
   "async function buildConfig(",
   "function syncModernVideoParams(",
+  "function normalizeVideoDialectStyle(",
+  "function syncModernDialectParams(",
+  "function syncDialectControlAvailability(",
+  "function setVideoDialectControls(",
+  "function selectedVideoDialectStyle(",
   "function hydrateConfigInputs(",
 ]) {
   vm.runInContext(extractFunction(app, signature), context, { filename: "public/app.js" });
@@ -137,6 +145,7 @@ assert.equal(requestLog[1]?.path, "/api/project/p1/config", "click must submit t
 assert.equal(requestLog[1]?.body.promptMode, "prompt", "normal storyboard prompt flow must not silently enable Production Board");
 assert.equal(requestLog[1]?.body.enableStoryboards, false, "normal storyboard prompt flow must not require a Production Board");
 assert.equal(requestLog[1]?.body.tailFrameContinuity, true, "normal storyboard prompt flow must keep tail-frame continuity enabled");
+assert.equal(requestLog[1]?.body.dialectStyle, "none", "video config must keep dialect disabled by default");
 assert.deepEqual(toastLog, ["视频配置已生成，可提交"], "a successful click must report completion");
 assert.deepEqual(workflowFocusLog, ["script"], "a completed video config must return the workflow guide to the next script");
 

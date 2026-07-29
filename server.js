@@ -5418,6 +5418,42 @@ function normalizeDialogueLanguage(value, fallback = "en") {
   return fallback === "zh" ? "zh" : "en";
 }
 
+const VIDEO_DIALECT_STYLE_LABELS = Object.freeze({
+  northeastern: "东北话",
+  sichuan: "四川话",
+  cantonese: "粤语",
+});
+
+function normalizeVideoDialectStyle(value, fallback = "none") {
+  const raw = compactLine(value);
+  const key = raw.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(VIDEO_DIALECT_STYLE_LABELS, key)) return key;
+  if (["东北话", "东北方言"].includes(raw)) return "northeastern";
+  if (["四川话", "四川方言"].includes(raw)) return "sichuan";
+  if (["粤语", "广东话"].includes(raw)) return "cantonese";
+  return fallback === "none" ? "none" : "northeastern";
+}
+
+function videoDialectPromptDirective(style = "none") {
+  const key = normalizeVideoDialectStyle(style);
+  const label = VIDEO_DIALECT_STYLE_LABELS[key];
+  if (!label) return "";
+  const guidance = {
+    northeastern: "对白使用自然的东北话口语表达，带东北地区真实语气、节奏和生活化措辞；保留角色原意，不要堆砌方言词，不要夸张成相声表演。",
+    sichuan: "对白使用自然的四川话口语表达，带四川地区真实语气、节奏和生活化措辞；保留角色原意，不要堆砌方言词，不要夸张成表演腔。",
+    cantonese: "对白使用自然的粤语口语表达，使用符合粤语口语习惯的词汇、语气和节奏；保留角色原意，不要写成普通话直译腔。",
+  }[key];
+  return `方言对白风格：${label}\n${guidance}\n人物对白、旁白和 OS 均按该方言的语气与节奏呈现，口型、表情和表演与台词同步。`;
+}
+
+function injectVideoDialectPrompt(prompt = "", style = "none") {
+  const raw = String(prompt || "");
+  const text = raw.trim();
+  const directive = videoDialectPromptDirective(style);
+  if (!directive || text.includes("方言对白风格：")) return raw;
+  return `${directive}\n\n${text}`.trim();
+}
+
 function projectDialogueLanguage(episodeRoot, fallback = "en") {
   const config = readVideoConfig(episodeRoot)?.data;
   const manifest = readAssetManifest(episodeRoot)?.data;
@@ -20981,6 +21017,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     body.dialogueLanguage || currentConfig.dialogueLanguage || currentConfig.settings?.dialogueLanguage || currentManifest.dialogueLanguage || currentManifest.production?.dialogueLanguage || "",
     projectDialogueLanguage(episodeRoot, "en"),
   );
+  const requestedDialectStyle = normalizeVideoDialectStyle(
+    body.dialectStyle || currentConfig.dialectStyle || currentConfig.settings?.dialectStyle || "none",
+  );
   const requestedDurationMode = persistProjectDurationMode(
     episodeRoot,
     body.durationMode || projectDurationMode(episodeRoot),
@@ -21144,6 +21183,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
       shot.prompt = storyboardSeedancePrompt(shot, index, dialogueLanguage);
     }
   });
+  shots.forEach((shot) => {
+    shot.prompt = cleanVideoPromptForSubmission(injectVideoDialectPrompt(shot.prompt, requestedDialectStyle));
+  });
   const storyboardsAttached = storyboardsActive && storyboardRecords.length > 0;
   shots.forEach((shot, index) => {
     const continuityDecision =
@@ -21192,11 +21234,13 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     modelName: normalizeVideoConfigModelName(body.modelName || previous.modelName || DEFAULT_VIDEO_CONFIG_MODEL),
     modelAliases: previous.modelAliases || [DEFAULT_VIDEO_CONFIG_MODEL],
     dialogueLanguage,
+    dialectStyle: requestedDialectStyle,
     durationMode: requestedDurationMode,
     settings: {
       ratio: body.ratio || previous.settings?.ratio || "9:16",
       resolution: body.resolution || previous.settings?.resolution || "480p",
       dialogueLanguage,
+      dialectStyle: requestedDialectStyle,
       durationMode: requestedDurationMode,
       enableSound: previous.settings?.enableSound || "on",
       count: Number(previous.settings?.count || 1),
@@ -23667,6 +23711,9 @@ module.exports = {
     },
     videoPrompt: {
       updateVideoPromptInConfig,
+      normalizeVideoDialectStyle,
+      videoDialectPromptDirective,
+      injectVideoDialectPrompt,
     },
     videoRetry: {
       updateVideoModelForShotInConfig,

@@ -5879,6 +5879,56 @@ function syncModernVideoParams(source = "legacy") {
   });
 }
 
+const VIDEO_DIALECT_STYLE_OPTIONS = ["northeastern", "sichuan", "cantonese"];
+
+function normalizeVideoDialectStyle(value, fallback = "none") {
+  const key = String(value || "").trim().toLowerCase();
+  if (VIDEO_DIALECT_STYLE_OPTIONS.includes(key)) return key;
+  return fallback === "none" ? "none" : "northeastern";
+}
+
+function syncDialectControlAvailability() {
+  [["configDialectEnabled", "configDialectStyle"], ["modernDialectEnabled", "modernDialectStyle"]].forEach(([enabledId, styleId]) => {
+    const enabled = $(`#${enabledId}`);
+    const select = $(`#${styleId}`);
+    if (select) select.disabled = !enabled?.checked;
+  });
+}
+
+function syncModernDialectParams(source = "legacy") {
+  [["modernDialectEnabled", "configDialectEnabled"], ["modernDialectStyle", "configDialectStyle"]].forEach(([modernId, legacyId]) => {
+    const modern = $(`#${modernId}`);
+    const legacy = $(`#${legacyId}`);
+    if (!modern || !legacy) return;
+    const from = source === "modern" ? modern : legacy;
+    const to = source === "modern" ? legacy : modern;
+    if (from.type === "checkbox") to.checked = from.checked;
+    else if (from.value) to.value = from.value;
+  });
+  syncDialectControlAvailability();
+}
+
+function setVideoDialectControls(style = "none") {
+  const normalized = normalizeVideoDialectStyle(style);
+  const enabled = normalized !== "none";
+  ["config", "modern"].forEach((prefix) => {
+    const toggle = $(`#${prefix}DialectEnabled`);
+    const select = $(`#${prefix}DialectStyle`);
+    if (toggle) toggle.checked = enabled;
+    if (select) select.value = enabled ? normalized : "northeastern";
+  });
+  syncModernDialectParams("legacy");
+}
+
+function selectedVideoDialectStyle() {
+  const modernMode = document.body?.classList?.contains("is-studio-modern");
+  const prefix = modernMode ? "modern" : "config";
+  const enabled = $(`#${prefix}DialectEnabled`);
+  const select = $(`#${prefix}DialectStyle`);
+  if (!enabled || !select || !enabled.checked) return "none";
+  return normalizeVideoDialectStyle(select.value);
+}
+
 function hydrateConfigInputs(configText) {
   try {
     const config = JSON.parse(configText);
@@ -5894,12 +5944,14 @@ function hydrateConfigInputs(configText) {
     $("#configResolution").value = settings.resolution || "480p";
     $("#configRatio").value = settings.ratio || "9:16";
     $("#configPromptMode").value = hasProductionBoardConfig ? "production_board" : "prompt";
+    setVideoDialectControls(settings.dialectStyle || config.dialectStyle || "none");
   } catch {
     $("#configGroup").value = "";
     $("#configModel").value = "seedance-2-0-fast";
     $("#configResolution").value = "480p";
     $("#configRatio").value = "9:16";
     $("#configPromptMode").value = "prompt";
+    setVideoDialectControls("none");
   }
   syncModernVideoParams("legacy");
 }
@@ -9037,6 +9089,7 @@ async function refreshVideoConfig({ silent } = { silent: false }) {
       promptMode: $("#configPromptMode")?.value || "prompt",
       assetAnalyzerModel: state.assetAnalyzerModel,
       dialogueLanguage: state.dialogueLanguage,
+      dialectStyle: selectedVideoDialectStyle(),
       durationMode: state.durationMode,
       enableStoryboards: ($("#configPromptMode")?.value || "prompt") === "production_board",
       tailFrameContinuity: ($("#configPromptMode")?.value || "prompt") !== "production_board",
@@ -9956,6 +10009,18 @@ function bind() {
   ["modernParamRatio", "modernParamResolution", "modernParamModel"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernVideoParams("modern");
+      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+    });
+  });
+  ["configDialectEnabled", "configDialectStyle"].forEach((id) => {
+    $(`#${id}`)?.addEventListener("change", () => {
+      syncModernDialectParams("legacy");
+      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+    });
+  });
+  ["modernDialectEnabled", "modernDialectStyle"].forEach((id) => {
+    $(`#${id}`)?.addEventListener("change", () => {
+      syncModernDialectParams("modern");
       refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
     });
   });

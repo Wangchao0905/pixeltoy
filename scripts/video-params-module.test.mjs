@@ -46,6 +46,8 @@ function extractFunction(source, signature) {
 class FakeElement {
   constructor(id) {
     this.id = id;
+    this.type = id.toLowerCase().includes("enabled") ? "checkbox" : "select";
+    this.checked = false;
     this.value = "";
     this.listeners = new Map();
   }
@@ -64,11 +66,16 @@ const ids = [
   "configResolution",
   "configRatio",
   "configPromptMode",
+  "configDialectEnabled",
+  "configDialectStyle",
+  "modernDialectEnabled",
+  "modernDialectStyle",
 ];
 const elements = new Map(ids.map((id) => [id, new FakeElement(id)]));
 const requestLog = [];
 const context = {
   console,
+  VIDEO_DIALECT_STYLE_OPTIONS: ["northeastern", "sichuan", "cantonese"],
   VIDEO_MODEL_OPTIONS: {
     "seedance-2-0": "Seedance 2.0",
     "seedance-2-0-fast": "Seedance 2.0 Fast",
@@ -100,7 +107,16 @@ const context = {
   $: (selector) => context.document.querySelector(selector),
 };
 vm.createContext(context);
-for (const signature of ["function syncModernVideoParams(", "function hydrateConfigInputs(", "async function refreshVideoConfig("]) {
+for (const signature of [
+  "function syncModernVideoParams(",
+  "function normalizeVideoDialectStyle(",
+  "function syncModernDialectParams(",
+  "function syncDialectControlAvailability(",
+  "function setVideoDialectControls(",
+  "function selectedVideoDialectStyle(",
+  "function hydrateConfigInputs(",
+  "async function refreshVideoConfig(",
+]) {
   vm.runInContext(extractFunction(app, signature), context, { filename: "public/app.js" });
 }
 vm.runInContext(extractFunction(app, "function normalizeVideoModelName("), context, { filename: "public/app.js" });
@@ -123,6 +139,10 @@ vm.runInContext(
   'hydrateConfigInputs(JSON.stringify({ modelName: "seedance-2-0-person-reference", settings: { resolution: "1080p", ratio: "16:9" } }))',
   context,
 );
+assert.equal(elements.get("configDialectEnabled").checked, false, "dialect must default to disabled");
+assert.equal(elements.get("configDialectStyle").value, "northeastern", "disabled dialect must keep a stable default selection");
+assert.equal(elements.get("modernDialectEnabled").checked, false, "modern dialect must default to disabled");
+assert.equal(elements.get("modernDialectStyle").value, "northeastern", "modern dialect must keep a stable default selection");
 for (const [modernId, legacyId] of [
   ["modernParamModel", "configModel"],
   ["modernParamResolution", "configResolution"],
@@ -131,20 +151,38 @@ for (const [modernId, legacyId] of [
   assert.equal(elements.get(modernId).value, elements.get(legacyId).value, `${modernId} must hydrate with the legacy value`);
 }
 
+vm.runInContext(
+  'hydrateConfigInputs(JSON.stringify({ settings: { dialectStyle: "cantonese" } }))',
+  context,
+);
+assert.equal(elements.get("configDialectEnabled").checked, true, "persisted dialect must restore the legacy toggle");
+assert.equal(elements.get("configDialectStyle").value, "cantonese", "persisted dialect must restore the legacy selection");
+assert.equal(elements.get("modernDialectEnabled").checked, true, "persisted dialect must restore the modern toggle");
+assert.equal(elements.get("modernDialectStyle").value, "cantonese", "persisted dialect must restore the modern selection");
+
+elements.get("configModel").value = "seedance-2-0-person-reference";
+elements.get("configResolution").value = "1080p";
+elements.get("configRatio").value = "16:9";
+
 elements.get("modernParamModel").value = "seedance-2-0-mini";
 elements.get("modernParamResolution").value = "720p";
 elements.get("modernParamRatio").value = "1:1";
+elements.get("modernDialectEnabled").checked = true;
+elements.get("modernDialectStyle").value = "cantonese";
 await vm.runInContext("refreshVideoConfig({ silent: true })", context);
 assert.equal(requestLog.at(-1).body.modelName, "seedance-2-0-mini", "config must prefer the modern model control");
 assert.equal(requestLog.at(-1).body.resolution, "720p", "config must prefer the modern resolution control");
 assert.equal(requestLog.at(-1).body.ratio, "1:1", "config must prefer the modern ratio control");
+assert.equal(requestLog.at(-1).body.dialectStyle, "cantonese", "config must submit the enabled modern dialect");
 
 elements.delete("modernParamModel");
 elements.delete("modernParamResolution");
 elements.delete("modernParamRatio");
+elements.get("configDialectEnabled").checked = false;
 await vm.runInContext("refreshVideoConfig({ silent: true })", context);
 assert.equal(requestLog.at(-1).body.modelName, "seedance-2-0-person-reference", "config must fall back to the legacy model control");
 assert.equal(requestLog.at(-1).body.resolution, "1080p", "config must fall back to the legacy resolution control");
 assert.equal(requestLog.at(-1).body.ratio, "16:9", "config must fall back to the legacy ratio control");
+assert.equal(requestLog.at(-1).body.dialectStyle, "none", "disabled legacy dialect must submit none");
 
 console.log("video params module tests passed");

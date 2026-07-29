@@ -1661,6 +1661,26 @@ h1 {
   background: rgba(2, 8, 17, 0.74);
 }
 
+.video-dialect-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+.video-dialect-controls > span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.video-dialect-controls select {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
 .config-store {
   display: none;
 }
@@ -17616,7 +17636,7 @@ body.is-studio-modern .modern-video-param-caption small {
 }
 body.is-studio-modern .modern-video-param-controls {
   display: grid;
-  grid-template-columns: minmax(80px, .45fr) minmax(82px, .5fr) minmax(180px, 1.4fr);
+  grid-template-columns: minmax(80px, .45fr) minmax(82px, .5fr) minmax(180px, 1.4fr) minmax(170px, 1fr);
   gap: 8px;
   align-items: stretch;
   min-width: 0;
@@ -17657,6 +17677,31 @@ body.is-studio-modern .modern-video-params select:hover {
 body.is-studio-modern .modern-video-params select:focus-visible {
   border-color: var(--modern-signal);
   box-shadow: 0 0 0 2px rgba(217,45,69,.16);
+}
+body.is-studio-modern .modern-dialect-controls {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+body.is-studio-modern .modern-dialect-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: max-content;
+  color: var(--mv-mut);
+  font-family: var(--mono);
+  font-size: 9px;
+  cursor: pointer;
+}
+body.is-studio-modern .modern-dialect-toggle input {
+  accent-color: var(--modern-signal);
+}
+body.is-studio-modern .modern-video-param-dialect select:disabled,
+.video-dialect-controls select:disabled {
+  cursor: not-allowed;
+  opacity: .55;
 }
 body.is-studio-modern .modern-command-status {
   display: grid;
@@ -17737,6 +17782,7 @@ body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
     width: 100%;
   }
   body.is-studio-modern .modern-video-param-model { grid-column: 1 / -1; }
+  body.is-studio-modern .modern-video-param-dialect { grid-column: 1 / -1; }
 }
 
 /* Asset generation controls: keep the range label, selector, and action on one optical baseline. */

@@ -20081,6 +20081,52 @@ function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
   return { ...rawConfig, shots: nextShots };
 }
 
+function stripVideoDialectPromptDirective(prompt = "") {
+  const text = String(prompt || "").trim();
+  if (!text.startsWith("方言对白风格：")) return text;
+  const separator = text.indexOf("\n\n");
+  return separator >= 0 ? text.slice(separator + 2).trim() : "";
+}
+
+// 更新视频提交参数，但不重建配置运行空间。生成中的任务、已完成快照和画布视频节点必须继续沿用原身份。
+function updateVideoSettingsInConfig(rawConfig = {}, body = {}) {
+  const previousSettings = rawConfig?.settings && typeof rawConfig.settings === "object" ? rawConfig.settings : {};
+  const modelName = normalizeVideoConfigModelName(body.modelName || rawConfig.modelName || previousSettings.modelName || DEFAULT_VIDEO_CONFIG_MODEL);
+  const ratio = normalizeVideoRatio(body.ratio || previousSettings.ratio || "9:16");
+  const resolution = normalizeVideoResolution(body.resolution || previousSettings.resolution || "720p", modelName);
+  const dialectStyle = normalizeVideoDialectStyle(
+    body.dialectStyle ?? rawConfig.dialectStyle ?? previousSettings.dialectStyle ?? "none",
+  );
+  const shots = Array.isArray(rawConfig.shots)
+    ? rawConfig.shots.map((shot) => {
+        if (!shot || typeof shot !== "object") return shot;
+        const hasPrompt = typeof shot.prompt === "string" || typeof shot.videoPrompt === "string";
+        if (!hasPrompt) return { ...shot };
+        const basePrompt = stripVideoDialectPromptDirective(shot.prompt || shot.videoPrompt || "");
+        const nextPrompt = cleanVideoPromptForSubmission(injectVideoDialectPrompt(basePrompt, dialectStyle));
+        return {
+          ...shot,
+          ...(typeof shot.prompt === "string" ? { prompt: nextPrompt } : {}),
+          ...(typeof shot.videoPrompt === "string" ? { videoPrompt: nextPrompt } : {}),
+        };
+      })
+    : rawConfig.shots;
+  return {
+    ...rawConfig,
+    modelName,
+    dialectStyle,
+    settings: {
+      ...previousSettings,
+      modelName,
+      ratio,
+      resolution,
+      dialectStyle,
+    },
+    shots,
+    videoSettingsUpdatedAt: new Date().toISOString(),
+  };
+}
+
 function manifestItemsToAssets(manifest) {
   return (manifest?.items || []).map((item) => ({
     type: item.type,
@@ -23415,6 +23461,16 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, state: fullProjectState(episodeRoot) });
   }
 
+  if (req.method === "POST" && action === "video-settings") {
+    const body = await readBody(req);
+    const configRecord = ensureVideoConfigIsolation(episodeRoot);
+    if (!configRecord?.data || !Array.isArray(configRecord.data.shots)) throw new Error("请先生成视频配置");
+    const config = updateVideoSettingsInConfig(configRecord.data, body);
+    writeVideoConfigRecord(configRecord, config);
+    syncProjectShotsToCanvasState(episodeRoot, config, config.shots);
+    return send(res, 200, { ok: true, state: fullProjectState(episodeRoot) });
+  }
+
   if (req.method === "POST" && action === "asset-extract") {
     const result = await extractAssetManifest(episodeRoot, await readBody(req));
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
@@ -23860,6 +23916,10 @@ module.exports = {
       normalizeVideoDialectStyle,
       videoDialectPromptDirective,
       injectVideoDialectPrompt,
+    },
+    videoSettings: {
+      updateVideoSettingsInConfig,
+      stripVideoDialectPromptDirective,
     },
     videoRetry: {
       updateVideoModelForShotInConfig,

@@ -9154,6 +9154,31 @@ async function refreshVideoConfig({ silent } = { silent: false }) {
   }
 }
 
+async function saveVideoSettings({ silent = true } = {}) {
+  if (!state.selectedId) return;
+  const existingConfig = videoConfigDataFromProject();
+  if (!Array.isArray(existingConfig.shots) || !existingConfig.shots.length) {
+    await refreshVideoConfig({ silent });
+    return;
+  }
+  const project = state.project?.project || {};
+  const modelInput = $("#modernParamModel") || $("#configModel");
+  const resolutionInput = $("#modernParamResolution") || $("#configResolution");
+  const ratioInput = $("#modernParamRatio") || $("#configRatio");
+  const data = await api(`/api/project/${state.selectedId}/video-settings`, {
+    method: "POST",
+    body: JSON.stringify({
+      modelName: normalizeVideoModelName(modelInput?.value || project.model),
+      resolution: resolutionInput?.value || "480p",
+      ratio: ratioInput?.value || "9:16",
+      dialectStyle: selectedVideoDialectStyle(),
+    }),
+  });
+  setProjectState(data.state);
+  renderWorkspace();
+  if (!silent) toast("视频设置已保存，已生成片段保持不变");
+}
+
 function renderSeriesPreflightResult(result = {}) {
   const target = $("#seriesPreflightResult");
   if (!target) return;
@@ -10062,16 +10087,19 @@ function bind() {
     const button = event.currentTarget;
     withStudioButtonFeedback(button, () => buildConfig()).catch((error) => toast(error.message));
   });
-  ["configPromptMode", "configRatio", "configResolution", "configModel"].forEach((id) => {
+  $("#configPromptMode")?.addEventListener("change", () => {
+    refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+  });
+  ["configRatio", "configResolution", "configModel"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernVideoParams("legacy");
-      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+      saveVideoSettings().catch((error) => toast(error.message));
     });
   });
   ["modernParamRatio", "modernParamResolution"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernVideoParams("modern");
-      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+      saveVideoSettings().catch((error) => toast(error.message));
     });
   });
   $("#modernParamModel")?.addEventListener("change", () => {
@@ -10081,13 +10109,13 @@ function bind() {
   ["configDialectEnabled", "configDialectStyle"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernDialectParams("legacy");
-      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+      saveVideoSettings().catch((error) => toast(error.message));
     });
   });
   ["modernDialectEnabled", "modernDialectStyle"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernDialectParams("modern");
-      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+      saveVideoSettings().catch((error) => toast(error.message));
     });
   });
 }

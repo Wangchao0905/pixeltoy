@@ -9009,18 +9009,36 @@ function collectFinalCutClips(episodeRoot, config) {
     if (!name) continue;
     const snap = snapshotStatusForShot(episodeRoot, name, { runNamespace });
     const media = snap ? localVideoFromSnapshot(episodeRoot, snap) : null;
-    if (media?.path && fs.existsSync(media.path)) clips.push({ name, file: media.path });
+    if (media?.path && fs.existsSync(media.path)) {
+      const stat = fs.statSync(media.path);
+      clips.push({
+        name,
+        file: media.path,
+        mtimeMs: stat.mtimeMs,
+        size: stat.size,
+        version: `${stat.mtimeMs}:${stat.size}:${snap.updatedAt || snap.finishedAt || ""}`,
+      });
+    }
     else missing.push(name);
   }
   return { clips, missing, total: shots.length };
+}
+function finalCutOutputIsCurrent({ outputMtime = 0, clips = [], missing = [], total = 0 } = {}) {
+  if (!Number(outputMtime) || !Number(total) || missing.length || clips.length !== Number(total)) return false;
+  return clips.every((clip) => Number(clip?.mtimeMs || 0) <= Number(outputMtime));
 }
 function finalCutStatus(episodeRoot) {
   const job = finalCutJobs.get(finalCutJobKey(episodeRoot)) || null;
   const out = finalCutOutputFile(episodeRoot);
   const exists = fs.existsSync(out) && fs.statSync(out).isFile();
+  const outputStat = exists ? fs.statSync(out) : null;
+  const config = readVideoConfig(episodeRoot)?.data || {};
+  const { clips, missing, total } = collectFinalCutClips(episodeRoot, config);
+  const outputCurrent = !!outputStat && finalCutOutputIsCurrent({ outputMtime: outputStat.mtimeMs, clips, missing, total });
+  const stale = exists && !outputCurrent;
   let output = null;
-  if (exists) {
-    const stat = fs.statSync(out);
+  if (outputCurrent) {
+    const stat = outputStat;
     output = {
       url: `/media?path=${encodeURIComponent(out)}&v=${Math.round(stat.mtimeMs)}`,
       downloadUrl: `/media?path=${encodeURIComponent(out)}&v=${Math.round(stat.mtimeMs)}&download=1`,
@@ -9028,14 +9046,24 @@ function finalCutStatus(episodeRoot) {
       size: stat.size,
     };
   }
+  const status = job?.running
+    ? "running"
+    : job?.status === "failed"
+      ? "failed"
+      : outputCurrent
+        ? job?.status || "ready"
+        : stale
+          ? "stale"
+          : "idle";
   return {
     running: !!job?.running,
-    status: job?.running ? "running" : job?.status || (exists ? "ready" : "idle"),
-    progress: job?.progress || (exists && !job?.running ? 100 : 0),
-    message: job?.message || "",
+    status,
+    progress: job?.progress || (outputCurrent && !job?.running ? 100 : 0),
+    message: job?.message || (stale ? (missing.length ? "视频片段已更新，等待全部片段完成后重新组装" : "视频片段已更新，请重新组装成片") : ""),
     error: job?.error || "",
-    total: job?.total || 0,
-    done: job?.done || 0,
+    total: job?.total || total || 0,
+    done: job?.done || (outputCurrent ? total : clips.length),
+    stale,
     output,
   };
 }
@@ -9114,13 +9142,6 @@ function startFinalCutAssembly(episodeRoot) {
 // 自动成片:全部片段就绪后自动触发组装,无需手动点击。用"片段集签名"(名字+mtime)守卫,
 // 同一套片段只自动拼一次;某片段重生成(签名变化)才自动重拼;已在组装或成片已比片段新则跳过。
 const autoFinalCutSignatures = new Map();
-function finalCutClipMtime(file) {
-  try {
-    return Math.round(fs.statSync(file).mtimeMs);
-  } catch {
-    return 0;
-  }
-}
 function maybeAutoAssembleFinalCut(episodeRoot) {
   try {
     const config = readVideoConfig(episodeRoot)?.data || {};
@@ -9129,15 +9150,14 @@ function maybeAutoAssembleFinalCut(episodeRoot) {
     const key = finalCutJobKey(episodeRoot);
     if (finalCutJobs.get(key)?.running) return; // 正在组装
     const signature = clips
-      .map((clip) => `${clip.name}:${finalCutClipMtime(clip.file)}`)
+      .map((clip) => `${clip.name}:${clip.version || `${clip.mtimeMs}:${clip.size}`}`)
       .sort()
       .join("|");
     if (autoFinalCutSignatures.get(key) === signature) return; // 这套片段已自动拼过
-    autoFinalCutSignatures.set(key, signature);
     const out = finalCutOutputFile(episodeRoot);
-    const outMtime = fs.existsSync(out) ? finalCutClipMtime(out) : 0;
-    const newestClip = clips.reduce((max, clip) => Math.max(max, finalCutClipMtime(clip.file)), 0);
-    if (outMtime && outMtime >= newestClip) return; // 现有成片已比所有片段新,无需重拼
+    const outMtime = fs.existsSync(out) ? fs.statSync(out).mtimeMs : 0;
+    if (finalCutOutputIsCurrent({ outputMtime: outMtime, clips, missing, total })) return;
+    autoFinalCutSignatures.set(key, signature);
     startFinalCutAssembly(episodeRoot);
   } catch {
     // 自动组装为尽力而为,失败不影响主流程;用户仍可手动点「组装成片」
@@ -24035,6 +24055,10 @@ module.exports = {
       stripVideoDialectPromptDirective,
       stripVideoPromptDirectives,
       applyVideoPromptDirectives,
+    },
+    finalCut: {
+      finalCutOutputIsCurrent,
+      finalCutStatus,
     },
     videoRetry: {
       updateVideoModelForShotInConfig,

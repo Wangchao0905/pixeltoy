@@ -8570,11 +8570,12 @@ function renderFinalCut(finalCut = null) {
   const downloadEl = $("#modernFinalCutDownload");
   if (!statusEl || !previewEl) return;
   const running = !!fc.running;
+  const needsRebuild = !!fc.output || fc.stale === true || fc.status === "stale";
   if (btn) {
     btn.disabled = running;
     btn.classList.add("primary");
     btn.classList.remove("ghost");
-    btn.textContent = running ? "组装中…" : fc.output ? "重新组装" : "组装成片";
+    btn.textContent = running ? "组装中…" : needsRebuild ? "重新组装" : "组装成片";
   }
   if (downloadEl) {
     const downloadUrl = fc.output?.downloadUrl || fc.output?.url || "";
@@ -8591,6 +8592,8 @@ function renderFinalCut(finalCut = null) {
     statusEl.innerHTML = `<span class="pill warn">组装失败</span><span>${escapeHtml(fc.error)}</span>`;
   } else if (running) {
     statusEl.innerHTML = `<span class="pill active">组装中 ${Number(fc.progress) || 0}%</span><span>${escapeHtml(fc.message || "")}</span>`;
+  } else if (fc.stale || fc.status === "stale") {
+    statusEl.innerHTML = `<span class="pill warn">片段已更新</span><span>${escapeHtml(fc.message || "视频片段已更新，请重新组装成片")}</span>`;
   } else if (fc.output) {
     statusEl.innerHTML = `<span class="pill ok">成片就绪</span><span>${escapeHtml(fc.message || "已生成完整成片")}</span>`;
   } else {

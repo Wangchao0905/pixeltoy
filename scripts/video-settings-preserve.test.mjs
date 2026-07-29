@@ -29,10 +29,12 @@ const original = {
   runNamespace: "run-1",
   modelName: "seedance-2-0-fast",
   dialectStyle: "none",
+  sfxStyle: "none",
   settings: {
     ratio: "16:9",
     resolution: "480p",
     dialectStyle: "none",
+    sfxStyle: "none",
   },
   shots: [
     { name: "E01_V01", prompt: "completed shot prompt", status: "complete" },
@@ -46,6 +48,7 @@ const next = __test.videoSettings.updateVideoSettingsInConfig(original, {
   ratio: "9:16",
   resolution: "720p",
   dialectStyle: "sichuan",
+  sfxStyle: "mystery",
 });
 
 assert.equal(next.videoCanvasId, original.videoCanvasId, "changing settings must keep the video canvas identity");
@@ -54,12 +57,15 @@ assert.equal(next.modelName, "seedance-2-0-mini", "the selected model must be pe
 assert.equal(next.settings.ratio, "9:16", "the selected ratio must be persisted");
 assert.equal(next.settings.resolution, "720p", "the selected resolution must be persisted");
 assert.equal(next.settings.dialectStyle, "sichuan", "the selected dialect must be persisted");
+assert.equal(next.sfxStyle, "mystery", "the selected SFX style must be persisted");
+assert.equal(next.settings.sfxStyle, "mystery", "the selected SFX style must be mirrored in settings");
 assert.equal(next.shots.length, original.shots.length, "changing settings must keep every shot");
 assert.equal(next.shots[0].status, "complete", "changing settings must keep completed shot state");
-assert.equal(next.shots[0].prompt.startsWith("方言对白风格：粤语") || next.shots[0].prompt.startsWith("方言对白风格：四川话"), true, "new dialect must apply to future shot submissions");
+assert.match(next.shots[0].prompt, /方言对白风格：四川话/, "new dialect must apply to future shot submissions");
+assert.match(next.shots[0].prompt, /^声音设计风格：悬疑\n/, "new SFX style must be injected into future shot submissions");
 assert.deepEqual(original.shots[0], { name: "E01_V01", prompt: "completed shot prompt", status: "complete" }, "the updater must not mutate the original config");
 
-const disabled = __test.videoSettings.updateVideoSettingsInConfig(next, { dialectStyle: "none" });
+const disabled = __test.videoSettings.updateVideoSettingsInConfig(next, { dialectStyle: "none", sfxStyle: "none" });
 assert.equal(disabled.dialectStyle, "none", "disabling dialect must clear the top-level setting");
 assert.equal(disabled.settings.dialectStyle, "none", "disabling dialect must clear the settings value");
 assert.equal(disabled.shots[0].prompt, "completed shot prompt", "disabling dialect must restore the underlying prompt");

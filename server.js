@@ -5479,6 +5479,61 @@ function injectVideoDialectPrompt(prompt = "", style = "none") {
   return `${directive}\n\n${text}`.trim();
 }
 
+const VIDEO_SFX_STYLE_LABELS = Object.freeze({
+  mystery: "悬疑",
+  epic: "史诗",
+  palace: "宫斗",
+  vampire: "吸血鬼",
+  sci_fi: "科幻",
+  disaster: "灾难",
+  light: "轻松",
+  comedy: "搞笑",
+});
+
+function normalizeVideoSfxStyle(value, fallback = "none") {
+  const raw = compactLine(value);
+  const key = raw.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(VIDEO_SFX_STYLE_LABELS, key)) return key;
+  const aliases = {
+    悬疑: "mystery",
+    史诗: "epic",
+    宫斗: "palace",
+    吸血鬼: "vampire",
+    科幻: "sci_fi",
+    灾难: "disaster",
+    轻松: "light",
+    搞笑: "comedy",
+    搞笑无厘头: "comedy",
+  };
+  if (aliases[raw]) return aliases[raw];
+  return fallback === "none" ? "none" : "mystery";
+}
+
+function videoSfxPromptDirective(style = "none") {
+  const key = normalizeVideoSfxStyle(style);
+  const label = VIDEO_SFX_STYLE_LABELS[key];
+  if (!label) return "";
+  const guidance = {
+    mystery: "环境声：低频室内底噪、远处设备嗡鸣和克制的空间回响。拟音：近距离呼吸、衣物摩擦、细微金属碰撞。动作音效：线索出现时使用短促高频提示，危险临近时增加低频压力。BGM：极简持续音、微分音弦乐、稀疏钢琴单音、反向混响和缓慢脉冲，不使用完整旋律。",
+    epic: "环境声：风压、旷野空间和远处人群声。拟音：沉重脚步、铠甲摩擦、武器碰撞、旗帜和地面震动。动作音效：战斗击打按动作落点同步，冲击保留重量感。BGM：大型管弦乐、低音鼓、铜管、宽阔弦乐和合唱，随镜头规模渐进，不突然满编。",
+    palace: "环境声：安静室内空气声、庭院远声和近距离空间回响。拟音：绸缎与衣袖摩擦、玉佩碰撞、茶盏轻放、木门和脚步停顿。动作音效：关键表情与权力动作使用极轻的呼吸和心跳。BGM：古琴、箫、低音弦乐和稀疏打击乐，旋律克制、华丽而有压迫感。",
+    vampire: "环境声：夜风、树叶、石墙回声和远处乌鸦。拟音：蝙蝠振翅、棺木摩擦、低沉喘息、玻璃碎裂。动作音效：超自然出现时加入反向吸气和低频下坠。BGM：哥特管风琴、低音提琴、幽暗合唱和缓慢三拍子，带黑暗浪漫感。",
+    sci_fi: "环境声：舱体低频震动、设备风扇和封闭空间混响。拟音：机械伺服、液压舱门、扫描提示、电子杂讯和通讯失真。动作音效：设备状态变化使用分层提示音，能量动作保留充能和释放过程。BGM：冷峻氛围电子、合成器脉冲、颗粒化音色和空间化低频，保持机械秩序感。",
+    disaster: "环境声：灾难前保留异常安静和远处环境声，随后逐步加入风压、警报与人群混乱。拟音：结构震动、玻璃碎裂、金属扭曲、坍塌、急刹和奔跑。动作音效：重大冲击前留出短暂空白，冲击后保留余震和碎片回落。BGM：低音持续音、紧张弦乐、低频鼓点和加速脉冲，强调失控感。",
+    light: "环境声：自然空间底噪、鸟鸣、风声和室内生活声。拟音：轻微脚步、餐具、衣物和家具细节，真实但不过度突出。动作音效：保持柔和、短促和生活化。BGM：木吉他、钢琴、尤克里里、轻鼓刷和柔和贝斯，明亮、松弛、有自然呼吸感。",
+    comedy: "环境声：清晰而简洁的场景底噪，为笑点留出空间。拟音：夸张但干脆的动作细节。动作音效：卡通冲击、弹簧、木鱼、气泡、滑倒、突然刹车、错误提示音和夸张落体；笑点前留半拍，笑点后快速收音。BGM：跳跃木琴、短铜管、拨弦和卡通打击乐，使用突然停止与节奏反转服务笑点。",
+  }[key];
+  return `声音设计风格：${label}\n${guidance}\n混音规则：对白优先，音效不能覆盖对白；声音只匹配当前镜头真实发生的动作，不要每段机械重复；保持前后镜头的 BGM 调性和空间连续。`;
+}
+
+function injectVideoSfxPrompt(prompt = "", style = "none") {
+  const raw = String(prompt || "");
+  const text = raw.trim();
+  const directive = videoSfxPromptDirective(style);
+  if (!directive || text.includes("声音设计风格：")) return raw;
+  return `${directive}\n\n${text}`.trim();
+}
+
 function projectDialogueLanguage(episodeRoot, fallback = "en") {
   const config = readVideoConfig(episodeRoot)?.data;
   const manifest = readAssetManifest(episodeRoot)?.data;
@@ -21107,6 +21162,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   const requestedDialectStyle = normalizeVideoDialectStyle(
     body.dialectStyle || currentConfig.dialectStyle || currentConfig.settings?.dialectStyle || "none",
   );
+  const requestedSfxStyle = normalizeVideoSfxStyle(
+    body.sfxStyle || currentConfig.sfxStyle || currentConfig.settings?.sfxStyle || "none",
+  );
   const requestedDurationMode = persistProjectDurationMode(
     episodeRoot,
     body.durationMode || projectDurationMode(episodeRoot),
@@ -21271,7 +21329,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     }
   });
   shots.forEach((shot) => {
-    shot.prompt = cleanVideoPromptForSubmission(injectVideoDialectPrompt(shot.prompt, requestedDialectStyle));
+    shot.prompt = cleanVideoPromptForSubmission(
+      injectVideoSfxPrompt(injectVideoDialectPrompt(shot.prompt, requestedDialectStyle), requestedSfxStyle),
+    );
   });
   const storyboardsAttached = storyboardsActive && storyboardRecords.length > 0;
   shots.forEach((shot, index) => {
@@ -21322,12 +21382,14 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     modelAliases: previous.modelAliases || [DEFAULT_VIDEO_CONFIG_MODEL],
     dialogueLanguage,
     dialectStyle: requestedDialectStyle,
+    sfxStyle: requestedSfxStyle,
     durationMode: requestedDurationMode,
     settings: {
       ratio: body.ratio || previous.settings?.ratio || "9:16",
       resolution: body.resolution || previous.settings?.resolution || "480p",
       dialogueLanguage,
       dialectStyle: requestedDialectStyle,
+      sfxStyle: requestedSfxStyle,
       durationMode: requestedDurationMode,
       enableSound: previous.settings?.enableSound || "on",
       count: Number(previous.settings?.count || 1),
@@ -23916,6 +23978,9 @@ module.exports = {
       normalizeVideoDialectStyle,
       videoDialectPromptDirective,
       injectVideoDialectPrompt,
+      normalizeVideoSfxStyle,
+      videoSfxPromptDirective,
+      injectVideoSfxPrompt,
     },
     videoSettings: {
       updateVideoSettingsInConfig,

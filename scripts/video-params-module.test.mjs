@@ -70,12 +70,17 @@ const ids = [
   "configDialectStyle",
   "modernDialectEnabled",
   "modernDialectStyle",
+  "configSfxEnabled",
+  "configSfxStyle",
+  "modernSfxEnabled",
+  "modernSfxStyle",
 ];
 const elements = new Map(ids.map((id) => [id, new FakeElement(id)]));
 const requestLog = [];
 const context = {
   console,
   VIDEO_DIALECT_STYLE_OPTIONS: ["northeastern", "sichuan", "cantonese"],
+  VIDEO_SFX_STYLE_OPTIONS: ["mystery", "epic", "palace", "vampire", "sci_fi", "disaster", "light", "comedy"],
   VIDEO_MODEL_OPTIONS: {
     "seedance-2-0": "Seedance 2.0",
     "seedance-2-0-fast": "Seedance 2.0 Fast",
@@ -114,6 +119,11 @@ for (const signature of [
   "function syncDialectControlAvailability(",
   "function setVideoDialectControls(",
   "function selectedVideoDialectStyle(",
+  "function syncModernSfxParams(",
+  "function syncSfxControlAvailability(",
+  "function setVideoSfxControls(",
+  "function selectedVideoSfxStyle(",
+  "function normalizeVideoSfxStyle(",
   "function hydrateConfigInputs(",
   "async function refreshVideoConfig(",
 ]) {
@@ -121,6 +131,8 @@ for (const signature of [
 }
 vm.runInContext(extractFunction(app, "function normalizeVideoModelName("), context, { filename: "public/app.js" });
 context.normalizeVideoModelName = vm.runInContext("normalizeVideoModelName", context);
+vm.runInContext(extractFunction(app, "function normalizeVideoSfxStyle("), context, { filename: "public/app.js" });
+context.normalizeVideoSfxStyle = vm.runInContext("normalizeVideoSfxStyle", context);
 assert.equal(
   context.normalizeVideoModelName("Seedance 2.0 Mini"),
   "seedance-2-0-mini",
@@ -143,6 +155,10 @@ assert.equal(elements.get("configDialectEnabled").checked, false, "dialect must 
 assert.equal(elements.get("configDialectStyle").value, "northeastern", "disabled dialect must keep a stable default selection");
 assert.equal(elements.get("modernDialectEnabled").checked, false, "modern dialect must default to disabled");
 assert.equal(elements.get("modernDialectStyle").value, "northeastern", "modern dialect must keep a stable default selection");
+assert.equal(elements.get("configSfxEnabled").checked, false, "SFX must default to disabled");
+assert.equal(elements.get("configSfxStyle").value, "mystery", "disabled SFX must keep a stable default selection");
+assert.equal(elements.get("modernSfxEnabled").checked, false, "modern SFX must default to disabled");
+assert.equal(elements.get("modernSfxStyle").value, "mystery", "modern SFX must keep a stable default selection");
 for (const [modernId, legacyId] of [
   ["modernParamModel", "configModel"],
   ["modernParamResolution", "configResolution"],
@@ -160,6 +176,15 @@ assert.equal(elements.get("configDialectStyle").value, "cantonese", "persisted d
 assert.equal(elements.get("modernDialectEnabled").checked, true, "persisted dialect must restore the modern toggle");
 assert.equal(elements.get("modernDialectStyle").value, "cantonese", "persisted dialect must restore the modern selection");
 
+vm.runInContext(
+  'hydrateConfigInputs(JSON.stringify({ settings: { dialectStyle: "cantonese", sfxStyle: "搞笑无厘头" } }))',
+  context,
+);
+assert.equal(elements.get("configSfxEnabled").checked, true, "persisted SFX must restore the legacy toggle");
+assert.equal(elements.get("configSfxStyle").value, "comedy", "legacy SFX alias must restore the comedy selection");
+assert.equal(elements.get("modernSfxEnabled").checked, true, "persisted SFX must restore the modern toggle");
+assert.equal(elements.get("modernSfxStyle").value, "comedy", "modern SFX alias must restore the comedy selection");
+
 elements.get("configModel").value = "seedance-2-0-person-reference";
 elements.get("configResolution").value = "1080p";
 elements.get("configRatio").value = "16:9";
@@ -169,20 +194,25 @@ elements.get("modernParamResolution").value = "720p";
 elements.get("modernParamRatio").value = "1:1";
 elements.get("modernDialectEnabled").checked = true;
 elements.get("modernDialectStyle").value = "cantonese";
+elements.get("modernSfxEnabled").checked = true;
+elements.get("modernSfxStyle").value = "comedy";
 await vm.runInContext("refreshVideoConfig({ silent: true })", context);
 assert.equal(requestLog.at(-1).body.modelName, "seedance-2-0-mini", "config must prefer the modern model control");
 assert.equal(requestLog.at(-1).body.resolution, "720p", "config must prefer the modern resolution control");
 assert.equal(requestLog.at(-1).body.ratio, "1:1", "config must prefer the modern ratio control");
 assert.equal(requestLog.at(-1).body.dialectStyle, "cantonese", "config must submit the enabled modern dialect");
+assert.equal(requestLog.at(-1).body.sfxStyle, "comedy", "config must submit the enabled modern SFX style");
 
 elements.delete("modernParamModel");
 elements.delete("modernParamResolution");
 elements.delete("modernParamRatio");
 elements.get("configDialectEnabled").checked = false;
+elements.get("configSfxEnabled").checked = false;
 await vm.runInContext("refreshVideoConfig({ silent: true })", context);
 assert.equal(requestLog.at(-1).body.modelName, "seedance-2-0-person-reference", "config must fall back to the legacy model control");
 assert.equal(requestLog.at(-1).body.resolution, "1080p", "config must fall back to the legacy resolution control");
 assert.equal(requestLog.at(-1).body.ratio, "16:9", "config must fall back to the legacy ratio control");
 assert.equal(requestLog.at(-1).body.dialectStyle, "none", "disabled legacy dialect must submit none");
+assert.equal(requestLog.at(-1).body.sfxStyle, "none", "disabled legacy SFX must submit none");
 
 console.log("video params module tests passed");

@@ -778,6 +778,23 @@
                               </select>
                             </div>
                           </label>
+                          <label class="video-dialect-setting video-sfx-setting">
+                            <span>SFX</span>
+                            <div class="video-dialect-controls">
+                              <input id="configSfxEnabled" type="checkbox" aria-label="启用声音设计" />
+                              <span>启用</span>
+                              <select id="configSfxStyle" aria-label="声音设计风格" disabled>
+                                <option value="mystery">悬疑</option>
+                                <option value="epic">史诗</option>
+                                <option value="palace">宫斗</option>
+                                <option value="vampire">吸血鬼</option>
+                                <option value="sci_fi">科幻</option>
+                                <option value="disaster">灾难</option>
+                                <option value="light">轻松</option>
+                                <option value="comedy">搞笑</option>
+                              </select>
+                            </div>
+                          </label>
                         </div>
                         <div class="config-store" aria-hidden="true">
                           <span id="configPath"></span>
@@ -1143,6 +1160,7 @@
                   <label class="modern-video-param"><span>规格</span><select id="modernParamResolution" aria-label="视频分辨率"><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option></select></label>
                   <label class="modern-video-param modern-video-param-model"><span>模型</span><select id="modernParamModel" aria-label="视频模型"><option value="seedance-2-0">Seedance 2.0</option><option value="seedance-2-0-fast">Seedance 2.0 Fast</option><option value="seedance-2-0-mini">Seedance 2.0 Mini</option><option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option><option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option><option value="grok-imagine-video">Grok Imagine Video</option></select></label>
                   <div class="modern-video-param modern-video-param-dialect"><span>方言</span><div class="modern-dialect-controls"><label class="modern-dialect-toggle"><input id="modernDialectEnabled" type="checkbox" aria-label="启用方言对白" /><span>启用</span></label><select id="modernDialectStyle" aria-label="方言种类" disabled><option value="northeastern">东北话</option><option value="sichuan">四川话</option><option value="cantonese">粤语</option></select></div></div>
+                  <div class="modern-video-param modern-video-param-sfx"><span>SFX</span><div class="modern-dialect-controls"><label class="modern-dialect-toggle"><input id="modernSfxEnabled" type="checkbox" aria-label="启用声音设计" /><span>启用</span></label><select id="modernSfxStyle" aria-label="声音设计风格" disabled><option value="mystery">悬疑</option><option value="epic">史诗</option><option value="palace">宫斗</option><option value="vampire">吸血鬼</option><option value="sci_fi">科幻</option><option value="disaster">灾难</option><option value="light">轻松</option><option value="comedy">搞笑</option></select></div></div>
                 </div>
                 <span id="modernSelectedShotSummary" class="modern-shot-summary-compat" aria-hidden="true"></span>
               </div>

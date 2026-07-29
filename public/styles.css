@@ -17722,6 +17722,7 @@ body.is-studio-modern .modern-dialect-toggle input {
   accent-color: var(--modern-signal);
 }
 body.is-studio-modern .modern-video-param-dialect select:disabled,
+.modern-video-param-sfx select:disabled,
 .video-dialect-controls select:disabled {
   cursor: not-allowed;
   opacity: .55;
@@ -17804,8 +17805,9 @@ body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
   }
-  body.is-studio-modern .modern-video-param-model { grid-column: 1 / -1; }
-  body.is-studio-modern .modern-video-param-dialect { grid-column: 1 / -1; }
+body.is-studio-modern .modern-video-param-model { grid-column: 1 / -1; }
+body.is-studio-modern .modern-video-param-dialect { grid-column: 1 / -1; }
+body.is-studio-modern .modern-video-param-sfx { grid-column: 1 / -1; }
 }
 
 /* Asset generation controls: keep the range label, selector, and action on one optical baseline. */

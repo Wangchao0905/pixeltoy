@@ -38,7 +38,7 @@ class FakeElement {
 }
 
 const elements = new Map(
-  ["buildConfigBtn", "seedanceText", "configGroup", "configModel", "configResolution", "configRatio", "configPromptMode", "configDialectEnabled", "configDialectStyle", "modernDialectEnabled", "modernDialectStyle", "modernParamModel", "modernParamResolution", "modernParamRatio"].map(
+  ["buildConfigBtn", "seedanceText", "configGroup", "configModel", "configResolution", "configRatio", "configPromptMode", "configDialectEnabled", "configDialectStyle", "modernDialectEnabled", "modernDialectStyle", "configSfxEnabled", "configSfxStyle", "modernSfxEnabled", "modernSfxStyle", "modernParamModel", "modernParamResolution", "modernParamRatio"].map(
     (id) => [id, new FakeElement(id)],
   ),
 );
@@ -57,6 +57,7 @@ const localStorage = {
 const context = {
   console,
   VIDEO_DIALECT_STYLE_OPTIONS: ["northeastern", "sichuan", "cantonese"],
+  VIDEO_SFX_STYLE_OPTIONS: ["mystery", "epic", "palace", "vampire", "sci_fi", "disaster", "light", "comedy"],
   document: {
     querySelector(selector) {
       return selector.startsWith("#") ? elements.get(selector.slice(1)) || null : null;
@@ -108,6 +109,11 @@ for (const signature of [
   "function syncDialectControlAvailability(",
   "function setVideoDialectControls(",
   "function selectedVideoDialectStyle(",
+  "function syncModernSfxParams(",
+  "function syncSfxControlAvailability(",
+  "function setVideoSfxControls(",
+  "function selectedVideoSfxStyle(",
+  "function normalizeVideoSfxStyle(",
   "function hydrateConfigInputs(",
 ]) {
   vm.runInContext(extractFunction(app, signature), context, { filename: "public/app.js" });
@@ -146,6 +152,7 @@ assert.equal(requestLog[1]?.body.promptMode, "prompt", "normal storyboard prompt
 assert.equal(requestLog[1]?.body.enableStoryboards, false, "normal storyboard prompt flow must not require a Production Board");
 assert.equal(requestLog[1]?.body.tailFrameContinuity, true, "normal storyboard prompt flow must keep tail-frame continuity enabled");
 assert.equal(requestLog[1]?.body.dialectStyle, "none", "video config must keep dialect disabled by default");
+assert.equal(requestLog[1]?.body.sfxStyle, "none", "video config must keep SFX disabled by default");
 assert.deepEqual(toastLog, ["视频配置已生成，可提交"], "a successful click must report completion");
 assert.deepEqual(workflowFocusLog, ["script"], "a completed video config must return the workflow guide to the next script");
 

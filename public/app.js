@@ -5897,6 +5897,7 @@ function syncModernVideoParams(source = "legacy") {
 }
 
 const VIDEO_DIALECT_STYLE_OPTIONS = ["northeastern", "sichuan", "cantonese"];
+const VIDEO_SFX_STYLE_OPTIONS = ["mystery", "epic", "palace", "vampire", "sci_fi", "disaster", "light", "comedy"];
 
 function normalizeVideoDialectStyle(value, fallback = "none") {
   const key = String(value || "").trim().toLowerCase();
@@ -5946,6 +5947,55 @@ function selectedVideoDialectStyle() {
   return normalizeVideoDialectStyle(select.value);
 }
 
+function normalizeVideoSfxStyle(value, fallback = "none") {
+  const key = String(value || "").trim().toLowerCase();
+  if (VIDEO_SFX_STYLE_OPTIONS.includes(key)) return key;
+  if (value === "搞笑无厘头") return "comedy";
+  return fallback === "none" ? "none" : "mystery";
+}
+
+function syncSfxControlAvailability() {
+  [["configSfxEnabled", "configSfxStyle"], ["modernSfxEnabled", "modernSfxStyle"]].forEach(([enabledId, styleId]) => {
+    const enabled = $(`#${enabledId}`);
+    const select = $(`#${styleId}`);
+    if (select) select.disabled = !enabled?.checked;
+  });
+}
+
+function syncModernSfxParams(source = "legacy") {
+  [["modernSfxEnabled", "configSfxEnabled"], ["modernSfxStyle", "configSfxStyle"]].forEach(([modernId, legacyId]) => {
+    const modern = $(`#${modernId}`);
+    const legacy = $(`#${legacyId}`);
+    if (!modern || !legacy) return;
+    const from = source === "modern" ? modern : legacy;
+    const to = source === "modern" ? legacy : modern;
+    if (from.type === "checkbox") to.checked = from.checked;
+    else if (from.value) to.value = from.value;
+  });
+  syncSfxControlAvailability();
+}
+
+function setVideoSfxControls(style = "none") {
+  const normalized = normalizeVideoSfxStyle(style);
+  const enabled = normalized !== "none";
+  ["config", "modern"].forEach((prefix) => {
+    const toggle = $(`#${prefix}SfxEnabled`);
+    const select = $(`#${prefix}SfxStyle`);
+    if (toggle) toggle.checked = enabled;
+    if (select) select.value = enabled ? normalized : "mystery";
+  });
+  syncModernSfxParams("legacy");
+}
+
+function selectedVideoSfxStyle() {
+  const modernMode = document.body?.classList?.contains("is-studio-modern");
+  const prefix = modernMode ? "modern" : "config";
+  const enabled = $(`#${prefix}SfxEnabled`);
+  const select = $(`#${prefix}SfxStyle`);
+  if (!enabled || !select || !enabled.checked) return "none";
+  return normalizeVideoSfxStyle(select.value);
+}
+
 function hydrateConfigInputs(configText) {
   try {
     const config = JSON.parse(configText);
@@ -5962,6 +6012,7 @@ function hydrateConfigInputs(configText) {
     $("#configRatio").value = settings.ratio || "9:16";
     $("#configPromptMode").value = hasProductionBoardConfig ? "production_board" : "prompt";
     setVideoDialectControls(settings.dialectStyle || config.dialectStyle || "none");
+    setVideoSfxControls(settings.sfxStyle || config.sfxStyle || "none");
   } catch {
     $("#configGroup").value = "";
     $("#configModel").value = "seedance-2-0-fast";
@@ -5969,6 +6020,7 @@ function hydrateConfigInputs(configText) {
     $("#configRatio").value = "9:16";
     $("#configPromptMode").value = "prompt";
     setVideoDialectControls("none");
+    setVideoSfxControls("none");
   }
   syncModernVideoParams("legacy");
 }
@@ -9141,6 +9193,7 @@ async function refreshVideoConfig({ silent } = { silent: false }) {
       assetAnalyzerModel: state.assetAnalyzerModel,
       dialogueLanguage: state.dialogueLanguage,
       dialectStyle: selectedVideoDialectStyle(),
+      sfxStyle: selectedVideoSfxStyle(),
       durationMode: state.durationMode,
       enableStoryboards: ($("#configPromptMode")?.value || "prompt") === "production_board",
       tailFrameContinuity: ($("#configPromptMode")?.value || "prompt") !== "production_board",
@@ -10116,6 +10169,18 @@ function bind() {
     $(`#${id}`)?.addEventListener("change", () => {
       syncModernDialectParams("modern");
       saveVideoSettings().catch((error) => toast(error.message));
+    });
+  });
+  ["configSfxEnabled", "configSfxStyle"].forEach((id) => {
+    $(`#${id}`)?.addEventListener("change", () => {
+      syncModernSfxParams("legacy");
+      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
+    });
+  });
+  ["modernSfxEnabled", "modernSfxStyle"].forEach((id) => {
+    $(`#${id}`)?.addEventListener("change", () => {
+      syncModernSfxParams("modern");
+      refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
     });
   });
 }

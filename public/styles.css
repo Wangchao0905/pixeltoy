@@ -16478,6 +16478,12 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-episode-switcher .modern-episode-row.is-active { border-color: var(--mv-lime); color: var(--mv-tx); }
 .modern-episode-add { flex: 0 0 29px; min-height: 29px; border: 1px dashed var(--mv-line-2); border-radius: 4px; background: transparent; color: var(--mv-lime); font-size: 17px; line-height: 1; }
 .modern-episode-add:hover { border-color: var(--mv-line-2); }
+/* 左边栏卡片列表里的＋:占满整行并与 .modern-episode-row 的高度/圆角对齐,
+   区别于分集切换器里那个 29px 方形按钮。 */
+.modern-episode-add-row { flex: none; width: 100%; min-height: 40px; border-radius: var(--mv-r-s); }
+/* hover 只给指针反馈(背景+边框明度),不借用柠檬主色——柠檬是「主行动」的专属信号。 */
+.modern-episode-add-row:hover:not(:disabled) { border-color: var(--mv-line-2); background: var(--mv-s3); }
+.modern-episode-add-row:disabled { opacity: .5; cursor: progress; }
 .modern-project-menu { display: grid; gap: 3px; margin: 6px 14px 0; padding: 4px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: var(--mv-s1); box-shadow: var(--mv-e1); }
 .modern-project-menu button { display: flex; gap: 8px; align-items: center; width: 100%; min-height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--mv-mut); text-align: left; font-size: 11px; }
 .modern-project-menu button:hover, .modern-project-menu button:focus-visible { background: var(--mv-s3); color: var(--mv-tx); outline: 0; }

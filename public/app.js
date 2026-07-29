@@ -5542,7 +5542,12 @@ function renderModernEpisodes(project, percent, total, completed) {
     return `<button class="modern-episode-row${active ? " is-active" : ""}${isCurrent && completed === total && total ? " is-complete" : ""}" type="button" data-episode-id="${escapeAttr(episode.id || "")}"${active ? ' aria-current="page"' : ""}><span class="modern-episode-thumb" aria-hidden="true"></span><div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(subtitle)}</small></div><i></i></button>`;
   };
   const nav = $("#modernEpisodeList");
-  if (nav) nav.innerHTML = episodes.map((episode) => episodeMarkup(episode)).join("");
+  // 左边栏剧集卡片下方也给一个＋:新建下一集并清空剧本框,等着粘新剧情。
+  // 资产库是项目级的(project_asset_manifest.json),新集在同一项目目录下自动继承锁定,不用另处理。
+  const addMarkup = project?.projectDir
+    ? `<button class="modern-episode-add modern-episode-add-row" type="button" data-add-episode aria-label="添加剧集" title="添加剧集(清空剧本，资产库保持锁定)">＋</button>`
+    : "";
+  if (nav) nav.innerHTML = `${episodes.map((episode) => episodeMarkup(episode)).join("")}${addMarkup}`;
   const switcher = $("#modernEpisodeSwitcher");
   if (switcher) switcher.innerHTML = `${episodes.map((episode) => episodeMarkup(episode)).join("")}<button class="modern-episode-add" type="button" data-add-episode aria-label="添加分集" title="添加分集">＋</button>`;
 }
@@ -5554,31 +5559,38 @@ function nextEpisodeSlug(episodes = []) {
   return `e${String(Math.max(0, ...numbers) + 1).padStart(2, "0")}`;
 }
 
-async function addSeriesEpisode() {
+// 点＋直接建下一集,不再弹 prompt 问集数。剧本框由 data.contents.script 回填,
+// 新集为空所以自动清空;资产库是项目级的,同一 projectDir 下自动继承锁定。
+async function addSeriesEpisode(button = null) {
   const project = state.project?.project;
   if (!project?.projectDir) return toast("当前项目不是可添加分集的剧集");
+  if (addSeriesEpisode.pending) return;
   const episodes = Array.isArray(state.project?.episodes) ? state.project.episodes : [];
-  const input = window.prompt("输入集数", nextEpisodeSlug(episodes));
-  if (!input) return;
-  const match = String(input).trim().match(/^(?:e(?:pisode)?\s*)?(\d{1,3})$/i);
-  if (!match) return toast("请输入有效集数，例如 E03");
-  const episodeSlug = `e${String(Number(match[1])).padStart(2, "0")}`;
-  const data = await api("/api/projects", {
-    method: "POST",
-    body: JSON.stringify({
-      projectName: project.seriesTitle || project.title || "untitled_project",
-      title: project.seriesTitle || project.title || episodeSlug,
-      episodeSlug,
-      projectDir: project.projectDir,
-      reuseExistingProject: true,
-      scriptText: "",
-      assetDescriptionText: "",
-      autoDraft: false,
-      dialogueLanguage: state.dialogueLanguage,
-    }),
-  });
-  openProjectFromState(data);
-  await loadProjects(false, { force: true });
+  const episodeSlug = nextEpisodeSlug(episodes);
+  addSeriesEpisode.pending = true;
+  if (button) button.disabled = true;
+  try {
+    const data = await api("/api/projects", {
+      method: "POST",
+      body: JSON.stringify({
+        projectName: project.seriesTitle || project.title || "untitled_project",
+        title: project.seriesTitle || project.title || episodeSlug,
+        episodeSlug,
+        projectDir: project.projectDir,
+        reuseExistingProject: true,
+        scriptText: "",
+        assetDescriptionText: "",
+        autoDraft: false,
+        dialogueLanguage: state.dialogueLanguage,
+      }),
+    });
+    openProjectFromState(data);
+    await loadProjects(false, { force: true });
+    toast(`已新建 ${episodeSlug.toUpperCase()}，粘贴新剧情即可`);
+  } finally {
+    addSeriesEpisode.pending = false;
+    if (button) button.disabled = false;
+  }
 }
 
 function modernShotMediaMarkup(data, shot, index) {
@@ -9612,6 +9624,11 @@ function bind() {
     loadProject(episodeButton.dataset.episodeId).catch((error) => toast(error.message));
   });
   $("#modernEpisodeList")?.addEventListener("click", (event) => {
+    const addButton = event.target.closest("[data-add-episode]");
+    if (addButton) {
+      addSeriesEpisode(addButton).catch((error) => toast(error.message));
+      return;
+    }
     const episodeButton = event.target.closest("[data-episode-id]");
     if (!episodeButton?.dataset.episodeId || episodeButton.dataset.episodeId === state.selectedId) return;
     loadProject(episodeButton.dataset.episodeId).catch((error) => toast(error.message));

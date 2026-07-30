@@ -25,5 +25,6 @@ assert.match(css, /\.studio-modern-shell\.is-nav-collapsed \.modern-project-swit
 assert.match(css, /\.modern-series-nav-toggle\s*\{[^}]*position:\s*absolute[^}]*min-width:\s*28px[^}]*min-height:\s*40px/, "箭头按钮必须固定在主导航边缘且保留可点击尺寸");
 assert.match(css, /\.modern-series-nav-toggle[^}]*transition:[^}]*transform/, "折叠按钮必须有轻量状态动效");
 assert.match(css, /@media \(max-width:\s*980px\)[\s\S]*?\.modern-series-nav-toggle\s*\{[^}]*display:\s*none/, "窄屏应回到横向导航而不是保留 56px 窄轨");
+assert.match(css, /@media \(max-width:\s*980px\)[\s\S]*?is-nav-collapsed \.modern-episode-list\s*\{[^}]*display:\s*flex/, "窄屏折叠状态仍必须保留横向分集导航");
 
 console.log("modern series nav toggle tests passed");

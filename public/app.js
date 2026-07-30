@@ -200,7 +200,26 @@ const state = {
   loadProjectToken: null,
   activeWindowZ: Number(localStorage.getItem(layoutStorageKey(WINDOW_Z_KEY)) || 20),
   activeStudioTab: "assets",
-  modernStudio: { shotIndex: 0, copyTab: "story", queueFilter: "all", focus: "video", detailsOpen: false, assetManageMode: false },
+  modernStudio: {
+    shotIndex: 0,
+    copyTab: "story",
+    queueFilter: "all",
+    focus: "video",
+    detailsOpen: false,
+    assetManageMode: false,
+    storyboardTool: "select",
+    storyboardZoom: 75,
+    storyboardPageIndex: 0,
+    storyboardPanelIndex: 0,
+    storyboardAssetTab: "Character",
+    storyboardBindings: {},
+    storyboardUploadBusy: false,
+    storyboardUploadStatus: "",
+    storyboardStrictReuse: true,
+    storyboardExtraPages: 0,
+    storyboardGenerating: false,
+    storyboardContinuityLoadedFor: "",
+  },
 };
 localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
 
@@ -5184,6 +5203,351 @@ function modernShotRecords(data = state.project) {
     };
   });
 }
+function modernStoryboardStatusForPanel(panel = {}) {
+  if (panel.source === "reused-anchor") return "reused";
+  const status = String(panel.shot?.status || panel.status || "waiting").toLowerCase();
+  if (["complete", "ready"].includes(status)) return "complete";
+  if (["running", "queued"].includes(status)) return status;
+  if (status === "failed") return "failed";
+  return "waiting";
+}
+
+function modernStoryboardPages(data = state.project, shots = modernShotRecords(data)) {
+  const slotCount = Array.isArray(data?.storyboardSlots) ? data.storyboardSlots.length : 0;
+  const baseCount = Math.max(1, Math.ceil(Math.max(shots.length, slotCount) / 9));
+  const extraCount = Math.max(0, Number(state.modernStudio.storyboardExtraPages) || 0);
+  const pageCount = Math.max(baseCount, extraCount);
+  return Array.from({ length: pageCount }, (_, pageIndex) => {
+    const panels = Array.from({ length: 9 }, (_, panelIndex) => {
+      const shot = shots[pageIndex * 9 + panelIndex] || null;
+      const isAnchor = panelIndex === 0 && pageIndex > 0 && state.modernStudio.storyboardStrictReuse;
+      const previousTail = pageIndex > 0 ? shots[pageIndex * 9 - 1] || null : null;
+      const inheritedShot = isAnchor ? previousTail : shot;
+      const sizeLabels = ["WS", "MS", "CU", "MS", "OTS", "CU", "MS", "CU", "WS"];
+      const source = isAnchor ? "reused-anchor" : "generated-blocking";
+      return {
+        id: `sb-page-${String(pageIndex + 1).padStart(2, "0")}-panel-${String(panelIndex + 1).padStart(2, "0")}`,
+        pageIndex,
+        panelIndex,
+        number: panelIndex + 1,
+        source,
+        assetRole: "storyboard-preview-only",
+        shot: inheritedShot,
+        size: inheritedShot?.size || sizeLabels[panelIndex],
+        copy: isAnchor
+          ? "直接复用上一页尾格的构图锚点"
+          : inheritedShot?.story || inheritedShot?.prompt || (panelIndex === 8 ? "保存为本页尾格锚点" : "等待脚本节拍生成"),
+        status: isAnchor ? "reused" : modernStoryboardStatusForPanel({ shot }),
+        blocking: {
+          characters: Array.isArray(inheritedShot?.assets) ? inheritedShot.assets.map((name) => ({ role: "anonymous", ref: name })) : [],
+          sceneAnchors: ["空间方向", "光区"],
+          propSlots: [],
+        },
+      };
+    });
+    return {
+      id: `sb-page-${String(pageIndex + 1).padStart(2, "0")}`,
+      pageIndex,
+      panels,
+      status: panels.every((panel) => ["complete", "reused"].includes(panel.status)) ? "complete" : panels.some((panel) => ["running", "queued"].includes(panel.status)) ? "running" : panels.some((panel) => panel.status === "failed") ? "failed" : "waiting",
+      previousTail: pageIndex > 0 ? panels[0].source === "reused-anchor" ? panels[0] : null : null,
+    };
+  });
+}
+
+const storyboardToolLabels = {
+  select: "选择镜头",
+  pan: "平移画布",
+  draw: "标记构图",
+  text: "添加批注",
+};
+
+function modernStoryboardPageBindingKey(page = {}) {
+  return page.id || `sb-page-${String(Number(page.pageIndex || 0) + 1).padStart(2, "0")}`;
+}
+
+function modernStoryboardPageBindings(page = {}) {
+  const key = modernStoryboardPageBindingKey(page);
+  const persisted = state.modernStudio.storyboardBindings?.[key];
+  return new Set(Array.isArray(persisted) ? persisted : []);
+}
+
+function setModernStoryboardPageBindings(page = {}, bindings = new Set()) {
+  const key = modernStoryboardPageBindingKey(page);
+  state.modernStudio.storyboardBindings = {
+    ...(state.modernStudio.storyboardBindings || {}),
+    [key]: [...bindings].filter(Boolean),
+  };
+}
+
+function humanizeStoryboardUploadLabel(filename = "") {
+  const base = String(filename || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return base.slice(0, 80) || "未命名生产参考";
+}
+
+async function uploadModernStoryboardReference(file) {
+  if (!file || state.modernStudio.storyboardUploadBusy) return;
+  if (!state.selectedId) return toast("请先打开一个项目");
+  const tab = state.modernStudio.storyboardAssetTab || "Character";
+  if (tab === "Style") return toast("风格包请在资产图页面上传和管理");
+  if (!/\.(png|jpe?g|webp)$/i.test(file.name)) return toast("只支持 PNG / JPG / WEBP");
+  state.modernStudio.storyboardUploadBusy = true;
+  state.modernStudio.storyboardUploadStatus = "正在上传并绑定当前页…";
+  renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  try {
+    const data = await api(`/api/project/${state.selectedId}/asset-upload-local`, {
+      method: "POST",
+      body: JSON.stringify({
+        type: tab,
+        label: humanizeStoryboardUploadLabel(file.name),
+        filename: file.name,
+        contentBase64: await fileBase64(file),
+        confirm: true,
+        generate: false,
+      }),
+    });
+    setProjectState(data.state);
+    const pages = modernStoryboardPages(state.project, modernShotRecords(state.project));
+    const page = pages[state.modernStudio.storyboardPageIndex] || pages[0];
+    const id = data.result?.asset?.id || data.result?.asset?.assetName || data.result?.asset?.name;
+    if (id && page) {
+      const bindings = modernStoryboardPageBindings(page);
+      bindings.add(id);
+      setModernStoryboardPageBindings(page, bindings);
+    }
+    toast(data.result?.message || "生产参考已上传并绑定当前页");
+    state.modernStudio.storyboardUploadStatus = "已上传并绑定当前页 · 可继续添加";
+  } catch (error) {
+    state.modernStudio.storyboardUploadStatus = "上传失败 · 请重试";
+    throw error;
+  } finally {
+    state.modernStudio.storyboardUploadBusy = false;
+    const input = $("#modernStoryboardReferenceFile");
+    if (input) input.value = "";
+    renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  }
+}
+
+function toggleModernStoryboardAssetBinding(assetId) {
+  const pages = modernStoryboardPages(state.project, modernShotRecords(state.project));
+  const page = pages[state.modernStudio.storyboardPageIndex] || pages[0];
+  if (!page || !assetId) return;
+  const bindings = modernStoryboardPageBindings(page);
+  if (bindings.has(assetId)) bindings.delete(assetId);
+  else bindings.add(assetId);
+  setModernStoryboardPageBindings(page, bindings);
+  const status = $("#modernStoryboardActionStatus");
+  if (status) status.textContent = bindings.has(assetId) ? "参考资产已绑定到当前页" : "参考资产已从当前页移除";
+  renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+}
+
+function modernStoryboardAssetRecords(data = state.project, page = null) {
+  const items = Array.isArray(data?.assetManifest?.items) ? data.assetManifest.items : [];
+  const assets = Array.isArray(data?.assets) ? data.assets : [];
+  const byName = new Map(assets.map((asset) => [asset.assetName || asset.name, asset]));
+  const boundNames = new Set((page?.panels || []).flatMap((panel) => panel.blocking?.characters || []).map((item) => item.ref).filter(Boolean));
+  modernStoryboardPageBindings(page || {}).forEach((id) => boundNames.add(id));
+  const tab = state.modernStudio.storyboardAssetTab;
+  if (tab === "Style") {
+    const reference = data?.assetStyleReference?.asset;
+    return [{ id: "style-package", label: reference?.name || "资产图风格参考", type: "Style", asset: reference, bound: true, meta: "线条 · 色彩 · 材质 · 光影" }];
+  }
+  return items
+    .filter((item) => item.type === tab || (tab === "Prop" && ["Insert", "Prop"].includes(item.type)))
+    .map((item) => ({
+      id: item.id,
+      label: item.label || item.id,
+      type: item.type,
+      asset: byName.get(item.id) || null,
+      bound: boundNames.has(item.id),
+      meta: item.usage || item.note || "可用于真实生产",
+    }));
+}
+
+function modernStoryboardStatusLabel(status = "waiting") {
+  return { complete: "已确认", reused: "继承镜头", running: "生成中", queued: "排队中", failed: "需检查", waiting: "待生成" }[status] || "待生成";
+}
+
+function renderModernStoryboardStudio(data = state.project, shots = modernShotRecords(data)) {
+  const studio = $("#modernStoryboardStudio");
+  if (!studio) return;
+  const pages = modernStoryboardPages(data, shots);
+  const currentIndex = Math.max(0, Math.min(Number(state.modernStudio.storyboardPageIndex) || 0, pages.length - 1));
+  const page = pages[currentIndex];
+  state.modernStudio.storyboardPageIndex = currentIndex;
+  const selectedPanelIndex = Math.max(0, Math.min(Number(state.modernStudio.storyboardPanelIndex) || 0, page.panels.length - 1));
+  state.modernStudio.storyboardPanelIndex = selectedPanelIndex;
+  const selectedPanel = page.panels[selectedPanelIndex];
+  const ratio = videoConfigDataFromProject()?.settings?.storyboardRatio
+    || videoConfigDataFromProject()?.settings?.ratio
+    || $("#configRatio")?.value
+    || "16:9";
+  const project = data?.project || {};
+  const title = displayProjectTitle(project);
+  const jobStatus = String(data?.storyboardJob?.status || "").toLowerCase();
+  const generating = state.modernStudio.storyboardGenerating || ["running", "queued"].includes(jobStatus);
+
+  $("#modernStoryboardProject").textContent = title || "项目";
+  $("#modernStoryboardPage").textContent = `第 ${String(currentIndex + 1).padStart(2, "0")} / ${String(pages.length).padStart(2, "0")} 页`;
+  $("#modernStoryboardRatio").textContent = ratio;
+  const storyboardZoom = Math.max(50, Math.min(120, Number(state.modernStudio.storyboardZoom) || 75));
+  state.modernStudio.storyboardZoom = storyboardZoom;
+  $("#modernStoryboardToolPage").textContent = `分镜页 ${String(currentIndex + 1).padStart(2, "0")}`;
+  $("#modernStoryboardToolMeta").textContent = `${page.panels.length} 镜头 · ${state.modernStudio.storyboardStrictReuse ? "连续草稿" : "参考连续"}`;
+  $("#modernStoryboardZoom").textContent = `${storyboardZoom}%`;
+  $(".modern-storyboard-paper")?.style.setProperty("--storyboard-zoom", String(storyboardZoom / 75));
+  $$('[data-storyboard-tool]').forEach((button) => {
+    const active = button.dataset.storyboardTool === state.modernStudio.storyboardTool;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  const referenceFile = $("#modernStoryboardReferenceFile");
+  const referenceUpload = $("#modernStoryboardReferenceUpload");
+  const referenceDropzone = $("#modernStoryboardReferenceDropzone");
+  const referenceUploadStatus = $("#modernStoryboardReferenceUploadStatus");
+  const uploadBusy = state.modernStudio.storyboardUploadBusy === true;
+  if (referenceFile) referenceFile.disabled = uploadBusy;
+  if (referenceUpload) referenceUpload.disabled = uploadBusy;
+  if (referenceDropzone) {
+    referenceDropzone.disabled = uploadBusy;
+    referenceDropzone.classList.toggle("is-busy", uploadBusy);
+  }
+  if (referenceUploadStatus) referenceUploadStatus.textContent = state.modernStudio.storyboardUploadStatus || (uploadBusy ? "正在上传并绑定当前页…" : "拖入图片，或点击右上角＋添加");
+  $("#modernStoryboardCanvasTitle").textContent = `第 ${String(currentIndex + 1).padStart(2, "0")} 页 · 匿名构图`;
+  $("#modernStoryboardCanvasMeta").textContent = state.modernStudio.storyboardStrictReuse && currentIndex > 0 ? "严格连续 · 第 1 格直接继承上一页尾格" : "抽象构图 · 仅传递镜头语言与连续性元数据";
+  $("#modernStoryboardCanvasStatus").textContent = generating ? "生成中" : modernStoryboardStatusLabel(page.status);
+  $("#modernStoryboardCanvasStatus").className = `modern-storyboard-state is-${generating ? "running" : page.status === "complete" ? "ready" : page.status === "failed" ? "failed" : ""}`;
+  $("#modernStoryboardReferenceCount").textContent = `${modernStoryboardAssetRecords(data, page).filter((item) => item.bound).length} 个引用`;
+  $("#modernStoryboardSelectedPanel").textContent = `${String(selectedPanel.number).padStart(2, "0")} · ${selectedPanel.size}`;
+  $("#modernStoryboardSelectedCopy").textContent = selectedPanel.copy;
+  $("#modernStoryboardStrictReuse").checked = state.modernStudio.storyboardStrictReuse;
+  $("#modernStoryboardInspectorState").textContent = generating ? "检查中" : page.status === "complete" ? "可继续" : "待检查";
+  $("#modernStoryboardInspectorState").className = `modern-storyboard-state ${page.status === "complete" ? "is-ready" : generating ? "is-running" : ""}`;
+  $("#modernStoryboardQueueLabel").textContent = generating ? "故事板队列运行中" : data?.storyboardJob?.status === "failed" ? "上次生成失败，可恢复" : "队列空闲";
+  $("#modernStoryboardGeneratePage").disabled = generating;
+  $("#modernStoryboardGenerateNext").disabled = generating;
+  $("#modernStoryboardRetryPanel").disabled = generating;
+
+  const grid = $("#modernStoryboardGrid");
+  if (grid) {
+    grid.innerHTML = page.panels.map((panel, panelIndex) => {
+      const status = modernStoryboardStatusLabel(panel.status);
+      const media = modernMediaForShot(data, panel.shot, panel.panelIndex, "storyboard");
+      const copy = String(panel.copy || "等待镜头描述").replace(/\s+/g, " ").slice(0, 52);
+      return `<button type="button" class="modern-storyboard-panel ${panelIndex === selectedPanelIndex ? "is-active" : ""} ${panel.status === "reused" ? "is-reused" : ""} ${panel.status === "failed" ? "is-failed" : ""}" data-storyboard-panel-index="${panelIndex}" aria-label="镜头 ${String(panel.number).padStart(2, "0")} ${escapeAttr(panel.size)}">
+        <span class="modern-storyboard-panel-number">${String(panel.number).padStart(2, "0")}</span><span class="modern-storyboard-panel-art${media ? " has-media" : ""}" aria-hidden="true">${media ? `<img src="${escapeAttr(media)}" alt="" loading="lazy" />` : ""}</span><span class="modern-storyboard-panel-copy"><b>${escapeHtml(panel.size)}</b><small>${escapeHtml(copy)}</small><em class="is-${escapeAttr(panel.status)}">${escapeHtml(status)}</em></span>
+      </button>`;
+    }).join("");
+  }
+
+  const assetList = $("#modernStoryboardAssetList");
+  if (assetList) {
+    const records = modernStoryboardAssetRecords(data, page);
+    assetList.innerHTML = records.length
+      ? records.map((item) => `<button type="button" class="modern-storyboard-asset-item ${item.bound ? "is-bound" : ""}" role="listitem" data-storyboard-asset-id="${escapeAttr(item.id)}" aria-pressed="${item.bound ? "true" : "false"}" aria-label="${escapeAttr(`${item.bound ? "取消引用" : "引用"} ${item.label}`)}"><span class="modern-storyboard-asset-thumb">${item.asset?.url ? `<img src="${escapeAttr(item.asset.url)}" alt="" loading="lazy" />` : ""}</span><span class="modern-storyboard-asset-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.bound ? "已绑定当前页" : item.meta)}</small></span><i aria-label="${item.bound ? "已引用" : "未引用"}"></i></button>`).join("")
+      : `<div class="modern-storyboard-empty-reference">暂无${state.modernStudio.storyboardAssetTab === "Style" ? "风格包" : "已确认资产"}</div>`;
+  }
+  $("#modernStoryboardAssetTabs")?.querySelectorAll("[data-storyboard-asset-tab]").forEach((button) => {
+    button.setAttribute("aria-selected", button.dataset.storyboardAssetTab === state.modernStudio.storyboardAssetTab ? "true" : "false");
+  });
+
+  const previousTail = currentIndex > 0 ? pages[currentIndex - 1].panels[8] : null;
+  const tailPreview = $("#modernStoryboardTailPreview");
+  const headPreview = $("#modernStoryboardHeadPreview");
+  const tailMedia = previousTail ? modernMediaForShot(data, previousTail.shot, previousTail.panelIndex, "storyboard") : "";
+  const headMedia = modernMediaForShot(data, selectedPanel.shot, selectedPanel.panelIndex, "storyboard");
+  if (tailPreview) {
+    tailPreview.classList.toggle("has-media", !!tailMedia);
+    tailPreview.innerHTML = `${tailMedia ? `<img src="${escapeAttr(tailMedia)}" alt="" loading="lazy" />` : ""}<span>${previousTail ? "第 09 格 · 尾格锚点" : "无上一页"}</span>`;
+  }
+  if (headPreview) {
+    headPreview.classList.toggle("has-media", !!headMedia);
+    headPreview.innerHTML = `${headMedia ? `<img src="${escapeAttr(headMedia)}" alt="" loading="lazy" />` : ""}<span>${selectedPanel.source === "reused-anchor" ? "直接复用" : "参考生成"}</span>`;
+  }
+
+  const checks = [
+    ["人物数量", page.panels.some((panel) => panel.blocking.characters.length > 0) || !data?.assetManifest?.confirmed],
+    ["站位与朝向", state.modernStudio.storyboardStrictReuse || currentIndex === 0],
+    ["视线方向", page.status !== "failed"],
+    ["场景锚点", page.panels.some((panel) => panel.blocking.sceneAnchors.length > 0)],
+    ["道具槽位", true],
+    ["镜头方向", page.panels.length === 9],
+  ];
+  $("#modernStoryboardChecks").innerHTML = checks.map(([label, pass]) => `<li class="${pass ? "is-pass" : ""}">${escapeHtml(label)}<span>${pass ? "已通过" : "待检查"}</span></li>`).join("");
+  const beats = page.panels.slice(0, 4).map((panel, index) => ({ label: panel.copy, done: ["complete", "reused"].includes(panel.status) || index === 0 }));
+  $("#modernStoryboardBeats").innerHTML = beats.map((beat) => `<li class="${beat.done ? "is-done" : ""}"><span>${escapeHtml(String(beat.label).slice(0, 42))}</span><i aria-hidden="true"></i></li>`).join("");
+
+  const timeline = $("#modernStoryboardTimelineTrack");
+  if (timeline) {
+    timeline.innerHTML = pages.map((entry, index) => `${index ? '<span class="modern-storyboard-page-connector" aria-hidden="true"></span>' : ""}<button type="button" class="modern-storyboard-page-card ${index === currentIndex ? "is-current" : ""} ${entry.status === "complete" ? "is-complete" : ""}" data-storyboard-page-index="${index}"><header><b>第 ${String(index + 1).padStart(2, "0")} 页</b><small>${entry.status === "complete" ? "已完成" : index === currentIndex ? "当前页" : "排队"}</small></header><span class="modern-storyboard-page-thumbs">${entry.panels.map((panel, panelIndex) => `<i class="${panel.status === "complete" ? "is-done" : panel.status === "reused" ? "is-current" : ""}" title="镜头 ${panelIndex + 1}"></i>`).join("")}</span><footer>${entry.panels.filter((panel) => ["complete", "reused"].includes(panel.status)).length}/9 镜头 · 尾格 ${entry.panels[8].status === "complete" ? "已锁定" : "待确认"}</footer></button>`).join("");
+  }
+}
+
+async function runModernStoryboardJob(action = "current") {
+  const status = $("#modernStoryboardActionStatus");
+  const target = document.querySelector("[data-job='storyboards']");
+  if (!target) throw new Error("当前没有可执行的故事板任务");
+  state.modernStudio.storyboardGenerating = true;
+  if (status) {
+    status.className = "modern-storyboard-action-status is-running";
+    status.textContent = action === "next" ? "正在准备下一页，严格连续会锁定首格…" : "正在准备当前页，保留已确认镜头…";
+  }
+  renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  try {
+    await startJob("storyboards");
+    if (status) {
+      status.className = "modern-storyboard-action-status";
+      status.textContent = action === "next" ? "下一页已加入队列 · 首格将承接上一页尾格" : "当前页已加入队列 · 已确认镜头不会被覆盖";
+    }
+  } catch (error) {
+    if (status) {
+      status.className = "modern-storyboard-action-status is-error";
+      status.textContent = `生成失败：${error.message}`;
+    }
+    throw error;
+  } finally {
+    state.modernStudio.storyboardGenerating = false;
+    renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  }
+}
+
+function saveModernStoryboardContinuity() {
+  const key = `pixelToys.storyboardContinuity.${state.selectedId || "anonymous"}`;
+  localStorage.setItem(key, JSON.stringify({
+    pageIndex: state.modernStudio.storyboardPageIndex,
+    strictReuse: state.modernStudio.storyboardStrictReuse,
+    bindings: state.modernStudio.storyboardBindings || {},
+    updatedAt: Date.now(),
+  }));
+  const status = $("#modernStoryboardActionStatus");
+  if (status) {
+    status.className = "modern-storyboard-action-status";
+    status.textContent = "连续性设置已保存";
+  }
+}
+
+function exportModernStoryboardPage() {
+  const pages = modernStoryboardPages(state.project, modernShotRecords(state.project));
+  const page = pages[state.modernStudio.storyboardPageIndex] || pages[0];
+  const lines = [
+    `# ${displayProjectTitle(state.project?.project || {})} · 第 ${page.pageIndex + 1} 页故事板`,
+    "",
+    `连续策略：${state.modernStudio.storyboardStrictReuse ? "严格复用首格" : "参考连续"}`,
+    "故事板预览不回流资产库。",
+    "",
+    ...page.panels.map((panel) => `- 镜号 ${String(panel.number).padStart(2, "0")} · ${panel.size} · ${modernStoryboardStatusLabel(panel.status)} · ${panel.copy}`),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `storyboard-page-${String(page.pageIndex + 1).padStart(2, "0")}.md`;
+  link.click();
+  URL.revokeObjectURL(url);
+  const status = $("#modernStoryboardActionStatus");
+  if (status) status.textContent = "当前页分镜表已导出";
+}
+
 
 function modernMediaForShot(data, shot, index, kind) {
   const list = kind === "storyboard" ? (data?.storyboards || data?.storyboardSlots || []) : (data?.videoProgress?.items || []);
@@ -5210,6 +5574,8 @@ function renderModernStudio(data = state.project) {
     : "assets";
   state.modernStudio.focus = modernFocus;
   root.querySelector(".modern-main")?.setAttribute("data-modern-view", modernFocus);
+  const modernWorkbench = root.querySelector(".modern-workbench");
+  if (modernWorkbench) modernWorkbench.hidden = modernFocus !== "video";
   root.querySelectorAll("[data-modern-focus]").forEach((button) => {
     const buttonFocus = button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus;
     button.classList.toggle("is-active", buttonFocus === modernFocus);
@@ -5261,6 +5627,20 @@ function renderModernStudio(data = state.project) {
   const title = displayProjectTitle(project);
   const progress = data.videoProgress || {};
   const shots = modernShotRecords(data);
+  if (state.selectedId && state.modernStudio.storyboardContinuityLoadedFor !== state.selectedId) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`pixelToys.storyboardContinuity.${state.selectedId}`) || "null");
+      if (saved && typeof saved === "object") {
+        state.modernStudio.storyboardPageIndex = Math.max(0, Number(saved.pageIndex) || 0);
+        state.modernStudio.storyboardStrictReuse = saved.strictReuse !== false;
+        state.modernStudio.storyboardBindings = saved.bindings && typeof saved.bindings === "object" ? saved.bindings : {};
+      }
+    } catch {
+      // Ignore malformed local continuity state and keep the strict default.
+    }
+    state.modernStudio.storyboardContinuityLoadedFor = state.selectedId;
+  }
+  renderModernStoryboardStudio(data, shots);
   const total = shots.length || Number(progress.total || 0);
   const completed = shots.filter((shot) => shot.status === "complete").length || Number(progress.completed || 0);
   const queueCount = modernVideoQueueCount(progress);
@@ -9683,7 +10063,7 @@ function bind() {
       : nextFocus === "assetimg"
         ? $("#modernAssetImagePanel")
       : nextFocus === "storyboard"
-        ? $("#modernStillTitle")?.closest(".modern-stage-pane")
+        ? $("#modernStoryboardStudio")
         : nextFocus === "cut"
           ? $("#modernCutPanel")
           : $("#modernMotionTitle")?.closest(".modern-stage-pane");
@@ -9973,7 +10353,113 @@ function bind() {
     if (button.disabled) return;
     withStudioButtonFeedback(button, () => generateDraft()).catch((error) => toast(error.message));
   });
-  $("#modernSaveAssetDescription")?.addEventListener("click", (event) => {
+  $("#modernStoryboardAssetTabs")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-storyboard-asset-tab]");
+    if (!button) return;
+    state.modernStudio.storyboardAssetTab = button.dataset.storyboardAssetTab || "Character";
+    state.modernStudio.storyboardUploadStatus = "";
+    renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  });
+  $("#modernStoryboardReferenceUpload")?.addEventListener("click", () => {
+    if (state.modernStudio.storyboardAssetTab === "Style") return toast("风格包请在资产图页面上传和管理");
+    $("#modernStoryboardReferenceFile")?.click();
+  });
+  $("#modernStoryboardReferenceDropzone")?.addEventListener("click", () => {
+    if (state.modernStudio.storyboardAssetTab === "Style") return toast("风格包请在资产图页面上传和管理");
+    $("#modernStoryboardReferenceFile")?.click();
+  });
+  $("#modernStoryboardReferenceFile")?.addEventListener("change", (event) => {
+    uploadModernStoryboardReference(event.currentTarget.files?.[0]).catch((error) => toast(error.message));
+  });
+  $("#modernStoryboardReferenceDropzone")?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    event.currentTarget.classList.add("is-dragging");
+  });
+  $("#modernStoryboardReferenceDropzone")?.addEventListener("dragleave", (event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    event.currentTarget.classList.remove("is-dragging");
+  });
+  $("#modernStoryboardReferenceDropzone")?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    event.currentTarget.classList.remove("is-dragging");
+    uploadModernStoryboardReference(event.dataTransfer?.files?.[0]).catch((error) => toast(error.message));
+  });
+  $("#modernStoryboardAssetList")?.addEventListener("click", (event) => {
+    const asset = event.target.closest("[data-storyboard-asset-id]");
+    if (!asset) return;
+    toggleModernStoryboardAssetBinding(asset.dataset.storyboardAssetId || "");
+  });
+  $("#modernStoryboardToolrow")?.addEventListener("click", (event) => {
+    const tool = event.target.closest("[data-storyboard-tool]");
+    if (tool) {
+      state.modernStudio.storyboardTool = tool.dataset.storyboardTool || "select";
+      const status = $("#modernStoryboardActionStatus");
+      if (status) status.textContent = `${storyboardToolLabels[state.modernStudio.storyboardTool] || "画布工具"}模式已启用`;
+      renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+      return;
+    }
+    if (event.target.closest("#modernStoryboardFit")) state.modernStudio.storyboardZoom = 75;
+    else if (event.target.closest("#modernStoryboardZoomOut")) state.modernStudio.storyboardZoom = Math.max(50, (Number(state.modernStudio.storyboardZoom) || 75) - 10);
+    else if (event.target.closest("#modernStoryboardZoomIn")) state.modernStudio.storyboardZoom = Math.min(120, (Number(state.modernStudio.storyboardZoom) || 75) + 10);
+    else return;
+    renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  });
+  $("#modernStoryboardGrid")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-storyboard-panel-index]");
+    if (!button) return;
+    state.modernStudio.storyboardPanelIndex = Number(button.dataset.storyboardPanelIndex) || 0;
+    const status = $("#modernStoryboardActionStatus");
+    if (status) status.textContent = `已选择镜头 ${String(state.modernStudio.storyboardPanelIndex + 1).padStart(2, "0")}`;
+    renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  });
+  $("#modernStoryboardTimelineTrack")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-storyboard-page-index]");
+    if (!button) return;
+    state.modernStudio.storyboardPageIndex = Number(button.dataset.storyboardPageIndex) || 0;
+    state.modernStudio.storyboardPanelIndex = 0;
+    renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  });
+  $("#modernStoryboardStrictReuse")?.addEventListener("change", (event) => {
+    state.modernStudio.storyboardStrictReuse = event.currentTarget.checked;
+    renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  });
+  $("#modernStoryboardGeneratePage")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => runModernStoryboardJob("current")).catch((error) => toast(error.message));
+  });
+  $("#modernStoryboardGenerateNext")?.addEventListener("click", (event) => {
+    const pages = modernStoryboardPages(state.project, modernShotRecords(state.project));
+    state.modernStudio.storyboardPageIndex = Math.min(pages.length - 1, state.modernStudio.storyboardPageIndex + 1);
+    state.modernStudio.storyboardPanelIndex = 0;
+    withStudioButtonFeedback(event.currentTarget, () => runModernStoryboardJob("next")).catch((error) => toast(error.message));
+  });
+  $("#modernStoryboardSave")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => saveModernStoryboardContinuity());
+  });
+  $("#modernStoryboardExport")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => exportModernStoryboardPage());
+  });
+  $("#modernStoryboardRetryPanel")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => runModernStoryboardJob("current")).catch((error) => toast(error.message));
+  });
+  $("#modernStoryboardRestartPage")?.addEventListener("click", () => {
+    const pageIndex = state.modernStudio.storyboardPageIndex;
+    state.modernStudio.storyboardExtraPages = Math.max(Number(state.modernStudio.storyboardExtraPages) || 0, pageIndex + 2);
+    state.modernStudio.storyboardPageIndex = pageIndex + 1;
+    state.modernStudio.storyboardPanelIndex = 0;
+    renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+    toast("已建立新的连续分支，原页面仍可回看");
+  });
+  $("#modernStoryboardRecover")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => runModernStoryboardJob("current")).catch((error) => toast(error.message));
+  });
+  $("#modernStoryboardAddPage")?.addEventListener("click", () => {
+    const pages = modernStoryboardPages(state.project, modernShotRecords(state.project));
+    state.modernStudio.storyboardExtraPages = pages.length + 1;
+    state.modernStudio.storyboardPageIndex = pages.length;
+    state.modernStudio.storyboardPanelIndex = 0;
+    renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+  });
+ $("#modernSaveAssetDescription")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, () => saveFile("assetDescription")).catch((error) => toast(error.message));
   });
   $("#modernExtractAssets")?.addEventListener("click", (event) => {

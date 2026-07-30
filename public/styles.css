@@ -16924,6 +16924,7 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 @media (max-width: 980px) { .modern-source-panel { display: block; margin: 14px 14px 0; }.modern-source-grid { grid-template-columns: 1fr; }.modern-source-field + .modern-source-field { border-top: 1px solid var(--modern-line); border-left: 0; }.modern-asset-results { border-top: 1px solid var(--modern-line); border-left: 0; } }
 @media (max-width: 560px) { .modern-manual-asset-upload-form { grid-template-columns: 1fr; }.modern-manual-asset-upload-form > button { width: 100%; }.modern-manual-asset-upload > summary { align-items: start; flex-direction: column; gap: 3px; } }
 @media (max-width: 980px) { body.is-studio-modern { min-width: 0; }.studio-modern-shell { display: block; height: auto; min-height: 100vh; overflow: visible; }.modern-main { min-height: 0; overflow: visible; }.modern-series-nav { position: relative; height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--mv-line); }.modern-brand { display: flex; align-items: center; justify-content: space-between; }.modern-series-context, .modern-series-footer { display: none; }.modern-episode-list { display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; overflow-y: hidden; }.modern-episode-row { flex: 0 0 150px; }.modern-stage-grid { grid-template-columns: 1fr; }.modern-stage-pane { border-right: 0; border-bottom: 1px solid var(--mv-line); }.modern-stage-pane:last-child { border-bottom: 0; }.modern-kit-bar { margin: 14px 14px 0; }.modern-sequence { margin: 14px; }.modern-workbench { margin: 18px 14px 24px; }.modern-core { overflow: visible; } }
+@media (max-width: 980px) { .modern-series-nav-toggle { display: none; } body.is-studio-modern .studio-modern-shell.is-nav-collapsed { display: block; } }
 
 /* Keep source fields compact beside the parsed-assets rail instead of stretching to its height. */
 .modern-source-panel { display: flex; flex-wrap: wrap; align-items: flex-start; }
@@ -17591,7 +17592,45 @@ body.is-studio-modern .studio-modern-shell {
   --mv-amb: #f27a5b;
   --mv-ok: #9fcf58;
   grid-template-columns: 224px minmax(0, 1fr);
+  transition: grid-template-columns 220ms cubic-bezier(.22, 1, .36, 1);
 }
+
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+
+body.is-studio-modern .modern-series-nav { position: relative; }
+.modern-series-nav-toggle {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  right: 7px;
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid var(--mv-line-2);
+  border-radius: 6px;
+  background: var(--mv-s2);
+  color: var(--mv-mut);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1);
+}
+.modern-series-nav-toggle:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
+.modern-series-nav-toggle:focus-visible { border-color: var(--mv-lime); outline: 2px solid rgba(217,45,69,.35); outline-offset: 2px; }
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-series-nav-toggle { right: 14px; }
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-series-nav-toggle span { transform: translateX(1px); }
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand { justify-content: center; padding-right: 0; padding-left: 0; }
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand button { width: 28px; overflow: hidden; }
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand-logo { width: 28px; background-size: auto 20px; background-position: left center; }
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand-copy,
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-project-switcher,
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-episode-list,
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-series-footer { display: none; }
 
 body.is-studio-modern .modern-topbar {
   grid-template-columns: minmax(0, 1fr) auto;

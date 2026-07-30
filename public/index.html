@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=auth-entry-20260730" />
+    <link rel="stylesheet" href="/styles.css?v=nav-toggle-20260730" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -931,6 +931,9 @@
 
       <section id="studioModernShell" class="studio-modern-shell hidden" aria-label="新版制作台">
         <aside class="modern-series-nav" aria-label="项目与剧集">
+          <button id="modernSeriesNavToggle" class="modern-series-nav-toggle" type="button" aria-controls="modernProjectSwitcher modernEpisodeList modernSeriesFooter" aria-expanded="true" aria-label="收起项目导航" title="收起项目导航">
+            <span data-nav-toggle-icon aria-hidden="true">‹</span>
+          </button>
           <header class="modern-brand">
             <button id="modernBrandButton" type="button" aria-label="返回项目页" title="返回项目页">
               <span class="modern-brand-logo pixel-toys-wordmark" aria-hidden="true"></span>
@@ -961,7 +964,7 @@
             </form>
           </div>
           <nav id="modernEpisodeList" class="modern-episode-list" aria-label="项目阶段"></nav>
-          <footer class="modern-series-footer">
+          <footer id="modernSeriesFooter" class="modern-series-footer">
             <div class="modern-progress-track"><span id="modernSeriesProgress"></span></div>
             <div class="modern-progress-label"><span>制作进度</span><strong id="modernSeriesProgressLabel">0%</strong></div>
             <button id="modernVisualBibleButton" class="modern-bible-entry" type="button">
@@ -1452,6 +1455,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=auth-entry-20260730"></script>
+    <script src="/app.js?v=nav-toggle-20260730"></script>
   </body>
 </html>

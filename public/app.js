@@ -30,6 +30,7 @@ const IMAGE_EXPLORE_STORYBOARD_HISTORY_KEY = "pixelToys.imageStoryboardHistory.v
 const IMAGE_EXPLORE_STORYBOARD_RECOVERY_KEY = "pixelToys.imageStoryboardRecovery.v1";
 const SUPER_PIXEL_RAIL_OPEN_KEY = "pixelToys.superPixelRailOpen";
 const SUPER_PIXEL_HISTORY_KEY = "pixelToys.superPixelHistory.v1";
+const MODERN_SERIES_NAV_COLLAPSED_KEY = "pixelToys.modernSeriesNavCollapsed";
 const SUPER_PIXEL_HISTORY_MAX_MESSAGES = 100;
 const SUPER_PIXEL_HISTORY_SAVE_DELAY_MS = 250;
 const IMAGE_EXPLORE_POLL_INTERVAL_MS = 1200;
@@ -205,6 +206,7 @@ const state = {
     copyTab: "story",
     queueFilter: "all",
     focus: "video",
+    navCollapsed: localStorage.getItem(MODERN_SERIES_NAV_COLLAPSED_KEY) === "1",
     detailsOpen: false,
     assetManageMode: false,
     storyboardTool: "select",
@@ -5571,6 +5573,7 @@ function modernMediaForShot(data, shot, index, kind) {
 function renderModernStudio(data = state.project) {
   const root = $("#studioModernShell");
   if (!root || !data?.project) return;
+  syncModernSeriesNav();
   renderModernDurationMode(data);
   const modernFocus = ["assets", "assetimg", "storyboard", "video", "cut"].includes(state.modernStudio.focus)
     ? state.modernStudio.focus
@@ -5732,6 +5735,19 @@ function renderModernStudio(data = state.project) {
   renderModernVideoQueue(shots, selectedIndex, data);
   renderModernFinalCutTrack(shots);
   renderModernSelectedShot(data, selected, selectedIndex);
+}
+
+function syncModernSeriesNav() {
+  const shell = $("#studioModernShell");
+  const toggle = $("#modernSeriesNavToggle");
+  if (!shell || !toggle) return;
+  const collapsed = state.modernStudio.navCollapsed === true;
+  shell.classList.toggle("is-nav-collapsed", collapsed);
+  toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  toggle.setAttribute("aria-label", collapsed ? "展开项目导航" : "收起项目导航");
+  toggle.title = collapsed ? "展开项目导航" : "收起项目导航";
+  const icon = toggle.querySelector("[data-nav-toggle-icon]");
+  if (icon) icon.textContent = collapsed ? "›" : "‹";
 }
 
 function renderModernAssetGenerationControls(data = state.project) {
@@ -10004,6 +10020,11 @@ function bind() {
     renderModernStudio(state.project);
   });
   $("#modernBrandButton")?.addEventListener("click", goBackToProjects);
+  $("#modernSeriesNavToggle")?.addEventListener("click", () => {
+    state.modernStudio.navCollapsed = !state.modernStudio.navCollapsed;
+    localStorage.setItem(MODERN_SERIES_NAV_COLLAPSED_KEY, state.modernStudio.navCollapsed ? "1" : "0");
+    syncModernSeriesNav();
+  });
   $("#modernProjectContext")?.addEventListener("click", () => {
     setModernProjectMenu($("#modernProjectMenu")?.classList.contains("hidden"));
   });

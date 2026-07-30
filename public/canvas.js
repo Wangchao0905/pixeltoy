@@ -522,7 +522,15 @@ function normalizeRestoredNode(node = {}) {
       !node.taskId &&
       /提交\s*Seedance|正在提交/i.test(String(node.statusMessage || "")) &&
       (!submittedAtMs || Date.now() - submittedAtMs > VIDEO_SUBMIT_STALE_MS);
-    const restoredStatus = node.videoUrl ? "completed" : staleSubmitting ? "failed" : node.status || "idle";
+    const rawStatus = String(node.status || "").toLowerCase();
+    const activeStatus = ["running", "queued", "pending"].includes(rawStatus);
+    const restoredStatus = staleSubmitting
+      ? "failed"
+      : activeStatus
+        ? rawStatus
+        : node.videoUrl
+          ? "completed"
+          : rawStatus || "idle";
     const restoredProgress = restoredStatus === "running"
       ? null
       : Number.isFinite(Number(node.progress))
@@ -539,9 +547,12 @@ function normalizeRestoredNode(node = {}) {
       statusMessage: staleSubmitting
         ? "提交视频任务超时：没有拿到 taskId，请重新生成"
         : node.status === "running" && !node.videoUrl ? node.statusMessage || "任务已提交，等待接口返回结果" : node.statusMessage || "",
-      videoUrl: node.videoUrl || "",
+      // A server refresh can briefly return the previous URL while the new
+      // generation is running. Never render that stale media as the result.
+      videoUrl: activeStatus ? "" : node.videoUrl || "",
       taskId: hasTask ? node.taskId || "" : "",
       taskProvider: hasTask ? node.taskProvider || "" : "",
+      videoPreviewVersion: node.videoPreviewVersion || "",
       progress: restoredProgress,
       submittedAt,
       startFrameUrl: node.startFrameUrl || "",
@@ -1125,6 +1136,10 @@ function endCanvasPan(event = {}) {
   canvas?.classList.remove("is-middle-panning");
   canvasState.viewportPan = null;
   scheduleCanvasSave();
+}
+
+function canvasInteractionIsActive() {
+  return !!(canvasState.drag || canvasState.resize || canvasState.marquee || canvasState.viewportPan);
 }
 
 function setStudioBackLink() {
@@ -1957,10 +1972,24 @@ function videoDownloadHref(node) {
   return String(node?.videoUrl || "").trim();
 }
 
+function videoPreviewSrc(node) {
+  const raw = String(node?.videoUrl || "").trim();
+  const version = String(node?.videoPreviewVersion || node?.taskId || "").trim();
+  if (!raw || !version || /^(?:blob|data):/i.test(raw)) return raw;
+  try {
+    const url = new URL(raw, window.location.origin);
+    url.searchParams.set("canvasVideoGeneration", version);
+    return url.href;
+  } catch {
+    return `${raw}${raw.includes("?") ? "&" : "?"}canvasVideoGeneration=${encodeURIComponent(version)}`;
+  }
+}
+
 function renderVideoPreview(node) {
   if (node.kind !== "video") return "生成结果预览";
   if (node.videoUrl) {
     const downloadHref = videoDownloadHref(node);
+    const previewSrc = videoPreviewSrc(node);
     const captureBusy = node.tailFrameCaptureStatus === "capturing";
     const captureTailFrame = node.status === "completed"
       ? `<button class="video-capture-tail-button" type="button" data-capture-tail-frame aria-label="截取当前视频尾帧" title="${captureBusy ? "正在截取尾帧" : "截取当前视频尾帧"}"${captureBusy ? " disabled aria-busy=\"true\"" : ""}>${CAMERA_ICON_SVG}</button>`
@@ -1971,7 +2000,7 @@ function renderVideoPreview(node) {
         ? `<span class="video-tail-frame-status is-failed" role="status">${escapeHtml(node.tailFrameCaptureMessage)}</span>`
         : "";
     return `
-      <video src="${escapeHtml(node.videoUrl)}" controls playsinline preload="metadata"${node.tailFrameUrl ? ` poster="${escapeHtml(node.tailFrameUrl)}"` : ""}></video>
+      <video src="${escapeHtml(previewSrc)}" controls playsinline preload="metadata"${node.tailFrameUrl ? ` poster="${escapeHtml(node.tailFrameUrl)}"` : ""}></video>
       <div class="video-media-actions" aria-label="视频操作">
         <a class="media-download-button" href="${escapeHtml(downloadHref)}" download="${escapeHtml(videoDownloadName(node))}" aria-label="下载生成视频">${DOWNLOAD_ICON_SVG}<span>下载</span></a>
         ${captureTailFrame}
@@ -3210,6 +3239,7 @@ function refreshVideoNodeElement(nodeId) {
       // Some project providers keep the same media URL across generations.
       // The task identity must still force the player to adopt the new result.
       taskId: node.taskId || "",
+      videoPreviewVersion: node.videoPreviewVersion || "",
       status: node.status || "",
       tailFrameUrl: node.tailFrameUrl || "",
       tailFrameCaptureStatus: node.tailFrameCaptureStatus || "",
@@ -3447,7 +3477,7 @@ function renderImagePreview(node) {
         : "";
     const downloadHref = imageDownloadHref(node);
     return certificationBadge +
-      `<img class="image-preview-img" draggable="true" src="${escapeHtml(thumbUrl(node.imageUrl, 640))}" alt="生成结果" loading="lazy" decoding="async" />` +
+      `<img class="image-preview-img" draggable="false" src="${escapeHtml(thumbUrl(node.imageUrl, 640))}" alt="生成结果" loading="lazy" decoding="async" />` +
       `<div class="media-action-cluster">` +
         `<button type="button" class="media-download-button media-regen-button" data-image-action="regenerate" aria-label="重新生成" title="重新生成">↻<span>重新生成</span></button>` +
         (downloadHref
@@ -3647,6 +3677,7 @@ function applyVideoGenerationResult(nodeId, result = {}, options = {}) {
   const status = String(result.status || "").toLowerCase();
   const nextProgress = normalizeVideoProgress(result.progress, 99);
   const node = canvasState.nodes.find((item) => item.id === nodeId);
+  const resolvedTaskId = result.taskId || expectedTaskId || node?.taskId || "";
   if (result.videoUrl || status === "completed") {
     clearVideoPoll(nodeId);
     audioRetriedVideoNodes.delete(nodeId);
@@ -3654,8 +3685,8 @@ function applyVideoGenerationResult(nodeId, result = {}, options = {}) {
       status: "completed",
       statusMessage: result.message || "生成完成",
       videoUrl: result.videoUrl || node?.videoUrl || "",
-      taskId: result.taskId || "",
-      taskProvider: result.provider || "",
+      taskId: resolvedTaskId,
+      taskProvider: result.provider || node?.taskProvider || "",
       progress: 100,
     });
     persistNodeTailFrame(nodeId, result, generationToken);
@@ -3722,6 +3753,7 @@ async function generateVideoNode(nodeId, options = {}) {
   if (!node || node.kind !== "video") return;
   const generationToken = options.generationToken || beginVideoGeneration(nodeId);
   if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
+  const videoPreviewVersion = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   // Invalidate the previous poll immediately, before any async reference
   // preparation, so its in-flight response cannot win this regeneration.
   clearVideoPoll(nodeId);
@@ -3735,6 +3767,7 @@ async function generateVideoNode(nodeId, options = {}) {
       videoUrl: "",
       taskId: "",
       taskProvider: "",
+      videoPreviewVersion,
       progress: null,
       tailFrameReady: false,
       tailFrameUrl: "",
@@ -3784,6 +3817,7 @@ async function generateVideoNode(nodeId, options = {}) {
     videoUrl: "",
     taskId: "",
     taskProvider: "",
+    videoPreviewVersion,
     progress: null,
     tailFrameReady: false,
     tailFrameUrl: "",
@@ -4010,7 +4044,8 @@ function syncAssetNodeElement(element, node) {
       if (visual) visual.replaceWith(img);
       else element.insertBefore(img, element.querySelector(".asset-node-caption"));
     }
-    img.setAttribute("draggable", "true");
+    // 画布节点由 Pointer Events 拖动;原生图片拖拽会抢走事件并生成参考图副本。
+    img.setAttribute("draggable", "false");
     img.alt = asset.name || "";
     img.loading = "lazy";
     img.decoding = "async";
@@ -4044,6 +4079,8 @@ function syncAssetNodeElement(element, node) {
 }
 
 function renderNodes({ preserveExisting = false } = {}) {
+  // 后台轮询不能在交互中销毁节点 DOM,否则拖动目标会被替换成新节点而跳位/复制。
+  preserveExisting = preserveExisting || canvasInteractionIsActive();
   const wrap = qs("#canvasNodes");
   qs("#canvasHint").classList.toggle("hidden", canvasState.nodes.length > 0);
   // 结构签名：节点(含位置、资产节点的预览)、连接、选中、激活态。结构未变时不做
@@ -4088,6 +4125,14 @@ function renderNodes({ preserveExisting = false } = {}) {
   if (!preserveExisting) {
     wrap.innerHTML = "";
     nodeResizeObserver?.disconnect();
+  } else {
+    const nodeIds = new Set(canvasState.nodes.map((node) => node.id));
+    for (const element of existingElements.values()) {
+      if (!nodeIds.has(element.dataset.nodeId)) {
+        nodeResizeObserver?.unobserve(element);
+        element.remove();
+      }
+    }
   }
   for (const node of canvasState.nodes) {
     const existingElement = existingElements.get(node.id);
@@ -4113,11 +4158,6 @@ function renderNodes({ preserveExisting = false } = {}) {
     if (node.kind === "asset") {
       syncAssetNodeElement(element, node);
       element.addEventListener("contextmenu", (event) => showAssetContextMenu(event, node.id));
-      element.setAttribute("draggable", "true");
-      element.addEventListener("dragstart", (event) => beginCanvasAgentNodeDrag(event, node.id));
-      element.addEventListener("dragend", endCanvasAgentNodeDrag);
-      element.querySelector(".asset-node-image")?.addEventListener("dragstart", (event) => beginCanvasAgentNodeDrag(event, node.id));
-      element.querySelector(".asset-node-image")?.addEventListener("dragend", endCanvasAgentNodeDrag);
     } else {
       element.querySelector(".node-flow-summary").textContent = upstreamSummary(node);
       element.querySelector(".node-assets").innerHTML = renderNodeAssets(node);
@@ -4134,8 +4174,6 @@ function renderNodes({ preserveExisting = false } = {}) {
     const imagePreview = element.querySelector(".image-preview-slot");
     if (imagePreview && node.kind === "image") {
       imagePreview.addEventListener("contextmenu", (event) => showAssetContextMenu(event, node.id));
-      imagePreview.querySelector(".image-preview-img")?.addEventListener("dragstart", (event) => beginCanvasAgentNodeDrag(event, node.id));
-      imagePreview.querySelector(".image-preview-img")?.addEventListener("dragend", endCanvasAgentNodeDrag);
       imagePreview.style.setProperty("--image-preview-ratio", VIDEO_PREVIEW_RATIOS[node.settings?.ratio] || "16 / 9");
       imagePreview.dataset.previewSig = imagePreviewSig(node);
       imagePreview.innerHTML = renderImagePreview(node);
@@ -4259,6 +4297,7 @@ function startNodeDrag(event, nodeId) {
   canvasState.drag = {
     nodeId,
     nodeIds: selectedIds,
+    pointerId: event.pointerId,
     start: point,
     current: point,
     origins: selectedIds.map((id) => {
@@ -4289,12 +4328,14 @@ function applyNodeDragFrame() {
 }
 
 function updateNodeDrag(event) {
-  if (!canvasState.drag) return;
-  canvasState.drag.current = stagePoint(event.clientX, event.clientY);
+  const drag = canvasState.drag;
+  if (!drag || (drag.pointerId != null && event.pointerId !== drag.pointerId)) return;
+  drag.current = stagePoint(event.clientX, event.clientY);
   if (!canvasState.dragFrame) canvasState.dragFrame = requestAnimationFrame(applyNodeDragFrame);
 }
 
-function endNodeDrag() {
+function endNodeDrag(event = {}) {
+  if (canvasState.drag && canvasState.drag.pointerId != null && event.pointerId != null && event.pointerId !== canvasState.drag.pointerId) return;
   if (canvasState.dragFrame) {
     cancelAnimationFrame(canvasState.dragFrame);
     applyNodeDragFrame();
@@ -5127,7 +5168,7 @@ function markAssetUploadFailed(id, message = "") {
   asset.uploading = false;
   asset.uploadFailed = true;
   asset.uploadMessage = message;
-  renderNodes();
+  renderNodes({ preserveExisting: true });
 }
 
 function handleCanvasDragOver(event) {
@@ -5274,7 +5315,7 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
   // 拖拽/缩放进行中时跳过后台轮询刷新:否则(尤其生成中每几秒轮询一次)loadProject 会用服务端
   // 数据替换节点并触发 renderNodes 全量重建,把正在拖的节点销毁重建 → 内部布局乱跳/尺寸重排。
   // 拖拽/缩放结束后 pointerup 会再触发刷新,不会漏更新。用户主动切项目不会与拖拽同时发生。
-  if ((canvasState.drag || canvasState.resize) && options.silent) return;
+  if (canvasInteractionIsActive() && options.silent) return;
   const videoGeneration = options.videoGeneration || null;
   const videoLoadIsCurrent = () =>
     !videoGeneration || videoOperationIsCurrent(videoGeneration.nodeId, { generationToken: videoGeneration.generationToken });
@@ -5289,6 +5330,10 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
     syncCanvasUrl("", canvasState.canvasId);
     const saved = await api(`/api/canvas/state?projectId=${encodeURIComponent(canvasStorageProjectId())}`);
     if (!videoLoadIsCurrent()) {
+      canvasState.hydrating = false;
+      return false;
+    }
+    if (canvasInteractionIsActive() && options.silent) {
       canvasState.hydrating = false;
       return false;
     }
@@ -5344,6 +5389,10 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
     canvasState.hydrating = false;
     return false;
   }
+  if (canvasInteractionIsActive() && options.silent) {
+    canvasState.hydrating = false;
+    return false;
+  }
   canvasState.project = project;
   const currentCanvasId = projectVideoCanvasId(canvasState.project);
   canvasState.canvasId = currentCanvasId || urlCanvasId || "";
@@ -5354,6 +5403,10 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
     : null;
   const saved = preloadedCanvas || await api(`/api/canvas/state?projectId=${encodeURIComponent(canvasStorageProjectId())}`);
   if (!videoLoadIsCurrent()) {
+    canvasState.hydrating = false;
+    return false;
+  }
+  if (canvasInteractionIsActive() && options.silent) {
     canvasState.hydrating = false;
     return false;
   }

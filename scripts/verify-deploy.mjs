@@ -24,6 +24,7 @@ const syntaxFiles = [
   "server/team-progress.js",
   "server/team-references.js",
   "server/team-store.js",
+  "server/email-auth.js",
   "public/app.js",
   "public/admin.js",
   "public/canvas.js",

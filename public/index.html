@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=episode-sequence-20260729" />
+    <link rel="stylesheet" href="/styles.css?v=auth-entry-20260730" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -24,7 +24,8 @@
           </nav>
           <div class="explore-account-actions">
             <span id="exploreAuthUserLabel"></span>
-            <a id="exploreLoginLink" class="explore-account-link" href="/auth.html?next=/">登录</a>
+            <a id="exploreLoginLink" class="explore-account-link" href="/auth.html?mode=login&amp;next=/">登录</a>
+            <a id="exploreRegisterLink" class="explore-account-link explore-register-link" href="/auth.html?mode=register&amp;next=/">注册</a>
             <a id="exploreAdminLink" class="explore-account-link hidden" href="/admin.html">Admin</a>
             <button id="exploreTeamButton" type="button" aria-haspopup="dialog" aria-controls="teamPanel" title="团队">Team</button>
             <button id="exploreRefresh" type="button" aria-label="刷新项目" title="刷新项目">↻</button>
@@ -1451,6 +1452,6 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=episode-sequence-20260729"></script>
+    <script src="/app.js?v=auth-entry-20260730"></script>
   </body>
 </html>

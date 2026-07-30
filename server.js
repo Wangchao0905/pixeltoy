@@ -22,6 +22,12 @@ const { buildTeamProjectProgressFacts, calculateTeamProjectProgress, selectVideo
 const { createAssetLibrary } = require("./server/asset-library.js");
 const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
 const { ensureThumbnail } = require("./server/thumbnailer.js");
+const {
+  isValidEmail,
+  normalizeEmail,
+  requestEmailCode,
+  verifyEmailCode,
+} = require("./server/email-auth.js");
 
 // Keep outbound provider requests reliable on hosts with broken IPv6 routing.
 // ipv4first alone is insufficient: Node 20+ enables Happy Eyeballs (autoSelectFamily),
@@ -394,6 +400,7 @@ function publicUser(user = {}) {
   return {
     id: user.id || "",
     username: user.username || "",
+    email: isValidEmail(user.email || user.username) ? normalizeEmail(user.email || user.username) : "",
     displayName: user.displayName || user.username || "",
     avatarUrl: user.avatarUrl || "",
     role: computedUserRole(user),
@@ -664,6 +671,7 @@ function assertUserCanSubmitVideoTask(req, taskCount = 1) {
 function isAuthApiPath(pathname = "") {
   return (
     pathname === "/api/auth/me" ||
+    pathname === "/api/auth/email-code" ||
     pathname === "/api/auth/register" ||
     pathname === "/api/auth/login" ||
     pathname === "/api/auth/logout" ||
@@ -751,23 +759,43 @@ async function handleAuthApi(req, res, url) {
     const user = currentUserFromRequest(req);
     return send(res, 200, { ok: true, user: user ? publicUser(user) : null });
   }
+  if (req.method === "POST" && url.pathname === "/api/auth/email-code") {
+    const body = await readBody(req);
+    const email = normalizeEmail(body.email || "");
+    const purpose = body.purpose === "login" ? "login" : "register";
+    if (!isValidEmail(email)) throw new Error("请输入有效的邮箱地址");
+    const store = readAuthUsers();
+    const existing = store.users.find((user) => normalizeEmail(user.email || user.username) === email);
+    if (purpose === "register" && existing) throw new Error("该邮箱已注册，请直接登录");
+    if (purpose === "login" && !existing) throw new Error("邮箱或密码不正确");
+    const result = await requestEmailCode({
+      email,
+      purpose,
+      rateKey: req.socket?.remoteAddress || "anonymous",
+    });
+    return send(res, 200, { ok: true, ...result });
+  }
   if (req.method === "POST" && url.pathname === "/api/auth/register") {
     const body = await readBody(req);
-    const username = normalizeUsername(body.username || "");
+    const email = normalizeEmail(body.email || body.username || "");
     const password = String(body.password || "");
-    const displayName = compactLine(body.displayName || username).slice(0, 80);
+    const displayName = compactLine(body.displayName || email).slice(0, 80);
     const inviteCode = compactLine(body.inviteCode || body.invitationCode || "");
-    if (!/^[a-z0-9][a-z0-9_-]{2,31}$/.test(username)) throw new Error("用户名需为 3-32 位小写字母、数字、下划线或短横线");
+    const emailCode = compactLine(body.emailCode || body.verificationCode || "");
+    if (!isValidEmail(email)) throw new Error("请输入有效的邮箱地址");
     if (password.length < 8) throw new Error("密码至少 8 位");
+    verifyEmailCode({ email, purpose: "register", code: emailCode });
     const store = readAuthUsers();
     if (!verifyInvitationCode(inviteCode, store.users)) throw new Error("邀请码不正确、已使用或注册暂未开放");
-    if (store.users.some((user) => user.username === username)) throw new Error("用户名已存在");
+    if (store.users.some((user) => normalizeEmail(user.email || user.username) === email)) throw new Error("该邮箱已注册，请直接登录");
     const user = {
       id: `user_${crypto.randomBytes(12).toString("base64url")}`,
-      username,
-      displayName: displayName || username,
+      username: email,
+      email,
+      displayName: displayName || email,
       role: "user",
       inviteCode,
+      emailVerifiedAt: new Date().toISOString(),
       disabled: false,
       passwordHash: passwordHash(password),
       createdAt: new Date().toISOString(),
@@ -780,11 +808,18 @@ async function handleAuthApi(req, res, url) {
   }
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
     const body = await readBody(req);
-    const username = normalizeUsername(body.username || "");
+    const identity = String(body.email || body.username || "").trim();
+    const email = normalizeEmail(identity);
     const password = String(body.password || "");
     const store = readAuthUsers();
-    const user = store.users.find((item) => item.username === username);
-    if (!user || !verifyPassword(password, user.passwordHash)) throw new Error("用户名或密码不正确");
+    const emailLogin = isValidEmail(email);
+    const user = store.users.find((item) => emailLogin
+      ? normalizeEmail(item.email || item.username) === email
+      : item.username === normalizeUsername(identity));
+    const emailCode = compactLine(body.emailCode || body.verificationCode || "");
+    const passwordValid = user && verifyPassword(password, user.passwordHash);
+    const codeValid = emailLogin && user && emailCode ? verifyEmailCode({ email, purpose: "login", code: emailCode }) : false;
+    if (!user || (!passwordValid && !codeValid)) throw new Error(emailLogin ? "邮箱或密码不正确" : "用户名或密码不正确");
     if (user.disabled) throw new Error("账号已停用，请联系管理员");
     user.lastLoginAt = new Date().toISOString();
     writeAuthUsers(store);

@@ -69,12 +69,18 @@
           class="auth-form"
           method="post"
           action="/api/auth/login"
-          onsubmit="return window.pixelToysAuthSubmit ? window.pixelToysAuthSubmit(event) : false"
         >
           <label>
-            <span>Username</span>
-            <input name="username" autocomplete="username" placeholder="studio-name" required />
+            <span>Email</span>
+            <input name="email" type="text" inputmode="email" autocomplete="username" placeholder="you@example.com" required />
           </label>
+          <div id="emailCodeField" class="auth-code-row hidden">
+            <label>
+              <span>Email code</span>
+              <input name="emailCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits" />
+            </label>
+            <button id="sendEmailCode" class="auth-code-button" type="button">Send code</button>
+          </div>
           <label>
             <span>Password</span>
             <input name="password" type="password" autocomplete="current-password" minlength="8" required />

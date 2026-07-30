@@ -6889,6 +6889,39 @@ body.is-studio .studio-tab-button.is-active {
   color: #f7fbff;
 }
 
+.auth-code-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.auth-code-row label {
+  min-width: 0;
+}
+
+.auth-code-button {
+  min-width: 104px;
+  height: 46px;
+  border: 1px solid rgba(182, 255, 88, 0.32);
+  border-radius: 5px;
+  background: rgba(182, 255, 88, 0.08);
+  color: var(--auth-ink);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.auth-code-button:hover,
+.auth-code-button:focus-visible {
+  border-color: rgba(182, 255, 88, 0.75);
+  background: rgba(182, 255, 88, 0.16);
+}
+
+.auth-code-button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
 .auth-form {
   display: grid;
   gap: 14px;
@@ -7864,6 +7897,15 @@ body.is-explore-ui {
   white-space: nowrap;
 }
 
+.explore-account-actions > .explore-register-link {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgba(168, 255, 54, 0.62);
+  border-radius: 6px;
+  background: var(--explore-action);
+  color: #07110b !important;
+}
+
 .explore-brand:hover,
 .explore-brand.is-active,
 .explore-topbar nav > button:hover,
@@ -7878,6 +7920,12 @@ body.is-explore-ui {
 .explore-account-actions > .explore-account-link:focus-visible {
   color: var(--explore-text);
   background: #121b29;
+}
+
+.explore-account-actions > .explore-register-link:hover,
+.explore-account-actions > .explore-register-link:focus-visible {
+  background: #c1ff6a;
+  color: #07110b !important;
 }
 
 .explore-topbar .explore-brand {

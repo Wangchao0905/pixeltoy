@@ -971,6 +971,22 @@ function displayProjectTitle(project = {}) {
   return project.displayTitle || [seriesTitle, episodeTitle].filter(Boolean).join(" / ");
 }
 
+function projectListIncludesEpisode(project = {}, id = "") {
+  const targetId = String(id || "");
+  return String(project.id || "") === targetId
+    || (Array.isArray(project.episodes) && project.episodes.some((episode) => String(episode?.id || "") === targetId));
+}
+
+function projectListEntryForEpisode(id = "") {
+  return state.projects.find((project) => projectListIncludesEpisode(project, id)) || null;
+}
+
+function projectEpisodeListLabel(project = {}) {
+  const count = Number(project.episodeCount || project.episodes?.length || 0);
+  if (count > 1) return `${count} 集`;
+  return project.episodeLabel || project.episodeCode || project.episodeSlug || "";
+}
+
 function projectNeedsDisplayName(project = {}) {
   const title = String(project.title || project.seriesTitle || "").trim();
   return !title || title === "项目名称未设置" || title === "未命名项目";
@@ -1931,7 +1947,7 @@ async function loadProjectsOnce(keepSelection = true) {
   renderProjectList();
   renderExploreHome();
   if (!INITIAL_PROJECT_ID && !state.selectedId) showProjectHome();
-  if (!initialProjectHandled && INITIAL_PROJECT_ID && state.projects.some((project) => project.id === INITIAL_PROJECT_ID)) {
+  if (!initialProjectHandled && INITIAL_PROJECT_ID && state.projects.some((project) => projectListIncludesEpisode(project, INITIAL_PROJECT_ID))) {
     initialProjectHandled = true;
     await loadProject(INITIAL_PROJECT_ID, { openStudio: true });
     return;
@@ -1940,7 +1956,7 @@ async function loadProjectsOnce(keepSelection = true) {
     // ?project 指向的项目不存在:撤销初始的同步进控制台,回到首页。
     showProjectHome();
   }
-  if (keepSelection && state.selectedId && state.projects.some((project) => project.id === state.selectedId)) {
+  if (keepSelection && state.selectedId && state.projects.some((project) => projectListIncludesEpisode(project, state.selectedId))) {
     await loadProject(state.selectedId, { openStudio: false });
   }
 }
@@ -1950,7 +1966,7 @@ async function loadProject(id, { openStudio = true, rescheduleRefresh = true } =
   if (projectChanged) resetProjectScopedUiState();
   state.selectedId = id;
   $("#teamResourceButton")?.classList.toggle("hidden", !state.team || !id);
-  const summary = state.projects.find((project) => project.id === id);
+  const summary = projectListEntryForEpisode(id);
   initialProjectHandled = true;
   localStorage.setItem("pixelToys.canvasProjectId", id);
   syncProjectUrl(id);
@@ -1995,7 +2011,7 @@ function renderProjectList() {
   for (const project of state.projects) {
     const card = document.createElement("article");
     const title = displayProjectTitle(project);
-    card.className = `project-card${project.id === state.selectedId ? " active" : ""}`;
+    card.className = `project-card${projectListIncludesEpisode(project, state.selectedId) ? " active" : ""}`;
     card.tabIndex = 0;
     card.setAttribute("role", "button");
     card.setAttribute("aria-label", `打开项目 ${title}`);
@@ -2008,7 +2024,7 @@ function renderProjectList() {
         ${project.canDelete ? `<button class="project-delete" type="button" aria-label="删除 ${escapeAttr(title)}" title="删除项目">删除</button>` : ""}
       </div>
       <span class="project-meta">
-        <span class="pill">${escapeHtml(project.episodeSlug)}</span>
+        <span class="pill">${escapeHtml(projectEpisodeListLabel(project))}</span>
         <span class="pill">${project.counts.parsedAssets || 0} parsed</span>
         <span class="pill">${project.counts.assets} images</span>
         <span class="pill">${project.counts.rawClips} clips</span>
@@ -2038,7 +2054,7 @@ function filteredExploreProjects() {
   return state.projects.filter((project) => {
     if (state.exploreScopeFilter !== "all" && project.scope !== state.exploreScopeFilter) return false;
     if (!query) return true;
-    return [project.displayName, project.title, project.episodeSlug].some((value) => String(value || "").toLowerCase().includes(query));
+    return [project.displayName, project.title, project.seriesTitle, project.episodeSlug, ...(project.episodeSlugs || [])].some((value) => String(value || "").toLowerCase().includes(query));
   });
 }
 
@@ -2155,7 +2171,7 @@ function renderExploreCanvasLibrary() {
               <button class="explore-canvas-card-open" type="button" data-explore-project="${escapeAttr(project.id)}">
                 <span class="explore-canvas-preview explore-production-preview">
                   ${exploreProductionPreviewMarkup(project)}
-                  <span>${escapeHtml(project.episodeSlug || "Production")}</span>
+                  <span>${escapeHtml(projectEpisodeListLabel(project) || "Production")}</span>
                 </span>
                 <strong>${escapeHtml(displayProjectTitle(project))}</strong>
                 <small>${escapeHtml(projectProgressLabel(project))}</small>

@@ -8894,6 +8894,63 @@ function lightweightProjectSummary(episodeRoot) {
   };
 }
 
+function projectListGroupKey(summary = {}) {
+  const candidate = summary.projectDir || summary.episodeRoot || summary.id || "";
+  return candidate ? path.resolve(String(candidate)) : "";
+}
+
+function projectEpisodeSummarySort(a = {}, b = {}) {
+  const aSlug = String(a.episodeSlug || a.episodeCode || "");
+  const bSlug = String(b.episodeSlug || b.episodeCode || "");
+  const aNumber = aSlug.match(/^e(\d+)/i)?.[1];
+  const bNumber = bSlug.match(/^e(\d+)/i)?.[1];
+  if (aNumber && bNumber && Number(aNumber) !== Number(bNumber)) return Number(aNumber) - Number(bNumber);
+  return aSlug.localeCompare(bSlug, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function projectListSummaryUpdatedSort(a = {}, b = {}) {
+  return String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""));
+}
+
+function groupProjectSummariesForList(projects = []) {
+  const groups = new Map();
+  for (const project of projects) {
+    const key = projectListGroupKey(project);
+    if (!key) continue;
+    const entries = groups.get(key) || [];
+    entries.push(project);
+    groups.set(key, entries);
+  }
+
+  return [...groups.values()].map((entries) => {
+    const episodes = entries.slice().sort(projectEpisodeSummarySort);
+    const latest = entries.slice().sort(projectListSummaryUpdatedSort)[0] || episodes[0] || {};
+    const counts = { ...(latest.counts || {}) };
+    const countValues = (name) => entries.map((entry) => Number(entry.counts?.[name] || 0));
+    counts.assets = Math.max(0, ...countValues("assets"));
+    counts.parsedAssets = Math.max(0, ...countValues("parsedAssets"));
+    counts.rawClips = countValues("rawClips").reduce((total, value) => total + value, 0);
+    for (const name of ["plannedAssets", "plannedStoryboards", "storyboards", "plannedShots"]) {
+      counts[name] = countValues(name).reduce((total, value) => total + value, 0);
+    }
+    if (entries.some((entry) => entry.counts?.scriptReady)) counts.scriptReady = true;
+
+    const projectName = latest.seriesTitle || latest.title || latest.scriptTitle || "未命名项目";
+    return {
+      ...latest,
+      displayTitle: projectName,
+      episodeLabel: episodes.length === 1 ? latest.episodeLabel : "",
+      episodeCode: episodes.length === 1 ? latest.episodeCode : "",
+      episodeSlug: episodes.length === 1 ? latest.episodeSlug : "",
+      episodeCount: episodes.length,
+      episodeSlugs: episodes.map((episode) => episode.episodeSlug || episode.episodeCode).filter(Boolean),
+      episodes,
+      counts,
+      canDelete: episodes.length === 1 && !!latest.canDelete,
+    };
+  });
+}
+
 function projectEpisodeSummaries(episodeRoot) {
   return projectEpisodeRoots(episodeRoot).map((root) => lightweightProjectSummary(root));
 }
@@ -23006,10 +23063,12 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/projects") {
     const user = currentUserFromRequest(req);
-    const projects = scanEpisodeRoots().filter((episodeRoot) => userCanAccessProject(user, episodeRoot)).map((episodeRoot) => ({
-      ...lightweightProjectSummary(episodeRoot),
-      canDelete: userCanDeleteProject(user, episodeRoot),
-    })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const projects = groupProjectSummariesForList(
+      scanEpisodeRoots().filter((episodeRoot) => userCanAccessProject(user, episodeRoot)).map((episodeRoot) => ({
+        ...lightweightProjectSummary(episodeRoot),
+        canDelete: userCanDeleteProject(user, episodeRoot),
+      })),
+    ).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return send(res, 200, { ok: true, appRoot: APP_ROOT, defaultProjectRoot: DEFAULT_PROJECT_ROOT, ui: uiRuntimeConfig(), projects });
   }
 
@@ -24040,6 +24099,11 @@ module.exports = {
       scanAssets,
       projectEpisodeRoots,
       assertProjectEpisodeAccess,
+    },
+    projectList: {
+      groupProjectSummariesForList,
+      projectListGroupKey,
+      projectEpisodeSummarySort,
     },
     dialogue: {
       dialoguesForText,

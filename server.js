@@ -182,7 +182,7 @@ const IMAGE_SIZE_BY_QUALITY_16_9 = {
   "4k": "3840x2160",
 };
 const DEFAULT_IMAGE_SIZE_16_9 = IMAGE_SIZE_BY_QUALITY_16_9["1k"];
-// Production Board 整张为 9:16 竖版(和最终竖屏视频一致),九格面板同样是竖版构图。
+// Production Board 首版固定为 16:9 横版，九格面板沿用横版构图；视频成片比例另由视频配置决定。
 const IMAGE_SIZE_BY_QUALITY_9_16 = {
   "1k": "720x1280",
   "2k": "1152x2048",
@@ -993,14 +993,14 @@ const ASSET_TYPE_META = {
     folder: "storyboards",
     scanType: "storyboard",
     usage:
-      "Production Board 唯一视频参考：包含由正式人物、场景和道具资产生成的 9:16 竖版 3×3 九格镜头画面；直接承载身份、场景、动作、镜头节奏和剪辑出口",
+      "15 秒 16:9 横版九宫格故事板：黑白线稿速写，承载构图、站位、动作、镜头节奏和跨 PART 剪辑出口；不替代 C/S/P/I 正式资产",
   },
 };
 
 const PRODUCTION_BOARD_MAX_SECONDS = 15;
 const STORYBOARD_MAX_SECONDS = PRODUCTION_BOARD_MAX_SECONDS;
-// 一张 Production Board 讲一个完整的 ≤15 秒剧情单元;整张板是 9:16 竖版,固定 3×3 九格布局。
-// 每一格都是竖版镜头构图:首格建立空间,末格保留剪辑出口,其余格连续推进人物、动作和反应。
+// 一张 Production Board 讲一个完整的 ≤15 秒剧情单元；整张板是 16:9 横版，固定 3×3 九格布局。
+// 每一格都是横版镜头构图：首格建立空间，末格保留剪辑出口，其余格连续推进人物、动作和反应。
 const STORYBOARD_MIN_PANELS = 9;
 const STORYBOARD_MAX_PANELS = 9;
 const STORYBOARD_BOARD_COLUMNS = 3;
@@ -5916,7 +5916,7 @@ function storyboardProductionTabForPanel(roleKey = "", details = {}) {
   };
 }
 
-// 一块 Production Board = 一个完整的 ≤15 秒剧情单元。统一固定为竖版 3×3 九格，
+// 一块 Production Board = 一个完整的 ≤15 秒剧情单元。统一固定为 16:9 横版 3×3 九格，
 // 首格恒为建立、末格恒为切点/交接，中间七格推进站位、动作、转折和反应。
 // options.prevBoardTail:上一块板收尾格的描述;若提供,本板首格显式要求"与上一块板的最后一格保持一致"(跨板续接)。
 function storyboardPanelPlanForGroup(group, options = {}) {
@@ -6309,7 +6309,7 @@ function storyboardSlotNameForGroup(group, index) {
 }
 
 function productionBoardReferenceGuide() {
-  return "视频制作中将此 Production Board 作为唯一 storyboard_reference：读取其 9:16 竖版面板中已锁定的人物身份、场景、道具、构图、站位、镜头方向、动作节奏和剪辑出口；视频提交不再附带单独资产图。";
+  return "视频制作中将此 Production Board 作为 storyboard_reference：读取其 16:9 横版九格中的构图、站位、镜头方向、动作节奏和剪辑出口；人物、场景、道具身份仍由 C/S/P/I 正式资产绑定，视频提交不把线稿当成真实资产图。";
 }
 
 function storyboardSlotsForState(episodeRoot, manifest = null, assets = scanAssets(episodeRoot), options = {}) {
@@ -6376,9 +6376,38 @@ function storyboardSlotsForState(episodeRoot, manifest = null, assets = scanAsse
           videoReferenceGuide: productionBoardReferenceGuide(),
         },
       ];
+  // 每块板固定九格；后一块板的第 1 格直接复用前一块板第 9 格的稳定 panelId。
+  // 这是真正的同一镜头对象，不是把两段文字写成“相似”或仅靠提示词提醒模型。
+  let previousTailPanel = null;
+  const normalizedBaseSlots = baseSlots.map((slot, boardIndex) => {
+    const panels = (Array.isArray(slot.panels) ? slot.panels : defaultStoryboardPanels()).slice(0, STORYBOARD_MAX_PANELS).map((panel, panelIndex) => ({
+      ...panel,
+      id: panel.id || `${slot.id}_P${String(panelIndex + 1).padStart(2, "0")}`,
+    }));
+    while (panels.length < STORYBOARD_MAX_PANELS) {
+      const panelIndex = panels.length;
+      panels.push({
+        ...defaultStoryboardPanels()[panelIndex],
+        id: `${slot.id}_P${String(panelIndex + 1).padStart(2, "0")}`,
+      });
+    }
+    if (boardIndex > 0 && previousTailPanel) {
+      panels[0] = {
+        ...previousTailPanel,
+        panel: 1,
+        label: "P1",
+        id: previousTailPanel.id,
+        source: "reused-anchor",
+        continuitySourcePanelId: previousTailPanel.id,
+        continuityEntry: `与上一 PART 的 ${previousTailPanel.id} 完全相同；保持构图、站位、视线、道具状态和屏幕方向。`,
+      };
+    }
+    previousTailPanel = panels[STORYBOARD_MAX_PANELS - 1];
+    return { ...slot, panels };
+  });
   const storyboardCandidates = [...byName.values()];
   const usedStoryboardNames = new Set();
-  const slots = baseSlots.map((slot) => {
+  const slots = normalizedBaseSlots.map((slot) => {
     // 先精确同名,再按镜头集合(稳定键)匹配磁盘上的旧板,避免重分组后名字漂移导致"缺失/断连"。
     const { asset, coverage } = matchStoryboardAssetForSlot(slot, storyboardCandidates, usedStoryboardNames);
     if (asset) usedStoryboardNames.add(asset.assetName);
@@ -18540,12 +18569,12 @@ function storyboardGuidancePromptText(guidance, storyboardImageIndex = null) {
     })
     .join("\n");
   return `Production Board 镜头参考：
-${imageLabel} 是 Production Board / storyboard_reference，也是本段唯一提交图片参考。读取本段实际编号面板中的 9:16 构图、人物/道具站位、运动方向、镜头景别、动作节奏和剪辑出口。
+${imageLabel} 是 Production Board / storyboard_reference，也是本段唯一提交图片参考。读取本段实际编号面板中的 16:9 构图、人物/道具站位、运动方向、镜头景别、动作节奏和剪辑出口。
 这张板已经由绑定的 Character/Scene/Prop/Insert 资产生成，板面中的人物身份、场景结构、道具外观、材质、颜色、光线和风格均为最终视觉依据。不要期待、引用或补充其他资产图。
 ${assetLock ? `${assetLock}\n` : ""}${panelBindings ? `${panelBindings}\n` : ""}
 按本板固定的 9 个编号面板顺序执行镜头：首格建立空间，末格保留干净剪辑出口，中间七格推进站位、动作、转折和反应。
 ${panelText || "- 使用故事版图中的编号面板控制构图、站位、动作节奏与切镜。"}
-Production Board 模式下，相邻片段的空间连贯由同一 Sequence 的竖版面板、板面中已锁定的场景与道具状态和剪辑出口共同控制。`;
+Production Board 模式下，相邻片段的空间连贯由同一 Sequence 的横版面板、板面中已锁定的场景与道具状态和剪辑出口共同控制。`;
 }
 
 function assetLookupFromAssets(assets = []) {
@@ -19272,8 +19301,8 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
 - 不要平均分配镜头时长，不要把所有镜头都设为 12 秒。推荐时长必须根据剧情节拍决定，并优先把完整剧情段落设计成接近 15 秒：建立镜头/插入/转场 4-8 秒，普通对白或反应 8-12 秒，同场景连续动作、危机升级、关键表演、需要尾帧承接的剧情 12-15 秒。
 - 一集通常优先规划约 5 个 15 秒级视频片段；剧情复杂、切镜明确、换场较多或对白密集时增加到 6-8 个片段，最高不超过 ${VIDEO_MAX_EPISODE_SECONDS} 秒。
 - 如果相邻镜头发生在同一场景，应保持同一个场景资产引用和空间方向；尾帧续接由后端配置层判断，videoPrompt 中不要写尾帧规则。
-- Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落渲染成一张 9:16 竖版、3×3 九个编号面板的 Production Board。每个面板必须把实际人物、场景和道具的最终视觉身份烘焙进画面；视频阶段只提交这张 Production Board。
-- 当使用 Production Board 时，videoPrompt 需要明确本段读取哪些实际面板的节奏来源，说明动作方向、演员站位、构图、切换点和同场景衔接；整张制作板与每个面板都服务最终 9:16 成片构图。
+- Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落渲染成一张 16:9 横版、3×3 九个编号面板的 Production Board。每个面板必须把实际人物、场景和道具的最终视觉身份烘焙进画面；视频阶段只提交这张 Production Board。
+- 当使用 Production Board 时，videoPrompt 需要明确本段读取哪些实际面板的节奏来源，说明动作方向、演员站位、构图、切换点和同场景衔接；整张制作板与每个面板都服务当前视频配置的成片构图。
 - 使用 Production Board 时，videoPrompt 只引用已提交的故事板图片、剧情与镜头、对白、摄影与声音。后端面板资产绑定仅用于生成故事板；视频模型不再接收正式 Character / Scene / Prop / Insert 资产图。
 - 每个镜头的画面拆解必须用下方《导演引擎》方法，并输出为结构化的 design 对象（字段值用具体中文，禁用感觉词）。design 字段内容使用中文，英文对白只出现在 dialogueLines。
 - 同一场景只有第一个镜头可以承担短建立镜头；后续镜头必须直接承接上一镜的站位、视线、道具状态、动作方向和情绪，不得重新展示环境，不得用空镜或大全景重启本段。
@@ -19480,11 +19509,11 @@ function removeTailFrameContinuityFromStoryboardPrompt(prompt) {
   return String(prompt || "")
     .replace(
       /如果本段与上一片段同场景，保持尾帧方向、光线、人物站位和运动方向连续，避免跳轴。/g,
-      "如果本段与相邻片段同场景，按 Production Board 的 9:16 面板构图、站位、镜头方向、动作节奏和剪辑出口保持空间连贯，避免跳轴。",
+      "如果本段与相邻片段同场景，按 Production Board 的 16:9 面板构图、站位、镜头方向、动作节奏和剪辑出口保持空间连贯，避免跳轴。",
     )
     .replace(
       /如果与上一片段同场景，保持尾帧方向、光线和人物站位连续，避免跳轴。/g,
-      "如果与相邻片段同场景，按 Production Board 的 9:16 面板构图、站位、镜头方向和剪辑出口保持空间连贯，避免跳轴。",
+      "如果与相邻片段同场景，按 Production Board 的 16:9 面板构图、站位、镜头方向和剪辑出口保持空间连贯，避免跳轴。",
     )
     .replace(/尾帧续接/g, "Production Board 衔接")
     .replace(/上一片段尾帧/g, "Production Board")
@@ -21138,23 +21167,20 @@ function storyboardPromptForSlot(slot) {
   // 整张 Production Board 就是 3×3 网格。P1 承担建立空间，但不能额外占据一条大建立镜头。
   // 角色、场景、道具直接从引用资产生成到面板画面中，视频阶段仅提交这张板。
   return [
-    "Create ONE 9:16 vertical (portrait) professional film storyboard sheet — clearly taller than wide, matching the final vertical 9:16 short-drama video. Full sheet visible, no cropping.",
-    `The complete sheet is one edge-to-edge ${gridLabel} grid of exactly ${panelCount} equal-size storyboard panels, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Every panel outer boundary has the same portrait 9:16 proportion, with uniform narrow gutters.`,
-    "P1 is the establishing composition, but it must occupy exactly one ordinary top-left grid cell. No panel may span multiple rows or columns.",
-    "Do not draw a separate establishing strip, full-width image, top header, footer, sequence summary band, or any other content outside the nine equal panels.",
-    "Every panel has an integrated lower Production Tab. Reserve its lower 40 percent as clean off-white paper with no generated lettering: a deterministic post-process will typeset P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion, and visible identity anchors there. Use the upper 60 percent as the cinematic frame, with a portrait vertical 9:16 composition, leaving no important face, product, action, or location detail in the lower reserved area. Do not make the image model render its own production copy, speech bubbles, tables, or technical notes; this prevents glyph errors while preserving the full readable document.",
-    "Render every panel as a cinematic production still using the actual referenced Character, Scene, Prop, and Insert assets. The same actual character face, hairstyle, wardrobe, body type, scene architecture, prop shape, materials, palette, and lighting identity from those references must visibly appear in the panels. This is a true visual storyboard, NOT hand-drawn sketches, NOT silhouettes, NOT stick figures, NOT flat icons, and NOT a contact sheet of the source images.",
-    "Cinematic composition with clear foreground / midground / background and correct vertical 9:16 framing in every panel; each upper frame is a true standing-phone-screen vertical camera view.",
-    "Keep characters and locations visually identical across every panel. The panel image itself must carry the final identity, material, color, texture and lighting information from the official references, so it can later serve as the only submitted video reference.",
-    "Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips, thumbnails or PT-code boxes in the generated artwork — the deterministic Production Tab adds the visible identity references and readable production information after generation. Draw a clean cinematic Production Board, not a technical markup diagram.",
-    `Every panel must use a distinct shot scale and camera angle per the plan below — do not repeat the same drawing. Time coverage ${timeRange}; sequence duration ${slot.duration || PRODUCTION_BOARD_MAX_SECONDS}s.`,
+    "Create ONE 16:9 horizontal professional film storyboard document covering exactly 15 seconds of one continuous scripted beat. Full sheet visible, no cropping.",
+    `The complete sheet is one clean ${gridLabel} nine-panel storyboard grid, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Use equal panel boundaries and an editorial production-sheet layout with a clear header and a compact footer summary.`,
+    "Render every panel as a black-and-white hand-drawn storyboard sketch: graphite/pencil linework, loose hatching, clear silhouettes, expressive blocking, rough but intentional speed lines, white paper, no color. This is a planning document, not a finished cinematic still and not an asset image.",
+    "Each panel must communicate shot scale, camera angle, screen direction, character count, body orientation, prop placement, action and emotional beat. Keep real identity details abstract; official C/S/P/I assets are referenced only by their IDs in the panel notes and remain separate from the sketch.",
+    "Every panel has a readable lower production note area. Typeset or reserve space for panel number, time range, action, shot size, camera/lens, movement, dialogue or sound, and transition. Do not invent speech bubbles, logos, random glyphs, or decorative UI.",
+    "The final panel is the outgoing continuity anchor. The next 15-second board must reuse this exact panel as its first panel, preserving composition, screen direction, character blocking, eyeline, prop state and light direction before introducing new action.",
+    `Every panel must use a distinct shot scale and camera angle per the plan below. Time coverage ${timeRange}; sequence duration ${slot.duration || PRODUCTION_BOARD_MAX_SECONDS}s.`,
     `Source shots: ${shots}.`,
-    `Scene / story beat: ${beat || "cinematic story progression from the screenplay."}`,
-    `Characters and assets to keep consistent (do not invent new characters): ${refs}.`,
+    `Scene / story beat: ${beat || "continuous story progression from the screenplay."}`,
+    `Official production references (use IDs only in notes, do not redraw asset sheets): ${refs}.`,
     dialogueRule,
     "Per-panel plan — follow exactly, one panel each, in order:",
     panelGuide,
-    "Preserve every supplied full plot/action and dialogue word for the deterministic Production Tab. No watermark, no random glyphs, no unrelated text, no invented dialogue.",
+    "No watermark, no random text, no invented characters, no color rendering, no photorealism, no 3D render, no polished key art.",
   ].join("\n");
 }
 
@@ -21182,13 +21208,14 @@ ${storyboardPanelGuideText(slot.panels || [], slot.dialogueLanguage || dialogueL
 ${storyboardPromptForSlot({ ...slot, dialogueLanguage: slot.dialogueLanguage || dialogueLanguage })}
 \`\`\``)
     .join("\n\n");
-  return `# ${title} Production Board 提示词
+  return `# ${title} 15秒九宫格故事板提示词
 
 ## 规则
 
-- Production Board 定位为「专业影视故事板文档」竖版 9:16 工作纸(与最终竖屏视频一致),整张只由标准 3×3 九个等大竖格组成,从左到右、从上到下阅读;禁止顶部信息栏、底部总结栏。每格上 60% 是电影级竖版画面，下 40% 是后处理写入的可读 Production Tab：镜号、时长、完整剧情动作、完整对白、Visual/Camera/Shot/Lens/Lighting/Emotion 必须保留；由确定性排版输出，避免模型文字乱码。
-- 分镜格是**由正式资产图驱动的电影级真实镜头画面**:角色脸、发型、服装、体型、场景结构、道具外观、材质、颜色和光线必须继承引用资产;禁止粗剪影、火柴人、扁平图标和黑白速写。每格构图/景别/机位各异,按弧线展开(建立→站位→转折/高潮→反应→剪辑点),不得各格重复同一张图。
-- 这张 Production Board 是视频阶段的唯一图片参考，正式资产图只在本板生成阶段使用。每格 Production Tab 显示该镜头的**可见身份参考**（人物三视图、产品、场景缩略图），作为角色、产品和布景连续性的可见锚点；不要让模型自行画蓝红箭头、镜头框或乱码技术标注。
+- 故事板定位为「15 秒连续镜头文档」：固定 16:9 横版九宫格，黑白铅笔/炭笔线稿速写，顶部 Part 信息、底部 Part 总结，镜头格按时间顺序阅读。
+- 每格只表达构图、景别、站位、视线、运动方向、道具槽位、镜头节奏和声音/对白提示。人物、场景、道具的真实身份只通过 C/S/P/I 编号引用，不把线稿写入资产库。
+- 本 PART 的第 09 格是下一 PART 的第 01 格：二者使用同一镜头对象，保持构图、屏幕方向、站位、视线和道具状态一致，不重新设计首格。
+- 故事板是视频生成的构图与连续性参考，不替代正式资产图，也不携带视频模型、方言、SFX 等参数。
 - 每张 Production Board 最多覆盖 ${PRODUCTION_BOARD_MAX_SECONDS} 秒连续场景段落;最终视频片段仍按 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS} 秒拆分。
 - Production Board 对白语言必须跟随剧本解析阶段设置:${dialogueLanguage === "zh" ? "中文对白" : "英文对白"},不得中英混用。
 - 后处理把结构化制作指引完整排版进每格 Production Tab 并传递给视频生成；画面区与文字区分层，既不遮挡关键构图，也不会产生乱码。
@@ -21541,7 +21568,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     } else {
       delete shot.tailFrameSource;
       if (usesStoryboardReference) {
-        shot.continuityNote = "已启用 Production Board 唯一参考：使用板面中已锁定的 9:16 画面、人物、场景、道具与剪辑出口保持连贯";
+        shot.continuityNote = "已启用 Production Board 唯一参考：使用板面中已锁定的 16:9 画面、人物、场景、道具与剪辑出口保持连贯";
       } else if (!allowTailFrameContinuity && continuityDecision.sharedScene) {
         shot.continuityNote = "尾帧续接已关闭：同场景片段使用正常切镜";
       } else if (continuityDecision.reason) {
@@ -21618,7 +21645,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     storyboardPolicy: {
       mode: videoPromptMode === "production_board" ? "production_board_reference" : "prompt_tail_frame",
       instruction: storyboardsAttached
-        ? "Use each Production Board as the sole submitted image reference: nine vertical 9:16 numbered panels in a 3-column grid inside a 9:16 vertical board. Read composition, blocking, camera direction, shot rhythm, cut structure, and the actual character, scene, prop, material, color, lighting, and visual style already rendered into the panels. Do not expect separate Character, Scene, Prop, or Insert images during video generation."
+        ? "Use each Production Board as the sole submitted image reference: nine horizontal 16:9 numbered panels in a 3-column grid inside a 16:9 horizontal board. Read composition, blocking, camera direction, shot rhythm, cut structure, and the actual character, scene, prop, material, color, lighting, and visual style already rendered into the panels. Do not expect separate Character, Scene, Prop, or Insert images during video generation."
         : "Storyboard files are preserved but inactive for the current production flow. Generate videos from Seedance prompts and use previous-shot tail frames only for true continuous action or state carryover.",
       assetBindingInstruction:
         "Before Production Board generation, bind each panel to the shot's official Scene, Character, Prop, and Insert assets and render their actual identity into the panel. Character slots such as 主角A/角色B define panel position only. After the board is generated, submit only the board to video generation; do not attach the source asset images.",
@@ -22059,7 +22086,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
     if (!isDryRun && !imageApiKey()) {
       throw new Error("缺少 OPENAI_API_KEY：Production Board 需要通过 api.apikey.fun / gpt-image-2 生图模型生成，请在项目 .env.local 或启动终端配置可用 Key 后重启服务。");
     }
-    const size = IMAGE_SIZE_BY_QUALITY_9_16[String(body.quality || "1k").toLowerCase()] || DEFAULT_IMAGE_SIZE_9_16;
+    const size = IMAGE_SIZE_BY_QUALITY_16_9[String(body.quality || "1k").toLowerCase()] || DEFAULT_IMAGE_SIZE_16_9;
     persistProjectDialogueLanguage(
       episodeRoot,
       normalizeDialogueLanguage(body.dialogueLanguage || projectDialogueLanguage(episodeRoot), "en"),

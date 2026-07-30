@@ -1216,100 +1216,59 @@
               </div>
             </aside>
           </section>
-          <section id="modernStoryboardStudio" class="modern-storyboard-studio" aria-label="连续故事板生产台">
-            <header class="modern-storyboard-commandbar">
-              <div class="modern-storyboard-context">
-                <span class="modern-eyebrow">CONTINUOUS STORYBOARD</span>
+          <section id="modernStoryboardStudio" class="modern-storyboard-studio storyboard-document" aria-label="15秒九宫格故事板">
+            <header class="storyboard-document-toolbar">
+              <div class="storyboard-document-context">
+                <span class="modern-eyebrow">STORYBOARD DRAFT</span>
                 <strong id="modernStoryboardProject">项目</strong>
                 <span aria-hidden="true">/</span>
-                <strong id="modernStoryboardPage">第 01 / 01 页</strong>
-                <b id="modernStoryboardRatio" class="modern-storyboard-ratio">16:9</b>
+                <span id="modernStoryboardBoardCount">PART 01 / 01</span>
+                <b class="storyboard-document-format">16:9</b>
               </div>
-              <div class="modern-storyboard-command-actions">
-                <button id="modernStoryboardSave" type="button">保存</button>
+              <div class="storyboard-document-actions">
+                <span id="modernStoryboardActionStatus" class="modern-storyboard-action-status" aria-live="polite">故事板预览不回流资产库</span>
                 <button id="modernStoryboardExport" type="button">导出分镜表</button>
-                <button id="modernStoryboardGenerateNext" type="button">生成下一页</button>
+                <button id="modernStoryboardGeneratePage" class="is-primary" type="button">生成故事板</button>
               </div>
-              <p id="modernStoryboardActionStatus" class="modern-storyboard-action-status" aria-live="polite">故事板预览不回流资产库</p>
             </header>
 
-            <div id="modernStoryboardToolrow" class="modern-storyboard-toolrow" role="toolbar" aria-label="故事板画布工具">
-              <div class="modern-storyboard-tool-context"><strong id="modernStoryboardToolPage">分镜页 01</strong><span id="modernStoryboardToolMeta">9 镜头 · 连续草稿</span></div>
-              <div class="modern-storyboard-tools" role="group" aria-label="画布工具">
-                <button id="modernStoryboardToolSelect" class="is-active" type="button" data-storyboard-tool="select" aria-label="选择镜头" title="选择镜头">↖</button>
-                <button type="button" data-storyboard-tool="pan" aria-label="平移画布" title="平移画布">✋</button>
-                <button type="button" data-storyboard-tool="draw" aria-label="标记构图" title="标记构图">⌁</button>
-                <button type="button" data-storyboard-tool="text" aria-label="添加批注" title="添加批注">T</button>
+            <div class="storyboard-document-board">
+              <header class="storyboard-document-head">
+                <div class="storyboard-document-titleline">
+                  <strong id="modernStoryboardPage">PART 01</strong>
+                  <span id="modernStoryboardTimeRange">00:00 – 00:15</span>
+                  <h2 id="modernStoryboardCanvasTitle">剧情节拍</h2>
+                </div>
+                <div class="storyboard-document-brief">
+                  <span id="modernStoryboardCanvasMeta">黑白线稿 · 9 格 · 16:9</span>
+                  <small id="modernStoryboardCanvasStatus">待生成</small>
+                </div>
+              </header>
+              <div class="storyboard-document-meta-grid">
+                <div><span>核心情绪</span><strong id="modernStoryboardEmotion">等待剧本拆解</strong></div>
+                <div><span>场景设定</span><strong id="modernStoryboardSetting">等待资产与剧本</strong></div>
+                <div><span>本 PART 时长</span><strong>15 秒</strong></div>
+                <div><span>镜头风格</span><strong>黑白线稿速写</strong></div>
               </div>
-              <div class="modern-storyboard-zoom-controls" aria-label="画布缩放">
-                <button id="modernStoryboardFit" type="button" title="适合画布">适合画布</button>
-                <button id="modernStoryboardZoomOut" type="button" aria-label="缩小" title="缩小">−</button>
-                <output id="modernStoryboardZoom" aria-live="polite">75%</output>
-                <button id="modernStoryboardZoomIn" type="button" aria-label="放大" title="放大">＋</button>
-              </div>
+
+              <div id="modernStoryboardGrid" class="storyboard-document-grid" aria-label="16:9 九宫格故事板"></div>
+
+              <footer class="storyboard-document-footer">
+                <div><span>本 PART 总结</span><p id="modernStoryboardSummary">等待 GPT 根据剧本节拍生成总结。</p></div>
+                <div><span>视觉关键词</span><p id="modernStoryboardKeywords">等待生成</p></div>
+                <div class="storyboard-document-continuity"><span>连续性</span><strong id="modernStoryboardContinuity">首格与上一 PART 尾格保持一致</strong></div>
+              </footer>
             </div>
 
-            <div class="modern-storyboard-workspace">
-              <aside class="modern-storyboard-reference-panel" aria-label="生产参考资产">
-                <header class="modern-storyboard-panel-head">
-                  <div><span class="modern-eyebrow">PRODUCTION REFERENCES</span><strong>生产参考资产</strong></div>
-                <button id="modernStoryboardReferenceUpload" type="button" aria-label="上传生产参考资产" title="上传生产参考资产">＋</button>
-                <input id="modernStoryboardReferenceFile" class="modern-storyboard-reference-file-input" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
-                </header>
-                <p class="modern-storyboard-reference-note">仅用于后续真实生产；不会绘入抽象线稿，也不会被线稿结果覆盖。</p>
-                <div id="modernStoryboardAssetTabs" class="modern-storyboard-asset-tabs" role="tablist" aria-label="参考资产类型">
-                  <button type="button" role="tab" aria-selected="true" data-storyboard-asset-tab="Character">角色</button>
-                  <button type="button" role="tab" aria-selected="false" data-storyboard-asset-tab="Scene">场景</button>
-                  <button type="button" role="tab" aria-selected="false" data-storyboard-asset-tab="Prop">道具</button>
-                  <button type="button" role="tab" aria-selected="false" data-storyboard-asset-tab="Style">风格包</button>
-                </div>
-                <button id="modernStoryboardReferenceDropzone" class="modern-storyboard-reference-dropzone" type="button"><span aria-hidden="true">⇧</span><div><strong>上传生产参考</strong><small id="modernStoryboardReferenceUploadStatus">拖入图片，或点击右上角＋添加</small></div></button>
-                <div id="modernStoryboardAssetList" class="modern-storyboard-asset-list" role="list"></div>
-                <footer class="modern-storyboard-reference-footer"><span>绑定到当前页</span><strong id="modernStoryboardReferenceCount">0 个引用</strong></footer>
-              </aside>
-
-              <section class="modern-storyboard-canvas-panel" aria-labelledby="modernStoryboardCanvasTitle">
-                <header class="modern-storyboard-canvas-head">
-                  <div><span class="modern-eyebrow">ABSTRACT BLOCKING</span><h2 id="modernStoryboardCanvasTitle">当前页 · 匿名构图</h2><small id="modernStoryboardCanvasMeta">严格连续 · 第 1 格继承上一页尾格</small></div>
-                  <span id="modernStoryboardCanvasStatus" class="modern-storyboard-state">待生成</span>
-                </header>
-                <div class="modern-storyboard-paper-viewport" aria-label="3×3 故事板画布">
-                  <div class="modern-storyboard-paper">
-                    <div id="modernStoryboardGrid" class="modern-storyboard-grid">
-                    <button type="button" class="modern-storyboard-panel is-active" data-storyboard-panel-index="0"><span class="modern-storyboard-panel-number">01</span><span class="modern-storyboard-panel-art" aria-hidden="true"></span><span class="modern-storyboard-panel-copy"><b>WS</b><small>继承镜头</small></span></button>
-                    <button type="button" class="modern-storyboard-panel" data-storyboard-panel-index="1"><span class="modern-storyboard-panel-number">02</span><span class="modern-storyboard-panel-art" aria-hidden="true"></span><span class="modern-storyboard-panel-copy"><b>MS</b><small>待生成</small></span></button>
-                    <button type="button" class="modern-storyboard-panel" data-storyboard-panel-index="2"><span class="modern-storyboard-panel-number">03</span><span class="modern-storyboard-panel-art" aria-hidden="true"></span><span class="modern-storyboard-panel-copy"><b>CU</b><small>待生成</small></span></button>
-                    <button type="button" class="modern-storyboard-panel" data-storyboard-panel-index="3"><span class="modern-storyboard-panel-number">04</span><span class="modern-storyboard-panel-art" aria-hidden="true"></span><span class="modern-storyboard-panel-copy"><b>MS</b><small>待生成</small></span></button>
-                    <button type="button" class="modern-storyboard-panel" data-storyboard-panel-index="4"><span class="modern-storyboard-panel-number">05</span><span class="modern-storyboard-panel-art" aria-hidden="true"></span><span class="modern-storyboard-panel-copy"><b>OTS</b><small>待生成</small></span></button>
-                    <button type="button" class="modern-storyboard-panel" data-storyboard-panel-index="5"><span class="modern-storyboard-panel-number">06</span><span class="modern-storyboard-panel-art" aria-hidden="true"></span><span class="modern-storyboard-panel-copy"><b>CU</b><small>待生成</small></span></button>
-                    <button type="button" class="modern-storyboard-panel" data-storyboard-panel-index="6"><span class="modern-storyboard-panel-number">07</span><span class="modern-storyboard-panel-art" aria-hidden="true"></span><span class="modern-storyboard-panel-copy"><b>MS</b><small>待生成</small></span></button>
-                    <button type="button" class="modern-storyboard-panel" data-storyboard-panel-index="7"><span class="modern-storyboard-panel-number">08</span><span class="modern-storyboard-panel-art" aria-hidden="true"></span><span class="modern-storyboard-panel-copy"><b>CU</b><small>待生成</small></span></button>
-                    <button type="button" class="modern-storyboard-panel" data-storyboard-panel-index="8"><span class="modern-storyboard-panel-number">09</span><span class="modern-storyboard-panel-art" aria-hidden="true"></span><span class="modern-storyboard-panel-copy"><b>WS</b><small>尾格锚点</small></span></button>
-                    </div>
-                  </div>
-                </div>
-                <footer class="modern-storyboard-canvas-footer">
-                  <div><span>当前镜头</span><strong id="modernStoryboardSelectedPanel">01 · WS</strong><small id="modernStoryboardSelectedCopy">上一页尾格的构图锚点会被直接复用。</small></div>
-                  <div class="modern-storyboard-panel-actions"><button id="modernStoryboardRetryPanel" type="button">重试当前镜头</button><button id="modernStoryboardRestartPage" type="button">从此页重新开始</button></div>
-                </footer>
-              </section>
-
-              <aside id="modernStoryboardInspector" class="modern-storyboard-inspector" aria-label="连续性检查器">
-                <header class="modern-storyboard-panel-head"><div><span class="modern-eyebrow">CONTINUITY CHECKER</span><strong>连续性检查器</strong></div><span id="modernStoryboardInspectorState" class="modern-storyboard-state">待检查</span></header>
-                <div class="modern-storyboard-continuity-link"><div><span>上一页尾格</span><figure id="modernStoryboardTailPreview" class="modern-storyboard-anchor-preview"><span>第 09 格</span></figure></div><i aria-hidden="true">→</i><div><span>本页首格</span><figure id="modernStoryboardHeadPreview" class="modern-storyboard-anchor-preview"><span>第 01 格</span></figure></div></div>
-                <label class="modern-storyboard-toggle"><input id="modernStoryboardStrictReuse" type="checkbox" checked /><span><b>严格复用首格</b><small>直接复用上一页第 9 格，不重新生成</small></span></label>
-                <section class="modern-storyboard-check-section"><h3>连续性检查项</h3><ul id="modernStoryboardChecks"></ul></section>
-                <section class="modern-storyboard-beat-section"><h3>脚本节拍</h3><ol id="modernStoryboardBeats"></ol></section>
-                <footer id="modernStoryboardInspectorActions" class="modern-storyboard-inspector-actions"><button id="modernStoryboardGeneratePage" class="is-primary" type="button">生成当前页分镜</button><button id="modernStoryboardRecover" type="button">失败恢复</button></footer>
-                <div class="modern-storyboard-queue-status"><span id="modernStoryboardQueueLabel">队列空闲</span><small>已确认镜头不会被覆盖</small></div>
-                <p class="modern-storyboard-safety-note"><span aria-hidden="true">◈</span> 故事板预览不回流资产库</p>
-              </aside>
-            </div>
-
-            <nav id="modernStoryboardTimeline" class="modern-storyboard-timeline" aria-label="故事板分页轨道">
-              <div class="modern-storyboard-timeline-head"><div><span class="modern-eyebrow">PAGE SEQUENCE</span><strong>连续分页</strong></div><button id="modernStoryboardAddPage" type="button">＋ 添加页面</button></div>
-              <div id="modernStoryboardTimelineTrack" class="modern-storyboard-timeline-track"></div>
+            <nav id="modernStoryboardTimeline" class="storyboard-document-sequence" aria-label="故事板 Part 序列">
+              <div class="storyboard-document-sequence-head"><div><span class="modern-eyebrow">PART SEQUENCE</span><strong>按剧本自动拆分，每 PART 最长 15 秒</strong></div><span id="modernStoryboardQueueLabel">队列空闲</span></div>
+              <div id="modernStoryboardTimelineTrack" class="storyboard-document-sequence-track"></div>
             </nav>
+
+            <div class="storyboard-document-selection" aria-live="polite">
+              <div><span>当前镜头</span><strong id="modernStoryboardSelectedPanel">01 · WS</strong><small id="modernStoryboardSelectedCopy">点击镜头格查看 GPT 生成的镜头描述。</small></div>
+              <button id="modernStoryboardRetryPanel" type="button">重试当前镜头</button>
+            </div>
           </section>
 
 

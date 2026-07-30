@@ -6,81 +6,64 @@ const root = path.resolve(new URL("..", import.meta.url).pathname);
 const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const js = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/styles.css"), "utf8");
+const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
 
 const storyboardStart = html.indexOf('id="modernStoryboardStudio"');
 const workbenchStart = html.indexOf('<section class="modern-workbench"', storyboardStart);
 const panel = storyboardStart >= 0 && workbenchStart > storyboardStart ? html.slice(storyboardStart, workbenchStart) : "";
-assert.ok(panel, "modern storyboard studio must be present");
+assert.ok(panel, "storyboard document must be present");
+
 for (const id of [
   "modernStoryboardProject",
+  "modernStoryboardBoardCount",
   "modernStoryboardPage",
-  "modernStoryboardRatio",
-  "modernStoryboardSave",
-  "modernStoryboardExport",
-  "modernStoryboardGeneratePage",
-  "modernStoryboardGenerateNext",
-  "modernStoryboardToolrow",
-  "modernStoryboardToolSelect",
-  "modernStoryboardFit",
-  "modernStoryboardZoomOut",
-  "modernStoryboardZoomIn",
-  "modernStoryboardAssetTabs",
-  "modernStoryboardAssetList",
-  "modernStoryboardReferenceDropzone",
-  "modernStoryboardReferenceFile",
-  "modernStoryboardReferenceUploadStatus",
+  "modernStoryboardTimeRange",
+  "modernStoryboardCanvasTitle",
+  "modernStoryboardCanvasMeta",
+  "modernStoryboardCanvasStatus",
+  "modernStoryboardEmotion",
+  "modernStoryboardSetting",
   "modernStoryboardGrid",
-  "modernStoryboardInspector",
-  "modernStoryboardTailPreview",
-  "modernStoryboardHeadPreview",
-  "modernStoryboardStrictReuse",
-  "modernStoryboardChecks",
-  "modernStoryboardBeats",
+  "modernStoryboardSummary",
+  "modernStoryboardKeywords",
+  "modernStoryboardContinuity",
   "modernStoryboardTimeline",
-  "modernStoryboardInspectorActions",
+  "modernStoryboardTimelineTrack",
+  "modernStoryboardGeneratePage",
+  "modernStoryboardRetryPanel",
 ]) {
-  assert.match(panel, new RegExp(`id="${id}"`), `storyboard studio missing ${id}`);
+  assert.match(panel, new RegExp(`id="${id}"`), `storyboard document missing ${id}`);
 }
-assert.match(panel, /data-storyboard-asset-tab="Character"/);
-assert.match(panel, /data-storyboard-asset-tab="Scene"/);
-assert.match(panel, /data-storyboard-asset-tab="Prop"/);
-assert.match(panel, /data-storyboard-asset-tab="Style"/);
-assert.match(panel, /data-storyboard-panel-index="0"/);
-assert.match(panel, /data-storyboard-panel-index="8"/);
-assert.match(panel, /故事板预览不回流资产库/);
-assert.match(panel, /尾格[\s\S]*首格/);
 
-assert.match(js, /function renderModernStoryboardStudio\(/, "storyboard studio needs a dedicated renderer");
-assert.match(js, /function uploadModernStoryboardReference\(/, "storyboard reference upload needs a dedicated action");
-assert.match(js, /modernStoryboardReferenceUploadStatus/, "storyboard reference upload needs visible feedback");
-assert.match(js, /data-storyboard-asset-id/, "reference assets must be bindable from the storyboard panel");
-assert.match(js, /storyboardBindings/, "storyboard reference bindings must be kept separate from production assets");
-assert.match(js, /storyboardToolLabels/, "storyboard tools need visible action feedback");
-assert.match(js, /modernStoryboardToolrow[\s\S]*modernStoryboardZoom/, "storyboard renderer must update the canvas tool row");
-assert.match(js, /modernMediaForShot\(data,[\s\S]*storyboard/, "storyboard panels must use generated media when available");
-assert.match(js, /const modernWorkbench = root\.querySelector\("\.modern-workbench"\)[\s\S]*modernWorkbench\.hidden = modernFocus !== "video"/, "storyboard view must hard-hide the video workbench");
-assert.match(js, /storyboard-preview-only/, "storyboard panels must be explicitly isolated from production assets");
-assert.match(js, /reused-anchor/, "strict continuity must mark a reused anchor");
-assert.match(js, /function modernStoryboardPages\(/, "storyboard pages must be derived separately from video queue records");
-assert.match(js, /function runModernStoryboardJob[\s\S]*?startJob\("storyboards"\)/, "storyboard actions must use the existing storyboard job");
-assert.match(js, /storyboardStrictReuse/, "strict reuse must be persisted in modern storyboard state");
-assert.match(js, /saveModernStoryboardContinuity[\s\S]*storyboardStrictReuse/, "strict reuse must be saved with the storyboard controls");
+assert.match(panel, /STORYBOARD DRAFT/);
+assert.match(panel, /16:9/);
+assert.match(panel, /15 秒/);
+assert.match(panel, /黑白线稿速写/);
+assert.doesNotMatch(panel, /modernStoryboardReferencePanel|modernStoryboardToolrow|modernStoryboardInspector|modernStoryboardAddPage/);
 
-assert.match(css, /\.modern-storyboard-workspace\s*\{[^}]*grid-template-columns:\s*minmax\(190px,\s*\.72fr\)\s+minmax\(560px,\s*2fr\)\s+minmax\(240px,\s*\.9fr\)/, "storyboard studio must use a three-column workspace");
-assert.match(css, /\.modern-storyboard-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/, "storyboard canvas must be a 3x3 grid");
-assert.match(css, /\.modern-storyboard-paper\s*\{[^}]*background:\s*#f3efe7/, "storyboard must use a light paper canvas");
-assert.match(css, /\.modern-storyboard-timeline\s*\{/, "storyboard must expose a page timeline");
-assert.match(css, /\.modern-storyboard-toolrow\s*\{/, "storyboard must expose a dedicated canvas tool row");
-assert.match(css, /\.modern-storyboard-asset-list\s*\{[^}]*grid-template-columns:\s*repeat\(2/, "reference assets must use a compact card grid");
-assert.match(css, /\.modern-storyboard-panel-art img\s*\{/, "storyboard cells must support generated frame thumbnails");
-assert.match(css, /\.modern-storyboard-paper-viewport\s*\{/, "storyboard zoom must stay inside a dedicated viewport");
-assert.match(css, /\.modern-storyboard-asset-item\[aria-pressed="true"\]/, "bound reference cards need a clear selected state");
-assert.match(css, /\.modern-storyboard-inspector-actions[^}]*\.is-primary/, "storyboard primary generation action must sit in the inspector footer");
-assert.match(css, /\.modern-main\[data-modern-view="storyboard"\][\s\S]*?\.modern-workbench\s*\{\s*display:\s*none/, "legacy shot workbench must be hidden in storyboard view");
+assert.match(js, /function modernStoryboardPages\(/, "storyboard pages must be derived from 15-second board slots");
+assert.match(js, /source:\s*"reused-anchor"/, "the next board must reuse the previous board tail");
+assert.match(js, /carryIn[\s\S]*上一 PART/, "the UI must explain the cross-part anchor");
+assert.match(js, /function renderModernStoryboardStudio\(/, "storyboard document needs a dedicated renderer");
+assert.match(js, /storyboardBoardMedia\(/, "generated storyboard sheet media must be shown in the document");
+assert.match(js, /黑白线稿速写 · 九宫格 · 16:9/, "the document must stay fixed to the approved first format");
 
-assert.match(css, /\.modern-storyboard-reference-panel \.modern-storyboard-panel-head > #modernStoryboardReferenceUpload[\s\S]*?width:\s*42px[\s\S]*?height:\s*42px/, "reference upload control needs a larger dedicated hit area");
-assert.match(css, /#modernStoryboardReferenceUpload:hover[\s\S]*?rgba\(217,45,69/, "reference upload control needs a production-signal hover state");
-assert.match(css, /#modernStoryboardReferenceUpload:focus-visible[\s\S]*?outline:\s*2px/, "reference upload control needs a visible keyboard focus state");
-assert.match(css, /#modernStoryboardReferenceUpload:disabled[\s\S]*?opacity:\s*\.45/, "reference upload control needs a restrained disabled state");
+assert.match(server, /const STORYBOARD_MIN_PANELS = 9/);
+assert.match(server, /const STORYBOARD_MAX_PANELS = 9/);
+assert.match(server, /IMAGE_SIZE_BY_QUALITY_16_9\[String\(body\.quality/);
+assert.match(server, /16:9 horizontal professional film storyboard document/);
+assert.match(server, /black-and-white hand-drawn storyboard sketch/);
+assert.match(server, /continuitySourcePanelId/);
+assert.match(server, /Production Board 唯一视频参考|15 秒 16:9 横版九宫格故事板/);
+assert.doesNotMatch(server, /Create ONE 9:16 vertical \(portrait\)/);
 
-console.log("continuous storyboard UI tests passed");
+for (const selector of [
+  /\.storyboard-document-board\s*\{/,
+  /\.storyboard-document-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3/,
+  /\.storyboard-document-shot-frame\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/,
+  /\.storyboard-document-sequence-connector/,
+]) {
+  assert.match(css, selector, `missing storyboard document styling: ${selector}`);
+}
+
+console.log("storyboard document UI tests passed");

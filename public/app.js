@@ -472,6 +472,7 @@ async function syncAuthUser() {
   const label = $("#authUserLabel");
   const exploreLabel = $("#exploreAuthUserLabel");
   const exploreLoginLink = $("#exploreLoginLink");
+  const exploreRegisterLink = $("#exploreRegisterLink");
   const adminLink = $("#adminLink");
   const exploreAdminLink = $("#exploreAdminLink");
   const exploreTeamButton = $("#exploreTeamButton");
@@ -499,6 +500,7 @@ async function syncAuthUser() {
     if (exploreLabel) exploreLabel.textContent = authDisplayName;
     adminLink?.classList.toggle("hidden", data.user?.role !== "admin");
     exploreLoginLink?.classList.toggle("hidden", !!data.user);
+    exploreRegisterLink?.classList.toggle("hidden", !!data.user);
     exploreAdminLink?.classList.toggle("hidden", data.user?.role !== "admin");
     superPixelEntry?.classList.toggle("hidden", data.user?.role !== "admin");
     exploreTeamButton?.classList.toggle("hidden", !data.user);
@@ -517,6 +519,7 @@ async function syncAuthUser() {
     label.textContent = "";
     if (exploreLabel) exploreLabel.textContent = "";
     exploreLoginLink?.classList.remove("hidden");
+    exploreRegisterLink?.classList.remove("hidden");
     adminLink?.classList.add("hidden");
     exploreAdminLink?.classList.add("hidden");
     superPixelEntry?.classList.add("hidden");
@@ -810,7 +813,7 @@ function userHasCanvasPermission() {
 
 async function logout() {
   await api("/api/auth/logout", { method: "POST", body: JSON.stringify({}) });
-  window.location.href = "/auth.html";
+  window.location.href = "/";
 }
 
 function openChangePasswordDialog() {

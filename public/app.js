@@ -475,6 +475,8 @@ async function syncAuthUser() {
   const exploreLabel = $("#exploreAuthUserLabel");
   const exploreLoginLink = $("#exploreLoginLink");
   const exploreRegisterLink = $("#exploreRegisterLink");
+  const projectLoginButton = $("#projectLoginButton");
+  const projectRegisterButton = $("#projectRegisterButton");
   const adminLink = $("#adminLink");
   const exploreAdminLink = $("#exploreAdminLink");
   const exploreTeamButton = $("#exploreTeamButton");
@@ -500,6 +502,8 @@ async function syncAuthUser() {
       : data.user?.displayName || data.user?.username || "";
     label.textContent = authDisplayName;
     if (exploreLabel) exploreLabel.textContent = authDisplayName;
+    projectLoginButton?.classList.toggle("hidden", !!data.user);
+    projectRegisterButton?.classList.toggle("hidden", !!data.user);
     adminLink?.classList.toggle("hidden", data.user?.role !== "admin");
     exploreLoginLink?.classList.toggle("hidden", !!data.user);
     exploreRegisterLink?.classList.toggle("hidden", !!data.user);
@@ -520,6 +524,8 @@ async function syncAuthUser() {
     state.imageStudio.storyboardHistory = readImageExploreStoryboardHistory();
     label.textContent = "";
     if (exploreLabel) exploreLabel.textContent = "";
+    projectLoginButton?.classList.remove("hidden");
+    projectRegisterButton?.classList.remove("hidden");
     exploreLoginLink?.classList.remove("hidden");
     exploreRegisterLink?.classList.remove("hidden");
     adminLink?.classList.add("hidden");

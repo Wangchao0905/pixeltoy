@@ -24,8 +24,8 @@
           </nav>
           <div class="explore-account-actions">
             <span id="exploreAuthUserLabel"></span>
-            <a id="exploreLoginLink" class="explore-account-link" href="/auth.html?mode=login&amp;next=/">登录</a>
-            <a id="exploreRegisterLink" class="explore-account-link explore-register-link" href="/auth.html?mode=register&amp;next=/">注册</a>
+            <button id="exploreLoginLink" class="explore-account-link" type="button" data-auth-open="login">登录</button>
+            <button id="exploreRegisterLink" class="explore-account-link explore-register-link" type="button" data-auth-open="register">注册</button>
             <a id="exploreAdminLink" class="explore-account-link hidden" href="/admin.html">Admin</a>
             <button id="exploreTeamButton" type="button" aria-haspopup="dialog" aria-controls="teamPanel" title="团队">Team</button>
             <button id="exploreRefresh" type="button" aria-label="刷新项目" title="刷新项目">↻</button>
@@ -279,6 +279,8 @@
           </div>
           <div class="project-home-actions">
             <span id="authUserLabel" class="auth-user-label"></span>
+            <button id="projectLoginButton" class="ghost auth-entry-button" type="button" data-auth-open="login">登录</button>
+            <button id="projectRegisterButton" class="primary auth-entry-button" type="button" data-auth-open="register">注册</button>
             <a id="adminLink" class="ghost hidden" href="/admin.html">管理后台</a>
             <button id="changePasswordButton" class="ghost" type="button">修改密码</button>
             <button id="logoutButton" class="ghost" type="button">退出</button>
@@ -356,6 +358,67 @@
           </form>
         </section>
       </div>
+
+      <dialog id="authDialog" class="auth-dialog" aria-labelledby="authDialogTitle">
+        <div class="auth-dialog-shell">
+          <section class="auth-dialog-intro" aria-label="Pixel Toys">
+            <div class="auth-dialog-brand">
+              <span class="auth-dialog-brand-mark pixel-toys-wordmark" aria-hidden="true"></span>
+              <span>PIXEL TOYS</span>
+            </div>
+            <div class="auth-dialog-intro-copy">
+              <span class="auth-dialog-kicker">PRODUCTION SPACE</span>
+              <h2>进入你的<br /><em>制作空间</em></h2>
+              <p>脚本、资产、故事板和视频片段，都从这里继续。</p>
+            </div>
+            <div class="auth-dialog-signal" aria-hidden="true">
+              <span class="auth-signal-line"></span>
+              <span class="auth-signal-dot"></span>
+              <span class="auth-signal-label">WORKSPACE / READY</span>
+            </div>
+          </section>
+          <section class="auth-dialog-panel">
+            <header class="auth-dialog-head">
+              <div>
+                <span class="section-label">Account</span>
+                <h2 id="authDialogTitle">登录或注册</h2>
+              </div>
+              <button id="closeAuthDialog" class="auth-dialog-close" type="button" aria-label="关闭登录窗口" title="关闭"></button>
+            </header>
+            <div class="auth-modal-tabs" role="tablist" aria-label="登录方式">
+              <button class="is-active" type="button" role="tab" aria-selected="true" data-auth-mode="login">登录</button>
+              <button type="button" role="tab" aria-selected="false" data-auth-mode="register">注册</button>
+            </div>
+            <form id="authModalForm" class="auth-modal-form">
+              <label>
+                <span>邮箱</span>
+                <input name="email" type="email" inputmode="email" autocomplete="username" placeholder="name@example.com" required />
+              </label>
+              <div id="authModalEmailCodeField" class="auth-modal-code-row hidden">
+                <label>
+                  <span>邮箱验证码</span>
+                  <input name="emailCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位验证码" />
+                </label>
+                <button id="authModalSendEmailCode" class="auth-modal-code-button" type="button">发送验证码</button>
+              </div>
+              <label>
+                <span>密码</span>
+                <input name="password" type="password" autocomplete="current-password" minlength="8" required />
+              </label>
+              <label id="authModalDisplayNameField" class="hidden">
+                <span>显示名称</span>
+                <input name="displayName" autocomplete="name" placeholder="你的工作室名称" />
+              </label>
+              <label id="authModalInviteCodeField" class="hidden">
+                <span>邀请码</span>
+                <input name="inviteCode" autocomplete="off" placeholder="输入邀请码" />
+              </label>
+              <p id="authModalMessage" class="auth-modal-message" aria-live="polite"></p>
+              <button id="authModalSubmit" class="primary auth-modal-submit" type="submit">进入制作空间</button>
+            </form>
+          </section>
+        </div>
+      </dialog>
 
       <template id="legacyEditorTemplate" data-legacy-editor="true">
         <aside class="studio-sidebar" aria-label="制作工具栏">
@@ -1456,5 +1519,6 @@
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
     <script src="/app.js?v=nav-toggle-20260730"></script>
+    <script src="/auth-modal.js?v=auth-modal-20260730"></script>
   </body>
 </html>

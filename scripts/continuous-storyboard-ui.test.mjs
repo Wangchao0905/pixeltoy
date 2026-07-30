@@ -78,4 +78,9 @@ assert.match(css, /\.modern-storyboard-asset-item\[aria-pressed="true"\]/, "boun
 assert.match(css, /\.modern-storyboard-inspector-actions[^}]*\.is-primary/, "storyboard primary generation action must sit in the inspector footer");
 assert.match(css, /\.modern-main\[data-modern-view="storyboard"\][\s\S]*?\.modern-workbench\s*\{\s*display:\s*none/, "legacy shot workbench must be hidden in storyboard view");
 
+assert.match(css, /\.modern-storyboard-reference-panel \.modern-storyboard-panel-head > #modernStoryboardReferenceUpload[\s\S]*?width:\s*42px[\s\S]*?height:\s*42px/, "reference upload control needs a larger dedicated hit area");
+assert.match(css, /#modernStoryboardReferenceUpload:hover[\s\S]*?rgba\(217,45,69/, "reference upload control needs a production-signal hover state");
+assert.match(css, /#modernStoryboardReferenceUpload:focus-visible[\s\S]*?outline:\s*2px/, "reference upload control needs a visible keyboard focus state");
+assert.match(css, /#modernStoryboardReferenceUpload:disabled[\s\S]*?opacity:\s*\.45/, "reference upload control needs a restrained disabled state");
+
 console.log("continuous storyboard UI tests passed");

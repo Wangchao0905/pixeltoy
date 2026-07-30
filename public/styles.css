@@ -18145,6 +18145,44 @@ body.is-studio-modern .modern-video-param-sfx { grid-column: 1 / -1; }
 .modern-storyboard-panel-head strong { color: var(--mv-tx); font-size: 13px; font-weight: 550; }
 .modern-storyboard-panel-head button { width: 27px; height: 27px; border: 1px solid var(--mv-line); border-radius: 6px; background: transparent; color: var(--mv-mut); cursor: pointer; }
 .modern-storyboard-panel-head button:hover { border-color: var(--mv-line-2); color: var(--mv-tx); }
+.modern-storyboard-reference-panel .modern-storyboard-panel-head > #modernStoryboardReferenceUpload {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 10px;
+  background: rgba(255,255,255,.025);
+  color: var(--mv-mut);
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 300;
+  line-height: 1;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.modern-storyboard-reference-panel .modern-storyboard-panel-head > #modernStoryboardReferenceUpload:hover {
+  border-color: rgba(217,45,69,.62);
+  background: rgba(217,45,69,.09);
+  color: var(--mv-tx);
+  box-shadow: 0 7px 18px -12px rgba(217,45,69,.95);
+}
+.modern-storyboard-reference-panel .modern-storyboard-panel-head > #modernStoryboardReferenceUpload:focus-visible {
+  border-color: var(--modern-signal);
+  outline: 2px solid rgba(217,45,69,.5);
+  outline-offset: 2px;
+}
+.modern-storyboard-reference-panel .modern-storyboard-panel-head > #modernStoryboardReferenceUpload:active {
+  background: rgba(217,45,69,.14);
+  transform: translateY(1px) scale(.97);
+}
+.modern-storyboard-reference-panel .modern-storyboard-panel-head > #modernStoryboardReferenceUpload:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+  box-shadow: none;
+  transform: none;
+}
 .modern-storyboard-reference-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .modern-storyboard-reference-note { margin: 13px 14px 10px; color: var(--mv-qt); font-size: 10px; line-height: 1.55; }
 .modern-storyboard-asset-tabs { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 3px; margin: 0 12px 10px; padding: 3px; border-radius: 7px; background: var(--mv-bg); }

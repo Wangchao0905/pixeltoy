@@ -2729,14 +2729,26 @@ function assetAnalyzerTimeoutMs() {
   return Math.max(5000, Number(process.env.ASSET_ANALYZER_TIMEOUT_MS || 240000));
 }
 
+// 还有备用模型可切时用的短超时。2026-07-31 生产实测:最大真实资产文档(7021 字)
+// opus 三类并行最慢一类 62 秒、覆盖校验 20 秒,haiku 仅 29 秒——正常响应远低于 120 秒,
+// 而 240 秒里绝大部分是白等(日志里 240 秒超时反复真实发生)。后面还有候选就别死等满:
+// 早点切模型,单类最坏从 720 秒降到 270 秒。最后一个候选仍用完整超时,因为切无可切,
+// 宁多等也不要摔回本地傻规则(那会产生 undefined 名字/缺场景的垃圾资产)。
+function assetAnalyzerFallbackTimeoutMs() {
+  const full = assetAnalyzerTimeoutMs();
+  const short = Math.max(5000, Number(process.env.ASSET_ANALYZER_FALLBACK_TIMEOUT_MS || 120000));
+  return Math.min(short, full);
+}
+
 async function fetchAssetAnalyzer(url, options = {}) {
-  const timeoutMs = assetAnalyzerTimeoutMs();
+  const { timeoutMs: requestedTimeoutMs, ...fetchOptions } = options;
+  const timeoutMs = Number(requestedTimeoutMs) > 0 ? Number(requestedTimeoutMs) : assetAnalyzerTimeoutMs();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
-      ...options,
-      signal: options.signal || controller.signal,
+      ...fetchOptions,
+      signal: fetchOptions.signal || controller.signal,
     });
   } catch (error) {
     if (error?.name === "AbortError") throw new Error(`资产解析模型请求超时（${Math.round(timeoutMs / 1000)} 秒）：${url}`);
@@ -6033,18 +6045,23 @@ function storyboardSegmentsFromShots(shots = [], dialogueLanguage = "en") {
     .map((shot, index) => {
       const duration = clampStoryboardDuration(shot?.duration, 10);
       const name = compactLine(shot?.name || shot?.id || `V${String(index + 1).padStart(3, "0")}`);
+      const sourceShotNames = [...new Set(
+        (Array.isArray(shot?.storyboardSourceShots) && shot.storyboardSourceShots.length ? shot.storyboardSourceShots : [name])
+          .map(compactLine)
+          .filter(Boolean),
+      )];
       const dialogueItems = normalizeDialogueItems(
         Array.isArray(shot?.dialogues) && shot.dialogues.length ? shot.dialogues : shot?.dialogueLines || [],
         projectLanguage,
       );
       const segment = {
-        key: name,
+        key: sourceShotNames[0] || name,
         title: compactLine(shot?.title || shot?.promptSection || name || `剧情段 ${index + 1}`),
         beat: compactLine(shot?.beat || shot?.purpose || shot?.prompt || ""),
         duration,
         startSecond: cursor,
         endSecond: cursor + duration,
-        sourceShotNames: [name].filter(Boolean),
+        sourceShotNames,
         refs: Array.isArray(shot?.refs) ? shot.refs.map(compactLine).filter(Boolean) : [],
         sceneRef: compactLine(shot?.sceneRef || ""),
         dialogues: dialogueItems,
@@ -6990,6 +7007,27 @@ function uploadLocalAsset(episodeRoot, body = {}) {
   // Validate the image before changing the asset manifest, so an invalid upload
   // never leaves an unusable reference slot behind.
   decodeUploadedImage(body);
+
+  // 同名同类型的资产已经在清单里时，直接替换它的资产图，而不是抛「已经存在」把用户挡住。
+  // 走 uploadBoundAsset 就能保持资产名称/清单条目/confirmed 状态不变，只换图。
+  const existingManifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const existingItem = existingManifest.items.find((item) => item.type === type && sameAssetLabel(item.label, label));
+  if (existingItem) {
+    const upload = uploadBoundAsset(episodeRoot, {
+      assetId: existingItem.id,
+      filename: body.filename,
+      contentBase64: body.contentBase64,
+    });
+    return {
+      asset: existingItem,
+      manifest: existingManifest,
+      binding: { updated: false, boundShots: [], reason: "沿用已有资产条目" },
+      upload,
+      replacedExisting: true,
+      message: `已替换资产图：${existingItem.label}（资产名称保持 ${existingItem.id}）`,
+    };
+  }
+
   const created = addManualAsset(episodeRoot, {
     type,
     label,
@@ -8034,11 +8072,10 @@ function configReadiness(episodeRoot, configData = null) {
   }
   const assets = Array.isArray(config.assets) ? config.assets : [];
   const promptMode = config.settings?.promptMode || (config.settings?.enableStoryboards === true ? "production_board" : "prompt");
-  const storyboardOnlyReferences = promptMode === "production_board";
+  const storyboardMode = ["production_board", "storyboard"].includes(String(promptMode).toLowerCase());
   const productionAssets = assets.filter((asset) => asset.manifestType !== "Storyboard");
   const storyboards = Array.isArray(config.storyboardReferences) ? config.storyboardReferences : [];
   const shots = Array.isArray(config.shots) ? config.shots : [];
-  const assetNames = new Set(productionAssets.map((asset) => compactLine(asset.name || asset.assetName || "")).filter(Boolean));
   const allAssetNames = new Set(assets.map((asset) => compactLine(asset.name || asset.assetName || "")).filter(Boolean));
   // 兜底:config.assets 名单可能滞后于 shot.storyboardRefs(故事板重分组后名字变化)。把磁盘上真实存在的
   // 故事板文件名并入允许集合,避免"图已在磁盘、引用也对"却因名单滞后被误报"N 个片段引用了未生成资产"。
@@ -8047,41 +8084,37 @@ function configReadiness(episodeRoot, configData = null) {
       if (asset.manifestType === "Storyboard" && asset.assetName) allAssetNames.add(asset.assetName);
     }
   }
-  if (!storyboardOnlyReferences && !productionAssets.length) missing.push("缺少资产图");
+  if (!storyboardMode && !productionAssets.length) missing.push("缺少资产图");
   if (!shots.length) missing.push("缺少视频片段");
   // 仅当缺失资产被某片段(refs/storyboardRefs)真正引用时才锁定生成;未被引用的死资产不阻塞。
   // 片段引用了未生成资产另有 shotsWithMissingRefs 精准兜底。
   const shotReferencedAssetNames = new Set();
   for (const shot of shots) {
-    const references = storyboardOnlyReferences
-      ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
-      : (Array.isArray(shot.refs) ? shot.refs : []);
+    const references = projectShotVideoReferenceNames(config, shot);
     for (const reference of references) { const clean = compactLine(reference); if (clean) shotReferencedAssetNames.add(clean); }
   }
   for (const name of Array.isArray(config.missingAssets) ? config.missingAssets : []) {
     const clean = compactLine(name);
     if (clean && shotReferencedAssetNames.has(clean)) missing.push(`缺少资产图：${clean}`);
   }
-  if (promptMode === "production_board" && !storyboards.length) missing.push("缺少 Production Board");
-  if (promptMode === "production_board") {
+  if (storyboardMode && !storyboards.length) missing.push("缺少 Production Board");
+  if (storyboardMode) {
     const storyboardShotsWithoutRefs = shots.filter((shot) => !Array.isArray(shot.storyboardRefs) || !shot.storyboardRefs.length);
     if (storyboardShotsWithoutRefs.length) missing.push(`${storyboardShotsWithoutRefs.length} 个片段缺少 Production Board 绑定`);
+    const officialAssetShotsWithoutRefs = shots.filter((shot) => !Array.isArray(shot.refs) || !shot.refs.length);
+    if (officialAssetShotsWithoutRefs.length) missing.push(`${officialAssetShotsWithoutRefs.length} 个片段缺少人物、场景或道具绑定`);
   }
   const shotsWithoutRefs = shots.filter((shot) => {
-    const references = storyboardOnlyReferences
-      ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
-      : (Array.isArray(shot.refs) ? shot.refs : []);
+    const references = projectShotVideoReferenceNames(config, shot);
     return !references.length;
   });
   if (shotsWithoutRefs.length) missing.push(`${shotsWithoutRefs.length} 个片段缺少参考图`);
   const shotsWithMissingRefs = shots
     .map((shot) => ({
       name: shot.name,
-      missingRefs: (storyboardOnlyReferences
-        ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
-        : (Array.isArray(shot.refs) ? shot.refs : []))
+      missingRefs: projectShotVideoReferenceNames(config, shot)
         .map(compactLine)
-        .filter((ref) => ref && !(storyboardOnlyReferences ? allAssetNames : assetNames).has(ref)),
+        .filter((ref) => ref && !allAssetNames.has(ref)),
       missingStoryboardRefs: [],
     }))
     .filter((item) => item.missingRefs.length || item.missingStoryboardRefs.length);
@@ -14121,35 +14154,37 @@ function mergeValidatedProjectAssets(config = {}, validatedAssets = []) {
   return { config: changed ? { ...config, assets } : config, changed };
 }
 
-function projectShotReferenceAssets(config = {}, shot = {}) {
-  const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((asset) => [asset.name, asset]));
-  return (Array.isArray(shot.refs) ? shot.refs : []).map((ref) => assetByName.get(ref)).filter(Boolean);
-}
-
 function isProductionBoardMode(config = {}, shot = null) {
+  const promptMode = compactLine(config.settings?.promptMode || config.promptMode || "").toLowerCase();
   return (
-    compactLine(config.settings?.promptMode || "").toLowerCase() === "production_board" ||
+    promptMode === "production_board" ||
+    promptMode === "storyboard" ||
     config.settings?.enableStoryboards === true ||
     compactLine(shot?.videoPromptMode || "").toLowerCase() === "production_board"
   );
 }
 
-function projectShotStoryboardAssets(config = {}, shot = {}) {
-  const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((asset) => [asset.name, asset]));
-  return (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : []).map((ref) => assetByName.get(ref)).filter(Boolean);
+function projectShotVideoReferenceNames(config = {}, shot = {}) {
+  const storyboardRefs = Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [];
+  const officialRefs = Array.isArray(shot.refs) ? shot.refs : [];
+  const refs = isProductionBoardMode(config, shot) ? [...storyboardRefs, ...officialRefs] : officialRefs;
+  return [...new Set(refs.map(compactLine).filter(Boolean))];
 }
 
 function projectShotAllVideoReferenceAssets(config = {}, shot = {}) {
-  const sourceAssets = isProductionBoardMode(config, shot)
-    ? projectShotStoryboardAssets(config, shot)
-    : projectShotReferenceAssets(config, shot);
+  const assetByName = new Map(
+    (Array.isArray(config.assets) ? config.assets : [])
+      .map((asset) => [compactLine(asset?.name || asset?.assetName || ""), asset])
+      .filter(([name]) => !!name),
+  );
   const refs = [];
   const seen = new Set();
-  for (const asset of sourceAssets) {
-    const key = compactLine(asset?.name || asset?.assetName || asset?.id || "");
+  for (const name of projectShotVideoReferenceNames(config, shot)) {
+    const asset = assetByName.get(name);
+    const key = compactLine(asset?.name || asset?.assetName || asset?.id || name);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    refs.push(asset);
+    if (asset) refs.push(asset);
   }
   return refs;
 }
@@ -14178,12 +14213,7 @@ function projectShotUsableVideoReferenceAssets(episodeRoot = "", config = {}, sh
   const configured = new Map(
     projectShotAllVideoReferenceAssets(config, shot).map((asset) => [compactLine(asset?.name || asset?.assetName || asset?.id || ""), asset]),
   );
-  const names = (isProductionBoardMode(config, shot)
-    ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
-    : (Array.isArray(shot.refs) ? shot.refs : []))
-    .map(compactLine)
-    .filter(Boolean);
-  return [...new Set(names)]
+  return projectShotVideoReferenceNames(config, shot)
     .map((name) => configured.get(name) || (episodeRoot ? resolveScannedAssetByName(episodeRoot, name) : null))
     .filter(Boolean)
     .map((asset) => (episodeRoot ? projectAssetForVideoPayload(episodeRoot, asset) : asset))
@@ -14193,10 +14223,7 @@ function projectShotUsableVideoReferenceAssets(episodeRoot = "", config = {}, sh
 function videoSubmissionReferenceNames(config = {}, shots = []) {
   const names = new Set();
   for (const shot of Array.isArray(shots) ? shots : []) {
-    const references = isProductionBoardMode(config, shot)
-      ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [])
-      : (Array.isArray(shot.refs) ? shot.refs : []);
-    for (const reference of references) {
+    for (const reference of projectShotVideoReferenceNames(config, shot)) {
       const name = compactLine(reference);
       if (name) names.add(name);
     }
@@ -14639,7 +14666,9 @@ function projectVideoPayloadForShot(episodeRoot, shot, config = {}) {
     if (!tailFrame) throw new Error(`等待上一段尾帧：${shot.tailFrameSource}`);
     startFrameUrl = tailFrame.url;
   }
-  const storyboardGuidanceText = storyboardsActive ? storyboardGuidancePromptText(shot.storyboardGuidance, refs.length) : "";
+  const storyboardGuidanceText = storyboardsActive
+    ? storyboardGuidancePromptText(shot.storyboardGuidance, Array.isArray(shot.storyboardRefs) && shot.storyboardRefs.length ? 1 : null)
+    : "";
   return {
     prompt: compactLine(shot.prompt || shot.videoPrompt || ""),
     model: projectVideoModelForShot(config, shot),
@@ -14717,9 +14746,7 @@ function canvasNodeFromConfigShot(shot = {}, index = 0, config = {}) {
     projectShotName: shot.name || "",
     x: 120 + (index % 3) * 560,
     y: 120 + Math.floor(index / 3) * 620,
-    assets: storyboardsActive
-      ? (Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs.filter(Boolean) : [])
-      : (Array.isArray(shot.refs) ? shot.refs.filter(Boolean) : []),
+    assets: projectShotVideoReferenceNames(config, shot),
     prompt: String(shot.prompt || shot.videoPrompt || "").trim(),
     settings: {
       model: projectVideoModelForShot(config, shot),
@@ -16726,7 +16753,7 @@ async function callAssetAnalyzerModel({ script, fallbackAssets, worldProfile, mo
       { role: "user", content: assetAnalyzerUserPrompt({ script, fallbackAssets, worldProfile }) },
     ],
   });
-  const post = (model, withJsonMode, focus) =>
+  const post = (model, withJsonMode, focus, timeoutMs) =>
     fetchAssetAnalyzer(openAiCompatUrl("/v1/chat/completions"), {
       method: "POST",
       headers: {
@@ -16734,14 +16761,16 @@ async function callAssetAnalyzerModel({ script, fallbackAssets, worldProfile, mo
         "Content-Type": "application/json",
       },
       body: JSON.stringify(requestBody(model, withJsonMode, focus)),
+      timeoutMs,
     });
   // 单个模型跑一次,返回 { ok, data } / { retryable, reason }
-  const tryModel = async (model, focus) => {
+  // timeoutMs: 后面还有候选模型时传短超时,快速切换;最后一个候选不传,用完整超时。
+  const tryModel = async (model, focus, timeoutMs) => {
     try {
-      let response = await post(model, true, focus);
+      let response = await post(model, true, focus, timeoutMs);
       let raw = await response.text();
       if (!response.ok && response.status === 400 && /response_format|json_object/i.test(raw)) {
-        response = await post(model, false, focus);
+        response = await post(model, false, focus, timeoutMs);
         raw = await response.text();
       }
       if (!response.ok) {
@@ -16769,7 +16798,8 @@ async function callAssetAnalyzerModel({ script, fallbackAssets, worldProfile, mo
     let lastReason = "";
     for (let i = 0; i < candidates.length; i += 1) {
       const model = candidates[i];
-      const result = await tryModel(model, focus);
+      const hasFallbackLeft = i < candidates.length - 1;
+      const result = await tryModel(model, focus, hasFallbackLeft ? assetAnalyzerFallbackTimeoutMs() : undefined);
       if (result.ok) return { focus: focus.label, ok: true, model, data: result.data };
       lastReason = `${model}: ${result.reason}`;
       if (!result.retryable) return { focus: focus.label, ok: false, model, reason: result.reason };
@@ -18605,12 +18635,12 @@ function storyboardGuidancePromptText(guidance, storyboardImageIndex = null) {
     })
     .join("\n");
   return `Production Board 镜头参考：
-${imageLabel} 是 Production Board / storyboard_reference，也是本段唯一提交图片参考。读取本段实际编号面板中的 16:9 构图、人物/道具站位、运动方向、镜头景别、动作节奏和剪辑出口。
-这张板已经由绑定的 Character/Scene/Prop/Insert 资产生成，板面中的人物身份、场景结构、道具外观、材质、颜色、光线和风格均为最终视觉依据。不要期待、引用或补充其他资产图。
+${imageLabel} 是本段的 Production Board 故事板参考。读取本段实际编号面板中的 16:9 构图、人物/道具站位、运动方向、镜头景别、动作节奏和剪辑出口。
+故事板负责构图、站位、动作和节奏；本段随后提交的 Character/Scene/Prop/Insert 正式资产负责人物身份、场景材质、道具外观和细节一致性。二者必须同时使用，不得把任一类引用当成另一类的替代品。
 ${assetLock ? `${assetLock}\n` : ""}${panelBindings ? `${panelBindings}\n` : ""}
 按本板固定的 9 个编号面板顺序执行镜头：首格建立空间，末格保留干净剪辑出口，中间七格推进站位、动作、转折和反应。
 ${panelText || "- 使用故事版图中的编号面板控制构图、站位、动作节奏与切镜。"}
-Production Board 模式下，相邻片段的空间连贯由同一 Sequence 的横版面板、板面中已锁定的场景与道具状态和剪辑出口共同控制。`;
+Production Board 模式下，相邻片段的空间连贯由同一 Sequence 的横版面板、正式资产身份、板面中的场景与道具状态和剪辑出口共同控制。`;
 }
 
 function assetLookupFromAssets(assets = []) {
@@ -18748,12 +18778,12 @@ function storyboardAssetLockText(binding, imageLabel) {
       lines.push(`- ${item.matchCode || assetMatchCode(item.type, item.ref)} = ${item.ref}${item.label && item.label !== item.ref ? `（${item.label}）` : ""}，${rule}`),
     );
   };
-  push("面板已锁定/人物", binding.characters, `已渲染在 ${imageLabel} 对应面板中；保留其可见的脸、肤色、体型、服装和身份，不期待额外人物图片`);
-  push("面板已锁定/场景", binding.scenes, `已渲染在 ${imageLabel} 对应面板中；保留其可见的地点、建筑结构、材质和光影，不期待额外场景图片`);
-  push("面板已锁定/道具", [...(binding.props || []), ...(binding.inserts || [])], `已渲染在 ${imageLabel} 对应面板中；保留其可见的外观、摆放位置、手部互动和剪辑点，不期待额外道具图片`);
+  push("面板已锁定/人物", binding.characters, `已渲染在 ${imageLabel} 对应面板中；视频阶段同时提交该人物正式资产图片，保留脸、肤色、体型、服装和身份`);
+  push("面板已锁定/场景", binding.scenes, `已渲染在 ${imageLabel} 对应面板中；视频阶段同时提交该场景正式资产图片，保留地点、建筑结构、材质和光影`);
+  push("面板已锁定/道具", [...(binding.props || []), ...(binding.inserts || [])], `已渲染在 ${imageLabel} 对应面板中；视频阶段同时提交该道具或插入正式资产图片，保留外观、摆放位置、手部互动和剪辑点`);
   if (!lines.length) return "";
-  lines.push("资产绑定：正式 Character/Scene/Prop/Insert 资产只用于生成这张板；视频提交阶段不附带这些资产图片。");
-  lines.push(`视觉优先级：忠实保留 ${imageLabel} 中已经渲染的资产身份和视觉细节，不要用文字或未提交图片重新解释。`);
+  lines.push("资产绑定：正式 Character/Scene/Prop/Insert 资产已用于生成这张板，并会在视频提交阶段作为独立图片引用再次附带。");
+  lines.push(`视觉优先级：${imageLabel} 控制构图、站位、动作和节奏；正式资产图片控制人物、场景、道具和插入细节的身份一致性。`);
   return lines.join("\n");
 }
 
@@ -18766,7 +18796,7 @@ function storyboardPanelBindingsText(bindings = []) {
       ? `人物=${binding.characters.map((item) => `${item.roleSlot}/${item.matchCode || assetMatchCode("Character", item.ref)}->${item.ref}`).join("，")}`
       : "人物=无人物或仅作为环境空镜";
     const props = binding.props?.length ? `道具=${binding.props.map((item) => `${item.matchCode || assetMatchCode("Prop", item.ref)}->${item.ref}`).join("，")}` : "道具=无关键道具";
-    lines.push(`- ${binding.label}${binding.timeRange ? ` ${binding.timeRange}` : ""}：${scene}；${characters}；${props}；这些资产已经烘焙进故事板的本面板，视频只读取板面中的位置、动作、构图、节奏、剪辑出口和可见视觉身份。`);
+    lines.push(`- ${binding.label}${binding.timeRange ? ` ${binding.timeRange}` : ""}：${scene}；${characters}；${props}；故事板本面板控制位置、动作、构图、节奏和剪辑出口，视频同时读取对应正式资产图片锁定可见身份。`);
   }
   lines.push("角色匹配：主角A/角色B/角色C 表示板内位置；对应人物的最终脸、服装和体型以故事板中已渲染的画面为准。");
   return lines.join("\n");
@@ -19252,24 +19282,122 @@ function seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage) {
   return `${refs ? `${refs}\n\n` : ""}${prompt}`.trim();
 }
 
-// Production Board 已把实际资产身份烘焙进每个画面。视频阶段只提交故事板，
-// 文字提示只说明板的画面语义和对白，绝不能引用未上传的正式资产图片。
-function storyboardSeedancePrompt(shot, index, dialogueLanguage) {
+// Production Board 提供构图和动作控制层；正式 Character/Scene/Prop/Insert
+// 资产同时作为独立图片引用提交，锁定人物、场景、道具和插入细节的身份。
+function storyboardSeedancePrompt(shot, index, dialogueLanguage, assetLookup = null) {
   const storyboardRefs = Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [];
+  const officialRefs = [...new Set((Array.isArray(shot.refs) ? shot.refs : []).map(compactLine).filter(Boolean))]
+    .filter((ref) => !storyboardRefs.includes(ref));
   const sbLines = storyboardRefs.map(
-    (ref, i) => `@图片${i + 1} 是 Production Board 故事板，作为唯一提交图片参考；直接继承其面板中已经渲染的人物身份、场景、道具、材质、色彩、光线、构图、站位、镜头景别、动作方向与节奏。`,
+    (ref, i) => `@图片${i + 1} 是 Production Board 故事板，负责本段的构图、站位、镜头景别、动作方向、节奏与剪辑出口。`,
   );
-  const storyText = "严格按 Production Board 对应编号面板执行。人物、场景和道具的最终视觉身份已经在板面中锁定，不要期待、引用或补充其他资产图；不要臆造未出现的人物、物体或视觉风格。";
+  const assetLines = officialRefs.map((ref, i) => seedanceReferenceLine(ref, storyboardRefs.length + i, assetLookup || shot.assetLookup));
+  const storyText = "严格按 Production Board 对应编号面板执行构图、站位、动作节奏与剪辑出口；同时按后续正式资产图片保持人物、场景、道具和插入细节的视觉身份一致，不要臆造未出现的人物、物体或视觉风格。";
   const blocks = [`剧情动作：${storyText}`];
   const dlg = compactLine(seedanceDialogueText(shot));
   if (dlg) blocks.push(`对白：${dlg}`);
-  return `${sbLines.join("\n")}\n\n${blocks.join("\n\n")}`.trim();
+  return `${[...sbLines, ...assetLines].join("\n")}\n\n${blocks.join("\n\n")}`.trim();
+}
+
+function storyboardGuidanceForShot(shot = {}, slot = {}, assetLookup = new Map()) {
+  const storyboardRef = slot?.asset?.assetName || "";
+  const panels = Array.isArray(slot?.panels) ? slot.panels : [];
+  const assetBinding = storyboardAssetBindingForShot(shot, assetLookup);
+  const panelAssetBindings = buildStoryboardPanelAssetBindings({ shot, panels, assetLookup });
+  return {
+    storyboardId: slot.id || "",
+    referenceAssetName: storyboardRef,
+    timeRange: storyboardTimeRangeLabel(
+      slot.startSecond || 0,
+      slot.endSecond || (slot.startSecond || 0) + (slot.duration || 0),
+    ),
+    duration: slot.duration || 0,
+    usage: slot.videoReferenceGuide || "",
+    assetBinding,
+    panelAssetBindings,
+    panels: panels.map((panel) => ({
+      panel: panel.panel,
+      label: panel.label,
+      timeRange: panel.timeRange,
+      duration: panel.duration,
+      description: panel.description,
+      dialogue: panel.dialogue || null,
+      production: panel.production || storyboardProductionTabForPanel(panel.role, {
+        title: panel.title,
+        description: panel.description,
+        dialogue: panel.dialogue,
+        action: panel.actionArrow,
+        camera: panel.cameraFrame,
+        continuity: [panel.continuityEntry, panel.continuityExit].filter(Boolean).join(" "),
+      }),
+      actionArrow: panel.actionArrow,
+      cameraFrame: panel.cameraFrame,
+      continuityExit: panel.continuityExit,
+      assetAnchors: panel.assetAnchors || panel.refs || [],
+      videoUse: panel.videoUse,
+    })),
+    promptMode: "production_board",
+    policy:
+      "Submit the Production Board first for composition, blocking, camera direction, shot rhythm, and cut structure; submit the bound Character, Scene, Prop, and Insert images after it for identity, materials, colors, and visible detail consistency.",
+  };
+}
+
+// Production Board 模式的一个视频片段严格对应一张故事板。模型导演仍负责按剧本
+// 规划原始剧情镜头和时长，故事板槽位再把同一张板覆盖的连续镜头合并；视频阶段
+// 只读取板面时长，避免把提示词模式的镜头时长带进故事板队列。
+function productionBoardShotsFromSlots(sourceShots = [], slots = [], dialogueLanguage = "en", assetLookup = new Map()) {
+  const shotsByName = new Map((Array.isArray(sourceShots) ? sourceShots : []).map((shot) => [compactLine(shot?.name), shot]));
+  return (Array.isArray(slots) ? slots : []).map((slot, index) => {
+    const sourceNames = [...new Set((slot?.sourceShotNames || []).map(compactLine).filter(Boolean))];
+    const sourceShotsForSlot = sourceNames.map((name) => shotsByName.get(name)).filter(Boolean);
+    const primary = sourceShotsForSlot[0] || sourceShots[index] || {};
+    const refs = [...new Set([
+      ...(Array.isArray(slot?.refs) ? slot.refs : []),
+      ...sourceShotsForSlot.flatMap((shot) => Array.isArray(shot?.refs) ? shot.refs : []),
+    ].map(compactLine).filter(Boolean))];
+    const dialogues = [];
+    const dialogueKeys = new Set();
+    sourceShotsForSlot
+      .flatMap((shot) => Array.isArray(shot?.dialogues) ? shot.dialogues : [])
+      .forEach((dialogue) => {
+        const normalized = normalizeDialogueItems([dialogue], dialogueLanguage)[0];
+        if (!normalized) return;
+        const key = `${normalized.speaker || ""}\u0000${normalized.text || ""}`;
+        if (dialogueKeys.has(key)) return;
+        dialogueKeys.add(key);
+        dialogues.push(normalized);
+      });
+    const duration = Number(slot?.duration || 0);
+    if (!Number.isFinite(duration) || duration < VIDEO_MIN_SECONDS || duration > VIDEO_MAX_SECONDS) {
+      throw new Error(`故事板「${slot?.label || slot?.id || `第 ${index + 1} 张`}」时长 ${duration || 0}s 不在视频模型支持的 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS}s 范围内`);
+    }
+    const shot = {
+      ...primary,
+      name: compactLine(slot?.id || primary.name || `STORYBOARD_${String(index + 1).padStart(3, "0")}`),
+      promptSection: compactLine(slot?.id || primary.promptSection || primary.name || `STORYBOARD_${String(index + 1).padStart(3, "0")}`),
+      title: compactLine(slot?.label || primary.title || `故事板 ${index + 1}`),
+      beat: compactLine(slot?.beatSummary || sourceShotsForSlot.map((item) => item.beat || item.title).filter(Boolean).join(" / ") || primary.beat || `故事板 ${index + 1}`),
+      duration,
+      durationReason: "Production Board 模式：视频片段时长取对应故事板时长",
+      refs,
+      dialogues,
+      dialogueLanguage,
+      videoPromptMode: "production_board",
+      storyboardRefs: [slot?.asset?.assetName || ""].filter(Boolean),
+      storyboardSourceShots: sourceNames,
+      x: 120 + (index % 3) * 460,
+      y: 620 + Math.floor(index / 3) * 320,
+    };
+    shot.storyboardGuidance = storyboardGuidanceForShot(shot, slot, assetLookup);
+    shot.prompt = storyboardSeedancePrompt(shot, index, dialogueLanguage, assetLookup);
+    return shot;
+  });
 }
 
 // 按生成模式自动选择提示词方案:故事板模式=极简(跟故事板);首尾帧/普通模式=完整电影化提示词。
 function seedancePromptForShotMode(shot, index, dialogueLanguage, storyboardsActive) {
   return storyboardsActive
-    ? storyboardSeedancePrompt(shot, index, dialogueLanguage)
+    ? storyboardSeedancePrompt(shot, index, dialogueLanguage, shot?.assetLookup || null)
     : seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage);
 }
 
@@ -19337,9 +19465,9 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
 - 不要平均分配镜头时长，不要把所有镜头都设为 12 秒。推荐时长必须根据剧情节拍决定，并优先把完整剧情段落设计成接近 15 秒：建立镜头/插入/转场 4-8 秒，普通对白或反应 8-12 秒，同场景连续动作、危机升级、关键表演、需要尾帧承接的剧情 12-15 秒。
 - 一集通常优先规划约 5 个 15 秒级视频片段；剧情复杂、切镜明确、换场较多或对白密集时增加到 6-8 个片段，最高不超过 ${VIDEO_MAX_EPISODE_SECONDS} 秒。
 - 如果相邻镜头发生在同一场景，应保持同一个场景资产引用和空间方向；尾帧续接由后端配置层判断，videoPrompt 中不要写尾帧规则。
-- Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落渲染成一张 16:9 横版、3×3 九个编号面板的 Production Board。每个面板必须把实际人物、场景和道具的最终视觉身份烘焙进画面；视频阶段只提交这张 Production Board。
+- Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落渲染成一张 16:9 横版、3×3 九个编号面板的 Production Board。每个面板必须把实际人物、场景和道具的最终视觉身份烘焙进画面；视频阶段先提交这张 Production Board，再提交同一片段绑定的正式资产图。
 - 当使用 Production Board 时，videoPrompt 需要明确本段读取哪些实际面板的节奏来源，说明动作方向、演员站位、构图、切换点和同场景衔接；整张制作板与每个面板都服务当前视频配置的成片构图。
-- 使用 Production Board 时，videoPrompt 只引用已提交的故事板图片、剧情与镜头、对白、摄影与声音。后端面板资产绑定仅用于生成故事板；视频模型不再接收正式 Character / Scene / Prop / Insert 资产图。
+- 使用 Production Board 时，videoPrompt 同时引用已提交的故事板图片、正式 Character / Scene / Prop / Insert 资产图、剧情与镜头、对白、摄影与声音；故事板控制构图和节奏，正式资产控制身份与细节。
 - 每个镜头的画面拆解必须用下方《导演引擎》方法，并输出为结构化的 design 对象（字段值用具体中文，禁用感觉词）。design 字段内容使用中文，英文对白只出现在 dialogueLines。
 - 同一场景只有第一个镜头可以承担短建立镜头；后续镜头必须直接承接上一镜的站位、视线、道具状态、动作方向和情绪，不得重新展示环境，不得用空镜或大全景重启本段。
 - 相邻镜头必须有不同镜头目的，可在 establish / action_continuation / dialogue_reaction / insert / over_shoulder / close_reaction 中选择；不要连续输出同一种中景站立镜头。
@@ -21455,7 +21583,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   const plannedAssetNames = manifestNames.length ? manifestNames : parseAssetsFromPromptNames(readText(findProjectFile(episodeRoot, "assetPrompts")));
   const plannedSet = new Set(plannedAssetNames);
   const scannedAssets = scanAssets(episodeRoot);
-  const promptMode = compactLine(body.promptMode || body.videoGenerationMode || body.mode || "").toLowerCase();
+  const promptMode = compactLine(
+    body.promptMode || body.videoGenerationMode || body.mode || currentConfig.settings?.promptMode || currentConfig.promptMode || "",
+  ).toLowerCase();
   const storyboardsActive =
     promptMode === "production_board" ||
     promptMode === "storyboard" ||
@@ -21504,7 +21634,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     videoStylePreset,
   });
   const referenceWarnings = [];
-  const shots = modelShots.map((shot, index) => ({
+  let shots = modelShots.map((shot, index) => ({
     ...shot,
     prompt: cleanVideoPromptForSubmission(seedancePromptForShotMode(shot, index, dialogueLanguage, storyboardsActive)),
   }));
@@ -21516,73 +21646,32 @@ async function buildVideoConfig(episodeRoot, body = {}) {
         : body.tailFrameContinuity === false || previous.settings?.tailFrameContinuity === false
           ? false
           : true;
-  const storyboardSlots = storyboardsActive
+  let storyboardSlots = storyboardsActive
     ? storyboardSlotsForState(episodeRoot, manifest, actualStoryboards, { segments: storyboardSegmentsFromShots(shots, dialogueLanguage) })
     : [];
-  const storyboardByShot = new Map();
-  const storyboardByName = new Map(storyboardSlots.map((slot) => [slot.id, slot]));
-  for (const slot of storyboardSlots) {
-    for (const shotName of slot.sourceShotNames || []) {
-      storyboardByShot.set(shotName, slot);
+  if (storyboardsActive) {
+    const plannedShotNames = new Set(modelShots.map((shot) => compactLine(shot.name)).filter(Boolean));
+    storyboardSlots = storyboardSlots.filter((slot) => (slot.sourceShotNames || []).some((name) => plannedShotNames.has(compactLine(name))));
+    if (!storyboardSlots.length) {
+      throw new Error("故事板模式未找到与当前模型导演镜头对应的故事板，请重新生成故事板后再生成视频配置。");
     }
-  }
-  shots.forEach((shot, index) => {
-    const storyboardSlot = storyboardByShot.get(shot.name) || null;
-    const storyboardRef = storyboardSlot?.asset?.assetName || "";
-    shot.storyboardRefs = storyboardRef ? [storyboardRef] : [];
-    if (storyboardSlot) {
-      const panelsForShot = (storyboardSlot.panels || []).filter((panel) => {
-        const names = panel.sourceShotNames || [];
-        return !names.length || names.includes(shot.name);
-      });
-      const panels = panelsForShot.length ? panelsForShot : storyboardSlot.panels || [];
-      if (storyboardRef) shot.prompt = removeTailFrameContinuityFromStoryboardPrompt(shot.prompt);
-      const assetBinding = storyboardAssetBindingForShot(shot, assetLookup);
-      const panelAssetBindings = buildStoryboardPanelAssetBindings({ shot, panels, assetLookup });
-      const storyboardWarnings = storyboardAssetBindingWarnings(shot, assetBinding);
+    const missingStoryboardSlots = storyboardSlots.filter((slot) => !slot.asset || slot.partialCoverage);
+    if (missingStoryboardSlots.length) {
+      throw new Error(`故事板模式尚未完成：缺少 ${missingStoryboardSlots.map((slot) => slot.label || slot.id).join("、")}。请先生成对应故事板，再生成视频配置。`);
+    }
+    shots = productionBoardShotsFromSlots(modelShots, storyboardSlots, dialogueLanguage, assetLookup);
+    shots.forEach((shot) => {
+      const storyboardWarnings = storyboardAssetBindingWarnings(shot, shot.storyboardGuidance?.assetBinding || {});
       if (storyboardWarnings.length) referenceWarnings.push(...storyboardWarnings);
-      shot.storyboardGuidance = {
-        storyboardId: storyboardSlot.id,
-        referenceAssetName: storyboardRef || "",
-        timeRange: storyboardTimeRangeLabel(storyboardSlot.startSecond || 0, storyboardSlot.endSecond || (storyboardSlot.startSecond || 0) + (storyboardSlot.duration || 0)),
-        duration: storyboardSlot.duration || 0,
-        usage: storyboardSlot.videoReferenceGuide || "",
-        assetBinding,
-        panelAssetBindings,
-        panels: panels.map((panel) => ({
-          panel: panel.panel,
-          label: panel.label,
-          timeRange: panel.timeRange,
-          duration: panel.duration,
-          description: panel.description,
-          dialogue: panel.dialogue || null,
-          production: panel.production || storyboardProductionTabForPanel(panel.role, {
-            title: panel.title,
-            description: panel.description,
-            dialogue: panel.dialogue,
-            action: panel.actionArrow,
-            camera: panel.cameraFrame,
-            continuity: [panel.continuityEntry, panel.continuityExit].filter(Boolean).join(" "),
-          }),
-          actionArrow: panel.actionArrow,
-          cameraFrame: panel.cameraFrame,
-          continuityExit: panel.continuityExit,
-          assetAnchors: panel.assetAnchors || panel.refs || [],
-          videoUse: panel.videoUse,
-        })),
-        promptMode: "production_board",
-        policy:
-          "Use the Production Board as the sole submitted image reference. Each numbered panel already contains the bound Character, Scene, Prop, and Insert identity, materials, colors, lighting, blocking, camera direction, shot rhythm, and cut structure. Do not expect extra asset images.",
-      };
-      shot.prompt = storyboardSeedancePrompt(shot, index, dialogueLanguage);
-    }
-  });
+    });
+  }
+  const storyboardByName = new Map(storyboardSlots.map((slot) => [slot.id, slot]));
   shots.forEach((shot) => {
     shot.prompt = cleanVideoPromptForSubmission(
       injectVideoSfxPrompt(injectVideoDialectPrompt(shot.prompt, requestedDialectStyle), requestedSfxStyle),
     );
   });
-  const storyboardsAttached = storyboardsActive && storyboardRecords.length > 0;
+  const storyboardsAttached = storyboardsActive && storyboardSlots.length > 0 && storyboardSlots.every((slot) => !!slot.asset);
   shots.forEach((shot, index) => {
     const continuityDecision =
       index > 0
@@ -21633,6 +21722,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     dialectStyle: requestedDialectStyle,
     sfxStyle: requestedSfxStyle,
     durationMode: requestedDurationMode,
+    promptMode: videoPromptMode,
+    enableStoryboards: storyboardsActive,
+    durationAuthority: storyboardsActive ? "storyboard" : "script_duration_plan",
     settings: {
       ratio: body.ratio || previous.settings?.ratio || "9:16",
       resolution: body.resolution || previous.settings?.resolution || "480p",
@@ -21647,6 +21739,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
       tailFrameContinuity: allowTailFrameContinuity,
       enableStoryboards: storyboardsActive,
       promptMode: videoPromptMode,
+      durationAuthority: storyboardsActive ? "storyboard" : "script_duration_plan",
       storyboardWorkflowExplicit: storyboardsActive,
       storyboardDisablesTailFrameContinuity: false,
       modeType: previous.settings?.modeType || "image2video",
@@ -21681,10 +21774,10 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     storyboardPolicy: {
       mode: videoPromptMode === "production_board" ? "production_board_reference" : "prompt_tail_frame",
       instruction: storyboardsAttached
-        ? "Use each Production Board as the sole submitted image reference: nine horizontal 16:9 numbered panels in a 3-column grid inside a 16:9 horizontal board. Read composition, blocking, camera direction, shot rhythm, cut structure, and the actual character, scene, prop, material, color, lighting, and visual style already rendered into the panels. Do not expect separate Character, Scene, Prop, or Insert images during video generation."
+        ? "Submit each Production Board first, followed by the same shot's official Character, Scene, Prop, and Insert images. The board controls the nine numbered 16:9 panels, composition, blocking, camera direction, shot rhythm, and cut structure; the official assets lock identity, materials, colors, lighting, and visible details."
         : "Storyboard files are preserved but inactive for the current production flow. Generate videos from Seedance prompts and use previous-shot tail frames only for true continuous action or state carryover.",
       assetBindingInstruction:
-        "Before Production Board generation, bind each panel to the shot's official Scene, Character, Prop, and Insert assets and render their actual identity into the panel. Character slots such as 主角A/角色B define panel position only. After the board is generated, submit only the board to video generation; do not attach the source asset images.",
+        "Before Production Board generation, bind each panel to the shot's official Scene, Character, Prop, and Insert assets and render their actual identity into the panel. Character slots such as 主角A/角色B define panel position only. During video generation, submit the board plus those same official asset images so composition and identity remain independently constrained.",
       defaultShotContinuity: storyboardsAttached
         ? "production_board_controls_panel_continuity"
         : allowTailFrameContinuity
@@ -21888,6 +21981,37 @@ function shouldAutoRetryTransientAssetJob(job) {
   if (Number(job?.autoRetryAttempt || 0) >= AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS) return false;
   const failures = Array.isArray(job?.failureDetails) ? job.failureDetails : [];
   return failures.length > 0 && failures.every((failure) => AUTO_RETRYABLE_ASSET_FAILURE_CATEGORIES.has(failure.category));
+}
+
+function resolveStoryboardSelection(slots = [], body = {}, isRegenerate = false) {
+  const available = Array.isArray(slots) ? slots.filter((slot) => slot?.id) : [];
+  const requestedIndex = Number(body.storyboardIndex);
+  const indexedSlot = Number.isInteger(requestedIndex) && requestedIndex >= 0 ? available[requestedIndex] : null;
+  const requestedName = compactLine(body.storyboardName || body.assetName || "");
+  if (isRegenerate) {
+    const namedSlot = available.find((slot) => slot.id === requestedName);
+    if (namedSlot) return [namedSlot.id];
+    if (indexedSlot) return [indexedSlot.id];
+    throw new Error(`Production Board 槽位不存在：${requestedName || `第 ${requestedIndex + 1} 个故事板`}`);
+  }
+
+  const range = compactLine(body.storyboardRange || "missing") || "missing";
+  if (range === "selected") {
+    const requestedNames = (Array.isArray(body.storyboardNames) ? body.storyboardNames : []).map(compactLine).filter(Boolean);
+    const namedSlots = requestedNames
+      .map((name) => available.find((slot) => slot.id === name))
+      .filter(Boolean);
+    if (requestedNames.length && namedSlots.length === requestedNames.length) {
+      return [...new Set(namedSlots.map((slot) => slot.id))];
+    }
+    if (indexedSlot) return [indexedSlot.id];
+    if (!requestedNames.length) throw new Error("请选择要生成的 Production Board");
+    throw new Error(`Production Board 槽位不存在：${requestedNames.join("、")}`);
+  }
+  if (range === "all") return available.map((slot) => slot.id);
+  const missing = available.filter((slot) => slot.missing).map((slot) => slot.id);
+  if (!missing.length) throw new Error("没有缺失 Production Board 需要生成");
+  return missing;
 }
 
 function startProcessJob({ episodeRoot, type, command, args, cwd, meta = {} }) {
@@ -22136,24 +22260,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
     });
     const slots = storyboardSlotsForState(episodeRoot, manifest, storyboardAssets, { configData: config });
     if (!slots.length) throw new Error("没有可生成的故事版槽位，请先载入剧本并生成分镜/视频配置");
-    let selectedStoryboardNames = [];
-    if (isRegenerate) {
-      const storyboardName = compactLine(body.storyboardName || body.assetName || "");
-      if (!storyboardName) throw new Error("缺少要重新生成的 Production Board 名称");
-      if (!slots.some((slot) => slot.id === storyboardName)) throw new Error(`Production Board 槽位不存在：${storyboardName}`);
-      selectedStoryboardNames = [storyboardName];
-    } else {
-      const range = compactLine(body.storyboardRange || "missing") || "missing";
-      if (range === "selected") {
-        selectedStoryboardNames = (Array.isArray(body.storyboardNames) ? body.storyboardNames : []).map(compactLine).filter(Boolean);
-        if (!selectedStoryboardNames.length) throw new Error("请选择要生成的 Production Board");
-      } else if (range === "all") {
-        selectedStoryboardNames = slots.map((slot) => slot.id).filter(Boolean);
-      } else {
-        selectedStoryboardNames = slots.filter((slot) => slot.missing).map((slot) => slot.id);
-        if (!selectedStoryboardNames.length) throw new Error("没有缺失 Production Board 需要生成");
-      }
-    }
+    const selectedStoryboardNames = resolveStoryboardSelection(slots, body, isRegenerate);
     if (!isDryRun) clearAssetFailureLogs(episodeRoot, selectedStoryboardNames);
     const prompts = storyboardPromptsPath(episodeRoot, slots, selectedStoryboardNames);
     const args = [prompts, episodeRoot];
@@ -24180,6 +24287,10 @@ module.exports = {
       normalizeStoryboardPlan,
       storyboardSystemPrompt,
       storyboardUserPrompt,
+      productionBoardShotsFromSlots,
+      storyboardGuidanceForShot,
+      storyboardSegmentsFromShots,
+      resolveStoryboardSelection,
       fullProjectState,
       fullProjectStateForUser,
     },
@@ -24303,6 +24414,8 @@ module.exports = {
     },
     videoReferences: {
       assertVideoConfigAssetsReady,
+      projectShotVideoReferenceNames,
+      projectShotAllVideoReferenceAssets,
       projectShotUsableVideoReferenceAssets,
     },
     projectVideo: {

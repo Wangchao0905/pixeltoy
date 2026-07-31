@@ -5620,7 +5620,7 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
     timeline.innerHTML = pages.map((entry, index) => `${index ? '<span class="storyboard-document-sequence-connector" aria-hidden="true">尾格 → 首格</span>' : ""}<button type="button" class="storyboard-document-part ${index === currentIndex ? "is-current" : ""} ${entry.status === "complete" ? "is-complete" : ""}" data-storyboard-page-index="${index}"><header><b>PART ${String(index + 1).padStart(2, "0")}</b><small>${escapeHtml(modernStoryboardStatusLabel(entry.status))}</small></header><span>${formatStoryboardSeconds(entry.startSecond)} – ${formatStoryboardSeconds(entry.endSecond)}</span><footer>${entry.panels.filter((panel) => ["complete", "reused"].includes(panel.status)).length}/9 剧情格 · ${entry.carryIn ? "已承接" : "首 PART"}</footer></button>`).join("");
   }
 
-  $("#modernStoryboardSelectedPanel").textContent = `${String(selectedPanel.number).padStart(2, "0")} · ${STORYBOARD_PLOT_SECONDS} 秒剧情`;
+  $("#modernStoryboardSelectedPanel").textContent = `PART ${String(currentIndex + 1).padStart(2, "0")} · ${STORYBOARD_PLOT_SECONDS} 秒九宫格`;
   $("#modernStoryboardSelectedCopy").textContent = selectedPanel.source === "reused-anchor"
     ? "本格与上一 PART 的最后一格为同一镜头对象，不重新生成。"
     : `${selectedPanel.copy} · ${selectedPanel.dialogue || "无对白"}`;
@@ -5630,17 +5630,34 @@ async function runModernStoryboardJob(action = "current") {
   const status = $("#modernStoryboardActionStatus");
   const target = document.querySelector("[data-job='storyboards']");
   if (!target) throw new Error("当前没有可执行的故事板任务");
+  const pages = modernStoryboardPages(state.project, modernShotRecords(state.project));
+  const page = pages[state.modernStudio.storyboardPageIndex] || pages[0];
+  if (!page?.id) throw new Error("当前没有可执行的故事板");
+  const isRetry = action === "retry";
   state.modernStudio.storyboardGenerating = true;
   if (status) {
     status.className = "modern-storyboard-action-status is-running";
-    status.textContent = action === "next" ? "正在准备下一页，严格连续会锁定首格…" : "正在准备当前页，保留已确认镜头…";
+    status.textContent = action === "next"
+      ? "正在准备下一页，严格连续会锁定首格…"
+      : isRetry
+        ? "正在重新生成当前故事板，其他 PART 不受影响…"
+        : "正在准备当前故事板，其他 PART 不受影响…";
   }
   renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
   try {
-    await startJob("storyboards");
+    await startJob(
+      isRetry ? "storyboard-regenerate" : "storyboards",
+      isRetry
+        ? { storyboardName: page.id, storyboardIndex: page.pageIndex }
+        : { storyboardRange: "selected", storyboardNames: [page.id], storyboardIndex: page.pageIndex },
+    );
     if (status) {
       status.className = "modern-storyboard-action-status";
-      status.textContent = action === "next" ? "下一页已加入队列 · 首格将承接上一页尾格" : "当前页已加入队列 · 已确认镜头不会被覆盖";
+      status.textContent = action === "next"
+        ? "下一页已加入队列 · 首格将承接上一页尾格"
+        : isRetry
+          ? "当前故事板已加入重新生成队列 · 其他 PART 不受影响"
+          : "当前故事板已加入队列 · 其他 PART 不受影响";
     }
   } catch (error) {
     if (status) {
@@ -6058,7 +6075,10 @@ function renderModernAssetResults(data = state.project) {
         <span class="modern-asset-card-media">${image ? `<img src="${escapeAttr(image)}" alt="${escapeAttr(slot.label || name)}" loading="lazy" />` : `<span>${escapeHtml(statusLabel)}</span>`}</span>
       </button>
       <div class="modern-asset-card-copy"><strong>${escapeHtml(slot.label || name)}</strong><small class="modern-asset-card-status is-${isGenerating ? "running" : isFailed ? "failed" : asset ? "ready" : "waiting"}">${escapeHtml(statusLabel)}</small></div>
-      <button class="modern-asset-card-action ${isGenerating ? "is-running" : ""}" type="button" data-modern-asset-action="${escapeAttr(name)}" ${actionDisabled ? "disabled" : ""}>${actionLabel}</button>
+      <div class="modern-asset-card-actions">
+        <button class="modern-asset-card-action ${isGenerating ? "is-running" : ""}" type="button" data-modern-asset-action="${escapeAttr(name)}" ${actionDisabled ? "disabled" : ""}>${actionLabel}</button>
+        <button class="modern-asset-card-action" type="button" data-modern-asset-replace="${escapeAttr(name)}" ${isGenerating ? "disabled" : ""} title="用本地图片替换，资产名称不变">替换</button>
+      </div>
     </article>`;
   };
   gallery.innerHTML = galleryGroups.length
@@ -9666,13 +9686,13 @@ async function uploadStoryboardAsset(event) {
   toast(data.result?.message || "Production Board 已绑定");
 }
 
-async function startJob(type) {
+async function startJob(type, options = {}) {
   if (type === "assets" || type === "assets-dry-run") {
     if (type === "assets" && !(state.project?.assetManifest?.items?.length)) {
       return toast("请先提取资产，再生成资产图");
     }
   }
-  if (type === "storyboards" || type === "storyboards-dry-run") {
+  if (["storyboards", "storyboards-dry-run", "storyboard-regenerate", "storyboard-regenerate-dry-run"].includes(type)) {
     await saveFileQuiet("storyboard");
     await saveFileQuiet("seedancePrompts");
   }
@@ -9697,11 +9717,14 @@ async function startJob(type) {
     });
     renderAssetsFromState();
   }
-  if (type === "storyboards" || type === "storyboards-dry-run") {
+  if (["storyboards", "storyboards-dry-run", "storyboard-regenerate", "storyboard-regenerate-dry-run"].includes(type)) {
     body.quality = $("#assetQuality")?.value || "1k";
-    body.storyboardRange = $("#storyboardGenerateRange")?.value || "missing";
+    body.storyboardRange = options.storyboardRange || $("#storyboardGenerateRange")?.value || "missing";
+    if (Array.isArray(options.storyboardNames)) body.storyboardNames = options.storyboardNames.filter(Boolean);
+    if (options.storyboardName) body.storyboardName = options.storyboardName;
+    if (Number.isInteger(options.storyboardIndex)) body.storyboardIndex = options.storyboardIndex;
     body.dialogueLanguage = state.dialogueLanguage;
-    body.ratio = "9:16";
+    body.ratio = "16:9";
   }
   const data = await api(`/api/project/${state.selectedId}/job`, {
     method: "POST",
@@ -10644,7 +10667,7 @@ function bind() {
     withStudioButtonFeedback(event.currentTarget, () => exportModernStoryboardPage());
   });
   $("#modernStoryboardRetryPanel")?.addEventListener("click", (event) => {
-    withStudioButtonFeedback(event.currentTarget, () => runModernStoryboardJob("current")).catch((error) => toast(error.message));
+    withStudioButtonFeedback(event.currentTarget, () => runModernStoryboardJob("retry")).catch((error) => toast(error.message));
   });
   $("#modernStoryboardRestartPage")?.addEventListener("click", () => {
     const pageIndex = state.modernStudio.storyboardPageIndex;

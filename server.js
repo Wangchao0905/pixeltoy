@@ -13399,6 +13399,17 @@ function canvasImageProviderSizeFor(ratio) {
   return width > height ? "1536x1024" : "1024x1536";
 }
 
+function canvasImagePromptWithReferences(prompt, referenceCount = 0) {
+  const userPrompt = compactLine(prompt);
+  const count = Math.max(0, Number.parseInt(referenceCount, 10) || 0);
+  if (!count) return userPrompt;
+  return [
+    "Reference image requirement (mandatory): Treat every supplied reference image as the visual source of truth. Use their visible visual information directly; do not ignore them or replace them with an unrelated new design. Preserve the applicable subject identity, distinctive details, visual style, palette, materials, and composition. Apply only the changes requested by the user while keeping clear visual continuity with the supplied references.",
+    `Attached reference images: ${count}.`,
+    `User request: ${userPrompt}`,
+  ].join("\n\n");
+}
+
 async function normalizeCanvasImageOutput(entry = {}) {
   if (!entry.outPath || !fs.existsSync(entry.outPath)) return false;
   const match = String(entry.size || "").match(/^(\d+)x(\d+)$/);
@@ -13566,7 +13577,7 @@ async function writeSeedreamImageResult(entry, raw) {
 function seedreamImagePayload(entry = {}) {
   const payload = {
     model: entry.providerModel,
-    prompt: entry.prompt,
+    prompt: entry.providerPrompt || entry.prompt,
     size: entry.providerSize || entry.size,
     response_format: "url",
     watermark: false,
@@ -13883,6 +13894,7 @@ async function createCanvasImageGeneration(body = {}) {
   if (failedReference) throw new Error(`参考图准备失败：${failedReference.error}。请重新上传或检查公网素材存储配置。`);
   const references = referenceRecords.map((record) => record.localPath);
   const referenceInputs = referenceRecords.map((record) => record.input);
+  const providerPrompt = canvasImagePromptWithReferences(prompt, references.length);
   const timeout = String(Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10));
   let args;
   if (modelConfig.provider === "gpt") {
@@ -13890,7 +13902,7 @@ async function createCanvasImageGeneration(body = {}) {
       args = [
         IMAGE_GEN_SKILL_SCRIPT, "--mode", "image",
         "--image", referenceInputs[0],
-        "--prompt", prompt, "--size", providerSize,
+        "--prompt", providerPrompt, "--size", providerSize,
         "--model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini",
         "--image-model", modelConfig.model,
         "--out", outPath, "--timeout", timeout,
@@ -13917,7 +13929,9 @@ async function createCanvasImageGeneration(body = {}) {
     providerModel: modelConfig.model,
     normalizeOutput: supportsSize,
     referencePaths: references,
+    referenceImageCount: references.length,
     prompt,
+    providerPrompt,
     ownerUserId: compactLine(body.ownerUserId || ""),
     createdAt: Date.now(),
     child: null,
@@ -13929,7 +13943,7 @@ async function createCanvasImageGeneration(body = {}) {
   for (const [id, job] of canvasImageJobs) {
     if (Date.now() - (job.createdAt || 0) > 30 * 60 * 1000 && job.status !== "running") canvasImageJobs.delete(id);
   }
-  return { taskId, status: "running", size, ratio, resolution, imageModel: modelConfig.key, provider: modelConfig.provider };
+  return { taskId, status: "running", size, ratio, resolution, imageModel: modelConfig.key, provider: modelConfig.provider, referenceImageCount: references.length };
 }
 
 function getCanvasImageGeneration(taskId) {
@@ -13945,6 +13959,7 @@ function getCanvasImageGeneration(taskId) {
     resolution: job.resolution,
     imageModel: job.imageModel || "gpt-image-2",
     provider: job.provider || "gpt",
+    referenceImageCount: Number(job.referenceImageCount) || 0,
     libraryAssetId: job.libraryAssetId || "",
     libraryAsset: job.libraryAsset || null,
   };
@@ -24314,6 +24329,7 @@ module.exports = {
       seedreamImageSizeFor,
       seedreamImageResult,
       seedreamImagePayload,
+      canvasImagePromptWithReferences,
     },
     arkVirtualPerson: {
       buildOpenApiRequest: buildArkAssetOpenApiRequest,

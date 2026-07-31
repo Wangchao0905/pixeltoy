@@ -22,6 +22,12 @@ assert.match(imageControls, /bindPromptMentionMenu\(prompt, node\)/, "image prom
 assert.match(renderNodeAssets, /node\.kind !== "video"[\s\S]*data-insert-reference/, "image reference chips must insert @ mentions");
 assert.match(imageRefresh, /data-insert-reference[\s\S]*insertTextIntoPrompt/, "image reference chips must remain clickable after refresh");
 const imageGenerationRoute = server.slice(server.indexOf("function createCanvasImageGeneration"), server.indexOf("function getCanvasImageGeneration"));
-assert.match(imageGenerationRoute, /requestedReferences[\s\S]*references\.length !== requestedReferences\.length/, "image generation must reject unresolved reference images instead of silently switching to text mode");
+assert.match(imageGenerationRoute, /const referenceRecords = await Promise\.all\(requestedReferences\.map/, "image generation must prepare every requested reference before submission");
+assert.match(imageGenerationRoute, /const failedReference = referenceRecords\.find\(\(record\) => record\?\.error\)/, "image generation must detect unresolved references instead of silently switching to text mode");
+assert.match(imageGenerationRoute, /if \(failedReference\) throw new Error\(`参考图准备失败：/, "image generation must block submission when any reference cannot be prepared");
+assert.match(imageGenerationRoute, /const providerPrompt = canvasImagePromptWithReferences\(prompt, references\.length\)/, "image generation must add an explicit visual-reference instruction after every reference has resolved");
+assert.match(imageGenerationRoute, /"--prompt", providerPrompt/, "GPT Image requests must send the explicit visual-reference instruction to the image tool");
+assert.match(imageGenerationRoute, /providerPrompt,/, "Seedream requests must retain the explicit visual-reference instruction separately from the user-visible prompt");
+assert.match(imageGenerationRoute, /referenceImageCount: references\.length/, "image jobs must retain the resolved reference count for request diagnostics");
 
 console.log("image reference connection tests passed");

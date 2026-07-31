@@ -1860,7 +1860,7 @@ function projectHasRunningWork(data = state.project) {
     data.videoProgress?.job,
     ...(Array.isArray(data.jobs) ? data.jobs : []),
   ].filter(Boolean);
-  return videoProgressHasActiveWork(data.videoProgress) || jobs.some((job) => job?.status === "running");
+  return Boolean(data.finalCut?.running) || videoProgressHasActiveWork(data.videoProgress) || jobs.some((job) => job?.status === "running");
 }
 
 function updateGenerationCanvasLinks() {

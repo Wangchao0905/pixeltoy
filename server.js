@@ -9340,8 +9340,8 @@ function maybeAutoAssembleFinalCut(episodeRoot) {
     const outMtime = fs.existsSync(out) ? fs.statSync(out).mtimeMs : 0;
     const manifest = readFinalCutManifest(episodeRoot);
     if (finalCutOutputIsCurrent({ outputMtime: outMtime, outputSignature: manifest?.signature || "", clips, missing, total })) return;
-    autoFinalCutSignatures.set(key, signature);
-    startFinalCutAssembly(episodeRoot);
+    const started = startFinalCutAssembly(episodeRoot);
+    if (started?.running) autoFinalCutSignatures.set(key, signature);
   } catch {
     // 自动组装为尽力而为,失败不影响主流程;用户仍可手动点「组装成片」
   }
@@ -9482,6 +9482,8 @@ function projectStatusSnapshot(episodeRoot) {
   const localJobs = mergeJobs(episodeRoot, { runNamespace });
   const videos = scanVideos(episodeRoot, { minModifiedAt: runStart });
   const progress = videoProgress(episodeRoot, localJobs, videos);
+  // 状态轮询是制作台的持续心跳；即使片段完成发生在请求之间，也要在这里补触发自动组装。
+  maybeAutoAssembleFinalCut(episodeRoot);
   const videoQueue = projectVideoQueues.get(projectVideoQueueKey(episodeRoot)) || null;
   if (videoQueue && (videoQueue.running || videoQueue.status === "preparing" || videoQueue.status === "failed" || videoQueue.status === "blocked")) {
     if (videoQueue.running) progress.running = true;

@@ -17717,7 +17717,11 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 /* flex: 1 会被兄弟按钮挤扁——字号统一 +2 后实测 1100px 下「支持 TXT / DOCX」
    可见比例从 58% 掉到 19%,只剩一个省略号。改成不收缩,容器已有 flex-wrap,
    放不下就整体换行独占一行;ellipsis 只作独占一行仍不够时的兜底。 */
-.modern-source-actions > span { min-width: 0; flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-source-actions > span:not(.modern-asset-primary-actions) { min-width: 0; flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.modern-asset-primary-actions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; margin-left: auto; }
+.modern-asset-primary-actions button { min-height: 34px; padding: 0 14px; border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); box-shadow: var(--mv-hi); font-size: 12px; font-weight: 550; }
+.modern-asset-primary-actions button:hover:not(:disabled) { border-color: var(--mv-line-2); background: var(--mv-s2); color: var(--mv-tx); }
+.modern-asset-primary-actions button:disabled { cursor: not-allowed; opacity: .5; }
 .modern-asset-results { min-width: 0; grid-column: 2; grid-row: 2; padding: 13px 14px 14px; border-left: 1px solid var(--modern-line); }
 .modern-asset-results-head { display: flex; gap: 10px; align-items: start; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid var(--modern-line); }
 .modern-asset-results-head > div { min-width: 0; display: grid; gap: 4px; }
@@ -19435,16 +19439,18 @@ body.is-studio .asset-preview-panel .section-head .actions.asset-generation-only
 }
 
 /* Parsed assets ready-to-confirm: a quiet pulse that points to the next action. */
-.modern-asset-results-head button.is-ready-to-confirm {
+.modern-asset-primary-actions button.is-ready-to-parse,
+.modern-asset-primary-actions button.is-ready-to-confirm {
   position: relative;
   border-color: rgba(200, 255, 46, .72);
   background: rgba(200, 255, 46, .11);
   color: var(--mv-tx);
   box-shadow: 0 0 0 0 rgba(200, 255, 46, .2), var(--mv-hi);
-  animation: modernConfirmAttention 2.4s ease-in-out infinite;
+  animation: modernAssetActionAttention 2.4s ease-in-out infinite;
 }
 
-.modern-asset-results-head button.is-ready-to-confirm::after {
+.modern-asset-primary-actions button.is-ready-to-parse::after,
+.modern-asset-primary-actions button.is-ready-to-confirm::after {
   position: absolute;
   inset: -4px;
   border: 1px solid rgba(200, 255, 46, .38);
@@ -19452,31 +19458,35 @@ body.is-studio .asset-preview-panel .section-head .actions.asset-generation-only
   content: "";
   opacity: 0;
   pointer-events: none;
-  animation: modernConfirmAttentionRing 2.4s ease-in-out infinite;
+  animation: modernAssetActionAttentionRing 2.4s ease-in-out infinite;
 }
 
-.modern-asset-results-head button.is-ready-to-confirm:hover,
-.modern-asset-results-head button.is-ready-to-confirm:focus-visible {
+.modern-asset-primary-actions button.is-ready-to-parse:hover,
+.modern-asset-primary-actions button.is-ready-to-parse:focus-visible,
+.modern-asset-primary-actions button.is-ready-to-confirm:hover,
+.modern-asset-primary-actions button.is-ready-to-confirm:focus-visible {
   border-color: var(--mv-lime);
   background: rgba(200, 255, 46, .18);
   color: #0b0b0f;
   outline: 0;
 }
 
-@keyframes modernConfirmAttention {
+@keyframes modernAssetActionAttention {
   0%, 100% { box-shadow: 0 0 0 0 rgba(200, 255, 46, .08), var(--mv-hi); }
   50% { box-shadow: 0 0 0 6px rgba(200, 255, 46, .13), var(--mv-hi); }
 }
 
-@keyframes modernConfirmAttentionRing {
+@keyframes modernAssetActionAttentionRing {
   0%, 35%, 100% { opacity: 0; transform: scale(.98); }
   52% { opacity: 1; transform: scale(1); }
   72% { opacity: 0; transform: scale(1.04); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .modern-asset-results-head button.is-ready-to-confirm,
-  .modern-asset-results-head button.is-ready-to-confirm::after {
+  .modern-asset-primary-actions button.is-ready-to-parse,
+  .modern-asset-primary-actions button.is-ready-to-parse::after,
+  .modern-asset-primary-actions button.is-ready-to-confirm,
+  .modern-asset-primary-actions button.is-ready-to-confirm::after {
     animation: none;
   }
 }

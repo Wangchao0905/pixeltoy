@@ -1109,7 +1109,10 @@
                   <label class="modern-upload-button" for="modernAssetDescriptionUpload">上传资产文档</label>
                   <span id="modernAssetDescriptionUploadName" aria-live="polite">支持 TXT / DOCX</span>
                   <button id="modernSaveAssetDescription" type="button">保存</button>
-                  <button id="modernExtractAssets" class="is-primary" type="button">解析资产</button>
+                  <span class="modern-asset-primary-actions" aria-label="资产解析操作">
+                    <button id="modernExtractAssets" class="is-primary" type="button">解析资产</button>
+                    <button id="modernConfirmAssetManifest" class="is-primary" type="button">确认分类</button>
+                  </span>
                 </div>
               </section>
             </div>
@@ -1120,7 +1123,6 @@
                   <strong>解析结果</strong>
                   <small id="modernAssetManifestStatus">提交资产文档后，解析结果会显示在这里。</small>
                 </div>
-                <button id="modernConfirmAssetManifest" type="button">确认分类</button>
               </header>
               <div id="modernAssetManifestOverview" class="modern-asset-manifest-overview"></div>
             </section>

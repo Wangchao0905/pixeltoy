@@ -50,10 +50,13 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.modern-asset-results-head button\.is-ready-to-confirm\s*\{[\s\S]*?animation:\s*modernConfirmAttention/,
+  /\.modern-asset-primary-actions button\.is-ready-to-parse\s*,[\s\S]*?button\.is-ready-to-confirm\s*\{[\s\S]*?animation:\s*modernAssetActionAttention/,
   "确认按钮提醒状态必须使用呼吸动效",
 );
-assert.match(styles, /@keyframes modernConfirmAttention\s*\{/);
+assert.match(app, /function renderModernAssetExtractAction\([\s\S]*?workflowEditorValue\("assetDescription"\)[\s\S]*?classList\.toggle\("is-ready-to-parse", readyToParse\)/);
+assert.match(app, /modernAssetDescriptionText[\s\S]*?renderModernAssetExtractAction\(\)/);
+assert.match(styles, /\.modern-asset-primary-actions button\.is-ready-to-parse/);
+assert.match(styles, /@keyframes modernAssetActionAttention\s*\{/);
 assert.match(styles, /prefers-reduced-motion:\s*reduce/);
 
 console.log("modern asset manage delete tests passed");

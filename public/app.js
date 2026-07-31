@@ -5708,6 +5708,23 @@ function modernMediaForShot(data, shot, index, kind) {
     || "";
 }
 
+function renderModernAssetExtractAction() {
+  const button = $("#modernExtractAssets");
+  if (!button) return;
+  const extracting = isAssetExtracting();
+  const assetDescriptionReady = workflowEditorValue("assetDescription").trim().length > 0;
+  const readyToParse = !extracting && assetDescriptionReady;
+  button.disabled = extracting || !assetDescriptionReady;
+  button.textContent = extracting ? "解析中…" : "解析资产";
+  button.classList.toggle("is-ready-to-parse", readyToParse);
+  button.setAttribute("aria-label", readyToParse ? "解析资产，点击开始" : "解析资产");
+  button.title = extracting
+    ? "正在解析资产文档"
+    : assetDescriptionReady
+      ? "解析当前资产文档"
+      : "请先上传或粘贴资产文档";
+}
+
 function renderModernStudio(data = state.project) {
   const root = $("#studioModernShell");
   if (!root || !data?.project) return;
@@ -5725,7 +5742,6 @@ function renderModernStudio(data = state.project) {
     button.classList.toggle("is-active", buttonFocus === modernFocus);
   });
   const scriptSource = workflowEditorValue("script");
-  const assetSource = workflowEditorValue("assetDescription");
   const videoConfigReady = Boolean(data.videoConfigStatus?.ready);
   const videoConfigAvailable = Boolean(data.videoConfigStatus?.exists);
   const videoRunning = videoProgressHasActiveWork(data.videoProgress || {});
@@ -5736,6 +5752,7 @@ function renderModernStudio(data = state.project) {
     draftButton.textContent = drafting ? "生成中..." : "生成分镜草稿";
     draftButton.title = drafting ? "分镜草稿生成中" : scriptSource.trim() ? "根据当前剧本生成分镜草稿" : "请先输入或上传剧本";
   }
+  renderModernAssetExtractAction();
   const configButton = $("#modernBuildConfig");
   if (configButton) {
     const configGenerating = configButton.dataset.studioFeedbackBusy === "true";
@@ -10496,6 +10513,7 @@ function bind() {
       });
       $("#modernAssetSourceStatus")?.classList.remove("is-saved");
       if ($("#modernAssetSourceStatus")) $("#modernAssetSourceStatus").textContent = "有修改";
+      renderModernAssetExtractAction();
     } catch (error) {
       toast(error.message);
       event.target.value = "";
@@ -10508,6 +10526,7 @@ function bind() {
   $("#modernAssetDescriptionText")?.addEventListener("input", () => {
     $("#modernAssetSourceStatus")?.classList.remove("is-saved");
     if ($("#modernAssetSourceStatus")) $("#modernAssetSourceStatus").textContent = "有修改";
+    renderModernAssetExtractAction();
   });
   $("#modernSaveScript")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, () => saveFile("script")).catch((error) => toast(error.message));

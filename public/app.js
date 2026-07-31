@@ -5980,15 +5980,20 @@ function renderModernAssetResults(data = state.project) {
     generationStatus.textContent = generation.text;
   }
 
+  const confirmLabel = confirmed ? "已确认" : extracting ? "解析中…" : "确认分类";
+  const readyToConfirm = !extracting && !confirmed && items.length > 0;
+  confirmButton.disabled = extracting || !items.length || confirmed;
+  confirmButton.textContent = confirmLabel;
+  confirmButton.classList.toggle("is-ready-to-confirm", readyToConfirm);
+  confirmButton.setAttribute("aria-label", readyToConfirm ? "确认资产分类，点击继续" : confirmLabel);
+  confirmButton.title = readyToConfirm ? "解析完成，点击确认分类继续" : "";
   status.textContent = extracting
     ? "模型正在分析资产文档…"
     : confirmed
       ? manageMode ? `${items.length} 项已确认 · 管理中：点击右上角删除` : `${items.length} 项已确认，可继续生成资产图`
       : items.length
-        ? manageMode ? `${items.length} 项待确认 · 管理中：点击右上角删除` : `${items.length} 项待确认分类`
+        ? manageMode ? `${items.length} 项待确认 · 管理中：点击右上角删除` : `${items.length} 项待确认分类 · 请点击确认分类`
         : "提交资产文档后，解析结果会显示在这里。";
-  confirmButton.disabled = extracting || !items.length || confirmed;
-  confirmButton.textContent = confirmed ? "已确认" : extracting ? "解析中…" : "确认分类";
   const modernAssetChipHtml = (item) => {
     const label = item.label || item.id || "未命名资产";
     return `<span class="modern-asset-chip ${item.generate === false ? "is-skipped" : ""}${manageMode ? " is-manage-mode" : ""}" title="${escapeAttr(item.usage || item.note || "")}">
@@ -9508,38 +9513,6 @@ async function uploadBoundAsset(event) {
   toast(data.result?.message || (mode === "local" ? "本地资产已添加" : "资产图已绑定"));
 }
 
-async function uploadModernManualAsset(event) {
-  event.preventDefault();
-  if (!state.selectedId) throw new Error("请先打开一个项目");
-  const file = $("#modernManualAssetUploadFile")?.files?.[0];
-  const label = $("#modernManualAssetUploadLabel")?.value.trim() || "";
-  const type = $("#modernManualAssetUploadType")?.value || "Prop";
-  if (!label) throw new Error("请填写资产名称");
-  if (!file) throw new Error("请选择资产图文件");
-  if (!/\.(png|jpe?g|webp)$/i.test(file.name)) throw new Error("只支持 PNG / JPG / WEBP");
-  const status = $("#modernManualAssetUploadStatus");
-  if (status) status.textContent = "正在上传，完成后请在解析结果中确认分类…";
-  const data = await api(`/api/project/${state.selectedId}/asset-upload-local`, {
-    method: "POST",
-    body: JSON.stringify({
-      type,
-      label,
-      filename: file.name,
-      contentBase64: await fileBase64(file),
-      confirm: false,
-      generate: false,
-    }),
-  });
-  setProjectState(data.state);
-  $("#modernManualAssetUploadLabel").value = "";
-  $("#modernManualAssetUploadFile").value = "";
-  $("#modernManualAssetUploadName").textContent = "PNG / JPG / WEBP";
-  renderWorkspace();
-  $("#modernManualAssetUploadPanel").open = true;
-  if ($("#modernManualAssetUploadStatus")) $("#modernManualAssetUploadStatus").textContent = "已上传，解析结果中标记为待确认；确认分类后才能继续下一步。";
-  toast(data.result?.message || "资产图已上传，等待确认分类");
-}
-
 async function uploadAssetStyleReferenceFile(file, input = null) {
   if (!file || !state.selectedId) return;
   if (!/\.(png|jpe?g|webp)$/i.test(file.name)) {
@@ -9581,6 +9554,32 @@ async function bindModernAssetReference() {
   state.assetUploadTargetId = target;
   renderWorkspace();
   toast(data.result?.message || "资产参考图已绑定");
+}
+
+// ponytail: 临时 input 而不是每张卡都渲染一个隐藏 file input——卡片会被轮询重建，
+// 常驻 input 的 files 会被抹掉。
+function pickLocalImage() {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp";
+    input.addEventListener("change", () => resolve(input.files?.[0] || null), { once: true });
+    input.click();
+  });
+}
+
+async function replaceModernAssetImage(assetName) {
+  if (!state.selectedId || !assetName) return;
+  const file = await pickLocalImage();
+  if (!file) return;
+  if (!/\.(png|jpe?g|webp)$/i.test(file.name)) return toast("只支持 PNG / JPG / WEBP");
+  const data = await api(`/api/project/${state.selectedId}/asset-upload`, {
+    method: "POST",
+    body: JSON.stringify({ assetId: assetName, filename: file.name, contentBase64: await fileBase64(file) }),
+  });
+  setProjectState(data.state);
+  renderWorkspace();
+  toast(data.result?.message || `已替换资产图：${assetName}`);
 }
 
 async function setAssetStyleReferenceEnabled(enabled) {
@@ -10658,6 +10657,15 @@ function bind() {
     if (modernAssetRange) modernAssetRange.value = event.currentTarget.value;
   });
   $("#modernAssetGallery")?.addEventListener("click", (event) => {
+    const replace = event.target.closest("[data-modern-asset-replace]");
+    if (replace) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (replace.disabled) return;
+      const name = replace.dataset.modernAssetReplace || "";
+      if (name) replaceModernAssetImage(name).catch((error) => toast(error.message));
+      return;
+    }
     const action = event.target.closest("[data-modern-asset-action]");
     if (action) {
       event.preventDefault();
@@ -10692,17 +10700,6 @@ function bind() {
     $("#assetUploadName").textContent = file ? file.name : "PNG / JPG / WEBP";
     state.assetUploadTargetId = $("#assetUploadTarget")?.value || "";
     updateAssetUploadHint();
-  });
-  $("#modernManualAssetUploadFile")?.addEventListener("change", (event) => {
-    const file = event.target.files?.[0];
-    $("#modernManualAssetUploadName").textContent = file ? file.name : "PNG / JPG / WEBP";
-  });
-  $("#modernManualAssetUpload")?.addEventListener("submit", (event) => {
-    const button = event.currentTarget.querySelector("button[type='submit']");
-    withStudioButtonFeedback(button, () => uploadModernManualAsset(event)).catch((error) => {
-      if ($("#modernManualAssetUploadStatus")) $("#modernManualAssetUploadStatus").textContent = "上传失败，请检查图片格式后重试。";
-      toast(error.message);
-    });
   });
   $("#assetUploadMode")?.addEventListener("change", () => renderAssetUploadMode());
   $("#assetUploadLabel")?.addEventListener("input", () => updateAssetUploadHint());

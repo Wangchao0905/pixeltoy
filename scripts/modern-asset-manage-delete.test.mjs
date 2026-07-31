@@ -43,5 +43,17 @@ assert.doesNotMatch(
   /\.modern-asset-chip-remove\s*\{[^}]*border-radius:\s*50%/,
   "删除控件不得恢复为圆形胶囊",
 );
+assert.match(
+  app,
+  /const readyToConfirm = !extracting && !confirmed && items\.length > 0;[\s\S]*?classList\.toggle\("is-ready-to-confirm", readyToConfirm\)/,
+  "解析完成且未确认时，确认按钮必须进入提醒状态",
+);
+assert.match(
+  styles,
+  /\.modern-asset-results-head button\.is-ready-to-confirm\s*\{[\s\S]*?animation:\s*modernConfirmAttention/,
+  "确认按钮提醒状态必须使用呼吸动效",
+);
+assert.match(styles, /@keyframes modernConfirmAttention\s*\{/);
+assert.match(styles, /prefers-reduced-motion:\s*reduce/);
 
 console.log("modern asset manage delete tests passed");

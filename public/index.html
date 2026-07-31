@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=nav-toggle-20260730" />
+    <link rel="stylesheet" href="/styles.css?v=asset-replace-20260731" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -1111,30 +1111,6 @@
                   <button id="modernSaveAssetDescription" type="button">保存</button>
                   <button id="modernExtractAssets" class="is-primary" type="button">解析资产</button>
                 </div>
-                <details id="modernManualAssetUploadPanel" class="modern-manual-asset-upload">
-                  <summary><span>已有设计好的资产图？</span><b>上传并加入待确认分类</b></summary>
-                  <form id="modernManualAssetUpload" class="modern-manual-asset-upload-form">
-                    <label>
-                      <span>资产名称</span>
-                      <input id="modernManualAssetUploadLabel" type="text" maxlength="80" placeholder="例如：林夏 / 夜班站台 / 红色手提箱" autocomplete="off" required />
-                    </label>
-                    <label>
-                      <span>资产分类</span>
-                      <select id="modernManualAssetUploadType" required>
-                        <option value="Character">人物</option>
-                        <option value="Scene">场景</option>
-                        <option value="Prop">道具</option>
-                      </select>
-                    </label>
-                    <div class="modern-manual-asset-file">
-                      <input id="modernManualAssetUploadFile" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required />
-                      <label class="modern-upload-button" for="modernManualAssetUploadFile">选择资产图</label>
-                      <span id="modernManualAssetUploadName" aria-live="polite">PNG / JPG / WEBP</span>
-                    </div>
-                    <button id="modernManualAssetUploadSubmit" class="is-primary" type="submit">上传并待确认</button>
-                    <small id="modernManualAssetUploadStatus" aria-live="polite">上传后会出现在解析分类和资产图页面，确认分类后才能继续下一步。</small>
-                  </form>
-                </details>
               </section>
             </div>
             <section class="modern-asset-results" aria-label="解析后的资产">
@@ -1484,7 +1460,7 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=nav-toggle-20260730"></script>
+    <script src="/app.js?v=asset-replace-20260731"></script>
     <script src="/auth-modal.js?v=auth-modal-20260730"></script>
   </body>
 </html>

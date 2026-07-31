@@ -17718,25 +17718,6 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
    可见比例从 58% 掉到 19%,只剩一个省略号。改成不收缩,容器已有 flex-wrap,
    放不下就整体换行独占一行;ellipsis 只作独占一行仍不够时的兜底。 */
 .modern-source-actions > span { min-width: 0; flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.modern-manual-asset-upload { margin-top: 10px; border-top: 1px solid var(--modern-line); }
-.modern-manual-asset-upload > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0 2px; color: var(--modern-muted); font-size: 11px; cursor: pointer; list-style: none; }
-.modern-manual-asset-upload > summary::-webkit-details-marker { display: none; }
-.modern-manual-asset-upload > summary::after { color: var(--modern-quiet); content: "+"; font-family: var(--mono); font-size: 14px; }
-.modern-manual-asset-upload[open] > summary::after { content: "−"; }
-.modern-manual-asset-upload > summary:hover { color: var(--mv-tx); }
-.modern-manual-asset-upload > summary b { color: var(--modern-quiet); font-size: 10px; font-weight: 400; }
-.modern-manual-asset-upload-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .45fr); gap: 8px; align-items: end; padding: 8px 0 2px; }
-.modern-manual-asset-upload-form label { min-width: 0; }
-.modern-manual-asset-upload-form label > span { color: var(--modern-quiet); font-family: var(--mono); font-size: 9px; }
-.modern-manual-asset-upload-form input[type="text"],
-.modern-manual-asset-upload-form select { width: 100%; min-width: 0; min-height: 30px; padding: 0 8px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: var(--modern-surface-2); color: var(--modern-text); font-size: 11px; }
-.modern-manual-asset-file { display: flex; grid-column: 1 / -1; align-items: center; min-width: 0; gap: 7px; }
-.modern-manual-asset-file input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.modern-manual-asset-file > span { min-width: 0; overflow: hidden; color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.modern-manual-asset-upload-form > button { min-height: 30px; padding: 0 10px; border: 1px solid var(--modern-line-strong); border-radius: 3px; background: var(--modern-surface-2); color: var(--modern-muted); font-size: 11px; cursor: pointer; }
-.modern-manual-asset-upload-form > button:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
-.modern-manual-asset-upload-form > button.is-primary { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
-.modern-manual-asset-upload-form > small { grid-column: 1 / -1; color: var(--modern-quiet); font-size: 10px; line-height: 1.45; }
 .modern-asset-results { min-width: 0; grid-column: 2; grid-row: 2; padding: 13px 14px 14px; border-left: 1px solid var(--modern-line); }
 .modern-asset-results-head { display: flex; gap: 10px; align-items: start; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid var(--modern-line); }
 .modern-asset-results-head > div { min-width: 0; display: grid; gap: 4px; }
@@ -17802,7 +17783,6 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 }
 @media (max-width: 1180px) { .studio-modern-shell { grid-template-columns: 190px minmax(0,1fr); }.modern-topbar { gap: 12px; padding: 0 16px; }.modern-episode-action { min-width: 166px; padding: 0 11px; }.modern-kit-bar { grid-template-columns: minmax(200px,1fr) minmax(140px,1fr) auto; }.modern-kit-bar > div:nth-child(3) { display: none; } }
 @media (max-width: 980px) { .modern-source-panel { display: block; margin: 14px 14px 0; }.modern-source-grid { grid-template-columns: 1fr; }.modern-source-field + .modern-source-field { border-top: 1px solid var(--modern-line); border-left: 0; }.modern-asset-results { border-top: 1px solid var(--modern-line); border-left: 0; } }
-@media (max-width: 560px) { .modern-manual-asset-upload-form { grid-template-columns: 1fr; }.modern-manual-asset-upload-form > button { width: 100%; }.modern-manual-asset-upload > summary { align-items: start; flex-direction: column; gap: 3px; } }
 @media (max-width: 980px) { body.is-studio-modern { min-width: 0; }.studio-modern-shell { display: block; height: auto; min-height: 100vh; overflow: visible; }.modern-main { min-height: 0; overflow: visible; }.modern-series-nav { position: relative; height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--mv-line); }.modern-brand { display: flex; align-items: center; justify-content: space-between; }.modern-series-context, .modern-series-footer { display: none; }.modern-episode-list { display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; overflow-y: hidden; }.modern-episode-row { flex: 0 0 150px; }.modern-stage-grid { grid-template-columns: 1fr; }.modern-stage-pane { border-right: 0; border-bottom: 1px solid var(--mv-line); }.modern-stage-pane:last-child { border-bottom: 0; }.modern-kit-bar { margin: 14px 14px 0; }.modern-sequence { margin: 14px; }.modern-workbench { margin: 18px 14px 24px; }.modern-core { overflow: visible; } }
 @media (max-width: 980px) {
   .modern-series-nav-toggle { display: none; }
@@ -18339,6 +18319,9 @@ body.is-studio-modern ::-webkit-scrollbar-corner { background: transparent; }
 .modern-asset-card-status.is-failed { color: var(--modern-accent); }
 .modern-asset-card-status.is-waiting { color: var(--mv-qt); }
 .modern-asset-card-action { min-height: 30px; margin: 0 11px 11px; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); font-size: 11px; cursor: pointer; }
+.modern-asset-card-actions { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin: 0 11px 11px; }
+.modern-asset-card-actions .modern-asset-card-action { margin: 0; }
+.modern-asset-card-actions [data-modern-asset-replace] { padding: 0 10px; }
 .modern-asset-card-action:hover:not(:disabled) { border-color: var(--mv-line-2); background: var(--mv-s2); color: var(--mv-tx); }
 .modern-asset-card-action.is-running,
 .modern-asset-card-action:disabled { cursor: not-allowed; opacity: .58; }
@@ -19448,5 +19431,52 @@ body.is-studio .asset-preview-panel .section-head .actions.asset-generation-only
 @media (max-width: 560px) {
   .modern-asset-chip {
     width: 100%;
+  }
+}
+
+/* Parsed assets ready-to-confirm: a quiet pulse that points to the next action. */
+.modern-asset-results-head button.is-ready-to-confirm {
+  position: relative;
+  border-color: rgba(200, 255, 46, .72);
+  background: rgba(200, 255, 46, .11);
+  color: var(--mv-tx);
+  box-shadow: 0 0 0 0 rgba(200, 255, 46, .2), var(--mv-hi);
+  animation: modernConfirmAttention 2.4s ease-in-out infinite;
+}
+
+.modern-asset-results-head button.is-ready-to-confirm::after {
+  position: absolute;
+  inset: -4px;
+  border: 1px solid rgba(200, 255, 46, .38);
+  border-radius: 6px;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  animation: modernConfirmAttentionRing 2.4s ease-in-out infinite;
+}
+
+.modern-asset-results-head button.is-ready-to-confirm:hover,
+.modern-asset-results-head button.is-ready-to-confirm:focus-visible {
+  border-color: var(--mv-lime);
+  background: rgba(200, 255, 46, .18);
+  color: #0b0b0f;
+  outline: 0;
+}
+
+@keyframes modernConfirmAttention {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(200, 255, 46, .08), var(--mv-hi); }
+  50% { box-shadow: 0 0 0 6px rgba(200, 255, 46, .13), var(--mv-hi); }
+}
+
+@keyframes modernConfirmAttentionRing {
+  0%, 35%, 100% { opacity: 0; transform: scale(.98); }
+  52% { opacity: 1; transform: scale(1); }
+  72% { opacity: 0; transform: scale(1.04); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modern-asset-results-head button.is-ready-to-confirm,
+  .modern-asset-results-head button.is-ready-to-confirm::after {
+    animation: none;
   }
 }

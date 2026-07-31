@@ -59,7 +59,13 @@ const SERIES_ASSET_DIR_NAME = "assets";
 const LEGACY_EPISODE_ASSET_DIR_NAME = "04_assets";
 const SERIES_ASSET_MANIFEST_NAME = "project_asset_manifest.json";
 const SERIES_ASSET_DESCRIPTION_NAME = "project_asset_description.md";
-const ASSET_PARSER_VERSION = "asset-parser-v3-canonical-document-style";
+// 解析器行为一变就必须改这个串:它是「已解析过的资产清单可以复用」的缓存键
+// (见 extractAssetManifest 的指纹短路)。不改的话，用户重新点解析也只会拿回旧清单。
+// v4 (2026-07-31): jsonPayloadFromModelMessage 让 tool_calls 形状的模型回复也能解析。
+// 病史:咕咚第二集因此只出 2 个资产(1 人物 1 场景),修好后同一份文档出 12 个
+// (1 人物/4 场景/6 道具/1 插入)。修的是代码，可 v3 的旧残缺清单指纹依旧命中短路，
+// 于是重新点击解析毫无反应——必须换版本号才能让旧结果失效。
+const ASSET_PARSER_VERSION = "asset-parser-v4-tool-call-payload";
 const IMAGE_API_KEY_ENV_NAMES = [
   "PIXEL_TOYS_IMAGE_API_KEY",
   "IMAGE_GEN_API_KEY",
@@ -16658,6 +16664,44 @@ function stripJsonFence(value) {
   return start >= 0 && end > start ? text.slice(start, end + 1) : text;
 }
 
+// 网关/模型偶发不把 JSON 放在 message.content，而是塞进 tool_calls：
+// 实测 claude-opus-4-8 解析同一份资产文档，4/4 次返回 finish_reason=tool_calls、
+// content="" 、tool_calls[0].function = { name: "Write",
+//   arguments: '{}{"file_path":"/tmp/props.json","content":"{\"props\":[...]}"}' }
+// —— 模型把答案当成"要写进文件的内容"。只读 content 的话拿到空串，
+// JSON.parse("") 抛 "Unexpected end of JSON input"，整类资产判为失败，
+// 三类全失败就退回本地粗规则，产出「只有 1 人物 1 场景」这种残缺清单。
+// 这里把 tool_calls 也当作合法载体，逐层剥出真正的 JSON 对象。
+// arguments 前面那个多余的 "{}" 是网关拼接产生的，必须容忍。
+function jsonPayloadFromModelMessage(message = {}) {
+  const direct = String(message?.content || "").trim();
+  if (direct) return direct;
+  const calls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+  for (const call of calls) {
+    const rawArgs = String(call?.function?.arguments || "").trim();
+    if (!rawArgs) continue;
+    // arguments 本身可能是 '{}{"file_path":...}' 这种被前置垃圾污染的串。
+    // 逐个候选起点尝试，取第一个能解析出对象的。
+    for (let index = rawArgs.indexOf("{"); index >= 0; index = rawArgs.indexOf("{", index + 1)) {
+      let args = null;
+      try {
+        args = JSON.parse(rawArgs.slice(index, rawArgs.lastIndexOf("}") + 1));
+      } catch {
+        continue;
+      }
+      if (!args || typeof args !== "object") continue;
+      // 模型把答案放在 Write 工具的 content 参数里，那才是我们要的 JSON。
+      const nested = String(args.content || args.text || args.json || "").trim();
+      if (nested) return nested;
+      // 也可能直接就是答案对象本身（带 characters/scenes/props）。
+      if (args.characters || args.scenes || args.props || args.world !== undefined || args.shots) {
+        return JSON.stringify(args);
+      }
+    }
+  }
+  return "";
+}
+
 function assetAuditSystemPrompt() {
   return `你是资产分类审核员。逐条判断“当前类型”是否正确，只依据原文证据。
 重点抓三类范畴错：
@@ -16855,7 +16899,12 @@ async function callAssetAnalyzerModel({ script, fallbackAssets, worldProfile, mo
         return { retryable: !fatalForAll, reason };
       }
       const data = JSON.parse(raw);
-      const content = data.choices?.[0]?.message?.content || "";
+      const message = data.choices?.[0]?.message || {};
+      const content = jsonPayloadFromModelMessage(message);
+      if (!content) {
+        const finish = compactLine(data.choices?.[0]?.finish_reason || "");
+        return { retryable: true, reason: `模型未返回 JSON 内容（finish_reason=${finish || "unknown"}）` };
+      }
       const parsed = JSON.parse(stripJsonFence(content));
       return { ok: true, data: parsed };
     } catch (error) {

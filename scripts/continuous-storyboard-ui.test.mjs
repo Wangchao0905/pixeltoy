@@ -38,15 +38,19 @@ for (const id of [
 assert.match(panel, /STORYBOARD DRAFT/);
 assert.match(panel, /16:9/);
 assert.match(panel, /15 秒/);
+assert.match(panel, /每格 15 秒剧情/);
 assert.match(panel, /黑白线稿速写/);
 assert.doesNotMatch(panel, /modernStoryboardReferencePanel|modernStoryboardToolrow|modernStoryboardInspector|modernStoryboardAddPage/);
 
 assert.match(js, /function modernStoryboardPages\(/, "storyboard pages must be derived from 15-second board slots");
+assert.match(js, /const STORYBOARD_PLOT_SECONDS = 15/, "each storyboard grid must represent one 15-second plot");
+assert.match(js, /duration: STORYBOARD_PLOT_SECONDS/, "storyboard grid cells must use the 15-second plot duration");
+assert.doesNotMatch(js, /duration: raw\?\.duration \|\| shot\?\.duration \|\| 1\.7/, "storyboard cells must not fall back to 1.7-second beats");
 assert.match(js, /source:\s*"reused-anchor"/, "the next board must reuse the previous board tail");
 assert.match(js, /carryIn[\s\S]*上一 PART/, "the UI must explain the cross-part anchor");
 assert.match(js, /function renderModernStoryboardStudio\(/, "storyboard document needs a dedicated renderer");
 assert.match(js, /storyboardBoardMedia\(/, "generated storyboard sheet media must be shown in the document");
-assert.match(js, /黑白线稿速写 · 九宫格 · 16:9/, "the document must stay fixed to the approved first format");
+assert.match(js, /黑白线稿速写 · 九宫格 · 16:9 · 每格 \$\{STORYBOARD_PLOT_SECONDS\} 秒剧情/, "the document must identify each grid as a 15-second plot");
 
 assert.match(server, /const STORYBOARD_MIN_PANELS = 9/);
 assert.match(server, /const STORYBOARD_MAX_PANELS = 9/);

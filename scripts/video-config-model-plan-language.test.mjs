@@ -27,6 +27,11 @@ const context = {
   sha1Text(value) {
     return `sha:${String(value || "")}`;
   },
+  // modelShotPlanNeedsRefresh 现在还比对资产清单指纹（防止资产图重新生成后 plan 被
+  // 当成"还新鲜"直接复用），那条路径用到 compactLine，沙箱里必须提供。
+  compactLine(value) {
+    return String(value || "").trim();
+  },
 };
 vm.createContext(context);
 vm.runInContext(extractFunction(server, "function modelPlanDialogueLanguageForConfig("), context, { filename: "server.js" });
@@ -75,11 +80,15 @@ let modelPlanBuilds = 0;
 context.readStoryboardModelPlan = () => recoveredPlan;
 context.buildModelShotPlanForConfig = async (_episodeRoot, options) => {
   modelPlanBuilds += 1;
-  recoveredPlan = { scriptFingerprint: `sha:${options.script}`, dialogueLanguage: options.dialogueLanguage };
+  recoveredPlan = { scriptFingerprint: `sha:${options.script}`, dialogueLanguage: options.dialogueLanguage, assetManifestFingerprint: "fp-stable" };
 };
 context.buildDraft = async () => {
   throw new Error("whole draft rebuild must not run for video config repair");
 };
+// ensureModelShotPlanForConfig 现在会读资产清单算指纹（资产图重新生成后要强制重建 plan）。
+// 沙箱里给个稳定指纹即可——本用例验的是"缺 plan 时只调模型 plan 构建器"，不是指纹逻辑本身。
+context.readAssetManifest = () => ({ data: {} });
+context.assetManifestIdentityFingerprint = () => "fp-stable";
 vm.runInContext(ensureModelShotPlanForConfig, context, { filename: "server.js" });
 const recovered = await context.ensureModelShotPlanForConfig("/project/e01", { script, dialogueLanguage: "en" });
 assert.equal(modelPlanBuilds, 1, "a missing plan must invoke only the model-plan builder");

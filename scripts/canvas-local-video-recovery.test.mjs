@@ -49,18 +49,22 @@ const context = {
   encodeURIComponent,
 };
 vm.createContext(context);
+context.compactLine = (value) => String(value || "").trim();
+vm.runInContext(extractFunction(server, "function stampedLocalMediaUrl("), context, { filename: "server.js" });
 vm.runInContext(extractFunction(server, "function validLocalCanvasVideoFile("), context, { filename: "server.js" });
 vm.runInContext(extractFunction(server, "function localCanvasVideoFileForNode("), context, { filename: "server.js" });
 vm.runInContext(extractFunction(server, "function localCanvasVideoUrlForNode("), context, { filename: "server.js" });
 
-assert.equal(
-  context.localCanvasVideoUrlForNode({
-    id: "node_1784787598728_31",
-    videoUrl: "https://expired.example/video.mp4?X-Tos-Expires=86400",
-  }),
-  `/media?path=${encodeURIComponent(localVideo)}`,
+const recoveredUrl = context.localCanvasVideoUrlForNode({
+  id: "node_1784787598728_31",
+  videoUrl: "https://expired.example/video.mp4?X-Tos-Expires=86400",
+});
+assert.ok(
+  recoveredUrl.startsWith(`/media?path=${encodeURIComponent(localVideo)}`),
   "an expired remote URL must fall back to the matching local canvas MP4",
 );
+assert.match(recoveredUrl, /[?&]v=[^&]+$/, "恢复出的本地视频地址必须带缓存戳，否则重生成后画布仍播旧片段");
+assert.doesNotMatch(recoveredUrl, /v=NaN/, "缓存戳不能是 NaN（那会变成永不失效的假戳）");
 assert.equal(
   context.localCanvasVideoUrlForNode({ id: "node_missing", videoUrl: "https://expired.example/video.mp4" }),
   "",

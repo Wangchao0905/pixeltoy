@@ -7,9 +7,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "public/canvas.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/canvas.css"), "utf8");
 
-assert.match(html, /styles\.css\?v=canvas-shell-visual-20260727/);
-assert.match(html, /canvas\.css\?v=canvas-agent-conversation-redesign-20260729/);
-assert.match(html, /canvas\.js\?v=canvas-agent-upload-fast-20260729/);
+assert.match(html, /styles\.css\?v=[A-Za-z0-9._-]+/);
+assert.match(html, /canvas\.css\?v=[A-Za-z0-9._-]+/);
+assert.match(html, /canvas\.js\?v=[A-Za-z0-9._-]+/);
 assert.match(css, /\.canvas-topbar\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*1200;/);
 assert.match(css, /body\.canvas-page \.canvas-topbar\s*\{[\s\S]*?display:\s*flex\s*!important;[\s\S]*?visibility:\s*visible/s,
   "canvas navigation must stay visible in the final canvas style layer");

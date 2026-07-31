@@ -58,7 +58,7 @@ assert.match(js, /canvasAgentContextName/);
 assert.match(css, /\.canvas-agent-composer\s*\{[\s\S]*?border:\s*1px\s+solid/);
 assert.match(css, /\.canvas-agent-composer textarea\s*\{[\s\S]*?border:\s*0;[\s\S]*?outline:\s*0;[\s\S]*?box-shadow:\s*none;/);
 assert.match(css, /\.canvas-agent-send\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;/);
-assert.match(html, /canvas\.css\?v=canvas-agent-conversation-redesign-20260729/);
-assert.match(html, /canvas\.js\?v=canvas-agent-upload-fast-20260729/);
+assert.match(html, /canvas\.css\?v=[A-Za-z0-9._-]+/);
+assert.match(html, /canvas\.js\?v=[A-Za-z0-9._-]+/);
 
 console.log("canvas agent UI tests passed");

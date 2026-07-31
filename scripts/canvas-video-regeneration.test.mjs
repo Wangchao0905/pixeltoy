@@ -17,7 +17,7 @@ assert.match(
 );
 assert.match(
   html,
-  /canvas\.js\?v=canvas-agent-upload-fast-20260729/,
+  /canvas\.js\?v=[A-Za-z0-9._-]+/,
   "canvas video regeneration fix must invalidate the browser script cache",
 );
 

@@ -1425,7 +1425,7 @@ function localCanvasVideoFileForNode(node = {}) {
 
 function localCanvasVideoUrlForNode(node = {}) {
   const file = localCanvasVideoFileForNode(node);
-  return file ? `/media?path=${encodeURIComponent(file)}` : "";
+  return file ? stampedLocalMediaUrl(file) : "";
 }
 
 function persistMigratedCanvasDataUrl(dataUrl = "", asset = {}, index = 0) {
@@ -2319,6 +2319,18 @@ function superPixelModelConfig(model) {
     return { apiKey: process.env.XAI_API_KEY, kind: "grok" };
   }
   return null;
+}
+
+function superPixelUpstreamFailureMessage(status, raw = "") {
+  if (status !== 402) return `Super Pixel 模型返回 HTTP ${status}`;
+  const detail = compactLine(raw).toLowerCase();
+  if (/credit|balance|quota|insufficient|余额|充值|额度/.test(detail)) {
+    return "所选 Super Pixel 模型额度不足，请充值后重试。";
+  }
+  if (/permission|forbidden|not allowed|access|权限|未开通/.test(detail)) {
+    return "所选 Super Pixel 模型尚未开通或没有调用权限，请在供应商控制台开通后重试。";
+  }
+  return "所选 Super Pixel 模型当前不可用，请检查该模型的余额或调用权限后重试。";
 }
 
 // Canvas Agent is intentionally narrower than Super Pixel. Keep this list
@@ -3283,7 +3295,7 @@ function defaultPaths(episodeRoot) {
 
 const MODEL_SHOT_PLAN_VERSION = 1;
 
-function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage, durationMode = "tk", shots } = {}) {
+function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage, durationMode = "tk", assetManifestFingerprint = "", shots } = {}) {
   const path = defaultPaths(episodeRoot).modelShotPlan;
   const normalizedDurationMode = durationMode === "free" ? "free" : "tk";
   const plannedShots = (Array.isArray(shots) ? shots : []).map((shot) => ({
@@ -3320,6 +3332,7 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
         source: "storyboard_model",
         model: compactLine(model),
         scriptFingerprint: sha1Text(script),
+        assetManifestFingerprint: compactLine(assetManifestFingerprint),
         dialogueLanguage: dialogueLanguage === "zh" ? "zh" : "en",
         durationMode: normalizedDurationMode,
         createdAt: new Date().toISOString(),
@@ -3351,10 +3364,16 @@ function modelPlanDialogueLanguageForConfig(modelPlan, script, requestedLanguage
   return normalizeDialogueLanguage(modelPlan.dialogueLanguage, requested);
 }
 
-function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk") {
+function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk", assetManifestFingerprint = "") {
   const expectedMode = durationMode === "free" ? "free" : "tk";
   const plannedMode = plan?.durationMode === "free" ? "free" : "tk";
-  if (!plan || plan.scriptFingerprint !== sha1Text(script) || plannedMode !== expectedMode) return true;
+  const expectedAssetManifestFingerprint = compactLine(assetManifestFingerprint);
+  if (
+    !plan ||
+    plan.scriptFingerprint !== sha1Text(script) ||
+    plannedMode !== expectedMode ||
+    (expectedAssetManifestFingerprint && compactLine(plan.assetManifestFingerprint) !== expectedAssetManifestFingerprint)
+  ) return true;
   if (expectedMode !== "free") return false;
   const planningScript = modelPlanningScript(script);
   const sourceBeats = freeDurationSourceBeats(planningScript, scriptBeatCandidates(planningScript));
@@ -3379,6 +3398,7 @@ async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLangua
   const videoScript = modelPlanningScript(script);
   if (!compactLine(videoScript)) throw new Error("剧本为空，无法生成模型导演设计。");
   const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const assetManifestFingerprint = assetManifestIdentityFingerprint(manifest);
   const assets = manifestItemsToAssets(manifest);
   if (!assets.length) throw new Error("请先完成「资产提取」，再生成视频配置");
 
@@ -3427,20 +3447,25 @@ async function buildModelShotPlanForConfig(episodeRoot, { script, dialogueLangua
     script,
     dialogueLanguage: normalizedDialogueLanguage,
     durationMode: normalizedDurationMode,
+    assetManifestFingerprint,
     shots: result.shots,
   });
   return readStoryboardModelPlan(episodeRoot);
 }
 
 async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode = "tk" } = {}) {
-  let plan = readStoryboardModelPlan(episodeRoot);
-  if (!modelShotPlanNeedsRefresh(plan, script, durationMode)) return plan;
-  await buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode });
-  plan = readStoryboardModelPlan(episodeRoot);
-  if (modelShotPlanNeedsRefresh(plan, script, durationMode)) {
-    throw new Error("模型导演设计生成失败，请稍后重新提交视频配置。");
+  // Asset jobs can finish while the director plan is being generated. Recheck
+  // after writing and rebuild once so a stale asset manifest never reaches video submission.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const assetManifestFingerprint = assetManifestIdentityFingerprint(readAssetManifest(episodeRoot)?.data || {});
+    let plan = readStoryboardModelPlan(episodeRoot);
+    if (!modelShotPlanNeedsRefresh(plan, script, durationMode, assetManifestFingerprint)) return plan;
+    await buildModelShotPlanForConfig(episodeRoot, { script, dialogueLanguage, durationMode });
+    plan = readStoryboardModelPlan(episodeRoot);
+    const latestAssetManifestFingerprint = assetManifestIdentityFingerprint(readAssetManifest(episodeRoot)?.data || {});
+    if (!modelShotPlanNeedsRefresh(plan, script, durationMode, latestAssetManifestFingerprint)) return plan;
   }
-  return plan;
+  throw new Error("资产清单在视频配置期间发生变化，请等待资产生成完成后重新提交视频配置。");
 }
 
 function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPlan(episodeRoot), script, dialogueLanguage, assets, videoStylePreset } = {}) {
@@ -3451,12 +3476,21 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
   }
   const assetLookup = assetLookupFromAssets(assets);
   const invalidShots = [];
+  const missingBlockingRefsByShot = [];
   const shots = plan.shots.map((plannedShot, index) => {
     const videoDesign = sanitizeSeedanceDesign(plannedShot?.design);
     const refs = (Array.isArray(plannedShot?.refs) ? plannedShot.refs : []).map(compactLine).filter(Boolean);
     const missingRefs = refs.filter((ref) => !assetLookup.has(ref));
-    if (!plannedShot?.id || !plannedShot?.beat || !refs.length || missingRefs.length || !hasCompleteSeedanceDesign(videoDesign)) {
+    // A model plan describes the full asset manifest, while video submission may
+    // only use images that have actually finished generating. Missing files are
+    // reported to the caller and never treated as references for this run.
+    const availableRefs = refs.filter((ref) => assetLookup.has(ref));
+    // 主体资产(人物/场景/故事板)缺图不能静默剔除后继续,否则用户拿到一个"成功"
+    // 但引用被清空的配置,生成出一批没有人物的废片。
+    const missingBlockingRefs = blockingRefsMissing(missingRefs, assetLookup);
+    if (!plannedShot?.id || !plannedShot?.beat || !refs.length || missingBlockingRefs.length || !hasCompleteSeedanceDesign(videoDesign)) {
       invalidShots.push(plannedShot?.id || `镜头${index + 1}`);
+      if (missingBlockingRefs.length) missingBlockingRefsByShot.push({ shot: compactLine(plannedShot?.id) || `镜头${index + 1}`, refs: missingBlockingRefs });
       return null;
     }
     return {
@@ -3464,8 +3498,9 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
       promptSection: compactLine(plannedShot.id),
       duration: clampShotDuration(plannedShot.duration || 8),
       videoStylePreset,
-      refs,
-      sceneRef: sceneRefForShotRefs(refs, assetLookup),
+      refs: availableRefs,
+      unavailableRefs: missingRefs,
+      sceneRef: sceneRefForShotRefs(availableRefs, assetLookup),
       beat: compactLine(plannedShot.beat),
       title: compactLine(plannedShot.title || plannedShot.beat),
       dialogues: Array.isArray(plannedShot.dialogues) ? plannedShot.dialogues : [],
@@ -3476,6 +3511,10 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
       y: 620 + Math.floor(index / 3) * 320,
     };
   });
+  if (missingBlockingRefsByShot.length) {
+    const detail = missingBlockingRefsByShot.map((entry) => `${entry.shot}（缺 ${entry.refs.join("、")}）`).join("；");
+    throw new Error(`视频配置引用校验失败：以下镜头缺少人物/场景资产图，请先生成这些资产图再提交：${detail}`);
+  }
   if (invalidShots.length || shots.some((shot) => !shot)) {
     throw new Error(`模型导演设计引用的资产或镜头无效：${invalidShots.join("、")}。请重新生成分镜草稿。`);
   }
@@ -5766,6 +5805,11 @@ function assetManifestIdentityMap(manifest = {}) {
   );
 }
 
+function assetManifestIdentityFingerprint(manifest = {}) {
+  const identities = [...assetManifestIdentityMap(manifest)].sort(([left], [right]) => left.localeCompare(right));
+  return sha1Text(JSON.stringify(identities));
+}
+
 function assetManifestIdentityChanged(previous = {}, next = {}) {
   const before = assetManifestIdentityMap(previous);
   const after = assetManifestIdentityMap(next);
@@ -5811,6 +5855,7 @@ function invalidateDerivedVideoArtifactsForAssetManifestChange(episodeRoot, prev
   const staleFiles = [
     findProjectFile(episodeRoot, "storyboard"),
     defaults.storyboard,
+    defaults.modelShotPlan,
     findProjectFile(episodeRoot, "seedancePrompts"),
     defaults.seedancePrompts,
   ];
@@ -10524,6 +10569,11 @@ function isStructuredAssetCardHeading(value = "") {
   return !!structuredAssetType(heading) && /(?:卡|card)(?=\s|$)/i.test(heading);
 }
 
+function stripStructuredAssetHeadingMetadata(value = "") {
+  const title = compactLine(value).split(/[|｜]/u)[0].trim();
+  return title.replace(/^(?:[A-Za-z]{1,4}\d{1,4})\s*/u, "").trim();
+}
+
 function structuredAssetLabel(type, description = "") {
   let label = stripStructuredMarkdownHeading(description)
     .replace(/^[①②③④⑤⑥⑦⑧⑨⑩㊀㊁㊂㊃㊄㊅㊆㊇㊈㊉⒜-⒵]\s*/u, "")
@@ -10532,6 +10582,7 @@ function structuredAssetLabel(type, description = "") {
     .replace(/^[-•*]\s*/, "");
   if (label.includes("：") || label.includes(":")) label = label.split(/[：:]/)[0];
   label = label.split(/[，,。；;]/)[0].replace(/[（(].*$/, "").trim();
+  label = stripStructuredAssetHeadingMetadata(label);
   if (type === "Character") label = label.replace(/^(?:人物|角色|主角|男主|女主|反派)\s*/, "");
   if (type === "Scene") label = label.replace(/^(?:场景|环境|地点)\s*/, "");
   if (type === "Prop") label = label.replace(/^(?:道具|物件|物体)\s*/, "");
@@ -11083,6 +11134,29 @@ function publicRemoteAssetUrl(url) {
   if (!/^https?:\/\//i.test(raw)) return "";
   if (/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])/i.test(raw)) return "";
   return raw;
+}
+
+// 本地媒体 URL 必须带 mtime 缓存戳。/media 端点对不带 v= 的请求发 no-store，
+// 但浏览器里已经在播的 <video> 元素不会因为 no-store 就重新拉流——src 字符串没变，
+// 播放器就继续用它已经缓冲的那份。重生成后文件路径不变(都是 06_videos/raw/<shot>.mp4)，
+// 所以必须让 URL 本身随文件内容变化，播放器才会认成新地址去重新加载。
+// 2026-07-31 病例：同一视频窗口重新生成后一直显示旧片段。
+function stampedLocalMediaUrl(file) {
+  const clean = compactLine(file);
+  if (!clean) return "";
+  const base = `/media?path=${encodeURIComponent(clean)}`;
+  try {
+    const stat = fs.statSync(clean);
+    // 逐项取有限数值。缺 mtimeMs 时 Math.round(undefined) 是 NaN，会生成
+    // v=NaN-<size>-0 这种恒定不变的假戳——看着带戳，实际永远不失效。
+    const parts = [stat.mtimeMs, stat.size, stat.ino].map((value) =>
+      Number.isFinite(Number(value)) ? Math.round(Number(value)) : "",
+    );
+    const version = parts.filter((part) => part !== "").join("-");
+    return version ? `${base}&v=${encodeURIComponent(version)}` : base;
+  } catch {
+    return base;
+  }
 }
 
 function localMediaPathFromUrl(url) {
@@ -15285,7 +15359,7 @@ async function persistProjectTailFrame(episodeRoot, shotName, result = {}, local
     source: tailFrameSource,
     remoteUrl: remoteTailFrameUrl,
     localFile: tailFrameFile ? path.relative(episodeRoot, tailFrameFile) : "",
-    url: tailFrameFile ? `/media?path=${encodeURIComponent(tailFrameFile)}` : remoteTailFrameUrl,
+    url: tailFrameFile ? stampedLocalMediaUrl(tailFrameFile) : remoteTailFrameUrl,
     fileUrl: tailFrameFile ? pathToFileURL(tailFrameFile).href : "",
     message,
   };
@@ -15465,9 +15539,9 @@ async function persistCanvasTailFrame(body = {}, options = {}) {
   }
   return {
     ready: !!file,
-    videoUrl: localVideoFile ? `/media?path=${encodeURIComponent(localVideoFile)}` : result.videoUrl,
+    videoUrl: localVideoFile ? stampedLocalMediaUrl(localVideoFile) : stampedLocalMediaUrl(localMediaPathFromUrl(result.videoUrl)) || result.videoUrl,
     videoLocalFile: localVideoFile,
-    tailFrameUrl: file ? `/media?path=${encodeURIComponent(file)}` : remoteTailFrameUrl,
+    tailFrameUrl: file ? stampedLocalMediaUrl(file) : remoteTailFrameUrl,
     tailFrameLocalFile: file,
     tailFrameFileUrl: file ? pathToFileURL(file).href : "",
     message: message || (remoteTailFrameUrl ? "" : "接口未返回尾帧或视频不可抽帧"),
@@ -18657,6 +18731,21 @@ function assetTypeForLookupRecord(asset, fallbackName = "") {
   return normalizeAssetType(asset?.manifestType || asset?.type || "", "Prop");
 }
 
+// 参考图缺失要分级，不能一刀切。人物/场景/故事板是画面主体：缺了还发，模型只能凭文本
+// 编一个人出来,烧钱产出必废的片子,所以必须拦住。道具/插入图是点缀,缺一张不该卡死
+// 整个配置,退化成文本提示词是可接受的,记 warning 提示用户即可。
+// 判类型只靠名字(assetTypeForLookupRecord 的 fallbackName 路径),因为缺失的 ref
+// 在 assetLookup 里没有记录,拿不到 manifestType。
+const BLOCKING_ASSET_TYPES = new Set(["Character", "Scene", "Storyboard"]);
+
+function blockingRefsMissing(refs, lookup = null) {
+  return (Array.isArray(refs) ? refs : []).filter((ref) => {
+    const clean = compactLine(ref);
+    if (!clean) return false;
+    return BLOCKING_ASSET_TYPES.has(assetTypeForLookupRecord(lookup?.get?.(clean), clean));
+  });
+}
+
 function splitRefsByAssetType(refs, lookup = null) {
   const groups = { scenes: [], characters: [], props: [], inserts: [], storyboards: [], other: [] };
   for (const ref of Array.isArray(refs) ? refs : []) {
@@ -20978,6 +21067,7 @@ async function buildDraft(episodeRoot, options = {}) {
     script: videoScript,
     dialogueLanguage,
     durationMode,
+    assetManifestFingerprint: assetManifestIdentityFingerprint(sourceAssetManifest),
     shots,
   };
   const characterAssets = assets.filter((asset) => asset.type === "Character");
@@ -21635,6 +21725,12 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     videoStylePreset,
   });
   const referenceWarnings = [];
+  modelShots.forEach((shot) => {
+    const unavailableRefs = Array.isArray(shot.unavailableRefs) ? shot.unavailableRefs : [];
+    if (unavailableRefs.length) {
+      referenceWarnings.push(`${shot.name}：以下资产图尚未生成，已从本次视频引用中排除：${unavailableRefs.join("、")}`);
+    }
+  });
   let shots = modelShots.map((shot, index) => ({
     ...shot,
     prompt: cleanVideoPromptForSubmission(seedancePromptForShotMode(shot, index, dialogueLanguage, storyboardsActive)),
@@ -21703,7 +21799,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     }
   });
   const shotsWithoutRefs = shots.filter((shot) => !shot.refs.length);
-  if (shotsWithoutRefs.length) throw new Error(`视频配置引用校验失败：${shotsWithoutRefs.map((shot) => shot.name).join("、")} 缺少有效参考资产`);
+  if (shotsWithoutRefs.length) {
+    referenceWarnings.push(`以下镜头当前没有可用资产图，将以文本提示词生成：${shotsWithoutRefs.map((shot) => shot.name).join("、")}`);
+  }
   referenceWarnings.push(...shotOverlapWarnings(shots));
   const config = {
     groupName:
@@ -22931,8 +23029,8 @@ async function handleSuperPixelChat(req, res) {
       if (!upstream.ok) {
         const raw = await upstream.text();
         if (clientClosed) return;
-        const message = `Super Pixel 模型返回 HTTP ${upstream.status}`;
-        if (!res.headersSent) return fail(res, upstream.status, message, raw.slice(0, 600));
+        const message = superPixelUpstreamFailureMessage(upstream.status, raw);
+        if (!res.headersSent) return fail(res, upstream.status, message);
         emit({ error: message });
         res.end();
         return;

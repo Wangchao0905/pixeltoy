@@ -23990,7 +23990,18 @@ async function handleApi(req, res, url) {
         key === "seedancePrompts" &&
         !parsePromptSections(stripSeedancePromptRules(content)).some(isShotPromptSection) &&
         !!seedancePromptMarkdownFromConfig(readVideoConfig(episodeRoot)?.data || {});
-      if (!skipEmptySeedancePromptOverwrite) writeText(file, content);
+      // 故事板文档：如果前端提交的是空串，不能直接覆盖磁盘上的非空文档。
+      // 根因：startJob("storyboards") 在发 /job 前先调 saveFileQuiet("storyboard")，
+      // 而现代制作台的"故事板"面板根本没有可见的编辑器，workflowEditorElement 返回
+      // null → editor.value 为 undefined → content = ""，于是把已有的分镜文档清空，
+      // 后续 storyboardSegmentsForEpisode 算出的 slot 名全变，生成好的板子沦为"孤儿"
+      // 藏在 PART 05 里，PART 01-04 一片空白，用户看不到已成功生成的故事板。
+      // 与 seedancePrompts 的"不拿空串覆盖已有内容"方案对齐，保持一致的防护逻辑。
+      const skipEmptyStoryboardOverwrite =
+        key === "storyboard" &&
+        !String(content || "").trim() &&
+        !!String(readText(file) || "").trim();
+      if (!skipEmptySeedancePromptOverwrite && !skipEmptyStoryboardOverwrite) writeText(file, content);
       if (key === "config") ensureVideoConfigIsolation(episodeRoot, { file, data: JSON.parse(body.content || "{}") });
     }
     return send(res, 200, fullProjectState(episodeRoot));

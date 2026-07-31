@@ -28,5 +28,20 @@ assert.match(
 );
 assert.match(styles, /\.modern-asset-chip-remove\s*\{/);
 assert.match(styles, /\.modern-asset-chip\.is-manage-mode/);
+assert.match(
+  styles,
+  /\.modern-asset-chip\.is-manage-mode\s*\{[^}]*position:\s*relative[^}]*padding-right:\s*36px/,
+  "管理态资产标签必须给右上角删除控件预留空间",
+);
+assert.match(
+  styles,
+  /\.modern-asset-chip-remove\s*\{[^}]*position:\s*absolute[^}]*top:\s*6px[^}]*right:\s*6px[^}]*border-radius:\s*6px/,
+  "删除控件应为右上角的小型方形操作，不应继续使用椭圆胶囊",
+);
+assert.doesNotMatch(
+  styles,
+  /\.modern-asset-chip-remove\s*\{[^}]*border-radius:\s*50%/,
+  "删除控件不得恢复为圆形胶囊",
+);
 
 console.log("modern asset manage delete tests passed");

@@ -5983,9 +5983,9 @@ function renderModernAssetResults(data = state.project) {
   status.textContent = extracting
     ? "模型正在分析资产文档…"
     : confirmed
-      ? manageMode ? `${items.length} 项已确认 · 管理模式：点击减号删除资产` : `${items.length} 项已确认，可继续生成资产图`
+      ? manageMode ? `${items.length} 项已确认 · 管理中：点击右上角删除` : `${items.length} 项已确认，可继续生成资产图`
       : items.length
-        ? manageMode ? `${items.length} 项待确认 · 管理模式：点击减号删除资产` : `${items.length} 项待确认分类`
+        ? manageMode ? `${items.length} 项待确认 · 管理中：点击右上角删除` : `${items.length} 项待确认分类`
         : "提交资产文档后，解析结果会显示在这里。";
   confirmButton.disabled = extracting || !items.length || confirmed;
   confirmButton.textContent = confirmed ? "已确认" : extracting ? "解析中…" : "确认分类";
@@ -6033,7 +6033,10 @@ function renderModernAssetResults(data = state.project) {
         <span class="modern-asset-card-media">${image ? `<img src="${escapeAttr(image)}" alt="${escapeAttr(slot.label || name)}" loading="lazy" />` : `<span>${escapeHtml(statusLabel)}</span>`}</span>
       </button>
       <div class="modern-asset-card-copy"><strong>${escapeHtml(slot.label || name)}</strong><small class="modern-asset-card-status is-${isGenerating ? "running" : isFailed ? "failed" : asset ? "ready" : "waiting"}">${escapeHtml(statusLabel)}</small></div>
-      <button class="modern-asset-card-action ${isGenerating ? "is-running" : ""}" type="button" data-modern-asset-action="${escapeAttr(name)}" ${actionDisabled ? "disabled" : ""}>${actionLabel}</button>
+      <div class="modern-asset-card-actions">
+        <button class="modern-asset-card-action ${isGenerating ? "is-running" : ""}" type="button" data-modern-asset-action="${escapeAttr(name)}" ${actionDisabled ? "disabled" : ""}>${actionLabel}</button>
+        <button class="modern-asset-card-action" type="button" data-modern-asset-replace="${escapeAttr(name)}" ${isGenerating ? "disabled" : ""} title="用本地图片替换，资产名称不变">替换</button>
+      </div>
     </article>`;
   };
   gallery.innerHTML = galleryGroups.length
@@ -10246,7 +10249,7 @@ function bind() {
   $("#modernKitButton")?.addEventListener("click", () => {
     state.modernStudio.assetManageMode = !state.modernStudio.assetManageMode;
     focusModernPane("kit");
-    toast(state.modernStudio.assetManageMode ? "已进入资产管理模式，点击资产旁的减号删除" : "已退出资产管理模式");
+    toast(state.modernStudio.assetManageMode ? "已进入资产管理模式，点击资产右上角删除" : "已退出资产管理模式");
   });
   $$('[data-modern-focus]').forEach((button) => button.addEventListener("click", () => {
     const focus = button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus;

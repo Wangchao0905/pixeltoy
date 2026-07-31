@@ -6971,6 +6971,27 @@ function uploadLocalAsset(episodeRoot, body = {}) {
   // Validate the image before changing the asset manifest, so an invalid upload
   // never leaves an unusable reference slot behind.
   decodeUploadedImage(body);
+
+  // 同名同类型的资产已经在清单里时，直接替换它的资产图，而不是抛「已经存在」把用户挡住。
+  // 走 uploadBoundAsset 就能保持资产名称/清单条目/confirmed 状态不变，只换图。
+  const existingManifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const existingItem = existingManifest.items.find((item) => item.type === type && sameAssetLabel(item.label, label));
+  if (existingItem) {
+    const upload = uploadBoundAsset(episodeRoot, {
+      assetId: existingItem.id,
+      filename: body.filename,
+      contentBase64: body.contentBase64,
+    });
+    return {
+      asset: existingItem,
+      manifest: existingManifest,
+      binding: { updated: false, boundShots: [], reason: "沿用已有资产条目" },
+      upload,
+      replacedExisting: true,
+      message: `已替换资产图：${existingItem.label}（资产名称保持 ${existingItem.id}）`,
+    };
+  }
+
   const created = addManualAsset(episodeRoot, {
     type,
     label,

@@ -64,7 +64,9 @@ assert.doesNotMatch(server, /Create ONE 9:16 vertical \(portrait\)/);
 for (const selector of [
   /\.storyboard-document-board\s*\{/,
   /\.storyboard-document-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3/,
+  /\.storyboard-document-grid\s*\{[^}]*gap:\s*16px[^}]*width:\s*min\(100%,\s*1360px\)[^}]*margin:\s*0\s+auto/,
   /\.storyboard-document-shot-frame\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/,
+  /\.storyboard-document-shot-frame::after\s*\{[^}]*display:\s*none/,
   /\.storyboard-document-sequence-connector/,
 ]) {
   assert.match(css, selector, `missing storyboard document styling: ${selector}`);

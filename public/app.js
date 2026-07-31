@@ -1297,9 +1297,10 @@ function fileBase64(file) {
 
 async function readScriptUpload(file) {
   if (!file) throw new Error("请选择剧本文件");
-  if (!/\.(md|txt|docx)$/i.test(file.name)) throw new Error("剧本仅支持 MD、TXT 或 DOCX 格式");
+  if (!/\.(md|txt|docx|pdf)$/i.test(file.name)) throw new Error("文档仅支持 MD、TXT、DOCX 或 PDF 格式");
   const isDocx = /\.docx$/i.test(file.name);
-  const text = isDocx
+  const isPdf = /\.pdf$/i.test(file.name);
+  const text = isDocx || isPdf
     ? (
         await api("/api/extract-script", {
           method: "POST",
@@ -1308,19 +1309,19 @@ async function readScriptUpload(file) {
       ).text
     : await file.text();
   if (!String(text || "").trim()) throw new Error("剧本文件没有可读取的正文");
-  return { isDocx, text: String(text) };
+  return { isDocx, isPdf, text: String(text) };
 }
 
 async function applyScriptUpload(file, { textareaSelector, nameSelector, titleSelector = "", requireSave = false, label = "剧本" } = {}) {
   const textarea = $(textareaSelector);
   if (!textarea) throw new Error("找不到剧本编辑框");
-  const { isDocx, text } = await readScriptUpload(file);
+  const { isDocx, isPdf, text } = await readScriptUpload(file);
   textarea.value = text;
   const name = $(nameSelector);
   if (name) name.textContent = file.name;
   const title = titleSelector ? $(titleSelector) : null;
-  if (title && !title.value) title.value = file.name.replace(/\.(md|txt|docx)$/i, "");
-  toast(isDocx ? `DOCX ${label}已提取${requireSave ? "，请点击保存" : ""}` : `${label}已载入${requireSave ? "，请点击保存" : ""}`);
+  if (title && !title.value) title.value = file.name.replace(/\.(md|txt|docx|pdf)$/i, "");
+  toast(isDocx ? `DOCX ${label}已提取${requireSave ? "，请点击保存" : ""}` : isPdf ? `PDF ${label}已提取${requireSave ? "，请点击保存" : ""}` : `${label}已载入${requireSave ? "，请点击保存" : ""}`);
 }
 
 const referenceUploadConcurrency = 2;
@@ -3857,7 +3858,7 @@ function bindSuperPixel() {
       state.superPixel.scriptText = result.text;
       state.superPixel.scriptName = file.name;
       $("#superPixelScriptLabel").textContent = file.name;
-      toast(result.isDocx ? "DOCX 剧本已提取" : "剧本已载入");
+      toast(result.isDocx ? "DOCX 剧本已提取" : result.isPdf ? "PDF 剧本已提取" : "剧本已载入");
     } catch (error) {
       toast(error.message);
     } finally {
@@ -5808,7 +5809,9 @@ function renderModernStudio(data = state.project) {
   const selectedIndex = Math.max(0, Math.min(state.modernStudio.shotIndex, Math.max(0, shots.length - 1)));
   state.modernStudio.shotIndex = selectedIndex;
   const selected = shots[selectedIndex] || null;
-  if (selected?.name && !state.selectedVideoShotName) state.selectedVideoShotName = selected.name;
+  // The parameter strip always represents the visible shot. Keep the persisted
+  // target in sync so a later refresh cannot save a different shot's override.
+  if (selected?.name) state.selectedVideoShotName = selected.name;
   const ratio = videoConfigDataFromProject()?.settings?.ratio || "9:16";
   const pct = total ? Math.round((completed / total) * 100) : 0;
   const projectName = project.seriesTitle || project.title || project.scriptTitle || title;
@@ -6007,9 +6010,9 @@ function renderModernAssetResults(data = state.project) {
   status.textContent = extracting
     ? "模型正在分析资产文档…"
     : confirmed
-      ? manageMode ? `${items.length} 项已确认 · 管理中：点击右上角删除` : `${items.length} 项已确认，可继续生成资产图`
+      ? manageMode ? `${items.length} 项已确认 · 管理模式：点击减号删除资产` : `${items.length} 项已确认，可继续生成资产图`
       : items.length
-        ? manageMode ? `${items.length} 项待确认 · 管理中：点击右上角删除` : `${items.length} 项待确认分类 · 请点击确认分类`
+        ? manageMode ? `${items.length} 项待确认 · 管理模式：点击减号删除资产` : `${items.length} 项待确认分类 · 请点击确认分类`
         : "提交资产文档后，解析结果会显示在这里。";
   const modernAssetChipHtml = (item) => {
     const label = item.label || item.id || "未命名资产";
@@ -6055,10 +6058,7 @@ function renderModernAssetResults(data = state.project) {
         <span class="modern-asset-card-media">${image ? `<img src="${escapeAttr(image)}" alt="${escapeAttr(slot.label || name)}" loading="lazy" />` : `<span>${escapeHtml(statusLabel)}</span>`}</span>
       </button>
       <div class="modern-asset-card-copy"><strong>${escapeHtml(slot.label || name)}</strong><small class="modern-asset-card-status is-${isGenerating ? "running" : isFailed ? "failed" : asset ? "ready" : "waiting"}">${escapeHtml(statusLabel)}</small></div>
-      <div class="modern-asset-card-actions">
-        <button class="modern-asset-card-action ${isGenerating ? "is-running" : ""}" type="button" data-modern-asset-action="${escapeAttr(name)}" ${actionDisabled ? "disabled" : ""}>${actionLabel}</button>
-        <button class="modern-asset-card-action" type="button" data-modern-asset-replace="${escapeAttr(name)}" ${isGenerating ? "disabled" : ""} title="用本地图片替换，资产名称不变">替换</button>
-      </div>
+      <button class="modern-asset-card-action ${isGenerating ? "is-running" : ""}" type="button" data-modern-asset-action="${escapeAttr(name)}" ${actionDisabled ? "disabled" : ""}>${actionLabel}</button>
     </article>`;
   };
   gallery.innerHTML = galleryGroups.length
@@ -6427,7 +6427,12 @@ function renderModernSelectedShot(data, shot, index) {
   const number = shot ? String(shot.number).padStart(2, "0") : hasDraftContent ? "SB" : "--";
   $("#modernSelectedShotNumber").textContent = number;
   $("#modernSelectedShotTitle").textContent = shot?.name || (hasDraftContent ? "分镜草稿" : "未选择镜头");
-  const shotModel = shot?.model ? normalizeVideoModelName(shot.model) : $("#configModel")?.value || "seedance-2-0-fast";
+  // `shot.model` is a display label. Resolve from the persisted config shot so
+  // per-shot overrides survive module switches and status refreshes.
+  const configShot = shot?.name ? videoPromptShot(shot.name) : null;
+  const shotModel = configShot
+    ? videoModelForShot(configShot)
+    : normalizeVideoModelName(videoConfigDataFromProject()?.modelName || $("#configModel")?.value || "seedance-2-0-fast");
   const modernModel = $("#modernParamModel");
   if (modernModel) modernModel.value = shotModel;
   const modernSettings = videoConfigDataFromProject()?.settings || {};
@@ -9406,7 +9411,7 @@ async function saveFile(key) {
   await loadProject(state.selectedId, { openStudio: false });
 }
 
-async function saveFileQuiet(key) {
+async function saveFileQuiet(key, { content } = {}) {
   const map = {
     storyboard: "#storyboardText",
     assetManifest: "#assetManifestText",
@@ -9415,11 +9420,28 @@ async function saveFileQuiet(key) {
     config: "#configText",
   };
   const editor = (typeof workflowEditorElement === "function" ? workflowEditorElement(key) : null) || $(map[key] || (key === "script" ? "#scriptText" : key === "assetDescription" ? "#assetDescriptionText" : ""));
-  if (!editor) throw new Error("找不到要保存的内容");
+  const savedContent = typeof content === "string" ? content : editor?.value;
+  if (typeof savedContent !== "string") throw new Error("找不到要保存的内容");
   await api(`/api/project/${state.selectedId}/file`, {
     method: "POST",
-    body: JSON.stringify({ key, content: editor.value }),
+    body: JSON.stringify({ key, content: savedContent }),
   });
+}
+
+async function persistAssetExtractionSources(script, assetDescription) {
+  // Persist the captured values before the parsing-state render. This avoids a
+  // stale project snapshot clearing either source editor while the parser runs.
+  await saveFileQuiet("script", { content: script });
+  await saveFileQuiet("assetDescription", { content: assetDescription });
+  if (!state.project) return;
+  state.project = {
+    ...state.project,
+    contents: {
+      ...(state.project.contents || {}),
+      script,
+      assetDescription,
+    },
+  };
 }
 
 async function saveAssetManifest({ confirm = false } = {}) {
@@ -9472,7 +9494,7 @@ async function extractAssets() {
   const assetAnalyzerModel = document.querySelector("input[name='assetAnalyzerModel']:checked")?.value || state.assetAnalyzerModel || "claude-opus-4-8";
   state.assetAnalyzerModel = normalizeAssetAnalyzerModel(assetAnalyzerModel);
   localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
-  await saveFileQuiet("script");
+  await persistAssetExtractionSources(capturedScriptText, capturedAssetDescriptionText);
   state.uiBusy.assetExtracting = true;
   renderWorkspace();
   toast("正在提取人物和场景");
@@ -10265,7 +10287,7 @@ function bind() {
   $("#modernKitButton")?.addEventListener("click", () => {
     state.modernStudio.assetManageMode = !state.modernStudio.assetManageMode;
     focusModernPane("kit");
-    toast(state.modernStudio.assetManageMode ? "已进入资产管理模式，点击资产右上角删除" : "已退出资产管理模式");
+    toast(state.modernStudio.assetManageMode ? "已进入资产管理模式，点击资产旁的减号删除" : "已退出资产管理模式");
   });
   $$('[data-modern-focus]').forEach((button) => button.addEventListener("click", () => {
     const focus = button.dataset.modernFocus === "assets" ? "assets" : button.dataset.modernFocus;

@@ -2826,16 +2826,35 @@ function extractDocxText(buffer, filename = "script.docx") {
   }
 }
 
+function extractPdfText(buffer, filename = "script.pdf") {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pixel-toys-pdf-"));
+  const filePath = path.join(tempDir, safeSlug(filename.replace(/\.pdf$/i, ""), "script") + ".pdf");
+  try {
+    fs.writeFileSync(filePath, buffer);
+    try {
+      return execFileSync("/usr/bin/pdftotext", ["-layout", "-enc", "UTF-8", filePath, "-"], {
+        encoding: "utf8",
+        maxBuffer: 50 * 1024 * 1024,
+        timeout: 60000,
+      }).replace(/\u0000/g, "").trim();
+    } catch {
+      throw new Error("无法读取 PDF，请确认文件未加密、未损坏且包含可复制文本");
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 function extractUploadedScript(body) {
   const filename = String(body.filename || "");
   const ext = path.extname(filename).toLowerCase();
-  if (ext !== ".docx") throw new Error("only .docx extraction is supported here");
+  if (ext !== ".docx" && ext !== ".pdf") throw new Error("only .docx or .pdf extraction is supported here");
   const contentBase64 = String(body.contentBase64 || "");
-  if (!contentBase64) throw new Error("missing docx content");
+  if (!contentBase64) throw new Error("missing document content");
   const buffer = Buffer.from(contentBase64, "base64");
-  if (!buffer.length) throw new Error("empty docx file");
-  const text = extractDocxText(buffer, filename);
-  if (!text.trim()) throw new Error("no readable text found in docx");
+  if (!buffer.length) throw new Error("empty document file");
+  const text = ext === ".pdf" ? extractPdfText(buffer, filename) : extractDocxText(buffer, filename);
+  if (!text.trim()) throw new Error(`no readable text found in ${ext.slice(1)}`);
   return text;
 }
 
@@ -6971,27 +6990,6 @@ function uploadLocalAsset(episodeRoot, body = {}) {
   // Validate the image before changing the asset manifest, so an invalid upload
   // never leaves an unusable reference slot behind.
   decodeUploadedImage(body);
-
-  // 同名同类型的资产已经在清单里时，直接替换它的资产图，而不是抛「已经存在」把用户挡住。
-  // 走 uploadBoundAsset 就能保持资产名称/清单条目/confirmed 状态不变，只换图。
-  const existingManifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
-  const existingItem = existingManifest.items.find((item) => item.type === type && sameAssetLabel(item.label, label));
-  if (existingItem) {
-    const upload = uploadBoundAsset(episodeRoot, {
-      assetId: existingItem.id,
-      filename: body.filename,
-      contentBase64: body.contentBase64,
-    });
-    return {
-      asset: existingItem,
-      manifest: existingManifest,
-      binding: { updated: false, boundShots: [], reason: "沿用已有资产条目" },
-      upload,
-      replacedExisting: true,
-      message: `已替换资产图：${existingItem.label}（资产名称保持 ${existingItem.id}）`,
-    };
-  }
-
   const created = addManualAsset(episodeRoot, {
     type,
     label,
@@ -20358,7 +20356,7 @@ function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
 function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
   const name = compactLine(shotName || "");
   const requestedModel = compactLine(modelName || "");
-  const supportedModels = new Set(["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus"]);
+  const supportedModels = new Set(["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"]);
   if (!name) throw new Error("缺少视频片段");
   if (!supportedModels.has(requestedModel)) throw new Error("不支持的视频模型");
   const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];

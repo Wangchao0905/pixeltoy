@@ -5311,6 +5311,24 @@ async function uploadLocalVideoAsset(file, index, presetId = "") {
   };
 }
 
+function restoreAndRenderCanvasState(saved = null, { preserveSelection = false, previousSelection = [] } = {}) {
+  if (!restoreCanvasState(saved?.state)) {
+    canvasState.nodes = [];
+    canvasState.connections = [];
+    canvasState.assets = [];
+    canvasState.layoutChanged = false;
+    canvasState.viewport = { x: 0, y: 0, scale: 1 };
+    canvasState.livenessLibrary = defaultLivenessLibraryState();
+  }
+  syncLivenessLibraryPanel();
+  applyCanvasViewport();
+  renderNodes();
+  if (preserveSelection) setSelectedNodes(previousSelection);
+  const repairedLayout = canvasState.layoutChanged;
+  canvasState.layoutChanged = false;
+  return repairedLayout;
+}
+
 async function loadProject(id = canvasState.selectedId, options = {}) {
   // 拖拽/缩放进行中时跳过后台轮询刷新:否则(尤其生成中每几秒轮询一次)loadProject 会用服务端
   // 数据替换节点并触发 renderNodes 全量重建,把正在拖的节点销毁重建 → 内部布局乱跳/尺寸重排。
@@ -5384,6 +5402,31 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
   const preloadedCanvasRequest = urlCanvasId
     ? api(`/api/canvas/state?projectId=${encodeURIComponent(urlCanvasId)}`).catch(() => null)
     : null;
+  let preloadedCanvas = null;
+  let preloadedCanvasRendered = false;
+  const preloadedCanvasReady = preloadedCanvasRequest
+    ? preloadedCanvasRequest.then((saved) => {
+      preloadedCanvas = saved;
+      return saved;
+    })
+    : Promise.resolve(null);
+  if (preloadedCanvasRequest) {
+    preloadedCanvasReady.then((saved) => {
+      if (saved && videoLoadIsCurrent() && !(canvasInteractionIsActive() && options.silent)) {
+        // The canvas state is independent of the full project payload. Render it as
+        // soon as it arrives while the server finishes scanning project assets/videos.
+        canvasState.canvasId = urlCanvasId;
+        syncCanvasUrl(id, urlCanvasId);
+        renderProjectTitle();
+        const repairedLayout = restoreAndRenderCanvasState(saved, {
+          preserveSelection: options.preserveSelection,
+          previousSelection,
+        });
+        preloadedCanvasRendered = true;
+        if (repairedLayout) scheduleCanvasSave();
+      }
+    }).catch(() => {});
+  }
   const project = await projectRequest;
   if (!videoLoadIsCurrent()) {
     canvasState.hydrating = false;
@@ -5398,10 +5441,8 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
   canvasState.canvasId = currentCanvasId || urlCanvasId || "";
   syncCanvasUrl(id, canvasState.canvasId);
   renderProjectTitle();
-  const preloadedCanvas = urlCanvasId === canvasState.canvasId && preloadedCanvasRequest
-    ? await preloadedCanvasRequest
-    : null;
-  const saved = preloadedCanvas || await api(`/api/canvas/state?projectId=${encodeURIComponent(canvasStorageProjectId())}`);
+  const usablePreloadedCanvas = urlCanvasId === canvasState.canvasId ? await preloadedCanvasReady : null;
+  const saved = usablePreloadedCanvas || await api(`/api/canvas/state?projectId=${encodeURIComponent(canvasStorageProjectId())}`);
   if (!videoLoadIsCurrent()) {
     canvasState.hydrating = false;
     return false;
@@ -5410,21 +5451,13 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
     canvasState.hydrating = false;
     return false;
   }
-  if (!restoreCanvasState(saved.state)) {
-    canvasState.nodes = [];
-    canvasState.connections = [];
-    canvasState.assets = [];
-    canvasState.layoutChanged = false;
-    canvasState.viewport = { x: 0, y: 0, scale: 1 };
-    canvasState.livenessLibrary = defaultLivenessLibraryState();
-  }
-  syncLivenessLibraryPanel();
-  applyCanvasViewport();
-  renderNodes();
+  const repairedLayout = preloadedCanvasRendered && usablePreloadedCanvas
+    ? false
+    : restoreAndRenderCanvasState(saved, {
+        preserveSelection: options.preserveSelection,
+        previousSelection,
+      });
   resumeArkVirtualPersonPolls();
-  if (options.preserveSelection) setSelectedNodes(previousSelection);
-  const repairedLayout = canvasState.layoutChanged;
-  canvasState.layoutChanged = false;
   canvasState.hydrating = false;
   if (repairedLayout) scheduleCanvasSave();
   resumeVideoPolls();

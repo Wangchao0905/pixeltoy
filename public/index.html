@@ -232,7 +232,7 @@
                   <button id="superPixelAttach" class="super-pixel-tool" type="button">
                     <span aria-hidden="true">＋</span> <span id="superPixelScriptLabel">剧本</span>
                   </button>
-                  <input id="superPixelScriptUpload" class="hidden" type="file" accept=".md,.txt,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                  <input id="superPixelScriptUpload" class="hidden" type="file" accept=".md,.txt,.docx,.pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" />
                   <button id="superPixelImagePick" class="super-pixel-tool" type="button">
                     <span aria-hidden="true">＋</span> 图片
                   </button>
@@ -345,9 +345,9 @@
               <textarea name="assetDescriptionText" rows="5" placeholder="只粘贴人物/场景/道具的外观描述，用于资产解析；资产名与剧情称呼一致。留空则用剧情提取资产。"></textarea>
             </label>
             <div class="upload-row">
-              <input id="scriptUpload" type="file" accept=".md,.txt,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+              <input id="scriptUpload" type="file" accept=".md,.txt,.docx,.pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" />
               <label class="upload-pill" for="scriptUpload">选择上传剧本</label>
-              <span id="scriptUploadName">支持 .md / .txt / .docx</span>
+              <span id="scriptUploadName" aria-live="polite"></span>
             </div>
             <p id="projectCreateStatus" class="project-create-status" aria-live="polite"></p>
             <div class="project-form-actions">
@@ -495,8 +495,8 @@
                     </div>
                     <div class="actions">
                       <div class="upload-row script-upload-row">
-                        <input id="workflowScriptUpload" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-                        <label class="upload-pill" for="workflowScriptUpload" data-upload-tooltip="支持 TXT 和 DOCX">上传剧本</label>
+                        <input id="workflowScriptUpload" type="file" accept=".txt,.docx,.pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" />
+                        <label class="upload-pill" for="workflowScriptUpload" data-upload-tooltip="支持 TXT、DOCX 和 PDF">上传剧本</label>
                         <span id="workflowScriptUploadName" aria-live="polite"></span>
                       </div>
                       <div class="segmented" role="radiogroup" aria-label="对白语言">
@@ -545,11 +545,11 @@
                       <div class="asset-document-source">
                         <div class="asset-document-source-label">
                           <strong>资产文档</strong>
-                          <span>可直接粘贴，或上传 TXT / DOCX</span>
+                          <span></span>
                         </div>
                         <div class="asset-document-upload">
-                          <input id="assetDescriptionUpload" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-                          <label class="upload-pill" for="assetDescriptionUpload" data-upload-tooltip="支持 TXT 和 DOCX">上传资产文档</label>
+                          <input id="assetDescriptionUpload" type="file" accept=".txt,.docx,.pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" />
+                          <label class="upload-pill" for="assetDescriptionUpload" data-upload-tooltip="支持 TXT、DOCX 和 PDF">上传资产文档</label>
                           <span id="assetDescriptionUploadName" aria-live="polite"></span>
                         </div>
                       </div>
@@ -1094,9 +1094,9 @@
                 <header><span>01</span><div><small>STORY INPUT</small><h3 id="modernScriptSourceTitle">剧本 / 剧情</h3></div><i id="modernScriptSourceStatus">未保存</i></header>
                 <textarea id="modernScriptText" rows="5" placeholder="粘贴完整剧情、对白和场景推进。"></textarea>
                 <div class="modern-source-actions">
-                  <input id="modernScriptUpload" type="file" accept=".md,.txt,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                  <input id="modernScriptUpload" type="file" accept=".md,.txt,.docx,.pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" />
                   <label class="modern-upload-button" for="modernScriptUpload">上传剧本</label>
-                  <span id="modernScriptUploadName" aria-live="polite">支持 MD / TXT / DOCX</span>
+                  <span id="modernScriptUploadName" aria-live="polite"></span>
                   <button id="modernSaveScript" type="button">保存</button>
                   <button id="modernGenerateDraft" class="is-primary" type="button">生成分镜草稿</button>
                 </div>
@@ -1105,9 +1105,9 @@
                 <header><span>02</span><div><small>ASSET DOCUMENT</small><h3 id="modernAssetSourceTitle">资产描述文档</h3></div><i id="modernAssetSourceStatus">未保存</i></header>
                 <textarea id="modernAssetDescriptionText" rows="5" placeholder="独立描述人物、场景、道具的外观、服装、材质和连续性规则。"></textarea>
                 <div class="modern-source-actions">
-                  <input id="modernAssetDescriptionUpload" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                  <input id="modernAssetDescriptionUpload" type="file" accept=".txt,.docx,.pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" />
                   <label class="modern-upload-button" for="modernAssetDescriptionUpload">上传资产文档</label>
-                  <span id="modernAssetDescriptionUploadName" aria-live="polite">支持 TXT / DOCX</span>
+                  <span id="modernAssetDescriptionUploadName" aria-live="polite"></span>
                   <button id="modernSaveAssetDescription" type="button">保存</button>
                   <span class="modern-asset-primary-actions" aria-label="资产解析操作">
                     <button id="modernExtractAssets" class="is-primary" type="button">解析资产</button>
@@ -1381,7 +1381,7 @@
         <span id="projectTitle"></span><form id="projectDisplayNameForm"><input id="projectDisplayNameInput" /></form><div id="statusPills"></div>
         <span id="scriptPath"></span><span id="storyboardPath"></span><span id="assetPromptsPath"></span><span id="seedancePath"></span><span id="configPath"></span>
         <textarea id="scriptText"></textarea><textarea id="assetDescriptionText"></textarea><textarea id="storyboardText"></textarea><textarea id="assetManifestText"></textarea><textarea id="assetPromptsText"></textarea><textarea id="seedanceText"></textarea><textarea id="configText"></textarea>
-        <input id="scriptUpload" type="file" /><span id="scriptUploadName"></span><input id="workflowScriptUpload" type="file" /><span id="workflowScriptUploadName"></span><input id="assetDescriptionUpload" type="file" /><span id="assetDescriptionUploadName"></span>
+        <input id="scriptUpload" type="file" accept=".md,.txt,.docx,.pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" /><span id="scriptUploadName"></span><input id="workflowScriptUpload" type="file" accept=".txt,.docx,.pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" /><span id="workflowScriptUploadName"></span><input id="assetDescriptionUpload" type="file" accept=".txt,.docx,.pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" /><span id="assetDescriptionUploadName"></span>
         <input type="radio" name="draftDialogueLanguage" value="en" checked /><input type="radio" name="draftDialogueLanguage" value="zh" /><input id="draftAssumeEnglishDialogue" type="checkbox" /><input type="radio" name="assetAnalyzerModel" value="claude-opus-4-8" checked /><input type="radio" name="assetAnalyzerModel" value="gpt-5.5-thinking" />
         <div id="assetManifestOverview"></div><span id="assetManifestStatus"></span><button id="confirmAssetManifestBtn" type="button"></button><button id="draftBtn" type="button"></button><div id="assetGallery"></div><span id="assetCount"></span><div id="assetJobStatus"></div>
         <select id="assetQuality"><option value="1k">1K</option></select><select id="assetGenerateRange"><option value="missing">缺失</option></select><button data-job="assets" type="button"></button><input id="assetStyleReferenceFile" type="file" /><span id="assetStyleReferenceName"></span><input id="assetStyleReferenceEnabled" type="checkbox" checked /><button id="assetStyleReferenceRemove" type="button"></button>
@@ -1462,7 +1462,7 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=asset-replace-20260731"></script>
+    <script src="/app.js?v=asset-replace-pdf-upload-20260731"></script>
     <script src="/auth-modal.js?v=auth-modal-20260730"></script>
   </body>
 </html>

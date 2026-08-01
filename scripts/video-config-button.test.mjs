@@ -6,8 +6,11 @@ const root = new URL("..", import.meta.url);
 const app = fs.readFileSync(new URL("public/app.js", root), "utf8");
 const html = fs.readFileSync(new URL("public/index.html", root), "utf8");
 
-for (const id of ["buildConfigBtn", "seedanceText", "configGroup", "configModel", "configResolution", "configRatio", "configPromptMode"]) {
-  assert.match(html, new RegExp(`id=["']${id}["']`), `${id} must remain in the storyboard workflow DOM`);
+for (const id of ["modernBuildConfig", "modernVideoPromptMode", "modernParamModel", "modernParamResolution", "modernParamRatio"]) {
+  assert.match(html, new RegExp(`id=["']${id}["']`), `${id} must be in the active video workbench`);
+}
+for (const id of ["buildConfigBtn", "configGroup", "configModel", "configResolution", "configRatio", "configPromptMode"]) {
+  assert.doesNotMatch(html, new RegExp(`id=["']${id}["']`), `${id} must not return as hidden legacy DOM`);
 }
 
 function extractFunction(source, signature) {
@@ -26,34 +29,42 @@ function extractFunction(source, signature) {
 class FakeElement {
   constructor(id) {
     this.id = id;
-    this.type = id.toLowerCase().includes("enabled") ? "checkbox" : "select";
     this.checked = false;
     this.value = "";
-    this.listeners = new Map();
+    this.textContent = "";
+    this.disabled = false;
+    this.dataset = {};
+    this.classList = { toggle() {} };
   }
 
-  addEventListener(type, listener) {
-    this.listeners.set(type, listener);
-  }
+  setAttribute() {}
+
+  removeAttribute() {}
 }
 
 const elements = new Map(
-  ["buildConfigBtn", "seedanceText", "configGroup", "configModel", "configResolution", "configRatio", "configPromptMode", "configDialectEnabled", "configDialectStyle", "modernDialectEnabled", "modernDialectStyle", "configSfxEnabled", "configSfxStyle", "modernSfxEnabled", "modernSfxStyle", "modernParamModel", "modernParamResolution", "modernParamRatio"].map(
-    (id) => [id, new FakeElement(id)],
-  ),
+  [
+    "modernBuildConfig",
+    "modernVideoPromptMode",
+    "modernVideoPromptModeHint",
+    "modernParamModel",
+    "modernParamResolution",
+    "modernParamRatio",
+    "modernDialectEnabled",
+    "modernDialectStyle",
+    "modernSfxEnabled",
+    "modernSfxStyle",
+  ].map((id) => [id, new FakeElement(id)]),
 );
+const modeButtons = ["prompt", "production_board"].map((mode) => {
+  const button = new FakeElement(mode);
+  button.dataset.videoPromptMode = mode;
+  return button;
+});
 const requestLog = [];
+const savedFiles = [];
 const toastLog = [];
 const workflowFocusLog = [];
-const localStorage = {
-  values: new Map(),
-  getItem(key) {
-    return this.values.get(key) || null;
-  },
-  setItem(key, value) {
-    this.values.set(key, String(value));
-  },
-};
 const context = {
   console,
   VIDEO_DIALECT_STYLE_OPTIONS: ["northeastern", "sichuan", "cantonese"],
@@ -63,30 +74,24 @@ const context = {
       return selector.startsWith("#") ? elements.get(selector.slice(1)) || null : null;
     },
   },
-  fetch: async (path, options) => {
-    const body = options?.body ? JSON.parse(options.body) : null;
-    requestLog.push({ path, body });
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return {
-          ok: true,
-          state: { project: {}, videoConfigStatus: { ready: true, missing: [] } },
-          data: { state: { project: {} } },
-        };
-      },
-    };
-  },
-  localStorage,
   state: {
     selectedId: "p1",
     project: { project: { model: "seedance-2-0-fast" } },
     assetAnalyzerModel: "claude-opus-4-8",
     dialogueLanguage: "en",
+    pendingVideoPromptMode: null,
+  },
+  localStorage: { setItem() {} },
+  requestAnimationFrame(callback) {
+    callback();
   },
   normalizeAssetAnalyzerModel: (value) => value,
   normalizeVideoModelName: (value) => value || "seedance-2-0-fast",
+  saveFileQuiet: async (name) => savedFiles.push(name),
+  api: async (path, options) => {
+    requestLog.push({ path, body: JSON.parse(options.body) });
+    return { state: { project: {}, videoConfigStatus: { ready: true, missing: [] } } };
+  },
   setProjectState() {},
   renderWorkspace() {},
   setWorkflowFocus(mode) {
@@ -96,74 +101,51 @@ const context = {
     toastLog.push(message);
   },
   $: (selector) => context.document.querySelector(selector),
+  $$: (selector) => (selector === "[data-video-prompt-mode]" ? modeButtons : []),
 };
 vm.createContext(context);
 for (const signature of [
-  "async function api(",
-  "async function saveFileQuiet(",
-  "async function refreshVideoConfig(",
-  "async function buildConfig(",
-  "function syncModernVideoParams(",
+  "function normalizeVideoPromptMode(",
+  "function setModernVideoPromptMode(",
+  "function selectedVideoPromptMode(",
   "function normalizeVideoDialectStyle(",
-  "function syncModernDialectParams(",
   "function syncDialectControlAvailability(",
   "function setVideoDialectControls(",
   "function selectedVideoDialectStyle(",
-  "function syncModernSfxParams(",
+  "function normalizeVideoSfxStyle(",
   "function syncSfxControlAvailability(",
   "function setVideoSfxControls(",
   "function selectedVideoSfxStyle(",
-  "function normalizeVideoSfxStyle(",
-  "function hydrateConfigInputs(",
+  "async function refreshVideoConfig(",
+  "async function buildConfig(",
 ]) {
   vm.runInContext(extractFunction(app, signature), context, { filename: "public/app.js" });
 }
 
 assert.match(
   app,
-  /\$\("#buildConfigBtn"\)\?\.addEventListener\("click", \(event\) => \{[\s\S]*?withStudioButtonFeedback\(button, \(\) => buildConfig\(\)\)/,
-  "buildConfig button must remain wired through the shared studio feedback layer",
+  /modernBuildConfig[\s\S]{0,300}withStudioButtonFeedback\(button, \(\) => buildConfig\(button\)\)/,
+  "the visible video-config action must use the shared button feedback layer",
 );
 
-function resetInputs() {
-  elements.get("seedanceText").value = "draft prompt";
-  elements.get("configGroup").value = "";
-  elements.get("configModel").value = "seedance-2-0-fast";
-  elements.get("configResolution").value = "480p";
-  elements.get("configRatio").value = "9:16";
-  elements.get("configPromptMode").value = "prompt";
-}
-
-resetInputs();
-vm.runInContext('hydrateConfigInputs("")', context);
-assert.equal(elements.get("configPromptMode").value, "prompt", "an empty config must default to the prompt flow");
-vm.runInContext('hydrateConfigInputs(JSON.stringify({ settings: { enableStoryboards: false } }))', context);
-assert.equal(elements.get("configPromptMode").value, "prompt", "a config without storyboard mode must default to the prompt flow");
-vm.runInContext('hydrateConfigInputs(JSON.stringify({ settings: { enableStoryboards: true, promptMode: "production_board" }, storyboardPlans: [], storyboardReferences: [] }))', context);
-assert.equal(elements.get("configPromptMode").value, "prompt", "a legacy default Production Board config without board data must use the prompt flow");
-vm.runInContext('hydrateConfigInputs(JSON.stringify({ settings: { storyboardWorkflowExplicit: true, promptMode: "production_board" }, storyboardPlans: [] }))', context);
-assert.equal(elements.get("configPromptMode").value, "production_board", "an explicitly selected Production Board flow must remain available");
-resetInputs();
+elements.get("modernParamModel").value = "seedance-2-0-fast";
+elements.get("modernParamResolution").value = "480p";
+elements.get("modernParamRatio").value = "9:16";
+vm.runInContext('setModernVideoPromptMode("prompt")', context);
 await vm.runInContext("buildConfig()", context);
 
-assert.equal(requestLog[0]?.path, "/api/project/p1/file", "click must save the edited Seedance prompt first");
-assert.equal(requestLog[1]?.path, "/api/project/p1/config", "click must submit the video config");
-assert.equal(requestLog[1]?.body.promptMode, "prompt", "normal storyboard prompt flow must not silently enable Production Board");
-assert.equal(requestLog[1]?.body.enableStoryboards, false, "normal storyboard prompt flow must not require a Production Board");
-assert.equal(requestLog[1]?.body.tailFrameContinuity, true, "normal storyboard prompt flow must keep tail-frame continuity enabled");
-assert.equal(requestLog[1]?.body.dialectStyle, "none", "video config must keep dialect disabled by default");
-assert.equal(requestLog[1]?.body.sfxStyle, "none", "video config must keep SFX disabled by default");
-assert.deepEqual(toastLog, ["视频配置已生成，可提交"], "a successful click must report completion");
-assert.deepEqual(workflowFocusLog, ["script"], "a completed video config must return the workflow guide to the next script");
+assert.deepEqual(savedFiles, ["seedancePrompts"], "config generation must save the current prompt document first");
+assert.equal(requestLog.at(-1)?.path, "/api/project/p1/config", "the visible action must submit the video config");
+assert.equal(requestLog.at(-1)?.body.promptMode, "prompt", "prompt mode must remain the default submission mode");
+assert.equal(requestLog.at(-1)?.body.enableStoryboards, false, "prompt mode must not require a Production Board");
+assert.equal(requestLog.at(-1)?.body.tailFrameContinuity, true, "prompt mode must retain tail-frame continuity");
+assert.deepEqual(toastLog, ["正在生成视频配置", "视频配置已生成，可提交"], "the action must provide start and completion feedback");
+assert.deepEqual(workflowFocusLog, ["shots", "shots"], "config generation must keep the user in the video workspace");
 
-elements.get("configPromptMode").value = "production_board";
-requestLog.length = 0;
-toastLog.length = 0;
-workflowFocusLog.length = 0;
+vm.runInContext('setModernVideoPromptMode("production_board", { pending: true })', context);
 await vm.runInContext("buildConfig()", context);
-assert.equal(requestLog[1]?.body.promptMode, "production_board", "explicit Production Board mode must remain available");
-assert.equal(requestLog[1]?.body.enableStoryboards, true, "explicit Production Board mode must enable storyboard references");
-assert.equal(requestLog[1]?.body.tailFrameContinuity, false, "explicit Production Board mode must disable tail-frame continuity");
-assert.deepEqual(workflowFocusLog, ["script"], "every completed config build must reset the guide to the script step");
+assert.equal(requestLog.at(-1)?.body.promptMode, "production_board", "the selected storyboard mode must be submitted");
+assert.equal(requestLog.at(-1)?.body.enableStoryboards, true, "storyboard mode must require board references");
+assert.equal(requestLog.at(-1)?.body.tailFrameContinuity, false, "storyboard mode must not inject tail-frame continuity");
 
 console.log("video config button tests passed");

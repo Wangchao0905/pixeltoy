@@ -3298,7 +3298,7 @@ function defaultPaths(episodeRoot) {
   };
 }
 
-const MODEL_SHOT_PLAN_VERSION = 1;
+const MODEL_SHOT_PLAN_VERSION = 2;
 
 function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage, durationMode = "tk", assetManifestFingerprint = "", shots } = {}) {
   const path = defaultPaths(episodeRoot).modelShotPlan;
@@ -3473,7 +3473,7 @@ async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLangu
   throw new Error("资产清单在视频配置期间发生变化，请等待资产生成完成后重新提交视频配置。");
 }
 
-function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPlan(episodeRoot), script, dialogueLanguage, assets, videoStylePreset } = {}) {
+function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPlan(episodeRoot), script, dialogueLanguage, assets, videoStylePreset, videoStyleDirective } = {}) {
   const plan = modelPlan;
   const currentScriptFingerprint = sha1Text(script);
   if (!plan || plan.scriptFingerprint !== currentScriptFingerprint || plan.dialogueLanguage !== dialogueLanguage) {
@@ -3503,6 +3503,7 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
       promptSection: compactLine(plannedShot.id),
       duration: clampShotDuration(plannedShot.duration || 8),
       videoStylePreset,
+      videoStyleDirective: compactLine(videoStyleDirective || ""),
       refs: availableRefs,
       unavailableRefs: missingRefs,
       sceneRef: sceneRefForShotRefs(availableRefs, assetLookup),
@@ -5136,8 +5137,40 @@ function filmStudioPromptForShot(prompt = "", visualBible = {}) {
   const directive = compactLine(visualBible.directive || "");
   if (!directive) return base;
   const marker = "Film Studio 全剧视觉方向：";
-  const stripped = base.replace(new RegExp(`\\n?${marker}[\\s\\S]*?(?=\\n\\n|$)`), "").trim();
+  const stripped = stripFilmStudioPromptDirective(base);
   return `${marker}${directive.replace(/^Film Studio 全剧视觉方向：/, "")}\n\n${stripped}`.trim();
+}
+
+function stripFilmStudioPromptDirective(prompt = "") {
+  return String(prompt || "")
+    .replace(/(?:^|\n)Film Studio 全剧视觉方向：[^\n]*(?:\n\n)?/g, "\n")
+    .replace(/^\s+|\s+$/g, "");
+}
+
+function removeFilmStudioFromVideoConfig(rawConfig = {}) {
+  if (!rawConfig || typeof rawConfig !== "object") return rawConfig;
+  const {
+    visualReferences,
+    visualReferenceIds,
+    visualBibleVersion,
+    visualBible,
+    visualReferencePolicy,
+    filmStudioApplied,
+    ...config
+  } = rawConfig;
+  const shots = Array.isArray(config.shots)
+    ? config.shots.map((shot) => {
+        if (!shot || typeof shot !== "object") return shot;
+        const { filmStudioApplied: unusedFilmStudioMarker, ...cleanShot } = shot;
+        const prompt = stripFilmStudioPromptDirective(cleanShot.prompt || cleanShot.videoPrompt || "");
+        return {
+          ...cleanShot,
+          ...(typeof cleanShot.prompt === "string" ? { prompt } : {}),
+          ...(typeof cleanShot.videoPrompt === "string" ? { videoPrompt: prompt } : {}),
+        };
+      })
+    : config.shots;
+  return { ...config, ...(Array.isArray(shots) ? { shots } : {}) };
 }
 
 function applyFilmStudioToVideoConfig(rawConfig = {}, filmStudio = {}) {
@@ -5154,15 +5187,16 @@ function applyFilmStudioToVideoConfig(rawConfig = {}, filmStudio = {}) {
     source: candidate.source || "film-studio",
     matchReason: candidate.matchReason || "",
   }));
-  const shots = Array.isArray(rawConfig.shots)
-    ? rawConfig.shots.map((shot) => {
+  const baseConfig = removeFilmStudioFromVideoConfig(rawConfig);
+  const shots = Array.isArray(baseConfig.shots)
+    ? baseConfig.shots.map((shot) => {
         if (!shot || typeof shot !== "object") return shot;
         const prompt = filmStudioPromptForShot(shot.prompt || shot.videoPrompt || "", visualBible);
         return { ...shot, prompt, ...(typeof shot.videoPrompt === "string" ? { videoPrompt: prompt } : {}), filmStudioApplied: true };
       })
-    : rawConfig.shots;
+    : baseConfig.shots;
   return {
-    ...rawConfig,
+    ...baseConfig,
     visualReferences,
     visualReferenceIds: selected.map((candidate) => candidate.id),
     visualBibleVersion: Number(visualBible.version || 1),
@@ -5286,10 +5320,23 @@ function applyFilmStudioToProjectVideoConfig(episodeRoot) {
   if (!studio.selectedReferenceIds.length) throw new Error("请先在 Film Studio 选择参考图");
   const configRecord = ensureVideoConfigIsolation(episodeRoot);
   if (!configRecord?.data || !Array.isArray(configRecord.data.shots) || !configRecord.data.shots.length) throw new Error("请先生成视频配置");
-  const nextConfig = applyFilmStudioToVideoConfig(configRecord.data, studio);
-  writeVideoConfigRecord(configRecord, nextConfig);
-  const nextStudio = writeFilmStudio(episodeRoot, { ...studio, videoConfigEnabled: true });
-  return { config: nextConfig, filmStudio: nextStudio };
+  return setFilmStudioVideoConfigEnabled(episodeRoot, { enabled: true });
+}
+
+function setFilmStudioVideoConfigEnabled(episodeRoot, body = {}) {
+  const enabled = body.enabled === true;
+  const studio = readFilmStudio(episodeRoot);
+  if (enabled && !studio.selectedReferenceIds.length) throw new Error("请先在 Film Studio 选择参考图");
+  const configRecord = ensureVideoConfigIsolation(episodeRoot);
+  let config = null;
+  if (configRecord?.data && typeof configRecord.data === "object") {
+    config = enabled
+      ? applyFilmStudioToVideoConfig(configRecord.data, studio)
+      : removeFilmStudioFromVideoConfig(configRecord.data);
+    writeVideoConfigRecord(configRecord, config);
+  }
+  const nextStudio = writeFilmStudio(episodeRoot, { ...studio, videoConfigEnabled: enabled });
+  return { config, filmStudio: nextStudio };
 }
 
 function assetManifestItemCount(episodeRoot) {
@@ -6905,7 +6952,11 @@ function assetRecordFromMedia(asset, manifest = null, index = 0) {
     matchCode: item?.matchCode || assetMatchCode(identity.type, asset.assetName, index + 1),
     evidence: item?.evidence || "",
     visual: item?.visual || "",
-      file: asset.reused ? asset.path : asset.rel,
+    globalStyle: item?.globalStyle || "",
+    textToImagePrompt: item?.textToImagePrompt || "",
+    assetStylePreset: compactLine(asset.assetStylePreset || ""),
+    assetStyleLabel: compactLine(asset.assetStyleLabel || ""),
+    file: asset.reused ? asset.path : asset.rel,
     type: "image",
     manifestType: identity.type,
     use: identity.usage,
@@ -19735,6 +19786,31 @@ function seedanceStyleLawForPreset(preset = "") {
   return `全片强制保持「${label}」风格：所有镜头、人物、场景、材质、光影与调色都必须是该风格的渲染，人物必须是该风格下的角色形象；严禁真人实拍或写实照片质感、真实皮肤毛孔细节。`;
 }
 
+function seedanceStyleLawForShot(preset = "", directive = "") {
+  const documentStyle = compactLine(directive || "");
+  return documentStyle ? assetStylePromptLine(documentStyle) : seedanceStyleLawForPreset(preset);
+}
+
+function seedanceTimelineForShot(timeline = "", duration = 8) {
+  const phaseOrder = ["起始", "推进", "终点"];
+  const phases = new Map();
+  for (const line of String(timeline || "").split(/\r?\n+/)) {
+    const match = compactLine(line).match(/^(起始|推进|终点)\s*[：:]\s*(.+)$/u);
+    if (match) phases.set(match[1], compactLine(match[2]));
+  }
+  if (!phaseOrder.every((phase) => phases.get(phase))) {
+    throw new Error("模型导演时间线不完整：必须包含起始、推进、终点三个动作节拍。请重新生成分镜草稿。");
+  }
+  const total = clampShotDuration(duration || 8);
+  const firstEnd = Math.max(1, Math.round(total / 3));
+  const secondEnd = Math.max(firstEnd + 1, Math.round((total * 2) / 3));
+  return [
+    `0-${firstEnd} 秒：${phases.get("起始")}`,
+    `${firstEnd}-${secondEnd} 秒：${phases.get("推进")}`,
+    `${secondEnd}-${total} 秒：${phases.get("终点")}`,
+  ].join("；");
+}
+
 function seedancePromptDesignForShot(shot, index) {
   const design = sanitizeSeedanceDesign(shot?.videoDesign);
   if (!hasCompleteSeedanceDesign(design)) {
@@ -19742,12 +19818,13 @@ function seedancePromptDesignForShot(shot, index) {
   }
   const stylePreset = compactLine(shot.videoStylePreset || "") ? normalizeAssetStylePreset(shot.videoStylePreset) : "";
   return {
-    style: seedanceStyleLawForPreset(stylePreset),
+    style: seedanceStyleLawForShot(stylePreset, shot?.videoStyleDirective),
     shot_size: design.shot_size,
     camera_lens: design.camera_lens,
     camera_movement: design.camera_movement,
     camera_angle: design.camera_angle,
     visual: design.visual,
+    timeline: design.timeline,
     voice_over: design.voice_over,
     sound: design.sound,
   };
@@ -19765,6 +19842,7 @@ function seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage) {
     `运镜：${d.camera_movement}`,
     `机位视角：${d.camera_angle}`,
     `画面：${d.style} ${d.visual}`,
+    `动作时间线：${seedanceTimelineForShot(d.timeline, duration)}`,
     `人声 OS：${d.voice_over}`,
     `人物台词：${dialogue}`,
     `音效：${d.sound}`,
@@ -19772,8 +19850,25 @@ function seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage) {
   return `${refs ? `${refs}\n\n` : ""}${prompt}`.trim();
 }
 
+function storyboardPanelTimelineForPrompt(guidance = {}) {
+  const panels = Array.isArray(guidance?.panels) ? guidance.panels : [];
+  const entries = panels
+    .map((panel, index) => {
+      const label = compactLine(panel?.label || `P${index + 1}`);
+      const range = compactLine(panel?.timeRange || "");
+      const action = compactLine(panel?.description || panel?.actionArrow || panel?.production?.action || "");
+      const camera = compactLine(panel?.cameraFrame || panel?.production?.camera || "");
+      const exit = compactLine(panel?.continuityExit || "");
+      const detail = [action, camera && `镜头：${camera}`, exit && `衔接：${exit}`].filter(Boolean).join("；");
+      return detail ? `${range ? `${range} ` : ""}${label}：${detail}` : "";
+    })
+    .filter(Boolean);
+  return entries.length ? entries.join(" | ") : "按 Production Board 九宫格从左至右、从上至下执行动作推进，末格保留下一段剪辑出口。";
+}
+
 // Production Board 提供构图和动作控制层；正式 Character/Scene/Prop/Insert
-// 资产同时作为独立图片引用提交，锁定人物、场景、道具和插入细节的身份。
+// 资产同时作为独立图片引用提交，锁定人物、场景、道具和插入细节的身份。镜头
+// 语法仍完全复用模型导演 design，不能退化成“读板 + 剧情 + 对白”的薄提示词。
 function storyboardSeedancePrompt(shot, index, dialogueLanguage, assetLookup = null) {
   const storyboardRefs = Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [];
   const officialRefs = [...new Set((Array.isArray(shot.refs) ? shot.refs : []).map(compactLine).filter(Boolean))]
@@ -19782,11 +19877,25 @@ function storyboardSeedancePrompt(shot, index, dialogueLanguage, assetLookup = n
     (ref, i) => `@图片${i + 1} 是 Production Board 故事板，负责本段的构图、站位、镜头景别、动作方向、节奏与剪辑出口。`,
   );
   const assetLines = officialRefs.map((ref, i) => seedanceReferenceLine(ref, storyboardRefs.length + i, assetLookup || shot.assetLookup));
-  const storyText = "严格按 Production Board 对应编号面板执行构图、站位、动作节奏与剪辑出口；同时按后续正式资产图片保持人物、场景、道具和插入细节的视觉身份一致，不要臆造未出现的人物、物体或视觉风格。";
-  const blocks = [`剧情动作：${storyText}`];
-  const dlg = compactLine(seedanceDialogueText(shot));
-  if (dlg) blocks.push(`对白：${dlg}`);
-  return `${[...sbLines, ...assetLines].join("\n")}\n\n${blocks.join("\n\n")}`.trim();
+  const d = seedancePromptDesignForShot(shot, index);
+  const duration = clampShotDuration(shot.duration || 8);
+  const dialogue = Array.isArray(shot?.dialogues) && shot.dialogues.length ? seedanceDialogueText(shot) : "无";
+  const boardExecution = "严格按 Production Board 编号面板执行构图、站位、动作方向、镜头节奏与剪辑出口；后续正式资产图片只锁定人物、场景、道具和插入细节的身份。";
+  const prompt = [
+    `镜号 ${index + 1}（${duration} 秒）`,
+    "镜头类型：Production Board 连续镜头单元",
+    `景别：${d.shot_size}`,
+    `摄像机 / 镜头：${d.camera_lens}`,
+    `运镜：${d.camera_movement}`,
+    `机位视角：${d.camera_angle}`,
+    `画面：${d.style} ${d.visual} ${boardExecution}`,
+    `动作时间线：${seedanceTimelineForShot(d.timeline, duration)}`,
+    `故事板面板节拍：${storyboardPanelTimelineForPrompt(shot.storyboardGuidance)}`,
+    `人声 OS：${d.voice_over}`,
+    `人物台词：${dialogue}`,
+    `音效：${d.sound}`,
+  ].join("\n");
+  return `${[...sbLines, ...assetLines].filter(Boolean).join("\n")}\n\n${prompt}`.trim();
 }
 
 function storyboardGuidanceForShot(shot = {}, slot = {}, assetLookup = new Map()) {
@@ -19982,6 +20091,7 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
         "camera_movement": "小幅前后缓慢推动，写明速度、幅度和持续时间",
         "camera_angle": "侧前方微仰 15° 视角",
         "visual": "空间、站位、一个可见动作及终点、构图裁切、可信光源与连续性",
+        "timeline": "起始：可见动作起点\n推进：动作如何变化\n终点：可见状态落点",
         "voice_over": "人声 OS；没有时写 无",
         "sound": "具体音效、环境底噪与声音延续"
       }
@@ -21951,6 +22061,29 @@ function videoStylePresetFromProductionAssets(productionAssets = [], body = {}) 
   return mode === "manual" && manualPreset ? normalizeAssetStylePreset(manualPreset) : "";
 }
 
+// 正式资产图的 preset 只是历史元数据。资产文档里的明确风格文字（例如“恶搞之家
+// 式美式电视动画”）才是视频提示词可用的主来源；只提取风格相关句，不把人物/场景
+// 事实误当成全剧风格。
+function videoStyleDirectiveFromProductionAssets(productionAssets = [], body = {}) {
+  const directives = [];
+  const push = (value) => {
+    const clean = compactLine(value || "");
+    if (clean && !directives.includes(clean)) directives.push(clean);
+  };
+  const manualMode = compactLine(body.videoStyleMode || "").toLowerCase() === "manual";
+  if (manualMode) push(body.videoStyleDirective || body.videoStyle || "");
+  for (const asset of productionAssets || []) {
+    const explicit = canonicalAssetGlobalStyle(asset?.globalStyle || "");
+    if (explicit) push(explicit);
+  }
+  if (directives.length) return directives.slice(0, 2).join("；").slice(0, 720);
+  for (const asset of productionAssets || []) {
+    const source = [asset?.textToImagePrompt, asset?.visual, asset?.evidence].filter(Boolean).join("\n");
+    push(extractAssetStyleGuidance(source));
+  }
+  return directives.slice(0, 3).join("；").slice(0, 720);
+}
+
 // 资产图提示词只由 manifest 中的资产文档提示词生成；不再存在 preset 覆盖器。
 function refsFromPromptSection(section, referenceNames, assetLookup = null) {
   const known = new Set(referenceNames);
@@ -22135,6 +22268,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   // 视频风格只能继承已生成并实际绑定的正式资产。素材缺失时保留为空，避免把规划阶段
   // 误锁为超写实；只有显式 manual 模式才允许在未绑定资产时由请求指定风格。
   const videoStylePreset = videoStylePresetFromProductionAssets(productionAssets, body);
+  const videoStyleDirective = videoStyleDirectiveFromProductionAssets(productionAssets, body);
   const dialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, requestedDialogueLanguage);
   persistProjectDialogueLanguage(episodeRoot, dialogueLanguage);
   const { shots: modelShots } = modelShotPlanForConfig({
@@ -22144,6 +22278,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     dialogueLanguage,
     assets: productionAssets,
     videoStylePreset,
+    videoStyleDirective,
   });
   const referenceWarnings = [];
   modelShots.forEach((shot) => {
@@ -22360,6 +22495,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
   const resolvedDialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, dialogueLanguage);
   const configAssets = Array.isArray(previous.assets) && previous.assets.length ? previous.assets : manifestItemsToAssets(manifest);
   const videoStylePreset = compactLine(previousShots[shotIndex]?.videoStylePreset || "") || videoStylePresetFromProductionAssets(configAssets, body);
+  const videoStyleDirective = compactLine(previousShots[shotIndex]?.videoStyleDirective || "") || videoStyleDirectiveFromProductionAssets(configAssets, body);
   const promptMode = compactLine(previous.settings?.promptMode || previous.promptMode || "").toLowerCase();
   const storyboardsActive =
     promptMode === "production_board" ||
@@ -22373,6 +22509,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     dialogueLanguage: resolvedDialogueLanguage,
     assets: configAssets,
     videoStylePreset,
+    videoStyleDirective,
   });
   const modelShot = modelShots.find((shot) => shot.name === shotName);
   if (!modelShot) throw new Error(`模型导演设计中找不到片段：${shotName}`);
@@ -24222,6 +24359,11 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, ...result, filmStudio: publicFilmStudioState(episodeRoot), state: fullProjectState(episodeRoot) });
   }
 
+  if (req.method === "POST" && action === "film-studio/video-config") {
+    const result = setFilmStudioVideoConfigEnabled(episodeRoot, await readBody(req));
+    return send(res, 200, { ok: true, ...result, filmStudio: publicFilmStudioState(episodeRoot), state: fullProjectState(episodeRoot) });
+  }
+
   const referenceKitBindingMatch = action.match(/^reference-kits\/([^/]+)\/(bind|unbind)$/);
   if (req.method === "GET" && action === "reference-kits") {
     const workflow = readWorkflowState(episodeRoot);
@@ -24979,6 +25121,10 @@ module.exports = {
     },
     videoPrompt: {
       updateVideoPromptInConfig,
+      cleanVideoPromptForSubmission,
+      seedanceNaturalLanguagePromptForShot,
+      storyboardSeedancePrompt,
+      videoStyleDirectiveFromProductionAssets,
       normalizeVideoDialectStyle,
       videoDialectPromptDirective,
       injectVideoDialectPrompt,
@@ -25060,6 +25206,7 @@ module.exports = {
     filmStudio: {
       selectCandidates: selectFilmStudioCandidates,
       applyToVideoConfig: applyFilmStudioToVideoConfig,
+      removeFromVideoConfig: removeFilmStudioFromVideoConfig,
       normalizeState: normalizeFilmStudioState,
       visualBible: filmStudioVisualBibleForCandidates,
       promptForShot: filmStudioPromptForShot,

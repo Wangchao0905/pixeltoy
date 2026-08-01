@@ -279,9 +279,10 @@ assert(server.includes("storyboardDisablesTailFrameContinuity: false"), "Product
 assert(styles.includes(".storyboard-card img {\n  display: block;\n  width: 100%;\n  aspect-ratio: 16 / 9;"), "Production Board preview cards must show the 16:9 horizontal board");
 assert(styles.includes(".storyboard-missing-preview {\n  aspect-ratio: 16 / 9;"), "Production Board missing previews must show the 16:9 horizontal board shape");
 assert(styles.includes("body.is-studio .storyboard-card img,\nbody.is-studio .storyboard-card .asset-missing-preview,\nbody.is-studio .storyboard-missing-preview {\n  aspect-ratio: 16 / 9 !important;"), "studio storyboard previews must show the 16:9 horizontal board");
-assert(html.includes('id="configPromptMode"'), "video config UI must expose prompt/Production Board mode selection");
-assert(app.includes('promptMode: $("#configPromptMode")?.value || "prompt"'), "frontend must submit the selected video prompt mode");
-assert(app.includes('enableStoryboards: ($("#configPromptMode")?.value || "prompt") === "production_board"'), "frontend must enable storyboards only in Production Board mode");
+assert(!html.includes('id="configPromptMode"'), "retired video config mode DOM must stay removed");
+assert(html.includes('id="modernVideoPromptMode"'), "active video workbench must expose prompt/Production Board mode selection");
+assert(app.includes("const promptMode = selectedVideoPromptMode()"), "frontend must submit the selected modern video mode");
+assert(app.includes("enableStoryboards: promptMode === \"production_board\""), "frontend must enable storyboards only in Production Board mode");
 assert(server.includes('const videoPromptMode = storyboardsActive ? "production_board" : "prompt";'), "server must split prompt mode from Production Board mode");
 assert(server.includes('if (promptMode === "production_board" && !storyboards.length) missing.push("缺少 Production Board")'), "Production Board mode must not silently fall back when boards are missing");
 assert(!server.includes("Use nine-grid storyboard images only"), "old nine-grid storyboard policy must not be reintroduced");

@@ -104,7 +104,9 @@ assert.match(modernCommandbarHtml, /class="modern-command-status"/, "command bar
 assert.match(modernCommandbarHtml, /id="modernSelectedShotTitle"[^>]*class="[^"]*modern-shot-title-compat/, "shot title must remain only as a hidden runtime compatibility node");
 assert.match(css, /body\.is-studio-modern \.modern-shot-title-compat,[\s\S]*display:\s*none/, "shot title must not occupy the command bar visually");
 assert.match(css, /body\.is-studio-modern \.modern-shot-commandbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto\s+auto/, "command bar must use a compact four-part layout");
-assert.match(css, /body\.is-studio-modern \.modern-video-param-controls\s*\{[^}]*grid-template-columns:\s*minmax\(72px,\s*\.42fr\)[^;]*minmax\(78px,\s*\.48fr\)[^;]*minmax\(150px,\s*1\.2fr\)[^;]*minmax\(142px,\s*\.95fr\)[^;]*minmax\(142px,\s*\.95fr\)/, "video params must use five compact aligned control units");
+assert.match(modernCommandbarHtml, /id="modernVideoPromptMode"[^>]*class="[^"]*modern-video-mode-switch/, "video params must expose the active prompt/board mode selector");
+assert.match(modernCommandbarHtml, /data-video-prompt-mode="prompt"[\s\S]*data-video-prompt-mode="production_board"/, "video params must expose prompt and storyboard choices");
+assert.match(css, /body\.is-studio-modern \.modern-video-param-controls\s*\{[^}]*grid-template-columns:\s*minmax\(148px,\s*1\.1fr\)[^;]*minmax\(66px,\s*\.4fr\)[^;]*minmax\(72px,\s*\.45fr\)[^;]*minmax\(150px,\s*1\.08fr\)[^;]*minmax\(142px,\s*\.9fr\)[^;]*minmax\(142px,\s*\.9fr\)/, "video params must use six compact aligned control units");
 const modernQueueStart = html.indexOf('<section id="modernVideoQueue"');
 assert.ok(modernQueueStart > modernCommandbarStart && modernQueueStart < modernStageStart, "video queue must sit directly below the command bar");
 assert.match(css, /\.modern-main\[data-modern-view="video"\] \.modern-stage-grid\s*\{[^}]*display:\s*none/, "video view must remove the standalone motion preview stage");

@@ -484,7 +484,6 @@
                   </div>
                   <div class="studio-console-actions">
                     <button id="studioAssetsTabShortcut" class="ghost small" type="button" data-studio-tab="assets">查看资产库</button>
-                    <button id="studioVideoTabShortcut" class="primary small" type="button" data-studio-tab="video">进入视频生成</button>
                   </div>
                 </div>
                 <section class="panel script-panel flow-main draggable-window" data-window-id="script">
@@ -525,7 +524,6 @@
                 <div class="studio-tabbar" role="tablist" aria-label="制作内容">
                   <button class="studio-tab-button is-active" type="button" role="tab" data-studio-tab="assets" aria-controls="studioTabAssets">资产库</button>
                   <button class="studio-tab-button" type="button" role="tab" data-studio-tab="storyboards" aria-controls="studioTabStoryboards">故事板</button>
-                  <button class="studio-tab-button" type="button" role="tab" data-studio-tab="video" aria-controls="studioTabVideo">视频片段</button>
                   <button class="studio-tab-button" type="button" role="tab" data-studio-tab="logs" aria-controls="studioTabLogs">日志</button>
                 </div>
 
@@ -733,7 +731,6 @@
                         </div>
                         <div class="actions">
                           <button data-save="seedancePrompts" class="ghost" type="button">保存修改</button>
-                          <button id="buildConfigBtn" class="primary" type="button">生成视频配置</button>
                         </div>
                       </div>
                       <div id="shotsTable" class="shots-table"></div>
@@ -780,157 +777,6 @@
                     </section>
                   </section>
 
-                  <section id="studioTabVideo" class="studio-tab-panel" data-studio-panel="video" data-workspace-mode="video" role="tabpanel" hidden>
-                    <div class="video-workflow flow-status draggable-window" data-window-id="video">
-                      <section class="panel video-generate-panel">
-                        <div class="section-head">
-                          <div>
-                            <h2>视频生成</h2>
-                            <p id="videoConfigLabel">Seedance 2.0 / 操作台直接生成</p>
-                          </div>
-                          <div class="actions">
-                            <button id="generateAllSegments" class="primary" type="button">视频生成</button>
-                          </div>
-                        </div>
-                        <div id="videoConfigStatus" class="inline-status"></div>
-                        <div class="video-settings" aria-label="视频生成参数">
-                          <label>
-                            <span>生成模式</span>
-                            <select id="configPromptMode">
-                              <option value="production_board">Production Board</option>
-                              <option value="prompt">提示词 + 同场景尾帧</option>
-                            </select>
-                          </label>
-                          <label>
-                            <span>比例</span>
-                            <select id="configRatio">
-                              <option value="9:16">9:16</option>
-                              <option value="16:9">16:9</option>
-                              <option value="1:1">1:1</option>
-                              <option value="4:3">4:3</option>
-                              <option value="3:4">3:4</option>
-                            </select>
-                          </label>
-                          <label>
-                            <span>规格</span>
-                            <select id="configResolution">
-                              <option value="480p">480p</option>
-                              <option value="720p">720p</option>
-                              <option value="1080p">1080p</option>
-                            </select>
-                          </label>
-                          <label>
-                            <span>模型选择</span>
-                            <select id="configModel">
-                              <option value="seedance-2-0">Seedance 2.0</option>
-                              <option value="seedance-2-0-fast">Seedance 2.0 Fast</option>
-                              <option value="seedance-2-0-mini">Seedance 2.0 Mini</option>
-                              <option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option>
-                              <option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option>
-                              <option value="grok-imagine-video">Grok Imagine Video</option>
-                            </select>
-                          </label>
-                          <div class="video-dialect-setting">
-                            <span class="video-setting-label">方言</span>
-                            <div class="video-dialect-controls">
-                              <label class="video-setting-toggle">
-                                <input id="configDialectEnabled" type="checkbox" aria-label="启用方言对白" />
-                                <span>启用</span>
-                              </label>
-                              <span class="video-style-select"><select id="configDialectStyle" aria-label="方言种类" disabled>
-                                <option value="northeastern">东北话</option>
-                                <option value="sichuan">四川话</option>
-                                <option value="cantonese">粤语</option>
-                              </select></span>
-                            </div>
-                          </div>
-                          <div class="video-dialect-setting video-sfx-setting">
-                            <span class="video-setting-label">SFX</span>
-                            <div class="video-dialect-controls">
-                              <label class="video-setting-toggle">
-                                <input id="configSfxEnabled" type="checkbox" aria-label="启用声音设计" />
-                                <span>启用</span>
-                              </label>
-                              <span class="video-style-select"><select id="configSfxStyle" aria-label="声音设计风格" disabled>
-                                <option value="mystery">悬疑</option>
-                                <option value="epic">史诗</option>
-                                <option value="palace">宫斗</option>
-                                <option value="vampire">吸血鬼</option>
-                                <option value="sci_fi">科幻</option>
-                                <option value="disaster">灾难</option>
-                                <option value="light">轻松</option>
-                                <option value="comedy">搞笑</option>
-                              </select></span>
-                            </div>
-                          </div>
-                        </div>
-                        <div class="config-store" aria-hidden="true">
-                          <span id="configPath"></span>
-                          <input id="configGroup" />
-                          <textarea id="configText"></textarea>
-                        </div>
-                        <div id="videoProgressSummary" class="progress-summary"></div>
-                        <div id="videoProgressList" class="segment-progress"></div>
-                        <aside id="videoPromptInspector" class="video-prompt-inspector hidden" aria-label="视频提示词检查器">
-                          <header>
-                            <div>
-                              <strong id="videoPromptInspectorName"></strong>
-                              <span id="videoPromptInspectorMeta"></span>
-                            </div>
-                            <button id="closeVideoPromptInspector" type="button" aria-label="关闭提示词编辑器" title="关闭">×</button>
-                          </header>
-                          <label for="videoPromptInspectorModel">重试模型
-                            <select id="videoPromptInspectorModel">
-                              <option value="seedance-2-0">Seedance 2.0</option>
-                              <option value="seedance-2-0-fast">Seedance 2.0 Fast</option>
-                              <option value="seedance-2-0-mini">Seedance 2.0 Mini</option>
-                              <option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option>
-                              <option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option>
-                              <option value="grok-imagine-video">Grok Imagine Video</option>
-                            </select>
-                          </label>
-                          <label for="videoPromptInspectorPrompt">视频提示词</label>
-                          <textarea id="videoPromptInspectorPrompt" maxlength="8000" rows="12"></textarea>
-                          <div class="video-prompt-inspector-draft">
-                            <span id="videoPromptInspectorDraftStatus"></span>
-                            <span id="videoPromptInspectorPromptCount">0 / 8000</span>
-                          </div>
-                          <p id="videoPromptInspectorFailure" class="video-prompt-inspector-failure"></p>
-                          <div class="video-prompt-inspector-actions">
-                            <button id="restoreVideoPrompt" type="button">还原</button>
-                            <button id="saveVideoPrompt" type="button">保存提示词</button>
-                            <button id="regenerateVideoFromInspector" class="primary" type="button">切换模型并重新提交</button>
-                          </div>
-                        </aside>
-                      </section>
-                    </div>
-                    <section class="panel final-cut-panel" aria-labelledby="finalCutTitle">
-                      <div class="final-cut-step final-cut-assembly-step">
-                        <div class="section-head">
-                          <div class="final-cut-step-heading">
-                            <div>
-                              <h2 id="finalCutTitle">成片</h2>
-                              <p id="finalCutLabel">把已完成片段按顺序硬切拼成完整成片（1080×1920 / 24fps，保留音频）。</p>
-                            </div>
-                          </div>
-                          <div class="actions">
-                            <button id="assembleFinalCutBtn" class="primary" type="button">组装成片</button>
-                          </div>
-                        </div>
-                        <div id="finalCutStatus" class="inline-status"></div>
-                        <div id="finalCutPreview" class="final-cut-preview">
-                          <div class="final-cut-placeholder" role="img" aria-label="尚未生成成片，先生成全部视频片段，再组装成片">
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                              <rect x="5" y="3" width="14" height="18" rx="2"></rect>
-                              <path d="m10 9 5 3-5 3V9Z"></path>
-                            </svg>
-                            <span>先生成全部视频片段，再组装成片</span>
-                          </div>
-                        </div>
-                      </div>
-                    </section>
-                  </section>
-
                   <section id="studioTabLogs" class="studio-tab-panel" data-studio-panel="logs" role="tabpanel" hidden>
                     <section class="panel studio-log-panel">
                       <div class="section-head">
@@ -938,7 +784,6 @@
                           <h2>运行日志</h2>
                           <p>只显示当前项目最近的资产、故事板和视频状态。</p>
                         </div>
-                        <button class="ghost" type="button" data-studio-tab="video">查看视频片段</button>
                       </div>
                       <div id="studioLogContent" class="studio-log-content"></div>
                     </section>
@@ -1137,7 +982,11 @@
               </div>
               <div class="modern-film-studio-actions">
                 <button id="modernFilmStudioDiscover" class="is-primary" type="button">自动生成 3–5 张候选</button>
-                <button id="modernFilmStudioApply" type="button" disabled>添加到视频配置</button>
+                <label id="modernFilmStudioToggle" class="modern-film-studio-toggle" for="modernFilmStudioEnabled" aria-disabled="true">
+                  <span class="modern-film-studio-toggle-copy"><strong>应用到视频配置</strong><small id="modernFilmStudioToggleNote">仅当前项目 · 默认关闭</small></span>
+                  <input id="modernFilmStudioEnabled" type="checkbox" role="switch" disabled aria-describedby="modernFilmStudioStatus" />
+                  <span class="modern-film-studio-toggle-track" aria-hidden="true"><span></span></span>
+                </label>
               </div>
             </header>
             <div class="modern-film-studio-statusbar">
@@ -1282,12 +1131,14 @@
               <div id="modernSelectedShotMeta" class="modern-video-params" aria-label="视频参数">
                 <div class="modern-video-param-caption"><span>视频参数</span><small>用于当前片段</small></div>
                 <div class="modern-video-param-controls">
+                  <div class="modern-video-param modern-video-param-mode"><span>模式</span><div id="modernVideoPromptMode" class="modern-video-mode-switch" role="group" aria-label="视频生成模式" data-value="prompt"><button type="button" data-video-prompt-mode="prompt" aria-pressed="true" title="按模型导演的镜头提示词生成；仅连续动作使用尾帧">提示词</button><button type="button" data-video-prompt-mode="production_board" aria-pressed="false" title="按 15 秒 Production Board 生成；故事板控制构图与节奏">故事板</button></div></div>
                   <label class="modern-video-param"><span>比例</span><select id="modernParamRatio" aria-label="视频比例"><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label>
                   <label class="modern-video-param"><span>规格</span><select id="modernParamResolution" aria-label="视频分辨率"><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option></select></label>
                   <label class="modern-video-param modern-video-param-model"><span>模型</span><select id="modernParamModel" aria-label="视频模型"><option value="seedance-2-0">Seedance 2.0</option><option value="seedance-2-0-fast">Seedance 2.0 Fast</option><option value="seedance-2-0-mini">Seedance 2.0 Mini</option><option value="seedance-2-0-person-reference">Seedance 2.0 人物素材参考</option><option value="seedance-2-0-byteplus">Seedance 2.0（海外火山）</option><option value="grok-imagine-video">Grok Imagine Video</option></select></label>
                   <div class="modern-video-param modern-video-param-dialect"><span>方言</span><div class="modern-dialect-controls"><label class="modern-dialect-toggle"><input id="modernDialectEnabled" type="checkbox" aria-label="启用方言对白" /><span>启用</span></label><span class="modern-style-select"><select id="modernDialectStyle" aria-label="方言种类" disabled><option value="northeastern">东北话</option><option value="sichuan">四川话</option><option value="cantonese">粤语</option></select></span></div></div>
                   <div class="modern-video-param modern-video-param-sfx"><span>SFX</span><div class="modern-dialect-controls"><label class="modern-dialect-toggle"><input id="modernSfxEnabled" type="checkbox" aria-label="启用声音设计" /><span>启用</span></label><span class="modern-style-select"><select id="modernSfxStyle" aria-label="声音设计风格" disabled><option value="mystery">悬疑</option><option value="epic">史诗</option><option value="palace">宫斗</option><option value="vampire">吸血鬼</option><option value="sci_fi">科幻</option><option value="disaster">灾难</option><option value="light">轻松</option><option value="comedy">搞笑</option></select></span></div></div>
                 </div>
+                <span id="modernVideoPromptModeHint" class="modern-video-mode-hint" aria-live="polite">按模型导演的镜头提示词生成；连续动作才使用上一段尾帧。</span>
                 <span id="modernSelectedShotSummary" class="modern-shot-summary-compat" aria-hidden="true"></span>
               </div>
               <div class="modern-command-status">
@@ -1403,8 +1254,6 @@
         <div id="assetInspector"><span id="assetInspectorName"></span><span id="assetInspectorMeta"></span><textarea id="assetInspectorPrompt"></textarea><span id="assetInspectorDraftStatus"></span><span id="assetInspectorPromptCount"></span><span id="assetInspectorPolicy"></span><button id="closeAssetInspector" type="button"></button><button id="restoreAssetPrompt" type="button"></button><button id="saveAssetPrompt" type="button"></button><button id="regenerateAssetFromInspector" type="button"></button></div>
         <div id="referenceKitPanel"><form id="referenceKitForm"></form><button id="newReferenceKit" type="button"></button><button id="referenceKitCancel" type="button"></button><div id="referenceKitList"></div></div>
         <div id="storyboardGridGallery"></div><span id="storyboardGridCount"></span><div id="storyboardJobStatus"></div><select id="storyboardGenerateRange"><option value="missing">缺失</option></select><button data-job="storyboards" type="button"></button>
-        <div id="videoConfigStatus"></div><span id="videoConfigLabel"></span><button id="buildConfigBtn" type="button"></button><input id="configGroup" /><select id="configModel"><option value="seedance-2-0">Seedance 2.0</option><option value="grok-imagine-video">Grok Imagine Video</option></select><select id="configResolution"><option value="480p">480p</option></select><select id="configRatio"><option value="9:16">9:16</option></select><select id="configPromptMode"><option value="prompt">提示词</option><option value="production_board">Production Board</option></select>
-        <div id="videoProgressSummary"></div><div id="videoProgressList"></div><button id="generateAllSegments" type="button"></button>
         <div id="studioFlowStatus"></div><span id="studioFlowProgress"></span><div id="studioLogContent"></div><div id="studioContextTitle"></div><div id="studioContextCopy"></div><div id="studioContextStage"></div><div id="studioContextStatus"></div><div id="studioContextDownstream"></div><button id="studioContextOpen" type="button"></button><div id="studioQueueBar"><div id="studioQueueItems"></div><span id="studioQueueSummary"></span><div id="studioQueueProgress"><span id="studioQueueProgressFill"></span></div></div>
         <button id="backToProjects" type="button"></button><button id="studioModernOverviewButton" type="button"></button><button id="studioCommandButton" type="button"></button><button id="studioPrimaryRun" type="button"></button><button id="studioProjectsButton" type="button"></button><button id="refreshState" type="button"></button><button id="zoomOut" type="button"></button><button id="zoomIn" type="button"></button><button id="zoomFit" type="button"></button><button id="resetLayout" type="button"></button>
         <input id="assetUploadFile" type="file" /><input id="assetUploadLabel" /><select id="assetUploadTarget"></select><select id="assetUploadMode"><option value="bind">绑定</option></select><span id="assetUploadName"></span><span id="assetUploadHint"></span><button id="assetUploadButton" type="button"></button><form id="assetUploadForm"></form><input id="storyboardUploadFile" type="file" /><span id="storyboardUploadName"></span><select id="storyboardUploadTarget"></select><button id="storyboardUploadButton" type="button"></button><form id="storyboardUploadForm"></form><button id="refreshStoryboards" type="button"></button>

@@ -566,6 +566,19 @@ label span {
 .modern-film-studio-actions button.is-primary { border-color: var(--modern-signal); background: var(--modern-signal); color: #fff; box-shadow: 0 8px 22px -13px rgba(217,45,69,.9); }
 .modern-film-studio-actions button.is-primary:hover:not(:disabled) { filter: brightness(1.08); }
 .modern-film-studio-actions button:disabled { cursor: not-allowed; opacity: .42; }
+.modern-film-studio-toggle { position: relative; display: inline-grid; grid-template-columns: minmax(94px, auto) 38px; align-items: center; gap: 9px; min-height: 37px; padding: 0 9px 0 11px; border: 1px solid var(--mv-line-2); border-radius: 5px; background: var(--mv-s2); color: var(--mv-mut); cursor: pointer; transition: background 180ms ease, border-color 180ms ease, color 180ms ease; }
+.modern-film-studio-toggle:hover:not([aria-disabled="true"]) { border-color: rgba(255,255,255,.3); background: var(--mv-s3); color: var(--mv-tx); }
+.modern-film-studio-toggle.is-enabled { border-color: rgba(217,45,69,.7); background: rgba(217,45,69,.09); color: var(--mv-tx); }
+.modern-film-studio-toggle[aria-disabled="true"] { cursor: not-allowed; opacity: .48; }
+.modern-film-studio-toggle-copy { display: grid; gap: 1px; line-height: 1.05; }
+.modern-film-studio-toggle-copy strong { color: currentColor; font-size: 10px; font-weight: 560; }
+.modern-film-studio-toggle-copy small { color: var(--mv-qt); font-size: 8.5px; }
+.modern-film-studio-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.modern-film-studio-toggle-track { display: flex; align-items: center; width: 38px; height: 21px; padding: 2px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(0,0,0,.34); transition: background 180ms ease, border-color 180ms ease; }
+.modern-film-studio-toggle-track span { width: 15px; height: 15px; border-radius: 50%; background: var(--mv-qt); box-shadow: 0 2px 5px rgba(0,0,0,.32); transition: transform 180ms cubic-bezier(.2,.8,.2,1), background 180ms ease; }
+.modern-film-studio-toggle input:checked + .modern-film-studio-toggle-track { border-color: rgba(217,45,69,.78); background: var(--modern-signal); }
+.modern-film-studio-toggle input:checked + .modern-film-studio-toggle-track span { transform: translateX(17px); background: #fff; }
+.modern-film-studio-toggle input:focus-visible + .modern-film-studio-toggle-track { outline: 2px solid rgba(255,255,255,.78); outline-offset: 3px; }
 .modern-film-studio-statusbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 27px; color: var(--mv-qt); font-family: var(--mono); font-size: 9.5px; }
 #modernFilmStudioStatus.is-busy { color: #e4ad64; }
 #modernFilmStudioStatus.is-error { color: #f0a49a; }
@@ -578,6 +591,7 @@ label span {
 .modern-film-studio-card.is-selected { border-color: rgba(217,45,69,.8); background: rgba(217,45,69,.07); box-shadow: 0 0 0 2px rgba(217,45,69,.16), var(--mv-hi); }
 .modern-film-studio-card-select { position: absolute; z-index: 2; top: 9px; right: 9px; display: inline-flex; align-items: center; gap: 5px; min-height: 25px; padding: 0 8px 0 5px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: rgba(11,11,15,.78); color: var(--mv-mut); font-size: 9px; cursor: pointer; }
 .modern-film-studio-card-select:hover, .modern-film-studio-card.is-selected .modern-film-studio-card-select { border-color: rgba(217,45,69,.72); color: #fff; }
+.modern-film-studio-card-select:disabled { cursor: not-allowed; opacity: .58; }
 .modern-film-studio-check { display: grid; place-items: center; width: 15px; height: 15px; border: 1px solid currentColor; border-radius: 3px; font-size: 10px; line-height: 1; }
 .modern-film-studio-card.is-selected .modern-film-studio-check { background: var(--modern-signal); border-color: var(--modern-signal); }
 .modern-film-studio-image { display: grid; place-items: center; aspect-ratio: 16 / 9; overflow: hidden; background: #11141b; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; }
@@ -18787,7 +18801,7 @@ body.is-studio-modern .modern-kit-bar { margin: 16px 26px 0; border-radius: 5px;
 }
 
 /* Current-shot controls: the title is runtime metadata, not a visual header.
-   Keep the bar focused on the three decisions needed before video generation. */
+   Keep the bar focused on the decisions needed before video generation. */
 body.is-studio-modern .modern-shot-commandbar {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -18854,11 +18868,11 @@ body.is-studio-modern .modern-video-param-caption small {
 }
 body.is-studio-modern .modern-video-param-controls {
   display: grid;
-  grid-template-columns: minmax(72px, .42fr) minmax(78px, .48fr) minmax(150px, 1.2fr) minmax(142px, .95fr) minmax(142px, .95fr);
+  grid-template-columns: minmax(148px, 1.1fr) minmax(66px, .4fr) minmax(72px, .45fr) minmax(150px, 1.08fr) minmax(142px, .9fr) minmax(142px, .9fr);
   gap: 8px;
   align-items: stretch;
   min-width: 0;
-  width: min(100%, 720px);
+  width: min(100%, 884px);
 }
 body.is-studio-modern .modern-video-param {
   display: grid;
@@ -18895,6 +18909,47 @@ body.is-studio-modern .modern-video-params select:hover {
 body.is-studio-modern .modern-video-params select:focus-visible {
   border-color: var(--modern-signal);
   box-shadow: 0 0 0 2px rgba(217,45,69,.16);
+}
+body.is-studio-modern .modern-video-param-mode { min-width: 148px; }
+body.is-studio-modern .modern-video-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: 31px;
+  padding: 2px;
+  border: 1px solid var(--mv-line-2);
+  border-radius: var(--mv-r-s);
+  background: var(--mv-s2);
+}
+body.is-studio-modern .modern-video-mode-switch button {
+  min-width: 0;
+  border: 0;
+  border-radius: calc(var(--mv-r-s) - 2px);
+  background: transparent;
+  color: var(--mv-qt);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+body.is-studio-modern .modern-video-mode-switch button:hover:not(.is-active) { color: var(--mv-tx); }
+body.is-studio-modern .modern-video-mode-switch button.is-active {
+  background: rgba(217,45,69,.18);
+  color: #ffd7da;
+  box-shadow: inset 0 0 0 1px rgba(217,45,69,.48), 0 3px 8px rgba(0,0,0,.18);
+}
+body.is-studio-modern .modern-video-mode-switch button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--modern-signal);
+  outline-offset: 1px;
+}
+body.is-studio-modern .modern-video-mode-hint {
+  flex: 1 0 100%;
+  min-width: 0;
+  color: var(--mv-qt);
+  font-size: 9px;
+  line-height: 1.35;
 }
 body.is-studio-modern .modern-dialect-controls {
   display: grid;
@@ -19004,6 +19059,15 @@ body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
   padding: 0 13px;
 }
 
+@media (max-width: 1320px) {
+  body.is-studio-modern .modern-video-param-controls {
+    grid-template-columns: minmax(148px, 1fr) repeat(2, minmax(0, .76fr)) minmax(150px, 1.2fr);
+    width: 100%;
+  }
+  body.is-studio-modern .modern-video-param-dialect,
+  body.is-studio-modern .modern-video-param-sfx { grid-column: span 2; }
+}
+
 @media (max-width: 1000px) {
   body.is-studio-modern .modern-shot-commandbar {
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -19053,9 +19117,10 @@ body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
   }
-body.is-studio-modern .modern-video-param-model { grid-column: 1 / -1; }
-body.is-studio-modern .modern-video-param-dialect { grid-column: 1 / -1; }
-body.is-studio-modern .modern-video-param-sfx { grid-column: 1 / -1; }
+  body.is-studio-modern .modern-video-param-mode { grid-column: 1 / -1; }
+  body.is-studio-modern .modern-video-param-model { grid-column: 1 / -1; }
+  body.is-studio-modern .modern-video-param-dialect { grid-column: 1 / -1; }
+  body.is-studio-modern .modern-video-param-sfx { grid-column: 1 / -1; }
 }
 
 /* Continuous storyboard production desk. The storyboard is a plan made of

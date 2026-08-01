@@ -11,9 +11,15 @@ const html = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 
 assert.equal(typeof __test.filmStudio?.selectCandidates, "function", "Film Studio must expose candidate selection rules");
 assert.equal(typeof __test.filmStudio?.applyToVideoConfig, "function", "Film Studio must expose video config binding");
+assert.equal(typeof __test.filmStudio?.removeFromVideoConfig, "function", "Film Studio must expose a non-destructive video config removal rule");
+assert.equal(typeof __test.filmStudio?.normalizeState, "function", "Film Studio must expose its persisted setting normalization");
 assert.match(html, /Film Studio/, "the visual bible entry must be renamed to Film Studio");
 assert.match(app, /film-studio/, "the client must call the Film Studio endpoint");
-assert.match(app, /添加到视频配置/, "the Film Studio action must be visible in the client");
+assert.match(html, /modernFilmStudioEnabled/, "Film Studio must expose a visible project-level video setting");
+assert.match(app, /film-studio\/video-config/, "the client must persist the Film Studio video setting");
+
+const defaultStudio = __test.filmStudio.normalizeState({});
+assert.equal(defaultStudio.videoConfigEnabled, false, "Film Studio must be opt-in by default");
 
 const sourceCandidates = [
   { id: "a", role: "wide_empty_scene", sourceUrl: "https://example.test/a.jpg", matchScore: 96, diversityScore: 10 },
@@ -40,5 +46,14 @@ assert.deepEqual(config.visualReferenceIds, ["a", "d"], "only the chosen referen
 assert.equal(config.visualBibleVersion, 1, "video config must record the Film Studio bible version");
 assert.equal(config.shots[0].status, "complete", "binding Film Studio must not reset generated clips");
 assert.match(config.shots[0].prompt, /冷青色夜景/, "the global visual directive must be available to shot prompts");
+
+const disabledConfig = __test.filmStudio.removeFromVideoConfig(config);
+assert.equal(disabledConfig.visualReferences, undefined, "disabling Film Studio must remove only Film Studio reference metadata");
+assert.equal(disabledConfig.visualReferenceIds, undefined, "disabling Film Studio must remove Film Studio reference ids");
+assert.equal(disabledConfig.visualBible, undefined, "disabling Film Studio must remove the visual bible metadata");
+assert.equal(disabledConfig.shots[0].filmStudioApplied, undefined, "disabling Film Studio must remove the per-shot Film Studio marker");
+assert.equal(disabledConfig.shots[0].status, "complete", "disabling Film Studio must preserve generated clip status");
+assert.doesNotMatch(disabledConfig.shots[0].prompt, /Film Studio 全剧视觉方向/, "disabling Film Studio must remove only its prompt directive");
+assert.match(disabledConfig.shots[0].prompt, /原始提示词/, "disabling Film Studio must retain the original shot prompt");
 
 console.log("film studio tests passed");

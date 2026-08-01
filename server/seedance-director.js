@@ -15,6 +15,7 @@ const SEEDANCE_DESIGN_FIELDS = [
   "camera_movement",
   "camera_angle",
   "visual",
+  "timeline",
   "voice_over",
   "sound",
 ];
@@ -25,12 +26,21 @@ function compact(value) {
     .trim();
 }
 
+function compactTimeline(value) {
+  return String(value == null ? "" : value)
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => compact(line))
+    .filter(Boolean)
+    .join("\n");
+}
+
 // 把模型返回的 design 规整成「字段名 → 字符串」的干净对象：只保留白名单键、压平空白、空值不保留。
 function sanitizeSeedanceDesign(design) {
   if (!design || typeof design !== "object" || Array.isArray(design)) return {};
   const out = {};
   for (const key of SEEDANCE_DESIGN_FIELDS) {
-    const value = compact(design[key]);
+    const value = key === "timeline" ? compactTimeline(design[key]) : compact(design[key]);
     if (!value) continue;
     out[key] = value;
   }
@@ -39,7 +49,8 @@ function sanitizeSeedanceDesign(design) {
 
 function hasCompleteSeedanceDesign(design) {
   const clean = sanitizeSeedanceDesign(design);
-  return SEEDANCE_DESIGN_FIELDS.every((key) => !!clean[key]);
+  return SEEDANCE_DESIGN_FIELDS.every((key) => !!clean[key]) &&
+    ["起始", "推进", "终点"].every((phase) => new RegExp(`(?:^|\\n)${phase}\\s*[：:]\\s*\\S`, "u").test(clean.timeline));
 }
 
 // 注入 storyboard 系统提示词的导演引擎方法(中文)。指导模型对每个镜头做「导演式拆解」并输出 design。
@@ -67,12 +78,13 @@ const SEEDANCE_DIRECTOR_SYSTEM_ZH = `视频提示词拆解方法（Seedance 2.0 
 
 七、参考图与角色绑定：严格保留 @图片 等引用标签不改；每张参考各承担一个角色（人物=锁定主体身份，场景=场景氛围/空间，道具=形状颜色不变）；参考图已经展示的静态外观不要用文字重复描述，文字只写参考图承载不了的动作、运镜与变化。
 
-按上述方法，为每个镜头输出一个 design 对象。以下 7 项必须全部存在，字段值用具体中文、不用感觉词：
+按上述方法，为每个镜头输出一个 design 对象。以下 8 项必须全部存在，字段值用具体中文、不用感觉词：
 - shot_size：景别，例如「双人侧面半身中近景」或「单人面部近景特写」。
 - camera_lens：摄像机 / 镜头，例如「50mm 标准定焦」。
 - camera_movement：运镜，写清方向、速度、幅度、持续时间；固定机位明确写「固定镜头」。
 - camera_angle：机位视角，例如「侧前方微仰 15° 视角」。
 - visual：画面。必须包含可见空间、人物或道具位置、一个可见动作及终点、构图裁切、光源/光线与连续性；不要用抽象情绪词代替事实。
+- timeline：严格写 3 行动作节拍，依次为「起始：…」「推进：…」「终点：…」。每行只写一个可拍摄的动作或状态变化；终点必须是可见的落点，不要自行编造秒数，后端会按锁定时长换算为 0-X 秒时间线。
 - voice_over：人声 OS；没有时明确写「无」。
 - sound：具体音效与环境底噪；没有特殊音效时也要写保留的环境声。`;
 

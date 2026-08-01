@@ -179,6 +179,7 @@ const state = {
   selectedVideoShotName: "",
   videoPromptDrafts: new Map(),
   videoPromptInspectorOpen: false,
+  pendingVideoPromptMode: null,
   manualAssetType: "",
   manualAssetDraft: { label: "", description: "", evidence: "", quality: "1k", references: [] },
   shouldFocusManualAsset: false,
@@ -4758,7 +4759,7 @@ function studioPrimaryActionForMode(mode = state.activeWorkspaceMode, data = sta
     return { label: "Run: 生成故事板", selector: "[data-job='storyboards']", focus: "board" };
   }
   if (mode === "shots") {
-    return { label: "Run: 生成视频配置", selector: "#buildConfigBtn", focus: "shots" };
+    return { label: "Run: 生成视频配置", selector: "#modernBuildConfig", focus: "shots" };
   }
   if (mode === "video") {
     // 判据是「片段是否齐」，不是「成片是否已存在」。原先写成 finalCutOutputReady()
@@ -4770,7 +4771,7 @@ function studioPrimaryActionForMode(mode = state.activeWorkspaceMode, data = sta
     const segmentsAllDone = total > 0 && (progress.completed || 0) >= total && !progress.running;
     return segmentsAllDone
       ? { label: finalCutOutputReady(data?.finalCut) ? "Run: 重新组装成片" : "Run: 组装成片", selector: "#assembleFinalCutBtn", focus: "cut" }
-      : { label: "Run: 视频生成", selector: "#generateAllSegments", focus: "video" };
+      : { label: "Run: 视频生成", selector: "#modernVideoGenerate", focus: "video" };
   }
   return { label: "Run: 当前步骤", selector: "", focus: studioWorkflowFocusFromMode(mode) };
 }
@@ -4818,7 +4819,7 @@ function renderStudioActionStates(data = state.project, activeRun = null) {
   setStudioTaskButtonState(document.querySelector("[data-job='assets']"), assetRunning, isAssetExtracting() ? "资产解析中" : "资产生成中");
   setStudioTaskButtonState($("#modernAssetGenerateAssets"), assetRunning, isAssetExtracting() ? "资产解析中" : "资产生成中");
   setStudioTaskButtonState(document.querySelector("[data-job='storyboards']"), boardRunning, "故事板生成中");
-  setStudioTaskButtonState($("#generateAllSegments"), videoRunning, videoLabel);
+  setStudioTaskButtonState($("#modernVideoGenerate"), videoRunning, videoLabel);
   setStudioTaskButtonState($("#studioPrimaryRun"), !!activeRun, activeRun ? `运行中 · ${activeRun.label}` : "");
 }
 
@@ -4836,8 +4837,8 @@ async function runStudioPrimaryAction() {
   if (!target || target.disabled) throw new Error("当前步骤还没有可执行动作");
   if (selector === "[data-job='assets']") return startJob("assets");
   if (selector === "[data-job='storyboards']") return startJob("storyboards");
-  if (selector === "#buildConfigBtn") return buildConfig();
-  if (selector === "#generateAllSegments") return generateAllVideoSegments();
+  if (selector === "#modernBuildConfig") return buildConfig($("#modernBuildConfig"));
+  if (selector === "#modernVideoGenerate") return generateAllVideoSegments();
   if (selector === "#assembleFinalCutBtn") return assembleFinalCut();
   throw new Error("当前步骤还没有可执行动作");
 }
@@ -5632,7 +5633,7 @@ function renderModernStoryboardLegacy(data = state.project, shots = modernShotRe
   const selectedPanel = page.panels[selectedPanelIndex];
   const ratio = videoConfigDataFromProject()?.settings?.storyboardRatio
     || videoConfigDataFromProject()?.settings?.ratio
-    || $("#configRatio")?.value
+    || $("#modernParamRatio")?.value
     || "16:9";
   const project = data?.project || {};
   const title = displayProjectTitle(project);
@@ -5971,9 +5972,9 @@ function renderModernFilmStudio(data = state.project) {
       : studio.status === "failed"
         ? studio.error || "候选生成失败，请重试"
         : studio.videoConfigEnabled
-          ? "已加入视频配置 · 已生成片段不会被重置"
+          ? "已应用到视频配置 · 已生成片段不会被重置"
           : candidates.length
-            ? `已生成 ${candidates.length} 张候选 · 最多选择 3 张`
+            ? `已生成 ${candidates.length} 张候选 · 开启开关后才会进入视频配置`
             : "等待提取视觉意图";
     status.classList.toggle("is-busy", busy);
     status.classList.toggle("is-error", studio.status === "failed");
@@ -5988,12 +5989,24 @@ function renderModernFilmStudio(data = state.project) {
   }
   const selection = $("#modernFilmStudioSelection");
   if (selection) selection.textContent = selectedIds.size ? `已选 ${selectedIds.size} / 3` : "未选择参考图";
-  const applyButton = $("#modernFilmStudioApply");
-  if (applyButton) {
-    applyButton.disabled = busy || selectedIds.size === 0 || !data?.videoConfigStatus?.exists;
-    applyButton.textContent = studio.videoConfigEnabled ? "更新视频配置参考" : "添加到视频配置";
-    applyButton.title = !data?.videoConfigStatus?.exists ? "请先生成视频配置" : selectedIds.size ? "将选中的 Film Studio 参考加入视频配置" : "请先选择参考图";
+  const enabled = $("#modernFilmStudioEnabled");
+  const toggle = $("#modernFilmStudioToggle");
+  const toggleNote = $("#modernFilmStudioToggleNote");
+  if (enabled) {
+    enabled.checked = studio.videoConfigEnabled === true;
+    enabled.disabled = busy || selectedIds.size === 0;
+    enabled.title = selectedIds.size ? "开启后，Film Studio 视觉方向会注入后续视频配置" : "请先选择 1 至 3 张参考图";
   }
+  if (toggle) {
+    toggle.classList.toggle("is-enabled", studio.videoConfigEnabled === true);
+    toggle.setAttribute("aria-disabled", busy || selectedIds.size === 0 ? "true" : "false");
+    toggle.title = selectedIds.size
+      ? studio.videoConfigEnabled
+        ? "关闭后将从视频配置移除 Film Studio 视觉方向，不影响已生成片段"
+        : "开启后，Film Studio 视觉方向会注入后续视频配置"
+      : "请先选择 1 至 3 张参考图";
+  }
+  if (toggleNote) toggleNote.textContent = studio.videoConfigEnabled ? "仅当前项目 · 已启用" : "仅当前项目 · 默认关闭";
   const discoverButton = $("#modernFilmStudioDiscover");
   if (discoverButton) {
     discoverButton.disabled = busy;
@@ -6007,7 +6020,7 @@ function renderModernFilmStudio(data = state.project) {
           const isSelected = selectedIds.has(id);
           const palette = Array.isArray(candidate.palette) ? candidate.palette.slice(0, 4) : [];
           return `<article class="modern-film-studio-card${isSelected ? " is-selected" : ""}" data-film-studio-card="${escapeAttr(id)}">
-            <button class="modern-film-studio-card-select" type="button" data-film-studio-select="${escapeAttr(id)}" aria-pressed="${isSelected ? "true" : "false"}" aria-label="${isSelected ? "取消选择" : "选择"}${escapeAttr(candidate.sourceTitle || candidate.roleLabel || "参考图")}">
+            <button class="modern-film-studio-card-select" type="button" data-film-studio-select="${escapeAttr(id)}" aria-pressed="${isSelected ? "true" : "false"}" aria-label="${isSelected ? "取消选择" : "选择"}${escapeAttr(candidate.sourceTitle || candidate.roleLabel || "参考图")}" ${studio.videoConfigEnabled ? "disabled title=\"请先关闭应用到视频配置，再修改参考图\"" : ""}>
               <span class="modern-film-studio-check" aria-hidden="true">${isSelected ? "✓" : ""}</span>
               <span>${isSelected ? "已选" : "选择"}</span>
             </button>
@@ -6059,21 +6072,22 @@ async function saveFilmStudioSelection() {
   return result;
 }
 
-async function applyFilmStudioSelection() {
+async function setFilmStudioVideoConfigEnabled(enabled) {
   if (!state.selectedId) return toast("请先打开一个项目");
+  if (enabled && !(state.modernStudio.filmStudioSelection || []).length) return toast("请先选择 1 至 3 张 Film Studio 参考图");
   state.modernStudio.filmStudioBusy = true;
   renderModernFilmStudio(state.project);
   try {
-    await saveFilmStudioSelection();
-    const result = await api(`/api/project/${encodeURIComponent(state.selectedId)}/film-studio/apply-video-config`, {
+    if (enabled) await saveFilmStudioSelection();
+    const result = await api(`/api/project/${encodeURIComponent(state.selectedId)}/film-studio/video-config`, {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify({ enabled }),
     });
     if (result.state) setProjectState(result.state);
     renderWorkspace();
     state.modernStudio.focus = "video";
     renderModernStudio(state.project);
-    toast("Film Studio 已加入视频配置，已生成片段保持不变");
+    toast(enabled ? "Film Studio 已应用到视频配置，已生成片段保持不变" : "Film Studio 已从视频配置移除，已生成片段保持不变");
   } catch (error) {
     toast(error.message);
   } finally {
@@ -6798,7 +6812,7 @@ function renderModernSelectedShot(data, shot, index) {
   const configShot = shot?.name ? videoPromptShot(shot.name) : null;
   const shotModel = configShot
     ? videoModelForShot(configShot)
-    : normalizeVideoModelName(videoConfigDataFromProject()?.modelName || $("#configModel")?.value || "seedance-2-0-fast");
+    : normalizeVideoModelName(videoConfigDataFromProject()?.modelName || $("#modernParamModel")?.value || "seedance-2-0-fast");
   const modernModel = $("#modernParamModel");
   if (modernModel) modernModel.value = shotModel;
   const modernSettings = videoConfigDataFromProject()?.settings || {};
@@ -6806,7 +6820,7 @@ function renderModernSelectedShot(data, shot, index) {
   const modernResolution = $("#modernParamResolution");
   if (modernRatio && modernSettings.ratio) modernRatio.value = modernSettings.ratio;
   if (modernResolution && modernSettings.resolution) modernResolution.value = modernSettings.resolution;
-  syncModernVideoParams("modern");
+  setModernVideoPromptMode(selectedVideoPromptMode());
   $("#modernSelectedShotSummary").textContent = shot
     ? `${shot.duration}s · ${shot.model || "模型未配置"} · ${shot.assets.length} 个引用资产`
     : hasDraftContent ? "已生成分镜草稿 · 可继续生成视频配置" : "先生成分镜草稿或视频配置";
@@ -6844,20 +6858,31 @@ function renderModernSelectedShot(data, shot, index) {
   $("#modernReferenceStrip").innerHTML = `<span>实际引用资产</span><b>${escapeHtml(shot?.assets?.join(" · ") || "生成后显示")}</b>`;
 }
 
-function syncModernVideoParams(source = "legacy") {
-  const pairs = [
-    ["modernParamRatio", "configRatio"],
-    ["modernParamResolution", "configResolution"],
-    ["modernParamModel", "configModel"],
-  ];
-  pairs.forEach(([modernId, legacyId]) => {
-    const modern = $(`#${modernId}`);
-    const legacy = $(`#${legacyId}`);
-    if (!modern || !legacy) return;
-    const from = source === "modern" ? modern : legacy;
-    const to = source === "modern" ? legacy : modern;
-    if (from.value) to.value = from.value;
+function normalizeVideoPromptMode(value) {
+  return String(value || "").trim().toLowerCase() === "production_board" ? "production_board" : "prompt";
+}
+
+function setModernVideoPromptMode(mode, { pending = false } = {}) {
+  const nextMode = normalizeVideoPromptMode(mode);
+  const control = $("#modernVideoPromptMode");
+  if (control) control.dataset.value = nextMode;
+  $$('[data-video-prompt-mode]').forEach((button) => {
+    const active = button.dataset.videoPromptMode === nextMode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
   });
+  const hint = $("#modernVideoPromptModeHint");
+  if (hint) {
+    hint.textContent = nextMode === "production_board"
+      ? "按 15 秒故事板生成：故事板控制构图与节奏，正式资产锁定身份；不使用尾帧。"
+      : "按模型导演的镜头提示词生成；只有连续动作才使用上一段尾帧。";
+  }
+  if (pending) state.pendingVideoPromptMode = { projectId: state.selectedId, mode: nextMode };
+  return nextMode;
+}
+
+function selectedVideoPromptMode() {
+  return normalizeVideoPromptMode($("#modernVideoPromptMode")?.dataset.value || state.pendingVideoPromptMode?.mode || "prompt");
 }
 
 const VIDEO_DIALECT_STYLE_OPTIONS = ["northeastern", "sichuan", "cantonese"];
@@ -6870,43 +6895,24 @@ function normalizeVideoDialectStyle(value, fallback = "none") {
 }
 
 function syncDialectControlAvailability() {
-  [["configDialectEnabled", "configDialectStyle"], ["modernDialectEnabled", "modernDialectStyle"]].forEach(([enabledId, styleId]) => {
-    const enabled = $(`#${enabledId}`);
-    const select = $(`#${styleId}`);
-    if (select) select.disabled = !enabled?.checked;
-  });
-}
-
-function syncModernDialectParams(source = "legacy") {
-  [["modernDialectEnabled", "configDialectEnabled"], ["modernDialectStyle", "configDialectStyle"]].forEach(([modernId, legacyId]) => {
-    const modern = $(`#${modernId}`);
-    const legacy = $(`#${legacyId}`);
-    if (!modern || !legacy) return;
-    const from = source === "modern" ? modern : legacy;
-    const to = source === "modern" ? legacy : modern;
-    if (from.type === "checkbox") to.checked = from.checked;
-    else if (from.value) to.value = from.value;
-  });
-  syncDialectControlAvailability();
+  const enabled = $("#modernDialectEnabled");
+  const select = $("#modernDialectStyle");
+  if (select) select.disabled = !enabled?.checked;
 }
 
 function setVideoDialectControls(style = "none") {
   const normalized = normalizeVideoDialectStyle(style);
   const enabled = normalized !== "none";
-  ["config", "modern"].forEach((prefix) => {
-    const toggle = $(`#${prefix}DialectEnabled`);
-    const select = $(`#${prefix}DialectStyle`);
-    if (toggle) toggle.checked = enabled;
-    if (select) select.value = enabled ? normalized : "northeastern";
-  });
-  syncModernDialectParams("legacy");
+  const toggle = $("#modernDialectEnabled");
+  const select = $("#modernDialectStyle");
+  if (toggle) toggle.checked = enabled;
+  if (select) select.value = enabled ? normalized : "northeastern";
+  syncDialectControlAvailability();
 }
 
 function selectedVideoDialectStyle() {
-  const modernMode = document.body?.classList?.contains("is-studio-modern");
-  const prefix = modernMode ? "modern" : "config";
-  const enabled = $(`#${prefix}DialectEnabled`);
-  const select = $(`#${prefix}DialectStyle`);
+  const enabled = $("#modernDialectEnabled");
+  const select = $("#modernDialectStyle");
   if (!enabled || !select || !enabled.checked) return "none";
   return normalizeVideoDialectStyle(select.value);
 }
@@ -6919,43 +6925,24 @@ function normalizeVideoSfxStyle(value, fallback = "none") {
 }
 
 function syncSfxControlAvailability() {
-  [["configSfxEnabled", "configSfxStyle"], ["modernSfxEnabled", "modernSfxStyle"]].forEach(([enabledId, styleId]) => {
-    const enabled = $(`#${enabledId}`);
-    const select = $(`#${styleId}`);
-    if (select) select.disabled = !enabled?.checked;
-  });
-}
-
-function syncModernSfxParams(source = "legacy") {
-  [["modernSfxEnabled", "configSfxEnabled"], ["modernSfxStyle", "configSfxStyle"]].forEach(([modernId, legacyId]) => {
-    const modern = $(`#${modernId}`);
-    const legacy = $(`#${legacyId}`);
-    if (!modern || !legacy) return;
-    const from = source === "modern" ? modern : legacy;
-    const to = source === "modern" ? legacy : modern;
-    if (from.type === "checkbox") to.checked = from.checked;
-    else if (from.value) to.value = from.value;
-  });
-  syncSfxControlAvailability();
+  const enabled = $("#modernSfxEnabled");
+  const select = $("#modernSfxStyle");
+  if (select) select.disabled = !enabled?.checked;
 }
 
 function setVideoSfxControls(style = "none") {
   const normalized = normalizeVideoSfxStyle(style);
   const enabled = normalized !== "none";
-  ["config", "modern"].forEach((prefix) => {
-    const toggle = $(`#${prefix}SfxEnabled`);
-    const select = $(`#${prefix}SfxStyle`);
-    if (toggle) toggle.checked = enabled;
-    if (select) select.value = enabled ? normalized : "mystery";
-  });
-  syncModernSfxParams("legacy");
+  const toggle = $("#modernSfxEnabled");
+  const select = $("#modernSfxStyle");
+  if (toggle) toggle.checked = enabled;
+  if (select) select.value = enabled ? normalized : "mystery";
+  syncSfxControlAvailability();
 }
 
 function selectedVideoSfxStyle() {
-  const modernMode = document.body?.classList?.contains("is-studio-modern");
-  const prefix = modernMode ? "modern" : "config";
-  const enabled = $(`#${prefix}SfxEnabled`);
-  const select = $(`#${prefix}SfxStyle`);
+  const enabled = $("#modernSfxEnabled");
+  const select = $("#modernSfxStyle");
   if (!enabled || !select || !enabled.checked) return "none";
   return normalizeVideoSfxStyle(select.value);
 }
@@ -6970,23 +6957,21 @@ function hydrateConfigInputs(configText) {
         && ((Array.isArray(config.storyboardPlans) && config.storyboardPlans.length > 0)
           || (Array.isArray(config.storyboardReferences) && config.storyboardReferences.length > 0))
       );
-    $("#configGroup").value = config.groupName || "";
-    $("#configModel").value = normalizeVideoModelName(config.modelName);
-    $("#configResolution").value = settings.resolution || "480p";
-    $("#configRatio").value = settings.ratio || "9:16";
-    $("#configPromptMode").value = hasProductionBoardConfig ? "production_board" : "prompt";
+    const pendingMode = state.pendingVideoPromptMode?.projectId === state.selectedId ? state.pendingVideoPromptMode.mode : "";
+    $("#modernParamModel").value = normalizeVideoModelName(config.modelName);
+    $("#modernParamResolution").value = settings.resolution || "480p";
+    $("#modernParamRatio").value = settings.ratio || "9:16";
+    setModernVideoPromptMode(pendingMode || (hasProductionBoardConfig ? "production_board" : "prompt"));
     setVideoDialectControls(settings.dialectStyle || config.dialectStyle || "none");
     setVideoSfxControls(settings.sfxStyle || config.sfxStyle || "none");
   } catch {
-    $("#configGroup").value = "";
-    $("#configModel").value = "seedance-2-0-fast";
-    $("#configResolution").value = "480p";
-    $("#configRatio").value = "9:16";
-    $("#configPromptMode").value = "prompt";
+    $("#modernParamModel").value = "seedance-2-0-fast";
+    $("#modernParamResolution").value = "480p";
+    $("#modernParamRatio").value = "9:16";
+    setModernVideoPromptMode("prompt");
     setVideoDialectControls("none");
     setVideoSfxControls("none");
   }
-  syncModernVideoParams("legacy");
 }
 
 function assetPromptItem(assetName = "") {
@@ -9003,7 +8988,8 @@ function renderStoryboardJob(job) {
 function renderVideoConfigStatus(config) {
   const node = $("#videoConfigStatus");
   const label = $("#videoConfigLabel");
-  const mainGenerateButton = $("#generateAllSegments");
+  if (!node || !label) return;
+  const mainGenerateButton = $("#modernVideoGenerate");
   const hasBlockingMissing = Array.isArray(config.missing) && config.missing.length > 0;
   const canGenerate = !!config.exists && config.ready !== false && !hasBlockingMissing;
   if (mainGenerateButton) mainGenerateButton.disabled = !canGenerate;
@@ -9506,7 +9492,7 @@ async function generateAllVideoSegments() {
   });
   setProjectState(data.state);
   renderWorkspace();
-  setStudioTab("video", { persist: false });
+  setWorkflowFocus("video", { persist: false });
   scheduleProjectRefresh();
   toast(data.result?.message || `批量生成队列已启动：${data.result?.completed || 0}/${data.result?.total || 0}`);
 }
@@ -9598,6 +9584,8 @@ function renderVideoProgress(progress) {
         : "排队中"
       : statusText(progress.jobStatus) || "待生成");
   const node = $("#videoProgressList");
+  const summary = $("#videoProgressSummary");
+  if (!node || !summary) return;
   const videoSig = JSON.stringify({
     total,
     statusLabel,
@@ -9614,7 +9602,7 @@ function renderVideoProgress(progress) {
   });
   // Skip the teardown when nothing changed so the 2s poll loop stops thrashing.
   if (node.dataset.renderSig === videoSig && node.childElementCount > 0) return;
-  $("#videoProgressSummary").innerHTML = total
+  summary.innerHTML = total
     ? `
       <div>
         <strong>${completed}/${total}</strong>
@@ -10147,8 +10135,8 @@ async function changeDialogueLanguage(targetLanguage) {
   }
 }
 
-async function buildConfig(button = $("#buildConfigBtn")) {
-  const controls = [...new Set([button, $("#modernBuildConfig"), $("#buildConfigBtn")].filter(Boolean))];
+async function buildConfig(button = $("#modernBuildConfig")) {
+  const controls = [...new Set([button, $("#modernBuildConfig")].filter(Boolean))];
   const originalLabels = new Map(controls.map((control) => [control, control.textContent || "生成视频配置"]));
   // 先切到结果区并让浏览器完成首帧，再开始保存和生成请求。
   setWorkflowFocus("shots");
@@ -10174,29 +10162,31 @@ async function buildConfig(button = $("#buildConfigBtn")) {
 async function refreshVideoConfig({ silent } = { silent: false }) {
   await saveFileQuiet("seedancePrompts");
   const project = state.project?.project || {};
-  const modelInput = $("#modernParamModel") || $("#configModel");
-  const resolutionInput = $("#modernParamResolution") || $("#configResolution");
-  const ratioInput = $("#modernParamRatio") || $("#configRatio");
+  const modelInput = $("#modernParamModel");
+  const resolutionInput = $("#modernParamResolution");
+  const ratioInput = $("#modernParamRatio");
+  const promptMode = selectedVideoPromptMode();
   const assetAnalyzerModel = document.querySelector("input[name='assetAnalyzerModel']:checked")?.value || state.assetAnalyzerModel || "claude-opus-4-8";
   state.assetAnalyzerModel = normalizeAssetAnalyzerModel(assetAnalyzerModel);
   localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
   const data = await api(`/api/project/${state.selectedId}/config`, {
     method: "POST",
     body: JSON.stringify({
-      groupName: $("#configGroup").value.trim(),
+      groupName: "",
       modelName: normalizeVideoModelName(modelInput?.value || project.model),
       resolution: resolutionInput?.value || "480p",
       ratio: ratioInput?.value || "9:16",
-      promptMode: $("#configPromptMode")?.value || "prompt",
+      promptMode,
       assetAnalyzerModel: state.assetAnalyzerModel,
       dialogueLanguage: state.dialogueLanguage,
       dialectStyle: selectedVideoDialectStyle(),
       sfxStyle: selectedVideoSfxStyle(),
       durationMode: state.durationMode,
-      enableStoryboards: ($("#configPromptMode")?.value || "prompt") === "production_board",
-      tailFrameContinuity: ($("#configPromptMode")?.value || "prompt") !== "production_board",
+      enableStoryboards: promptMode === "production_board",
+      tailFrameContinuity: promptMode !== "production_board",
     }),
   });
+  state.pendingVideoPromptMode = null;
   setProjectState(data.state);
   renderWorkspace();
   if (!silent) {
@@ -10213,9 +10203,9 @@ async function saveVideoSettings({ silent = true, modelName = "", ratio = "", re
     return;
   }
   const project = state.project?.project || {};
-  const globalModel = modelName || existingConfig.modelName || $("#configModel")?.value || project.model || "seedance-2-0-fast";
-  const globalResolution = resolution || existingConfig.settings?.resolution || $("#configResolution")?.value || "480p";
-  const globalRatio = ratio || existingConfig.settings?.ratio || $("#configRatio")?.value || "9:16";
+  const globalModel = modelName || existingConfig.modelName || $("#modernParamModel")?.value || project.model || "seedance-2-0-fast";
+  const globalResolution = resolution || existingConfig.settings?.resolution || $("#modernParamResolution")?.value || "480p";
+  const globalRatio = ratio || existingConfig.settings?.ratio || $("#modernParamRatio")?.value || "9:16";
   const data = await api(`/api/project/${state.selectedId}/video-settings`, {
     method: "POST",
     body: JSON.stringify({
@@ -10665,12 +10655,13 @@ function bind() {
   $("#modernFilmStudioDiscover")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, discoverFilmStudio).catch((error) => toast(error.message));
   });
-  $("#modernFilmStudioApply")?.addEventListener("click", (event) => {
-    withStudioButtonFeedback(event.currentTarget, applyFilmStudioSelection).catch((error) => toast(error.message));
+  $("#modernFilmStudioEnabled")?.addEventListener("change", (event) => {
+    setFilmStudioVideoConfigEnabled(event.currentTarget.checked).catch((error) => toast(error.message));
   });
   $("#modernFilmStudioCandidates")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-film-studio-select]");
     if (!button || state.modernStudio.filmStudioBusy) return;
+    if (filmStudioData(state.project).videoConfigEnabled) return toast("请先关闭“应用到视频配置”，再修改参考图");
     const id = button.dataset.filmStudioSelect || "";
     const current = new Set(state.modernStudio.filmStudioSelection || []);
     if (current.has(id)) current.delete(id);
@@ -10843,10 +10834,6 @@ function bind() {
   $("#refreshState").addEventListener("click", () => {
     if (!state.selectedId) return toast("请先打开一个项目");
     loadProject(state.selectedId, { openStudio: false }).catch((error) => toast(error.message));
-  });
-  $("#generateAllSegments")?.addEventListener("click", (event) => {
-    const button = event.currentTarget;
-    withStudioButtonFeedback(button, () => generateAllVideoSegments()).catch((error) => toast(error.message));
   });
   $("#assembleFinalCutBtn")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
@@ -11276,26 +11263,13 @@ function bind() {
     const button = event.currentTarget;
     withStudioButtonFeedback(button, () => saveAssetManifest({ confirm: true })).catch((error) => toast(error.message));
   });
-  $("#buildConfigBtn")?.addEventListener("click", (event) => {
-    const button = event.currentTarget;
-    withStudioButtonFeedback(button, () => buildConfig()).catch((error) => toast(error.message));
-  });
-  $("#configPromptMode")?.addEventListener("change", () => {
-    refreshVideoConfig({ silent: true }).catch((error) => toast(error.message));
-  });
-  ["configRatio", "configResolution", "configModel"].forEach((id) => {
-    $(`#${id}`)?.addEventListener("change", () => {
-      syncModernVideoParams("legacy");
-      saveVideoSettings({
-        modelName: id === "configModel" ? $("#configModel")?.value : "",
-        ratio: id === "configRatio" ? $("#configRatio")?.value : "",
-        resolution: id === "configResolution" ? $("#configResolution")?.value : "",
-      }).catch((error) => toast(error.message));
-    });
+  $("#modernVideoPromptMode")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-video-prompt-mode]");
+    if (!button) return;
+    setModernVideoPromptMode(button.dataset.videoPromptMode, { pending: true });
   });
   ["modernParamRatio", "modernParamResolution"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
-      syncModernVideoParams("modern");
       saveVideoSettings({
         ratio: id === "modernParamRatio" ? $("#modernParamRatio")?.value : "",
         resolution: id === "modernParamResolution" ? $("#modernParamResolution")?.value : "",
@@ -11303,30 +11277,17 @@ function bind() {
     });
   });
   $("#modernParamModel")?.addEventListener("change", () => {
-    syncModernVideoParams("modern");
     saveVideoRetryModel().catch((error) => toast(error.message));
-  });
-  ["configDialectEnabled", "configDialectStyle"].forEach((id) => {
-    $(`#${id}`)?.addEventListener("change", () => {
-      syncModernDialectParams("legacy");
-      saveVideoSettings({ dialectStyle: selectedVideoDialectStyle() }).catch((error) => toast(error.message));
-    });
   });
   ["modernDialectEnabled", "modernDialectStyle"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
-      syncModernDialectParams("modern");
+      syncDialectControlAvailability();
       saveVideoSettings({ dialectStyle: selectedVideoDialectStyle() }).catch((error) => toast(error.message));
-    });
-  });
-  ["configSfxEnabled", "configSfxStyle"].forEach((id) => {
-    $(`#${id}`)?.addEventListener("change", () => {
-      syncModernSfxParams("legacy");
-      saveVideoSettings({ silent: true }).catch((error) => toast(error.message));
     });
   });
   ["modernSfxEnabled", "modernSfxStyle"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
-      syncModernSfxParams("modern");
+      syncSfxControlAvailability();
       saveVideoSettings({ silent: true }).catch((error) => toast(error.message));
     });
   });

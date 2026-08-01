@@ -18,12 +18,8 @@ assert.equal(typeof videoPrompt?.injectVideoSfxPrompt, "function");
 assert.equal(typeof server.__test?.videoSettings?.applyVideoPromptDirectives, "function");
 
 for (const [id, options] of [
-  ["configDialectEnabled", null],
-  ["configDialectStyle", ["northeastern", "sichuan", "cantonese"]],
   ["modernDialectEnabled", null],
   ["modernDialectStyle", ["northeastern", "sichuan", "cantonese"]],
-  ["configSfxEnabled", null],
-  ["configSfxStyle", ["mystery", "epic", "palace", "vampire", "sci_fi", "disaster", "light", "comedy"]],
   ["modernSfxEnabled", null],
   ["modernSfxStyle", ["mystery", "epic", "palace", "vampire", "sci_fi", "disaster", "light", "comedy"]],
 ]) {
@@ -34,13 +30,9 @@ for (const [id, options] of [
   }
 }
 assert.doesNotMatch(html, /搞笑无厘头/, "the visible SFX style list must use the shorter 搞笑 label");
-assert.ok(html.indexOf('id="configDialectStyle"') < html.indexOf('id="configSfxStyle"'), "legacy SFX controls must follow dialect controls");
 assert.ok(html.indexOf('id="modernDialectStyle"') < html.indexOf('id="modernSfxStyle"'), "modern SFX controls must follow dialect controls");
-assert.match(html, /class="video-setting-toggle"[\s\S]*id="configDialectEnabled"/, "legacy dialect must use the redesigned toggle button");
-assert.match(html, /class="video-setting-toggle"[\s\S]*id="configSfxEnabled"/, "legacy SFX must use the redesigned toggle button");
 assert.match(html, /class="modern-dialect-toggle"[\s\S]*id="modernDialectEnabled"/, "modern dialect must use the redesigned toggle button");
 assert.match(html, /class="modern-dialect-toggle"[\s\S]*id="modernSfxEnabled"/, "modern SFX must use the redesigned toggle button");
-assert.match(fs.readFileSync(new URL("public/styles.css", root), "utf8"), /\.video-setting-toggle input\s*\{[^}]*opacity:\s*0/);
 assert.match(fs.readFileSync(new URL("public/styles.css", root), "utf8"), /body\.is-studio-modern \.modern-dialect-toggle input\s*\{[^}]*opacity:\s*0/);
 
 assert.equal(videoPrompt.normalizeVideoDialectStyle(""), "none");

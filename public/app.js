@@ -5266,7 +5266,7 @@ function modernStoryboardPages(data = state.project, shots = modernShotRecords(d
   const slots = Array.isArray(data?.storyboardSlots) ? data.storyboardSlots : [];
   const boardCount = Math.max(1, slots.length || Math.ceil(Math.max(shots.length, 1) / 8));
   const sizeLabels = ["WS", "MS", "CU", "MS", "OTS", "CU", "MS", "CU", "WS"];
-  const boardPanel = (raw, panelIndex, shot, boardIndex) => {
+  const boardPanel = (raw, panelIndex, shot, boardIndex, boardDuration = STORYBOARD_PLOT_SECONDS) => {
     const status = raw ? modernStoryboardStatusForPanel({ shot: raw }) : modernStoryboardStatusForPanel({ shot });
     const sourceText = raw?.description || raw?.title || shot?.story || shot?.prompt || "等待 GPT 根据剧本节拍生成";
     return {
@@ -5279,7 +5279,7 @@ function modernStoryboardPages(data = state.project, shots = modernShotRecords(d
       shot: raw || shot || null,
       size: raw?.production?.shot || raw?.cameraFrame || shot?.size || sizeLabels[panelIndex],
       camera: raw?.production?.camera || raw?.cameraFrame || "待 GPT 设计机位与运镜",
-      duration: STORYBOARD_PLOT_SECONDS,
+      duration: raw?.duration || (Number(boardDuration) > 0 ? Number(boardDuration) / 9 : shot?.duration || 1.7),
       timeRange: "",
       copy: sourceText,
       action: raw?.actionArrow || raw?.production?.action || shot?.story || "等待剧情动作",
@@ -5299,7 +5299,7 @@ function modernStoryboardPages(data = state.project, shots = modernShotRecords(d
     const rawPanels = Array.isArray(slot.panels) ? slot.panels : [];
     let panels = Array.from({ length: 9 }, (_, panelIndex) => {
       const shot = shots[boardIndex * 8 + Math.max(0, panelIndex - (boardIndex > 0 ? 1 : 0))] || null;
-      return boardPanel(rawPanels[panelIndex], panelIndex, shot, boardIndex);
+      return boardPanel(rawPanels[panelIndex], panelIndex, shot, boardIndex, slot.duration || STORYBOARD_PLOT_SECONDS);
     });
     if (slot.generated || slot.status === "ready") {
       panels = panels.map((panel) => ({ ...panel, status: panel.source === "reused-anchor" ? "reused" : "complete" }));
@@ -5309,7 +5309,7 @@ function modernStoryboardPages(data = state.project, shots = modernShotRecords(d
       const carry = previousBoard || null;
       panels[0] = {
         ...panels[0],
-        ...(carry ? boardPanel(carry, 0, null, boardIndex) : {}),
+        ...(carry ? boardPanel(carry, 0, null, boardIndex, slot.duration || STORYBOARD_PLOT_SECONDS) : {}),
         id: carry?.id || panels[0].id,
         number: 1,
         source: "reused-anchor",
@@ -5689,7 +5689,7 @@ function renderModernStoryboardLegacy(data = state.project, shots = modernShotRe
   const headMedia = modernMediaForShot(data, selectedPanel.shot, selectedPanel.panelIndex, "storyboard");
   if (tailPreview) {
     tailPreview.classList.toggle("has-media", !!tailMedia);
-    tailPreview.innerHTML = `${tailMedia ? `<img src="${escapeAttr(tailMedia)}" alt="" loading="lazy" />` : ""}<span>${previousTail ? "第 09 格 · 尾格锚点" : "无上一页"}</span>`;
+    tailPreview.innerHTML = `${tailMedia ? `<img src="${escapeAttr(tailMedia)}" alt="" loading="lazy" />` : ""}<span>${previousTail ? `第 ${String(previousTail.number).padStart(2, "0")} 格 · 尾格锚点` : "无上一页"}</span>`;
   }
   if (headPreview) {
     headPreview.classList.toggle("has-media", !!headMedia);
@@ -5722,15 +5722,22 @@ function formatStoryboardSeconds(value = 0) {
 }
 
 function storyboardPanelTimeRange(page, panelIndex) {
-  void page;
-  void panelIndex;
-  return "15 秒剧情";
+  const panels = Array.isArray(page?.panels) && page.panels.length ? page.panels : [{}];
+  const boardStart = Number(page?.startSecond) || 0;
+  const boardDuration = Number(page?.duration) || STORYBOARD_PLOT_SECONDS;
+  const cellDuration = boardDuration / panels.length;
+  const index = Math.max(0, Math.min(Number(panelIndex) || 0, panels.length - 1));
+  const start = boardStart + cellDuration * index;
+  const end = boardStart + cellDuration * (index + 1);
+  return `${formatStoryboardSeconds(start)} – ${formatStoryboardSeconds(end)}`;
 }
 
 function storyboardPanelDuration(panel, page) {
-  void panel;
-  void page;
-  return `${STORYBOARD_PLOT_SECONDS}s`;
+  const panelDuration = Number(panel?.duration);
+  const boardDuration = Number(page?.duration) || STORYBOARD_PLOT_SECONDS;
+  const panelCount = Array.isArray(page?.panels) && page.panels.length ? page.panels.length : 9;
+  const duration = Number.isFinite(panelDuration) && panelDuration > 0 ? panelDuration : boardDuration / panelCount;
+  return `${duration.toFixed(1)}s`;
 }
 
 function storyboardBoardMedia(data, page) {
@@ -5763,14 +5770,15 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
   $("#modernStoryboardPage").textContent = `PART ${String(currentIndex + 1).padStart(2, "0")}`;
   $("#modernStoryboardTimeRange").textContent = `${formatStoryboardSeconds(page.startSecond)} – ${formatStoryboardSeconds(page.endSecond)}`;
   $("#modernStoryboardCanvasTitle").textContent = page.title;
-  $("#modernStoryboardCanvasMeta").textContent = `黑白线稿速写 · 九宫格 · 16:9 · 每格 ${STORYBOARD_PLOT_SECONDS} 秒剧情${page.carryIn ? " · 首格承接上一 PART 尾格" : ""}`;
+  $("#modernStoryboardCanvasMeta").textContent = `黑白线稿速写 · 九宫格 · 16:9 · 每张故事板覆盖 ${STORYBOARD_PLOT_SECONDS} 秒剧情${page.carryIn ? " · 首格承接上一 PART 尾格" : ""}`;
   $("#modernStoryboardCanvasStatus").textContent = generating ? "生成中" : modernStoryboardStatusLabel(page.status);
   $("#modernStoryboardCanvasStatus").className = `storyboard-document-status is-${generating ? "running" : page.status === "complete" ? "ready" : page.status === "failed" ? "failed" : "waiting"}`;
   $("#modernStoryboardEmotion").textContent = page.emotion;
   $("#modernStoryboardSetting").textContent = page.setting;
   $("#modernStoryboardSummary").textContent = page.summary;
   $("#modernStoryboardKeywords").textContent = page.keywords;
-  $("#modernStoryboardContinuity").textContent = page.carryIn ? "第 01 格与上一 PART 第 09 格为同一镜头" : "本 PART 第 09 格将成为下一 PART 的第 01 格";
+  const lastPanelNumber = page.panels.at(-1)?.number || page.panels.length;
+  $("#modernStoryboardContinuity").textContent = page.carryIn ? `第 01 格与上一 PART 第 ${String(lastPanelNumber).padStart(2, "0")} 格为同一镜头` : `本 PART 第 ${String(lastPanelNumber).padStart(2, "0")} 格将成为下一 PART 的第 01 格`;
   $("#modernStoryboardQueueLabel").textContent = generating ? "故事板生成中" : data?.storyboardJob?.status === "failed" ? "生成失败 · 可重试" : "队列空闲";
   const generatePageButton = $("#modernStoryboardGeneratePage");
   const retryPageButton = $("#modernStoryboardRetryPanel");
@@ -5795,17 +5803,17 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
       const position = `${(panelIndex % 3) * 50}% ${Math.floor(panelIndex / 3) * 50}%`;
       const frameStyle = boardMedia ? ` style="--storyboard-board-image: url('${escapeAttr(boardMedia)}'); --storyboard-board-position: ${position};"` : "";
       const status = modernStoryboardStatusLabel(panel.status);
-      return `<button type="button" class="storyboard-document-shot ${panelIndex === selectedPanelIndex ? "is-active" : ""} ${panel.status === "reused" ? "is-reused" : ""} ${panel.status === "failed" ? "is-failed" : ""}" data-storyboard-panel-index="${panelIndex}" aria-label="剧情格 ${String(panel.number).padStart(2, "0")} · 15 秒剧情">
+      return `<button type="button" class="storyboard-document-shot ${panelIndex === selectedPanelIndex ? "is-active" : ""} ${panel.status === "reused" ? "is-reused" : ""} ${panel.status === "failed" ? "is-failed" : ""}" data-storyboard-panel-index="${panelIndex}" aria-label="镜头格 ${String(panel.number).padStart(2, "0")} · ${escapeAttr(storyboardPanelDuration(panel, page))}">
         <header><b>${String(panel.number).padStart(2, "0")}</b><span>${escapeHtml(panel.timeRange || storyboardPanelTimeRange(page, panelIndex))}</span></header>
         <div class="storyboard-document-shot-frame${boardMedia ? " has-media" : ""}"${frameStyle}><span>${panel.status === "reused" ? "承接剧情格" : status}</span></div>
-        <div class="storyboard-document-shot-copy"><strong>15 秒剧情格</strong><p>${escapeHtml(copy)}</p><small>景别：${escapeHtml(panel.size)} · 镜头：${escapeHtml(camera)}</small><small>动作：${escapeHtml(action)}</small><small>转场：${escapeHtml(panel.transition)}</small></div>
+        <div class="storyboard-document-shot-copy"><strong>镜头格 ${String(panel.number).padStart(2, "0")} · ${escapeHtml(storyboardPanelDuration(panel, page))}</strong><p>${escapeHtml(copy)}</p><small>景别：${escapeHtml(panel.size)} · 镜头：${escapeHtml(camera)}</small><small>动作：${escapeHtml(action)}</small><small>转场：${escapeHtml(panel.transition)}</small></div>
       </button>`;
     }).join("");
   }
 
   const timeline = $("#modernStoryboardTimelineTrack");
   if (timeline) {
-    timeline.innerHTML = pages.map((entry, index) => `${index ? '<span class="storyboard-document-sequence-connector" aria-hidden="true">尾格 → 首格</span>' : ""}<button type="button" class="storyboard-document-part ${index === currentIndex ? "is-current" : ""} ${entry.status === "complete" ? "is-complete" : ""}" data-storyboard-page-index="${index}"><header><b>PART ${String(index + 1).padStart(2, "0")}</b><small>${escapeHtml(modernStoryboardStatusLabel(entry.status))}</small></header><span>${formatStoryboardSeconds(entry.startSecond)} – ${formatStoryboardSeconds(entry.endSecond)}</span><footer>${entry.panels.filter((panel) => ["complete", "reused"].includes(panel.status)).length}/9 剧情格 · ${entry.carryIn ? "已承接" : "首 PART"}</footer></button>`).join("");
+    timeline.innerHTML = pages.map((entry, index) => `${index ? '<span class="storyboard-document-sequence-connector" aria-hidden="true">尾格 → 首格</span>' : ""}<button type="button" class="storyboard-document-part ${index === currentIndex ? "is-current" : ""} ${entry.status === "complete" ? "is-complete" : ""}" data-storyboard-page-index="${index}"><header><b>PART ${String(index + 1).padStart(2, "0")}</b><small>${escapeHtml(modernStoryboardStatusLabel(entry.status))}</small></header><span>${formatStoryboardSeconds(entry.startSecond)} – ${formatStoryboardSeconds(entry.endSecond)}</span><footer>${entry.panels.filter((panel) => ["complete", "reused"].includes(panel.status)).length}/${entry.panels.length} 镜头格 · ${entry.carryIn ? "已承接" : "首 PART"}</footer></button>`).join("");
   }
 
   $("#modernStoryboardSelectedPanel").textContent = `PART ${String(currentIndex + 1).padStart(2, "0")} · ${STORYBOARD_PLOT_SECONDS} 秒九宫格`;
@@ -5880,11 +5888,11 @@ function exportModernStoryboardPage() {
   const lines = [
     `# ${displayProjectTitle(state.project?.project || {})} · PART ${String(page.partNumber).padStart(2, "0")} 故事板`,
     "",
-    `格式：16:9 · 每格时长：${STORYBOARD_PLOT_SECONDS} 秒剧情 · 黑白线稿速写`,
+    `格式：16:9 · 每张故事板时长：${STORYBOARD_PLOT_SECONDS} 秒 · 黑白线稿速写`,
     `连续策略：${page.carryIn ? "本 PART 首格与上一 PART 尾格为同一镜头对象" : "本 PART 尾格作为下一 PART 首格锚点"}`,
     "故事板只传递镜头构图、站位、节奏与连续性元数据，不回流资产库。",
     "",
-    ...page.panels.map((panel) => `- 剧情格 ${String(panel.number).padStart(2, "0")} · 15 秒剧情 · ${panel.copy} · 景别：${panel.size} · 镜头：${panel.camera} · 动作：${panel.action} · 转场：${panel.transition}`),
+    ...page.panels.map((panel) => `- 镜头格 ${String(panel.number).padStart(2, "0")} · ${storyboardPanelDuration(panel, page)} · ${panel.copy} · 景别：${panel.size} · 镜头：${panel.camera} · 动作：${panel.action} · 转场：${panel.transition}`),
   ];
   const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);

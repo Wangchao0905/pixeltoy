@@ -5264,7 +5264,13 @@ const STORYBOARD_PLOT_SECONDS = 15;
 
 function modernStoryboardPages(data = state.project, shots = modernShotRecords(data)) {
   const slots = Array.isArray(data?.storyboardSlots) ? data.storyboardSlots : [];
-  const boardCount = Math.max(1, slots.length || Math.ceil(Math.max(shots.length, 1) / 8));
+  const shotDurationTotal = (Array.isArray(shots) ? shots : []).reduce((total, shot) => total + Math.max(0, Number(shot?.duration) || 0), 0);
+  const slotDurationTotal = slots.reduce((total, slot) => total + Math.max(0, Number(slot?.duration) || 0), 0);
+  const durationBasedCount = Math.ceil(Math.max(shotDurationTotal, slotDurationTotal) / STORYBOARD_PLOT_SECONDS);
+  // The screenplay/video durations are the source of truth. Older project snapshots can
+  // still carry nine panel records in storyboardSlots; never let those stale records
+  // turn the board sequence into nine 15-second storyboards.
+  const boardCount = Math.max(1, durationBasedCount || slots.length || Math.ceil(Math.max(shots.length, 1) / 8));
   const sizeLabels = ["WS", "MS", "CU", "MS", "OTS", "CU", "MS", "CU", "WS"];
   const boardPanel = (raw, panelIndex, shot, boardIndex, boardDuration = STORYBOARD_PLOT_SECONDS) => {
     const status = raw ? modernStoryboardStatusForPanel({ shot: raw }) : modernStoryboardStatusForPanel({ shot });
@@ -5795,18 +5801,15 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
 
   const grid = $("#modernStoryboardGrid");
   if (grid) {
-    const boardMedia = storyboardBoardMedia(data, page);
-    grid.innerHTML = page.panels.map((panel, panelIndex) => {
-      const copy = String(panel.copy || "等待镜头描述").replace(/\s+/g, " ").slice(0, 110);
-      const action = String(panel.action || "等待动作").replace(/\s+/g, " ").slice(0, 100);
-      const camera = String(panel.camera || "待 GPT 设计").replace(/\s+/g, " ").slice(0, 82);
-      const position = `${(panelIndex % 3) * 50}% ${Math.floor(panelIndex / 3) * 50}%`;
-      const frameStyle = boardMedia ? ` style="--storyboard-board-image: url('${escapeAttr(boardMedia)}'); --storyboard-board-position: ${position};"` : "";
-      const status = modernStoryboardStatusLabel(panel.status);
-      return `<button type="button" class="storyboard-document-shot ${panelIndex === selectedPanelIndex ? "is-active" : ""} ${panel.status === "reused" ? "is-reused" : ""} ${panel.status === "failed" ? "is-failed" : ""}" data-storyboard-panel-index="${panelIndex}" aria-label="镜头格 ${String(panel.number).padStart(2, "0")} · ${escapeAttr(storyboardPanelDuration(panel, page))}">
-        <header><b>${String(panel.number).padStart(2, "0")}</b><span>${escapeHtml(panel.timeRange || storyboardPanelTimeRange(page, panelIndex))}</span></header>
-        <div class="storyboard-document-shot-frame${boardMedia ? " has-media" : ""}"${frameStyle}><span>${panel.status === "reused" ? "承接剧情格" : status}</span></div>
-        <div class="storyboard-document-shot-copy"><strong>镜头格 ${String(panel.number).padStart(2, "0")} · ${escapeHtml(storyboardPanelDuration(panel, page))}</strong><p>${escapeHtml(copy)}</p><small>景别：${escapeHtml(panel.size)} · 镜头：${escapeHtml(camera)}</small><small>动作：${escapeHtml(action)}</small><small>转场：${escapeHtml(panel.transition)}</small></div>
+    grid.innerHTML = pages.map((entry, index) => {
+      const boardMedia = storyboardBoardMedia(data, entry);
+      const copy = String(entry.summary || entry.title || "等待故事板生成").replace(/\s+/g, " ").slice(0, 150);
+      const status = modernStoryboardStatusLabel(entry.status);
+      const frameStyle = boardMedia ? ` style="--storyboard-board-image: url('${escapeAttr(boardMedia)}');"` : "";
+      return `<button type="button" class="storyboard-document-shot storyboard-document-board-card ${index === currentIndex ? "is-active" : ""} ${entry.status === "failed" ? "is-failed" : ""}" data-storyboard-page-index="${index}" aria-label="PART ${String(index + 1).padStart(2, "0")} · ${STORYBOARD_PLOT_SECONDS} 秒故事板">
+        <header><b>PART ${String(index + 1).padStart(2, "0")}</b><span>${escapeHtml(`${formatStoryboardSeconds(entry.startSecond)} – ${formatStoryboardSeconds(entry.endSecond)}`)}</span></header>
+        <div class="storyboard-document-shot-frame storyboard-document-board-frame${boardMedia ? " has-media" : ""}"${frameStyle}><span>${escapeHtml(status)}</span></div>
+        <div class="storyboard-document-shot-copy"><strong>${STORYBOARD_PLOT_SECONDS} 秒故事板</strong><p>${escapeHtml(copy)}</p><small>${entry.panels.length} 个镜头格 · ${entry.carryIn ? "承接上一 PART 尾格" : "首 PART"}</small><small>状态：${escapeHtml(status)}</small></div>
       </button>`;
     }).join("");
   }
@@ -10997,6 +11000,13 @@ function bind() {
     renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
   });
   $("#modernStoryboardGrid")?.addEventListener("click", (event) => {
+    const pageButton = event.target.closest("[data-storyboard-page-index]");
+    if (pageButton) {
+      state.modernStudio.storyboardPageIndex = Number(pageButton.dataset.storyboardPageIndex) || 0;
+      state.modernStudio.storyboardPanelIndex = 0;
+      renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
+      return;
+    }
     const button = event.target.closest("[data-storyboard-panel-index]");
     if (!button) return;
     state.modernStudio.storyboardPanelIndex = Number(button.dataset.storyboardPanelIndex) || 0;

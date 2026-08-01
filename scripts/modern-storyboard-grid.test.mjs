@@ -10,13 +10,11 @@ const runner = fs.readFileSync(path.join(root, "scripts/run_asset_generation.js"
 
 const render = app.match(/function renderModernStoryboardStudio\([\s\S]*?\n}\n\nasync function runModernStoryboardJob/);
 assert.ok(render, "modern storyboard renderer must be present");
-assert.match(render[0], /page\.panels\.map\(/, "the document must render every storyboard panel");
-assert.match(render[0], /\(panelIndex % 3\) \* 50\}%/);
-assert.match(render[0], /Math\.floor\(panelIndex \/ 3\) \* 50\}%/);
+assert.match(render[0], /pages\.map\(\(entry, index\)/, "the document must render one card per storyboard board");
+assert.match(render[0], /data-storyboard-page-index/, "board cards must select a storyboard page");
+assert.doesNotMatch(render[0], /grid\.innerHTML = page\.panels\.map/, "the main grid must not render nine panel cards as nine storyboards");
 assert.match(styles, /\.storyboard-document-shot-frame\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/);
-assert.match(styles, /\.storyboard-document-shot-frame\.has-media\s*\{[^}]*background-size:\s*300%\s*300%/, "each panel must crop a 3x3 board");
-const mediaRules = [...styles.matchAll(/\.storyboard-document-shot-frame\.has-media\s*\{[^}]*\}/g)].map((match) => match[0]);
-assert.ok(mediaRules.at(-1)?.includes("background-size: 300% 300%"), "the final media rule must survive the dark storyboard theme override");
+assert.match(styles, /\.storyboard-document-shot-frame\.storyboard-document-board-frame\.has-media\s*\{[^}]*background-size:\s*cover/);
 
 assert.match(server, /IMAGE_SIZE_BY_QUALITY_16_9\[String\(body\.quality/);
 assert.match(server, /aspectRatio:\s*"16:9"/);

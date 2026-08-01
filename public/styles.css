@@ -8328,6 +8328,10 @@ select:focus {
   background-repeat: no-repeat;
   filter: saturate(.72) contrast(1.04);
 }
+.storyboard-document-shot-frame.storyboard-document-board-frame.has-media {
+  background-position: center;
+  background-size: cover;
+}
 .storyboard-document-shot-frame::after { display: none; }
 .storyboard-document-shot-frame span {
   top: 50%;

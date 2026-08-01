@@ -20119,3 +20119,54 @@ body.is-studio .asset-preview-panel .section-head .actions.asset-generation-only
   width: 0;
   height: 0;
 }
+
+/* Let Super Pixel use the document scroll boundary instead of clipping long
+   generations inside a fixed-height view. The composer remains available at
+   the bottom while the page reveals the complete conversation. */
+body.is-explore-ui .super-pixel-view {
+  height: auto;
+  min-height: calc(100vh - 44px);
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+body.is-explore-ui .super-pixel-layout,
+body.is-explore-ui .super-pixel-stage {
+  height: auto;
+  min-height: calc(100vh - 44px);
+}
+
+body.is-explore-ui .super-pixel-stage,
+body.is-explore-ui .super-pixel-stage.is-chatting {
+  overflow: visible;
+}
+
+body.is-explore-ui .super-pixel-stage.is-chatting .super-pixel-messages {
+  flex: 0 0 auto;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+body.is-explore-ui .super-pixel-stage.is-chatting .super-pixel-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: 0;
+}
+
+body.is-explore-ui .super-pixel-asset-rail {
+  overflow: visible;
+}
+
+body.is-explore-ui .super-pixel-asset-rail-list {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (max-width: 600px) {
+  body.is-explore-ui .super-pixel-layout.is-rail-open .super-pixel-asset-rail-list {
+    max-height: 238px;
+    overflow-y: auto;
+  }
+}

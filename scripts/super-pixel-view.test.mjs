@@ -188,5 +188,8 @@ assert.match(superPixelRedesign, /\.super-pixel-tool-card\s*\{[^}]*border:\s*0/,
 assert.match(superPixelRedesign, /\.super-pixel-video-media:hover \.super-pixel-tool-card-download,[\s\S]*?\.super-pixel-video-media:focus-within \.super-pixel-tool-card-download/, "视频下载按钮应在悬停或键盘聚焦时显示");
 assert.match(superPixelRedesign, /\.super-pixel-messages\s*,\s*\.super-pixel-asset-rail-list\s*\{[\s\S]*?scrollbar-width:\s*none[\s\S]*?-ms-overflow-style:\s*none/, "消息区和素材栏必须隐藏原生滚动条但保留滚动能力");
 assert.match(superPixelRedesign, /\.super-pixel-messages::-webkit-scrollbar\s*,\s*\.super-pixel-asset-rail-list::-webkit-scrollbar\s*\{[\s\S]*?display:\s*none[\s\S]*?width:\s*0[\s\S]*?height:\s*0/, "WebKit 浏览器必须隐藏消息区和素材栏的滚动条滑块");
+assert.match(superPixelRedesign, /body\.is-explore-ui \.super-pixel-view\s*\{[\s\S]*?height:\s*auto[\s\S]*?min-height:\s*calc\(100vh - 44px\)[\s\S]*?overflow-y:\s*visible/, "Super Pixel 外层必须回到文档流，让页面接管纵向滚动");
+assert.match(superPixelRedesign, /body\.is-explore-ui \.super-pixel-stage\.is-chatting \.super-pixel-messages\s*\{[\s\S]*?height:\s*auto[\s\S]*?max-height:\s*none[\s\S]*?overflow:\s*visible/, "对话消息不能再成为唯一滚动容器，页面滚轮应能浏览完整内容");
+assert.match(superPixelRedesign, /body\.is-explore-ui \.super-pixel-stage\.is-chatting \.super-pixel-dock\s*\{[\s\S]*?position:\s*sticky[\s\S]*?bottom:\s*0/, "对话输入区在页面滚动时必须保持在底部");
 
 console.log("super pixel view tests passed");

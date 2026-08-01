@@ -5794,16 +5794,17 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
   $("#modernStoryboardContinuity").textContent = page.carryIn ? `第 01 格与上一 PART 第 ${String(lastPanelNumber).padStart(2, "0")} 格为同一镜头` : `本 PART 第 ${String(lastPanelNumber).padStart(2, "0")} 格将成为下一 PART 的第 01 格`;
   $("#modernStoryboardQueueLabel").textContent = generating ? "故事板生成中" : data?.storyboardJob?.status === "failed" ? "生成失败 · 可重试" : "队列空闲";
   const generatePageButton = $("#modernStoryboardGeneratePage");
-  const retryPageButton = $("#modernStoryboardRetryPanel");
+  const hasExistingBoard = Boolean(storyboardBoardMedia(data, page));
+  const storyboardAction = hasExistingBoard ? "retry" : "current";
   if (generatePageButton) {
     generatePageButton.disabled = generating;
-    generatePageButton.textContent = generating ? "生成中…" : "单张生成";
-    generatePageButton.title = generating ? "当前故事板生成中" : "只生成当前 15 秒故事板";
-  }
-  if (retryPageButton) {
-    retryPageButton.disabled = generating;
-    retryPageButton.textContent = generating ? "重新生成中…" : "单张重新生成";
-    retryPageButton.title = generating ? "当前故事板生成中" : "只重新生成当前 15 秒故事板";
+    generatePageButton.dataset.storyboardAction = storyboardAction;
+    generatePageButton.textContent = generating ? (storyboardAction === "retry" ? "重新生成中…" : "生成中…") : (storyboardAction === "retry" ? "单张重新生成" : "单张生成");
+    generatePageButton.title = generating
+      ? "当前故事板生成中"
+      : storyboardAction === "retry"
+        ? "只重新生成当前 15 秒故事板"
+        : "只生成当前 15 秒故事板";
   }
 
   const grid = $("#modernStoryboardGrid");
@@ -11033,7 +11034,8 @@ function bind() {
     renderModernStoryboardStudio(state.project, modernShotRecords(state.project));
   });
   $("#modernStoryboardGeneratePage")?.addEventListener("click", (event) => {
-    withStudioButtonFeedback(event.currentTarget, () => runModernStoryboardJob("current")).catch((error) => toast(error.message));
+    const action = event.currentTarget.dataset.storyboardAction === "retry" ? "retry" : "current";
+    withStudioButtonFeedback(event.currentTarget, () => runModernStoryboardJob(action)).catch((error) => toast(error.message));
   });
   $("#modernStoryboardGenerateNext")?.addEventListener("click", (event) => {
     const pages = modernStoryboardPages(state.project, modernShotRecords(state.project));
@@ -11046,9 +11048,6 @@ function bind() {
   });
   $("#modernStoryboardExport")?.addEventListener("click", (event) => {
     withStudioButtonFeedback(event.currentTarget, () => exportModernStoryboardPage());
-  });
-  $("#modernStoryboardRetryPanel")?.addEventListener("click", (event) => {
-    withStudioButtonFeedback(event.currentTarget, () => runModernStoryboardJob("retry")).catch((error) => toast(error.message));
   });
   $("#modernStoryboardRestartPage")?.addEventListener("click", () => {
     const pageIndex = state.modernStudio.storyboardPageIndex;

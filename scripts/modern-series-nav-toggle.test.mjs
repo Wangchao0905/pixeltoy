@@ -24,6 +24,9 @@ assert.match(css, /body\.is-studio-modern \.studio-modern-shell\s*\{[^}]*grid-te
 assert.match(css, /\.studio-modern-shell\.is-nav-collapsed \.modern-project-switcher[\s\S]*\.modern-episode-list[\s\S]*\.modern-series-footer/, "折叠状态必须隐藏项目、分集和进度信息");
 assert.match(css, /\.modern-series-nav-toggle\s*\{[^}]*position:\s*absolute[^}]*min-width:\s*28px[^}]*min-height:\s*40px/, "箭头按钮必须固定在主导航边缘且保留可点击尺寸");
 assert.match(css, /\.modern-series-nav-toggle[^}]*transition:[^}]*transform/, "折叠按钮必须有轻量状态动效");
+assert.match(css, /body\.is-studio-modern \.studio-modern-shell\.is-nav-collapsed \.modern-brand\s*\{[^}]*height:\s*54px[^}]*box-sizing:\s*border-box/, "折叠后的品牌栏必须与右侧顶部栏保持同高并对齐边线");
+assert.match(css, /body\.is-studio-modern \.studio-modern-shell\.is-nav-collapsed \.modern-brand-logo\s*\{[^}]*width:\s*32px[^}]*height:\s*32px[^}]*pixel-toys-logo-agent\.gif/, "折叠后必须显示完整的方形动画 logo，而不是裁切横向字标");
+assert.match(css, /body\.is-studio-modern \.studio-modern-shell\.is-nav-collapsed \.modern-brand-logo::before,\s*body\.is-studio-modern \.studio-modern-shell\.is-nav-collapsed \.modern-brand-logo::after\s*\{[^}]*display:\s*none/, "折叠后的方形 logo 不得叠加横向字标的旋转伪元素");
 assert.match(css, /@media \(max-width:\s*980px\)[\s\S]*?\.modern-series-nav-toggle\s*\{[^}]*display:\s*none/, "窄屏应回到横向导航而不是保留 56px 窄轨");
 assert.match(css, /@media \(max-width:\s*980px\)[\s\S]*?is-nav-collapsed \.modern-episode-list\s*\{[^}]*display:\s*flex/, "窄屏折叠状态仍必须保留横向分集导航");
 

@@ -20170,3 +20170,42 @@ body.is-explore-ui .super-pixel-asset-rail-list {
     overflow-y: auto;
   }
 }
+
+/* Collapsed modern nav: use the square animated mark so the wordmark cannot
+   be clipped into fragments inside the 56px rail. Match the 54px topbar line. */
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand {
+  height: 54px;
+  min-height: 54px;
+  box-sizing: border-box;
+  justify-content: center;
+  gap: 0;
+  padding: 10px 0;
+}
+
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  overflow: visible;
+}
+
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand-logo {
+  width: 32px;
+  height: 32px;
+  aspect-ratio: 1;
+  background-image: url("/pixel-toys-logo-agent.gif");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 32px 32px;
+}
+
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand-logo::before,
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand-logo::after {
+  display: none;
+}
+
+body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-series-nav-toggle {
+  right: 14px;
+}

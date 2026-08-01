@@ -5760,6 +5760,7 @@ function renderModernStudio(data = state.project) {
     button.classList.toggle("is-active", buttonFocus === modernFocus);
   });
   const scriptSource = workflowEditorValue("script");
+  const assetSource = workflowEditorValue("assetDescription");
   const videoConfigReady = Boolean(data.videoConfigStatus?.ready);
   const videoConfigAvailable = Boolean(data.videoConfigStatus?.exists);
   const videoRunning = videoProgressHasActiveWork(data.videoProgress || {});

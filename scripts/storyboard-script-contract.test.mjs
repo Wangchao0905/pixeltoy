@@ -9,6 +9,7 @@ assert.equal(typeof storyboard?.storyboardPanelPlanForGroup, "function", "storyb
 assert.equal(typeof storyboard?.storyboardPromptForSlot, "function", "storyboard prompt generation must be testable");
 assert.equal(typeof storyboard?.storyboardSlotHasScriptedContent, "function", "empty storyboard plans must be rejected");
 assert.equal(typeof runner.storyboardPanelObjects, "function", "the renderer must retain per-panel production fields");
+assert.equal(typeof runner.parseAssets, "function", "the renderer must retain storyboard prompt documents");
 
 const sourceShot = {
   name: "E01_V003_CHURCH_STANDOFF",
@@ -99,5 +100,20 @@ assert.deepEqual(
   },
   "renderer parsing must preserve script, camera, dialogue, and sound for the visible Production Tab",
 );
+
+const storyboardPromptDocument = `## New Storyboard Asset: SB001_SCRIPTED_BOARD
+
+故事板提示词（中文，提交给生图模型）：
+\`\`\`text
+Storyboard contract version: scripted-16x9-v1.
+Storyboard source signature: scripted-board-signature.
+P1 0-1.7s: script=伊莎贝拉退到门边; visual=维克多逼近; camera=slow push-in; shot=medium close-up; lens=50mm; lighting=lightning; dialogue=维克多: "Obey me."; sound=wind and breathing; action=后退; continuity=keep axis.
+P2 1.7-3.3s: script=伊莎贝拉继续后退; visual=维克多停在门边; camera=hold; shot=close-up; lens=85mm; lighting=lightning; dialogue=No spoken dialogue; sound=wind and breathing; action=停顿; continuity=keep axis.
+\`\`\``;
+const [parsedStoryboardAsset] = runner.parseAssets(storyboardPromptDocument);
+assert.equal(parsedStoryboardAsset.type, "Storyboard");
+assert.match(parsedStoryboardAsset.prompt, /Storyboard contract version: scripted-16x9-v1/, "storyboard prompt documents must preserve their contract");
+assert.match(parsedStoryboardAsset.prompt, /P1 0-1.7s: script=伊莎贝拉退到门边/, "storyboard prompt documents must preserve the scripted panel plan");
+assert.equal(runner.storyboardPanelObjects(parsedStoryboardAsset.prompt).length, 2, "the renderer must find panels inside a 故事板提示词 document");
 
 console.log("storyboard script contract tests passed");

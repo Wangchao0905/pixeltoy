@@ -312,7 +312,7 @@ function parseAssets(markdown) {
 }
 
 function extractTextToImagePrompt(section) {
-  const re = /(?:文)?生图提示词(?:[^\n：:]*?)[:：]\s*```(?:text|txt|markdown|md)?\s*([\s\S]*?)```/i;
+  const re = /(?:文)?(?:生图|故事板)提示词(?:[^\n：:]*?)[:：]\s*```(?:text|txt|markdown|md)?\s*([\s\S]*?)```/i;
   const match = section.match(re);
   return (match?.[1] || "").trim();
 }

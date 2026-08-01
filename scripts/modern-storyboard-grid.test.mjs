@@ -13,6 +13,16 @@ assert.ok(render, "modern storyboard renderer must be present");
 assert.match(render[0], /pages\.map\(\(entry, index\)/, "the document must render one card per storyboard board");
 assert.match(render[0], /data-storyboard-page-index/, "board cards must select a storyboard page");
 assert.doesNotMatch(render[0], /grid\.innerHTML = page\.panels\.map/, "the main grid must not render nine panel cards as nine storyboards");
+assert.match(
+  app,
+  /shotDurationTotal > 0\s*\?\s*Math\.ceil\(shotDurationTotal \/ STORYBOARD_PLOT_SECONDS\)/,
+  "the active video shot duration must determine the number of 15-second storyboard boards",
+);
+assert.doesNotMatch(
+  app,
+  /Math\.max\(shotDurationTotal,\s*slotDurationTotal\)/,
+  "legacy storyboard slots must not increase the number of storyboard boards",
+);
 assert.match(styles, /\.storyboard-document-shot-frame\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/);
 assert.match(styles, /\.storyboard-document-shot-frame\.storyboard-document-board-frame\.has-media\s*\{[^}]*background-size:\s*cover/);
 

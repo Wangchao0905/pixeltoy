@@ -5225,7 +5225,7 @@ function modernVideoQueueCount(progress = {}) {
 }
 
 function modernShotRecords(data = state.project) {
-  const config = videoConfigDataFromProject();
+  const config = videoConfigDataFromProject(data);
   const configShots = Array.isArray(config?.shots) ? config.shots : [];
   const progress = Array.isArray(data?.videoProgress?.items) ? data.videoProgress.items : [];
   const byName = new Map(progress.map((item) => [item.name, item]));
@@ -5265,12 +5265,15 @@ const STORYBOARD_PLOT_SECONDS = 15;
 function modernStoryboardPages(data = state.project, shots = modernShotRecords(data)) {
   const slots = Array.isArray(data?.storyboardSlots) ? data.storyboardSlots : [];
   const shotDurationTotal = (Array.isArray(shots) ? shots : []).reduce((total, shot) => total + Math.max(0, Number(shot?.duration) || 0), 0);
-  const slotDurationTotal = slots.reduce((total, slot) => total + Math.max(0, Number(slot?.duration) || 0), 0);
-  const durationBasedCount = Math.ceil(Math.max(shotDurationTotal, slotDurationTotal) / STORYBOARD_PLOT_SECONDS);
   // The screenplay/video durations are the source of truth. Older project snapshots can
   // still carry nine panel records in storyboardSlots; never let those stale records
   // turn the board sequence into nine 15-second storyboards.
-  const boardCount = Math.max(1, durationBasedCount || slots.length || Math.ceil(Math.max(shots.length, 1) / 8));
+  const boardCount = Math.max(
+    1,
+    shotDurationTotal > 0
+      ? Math.ceil(shotDurationTotal / STORYBOARD_PLOT_SECONDS)
+      : slots.length || Math.ceil(Math.max(shots.length, 1) / 8),
+  );
   const sizeLabels = ["WS", "MS", "CU", "MS", "OTS", "CU", "MS", "CU", "WS"];
   const boardPanel = (raw, panelIndex, shot, boardIndex, boardDuration = STORYBOARD_PLOT_SECONDS) => {
     const status = raw ? modernStoryboardStatusForPanel({ shot: raw }) : modernStoryboardStatusForPanel({ shot });
@@ -5324,8 +5327,12 @@ function modernStoryboardPages(data = state.project, shots = modernShotRecords(d
         status: "reused",
       };
     }
-    const startSecond = Number(slot.startSecond ?? boardIndex * 15);
-    const endSecond = Number(slot.endSecond ?? startSecond + 15);
+    const startSecond = shotDurationTotal > 0
+      ? boardIndex * STORYBOARD_PLOT_SECONDS
+      : Number(slot.startSecond ?? boardIndex * STORYBOARD_PLOT_SECONDS);
+    const endSecond = shotDurationTotal > 0
+      ? Math.min(shotDurationTotal, startSecond + STORYBOARD_PLOT_SECONDS)
+      : Number(slot.endSecond ?? startSecond + STORYBOARD_PLOT_SECONDS);
     const status = panels.every((panel) => ["complete", "reused"].includes(panel.status))
       ? "complete"
       : panels.some((panel) => ["running", "queued"].includes(panel.status))

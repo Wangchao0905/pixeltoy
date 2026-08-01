@@ -6277,43 +6277,33 @@ function storyboardSegmentsForEpisode(episodeRoot, configData = null) {
   return fallbackStoryboardSegmentsFromScript(episodeRoot, dialogueLanguage);
 }
 
-function splitStoryboardSegment(segment) {
-  const duration = clampStoryboardDuration(segment.duration, 10);
-  if (duration <= PRODUCTION_BOARD_MAX_SECONDS) return [{ ...segment, duration, partIndex: 1, partCount: 1 }];
-  const parts = [];
-  let remaining = duration;
-  let offset = 0;
-  const partCount = Math.ceil(duration / PRODUCTION_BOARD_MAX_SECONDS);
-  // 把该段落的剧情句子与对白按 part 数切开,每个 part 只承载自己的部分,
-  // 避免多个 Production Board 逐字重复展示同一段剧情。
+function storyboardSegmentSlice(segment, offset, duration, partIndex = 1, partCount = 1) {
+  const total = clampStoryboardDuration(segment.duration, 10);
+  const whole = offset <= 0 && duration >= total;
+  const sliceByTime = (items) => {
+    if (!items.length) return [];
+    if (items.length === 1) return partIndex === 1 ? items : [];
+    const start = Math.floor((offset / total) * items.length);
+    const end = Math.max(start + 1, Math.ceil(((offset + duration) / total) * items.length));
+    return items.slice(start, Math.min(items.length, end));
+  };
   const beatUnits = storyboardBeatUnits(segment);
   const dialogues = Array.isArray(segment.dialogues) ? segment.dialogues : [];
-  const sliceByPart = (arr, i) => {
-    const start = Math.floor((i * arr.length) / partCount);
-    const end = Math.max(start + 1, Math.floor(((i + 1) * arr.length) / partCount));
-    return arr.slice(start, end);
+  const startSecond = Number(segment.startSecond || 0) + offset;
+  const endSecond = startSecond + duration;
+  return {
+    ...segment,
+    key: whole ? segment.key : segment.key + "_P" + partIndex,
+    title: whole ? segment.title : segment.title + " " + partIndex + "/" + partCount,
+    beat: whole ? segment.beat : sliceByTime(beatUnits).join(" ") || segment.beat,
+    dialogues: whole ? segment.dialogues : sliceByTime(dialogues),
+    duration,
+    startSecond,
+    endSecond,
+    partIndex,
+    partCount,
+    forceOwnStoryboard: false,
   };
-  for (let partIndex = 1; remaining > 0; partIndex += 1) {
-    const partDuration = Math.min(PRODUCTION_BOARD_MAX_SECONDS, remaining);
-    const i = partIndex - 1;
-    const partBeat = beatUnits.length ? sliceByPart(beatUnits, i).join(" ") : "";
-    parts.push({
-      ...segment,
-      beat: partBeat || segment.beat,
-      dialogues: dialogues.length ? sliceByPart(dialogues, i) : segment.dialogues,
-      key: `${segment.key}_P${partIndex}`,
-      title: `${segment.title} ${partIndex}/${partCount}`,
-      duration: partDuration,
-      startSecond: (segment.startSecond || 0) + offset,
-      endSecond: (segment.startSecond || 0) + offset + partDuration,
-      partIndex,
-      partCount,
-      forceOwnStoryboard: true,
-    });
-    offset += partDuration;
-    remaining -= partDuration;
-  }
-  return parts;
 }
 
 function productionBoardGroupKey(segment) {
@@ -6331,22 +6321,34 @@ function storyboardGroupsForSegments(segments) {
     if (current?.segments?.length) groups.push(current);
     current = null;
   };
-  for (const part of segments.flatMap(splitStoryboardSegment)) {
-    const groupKey = productionBoardGroupKey(part);
-    if (!current || part.forceOwnStoryboard || current.groupKey !== groupKey || current.duration + part.duration > PRODUCTION_BOARD_MAX_SECONDS) {
-      flush();
-      current = {
-        segments: [],
-        duration: 0,
-        startSecond: part.startSecond || 0,
-        endSecond: part.endSecond || part.duration,
-        groupKey,
-      };
+  for (const segment of Array.isArray(segments) ? segments : []) {
+    const total = clampStoryboardDuration(segment.duration, 10);
+    let remaining = total;
+    let offset = 0;
+    let partIndex = 1;
+    while (remaining > 0) {
+      const available = PRODUCTION_BOARD_MAX_SECONDS - Number(current?.duration || 0);
+      const partDuration = Math.min(remaining, available > 0 ? available : PRODUCTION_BOARD_MAX_SECONDS);
+      const partCount = Math.max(1, Math.ceil((total + Number(current?.duration || 0)) / PRODUCTION_BOARD_MAX_SECONDS));
+      const part = storyboardSegmentSlice(segment, offset, partDuration, partIndex, partCount);
+      const groupKey = productionBoardGroupKey(part);
+      if (!current) {
+        current = {
+          segments: [],
+          duration: 0,
+          startSecond: part.startSecond || 0,
+          endSecond: part.endSecond || part.duration,
+          groupKey,
+        };
+      }
+      current.segments.push(part);
+      current.duration += part.duration;
+      current.endSecond = part.endSecond || current.startSecond + current.duration;
+      remaining -= partDuration;
+      offset += partDuration;
+      partIndex += 1;
+      if (current.duration >= PRODUCTION_BOARD_MAX_SECONDS) flush();
     }
-    current.segments.push(part);
-    current.duration += part.duration;
-    current.endSecond = part.endSecond || current.startSecond + current.duration;
-    if (part.forceOwnStoryboard || current.duration >= PRODUCTION_BOARD_MAX_SECONDS) flush();
   }
   flush();
   return groups;
@@ -6514,28 +6516,9 @@ function storyboardSlotsForState(episodeRoot, manifest = null, assets = scanAsse
       asset,
     };
   });
-  for (const asset of storyboardAssets) {
-    if (usedStoryboardNames.has(asset.assetName)) continue;
-    if (slots.some((slot) => slot.id === asset.assetName)) continue;
-    slots.push({
-      id: asset.assetName,
-      type: "Storyboard",
-      label: asset.assetName,
-      usage: asset.usage || assetUsageForType("Storyboard"),
-      sourceSceneId: "",
-      sourceSceneLabel: "手动上传",
-      refs: [],
-      beatSummary: "未匹配当前剧情拆解的故事版文件",
-      panels: defaultStoryboardPanels(),
-      videoReferenceGuide: productionBoardReferenceGuide(),
-      status: "ready",
-      statusLabel: "已就绪",
-      source: "file",
-      generated: true,
-      missing: false,
-      asset,
-    });
-  }
+  // 不把无法匹配当前剧情时间窗的旧 Production Board 追加为新 PART。
+  // 旧板仍保留在 storyboards 资产列表中，但不能改变当前序列的 PART 数量，
+  // 否则 90 秒剧情在重规划为 6 × 15 秒后会被旧的 9 张板重新撑回 9 张。
   return slots;
 }
 
@@ -21472,10 +21455,10 @@ function storyboardPromptForSlot(slot) {
   // 角色、场景、道具直接从引用资产生成到面板画面中，视频阶段仅提交这张板。
   return [
     "Create ONE 16:9 horizontal professional film storyboard document covering exactly 15 seconds of one continuous scripted beat. Full sheet visible, no cropping.",
-    `The complete sheet is one clean ${gridLabel} nine-panel storyboard grid, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Use equal panel boundaries and an editorial production-sheet layout with a clear header and a compact footer summary.`,
+    `The complete sheet is one clean ${gridLabel} nine-panel storyboard grid, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Use equal panel boundaries with no extra header, footer, or blank area outside the nine panels.`,
     "Render every panel as a black-and-white hand-drawn storyboard sketch: graphite/pencil linework, loose hatching, clear silhouettes, expressive blocking, rough but intentional speed lines, white paper, no color. This is a planning document, not a finished cinematic still and not an asset image.",
     "Each panel must communicate shot scale, camera angle, screen direction, character count, body orientation, prop placement, action and emotional beat. Keep real identity details abstract; official C/S/P/I assets are referenced only by their IDs in the panel notes and remain separate from the sketch.",
-    "Every panel has a readable lower production note area. Typeset or reserve space for panel number, time range, action, shot size, camera/lens, movement, dialogue or sound, and transition. Do not invent speech bubbles, logos, random glyphs, or decorative UI.",
+    "Fill every panel edge-to-edge with its planned horizontal storyboard frame. A deterministic post-process may overlay compact production notes inside each panel; never leave a lower section blank or reserve an empty paper band. Do not invent speech bubbles, logos, random glyphs, or decorative UI.",
     "The final panel is the outgoing continuity anchor. The next 15-second board must reuse this exact panel as its first panel, preserving composition, screen direction, character blocking, eyeline, prop state and light direction before introducing new action.",
     `Every panel must use a distinct shot scale and camera angle per the plan below. Time coverage ${timeRange}; sequence duration ${slot.duration || PRODUCTION_BOARD_MAX_SECONDS}s.`,
     `Source shots: ${shots}.`,
@@ -22432,7 +22415,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
         runNamespace: currentRunNamespace(episodeRoot),
         assetStylePreset: "production_board",
         assetStyleLabel: "Production Board",
-        aspectRatio: "9:16",
+        aspectRatio: "16:9",
         imageSize: size,
         targetAssetNames: selectedStoryboardNames.length === 1 ? selectedStoryboardNames : [],
       },
@@ -24449,6 +24432,7 @@ module.exports = {
       productionBoardShotsFromSlots,
       storyboardGuidanceForShot,
       storyboardSegmentsFromShots,
+      storyboardGroupsForSegments,
       resolveStoryboardSelection,
       fullProjectState,
       fullProjectStateForUser,

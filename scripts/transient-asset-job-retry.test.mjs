@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { __test } = require("../server.js");
-const { shouldAutoRetryTransientAssetJob, AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS, STORYBOARD_AUTO_RETRY_MAX_ATTEMPTS } = __test.assetJobRetry;
+const { shouldAutoRetryTransientAssetJob, AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS } = __test.assetJobRetry;
 
 const networkFailure = { category: "gateway-network" };
 
@@ -14,7 +14,18 @@ assert.equal(
     autoRetryAttempt: 0,
     failureDetails: [networkFailure],
   }),
+  false,
+  "storyboards must return to the user after one bounded request instead of starting another long job automatically",
+);
+assert.equal(
+  shouldAutoRetryTransientAssetJob({
+    type: "assets",
+    targetAssetNames: ["C001"],
+    autoRetryAttempt: 0,
+    failureDetails: [networkFailure],
+  }),
   true,
+  "non-storyboard asset jobs retain their existing transient retry behavior",
 );
 assert.equal(
   shouldAutoRetryTransientAssetJob({
@@ -24,16 +35,6 @@ assert.equal(
     failureDetails: [networkFailure],
   }),
   false,
-);
-assert.equal(
-  shouldAutoRetryTransientAssetJob({
-    type: "storyboards",
-    targetAssetNames: ["SB007"],
-    autoRetryAttempt: STORYBOARD_AUTO_RETRY_MAX_ATTEMPTS,
-    failureDetails: [networkFailure],
-  }),
-  false,
-  "a storyboard must stop after its single automatic retry so the user can recover from a known state",
 );
 assert.equal(
   shouldAutoRetryTransientAssetJob({

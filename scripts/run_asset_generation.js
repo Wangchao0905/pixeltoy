@@ -31,7 +31,9 @@ const DEFAULT_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_IMA
 const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_TIMEOUT_SECONDS || "180", 10);
 const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "120", 10);
 const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRIES || "2", 10);
-const STORYBOARD_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_RETRIES || "0", 10);
+// Production Boards are user-scoped, manually retryable jobs. Never let a
+// stale process environment turn one click into a second full upstream wait.
+const STORYBOARD_IMAGE_RETRIES = 0;
 const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v18-landscape-full-panels";
 
 function usage() {

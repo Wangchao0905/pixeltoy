@@ -30,7 +30,7 @@ assert.doesNotMatch(
 );
 assert.match(
   runner,
-  /PIXEL_TOYS_STORYBOARD_IMAGE_RETRIES \|\| "0"/,
+  /const STORYBOARD_IMAGE_RETRIES = 0/,
   "a single storyboard request must fail clearly instead of silently extending the wait with another full request",
 );
 

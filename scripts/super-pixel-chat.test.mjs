@@ -85,7 +85,10 @@ assert.match(app, /function superPixelVideoDownloadName\(/, "Super Pixel 视频�
 assert.match(app, /function superPixelVideoDownloadHref\(/, "Super Pixel 视频下载必须经过统一地址处理");
 assert.match(app, /\/api\/canvas\/video-download\?url=/, "远程 Super Pixel 视频必须使用同源下载代理");
 assert.match(app, /className = "super-pixel-tool-card-download"/, "完成的视频卡必须提供独立下载按钮");
-assert.match(app, /download\.textContent = "下载视频"/, "下载按钮文案必须明确");
+assert.match(app, /download\.setAttribute\("aria-label", "下载视频"\)/, "下载按钮必须保留无障碍名称");
+assert.match(app, /download\.textContent = "↓"/, "下载按钮应使用紧凑的下载图标");
+assert.match(app, /media\.className = "super-pixel-video-media"/, "视频与下载按钮必须在同一个预览容器中");
+assert.match(app, /media\.append\(video, download\)/, "下载按钮必须叠放在视频预览内");
 assert.match(app, /function handleSuperPixelStreamEvent\(/);
 assert.match(app, /function superPixelAssistantFailureMessage\(/);
 assert.match(app, /function startSuperPixelImagePoll\(/);

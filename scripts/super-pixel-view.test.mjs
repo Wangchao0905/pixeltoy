@@ -181,4 +181,10 @@ const jsStamp = html.match(/app\.js\?v=([A-Za-z0-9._-]+)/)?.[1];
 assert.ok(cssStamp && jsStamp, "缓存戳必须存在");
 assert.equal(cssStamp, jsStamp, "styles.css 与 app.js 缓存戳必须同步");
 
+const superPixelRedesign = css.slice(css.indexOf("/* Super Pixel redesign:"));
+assert.match(superPixelRedesign, /--sp-chat-font:\s*"Google Sans", "Google Sans Text", "SF Pro Display"/, "Super Pixel 正文应使用与参考一致的圆润无衬线字体栈");
+assert.match(superPixelRedesign, /\.super-pixel-message\.is-user\s*\{[^}]*border:\s*0/, "对话消息不应使用卡片边框");
+assert.match(superPixelRedesign, /\.super-pixel-tool-card\s*\{[^}]*border:\s*0/, "生成结果在对话流中不应使用外框");
+assert.match(superPixelRedesign, /\.super-pixel-video-media:hover \.super-pixel-tool-card-download,[\s\S]*?\.super-pixel-video-media:focus-within \.super-pixel-tool-card-download/, "视频下载按钮应在悬停或键盘聚焦时显示");
+
 console.log("super pixel view tests passed");

@@ -3047,23 +3047,22 @@ function renderSuperPixelVideoConfirmCard(message) {
   appendSuperPixelCardMeta(details, "比例", args.ratio || "9:16");
   card.appendChild(details);
   if (message.status === "completed" && message.videoUrl) {
+    const media = document.createElement("div");
+    media.className = "super-pixel-video-media";
     const video = document.createElement("video");
     video.className = "super-pixel-tool-card-media";
     video.src = message.videoUrl;
     video.controls = true;
     video.playsInline = true;
-    card.appendChild(video);
-    const actions = document.createElement("div");
-    actions.className = "super-pixel-tool-card-actions";
     const download = document.createElement("a");
     download.className = "super-pixel-tool-card-download";
     download.href = superPixelVideoDownloadHref(message);
     download.download = superPixelVideoDownloadName(message);
     download.setAttribute("aria-label", "下载视频");
     download.title = "下载视频";
-    download.textContent = "下载视频";
-    actions.appendChild(download);
-    card.appendChild(actions);
+    download.textContent = "↓";
+    media.append(video, download);
+    card.appendChild(media);
   } else if (message.status === "failed" || message.status === "cancelled") {
     const status = document.createElement("p");
     status.className = `super-pixel-tool-card-message${message.status === "failed" ? " is-error" : ""}`;

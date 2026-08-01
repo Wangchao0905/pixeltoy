@@ -5376,6 +5376,8 @@ function parseModernStoryboardProgress(job = null, pages = [], localGenerating =
   const activeNames = [...log.matchAll(/\b(?:generating|editing)\s+(.+?)\s+\(\d+x\d+\)\s+->/gi)].map((match) => match[1].trim());
   const generatedNames = [...log.matchAll(/\b(?:generated|edited)\s+(.+?)\s+->/gi)].map((match) => match[1].trim());
   const failedNames = [...log.matchAll(/\bfailed\s+(.+?):/gi)].map((match) => match[1].trim());
+  const retryMatches = [...log.matchAll(/(?:transient image-gen failure.*?retrying in|上游临时故障.*?将在)\s*(\d+)\s*(?:s|秒)/gi)];
+  const retryWaitSeconds = Number(retryMatches.length ? retryMatches[retryMatches.length - 1][1] : 0);
   const generatedNameSet = new Set(generatedNames);
   const pendingActiveNames = activeNames.filter((name) => !generatedNameSet.has(name));
   const activeName = pendingActiveNames[pendingActiveNames.length - 1] || targetNames[0] || generatedNames[generatedNames.length - 1] || failedNames[failedNames.length - 1] || "";
@@ -5431,7 +5433,13 @@ function parseModernStoryboardProgress(job = null, pages = [], localGenerating =
     detail = "任务已进入故事板队列，正在等待图像生成资源。";
   } else if (status === "running" || localGenerating) {
     state = "running";
-    if (hasGeneratedLine && !hasActiveLine) {
+    if (retryWaitSeconds > 0) {
+      stage = "阶段 2 / 4 · 等待上游重试";
+      stageIndex = 2;
+      percent = 48;
+      label = "上游暂时不可用 · 正在重试";
+      detail = `图像服务暂时未返回结果，将在 ${retryWaitSeconds} 秒后重试当前 PART；其他 PART 不受影响。`;
+    } else if (hasGeneratedLine && !hasActiveLine) {
       stage = "阶段 3 / 4 · 写入连续性";
       stageIndex = 3;
       percent = 82;

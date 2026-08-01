@@ -68,6 +68,14 @@ assert.equal(progress.current, "PART 02 / 02", "active log target must resolve t
 assert.equal(progress.percent, 52, "image generation should report the drawing phase");
 
 progress = progressContext.parseModernStoryboardProgress(
+  { status: "running", targetAssetNames: ["SB002_E01_V002_PRODUCTION_BOARD"], logs: "generating SB002_E01_V002_PRODUCTION_BOARD (1536x864) -> /tmp/board.png\n2026-08-01T07:30:00.000Z SB002_E01_V002_PRODUCTION_BOARD: transient image-gen failure, retrying in 12s" },
+  pages,
+  false,
+);
+assert.equal(progress.label, "上游暂时不可用 · 正在重试", "a retried provider request must not be presented as generic generation");
+assert.match(progress.detail, /12 秒/);
+
+progress = progressContext.parseModernStoryboardProgress(
   { status: "complete", logs: "generated SB001_E01_V001_PRODUCTION_BOARD -> /tmp/old-board.png" },
   pages,
   true,

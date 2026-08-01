@@ -28,6 +28,9 @@ if (!imageGen.includes('partial_image_b64') || !imageGen.includes("const finalEv
 if (!imageGen.includes("let lastPartialImages = []") || !imageGen.includes("partial: true")) {
   throw new Error("image-gen child must keep the last partial image when the final SSE event is missing");
 }
+if (!imageGen.includes('async function* readSseJson(response, timeoutSeconds = 0)') || !imageGen.includes('new UserError("request_timeout", "接口响应超时"') || !imageGen.includes("readImageResponse(activeRequest.response, timeout)")) {
+  throw new Error("an SSE response that stalls after its headers must surface as a bounded upstream timeout");
+}
 if (!server.includes('require("node:dns")') || !server.includes('dns.setDefaultResultOrder("ipv4first")')) {
   throw new Error("server must prefer IPv4 for outbound provider requests");
 }

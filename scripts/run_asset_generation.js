@@ -28,10 +28,10 @@ const IMAGE_API_KEY_ENV_NAMES = [
 const IMAGE_GEN_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || process.env.IMAGE_GEN_IMAGE_MODEL || "gpt-image-2";
 const IMAGE_GEN_ORCHESTRATION_MODEL = process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_MODEL || "gpt-5.4-mini";
 const DEFAULT_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10);
-const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_TIMEOUT_SECONDS || "900", 10);
-const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "900", 10);
+const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_TIMEOUT_SECONDS || "180", 10);
+const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "120", 10);
 const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRIES || "2", 10);
-const STORYBOARD_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_RETRIES || "1", 10);
+const STORYBOARD_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_RETRIES || "0", 10);
 const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v18-landscape-full-panels";
 
 function usage() {
@@ -1417,11 +1417,20 @@ function boundedTimeoutSeconds(value, fallback) {
   return Math.max(30, Math.min(parsed, 900));
 }
 
+function boundedStoryboardTimeoutSeconds(value, fallback) {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  // A Production Board is a single 16:9 sheet. Letting an upstream request
+  // occupy a worker for fifteen minutes makes a recoverable gateway stall look
+  // like an endless generation to the user.
+  return Math.max(60, Math.min(parsed, 180));
+}
+
 function timeoutSecondsFor(asset, stage = "primary") {
   if (asset?.type === "Storyboard") {
     return stage === "rescue"
-      ? boundedTimeoutSeconds(STORYBOARD_RESCUE_TIMEOUT_SECONDS, 120)
-      : boundedTimeoutSeconds(STORYBOARD_IMAGE_TIMEOUT_SECONDS, 120);
+      ? boundedStoryboardTimeoutSeconds(STORYBOARD_RESCUE_TIMEOUT_SECONDS, 120)
+      : boundedStoryboardTimeoutSeconds(STORYBOARD_IMAGE_TIMEOUT_SECONDS, 180);
   }
   return boundedTimeoutSeconds(DEFAULT_IMAGE_TIMEOUT_SECONDS, 900);
 }
@@ -1975,7 +1984,7 @@ function shouldFallbackStoryboardToText(message) {
     status === 522 ||
     status === 523 ||
     status === 524 ||
-    /no_image_result|stream|did not return image|service temporarily unavailable|no available account|no available channel|responses|api_http_error|request_timeout|network_error|timeout|timed out|cloudflare|无可用账号|无可用渠道|超时|流结束|没有收到图片/.test(haystack)
+    /no_image_result|stream|did not return image|service temporarily unavailable|no available account|no available channel|responses|api_http_error|network_error|cloudflare|无可用账号|无可用渠道|流结束|没有收到图片/.test(haystack)
   );
 }
 

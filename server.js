@@ -22490,12 +22490,19 @@ function appendJobLog(job, chunk) {
 const AUTO_RETRYABLE_ASSET_FAILURE_CATEGORIES = new Set(["gateway", "gateway-timeout", "gateway-network", "stream", "ratelimit"]);
 const AUTO_RETRYABLE_ASSET_JOB_TYPES = new Set(["assets", "asset-regenerate", "asset-edit", "storyboards", "storyboard-regenerate"]);
 const AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS = 2;
+const STORYBOARD_AUTO_RETRY_MAX_ATTEMPTS = 1;
+
+function autoRetryLimitForAssetJob(job) {
+  return ["storyboards", "storyboard-regenerate"].includes(job?.type)
+    ? STORYBOARD_AUTO_RETRY_MAX_ATTEMPTS
+    : AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS;
+}
 
 function shouldAutoRetryTransientAssetJob(job) {
   if (!AUTO_RETRYABLE_ASSET_JOB_TYPES.has(job?.type)) return false;
   const targetAssetNames = Array.isArray(job?.targetAssetNames) ? job.targetAssetNames.filter(Boolean) : [];
   if (targetAssetNames.length !== 1) return false;
-  if (Number(job?.autoRetryAttempt || 0) >= AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS) return false;
+  if (Number(job?.autoRetryAttempt || 0) >= autoRetryLimitForAssetJob(job)) return false;
   const failures = Array.isArray(job?.failureDetails) ? job.failureDetails : [];
   return failures.length > 0 && failures.every((failure) => AUTO_RETRYABLE_ASSET_FAILURE_CATEGORIES.has(failure.category));
 }
@@ -22605,9 +22612,10 @@ function startProcessJob({ episodeRoot, type, command, args, cwd, meta = {} }) {
         const retryAt = new Date(Date.now() + delayMs).toISOString();
         job.autoRetryAttempt = attempt;
         job.autoRetryAt = retryAt;
-        job.failureReason = `上游临时故障，正在自动重试（${attempt}/${AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS}）`;
+        const retryLimit = autoRetryLimitForAssetJob(job);
+        job.failureReason = `上游临时故障，正在自动重试（${attempt}/${retryLimit}）`;
         job.status = "running";
-        appendJobLog(job, `\n上游临时故障，正在自动重试（${attempt}/${AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS}），将在 ${Math.round(delayMs / 1000)} 秒后继续。\n`);
+        appendJobLog(job, `\n上游临时故障，正在自动重试（${attempt}/${retryLimit}），将在 ${Math.round(delayMs / 1000)} 秒后继续。\n`);
         setTimeout(() => {
           if (job.status !== "running" || job.autoRetryAt !== retryAt) return;
           job.autoRetryAt = "";
@@ -24977,6 +24985,7 @@ module.exports = {
     assetJobRetry: {
       shouldAutoRetryTransientAssetJob,
       AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS,
+      STORYBOARD_AUTO_RETRY_MAX_ATTEMPTS,
     },
     assetUpload: {
       uploadLocalAsset,

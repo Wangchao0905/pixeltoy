@@ -157,15 +157,20 @@ async function fetchWithTimeout(url, options, timeoutSeconds, retries = 2) {
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     const timeout = timeoutSignal(timeoutSeconds);
+    let response;
     try {
-      return await fetch(url, { ...options, signal: timeout.signal });
+      response = await fetch(url, { ...options, signal: timeout.signal });
+      // Keep the abort signal active while consuming an SSE response. A gateway
+      // can send headers then stop streaming; clearing this timer here would
+      // leave the child process hanging until its parent kills it.
+      return { response, clear: timeout.clear };
     } catch (error) {
       if (error.name === "AbortError") {
         throw new UserError("request_timeout", "接口请求超时", { timeout: timeoutSeconds, url });
       }
       lastError = error;
     } finally {
-      timeout.clear();
+      if (!response) timeout.clear();
     }
     if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
   }
@@ -181,7 +186,7 @@ async function ensureOkResponse(response, url) {
   });
 }
 
-async function* readSseJson(response) {
+async function* readSseJson(response, timeoutSeconds = 0) {
   if (!response.body) throw new UserError("stream_unreadable", "响应没有可读取的 SSE 流");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -201,7 +206,16 @@ async function* readSseJson(response) {
     }
   };
   while (true) {
-    const { value, done } = await reader.read();
+    let chunk;
+    try {
+      chunk = await reader.read();
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new UserError("request_timeout", "接口响应超时", { timeout: timeoutSeconds });
+      }
+      throw error;
+    }
+    const { value, done } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const frames = buffer.split(/\r?\n\r?\n/);
@@ -257,7 +271,7 @@ function collectImages(event, images = []) {
   return images;
 }
 
-async function readImageResponse(response) {
+async function readImageResponse(response, timeoutSeconds = 0) {
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   if (contentType.includes("json")) {
     const payload = await response.json().catch((error) => {
@@ -271,7 +285,7 @@ async function readImageResponse(response) {
 
   const images = [];
   let lastPartialImages = [];
-  for await (const event of readSseJson(response)) {
+  for await (const event of readSseJson(response, timeoutSeconds)) {
     throwIfErrorEvent(event);
     const eventImages = collectImages(event);
     if (isPartialImageEvent(event)) {
@@ -455,22 +469,26 @@ async function main() {
   const n = intArg(args, "n", 1);
   const timeout = intArg(args, "timeout", 900);
   const request = await buildRequest(args, mode);
-  let response;
+  let activeRequest;
   let usedResponsesFallback = false;
   try {
-    response = await fetchWithTimeout(request.url, request.options, timeout);
-    await ensureOkResponse(response, request.url);
+    activeRequest = await fetchWithTimeout(request.url, request.options, timeout);
+    await ensureOkResponse(activeRequest.response, request.url);
   } catch (error) {
+    activeRequest?.clear();
     if (mode !== "text" || !shouldFallbackToResponses(error)) throw error;
     const fallback = buildTextResponsesRequest(args);
-    response = await fetchWithTimeout(fallback.url, fallback.options, timeout);
-    await ensureOkResponse(response, fallback.url);
+    activeRequest = await fetchWithTimeout(fallback.url, fallback.options, timeout);
+    await ensureOkResponse(activeRequest.response, fallback.url);
     usedResponsesFallback = true;
   }
-
-  const result = await readImageResponse(response);
-  const paths = await saveImages(result.images.slice(0, n), args.out || request.defaultOut, request.defaultOut);
-  process.stdout.write(`${JSON.stringify({ ok: true, mode, paths, responsesFallback: usedResponsesFallback, ...(result.partial ? { partial: true } : {}) }, null, 2)}\n`);
+  try {
+    const result = await readImageResponse(activeRequest.response, timeout);
+    const paths = await saveImages(result.images.slice(0, n), args.out || request.defaultOut, request.defaultOut);
+    process.stdout.write(`${JSON.stringify({ ok: true, mode, paths, responsesFallback: usedResponsesFallback, ...(result.partial ? { partial: true } : {}) }, null, 2)}\n`);
+  } finally {
+    activeRequest?.clear();
+  }
 }
 
 main().catch((error) => {

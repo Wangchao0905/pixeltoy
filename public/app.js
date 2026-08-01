@@ -5377,7 +5377,10 @@ function parseModernStoryboardProgress(job = null, pages = [], localGenerating =
   const generatedNames = [...log.matchAll(/\b(?:generated|edited)\s+(.+?)\s+->/gi)].map((match) => match[1].trim());
   const failedNames = [...log.matchAll(/\bfailed\s+(.+?):/gi)].map((match) => match[1].trim());
   const retryMatches = [...log.matchAll(/(?:transient image-gen failure.*?retrying in|上游临时故障.*?将在)\s*(\d+)\s*(?:s|秒)/gi)];
-  const retryWaitSeconds = Number(retryMatches.length ? retryMatches[retryMatches.length - 1][1] : 0);
+  const lastRetry = retryMatches[retryMatches.length - 1];
+  const retryWaitSeconds = Number(lastRetry?.[1] || 0);
+  const retryLogTail = lastRetry ? log.slice((lastRetry.index || 0) + lastRetry[0].length) : "";
+  const retryHasRestarted = /开始第\s+\d+\s+次自动重试|\b(?:generating|editing)\s+/i.test(retryLogTail);
   const generatedNameSet = new Set(generatedNames);
   const pendingActiveNames = activeNames.filter((name) => !generatedNameSet.has(name));
   const activeName = pendingActiveNames[pendingActiveNames.length - 1] || targetNames[0] || generatedNames[generatedNames.length - 1] || failedNames[failedNames.length - 1] || "";
@@ -5433,7 +5436,7 @@ function parseModernStoryboardProgress(job = null, pages = [], localGenerating =
     detail = "任务已进入故事板队列，正在等待图像生成资源。";
   } else if (status === "running" || localGenerating) {
     state = "running";
-    if (retryWaitSeconds > 0) {
+    if (retryWaitSeconds > 0 && !retryHasRestarted) {
       stage = "阶段 2 / 4 · 等待上游重试";
       stageIndex = 2;
       percent = 48;

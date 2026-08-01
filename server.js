@@ -22,6 +22,9 @@ const { buildTeamProjectProgressFacts, calculateTeamProjectProgress, selectVideo
 const { createAssetLibrary } = require("./server/asset-library.js");
 const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
 const { ensureThumbnail } = require("./server/thumbnailer.js");
+const fsRequestCache = require("./server/fs-request-cache.js");
+fsRequestCache.install(fs);
+fsRequestCache.assertInstalled(fs);
 const {
   isValidEmail,
   normalizeEmail,
@@ -24745,7 +24748,7 @@ function serveMedia(req, res, file, options = {}) {
   fs.createReadStream(file, { start, end }).pipe(res);
 }
 
-const server = http.createServer(async (req, res) => {
+const handleRequest = async (req, res) => {
   // Defensive headers applied to every response. Set via setHeader so they
   // merge with (and are preserved through) later res.writeHead calls.
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -24799,6 +24802,16 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     return fail(res, error.statusCode || 500, error.message, process.env.NODE_ENV === "development" ? error.stack : undefined);
   }
+};
+
+function requestNeedsFsCache(rawUrl) {
+  const pathname = String(rawUrl || "").split("?")[0];
+  return pathname.startsWith("/api/") || pathname === "/media" || pathname.startsWith("/public-assets/");
+}
+
+const server = http.createServer((req, res) => {
+  if (!requestNeedsFsCache(req.url)) return handleRequest(req, res);
+  return fsRequestCache.runInRequest(() => handleRequest(req, res));
 });
 
 // 畸形 HTTP(坏请求行/头)在解析层触发,不会进入 requestListener。默认行为是

@@ -76,6 +76,13 @@ assert.equal(progress.label, "上游暂时不可用 · 正在重试", "a retried
 assert.match(progress.detail, /12 秒/);
 
 progress = progressContext.parseModernStoryboardProgress(
+  { status: "running", targetAssetNames: ["SB002_E01_V002_PRODUCTION_BOARD"], logs: "generating SB002_E01_V002_PRODUCTION_BOARD (1536x864) -> /tmp/board.png\ntransient image-gen failure, retrying in 12s\n开始第 1 次自动重试。\ngenerating SB002_E01_V002_PRODUCTION_BOARD (1536x864) -> /tmp/board.png" },
+  pages,
+  false,
+);
+assert.equal(progress.label, "生成中 · 九宫格画面", "a restarted request must clear the stale waiting-retry state");
+
+progress = progressContext.parseModernStoryboardProgress(
   { status: "complete", logs: "generated SB001_E01_V001_PRODUCTION_BOARD -> /tmp/old-board.png" },
   pages,
   true,

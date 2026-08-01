@@ -16,13 +16,6 @@ assert.ok(panel, "storyboard document must be present");
 for (const id of [
   "modernStoryboardProject",
   "modernStoryboardBoardCount",
-  "modernStoryboardPage",
-  "modernStoryboardTimeRange",
-  "modernStoryboardCanvasTitle",
-  "modernStoryboardCanvasMeta",
-  "modernStoryboardCanvasStatus",
-  "modernStoryboardEmotion",
-  "modernStoryboardSetting",
   "modernStoryboardGrid",
   "modernStoryboardSummary",
   "modernStoryboardKeywords",
@@ -37,8 +30,7 @@ for (const id of [
 assert.match(panel, /STORYBOARD DRAFT/);
 assert.match(panel, /16:9/);
 assert.match(panel, /15 秒/);
-assert.match(panel, /每张故事板覆盖 15 秒剧情/);
-assert.match(panel, /黑白线稿速写/);
+assert.doesNotMatch(panel, /Production Board|核心情绪|场景设定|单张故事板时长|镜头风格/, "九宫格前不应保留重复的标题或元数据条");
 const storyboardActions = panel.match(/<div class="storyboard-document-actions">[\s\S]*?<\/div>/)?.[0] || "";
 assert.match(storyboardActions, /id="modernStoryboardGeneratePage"[^>]*>单张生成<\/button>/, "故事板顶部必须提供当前 PART 的上下文生成入口");
 assert.doesNotMatch(storyboardActions, /单张重新生成/, "生成与重新生成不得并列为两个重复按钮");
@@ -55,7 +47,6 @@ assert.match(js, /carryIn[\s\S]*上一 PART/, "the UI must explain the cross-par
 assert.match(js, /function renderModernStoryboardStudio\(/, "storyboard document needs a dedicated renderer");
 assert.match(js, /const storyboardAction = hasExistingBoard \? "retry" : "current"/, "single storyboard action must switch to regeneration when the current PART already has a result");
 assert.match(js, /storyboardBoardMedia\(/, "generated storyboard sheet media must be shown in the document");
-assert.match(js, /黑白线稿速写 · 九宫格 · 16:9 · 每张故事板覆盖 \$\{STORYBOARD_PLOT_SECONDS\} 秒剧情/, "the document must identify each board as a 15-second plot");
 assert.doesNotMatch(js, /15 秒剧情格/, "a nine-panel board must not label every cell as a separate 15-second storyboard");
 
 assert.match(server, /const STORYBOARD_MIN_PANELS = 9/);

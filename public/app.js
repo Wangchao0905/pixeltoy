@@ -5632,7 +5632,6 @@ function renderModernStoryboardLegacy(data = state.project, shots = modernShotRe
   );
 
   $("#modernStoryboardProject").textContent = title || "项目";
-  $("#modernStoryboardPage").textContent = `第 ${String(currentIndex + 1).padStart(2, "0")} / ${String(pages.length).padStart(2, "0")} 页`;
   $("#modernStoryboardRatio").textContent = ratio;
   const storyboardZoom = Math.max(50, Math.min(120, Number(state.modernStudio.storyboardZoom) || 75));
   state.modernStudio.storyboardZoom = storyboardZoom;
@@ -5657,10 +5656,6 @@ function renderModernStoryboardLegacy(data = state.project, shots = modernShotRe
     referenceDropzone.classList.toggle("is-busy", uploadBusy);
   }
   if (referenceUploadStatus) referenceUploadStatus.textContent = state.modernStudio.storyboardUploadStatus || (uploadBusy ? "正在上传并绑定当前页…" : "拖入图片，或点击右上角＋添加");
-  $("#modernStoryboardCanvasTitle").textContent = `第 ${String(currentIndex + 1).padStart(2, "0")} 页 · 匿名构图`;
-  $("#modernStoryboardCanvasMeta").textContent = state.modernStudio.storyboardStrictReuse && currentIndex > 0 ? "严格连续 · 第 1 格直接继承上一页尾格" : "抽象构图 · 仅传递镜头语言与连续性元数据";
-  $("#modernStoryboardCanvasStatus").textContent = generating ? "生成中" : modernStoryboardStatusLabel(page.status);
-  $("#modernStoryboardCanvasStatus").className = `modern-storyboard-state is-${generating ? "running" : page.status === "complete" ? "ready" : page.status === "failed" ? "failed" : ""}`;
   $("#modernStoryboardReferenceCount").textContent = `${modernStoryboardAssetRecords(data, page).filter((item) => item.bound).length} 个引用`;
   $("#modernStoryboardSelectedPanel").textContent = `${String(selectedPanel.number).padStart(2, "0")} · ${selectedPanel.size}`;
   $("#modernStoryboardSelectedCopy").textContent = selectedPanel.copy;
@@ -5780,14 +5775,6 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
 
   $("#modernStoryboardProject").textContent = title || "项目";
   $("#modernStoryboardBoardCount").textContent = `PART ${String(currentIndex + 1).padStart(2, "0")} / ${String(pages.length).padStart(2, "0")}`;
-  $("#modernStoryboardPage").textContent = `PART ${String(currentIndex + 1).padStart(2, "0")}`;
-  $("#modernStoryboardTimeRange").textContent = `${formatStoryboardSeconds(page.startSecond)} – ${formatStoryboardSeconds(page.endSecond)}`;
-  $("#modernStoryboardCanvasTitle").textContent = page.title;
-  $("#modernStoryboardCanvasMeta").textContent = `黑白线稿速写 · 九宫格 · 16:9 · 每张故事板覆盖 ${STORYBOARD_PLOT_SECONDS} 秒剧情${page.carryIn ? " · 首格承接上一 PART 尾格" : ""}`;
-  $("#modernStoryboardCanvasStatus").textContent = generating ? "生成中" : modernStoryboardStatusLabel(page.status);
-  $("#modernStoryboardCanvasStatus").className = `storyboard-document-status is-${generating ? "running" : page.status === "complete" ? "ready" : page.status === "failed" ? "failed" : "waiting"}`;
-  $("#modernStoryboardEmotion").textContent = page.emotion;
-  $("#modernStoryboardSetting").textContent = page.setting;
   $("#modernStoryboardSummary").textContent = page.summary;
   $("#modernStoryboardKeywords").textContent = page.keywords;
   const lastPanelNumber = page.panels.at(-1)?.number || page.panels.length;

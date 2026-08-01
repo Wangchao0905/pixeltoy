@@ -124,6 +124,7 @@ const completeDesign = {
   camera_movement: "固定镜头",
   camera_angle: "平视",
   visual: "咕咚在小屋内完成当前动作，空间方向保持连续。",
+  timeline: "起始：咕咚站在小屋内。\n推进：咕咚完成当前动作。\n终点：咕咚停在动作落点。",
   voice_over: "无",
   sound: "室内环境声与动作声",
 };

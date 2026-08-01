@@ -23,8 +23,8 @@ assert.match(
 );
 
 assert.match(css, /\.modern-asset-card-actions\s*\{[\s\S]*?grid-template-columns:/, "asset card actions should use a grid layout");
-assert.match(html, /styles\.css\?v=[A-Za-z0-9._-]+/, "styles.css should have a cache version");
-assert.match(html, /app\.js\?v=[A-Za-z0-9._-]+/, "app.js should have a cache version");
+assert.match(html, /href="\/styles\.css"/, "styles.css should use the ETag-revalidated runtime URL");
+assert.match(html, /src="\/app\.js"/, "app.js should use the ETag-revalidated runtime URL");
 
 const localUploadStart = server.indexOf("function uploadLocalAsset");
 const localUploadEnd = server.indexOf("\nfunction ", localUploadStart + 1);

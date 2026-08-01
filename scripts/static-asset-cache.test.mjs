@@ -19,6 +19,7 @@ import vm from "node:vm";
 
 const root = path.resolve(new URL("..", import.meta.url).pathname);
 const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const index = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 
 function sliceBetween(source, startSig, endSig) {
   const start = source.indexOf(startSig);
@@ -45,6 +46,13 @@ assert.match(fn, /stat\.size/, "缓存失效凭证必须含 size");
 const etagLine = fn.split("\n").find((line) => line.includes("etag:"));
 assert.ok(etagLine, "找不到 etag 计算行");
 assert.match(etagLine, /update\(body\)/, "ETag 必须按文件内容算，不能按 mtime");
+
+// 制作台入口与 app.js/styles.css 必须使用稳定 URL。它们是手写的运行时文件，
+// 若使用手工 ?v= 并忘记更新，浏览器会把旧脚本与新版 DOM 混用，表现为按钮失效
+// 或资产面板空白。无版本 URL 会走 ETag 的 no-cache 重验证：内容没变只返回 304，
+// 内容变更则自动取得新文件，不会退回每次全量下载的 no-store。
+assert.match(index, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/, "制作台样式必须走 ETag 重验证，不得依赖手工缓存版本");
+assert.match(index, /<script src="\/app\.js"><\/script>/, "制作台脚本必须走 ETag 重验证，不得依赖手工缓存版本");
 
 // ---------- 行为验证：在沙箱里跑真实的 cachedStaticFile ----------
 // 只抽 cachedStaticFile（纯函数，只依赖 fs 和 crypto），避免把整个 server.js 拉起来。

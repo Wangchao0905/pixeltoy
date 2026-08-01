@@ -186,5 +186,7 @@ assert.match(superPixelRedesign, /--sp-chat-font:\s*"Google Sans", "Google Sans 
 assert.match(superPixelRedesign, /\.super-pixel-message\.is-user\s*\{[^}]*border:\s*0/, "对话消息不应使用卡片边框");
 assert.match(superPixelRedesign, /\.super-pixel-tool-card\s*\{[^}]*border:\s*0/, "生成结果在对话流中不应使用外框");
 assert.match(superPixelRedesign, /\.super-pixel-video-media:hover \.super-pixel-tool-card-download,[\s\S]*?\.super-pixel-video-media:focus-within \.super-pixel-tool-card-download/, "视频下载按钮应在悬停或键盘聚焦时显示");
+assert.match(superPixelRedesign, /\.super-pixel-messages\s*,\s*\.super-pixel-asset-rail-list\s*\{[\s\S]*?scrollbar-width:\s*none[\s\S]*?-ms-overflow-style:\s*none/, "消息区和素材栏必须隐藏原生滚动条但保留滚动能力");
+assert.match(superPixelRedesign, /\.super-pixel-messages::-webkit-scrollbar\s*,\s*\.super-pixel-asset-rail-list::-webkit-scrollbar\s*\{[\s\S]*?display:\s*none[\s\S]*?width:\s*0[\s\S]*?height:\s*0/, "WebKit 浏览器必须隐藏消息区和素材栏的滚动条滑块");
 
 console.log("super pixel view tests passed");

@@ -34,14 +34,14 @@ const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRI
 // Production Boards are user-scoped, manually retryable jobs. Never let a
 // stale process environment turn one click into a second full upstream wait.
 const STORYBOARD_IMAGE_RETRIES = 0;
-const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v18-landscape-full-panels";
+const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v19-landscape-tail-anchor";
 
 function usage() {
-  console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--size 1280x720|2048x1152|3840x2160]");
+  console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--previous-storyboard <path>] [--storyboard-tail-anchor-map <json>] [--size 1280x720|2048x1152|3840x2160]");
 }
 
 function parseArgs(argv) {
-  const args = { promptsPath: "", episodeRoot: "", dryRun: false, force: false, assetName: "", editInstruction: "", referenceImages: [], assetReferenceMap: "", styleReferenceImage: "", size: "1280x720", concurrency: 1 };
+  const args = { promptsPath: "", episodeRoot: "", dryRun: false, force: false, assetName: "", editInstruction: "", referenceImages: [], assetReferenceMap: "", styleReferenceImage: "", previousStoryboard: "", storyboardTailAnchorMap: "", size: "1280x720", concurrency: 1 };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") {
@@ -76,6 +76,15 @@ function parseArgs(argv) {
     if (arg === "--style-reference-image") {
       const styleReferenceImage = argv[++i] || "";
       if (styleReferenceImage) args.styleReferenceImage = path.resolve(styleReferenceImage);
+      continue;
+    }
+    if (arg === "--previous-storyboard") {
+      const previousStoryboard = argv[++i] || "";
+      if (previousStoryboard) args.previousStoryboard = path.resolve(previousStoryboard);
+      continue;
+    }
+    if (arg === "--storyboard-tail-anchor-map") {
+      args.storyboardTailAnchorMap = path.resolve(argv[++i] || "");
       continue;
     }
     if (arg === "--concurrency") {
@@ -1492,6 +1501,92 @@ with Image.open(path) as source:
   });
 }
 
+function storyboardSequenceNumber(assetName = "") {
+  const match = String(assetName || "").match(/^SB(\d+)_/i);
+  return match ? Number.parseInt(match[1], 10) : 0;
+}
+
+function readStoryboardTailAnchorMap(filePath = "") {
+  if (!filePath) return new Map();
+  if (!fs.existsSync(filePath)) throw new Error(`storyboard tail-anchor map does not exist: ${filePath}`);
+  const source = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!source || typeof source !== "object" || Array.isArray(source)) throw new Error("storyboard tail-anchor map must be an object");
+  return new Map(
+    Object.entries(source)
+      .filter(([name, previous]) => name && typeof previous === "string" && previous)
+      .map(([name, previous]) => [name, path.resolve(previous)]),
+  );
+}
+
+function isPreviousStoryboardFile(candidatePath, sequenceNumber) {
+  return !!candidatePath
+    && fs.existsSync(candidatePath)
+    && storyboardSequenceNumber(path.basename(candidatePath, path.extname(candidatePath))) === sequenceNumber - 1;
+}
+
+function previousStoryboardPath(episodeRoot, asset, requestedPath = "", tailAnchorMap = new Map()) {
+  if (asset?.type !== "Storyboard") return "";
+  const sequenceNumber = storyboardSequenceNumber(asset.name);
+  if (sequenceNumber <= 1) return "";
+  const mappedPath = tailAnchorMap.get(asset.name) || "";
+  if (isPreviousStoryboardFile(mappedPath, sequenceNumber)) return mappedPath;
+  if (isPreviousStoryboardFile(requestedPath, sequenceNumber)) return requestedPath;
+  const storyboardsDir = path.join(resolveSeriesAssetDir(episodeRoot), "storyboards");
+  if (!fs.existsSync(storyboardsDir)) return "";
+  const previous = fs.readdirSync(storyboardsDir).sort()
+    .filter((file) => /\.(png|jpe?g|webp)$/i.test(file))
+    .find((file) => storyboardSequenceNumber(path.basename(file, path.extname(file))) === sequenceNumber - 1);
+  return previous ? path.join(storyboardsDir, previous) : "";
+}
+
+function applyStoryboardTailAnchor(asset, outPath, sourcePath) {
+  if (asset?.type !== "Storyboard" || !sourcePath || !fs.existsSync(outPath) || !fs.existsSync(sourcePath)) return false;
+  const py = String.raw`
+import sys
+from PIL import Image
+
+source_path = sys.argv[1]
+target_path = sys.argv[2]
+
+def grid_geometry(width, height):
+    margin = max(12, round(width * 0.03))
+    gap = max(6, round(width * 0.0165))
+    max_grid_w = width - margin * 2
+    max_grid_h = height - margin * 2
+    cell_w = min(
+        (max_grid_w - gap * 2) // 3,
+        int(((max_grid_h - gap * 2) / 3) * 16 / 9),
+    )
+    cell_w = max(40, cell_w)
+    cell_h = max(40, round(cell_w * 9 / 16))
+    grid_w = cell_w * 3 + gap * 2
+    grid_h = cell_h * 3 + gap * 2
+    return max(0, (width - grid_w) // 2), max(0, (height - grid_h) // 2), cell_w, cell_h, gap
+
+with Image.open(source_path) as source_file, Image.open(target_path) as target_file:
+    source = source_file.convert("RGB")
+    target = target_file.convert("RGB")
+    source_x, source_y, source_w, source_h, source_gap = grid_geometry(*source.size)
+    target_x, target_y, target_w, target_h, target_gap = grid_geometry(*target.size)
+    # P9 is the third row, third column. Copy the whole cell now; the current
+    # board's P1 Production Tab is typeset immediately afterwards.
+    source_x += 2 * (source_w + source_gap)
+    source_y += 2 * (source_h + source_gap)
+    anchor = source.crop((source_x, source_y, source_x + source_w, source_y + source_h))
+    if anchor.size != (target_w, target_h):
+        resample = getattr(Image, "Resampling", Image).LANCZOS
+        anchor = anchor.resize((target_w, target_h), resample)
+    target.paste(anchor, (target_x, target_y))
+    target.save(target_path)
+`;
+  execFileSync("python3", ["-c", py, sourcePath, outPath], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 60_000,
+  });
+  return true;
+}
+
 function storyboardVisibleReferences(asset, referenceImages = []) {
   const codes = new Map(assetBindingEntries(asset?.prompt).map((entry) => [entry.name, entry.code]));
   return [...new Set(referenceImages || [])]
@@ -2014,7 +2109,9 @@ async function main() {
   if (args.referenceImages.length) console.log(`${new Date().toISOString()} reference images: ${args.referenceImages.map((item) => path.basename(item)).join(", ")}`);
   if (args.styleReferenceImage) console.log(`${new Date().toISOString()} style reference image: ${path.basename(args.styleReferenceImage)}`);
   const assetReferenceMap = readAssetReferenceMap(args.assetReferenceMap);
+  const storyboardTailAnchorMap = readStoryboardTailAnchorMap(args.storyboardTailAnchorMap);
   if (assetReferenceMap.size) console.log(`${new Date().toISOString()} hidden per-asset references enabled: ${assetReferenceMap.size} assets`);
+  if (storyboardTailAnchorMap.size) console.log(`${new Date().toISOString()} storyboard tail anchors: ${storyboardTailAnchorMap.size}`);
   const counts = typeCounts(assets);
   console.log(
     `${new Date().toISOString()} planned assets: ${counts.Character || 0} characters, ${counts.Scene || 0} scenes, ${counts.Prop || 0} props, ${counts.Insert || 0} inserts, ${counts.Storyboard || 0} storyboards`,
@@ -2023,13 +2120,20 @@ async function main() {
   if (!args.dryRun) fs.mkdirSync(logsDir, { recursive: true });
   const results = [];
   let aborted = false;
-  const effectiveConcurrency = args.assetName || args.editInstruction ? 1 : Math.max(1, Number(args.concurrency) || 1);
+  const hasStoryboardAssets = assets.some((asset) => asset.type === "Storyboard");
+  // P9 -> P1 continuity makes Production Boards an ordered sequence.
+  const effectiveConcurrency = args.assetName || args.editInstruction || hasStoryboardAssets ? 1 : Math.max(1, Number(args.concurrency) || 1);
   if (effectiveConcurrency > 1) {
     console.log(`${new Date().toISOString()} image generation concurrency: ${effectiveConcurrency}`);
   }
   async function processAsset(asset) {
     if (aborted) return;
     const out = outputPath(args.episodeRoot, asset);
+    const previousBoard = previousStoryboardPath(args.episodeRoot, asset, args.previousStoryboard, storyboardTailAnchorMap);
+    const requiresTailAnchor = asset.type === "Storyboard" && storyboardSequenceNumber(asset.name) > 1;
+    if (requiresTailAnchor && !previousBoard) {
+      throw new Error(`${asset.name} 必须先完成上一张 Production Board，才能锁定 P9 → P1 的画面衔接`);
+    }
     const prompt = promptFor(asset);
     const assetReferenceImages = [
       ...mappedReferenceImagesForAsset(asset, assetReferenceMap),
@@ -2039,8 +2143,11 @@ async function main() {
     const baseEffectivePrompt = args.editInstruction
       ? editPromptFor(asset, args.editInstruction, assetReferenceImages, args.styleReferenceImage, { hiddenSceneReferences })
       : referencePromptFor(asset, assetReferenceImages, args.styleReferenceImage, { hiddenSceneReferences });
+    const previousBoardFingerprint = previousBoard
+      ? `${path.basename(previousBoard)}:${Math.round(fs.statSync(previousBoard).mtimeMs)}:${fs.statSync(previousBoard).size}`
+      : "initial-board";
     const effectivePrompt = asset.type === "Storyboard"
-      ? `${baseEffectivePrompt}\n\nStoryboard renderer: ${STORYBOARD_RENDERER_VERSION}`
+      ? `${baseEffectivePrompt}\n\nStoryboard renderer: ${STORYBOARD_RENDERER_VERSION}\nTail anchor input: ${previousBoardFingerprint}`
       : baseEffectivePrompt;
     const currentHash = promptHash(effectivePrompt);
     const oldHash = existingPromptHash(logsDir, asset);
@@ -2059,6 +2166,7 @@ async function main() {
         force: args.force,
         edit: !!args.editInstruction,
         referenceImages: assetReferenceImages.map((item) => path.basename(item)),
+        previousStoryboard: previousBoard ? path.basename(previousBoard) : "",
         hiddenSceneReferenceMode: hiddenSceneReferences.size ? "color-grade-only" : "",
         styleReferenceImage: args.styleReferenceImage ? path.basename(args.styleReferenceImage) : "",
         sourceExists: fs.existsSync(out),
@@ -2069,6 +2177,9 @@ async function main() {
     console.log(`${new Date().toISOString()} ${args.editInstruction ? "editing" : "generating"} ${asset.name} (${args.size}) -> ${out}`);
     if (assetReferenceImages.length) {
       console.log(`${new Date().toISOString()} ${asset.name} bound references: ${assetReferenceImages.map((item) => path.basename(item)).join(", ")}`);
+    }
+    if (previousBoard) {
+      console.log(`${new Date().toISOString()} ${asset.name} tail anchor: ${path.basename(previousBoard)} P9 -> P1`);
     }
     if (args.styleReferenceImage) {
       console.log(`${new Date().toISOString()} ${asset.name} style-only reference: ${path.basename(args.styleReferenceImage)}`);
@@ -2091,6 +2202,7 @@ async function main() {
         }
       }
       ensureStoryboardCanvas(asset, out, args.size);
+      if (previousBoard) applyStoryboardTailAnchor(asset, out, previousBoard);
       stampStoryboardProductionTabs(asset, out, assetReferenceImages);
       fs.writeFileSync(path.join(logsDir, `${asset.name}.json`), raw ? `${raw}\n` : "");
       writePromptMeta(
@@ -2180,5 +2292,7 @@ module.exports = {
   promptFor,
   referencePromptFor,
   styleReferenceGuidance,
+  applyStoryboardTailAnchor,
+  previousStoryboardPath,
   stampStoryboardProductionTabs,
 };

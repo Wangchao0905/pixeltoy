@@ -135,10 +135,6 @@ const AUTH_COOKIE_NAME = "pixel_toys_session";
 const AUTH_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
 const DEFAULT_DAILY_VIDEO_LIMIT = 10;
 const DEFAULT_CONCURRENT_VIDEO_LIMIT = 2;
-const STORYBOARD_IMAGE_CONCURRENCY = (() => {
-  const parsed = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_CONCURRENCY || "", 10);
-  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 3;
-})();
 const ACTIVE_VIDEO_TASK_TTL_MS = 1000 * 60 * 60 * 6;
 const DEFAULT_SEEDANCE_MODEL_MAP = {
   "seedance-2-0": "doubao-seedance-2-0-260128",
@@ -21895,6 +21891,27 @@ function storyboardPromptsPath(episodeRoot, slots, selectedNames = []) {
   return file;
 }
 
+function storyboardTailAnchorMapPath(episodeRoot, slots = [], selectedNames = []) {
+  const selected = new Set((selectedNames || []).map(compactLine).filter(Boolean));
+  const anchors = {};
+  for (let index = 1; index < slots.length; index += 1) {
+    const slot = slots[index];
+    if (!selected.has(slot?.id)) continue;
+    const previousSlot = slots[index - 1];
+    if (!previousSlot?.id) continue;
+    anchors[slot.id] = previousSlot.asset?.path
+      || previousSlot.asset?.file
+      || path.join(resolveSeriesAssetDir(episodeRoot), "storyboards", `${previousSlot.id}.png`);
+  }
+  if (!Object.keys(anchors).length) return "";
+  const dir = path.join(episodeRoot, "03_asset_prompts", ".storyboards");
+  fs.mkdirSync(dir, { recursive: true });
+  const hash = crypto.createHash("sha1").update([...selected].join("\n")).digest("hex").slice(0, 12);
+  const file = path.join(dir, `${episodeSlug(episodeRoot)}_storyboard_tail_anchors_${hash}.json`);
+  writeText(file, `${JSON.stringify(anchors, null, 2)}\n`);
+  return file;
+}
+
 // 资产生图不再从 preset 生成提示词。这里仅保留历史资产/视频配置需要的显示名，
 // 不能把界面选项当成资产图的视觉来源。
 const ASSET_STYLE_LABELS = {
@@ -22783,18 +22800,16 @@ async function startToolJob(episodeRoot, type, body = {}) {
     const selectedStoryboardNames = resolveStoryboardSelection(slots, body, isRegenerate);
     if (!isDryRun) clearAssetFailureLogs(episodeRoot, selectedStoryboardNames);
     const prompts = storyboardPromptsPath(episodeRoot, slots, selectedStoryboardNames);
+    const tailAnchorMap = storyboardTailAnchorMapPath(episodeRoot, slots, selectedStoryboardNames);
     const args = [prompts, episodeRoot];
     if (isDryRun) args.push("--dry-run");
     if (isRegenerate) args.push("--force", "--asset-name", selectedStoryboardNames[0]);
+    if (tailAnchorMap) args.push("--storyboard-tail-anchor-map", tailAnchorMap);
     const selectedSlots = slots.filter((slot) => selectedStoryboardNames.includes(slot.id));
     for (const referenceImage of productionBoardReferenceImagesForSlots(episodeRoot, selectedSlots)) {
       args.push("--reference-image", referenceImage);
     }
     args.push("--size", size);
-    const storyboardConcurrency = Math.max(1, Math.min(STORYBOARD_IMAGE_CONCURRENCY, selectedStoryboardNames.length));
-    if (!isRegenerate && storyboardConcurrency > 1) {
-      args.push("--concurrency", String(storyboardConcurrency));
-    }
     const job = startProcessJob({
       episodeRoot,
       type,
@@ -24897,6 +24912,7 @@ module.exports = {
       storyboardSegmentsFromShots,
       storyboardGroupsForSegments,
       resolveStoryboardSelection,
+      storyboardTailAnchorMapPath,
       fullProjectState,
       fullProjectStateForUser,
     },

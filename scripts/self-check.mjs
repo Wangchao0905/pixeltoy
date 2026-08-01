@@ -629,7 +629,7 @@ assert(server.includes("可见身份参考"), "storyboard guidance must retain v
 assert(assetRunner.includes("P1-P9: show chronological story beats"), "storyboard renderer must retain the nine-panel fallback for the 3x3 contract");
 assert(assetRunner.includes("visible reference thumbnails"), "storyboard renderer must add visible reference thumbnails to the final board");
 assert(!assetRunner.includes("16:9 landscape Production Board"), "storyboard edits must preserve the vertical Production Board contract");
-assert(assetRunner.includes("production-board-imagegen-v18-landscape-full-panels"), "storyboard renderer revision must invalidate portrait or blank-panel boards");
+assert(assetRunner.includes("production-board-imagegen-v19-landscape-tail-anchor"), "storyboard renderer revision must invalidate boards generated before deterministic tail anchoring");
 assert(assetRunner.includes("function stampStoryboardProductionTabs"), "storyboard renderer must overlay production tabs after image generation");
 assert(assetRunner.includes("stampStoryboardProductionTabs(asset, out, assetReferenceImages);"), "storyboard renderer must typeset production tabs on every completed board");
 assert(assetRunner.includes("PRODUCTION TAB"), "storyboard renderer must render the production tab label on the final board");

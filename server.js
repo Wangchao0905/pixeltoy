@@ -24593,16 +24593,61 @@ async function handleApi(req, res, url) {
   return fail(res, 404, "not found");
 }
 
+// 静态资源内存缓存:key=文件路径,失效凭证=mtimeMs+size。
+// 之前每个请求都 readFileSync 一次,首屏 app.js(510KB)+styles.css(521KB) 等加起来
+// 约 1.5MB 全部同步读盘。Node 单线程,这些读发生在事件循环上,直接堆在用户点击前面。
+// 用 mtimeMs+size 当凭证而不是 TTL:改完文件下一个请求立刻生效,不用重启,
+// 也不会出现 TTL 缓存那种"改了但要等一会儿才生效"的窗口。
+const staticFileCache = new Map();
+
+function cachedStaticFile(file, stat) {
+  const token = `${Math.round(stat.mtimeMs)}-${stat.size}`;
+  const hit = staticFileCache.get(file);
+  if (hit && hit.token === token) return hit;
+  const body = fs.readFileSync(file);
+  // ETag 用内容哈希而不是 mtime:部署是 rsync 覆盖,mtime 会变但内容常常没变。
+  // 按内容算,内容没变浏览器就能继续复用,省掉一次整份传输。
+  const entry = { token, body, etag: `"${crypto.createHash("sha1").update(body).digest("hex")}"` };
+  staticFileCache.set(file, entry);
+  return entry;
+}
+
 function serveStatic(req, res, url) {
   const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
   const file = path.join(APP_ROOT, "public", pathname);
-  if (!isInside(path.join(APP_ROOT, "public"), file) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+  if (!isInside(path.join(APP_ROOT, "public"), file)) return fail(res, 404, "not found");
+  // 合并 existsSync+statSync 两次系统调用为一次 try/statSync:少一半 syscall,
+  // 且消除"存在性检查通过后文件被删"的竞态。
+  let stat = null;
+  try {
+    stat = fs.statSync(file);
+  } catch {
     return fail(res, 404, "not found");
   }
+  if (!stat.isFile()) return fail(res, 404, "not found");
   const ext = path.extname(file).toLowerCase();
-  send(res, 200, fs.readFileSync(file), {
+  const entry = cachedStaticFile(file, stat);
+  // 带 ?v= 的 URL 是内容寻址的(前端改动必须 bump 版本号,由 dialogue-language-tabs
+  // 测试强制 styles.css 与 app.js 版本号一致),所以可以放心 immutable。
+  // 不带 ?v= 的(index.html、workspace-shell.js)必须每次校验,否则改了首页看不到新版;
+  // 但配合 ETag 走 304,省掉正文传输。
+  const versioned = !!url.searchParams.get("v");
+  const cacheControl = versioned ? "public, max-age=31536000, immutable" : "no-cache";
+  // 条件请求:客户端带的 ETag 与当前内容一致就回 304。
+  // If-None-Match 可能是逗号分隔多值,也可能带 W/ 弱校验前缀,都要正确解析。
+  const ifNoneMatch = String(req.headers["if-none-match"] || "");
+  if (ifNoneMatch && ifNoneMatch.split(",").some((tag) => tag.trim().replace(/^W\//, "") === entry.etag)) {
+    // 304 必须无正文;缓存头仍要带上,否则浏览器下次又无条件回源。
+    if (!res.headersSent) {
+      res.writeHead(304, { ETag: entry.etag, "Cache-Control": cacheControl });
+      res.end();
+    }
+    return;
+  }
+  send(res, 200, entry.body, {
     "Content-Type": MIME[ext] || "application/octet-stream",
-    "Cache-Control": "no-store",
+    "Cache-Control": cacheControl,
+    ETag: entry.etag,
   });
 }
 

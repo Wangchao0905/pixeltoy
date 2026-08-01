@@ -10139,19 +10139,26 @@ async function changeDialogueLanguage(targetLanguage) {
 }
 
 async function buildConfig(button = $("#buildConfigBtn")) {
-  const originalLabel = button?.textContent || "生成视频配置";
-  if (button) {
-    button.disabled = true;
-    button.textContent = "生成中...";
-  }
+  const controls = [...new Set([button, $("#modernBuildConfig"), $("#buildConfigBtn")].filter(Boolean))];
+  const originalLabels = new Map(controls.map((control) => [control, control.textContent || "生成视频配置"]));
+  // 先切到结果区并让浏览器完成首帧，再开始保存和生成请求。
+  setWorkflowFocus("shots");
+  controls.forEach((control) => {
+    control.disabled = true;
+    control.textContent = "生成中...";
+    control.setAttribute("aria-busy", "true");
+  });
+  toast("正在生成视频配置");
+  await new Promise((resolve) => requestAnimationFrame(resolve));
   try {
     await refreshVideoConfig({ silent: false });
-    setWorkflowFocus("script");
+    setWorkflowFocus("shots");
   } finally {
-    if (button) {
-      button.disabled = false;
-      button.textContent = originalLabel;
-    }
+    controls.forEach((control) => {
+      control.disabled = false;
+      control.textContent = originalLabels.get(control) || "生成视频配置";
+      control.removeAttribute("aria-busy");
+    });
   }
 }
 

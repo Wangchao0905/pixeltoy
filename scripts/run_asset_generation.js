@@ -34,7 +34,7 @@ const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRI
 // Production Boards are user-scoped, manually retryable jobs. Never let a
 // stale process environment turn one click into a second full upstream wait.
 const STORYBOARD_IMAGE_RETRIES = 0;
-const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v19-landscape-tail-anchor";
+const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v20-scripted-16x9-tabs";
 
 function usage() {
   console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--previous-storyboard <path>] [--storyboard-tail-anchor-map <json>] [--size 1280x720|2048x1152|3840x2160]");
@@ -779,6 +779,17 @@ function firstPromptLine(prompt, prefix, fallback = "") {
   return line || fallback;
 }
 
+function storyboardContractMetadata(prompt = "") {
+  const field = (prefix) => firstPromptLine(prompt, prefix, "")
+    .slice(String(prefix).length)
+    .trim()
+    .replace(/[.。]+$/, "");
+  return {
+    storyboardContractVersion: field("Storyboard contract version:") || "",
+    storyboardSourceSignature: field("Storyboard source signature:") || "",
+  };
+}
+
 function compactStoryboardPanelLines(prompt) {
   return String(prompt || "")
     .split(/\r?\n/)
@@ -798,7 +809,7 @@ function storyboardPanelObjects(prompt) {
       const match = line.match(/^(P[1-9])\s+([^:：]+)[:：]?\s*(.*)$/i);
       const raw = match ? match[3] : line;
       const field = (name) => {
-        const matchField = raw.match(new RegExp(`(?:^|;)\\s*${name}=([\\s\\S]*?)(?=;\\s*(?:visual|camera|shot|lens|lighting|emotion|dialogue|action|continuity)=|$)`, "i"));
+        const matchField = raw.match(new RegExp(`(?:^|;)\\s*${name}=([\\s\\S]*?)(?=;\\s*(?:script|visual|camera|shot|lens|lighting|emotion|dialogue|sound|action|continuity)=|$)`, "i"));
         return (matchField?.[1] || "").replace(/\s+/g, " ").trim();
       };
       const visual = field("visual");
@@ -811,6 +822,7 @@ function storyboardPanelObjects(prompt) {
         timeRange: match?.[2]?.trim() || "",
         raw: line,
         description,
+        script: field("script") || description,
         visual: visual || description,
         camera: field("camera"),
         shot: field("shot"),
@@ -818,6 +830,7 @@ function storyboardPanelObjects(prompt) {
         lighting: field("lighting"),
         emotion: field("emotion"),
         dialogue: field("dialogue") || (raw.match(/;\s*((?:No dialogue|Dialogue|对白|无对白)[^;]*)/i)?.[1] || "").trim(),
+        sound: field("sound"),
         action: field("action"),
         continuity: field("continuity"),
       };
@@ -1664,11 +1677,9 @@ def text_lines(value, active_font, width):
         lines.append(current)
     return lines or ["-"]
 
-def brief_visual(value):
+def brief_script(value):
     text = str(value or "-").strip()
-    if ": " in text:
-        text = text.rsplit(": ", 1)[-1]
-    return text or "-"
+    return text[:150] or "-"
 
 def brief_dialogue(value):
     text = str(value or "-").strip()
@@ -1711,10 +1722,10 @@ def compact_light(value):
 
 def production_sections(panel):
     return [
-        ("VISUAL / ACTION", brief_visual(panel.get("visual") or panel.get("description"))),
-        ("DIALOGUE", brief_dialogue(panel.get("dialogue"))),
+        ("SCRIPT / ACTION", brief_script(panel.get("script") or panel.get("visual") or panel.get("description"))),
         ("CAMERA / SHOT", "%s / %s" % (compact_camera(panel.get("camera")), compact_shot(panel.get("shot")))),
-        ("LENS / LIGHT / EMOTION", "%s / %s / %s" % (compact_lens(panel.get("lens")), compact_light(panel.get("lighting")), str(panel.get("emotion") or "-").split("/")[0].strip())),
+        ("DIALOGUE", brief_dialogue(panel.get("dialogue"))),
+        ("SOUND", brief_script(panel.get("sound"))),
     ]
 
 def fit_production_copy(sections, max_width, max_height, preferred):
@@ -1768,7 +1779,7 @@ for i in range(9):
     y = grid_y + row * (cell_h + gap)
     label = str(panel.get("label") or f"P{i+1}")
     time_range = compact_time_range(panel.get("timeRange") or "")
-    tab_h = max(86, round(cell_h * 0.40))
+    tab_h = max(96, round(cell_h * 0.48))
     tab_y = y + cell_h - tab_h
     header_h = max(20, round(tab_h * 0.16))
     pad = max(5, round(cell_w * 0.04))
@@ -2210,7 +2221,9 @@ async function main() {
         asset,
         editResult ? editResult.prompt : effectivePrompt,
         args.size,
-        args.editInstruction
+        {
+          ...(asset.type === "Storyboard" ? storyboardContractMetadata(asset.prompt) : {}),
+          ...(args.editInstruction
           ? { mode: editResult?.mode || "edit", editInstructionHash: promptHash(args.editInstruction), referenceImages: assetReferenceImages.map((item) => path.basename(item)), styleReferenceImage: args.styleReferenceImage ? path.basename(args.styleReferenceImage) : "" }
           : {
               mode: assetReferenceImages.length || args.styleReferenceImage ? "image-with-references" : "text",
@@ -2220,7 +2233,8 @@ async function main() {
               styleReferenceImage: args.styleReferenceImage ? path.basename(args.styleReferenceImage) : "",
               policyRetry,
               policyRetryPromptHash: policyRetryPrompt ? promptHash(policyRetryPrompt) : "",
-            },
+            }),
+        },
       );
       const failedLog = path.join(logsDir, `${asset.name}.failed.json`);
       if (fs.existsSync(failedLog)) fs.rmSync(failedLog, { force: true });
@@ -2291,6 +2305,7 @@ module.exports = {
   parseAssets,
   promptFor,
   referencePromptFor,
+  storyboardPanelObjects,
   styleReferenceGuidance,
   applyStoryboardTailAnchor,
   previousStoryboardPath,

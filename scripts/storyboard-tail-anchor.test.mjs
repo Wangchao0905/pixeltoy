@@ -78,7 +78,7 @@ try {
   runner.stampStoryboardProductionTabs({ type: "Storyboard", prompt: panelPrompt }, currentBoard);
 
   const grid = boardGrid(1280, 720);
-  const visualHeight = grid.height - Math.max(86, Math.round(grid.height * 0.4));
+  const visualHeight = grid.height - Math.max(96, Math.round(grid.height * 0.48));
   const pixels = JSON.parse(execFileSync(
     "python3",
     ["-c", "from PIL import Image, ImageChops; import json,sys; a=Image.open(sys.argv[1]).convert('RGB'); b=Image.open(sys.argv[2]).convert('RGB'); sx,sy,dx,dy,w,h=map(int,sys.argv[3].split(',')); source=a.crop((sx,sy,sx+w,sy+h)); target=b.crop((dx,dy,dx+w,dy+h)); print(json.dumps({'equal': ImageChops.difference(source,target).getbbox() is None, 'source': source.getpixel((w//2,h//2)), 'target': target.getpixel((w//2,h//2))}))", previousBoard, currentBoard, [grid.x + 2 * (grid.width + grid.gap), grid.y + 2 * (grid.height + grid.gap), grid.x, grid.y, grid.width, visualHeight].join(",")],

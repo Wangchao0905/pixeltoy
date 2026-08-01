@@ -24,7 +24,7 @@ try {
   );
   const panels = Array.from({ length: 9 }, (_, index) => {
     const n = index + 1;
-    return `P${n} ${(n - 1) * 1.6}-${n * 1.6}s: visual=Lin Xia crosses the rainy rooftop and sees the signal flare above the city; camera=low tracking camera; shot=medium full shot; lens=35mm; lighting=blue rain practicals; emotion=controlled fear; dialogue=Lin Xia: \"Do not let them see the flare.\"; action=she shields the flare and runs toward the exit; continuity=the red flare remains in her right hand.`;
+    return `P${n} ${(n - 1) * 1.6}-${n * 1.6}s: script=Lin Xia shields the flare and runs toward the exit; visual=Lin Xia crosses the rainy rooftop and sees the signal flare above the city; camera=low tracking camera; shot=medium full shot; lens=35mm; lighting=blue rain practicals; emotion=controlled fear; dialogue=Lin Xia: \"Do not let them see the flare.\"; sound=rain, footsteps, and the flare's electrical hiss; action=she shields the flare and runs toward the exit; continuity=the red flare remains in her right hand.`;
   }).join("\n");
   runner.stampStoryboardProductionTabs(
     {
@@ -39,7 +39,7 @@ try {
       "python3",
       [
         "-c",
-        "from PIL import Image; import json, sys; im=Image.open(sys.argv[1]).convert('RGB'); print(json.dumps({'size': im.size, 'tab': im.getpixel((120, 334)), 'header': im.getpixel((120, 290)), 'thumb': im.getpixel((80, 420))}))",
+        "from PIL import Image; import json, sys; im=Image.open(sys.argv[1]).convert('RGB'); print(json.dumps({'size': im.size, 'tab': im.getpixel((120, 512)), 'header': im.getpixel((120, 481)), 'thumb': im.getpixel((80, 556))}))",
         board,
       ],
       { encoding: "utf8" },

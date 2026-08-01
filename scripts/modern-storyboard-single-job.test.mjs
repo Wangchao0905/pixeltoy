@@ -28,7 +28,10 @@ assert.match(runModern[0], /action === "retry"[\s\S]*?storyboard-regenerate/);
 assert.match(runModern[0], /storyboardName:\s*page\.id/);
 assert.doesNotMatch(runModern[0], /startJob\("storyboards"\);/);
 
-assert.match(js, /runModernStoryboardJob\("retry"\)/, "retry button must use the scoped retry action");
+const retryControl = js.match(/\$\("#modernStoryboardGeneratePage"\)\?\.addEventListener\("click", \(event\) => \{[\s\S]*?\n  \}\);/);
+assert.ok(retryControl, "storyboard generation button must have an event handler");
+assert.match(retryControl[0], /dataset\.storyboardAction === "retry" \? "retry" : "current"/);
+assert.match(retryControl[0], /runModernStoryboardJob\(action\)/, "retry button must use the scoped retry action");
 
 const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
 assert.match(server, /function resolveStoryboardSelection\(/, "server must resolve a storyboard by stable id or page index");

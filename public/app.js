@@ -5294,6 +5294,7 @@ function modernStoryboardPages(data = state.project, shots = modernShotRecords(d
       copy: sourceText,
       action: raw?.actionArrow || raw?.production?.action || shot?.story || "等待剧情动作",
       dialogue: raw?.dialogue?.caption || raw?.production?.dialogue || shot?.dialogue || "无",
+      sound: raw?.production?.sound || shot?.sound || shot?.sfx || "无额外声音设计",
       transition: panelIndex === 8 ? "切 · 作为下一 PART 的承接锚点" : "切",
       refs: raw?.refs || shot?.assets || [],
       status,
@@ -5334,7 +5335,7 @@ function modernStoryboardPages(data = state.project, shots = modernShotRecords(d
     const endSecond = shotDurationTotal > 0
       ? Math.min(shotDurationTotal, startSecond + STORYBOARD_PLOT_SECONDS)
       : Number(slot.endSecond ?? startSecond + STORYBOARD_PLOT_SECONDS);
-    const status = panels.every((panel) => ["complete", "reused"].includes(panel.status))
+    const status = slot.stale ? "stale" : panels.every((panel) => ["complete", "reused"].includes(panel.status))
       ? "complete"
       : panels.some((panel) => ["running", "queued"].includes(panel.status))
         ? "running"
@@ -5618,7 +5619,7 @@ function modernStoryboardAssetRecords(data = state.project, page = null) {
 }
 
 function modernStoryboardStatusLabel(status = "waiting") {
-  return { complete: "已确认", reused: "继承镜头", running: "生成中", queued: "排队中", failed: "需检查", waiting: "待生成" }[status] || "待生成";
+  return { complete: "已确认", reused: "继承镜头", running: "生成中", queued: "排队中", failed: "需检查", stale: "需重生成", waiting: "待生成" }[status] || "待生成";
 }
 
 function renderModernStoryboardLegacy(data = state.project, shots = modernShotRecords(data)) {
@@ -5829,7 +5830,7 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
   $("#modernStoryboardSelectedPanel").textContent = `PART ${String(currentIndex + 1).padStart(2, "0")} · ${STORYBOARD_PLOT_SECONDS} 秒九宫格`;
   $("#modernStoryboardSelectedCopy").textContent = selectedPanel.source === "reused-anchor"
     ? "本格与上一 PART 的最后一格为同一镜头对象，不重新生成。"
-    : `${selectedPanel.copy} · ${selectedPanel.dialogue || "无对白"}`;
+    : `剧情：${selectedPanel.copy} · 镜头：${selectedPanel.size}，${selectedPanel.camera} · 动作：${selectedPanel.action} · 对白：${selectedPanel.dialogue || "无"} · 声音：${selectedPanel.sound || "无"}`;
 }
 
 async function runModernStoryboardJob(action = "current") {

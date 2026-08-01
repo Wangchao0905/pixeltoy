@@ -2399,6 +2399,10 @@ body.canvas-page {
   animation: contextMenuIn 120ms ease-out;
 }
 
+#nodeContextMenu {
+  width: 292px;
+}
+
 .canvas-context-menu.hidden,
 .asset-context-menu.hidden,
 .connection-create-menu.hidden {

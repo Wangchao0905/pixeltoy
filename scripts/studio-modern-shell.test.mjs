@@ -77,7 +77,7 @@ assert.doesNotMatch(js, /hasStoryboardDraft|请先生成分镜草稿/, "storyboa
 assert.match(js, /configButton\.disabled = configGenerating \|\| !scriptSource\.trim\(\)/, "video config must only require script input in the modern shell");
 assert.match(js, /const videoConfigAvailable = Boolean\(data\.videoConfigStatus\?\.exists\)/, "video generation must detect an existing config separately from readiness");
 assert.match(js, /videoGenerateButton\.disabled = [^;]*!videoConfigAvailable/, "video generation must be clickable once a config exists");
-assert.match(js, /body\.ratio = "9:16"/, "storyboard generation must request the vertical 9:16 format");
+assert.match(js, /body\.ratio = "16:9"/, "storyboard generation must request the landscape 16:9 format");
 assert.doesNotMatch(html, /class="modern-sequence"/, "the empty shot sequence section must be removed from the modern shell");
 assert.doesNotMatch(html, /id="modernShotRail"/, "the modern shell must not render the low-frequency shot sequence rail");
 assert.doesNotMatch(html, /id="modernBatchAction"|id="modernBatchScopeAccordion"|选择生成范围/, "generation range controls must be removed from the modern shell");
@@ -197,7 +197,7 @@ for (const rule of assetImageRules) {
 }
 assert.match(css, /modern-main\[data-modern-view="storyboard"\]/, "storyboard view must have a dedicated core layout");
 assert.match(css, /\.modern-video-preview\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "video preview must use a portrait 9:16 frame");
-assert.match(css, /\.modern-still-preview\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "storyboard preview must use a portrait 9:16 frame");
+assert.match(css, /\.modern-still-preview\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/, "storyboard preview must use a landscape 16:9 frame");
 assert.doesNotMatch(css, /\.modern-main\[data-modern-view="storyboard"\][\s\S]*?\.modern-stage-pane:first-child\s*\{\s*display:\s*none/, "storyboard view must keep the draft pane visible");
 assert.match(js, /function modernCopyValue[\s\S]*?contents\.storyboard/, "storyboard copy must fall back to the saved draft content");
 assert.match(js, /function modernCopyValue[\s\S]*?contents\.seedancePrompts/, "prompt and dialogue tabs must fall back to saved prompt content");

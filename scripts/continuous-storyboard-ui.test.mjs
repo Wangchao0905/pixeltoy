@@ -40,6 +40,10 @@ assert.match(panel, /16:9/);
 assert.match(panel, /15 秒/);
 assert.match(panel, /每格 15 秒剧情/);
 assert.match(panel, /黑白线稿速写/);
+const storyboardActions = panel.match(/<div class="storyboard-document-actions">[\s\S]*?<\/div>/)?.[0] || "";
+assert.match(storyboardActions, /id="modernStoryboardGeneratePage"[^>]*>单张生成<\/button>/, "故事板顶部必须提供单张生成");
+assert.match(storyboardActions, /id="modernStoryboardRetryPanel"[^>]*>单张重新生成<\/button>/, "故事板顶部必须提供单张重新生成");
+assert.doesNotMatch(panel, /storyboard-document-selection[\s\S]*?id="modernStoryboardRetryPanel"/, "重新生成入口不应藏在底部选择栏");
 assert.doesNotMatch(panel, /modernStoryboardReferencePanel|modernStoryboardToolrow|modernStoryboardInspector|modernStoryboardAddPage/);
 
 assert.match(js, /function modernStoryboardPages\(/, "storyboard pages must be derived from 15-second board slots");
@@ -71,5 +75,8 @@ for (const selector of [
 ]) {
   assert.match(css, selector, `missing storyboard document styling: ${selector}`);
 }
+
+assert.doesNotMatch(css, /\.modern-main\[data-modern-view="storyboard"\]\s+\.modern-episode-hero\s*\{[^}]*display:\s*none/, "故事板视图不得隐藏统一剧集概览");
+assert.doesNotMatch(css, /\.modern-main\[data-modern-view="storyboard"\]\s+\.modern-pipeline\s*\{[^}]*padding-top:\s*8px/, "故事板视图不得压缩统一流程栏");
 
 console.log("storyboard document UI tests passed");

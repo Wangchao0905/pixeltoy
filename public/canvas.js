@@ -120,6 +120,7 @@ const canvasState = {
   connectDrag: null,
   pendingConnection: null,
   connectionMenu: null,
+  nodeMenu: null,
   assetMenu: null,
   ignoreNextConnectionMenuClick: false,
   ignoreNextBlankClick: false,
@@ -642,8 +643,8 @@ function sharedLibraryAssetToCanvasAsset(asset = {}) {
     // 素材库进入独立画布后始终保留独立来源,避免后续拖拽触发工作流自动认证。
     source: "shared-asset-library",
     librarySource: asset.source || "",
-    description: asset.description || asset.prompt || asset.metadata?.description || "",
-    prompt: asset.prompt || asset.description || asset.metadata?.description || "",
+    description: asset.description || asset.prompt || asset.visual || asset.evidence || asset.metadata?.description || "",
+    prompt: asset.prompt || asset.description || asset.visual || asset.evidence || asset.metadata?.description || "",
     ratio: asset.ratio || "",
     resolution: asset.resolution || "",
     assetStylePreset: asset.assetStylePreset || (imageGenerationAsset ? "photoreal" : ""),
@@ -1160,25 +1161,69 @@ function renderProjectTitle() {
 
 function projectAssets() {
   const data = canvasState.project || {};
+  const manifestItems = new Map(
+    (Array.isArray(data.assetManifest?.items) ? data.assetManifest.items : [])
+      .map((item) => [item?.id || item?.name, item])
+      .filter(([id]) => id),
+  );
   return [
     ...(data.assets || []).filter((asset) => asset.manifestType !== "Storyboard"),
     ...(data.storyboards || []),
-  ].map((asset) => ({
-    id: asset.assetName || asset.name,
-    name: asset.assetName || asset.name,
-    type: asset.manifestType || asset.type || "",
-    url: asset.url,
-    previewUrl: asset.previewUrl || "",
-    description: asset.description || asset.prompt || asset.assetDescription || asset.metadata?.description || "",
-    prompt: asset.prompt || asset.description || asset.assetDescription || asset.metadata?.description || "",
-    assetStylePreset: asset.assetStylePreset || "",
-    assetStyleLabel: asset.assetStyleLabel || "",
-    generationMode: asset.generationMode || "",
-    verificationType: asset.verificationType || "",
-    aiGenerated: asset.aiGenerated === true,
-    source: "project",
-    projectId: canvasState.selectedId || "",
-  }));
+  ].map((asset) => {
+    const id = asset.assetName || asset.name;
+    const manifestItem = manifestItems.get(id) || {};
+    const description = asset.description
+      || asset.prompt
+      || asset.assetDescription
+      || asset.visual
+      || asset.evidence
+      || asset.metadata?.description
+      || manifestItem.description
+      || manifestItem.visual
+      || manifestItem.evidence
+      || "";
+    return {
+      id,
+      name: id,
+      type: asset.manifestType || asset.type || manifestItem.type || "",
+      url: asset.url,
+      previewUrl: asset.previewUrl || "",
+      description,
+      prompt: asset.prompt
+        || asset.description
+        || asset.assetDescription
+        || asset.visual
+        || asset.evidence
+        || asset.metadata?.description
+        || manifestItem.description
+        || manifestItem.visual
+        || manifestItem.evidence
+        || "",
+      assetStylePreset: asset.assetStylePreset || "",
+      assetStyleLabel: asset.assetStyleLabel || "",
+      generationMode: asset.generationMode || "",
+      verificationType: asset.verificationType || "",
+      aiGenerated: asset.aiGenerated === true,
+      source: "project",
+      projectId: canvasState.selectedId || "",
+    };
+  });
+}
+
+function refreshCanvasProjectAssetMetadata() {
+  if (!canvasState.project || !canvasState.assets.length) return false;
+  const metadataById = new Map(projectAssets().map((asset) => [asset.id, asset]));
+  let changed = false;
+  canvasState.assets = canvasState.assets.map((asset) => {
+    const projectAsset = metadataById.get(asset.id);
+    if (!projectAsset) return asset;
+    const description = projectAsset.description || asset.description || asset.prompt || "";
+    const prompt = projectAsset.prompt || asset.prompt || asset.description || "";
+    if (description === asset.description && prompt === asset.prompt) return asset;
+    changed = true;
+    return { ...asset, description, prompt };
+  });
+  return changed;
 }
 
 function addAssets(assets) {
@@ -1306,6 +1351,55 @@ function createNode(kind, point = canvasState.menuPoint, options = {}) {
   hideConnectionMenu();
   if (!options.silent) toast(`${nodeTitle(kind)} 已创建`);
   return node;
+}
+
+function duplicateVideoNode(nodeId) {
+  const source = canvasState.nodes.find((node) => node.id === nodeId && node.kind === "video");
+  if (!source) return null;
+  const copy = createNode("video", {
+    x: (Number(source.x) || 0) + 36,
+    y: (Number(source.y) || 0) + 36,
+  }, {
+    render: false,
+    silent: true,
+    prompt: source.prompt || "",
+    assets: [...(source.assets || [])],
+    settings: { ...(source.settings || {}) },
+  });
+  copy.width = source.width;
+  copy.height = source.height;
+  copy.ratioLayoutRatio = source.ratioLayoutRatio || "";
+  copy.ratioManualSize = source.ratioManualSize === true;
+  copy.videoPromptMode = source.videoPromptMode || "";
+  copy.storyboardRefs = [...(source.storyboardRefs || [])];
+  copy.storyboardGuidance = source.storyboardGuidance || null;
+  copy.referenceKitId = source.referenceKitId || "";
+  copy.referenceKitName = source.referenceKitName || "";
+  copy.referenceKitVersion = Number(source.referenceKitVersion || 0) || 0;
+  copy.referenceKitSnapshot = source.referenceKitSnapshot || null;
+  copy.liveness = source.liveness
+    ? { ...source.liveness, status: "idle", error: "" }
+    : copy.liveness;
+  for (const connection of canvasState.connections.filter((item) => item.from === source.id || item.to === source.id)) {
+    const nextConnection = {
+      from: connection.from === source.id ? copy.id : connection.from,
+      to: connection.to === source.id ? copy.id : connection.to,
+    };
+    if (
+      nextConnection.from !== nextConnection.to
+      && !canvasState.connections.some((item) => item.from === nextConnection.from && item.to === nextConnection.to)
+    ) {
+      canvasState.connections.push(nextConnection);
+    }
+  }
+  setSelectedNodes([copy.id]);
+  canvasState.activeVideoNodeId = copy.id;
+  hideNodeContextMenu();
+  renderNodes();
+  renderLinks();
+  scheduleCanvasSave();
+  toast("已复制视频模块，连线和提示词已保留");
+  return copy;
 }
 
 function removeNode(nodeId) {
@@ -4165,6 +4259,9 @@ function renderNodes({ preserveExisting = false } = {}) {
         button.addEventListener("click", () => insertTextIntoPrompt(node.id, button.dataset.insertReference || ""));
       });
     }
+    if (node.kind === "video") {
+      element.addEventListener("contextmenu", (event) => showNodeContextMenu(event, node.id));
+    }
     const preview = element.querySelector(".video-preview-slot");
     if (preview) {
       preview.innerHTML = renderVideoPreview(node);
@@ -4489,9 +4586,10 @@ function updateMarqueeSelection() {
 
 function startSelectionMarquee(event) {
   if (event.button !== 0) return;
-  if (event.target.closest(".canvas-node, #contextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu, #sharedAssetLibraryPanel, button, input, select, textarea")) return;
+  if (event.target.closest(".canvas-node, #contextMenu, #nodeContextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu, #sharedAssetLibraryPanel, button, input, select, textarea")) return;
   event.preventDefault();
   hideContextMenu();
+  hideNodeContextMenu();
   hideAssetContextMenu();
   hideConnectionMenu();
   const startScreen = screenPoint(event.clientX, event.clientY);
@@ -4839,8 +4937,9 @@ function cancelConnectionDrag(event) {
 }
 
 function showContextMenu(event) {
-  if (event.target.closest(".canvas-node.asset-node, .image-preview-slot, #sharedAssetLibraryPanel, #contextMenu, #assetContextMenu")) return;
+  if (event.target.closest(".canvas-node, .image-preview-slot, #sharedAssetLibraryPanel, #contextMenu, #nodeContextMenu, #assetContextMenu")) return;
   event.preventDefault();
+  hideNodeContextMenu();
   hideAssetContextMenu();
   hideConnectionMenu();
   const menu = qs("#contextMenu");
@@ -4852,6 +4951,26 @@ function showContextMenu(event) {
   menu.classList.remove("hidden");
 }
 
+function showNodeContextMenu(event, nodeId) {
+  if (event.target.closest("textarea, input, select, button, [contenteditable='true']")) return;
+  const node = canvasState.nodes.find((item) => item.id === nodeId && item.kind === "video");
+  if (!node) return;
+  event.preventDefault();
+  event.stopPropagation();
+  hideContextMenu();
+  hideAssetContextMenu();
+  hideConnectionMenu();
+  canvasState.nodeMenu = { nodeId };
+  const menu = qs("#nodeContextMenu");
+  menu.classList.remove("hidden");
+  placeCanvasMenu(menu, event.clientX, event.clientY);
+}
+
+function hideNodeContextMenu() {
+  canvasState.nodeMenu = null;
+  qs("#nodeContextMenu")?.classList.add("hidden");
+}
+
 function hideContextMenu() {
   qs("#contextMenu").classList.add("hidden");
 }
@@ -4860,6 +4979,7 @@ function showAssetContextMenu(event, nodeId) {
   event.preventDefault();
   event.stopPropagation();
   hideContextMenu();
+  hideNodeContextMenu();
   hideConnectionMenu();
   const node = canvasState.nodes.find((item) => item.id === nodeId && (item.kind === "asset" || item.kind === "image"));
   const asset = primaryAssetForNode(node);
@@ -5355,6 +5475,10 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
       canvasState.hydrating = false;
       return false;
     }
+    if (!saved?.state && canvasState.canvasId && !initialCanvasBootstrap) {
+      canvasState.hydrating = false;
+      throw new Error("找不到该画布的保存状态，可能是旧链接或状态已被移除");
+    }
     const restored = restoreCanvasState(saved.state);
     if (!restored) {
       canvasState.nodes = [];
@@ -5451,20 +5575,35 @@ async function loadProject(id = canvasState.selectedId, options = {}) {
     canvasState.hydrating = false;
     return false;
   }
+  if (!saved?.state && canvasState.canvasId) {
+    canvasState.hydrating = false;
+    throw new Error("找不到该画布的保存状态，可能是旧链接或状态已被移除");
+  }
   const repairedLayout = preloadedCanvasRendered && usablePreloadedCanvas
     ? false
     : restoreAndRenderCanvasState(saved, {
         preserveSelection: options.preserveSelection,
         previousSelection,
       });
+  // Existing canvas states predate manifest descriptions. Hydrate metadata in
+  // place so captions update without importing new nodes or changing layout.
+  const metadataChanged = refreshCanvasProjectAssetMetadata();
+  if (metadataChanged) renderNodes({ preserveExisting: true });
   resumeArkVirtualPersonPolls();
   canvasState.hydrating = false;
-  if (repairedLayout) scheduleCanvasSave();
+  if (repairedLayout || metadataChanged) scheduleCanvasSave();
   resumeVideoPolls();
 }
 
 async function boot() {
-  await loadProject(canvasState.selectedId, { useUrlCanvas: true });
+  try {
+    await loadProject(canvasState.selectedId, { useUrlCanvas: true });
+  } catch (error) {
+    canvasState.hydrating = false;
+    renderProjectTitle();
+    toast(`画布状态加载失败：${error.message || "请刷新后重试"}`);
+    return;
+  }
   const libraryAssetId = new URLSearchParams(window.location.search).get("libraryAssetId") || "";
   if (!canvasState.selectedId && !canvasState.canvasId && (libraryAssetId || canvasState.assets.length || canvasState.nodes.length)) {
     try {
@@ -6131,7 +6270,7 @@ document.addEventListener("pointermove", updateCanvasPan);
 document.addEventListener("pointerup", endCanvasPan);
 document.addEventListener("pointercancel", endCanvasPan);
 document.addEventListener("click", (event) => {
-  const clickedCanvasChrome = event.target.closest?.("#contextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu, #sharedAssetLibraryPanel, #assetLibraryToggle");
+  const clickedCanvasChrome = event.target.closest?.("#contextMenu, #nodeContextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu, #sharedAssetLibraryPanel, #assetLibraryToggle");
   const clickedBlankCanvas = !clickedCanvasChrome && (event.target === qs("#blankCanvas") || (event.target.closest?.("#blankCanvas") && !event.target.closest?.(".canvas-node")));
   if (clickedBlankCanvas) {
     if (canvasState.ignoreNextBlankClick) {
@@ -6142,6 +6281,7 @@ document.addEventListener("click", (event) => {
     setActiveVideoNode("");
   }
   if (!event.target.closest("#contextMenu")) hideContextMenu();
+  if (!event.target.closest("#nodeContextMenu")) hideNodeContextMenu();
   if (!event.target.closest("#assetContextMenu")) hideAssetContextMenu();
   if (!event.target.closest("#promptMentionMenu") && !event.target.closest(".video-prompt")) hidePromptMentionMenu();
   if (canvasState.ignoreNextConnectionMenuClick) {
@@ -6153,7 +6293,7 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("keydown", (event) => {
   if (!["Delete", "Backspace"].includes(event.key)) return;
-  if (event.target.closest?.("input, textarea, select, [contenteditable='true'], #contextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu")) return;
+  if (event.target.closest?.("input, textarea, select, [contenteditable='true'], #contextMenu, #nodeContextMenu, #assetContextMenu, #connectionMenu, #promptMentionMenu")) return;
   if (removeSelectedNodes()) event.preventDefault();
 });
 
@@ -6171,6 +6311,10 @@ qs("[data-menu-action='import-assets']").addEventListener("click", () => {
 });
 
 qs("[data-menu-action='open-asset-library']")?.addEventListener("click", openSharedAssetLibraryFromMenu);
+
+qs("[data-node-action='duplicate-video']")?.addEventListener("click", () => {
+  duplicateVideoNode(canvasState.nodeMenu?.nodeId || "");
+});
 
 qs("[data-connection-create='image']")?.addEventListener("click", createImageFromConnectionMenu);
 qs("[data-connection-create='video']")?.addEventListener("click", createVideoFromConnectionMenu);

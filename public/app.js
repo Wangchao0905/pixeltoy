@@ -221,6 +221,9 @@ const state = {
     storyboardExtraPages: 0,
     storyboardGenerating: false,
     storyboardContinuityLoadedFor: "",
+    filmStudioSelection: [],
+    filmStudioSelectionDirty: false,
+    filmStudioBusy: false,
   },
 };
 localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
@@ -1671,6 +1674,7 @@ function workflowPreviewState() {
     ],
     referenceKits: [],
     referenceKitShots: [],
+    filmStudio: { status: "idle", candidates: [], selectedReferenceIds: [], videoConfigEnabled: false },
     teamReferences: [],
     videos: [],
     videoProgress: { total: 6, completed: 2, running: true, items: [] },
@@ -1930,6 +1934,9 @@ function resetProjectScopedUiState() {
   state.selectedAssetIds.clear();
   state.optimisticAssetJobs.clear();
   state.assetUploadTargetId = "";
+  state.modernStudio.filmStudioSelection = [];
+  state.modernStudio.filmStudioSelectionDirty = false;
+  state.modernStudio.filmStudioBusy = false;
 }
 
 function loadProjects(keepSelection = true, { force = false } = {}) {
@@ -2985,6 +2992,24 @@ function renderSuperPixelImageCard(message) {
   return card;
 }
 
+function superPixelVideoDownloadName(message) {
+  const suffix = String(message?.callId || "")
+    .trim()
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return `pixel-toy-superpixel-video${suffix ? `-${suffix}` : ""}.mp4`;
+}
+
+function superPixelVideoDownloadHref(message) {
+  const raw = String(message?.videoUrl || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) {
+    return `/api/canvas/video-download?url=${encodeURIComponent(raw)}&name=${encodeURIComponent(superPixelVideoDownloadName(message))}`;
+  }
+  return raw;
+}
+
 function renderSuperPixelVideoConfirmCard(message) {
   const card = document.createElement("article");
   card.className = `super-pixel-tool-card super-pixel-video-card is-${message.status || "confirming"}`;
@@ -3027,6 +3052,17 @@ function renderSuperPixelVideoConfirmCard(message) {
     video.controls = true;
     video.playsInline = true;
     card.appendChild(video);
+    const actions = document.createElement("div");
+    actions.className = "super-pixel-tool-card-actions";
+    const download = document.createElement("a");
+    download.className = "super-pixel-tool-card-download";
+    download.href = superPixelVideoDownloadHref(message);
+    download.download = superPixelVideoDownloadName(message);
+    download.setAttribute("aria-label", "下载视频");
+    download.title = "下载视频";
+    download.textContent = "下载视频";
+    actions.appendChild(download);
+    card.appendChild(actions);
   } else if (message.status === "failed" || message.status === "cancelled") {
     const status = document.createElement("p");
     status.className = `super-pixel-tool-card-message${message.status === "failed" ? " is-error" : ""}`;
@@ -5311,6 +5347,142 @@ function modernStoryboardPages(data = state.project, shots = modernShotRecords(d
   });
 }
 
+function modernStoryboardRunPartLabel(assetName, pages = []) {
+  const cleanName = String(assetName || "").trim();
+  const page = pages.find((entry) => entry?.id === cleanName || entry?.asset?.assetName === cleanName);
+  if (page) return `PART ${String(page.partNumber).padStart(2, "0")} / ${String(pages.length).padStart(2, "0")}`;
+  return cleanName ? cleanName.replace(/_PRODUCTION_BOARD$/i, "") : "当前 PART";
+}
+
+function parseModernStoryboardProgress(job = null, pages = [], localGenerating = false) {
+  const status = String(job?.status || "").toLowerCase();
+  const log = String(job?.logs || "");
+  const plannedMatches = [...log.matchAll(/(\d+)\s+storyboards?/gi)];
+  const plannedTotal = Number(plannedMatches.length ? plannedMatches[plannedMatches.length - 1][1] : 0);
+  const targetNames = Array.isArray(job?.targetAssetNames) ? job.targetAssetNames.filter(Boolean) : [];
+  const activeNames = [...log.matchAll(/\b(?:generating|editing)\s+(.+?)\s+\(\d+x\d+\)\s+->/gi)].map((match) => match[1].trim());
+  const generatedNames = [...log.matchAll(/\b(?:generated|edited)\s+(.+?)\s+->/gi)].map((match) => match[1].trim());
+  const failedNames = [...log.matchAll(/\bfailed\s+(.+?):/gi)].map((match) => match[1].trim());
+  const generatedNameSet = new Set(generatedNames);
+  const pendingActiveNames = activeNames.filter((name) => !generatedNameSet.has(name));
+  const activeName = pendingActiveNames[pendingActiveNames.length - 1] || targetNames[0] || generatedNames[generatedNames.length - 1] || failedNames[failedNames.length - 1] || "";
+  const targetPages = targetNames.length
+    ? pages.filter((page) => targetNames.includes(page.id))
+    : pages;
+  const totalParts = Math.max(1, targetNames.length || plannedTotal || targetPages.length || pages.length);
+  const generatedTargetCount = targetNames.length
+    ? generatedNames.filter((name) => targetNames.includes(name)).length
+    : generatedNames.length;
+  const stateCompleteCount = status === "complete"
+    ? targetNames.length
+      ? targetPages.filter((page) => page.status === "complete").length
+      : pages.filter((page) => page.status === "complete").length
+    : 0;
+  const completedParts = Math.min(totalParts, Math.max(generatedTargetCount, stateCompleteCount));
+  const failed = ["failed", "interrupted", "canceled", "cancelled"].includes(status);
+  const hasGeneratedLine = generatedNames.length > 0;
+  const hasActiveLine = pendingActiveNames.length > 0;
+  let state = "idle";
+  let stage = "等待提交";
+  let stageIndex = 0;
+  let percent = 0;
+  let label = "队列空闲";
+  let detail = "选择单张生成或单张重新生成，其他 PART 不受影响。";
+  if (localGenerating && (!job || ["complete", "failed", "interrupted", "canceled", "cancelled"].includes(status))) {
+    state = "submitting";
+    stage = "正在提交任务";
+    stageIndex = 1;
+    percent = 8;
+    label = "已提交 · 正在启动";
+    detail = "正在把当前 PART 写入故事板队列。";
+  } else if (failed) {
+    state = "failed";
+    stage = "任务已停止";
+    stageIndex = hasGeneratedLine ? 3 : hasActiveLine ? 2 : 1;
+    percent = hasGeneratedLine ? 76 : hasActiveLine ? 48 : 18;
+    label = status === "interrupted" ? "任务中断" : "生成失败";
+    detail = String(job?.failureReason || "当前故事板未完成，可重试当前 PART。").trim();
+  } else if (status === "complete") {
+    state = "complete";
+    stage = "阶段 4 / 4 · 已保存";
+    stageIndex = 4;
+    percent = 100;
+    label = "已完成 · 可查看";
+    detail = "故事板已保存，点击任意 PART 查看 9 格剧情。";
+  } else if (status === "queued") {
+    state = "queued";
+    stage = "阶段 1 / 4 · 等待队列";
+    stageIndex = 1;
+    percent = 18;
+    label = "已提交 · 排队中";
+    detail = "任务已进入故事板队列，正在等待图像生成资源。";
+  } else if (status === "running" || localGenerating) {
+    state = "running";
+    if (hasGeneratedLine && !hasActiveLine) {
+      stage = "阶段 3 / 4 · 写入连续性";
+      stageIndex = 3;
+      percent = 82;
+      label = "正在收尾 · 写入结果";
+      detail = "图片已返回，正在登记 PART 与尾格承接关系。";
+    } else if (hasActiveLine) {
+      stage = "阶段 2 / 4 · 绘制九宫格";
+      stageIndex = 2;
+      percent = 52;
+      label = "生成中 · 九宫格画面";
+      detail = "正在生成整张 16:9 九宫格，完成后写入连续性标记。";
+    } else {
+      stage = "阶段 1 / 4 · 准备提示词";
+      stageIndex = 1;
+      percent = 28;
+      label = "已启动 · 准备中";
+      detail = "已提交，正在整理九宫格提示词与引用资产。";
+    }
+  }
+  const current = activeName ? modernStoryboardRunPartLabel(activeName, pages) : targetNames[0] ? modernStoryboardRunPartLabel(targetNames[0], pages) : state === "idle" ? "尚未提交" : "等待分配 PART";
+  const action = job?.type === "storyboard-regenerate" ? "重新生成" : "生成";
+  const queue = state === "idle"
+    ? "未启动"
+    : state === "complete"
+      ? `${completedParts || totalParts} / ${totalParts} PART`
+      : `${Math.min(completedParts, totalParts)} / ${totalParts} PART · ${action}`;
+  return {
+    state,
+    label,
+    stage: `${stage}${stageIndex && state !== "complete" && state !== "failed" ? ` · ${Math.min(completedParts, totalParts)} / ${totalParts} PART` : ""}`,
+    current,
+    detail,
+    queue,
+    percent,
+    percentLabel: state === "idle" ? "—" : `${percent}%`,
+  };
+}
+
+function renderModernStoryboardProgress(progress = {}) {
+  const statusNode = $("#modernStoryboardRunStatus");
+  if (!statusNode) return;
+  const state = progress.state || "idle";
+  statusNode.dataset.state = state;
+  statusNode.className = `modern-storyboard-run-status is-${state}`;
+  const setText = (selector, value) => {
+    const node = $(selector);
+    if (node) node.textContent = value || "";
+  };
+  setText("#modernStoryboardRunStatusLabel", progress.label || "队列空闲");
+  setText("#modernStoryboardRunStage", progress.stage || "等待提交");
+  setText("#modernStoryboardRunCurrent", progress.current || "尚未提交");
+  setText("#modernStoryboardRunDetail", progress.detail || "");
+  setText("#modernStoryboardRunPercent", progress.percentLabel || "—");
+  setText("#modernStoryboardRunQueue", progress.queue || "未启动");
+  const meter = $("#modernStoryboardRunMeter");
+  const fill = $("#modernStoryboardRunFill");
+  const percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
+  if (meter) meter.setAttribute("aria-valuenow", String(percent));
+  if (fill) {
+    fill.style.width = "100%";
+    fill.style.transform = `scaleX(${percent / 100})`;
+  }
+}
+
 const storyboardToolLabels = {
   select: "选择镜头",
   pan: "平移画布",
@@ -5442,6 +5614,9 @@ function renderModernStoryboardLegacy(data = state.project, shots = modernShotRe
   const title = displayProjectTitle(project);
   const jobStatus = String(data?.storyboardJob?.status || "").toLowerCase();
   const generating = state.modernStudio.storyboardGenerating || ["running", "queued"].includes(jobStatus);
+  renderModernStoryboardProgress(
+    parseModernStoryboardProgress(data?.storyboardJob, pages, state.modernStudio.storyboardGenerating),
+  );
 
   $("#modernStoryboardProject").textContent = title || "项目";
   $("#modernStoryboardPage").textContent = `第 ${String(currentIndex + 1).padStart(2, "0")} / ${String(pages.length).padStart(2, "0")} 页`;
@@ -5579,6 +5754,9 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
   const title = displayProjectTitle(project);
   const jobStatus = String(data?.storyboardJob?.status || "").toLowerCase();
   const generating = state.modernStudio.storyboardGenerating || ["running", "queued"].includes(jobStatus);
+  renderModernStoryboardProgress(
+    parseModernStoryboardProgress(data?.storyboardJob, pages, state.modernStudio.storyboardGenerating),
+  );
 
   $("#modernStoryboardProject").textContent = title || "项目";
   $("#modernStoryboardBoardCount").textContent = `PART ${String(currentIndex + 1).padStart(2, "0")} / ${String(pages.length).padStart(2, "0")}`;
@@ -5594,8 +5772,18 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
   $("#modernStoryboardKeywords").textContent = page.keywords;
   $("#modernStoryboardContinuity").textContent = page.carryIn ? "第 01 格与上一 PART 第 09 格为同一镜头" : "本 PART 第 09 格将成为下一 PART 的第 01 格";
   $("#modernStoryboardQueueLabel").textContent = generating ? "故事板生成中" : data?.storyboardJob?.status === "failed" ? "生成失败 · 可重试" : "队列空闲";
-  $("#modernStoryboardGeneratePage").disabled = generating;
-  $("#modernStoryboardRetryPanel").disabled = generating;
+  const generatePageButton = $("#modernStoryboardGeneratePage");
+  const retryPageButton = $("#modernStoryboardRetryPanel");
+  if (generatePageButton) {
+    generatePageButton.disabled = generating;
+    generatePageButton.textContent = generating ? "生成中…" : "单张生成";
+    generatePageButton.title = generating ? "当前故事板生成中" : "只生成当前 15 秒故事板";
+  }
+  if (retryPageButton) {
+    retryPageButton.disabled = generating;
+    retryPageButton.textContent = generating ? "重新生成中…" : "单张重新生成";
+    retryPageButton.title = generating ? "当前故事板生成中" : "只重新生成当前 15 秒故事板";
+  }
 
   const grid = $("#modernStoryboardGrid");
   if (grid) {
@@ -5743,12 +5931,146 @@ function renderModernAssetExtractAction() {
       : "请先上传或粘贴资产文档";
 }
 
+function filmStudioData(data = state.project) {
+  return data?.filmStudio && typeof data.filmStudio === "object" ? data.filmStudio : {};
+}
+
+function renderModernFilmStudio(data = state.project) {
+  const panel = $("#modernFilmStudioPanel");
+  if (!panel) return;
+  const studio = filmStudioData(data);
+  if (!state.modernStudio.filmStudioSelectionDirty) {
+    state.modernStudio.filmStudioSelection = Array.isArray(studio.selectedReferenceIds)
+      ? studio.selectedReferenceIds.slice(0, 3)
+      : [];
+  }
+  const selectedIds = new Set(state.modernStudio.filmStudioSelection || []);
+  const candidates = Array.isArray(studio.candidates) ? studio.candidates : [];
+  const status = $("#modernFilmStudioStatus");
+  const busy = state.modernStudio.filmStudioBusy === true || studio.status === "analyzing";
+  if (status) {
+    status.textContent = busy
+      ? "正在提取剧本视觉意图并筛选候选…"
+      : studio.status === "failed"
+        ? studio.error || "候选生成失败，请重试"
+        : studio.videoConfigEnabled
+          ? "已加入视频配置 · 已生成片段不会被重置"
+          : candidates.length
+            ? `已生成 ${candidates.length} 张候选 · 最多选择 3 张`
+            : "等待提取视觉意图";
+    status.classList.toggle("is-busy", busy);
+    status.classList.toggle("is-error", studio.status === "failed");
+  }
+  const signals = $("#modernFilmStudioSignals");
+  if (signals) {
+    const extracted = studio.extractedSignals || {};
+    const signalLabels = [...(Array.isArray(extracted.locations) ? extracted.locations : []), ...(Array.isArray(extracted.moods) ? extracted.moods : [])]
+      .filter(Boolean)
+      .slice(0, 5);
+    signals.innerHTML = signalLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join("");
+  }
+  const selection = $("#modernFilmStudioSelection");
+  if (selection) selection.textContent = selectedIds.size ? `已选 ${selectedIds.size} / 3` : "未选择参考图";
+  const applyButton = $("#modernFilmStudioApply");
+  if (applyButton) {
+    applyButton.disabled = busy || selectedIds.size === 0 || !data?.videoConfigStatus?.exists;
+    applyButton.textContent = studio.videoConfigEnabled ? "更新视频配置参考" : "添加到视频配置";
+    applyButton.title = !data?.videoConfigStatus?.exists ? "请先生成视频配置" : selectedIds.size ? "将选中的 Film Studio 参考加入视频配置" : "请先选择参考图";
+  }
+  const discoverButton = $("#modernFilmStudioDiscover");
+  if (discoverButton) {
+    discoverButton.disabled = busy;
+    discoverButton.textContent = busy ? "筛选中…" : "自动生成 3–5 张候选";
+  }
+  const grid = $("#modernFilmStudioCandidates");
+  if (grid) {
+    grid.innerHTML = candidates.length
+      ? candidates.map((candidate, index) => {
+          const id = String(candidate.id || `film_ref_${index + 1}`);
+          const isSelected = selectedIds.has(id);
+          const palette = Array.isArray(candidate.palette) ? candidate.palette.slice(0, 4) : [];
+          return `<article class="modern-film-studio-card${isSelected ? " is-selected" : ""}" data-film-studio-card="${escapeAttr(id)}">
+            <button class="modern-film-studio-card-select" type="button" data-film-studio-select="${escapeAttr(id)}" aria-pressed="${isSelected ? "true" : "false"}" aria-label="${isSelected ? "取消选择" : "选择"}${escapeAttr(candidate.sourceTitle || candidate.roleLabel || "参考图")}">
+              <span class="modern-film-studio-check" aria-hidden="true">${isSelected ? "✓" : ""}</span>
+              <span>${isSelected ? "已选" : "选择"}</span>
+            </button>
+            <div class="modern-film-studio-image">${candidate.url ? `<img src="${escapeAttr(candidate.url)}" alt="${escapeAttr(candidate.sourceTitle || candidate.roleLabel || "Film Studio 参考图")}" loading="lazy" decoding="async" />` : `<span>等待图像</span>`}</div>
+            <div class="modern-film-studio-card-body">
+              <div class="modern-film-studio-card-title"><strong>${escapeHtml(candidate.roleLabel || "视觉参考")}</strong><small>${escapeHtml(candidate.sourceTitle || candidate.sourceFilm || "Film Studio catalog")}</small></div>
+              <p>${escapeHtml(candidate.matchReason || "提供不同的空间、色彩或光影参照")}</p>
+              <div class="modern-film-studio-palette">${palette.map((color) => `<span>${escapeHtml(color)}</span>`).join("")}</div>
+            </div>
+          </article>`;
+        }).join("")
+      : `<div class="modern-film-studio-empty"><strong>还没有候选参考图</strong><span>点击“自动生成 3–5 张候选”，系统会按剧本提取空镜、大场景和色彩差异。</span></div>`;
+  }
+  const directive = $("#modernFilmStudioDirective");
+  if (directive) directive.textContent = studio.visualBible?.directive || "选择参考图后，这里会显示写入视频提示词的全剧视觉方向。";
+}
+
+async function discoverFilmStudio() {
+  if (!state.selectedId) return toast("请先打开一个项目");
+  state.modernStudio.filmStudioBusy = true;
+  state.modernStudio.filmStudioSelection = [];
+  state.modernStudio.filmStudioSelectionDirty = false;
+  renderModernFilmStudio(state.project);
+  try {
+    const result = await api(`/api/project/${encodeURIComponent(state.selectedId)}/film-studio/discover`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (result.state) setProjectState(result.state);
+    renderWorkspace();
+    toast("Film Studio 已生成候选参考图");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    state.modernStudio.filmStudioBusy = false;
+    renderModernFilmStudio(state.project);
+  }
+}
+
+async function saveFilmStudioSelection() {
+  const selectedReferenceIds = [...new Set(state.modernStudio.filmStudioSelection || [])].slice(0, 3);
+  if (!selectedReferenceIds.length) throw new Error("请至少选择 1 张 Film Studio 参考图");
+  const result = await api(`/api/project/${encodeURIComponent(state.selectedId)}/film-studio/select`, {
+    method: "POST",
+    body: JSON.stringify({ selectedReferenceIds }),
+  });
+  state.modernStudio.filmStudioSelectionDirty = false;
+  if (result.state) setProjectState(result.state);
+  return result;
+}
+
+async function applyFilmStudioSelection() {
+  if (!state.selectedId) return toast("请先打开一个项目");
+  state.modernStudio.filmStudioBusy = true;
+  renderModernFilmStudio(state.project);
+  try {
+    await saveFilmStudioSelection();
+    const result = await api(`/api/project/${encodeURIComponent(state.selectedId)}/film-studio/apply-video-config`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (result.state) setProjectState(result.state);
+    renderWorkspace();
+    state.modernStudio.focus = "video";
+    renderModernStudio(state.project);
+    toast("Film Studio 已加入视频配置，已生成片段保持不变");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    state.modernStudio.filmStudioBusy = false;
+    renderModernFilmStudio(state.project);
+  }
+}
+
 function renderModernStudio(data = state.project) {
   const root = $("#studioModernShell");
   if (!root || !data?.project) return;
   syncModernSeriesNav();
   renderModernDurationMode(data);
-  const modernFocus = ["assets", "assetimg", "storyboard", "video", "cut"].includes(state.modernStudio.focus)
+  const modernFocus = ["assets", "assetimg", "filmstudio", "storyboard", "video", "cut"].includes(state.modernStudio.focus)
     ? state.modernStudio.focus
     : "assets";
   state.modernStudio.focus = modernFocus;
@@ -5821,6 +6143,7 @@ function renderModernStudio(data = state.project) {
     state.modernStudio.storyboardContinuityLoadedFor = state.selectedId;
   }
   renderModernStoryboardStudio(data, shots);
+  renderModernFilmStudio(data);
   const total = shots.length || Number(progress.total || 0);
   const completed = shots.filter((shot) => shot.status === "complete").length || Number(progress.completed || 0);
   const queueCount = modernVideoQueueCount(progress);
@@ -5911,6 +6234,11 @@ function renderModernStudio(data = state.project) {
   renderModernVideoQueue(shots, selectedIndex, data);
   renderModernFinalCutTrack(shots);
   renderModernSelectedShot(data, selected, selectedIndex);
+  const filmStudio = filmStudioData(data);
+  if (modernFocus === "filmstudio" && state.selectedId && !state.modernStudio.filmStudioBusy && filmStudio.status === "idle" && !filmStudio.candidates?.length) {
+    state.modernStudio.filmStudioBusy = true;
+    setTimeout(() => discoverFilmStudio().catch(() => {}), 0);
+  }
 }
 
 function syncModernSeriesNav() {
@@ -10279,7 +10607,7 @@ function bind() {
   const focusModernPane = (focus) => {
     const nextFocus = focus === "kit"
       ? "assets"
-      : ["assetimg", "storyboard", "video", "cut"].includes(focus)
+      : ["assetimg", "filmstudio", "storyboard", "video", "cut"].includes(focus)
         ? focus
         : "assets";
     if (nextFocus !== "assets") state.modernStudio.assetManageMode = false;
@@ -10288,7 +10616,9 @@ function bind() {
     const target = nextFocus === "assets"
       ? $("#modernSourcePanel")
       : nextFocus === "assetimg"
-        ? $("#modernAssetImagePanel")
+      ? $("#modernAssetImagePanel")
+      : nextFocus === "filmstudio"
+        ? $("#modernFilmStudioPanel")
       : nextFocus === "storyboard"
         ? $("#modernStoryboardStudio")
         : nextFocus === "cut"
@@ -10305,8 +10635,26 @@ function bind() {
   $("#modernReturnProject")?.addEventListener("click", goBackToProjects);
   $("#modernMoreActions")?.addEventListener("click", () => toast("更多操作将在当前项目菜单中提供"));
   $("#modernVisualBibleButton")?.addEventListener("click", () => {
-    focusModernPane("assets");
-    toast("已定位到资产与风格规则");
+    focusModernPane("filmstudio");
+    toast("已打开 Film Studio 全剧视觉方向");
+  });
+  $("#modernFilmStudioDiscover")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, discoverFilmStudio).catch((error) => toast(error.message));
+  });
+  $("#modernFilmStudioApply")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, applyFilmStudioSelection).catch((error) => toast(error.message));
+  });
+  $("#modernFilmStudioCandidates")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-film-studio-select]");
+    if (!button || state.modernStudio.filmStudioBusy) return;
+    const id = button.dataset.filmStudioSelect || "";
+    const current = new Set(state.modernStudio.filmStudioSelection || []);
+    if (current.has(id)) current.delete(id);
+    else if (current.size >= 3) return toast("最多选择 3 张参考图，请先取消一张");
+    else current.add(id);
+    state.modernStudio.filmStudioSelection = [...current];
+    state.modernStudio.filmStudioSelectionDirty = true;
+    renderModernFilmStudio(state.project);
   });
   $("#modernKitButton")?.addEventListener("click", () => {
     state.modernStudio.assetManageMode = !state.modernStudio.assetManageMode;

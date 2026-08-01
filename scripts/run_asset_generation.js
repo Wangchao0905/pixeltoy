@@ -32,7 +32,7 @@ const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_
 const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "900", 10);
 const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRIES || "2", 10);
 const STORYBOARD_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_RETRIES || "1", 10);
-const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v17-production-tabs-visible-references";
+const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v18-landscape-full-panels";
 
 function usage() {
   console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--size 1280x720|2048x1152|3840x2160]");
@@ -353,7 +353,7 @@ function typeCounts(assets) {
 
 function fixedAssetPromptFor(asset) {
   if (asset.type === "Storyboard") {
-    return "Production Board output contract: one 9:16 vertical (portrait) sheet — the whole sheet is taller than it is wide, exact 9:16 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel outer boundary is a portrait 9:16 cell with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Render real cinematic panel imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. Reserve the lower 40 percent of every panel as clean off-white paper; a deterministic post-process will typeset the Production Tab there with P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion, and visible reference thumbnails. Preserve the production-tab and visible-reference layout during generation and edits. Use the upper 60 percent as the cinematic vertical frame. Do not render your own dialogue, production fields, tables, or technical notes. Do NOT add a header, footer, metadata table, caption band outside a panel, or any content outside the nine story panels.";
+    return "Production Board output contract: one 16:9 horizontal (landscape) sheet — the whole sheet is wider than it is tall, exact 16:9 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel outer boundary is a landscape 16:9 cell with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Fill every panel with complete horizontal storyboard imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. A deterministic post-process may overlay a compact Production Tab inside each panel; do not leave any lower section blank or reserve an empty paper band. Do not render your own dialogue, production fields, tables, or technical notes. Do NOT add a header, footer, metadata table, caption band outside a panel, or any content outside the nine story panels.";
   }
   if (asset.type === "Character") {
     return [
@@ -633,7 +633,7 @@ function referenceRoleFor(asset, mode = "generate", options = {}) {
     return "Reference image. Object/material anchor: use it for shape, material, scale, color, wear, and practical construction. Keep the required asset-reference format.";
   }
   if (asset.type === "Storyboard") {
-    return "Production asset reference image. Read the filename prefix before using it: C### means Character, S### means Scene/location, P### means Prop, I### means Insert/detail. Character turnarounds are visible identity anchors in each panel's deterministic Production Tab and are primary identity inputs for the cinematic frame: use their front/side/back/portrait views to lock face, hairstyle, wardrobe, body proportions, and recognisable identity. Render every asset's actual identity inside the cinematic storyboard panels: preserve character likeness and wardrobe, scene architecture and palette, and prop form and material. Integrate it naturally into each upper 9:16 narrative camera frame.";
+    return "Production asset reference image. Read the filename prefix before using it: C### means Character, S### means Scene/location, P### means Prop, I### means Insert/detail. Character turnarounds are visible identity anchors in each panel's deterministic Production Tab and are primary identity inputs for the cinematic frame: use their front/side/back/portrait views to lock face, hairstyle, wardrobe, body proportions, and recognisable identity. Render every asset's actual identity inside the cinematic storyboard panels: preserve character likeness and wardrobe, scene architecture and palette, and prop form and material. Integrate it naturally into each upper 16:9 narrative camera frame.";
   }
   return "Reference image. Follow the prompt for the exact aspect to borrow; preserve the requested asset type and production-reference format.";
 }
@@ -908,7 +908,7 @@ def font(size, bold=False):
 
 caption_font = font(max(11, w // 54), True)
 
-# 9:16 竖版板:整张就是固定 3×3 九格。每个外格保持竖版 9:16，禁止页眉、页脚或大建立镜头占用网格空间。
+# 16:9 横版板:整张就是固定 3×3 九格。每个外格保持横版 16:9，禁止页眉、页脚或大建立镜头占用网格空间。
 margin = 22
 gap = 12
 panels = payload.get("panels") or []
@@ -920,10 +920,10 @@ max_grid_w = w - margin * 2
 max_grid_h = h - margin * 2
 cell_w = min(
     (max_grid_w - gap * (cols - 1)) // cols,
-    int(((max_grid_h - gap * (rows - 1)) / rows) * 9 / 16),
+    int(((max_grid_h - gap * (rows - 1)) / rows) * 16 / 9),
 )
 cell_w = max(40, cell_w)
-cell_h = max(72, round(cell_w * 16 / 9))
+cell_h = max(40, round(cell_w * 9 / 16))
 grid_w = cell_w * cols + gap * (cols - 1)
 grid_h = cell_h * rows + gap * (rows - 1)
 grid_x = max(0, (w - grid_w) // 2)
@@ -1275,11 +1275,11 @@ function rescueStoryboardPromptFor(asset, referenceImages = []) {
     : firstPromptLine(prompt, "Asset bindings:", "Asset bindings: use the named official assets from this sequence.");
   return [
     "Generate one professional cinematic Production Board image.",
-    "The board is a single 9:16 vertical (portrait) sheet — taller than it is wide — on warm off-white paper, full sheet visible, no cropping.",
-    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a portrait 9:16 outer cell with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells. Reserve the lower 40 percent of each cell as clean off-white paper for the deterministic Production Tab. The upper 60 percent is the cinematic vertical frame. The post-process will typeset P-number, duration, full plot/action, full dialogue, Visual / Camera / Shot / Lens / Lighting / Emotion, and visible reference thumbnails, so do not render your own letters, dialogue, tables, or technical notes.",
+    "The board is a single 16:9 horizontal (landscape) sheet — wider than it is tall — on warm off-white paper, full sheet visible, no cropping.",
+    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a landscape 16:9 outer cell with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells. Fill the entire area of every cell with the planned horizontal storyboard frame. A deterministic post-process may overlay compact production notes inside each panel, but no lower section may be left blank. Do not render your own letters, dialogue, tables, or technical notes.",
     "Each panel must be a distinct cinematic story frame, not repeated panels and not a UI wireframe: use the actual attached character, scene and prop identities with varied shot scales, camera angles, blocking, foreground/background staging, actor poses, eyelines, and cut points.",
     "Use a clean professional production-storyboard visual language with finished cinematic imagery, expressive performance and clear environmental continuity. Do not add colored technical diagrams or camera-frame overlays.",
-    "Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, or reference boxes. The board contains ONLY the nine equal cinematic story panels with their reserved lower tab areas.",
+    "Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, or reference boxes. The board contains ONLY the nine equal cinematic story panels; any production notes are compact overlays inside those panels.",
     "Do not paste source images as thumbnails; integrate their actual identities naturally into the story action in every relevant panel.",
     firstPromptLine(prompt, "Time coverage:", ""),
     firstPromptLine(prompt, "Source shots:", ""),
@@ -1532,10 +1532,10 @@ max_grid_w = w - margin * 2
 max_grid_h = h - margin * 2
 cell_w = min(
     (max_grid_w - gap * (cols - 1)) // cols,
-    int(((max_grid_h - gap * (rows - 1)) / rows) * 9 / 16),
+    int(((max_grid_h - gap * (rows - 1)) / rows) * 16 / 9),
 )
 cell_w = max(40, cell_w)
-cell_h = max(72, round(cell_w * 16 / 9))
+cell_h = max(40, round(cell_w * 9 / 16))
 grid_w = cell_w * cols + gap * (cols - 1)
 grid_h = cell_h * rows + gap * (rows - 1)
 grid_x = max(0, (w - grid_w) // 2)
@@ -1727,24 +1727,13 @@ async function runImageGenWithRetry(imageArgs, env, label, maxRetries = 0, execT
   throw lastError;
 }
 
-// 故事板/Production Board 走竖版 9:16（3×3 九格需要整板为竖版；把传入的
-// 16:9 尺寸按像素数换成 9:16 竖版，例如 1280x720 -> 720x1280）。
-function storyboardPortraitSize(size) {
-  const m = String(size || "1280x720").match(/^(\d+)x(\d+)$/);
-  if (!m) return "720x1280";
-  const w = Number(m[1]);
-  const h = Number(m[2]);
-  return w > h ? `${h}x${w}` : `${w}x${h}`;
-}
-
 async function runStoryboardReferenceBoardRoute(asset, outPath, size, referenceImages, env, logsDir, originalDetail = "") {
-  if (asset?.type === "Storyboard") size = storyboardPortraitSize(size);
   const board = storyboardReferenceContactSheet(asset, referenceImages, logsDir);
   const prompt = [
     referencePromptFor(asset, referenceImages),
     "",
     "The input image is a PRODUCTION ASSET REFERENCE BOARD, not the final storyboard.",
-    "Transform it into the requested 9:16 Production Board sheet with exactly 9 story panels in a 3-column grid. Use the input only to retain identity; do not reproduce its asset strip, thumbnails, labels, PT codes, arrows, or camera-frame overlays in the final board.",
+    "Transform it into the requested 16:9 Production Board sheet with exactly 9 story panels in a 3-column grid. Use the input only to retain identity; do not reproduce its asset strip, thumbnails, labels, PT codes, arrows, or camera-frame overlays in the final board.",
   ].join("\n");
   const timeout = timeoutSecondsFor(asset, "rescue");
   const editArgs = [
@@ -1779,7 +1768,6 @@ async function runStoryboardReferenceBoardRoute(asset, outPath, size, referenceI
 }
 
 async function runOne(asset, outPath, size, referenceImages = [], logsDir = os.tmpdir(), styleReferenceImage = "", options = {}) {
-  if (asset?.type === "Storyboard") size = storyboardPortraitSize(size);
   for (const referenceImage of [...referenceImages, styleReferenceImage].filter(Boolean)) {
     if (!fs.existsSync(referenceImage) || fs.statSync(referenceImage).size < 1000) {
       throw new Error(`${asset.name} reference image does not exist or is empty: ${referenceImage}`);

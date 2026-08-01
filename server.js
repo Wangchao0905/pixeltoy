@@ -4963,6 +4963,336 @@ async function buildHiddenSceneReferenceMap(episodeRoot, manifest, targetAssetNa
   return { mapPath, selections };
 }
 
+// Film Studio is a project-level visual direction layer. It is deliberately
+// separate from production assets: candidates steer colour, light, texture and
+// composition, while Character/Scene/Prop images continue to lock identity.
+const FILM_STUDIO_DIR = "12_film_studio";
+const FILM_STUDIO_ROLE_ORDER = ["wide_empty_scene", "color", "lighting", "texture", "composition"];
+const FILM_STUDIO_ROLE_LABELS = {
+  wide_empty_scene: "空镜 / 大场景",
+  color: "色彩与调色",
+  lighting: "光线与阴影",
+  texture: "材质与颗粒",
+  composition: "构图记忆点",
+};
+const FILM_STUDIO_SOURCE_URL_ENV = "FILM_STUDIO_SOURCE_URL";
+
+function filmStudioRoot(episodeRoot) {
+  return path.join(episodeRoot, FILM_STUDIO_DIR);
+}
+
+function filmStudioStateFile(episodeRoot) {
+  return path.join(filmStudioRoot(episodeRoot), "film_studio.json");
+}
+
+function filmStudioCandidateRole(id = "") {
+  const value = String(id || "").toLowerCase();
+  if (/forest|ocean|canyon|mountain|gothic|field/.test(value)) return "wide_empty_scene";
+  if (/noir|storm|desert|golden/.test(value)) return "color";
+  if (/warm|mountain|noir/.test(value)) return "lighting";
+  if (/industrial|cave|forest/.test(value)) return "texture";
+  return "composition";
+}
+
+function filmStudioPaletteForCandidate(candidate = {}) {
+  const text = `${candidate.id || ""} ${candidate.description || ""}`.toLowerCase();
+  if (/night|noir|blue|ocean|cold|mountain/.test(text)) return ["深蓝", "冷青", "黑灰"];
+  if (/warm|golden|desert|canyon|sunlit/.test(text)) return ["琥珀", "赭石", "深褐"];
+  if (/gothic|stone|industrial|cave/.test(text)) return ["石墨", "铁锈", "低饱和灰"];
+  return ["森林绿", "雾白", "深灰"];
+}
+
+function normalizeFilmStudioCandidate(candidate = {}, index = 0) {
+  const id = compactLine(candidate.id || candidate.assetId || `film_ref_${index + 1}`).slice(0, 100);
+  const role = FILM_STUDIO_ROLE_ORDER.includes(candidate.role) ? candidate.role : filmStudioCandidateRole(id);
+  const sourceUrl = compactLine(candidate.sourceUrl || candidate.url || candidate.imageUrl || "");
+  const localFile = compactLine(candidate.localFile || candidate.path || "");
+  return {
+    id,
+    role,
+    roleLabel: candidate.roleLabel || FILM_STUDIO_ROLE_LABELS[role] || "视觉参考",
+    localFile,
+    sourceUrl,
+    sourceTitle: compactLine(candidate.sourceTitle || candidate.title || "").slice(0, 180),
+    sourceFilm: compactLine(candidate.sourceFilm || candidate.film || "").slice(0, 120),
+    source: compactLine(candidate.source || "film-studio-catalog"),
+    tags: Array.isArray(candidate.tags) ? candidate.tags.map(compactLine).filter(Boolean).slice(0, 12) : [],
+    visualSignals: Array.isArray(candidate.visualSignals) ? candidate.visualSignals.map(compactLine).filter(Boolean).slice(0, 8) : [],
+    palette: Array.isArray(candidate.palette) ? candidate.palette.map(compactLine).filter(Boolean).slice(0, 6) : filmStudioPaletteForCandidate(candidate),
+    matchScore: Math.max(0, Math.min(100, Number(candidate.matchScore) || 0)),
+    diversityScore: Math.max(0, Math.min(100, Number(candidate.diversityScore) || 0)),
+    matchReason: compactLine(candidate.matchReason || candidate.description || "适合用于全局视觉方向参考").slice(0, 420),
+    selected: candidate.selected === true,
+  };
+}
+
+function filmStudioCandidateKey(candidate = {}) {
+  return compactLine(candidate.sourceUrl || candidate.localFile || candidate.id).toLowerCase();
+}
+
+function selectFilmStudioCandidates(candidates = [], max = 5) {
+  const limit = Math.max(3, Math.min(5, Number(max) || 5));
+  const unique = new Map();
+  (Array.isArray(candidates) ? candidates : []).forEach((candidate, index) => {
+    const normalized = normalizeFilmStudioCandidate(candidate, index);
+    const key = filmStudioCandidateKey(normalized);
+    if (!key || unique.has(key)) return;
+    unique.set(key, normalized);
+  });
+  const pool = [...unique.values()];
+  const selected = [];
+  const usedRoles = new Set();
+  for (const role of FILM_STUDIO_ROLE_ORDER) {
+    const match = pool
+      .filter((candidate) => candidate.role === role && !usedRoles.has(candidate.role))
+      .sort((a, b) => b.matchScore + b.diversityScore - (a.matchScore + a.diversityScore))[0];
+    if (!match) continue;
+    selected.push(match);
+    usedRoles.add(match.role);
+    if (selected.length >= limit) break;
+  }
+  if (selected.length < limit) {
+    pool
+      .filter((candidate) => !selected.some((item) => filmStudioCandidateKey(item) === filmStudioCandidateKey(candidate)))
+      .sort((a, b) => b.diversityScore - a.diversityScore || b.matchScore - a.matchScore)
+      .slice(0, limit - selected.length)
+      .forEach((candidate) => selected.push(candidate));
+  }
+  return selected.slice(0, limit).map((candidate, index) => ({ ...candidate, index: index + 1 }));
+}
+
+function normalizeFilmStudioState(raw = {}) {
+  const candidates = (Array.isArray(raw.candidates) ? raw.candidates : []).map(normalizeFilmStudioCandidate);
+  const selectedReferenceIds = [...new Set((Array.isArray(raw.selectedReferenceIds) ? raw.selectedReferenceIds : []).map(compactLine).filter(Boolean))]
+    .filter((id) => candidates.some((candidate) => candidate.id === id)).slice(0, 3);
+  return {
+    version: 1,
+    status: ["idle", "analyzing", "ready", "selected", "failed"].includes(raw.status) ? raw.status : candidates.length ? "ready" : "idle",
+    query: compactLine(raw.query || "").slice(0, 600),
+    extractedSignals: raw.extractedSignals && typeof raw.extractedSignals === "object" ? raw.extractedSignals : {},
+    candidates,
+    selectedReferenceIds,
+    selectedAt: compactLine(raw.selectedAt || ""),
+    visualBible: raw.visualBible && typeof raw.visualBible === "object" ? raw.visualBible : { version: 0, directive: "", palette: [], lighting: "", composition: "", texture: "" },
+    videoConfigEnabled: raw.videoConfigEnabled === true,
+    sourceStatus: compactLine(raw.sourceStatus || "本地电影参考目录"),
+    error: compactLine(raw.error || ""),
+    updatedAt: compactLine(raw.updatedAt || ""),
+  };
+}
+
+function readFilmStudio(episodeRoot) {
+  const file = filmStudioStateFile(episodeRoot);
+  if (!fs.existsSync(file)) return normalizeFilmStudioState({});
+  try {
+    return normalizeFilmStudioState(JSON.parse(fs.readFileSync(file, "utf8")));
+  } catch {
+    return normalizeFilmStudioState({ status: "failed", error: "Film Studio 状态文件无法读取" });
+  }
+}
+
+function writeFilmStudio(episodeRoot, raw = {}) {
+  const state = normalizeFilmStudioState({ ...raw, updatedAt: new Date().toISOString() });
+  writeText(filmStudioStateFile(episodeRoot), `${JSON.stringify(state, null, 2)}\n`);
+  return state;
+}
+
+function filmStudioPublicCandidate(candidate = {}, episodeRoot = "") {
+  const file = candidate.localFile && fs.existsSync(candidate.localFile) ? candidate.localFile : "";
+  const media = file ? mediaItem(file, episodeRoot) : null;
+  return {
+    ...candidate,
+    ...(media ? { url: media.url, previewUrl: media.url, file: media.rel } : {}),
+    localFile: undefined,
+  };
+}
+
+function publicFilmStudioState(episodeRoot) {
+  const state = readFilmStudio(episodeRoot);
+  return {
+    ...state,
+    candidates: state.candidates.map((candidate) => filmStudioPublicCandidate(candidate, episodeRoot)),
+  };
+}
+
+function filmStudioVisualBibleForCandidates(candidates = [], selectedIds = [], signals = {}) {
+  const selected = (Array.isArray(candidates) ? candidates : []).filter((candidate) => selectedIds.includes(candidate.id));
+  const palette = [...new Set(selected.flatMap((candidate) => candidate.palette || []))].slice(0, 8);
+  const roles = selected.map((candidate) => candidate.roleLabel || candidate.role).filter(Boolean);
+  const lighting = selected.map((candidate) => candidate.visualSignals?.find((signal) => /光|light|shadow|contrast/i.test(signal)) || "").filter(Boolean).join("；");
+  const texture = selected.map((candidate) => candidate.visualSignals?.find((signal) => /质感|texture|grain|material/i.test(signal)) || "").filter(Boolean).join("；");
+  const location = compactLine(signals.locations?.[0] || signals.setting || "剧本指定空间");
+  const directive = [
+    "Film Studio 全剧视觉方向：",
+    location ? `空间以${location}为基础` : "空间以剧本设定为基础",
+    palette.length ? `统一使用${palette.join("、")}的鲜明色彩关系` : "保持明确的主色与对比色关系",
+    roles.length ? `参考重点包含${roles.join("、")}` : "使用宽阔空镜建立空间关系",
+    "保持电影级光影、真实空间层次和可辨识的构图记忆点；视觉参考只约束风格，不替换人物、场景、道具身份。",
+  ].join("；");
+  return { version: 1, directive, palette, lighting, texture, composition: roles.join("、"), selectedIds: selected.map((candidate) => candidate.id) };
+}
+
+function filmStudioPromptForShot(prompt = "", visualBible = {}) {
+  const base = String(prompt || "").trim();
+  const directive = compactLine(visualBible.directive || "");
+  if (!directive) return base;
+  const marker = "Film Studio 全剧视觉方向：";
+  const stripped = base.replace(new RegExp(`\\n?${marker}[\\s\\S]*?(?=\\n\\n|$)`), "").trim();
+  return `${marker}${directive.replace(/^Film Studio 全剧视觉方向：/, "")}\n\n${stripped}`.trim();
+}
+
+function applyFilmStudioToVideoConfig(rawConfig = {}, filmStudio = {}) {
+  const studio = normalizeFilmStudioState(filmStudio);
+  const selected = studio.candidates.filter((candidate) => studio.selectedReferenceIds.includes(candidate.id));
+  const visualBible = studio.visualBible?.directive ? studio.visualBible : filmStudioVisualBibleForCandidates(studio.candidates, studio.selectedReferenceIds, studio.extractedSignals);
+  const visualReferences = selected.map((candidate) => ({
+    id: candidate.id,
+    name: candidate.sourceTitle || candidate.id,
+    role: candidate.role,
+    roleLabel: candidate.roleLabel,
+    file: candidate.localFile || candidate.file || "",
+    sourceUrl: candidate.sourceUrl || "",
+    source: candidate.source || "film-studio",
+    matchReason: candidate.matchReason || "",
+  }));
+  const shots = Array.isArray(rawConfig.shots)
+    ? rawConfig.shots.map((shot) => {
+        if (!shot || typeof shot !== "object") return shot;
+        const prompt = filmStudioPromptForShot(shot.prompt || shot.videoPrompt || "", visualBible);
+        return { ...shot, prompt, ...(typeof shot.videoPrompt === "string" ? { videoPrompt: prompt } : {}), filmStudioApplied: true };
+      })
+    : rawConfig.shots;
+  return {
+    ...rawConfig,
+    visualReferences,
+    visualReferenceIds: selected.map((candidate) => candidate.id),
+    visualBibleVersion: Number(visualBible.version || 1),
+    visualBible,
+    visualReferencePolicy: "visual_only",
+    shots,
+  };
+}
+
+function filmStudioSignalsFromText(text = "") {
+  const value = String(text || "");
+  const world = inferWorldProfile(value);
+  const locations = [...new Set([...parseLocations(value), ...deriveNarrativeLocations(value)])].slice(0, 5);
+  const moods = [
+    [/夜|night|noir|黑暗|阴影/i, "低照度夜景"],
+    [/雨|storm|暴雨|雾|fog|mist/i, "湿润空气与可见层次"],
+    [/金色|golden|夕阳|sunset|暖光/i, "暖金色侧光"],
+    [/霓虹|neon|电流|紫/i, "高饱和人工光"],
+    [/雪|冰|cold|winter/i, "冷色高反差"],
+  ].filter(([pattern]) => pattern.test(value)).map(([, label]) => label);
+  return { setting: world.settingPrompt, locations, moods: moods.length ? moods : ["以剧本空间为主，保留鲜明主色与层次光线"], worldProfile: world };
+}
+
+function filmStudioCatalogCandidates(text = "") {
+  const signals = filmStudioSignalsFromText(text);
+  const items = HIDDEN_SCENE_REFERENCE_CATALOG.map((candidate) => {
+    const score = hiddenSceneReferenceScore({ visual: text, evidence: signals.setting }, candidate);
+    const role = filmStudioCandidateRole(candidate.id);
+    return normalizeFilmStudioCandidate({
+      ...candidate,
+      role,
+      source: "film-studio-catalog",
+      tags: candidate.keywords?.slice(0, 5),
+      visualSignals: [candidate.description, ...(signals.moods || [])],
+      matchScore: Math.min(100, 52 + score * 4),
+      diversityScore: role === "wide_empty_scene" ? 92 : 78,
+      matchReason: score > 0 ? `与${signals.locations?.[0] || signals.setting}和${signals.moods[0]}相符` : "提供与其他候选不同的空间、色彩或光影参照",
+    });
+  });
+  return { signals, candidates: selectFilmStudioCandidates(items, 5) };
+}
+
+async function fetchFilmStudioRemoteCandidates(query = "") {
+  const endpoint = compactLine(process.env[FILM_STUDIO_SOURCE_URL_ENV] || process.env.SHOTDECK_SOURCE_URL || "");
+  if (!endpoint) return { candidates: [], sourceStatus: "本地电影参考目录" };
+  const url = new URL(endpoint);
+  url.searchParams.set("q", query.slice(0, 500));
+  url.searchParams.set("limit", "24");
+  const headers = { "User-Agent": "PixelToys Film Studio/1.0", Accept: "application/json" };
+  const token = compactLine(process.env.FILM_STUDIO_SOURCE_TOKEN || process.env.SHOTDECK_SOURCE_TOKEN || "");
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(url, { headers, redirect: "follow" });
+  if (!response.ok) throw new Error(`参考源 HTTP ${response.status}`);
+  const parsed = await response.json();
+  const list = Array.isArray(parsed) ? parsed : parsed.candidates || parsed.results || parsed.images || [];
+  return { candidates: list.map((item, index) => normalizeFilmStudioCandidate({ ...item, source: "shotdeck-adapter" }, index)), sourceStatus: "远程电影参考源" };
+}
+
+async function buildFilmStudioCandidates(episodeRoot, body = {}) {
+  const script = readText(findProjectFile(episodeRoot, "script"));
+  const assetDescription = readAssetDescription(episodeRoot);
+  const queryText = [script, assetDescription].filter(Boolean).join("\n\n");
+  const fallback = filmStudioCatalogCandidates(queryText);
+  let candidates = fallback.candidates;
+  let sourceStatus = "本地电影参考目录";
+  try {
+    const remote = await fetchFilmStudioRemoteCandidates([fallback.signals.setting, ...fallback.signals.locations, ...fallback.signals.moods].join("；"));
+    const remoteCandidates = selectFilmStudioCandidates(remote.candidates, 5);
+    if (remoteCandidates.length >= 3) {
+      candidates = remoteCandidates;
+      sourceStatus = remote.sourceStatus;
+    }
+  } catch (error) {
+    sourceStatus = `远程参考源不可用，已回退本地电影参考目录：${compactLine(error.message)}`;
+  }
+  const root = filmStudioRoot(episodeRoot);
+  const candidateDir = path.join(root, "candidates");
+  fs.mkdirSync(candidateDir, { recursive: true });
+  const hydrated = [];
+  for (const [index, candidate] of candidates.entries()) {
+    const ext = /\.png(?:\?|$)/i.test(candidate.sourceUrl) ? "png" : "jpg";
+    const target = path.join(candidateDir, `${String(index + 1).padStart(2, "0")}_${safeSlug(candidate.id || `reference-${index + 1}`)}.${ext}`);
+    try {
+      await downloadHiddenSceneReference({ url: candidate.sourceUrl, description: candidate.matchReason }, target);
+      hydrated.push({ ...candidate, localFile: target });
+    } catch (error) {
+      // Keep the remote URL in state so the user can still compare a candidate
+      // when the source is reachable from the browser but not from the server.
+      hydrated.push({ ...candidate, matchReason: `${candidate.matchReason}（本地缓存失败：${compactLine(error.message)}）` });
+    }
+  }
+  const current = readFilmStudio(episodeRoot);
+  const next = writeFilmStudio(episodeRoot, {
+    ...current,
+    status: hydrated.length >= 3 ? "ready" : "failed",
+    query: [fallback.signals.setting, ...fallback.signals.locations].filter(Boolean).join("；"),
+    extractedSignals: fallback.signals,
+    candidates: hydrated,
+    selectedReferenceIds: [],
+    selectedAt: "",
+    visualBible: { version: 0, directive: "", palette: [], lighting: "", composition: "", texture: "" },
+    videoConfigEnabled: false,
+    sourceStatus,
+    error: hydrated.length >= 3 ? "" : "候选图少于 3 张，请检查参考源或网络",
+  });
+  return next;
+}
+
+function selectFilmStudioReferences(episodeRoot, body = {}) {
+  const current = readFilmStudio(episodeRoot);
+  const ids = [...new Set((Array.isArray(body.selectedReferenceIds) ? body.selectedReferenceIds : []).map(compactLine).filter(Boolean))].slice(0, 3);
+  if (!ids.length) throw new Error("请至少选择 1 张 Film Studio 参考图");
+  const available = new Set(current.candidates.map((candidate) => candidate.id));
+  if (ids.some((id) => !available.has(id))) throw new Error("所选 Film Studio 参考图不存在，请重新生成候选");
+  const visualBible = filmStudioVisualBibleForCandidates(current.candidates, ids, current.extractedSignals);
+  return writeFilmStudio(episodeRoot, { ...current, status: "selected", selectedReferenceIds: ids, selectedAt: new Date().toISOString(), visualBible, videoConfigEnabled: false, error: "" });
+}
+
+function applyFilmStudioToProjectVideoConfig(episodeRoot) {
+  const studio = readFilmStudio(episodeRoot);
+  if (!studio.selectedReferenceIds.length) throw new Error("请先在 Film Studio 选择参考图");
+  const configRecord = ensureVideoConfigIsolation(episodeRoot);
+  if (!configRecord?.data || !Array.isArray(configRecord.data.shots) || !configRecord.data.shots.length) throw new Error("请先生成视频配置");
+  const nextConfig = applyFilmStudioToVideoConfig(configRecord.data, studio);
+  writeVideoConfigRecord(configRecord, nextConfig);
+  const nextStudio = writeFilmStudio(episodeRoot, { ...studio, videoConfigEnabled: true });
+  return { config: nextConfig, filmStudio: nextStudio };
+}
+
 function assetManifestItemCount(episodeRoot) {
   const manifest = readAssetManifest(episodeRoot)?.data;
   return Array.isArray(manifest?.items) ? manifest.items.length : 0;
@@ -9531,6 +9861,7 @@ function fullProjectState(episodeRoot) {
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     tailFrames: scanTailFrames(episodeRoot),
     finalCut: finalCutStatus(episodeRoot),
+    filmStudio: publicFilmStudioState(episodeRoot),
     summary: readSummary(episodeRoot, { runNamespace }),
     jobs: localJobs.map(jobSummary),
   };
@@ -9607,6 +9938,7 @@ function projectStatusSnapshot(episodeRoot) {
     storyboardJob: jobSummary(latestJobForTypes(localJobs, ["storyboards", "storyboard-regenerate"])),
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     finalCut: finalCutStatus(episodeRoot),
+    filmStudio: publicFilmStudioState(episodeRoot),
     jobs: localJobs.map(jobSummary),
     assetManifest: normalizedAssetManifest,
     assets: productionAssets,
@@ -12086,6 +12418,7 @@ function assertResolvedAllSeedanceReferences({ provider = "Seedance", startFrame
 
 function seedanceReferenceUsage(asset = {}) {
   const type = compactLine(asset.type || "");
+  if (/visualreference|film\s*studio|视觉参考/i.test(type)) return "仅作为全剧色彩、光线、材质、构图和电影感参考，不替换人物、场景、道具身份";
   if (/角色|人物|character|person|liveness/i.test(type)) return "作为人物形象、服装和身份一致性参考";
   if (/场景|环境|scene|location|background/i.test(type)) return "作为场景、背景和空间氛围参考";
   if (/道具|产品|prop|product/i.test(type)) return "作为道具或产品外观细节参考";
@@ -14733,6 +15066,42 @@ function projectVideoPayloadForShot(episodeRoot, shot, config = {}) {
   const storyboardGuidanceText = storyboardsActive
     ? storyboardGuidancePromptText(shot.storyboardGuidance, Array.isArray(shot.storyboardRefs) && shot.storyboardRefs.length ? 1 : null)
     : "";
+  const visualReferences = Array.isArray(config.visualReferences)
+    ? config.visualReferences
+        .map((reference) => {
+          const file = compactLine(reference?.file || "");
+          const localFile = file ? (path.isAbsolute(file) ? file : path.join(episodeRoot, file)) : "";
+          const sourceUrl = compactLine(reference?.sourceUrl || "");
+          if (!localFile || !fs.existsSync(localFile)) {
+            if (!/^https?:\/\//i.test(sourceUrl)) return null;
+            return {
+              id: compactLine(reference.id || reference.name || "Film Studio"),
+              name: compactLine(reference.name || reference.id || "Film Studio"),
+              label: compactLine(reference.roleLabel || "Film Studio"),
+              type: "VisualReference",
+              file: "",
+              url: sourceUrl,
+              previewUrl: sourceUrl,
+              visual: compactLine(reference.matchReason || "仅作为全局视觉风格参考"),
+            };
+          }
+          const media = mediaItem(localFile, episodeRoot);
+          return {
+            id: compactLine(reference.id || reference.name || "Film Studio"),
+            name: compactLine(reference.name || reference.id || "Film Studio"),
+            label: compactLine(reference.roleLabel || "Film Studio"),
+            type: "VisualReference",
+            file: media.rel,
+            url: media.url,
+            previewUrl: media.url,
+            visual: compactLine(reference.matchReason || "仅作为全局视觉风格参考"),
+          };
+        })
+        .filter(Boolean)
+    : [];
+  const frameCount = startFrameUrl ? 1 : 0;
+  const visualBudget = Math.max(0, SEEDANCE_MAX_IMAGE_REFERENCES - frameCount - refs.length);
+  const boundedVisualReferences = visualReferences.slice(0, visualBudget);
   return {
     prompt: compactLine(shot.prompt || shot.videoPrompt || ""),
     model: projectVideoModelForShot(config, shot),
@@ -14747,7 +15116,7 @@ function projectVideoPayloadForShot(episodeRoot, shot, config = {}) {
     storyboardRefs: Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs.filter(Boolean) : [],
     storyboardGuidance: shot.storyboardGuidance || null,
     storyboardGuidanceText,
-    assets: refs,
+    assets: [...refs, ...boundedVisualReferences],
   };
 }
 
@@ -21835,7 +22204,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     referenceWarnings.push(`以下镜头当前没有可用资产图，将以文本提示词生成：${shotsWithoutRefs.map((shot) => shot.name).join("、")}`);
   }
   referenceWarnings.push(...shotOverlapWarnings(shots));
-  const config = {
+  const baseConfig = {
     groupName:
       body.groupName ||
       (previousMatchesCurrentIsolation && normalizeRunNamespace(previous.runNamespace) === runNamespace && !isGenericGroupName(previous.groupName, episodeRoot) ? previous.groupName : "") ||
@@ -21925,6 +22294,10 @@ async function buildVideoConfig(episodeRoot, body = {}) {
       completedAt: new Date().toISOString(),
     },
   };
+  const filmStudio = readFilmStudio(episodeRoot);
+  const config = filmStudio.videoConfigEnabled && filmStudio.selectedReferenceIds.length
+    ? applyFilmStudioToVideoConfig(baseConfig, filmStudio)
+    : baseConfig;
   const resetVideoState = resetVideoGenerationStateForNewConfig(episodeRoot, config);
   config.resetVideoState = resetVideoState;
   writeText(configPath, `${JSON.stringify(config, null, 2)}\n`);
@@ -22024,6 +22397,15 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
   }
   nextShot.prompt = applyVideoPromptDirectives(nextShot.prompt, requestedDialectStyle, requestedSfxStyle);
 
+  const filmStudio = readFilmStudio(episodeRoot);
+  if (filmStudio.videoConfigEnabled && filmStudio.selectedReferenceIds.length) {
+    const visualBible = filmStudio.visualBible?.directive
+      ? filmStudio.visualBible
+      : filmStudioVisualBibleForCandidates(filmStudio.candidates, filmStudio.selectedReferenceIds, filmStudio.extractedSignals);
+    nextShot.prompt = filmStudioPromptForShot(nextShot.prompt, visualBible);
+    nextShot.filmStudioApplied = true;
+  }
+
   const config = {
     ...previous,
     dialectStyle: requestedDialectStyle,
@@ -22041,9 +22423,13 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
       updatedAt: nextShot.videoConfigUpdatedAt,
     },
   };
-  writeVideoConfigRecord(configRecord, config);
-  syncProjectShotsToCanvasState(episodeRoot, config, [nextShot], { forcePrompt: true });
-  return { configPath: configRecord.file, config, shotName };
+  const configWithFilmStudio = filmStudio.videoConfigEnabled && filmStudio.selectedReferenceIds.length
+    ? applyFilmStudioToVideoConfig(config, filmStudio)
+    : config;
+  writeVideoConfigRecord(configRecord, configWithFilmStudio);
+  const savedShot = configWithFilmStudio.shots.find((shot) => shot.name === shotName) || nextShot;
+  syncProjectShotsToCanvasState(episodeRoot, configWithFilmStudio, [savedShot], { forcePrompt: true });
+  return { configPath: configRecord.file, config: configWithFilmStudio, shotName };
 }
 
 function clearVideoArtifactsForNewCanvas(episodeRoot) {
@@ -23799,6 +24185,25 @@ async function handleApi(req, res, url) {
     return send(res, 200, projectStatusSnapshotForUser(episodeRoot, user));
   }
 
+  if (req.method === "GET" && action === "film-studio") {
+    return send(res, 200, { ok: true, filmStudio: publicFilmStudioState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "film-studio/discover") {
+    await buildFilmStudioCandidates(episodeRoot, await readBody(req));
+    return send(res, 200, { ok: true, filmStudio: publicFilmStudioState(episodeRoot), state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "film-studio/select") {
+    selectFilmStudioReferences(episodeRoot, await readBody(req));
+    return send(res, 200, { ok: true, filmStudio: publicFilmStudioState(episodeRoot), state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "film-studio/apply-video-config") {
+    const result = applyFilmStudioToProjectVideoConfig(episodeRoot);
+    return send(res, 200, { ok: true, ...result, filmStudio: publicFilmStudioState(episodeRoot), state: fullProjectState(episodeRoot) });
+  }
+
   const referenceKitBindingMatch = action.match(/^reference-kits\/([^/]+)\/(bind|unbind)$/);
   if (req.method === "GET" && action === "reference-kits") {
     const workflow = readWorkflowState(episodeRoot);
@@ -24577,6 +24982,13 @@ module.exports = {
     canvasAsset: {
       sourceCandidates: canvasAssetSourceCandidates,
       toPublicUrl: canvasAssetToPublicUrl,
+    },
+    filmStudio: {
+      selectCandidates: selectFilmStudioCandidates,
+      applyToVideoConfig: applyFilmStudioToVideoConfig,
+      normalizeState: normalizeFilmStudioState,
+      visualBible: filmStudioVisualBibleForCandidates,
+      promptForShot: filmStudioPromptForShot,
     },
     canvasImage: {
       normalizeCanvasImageModel,

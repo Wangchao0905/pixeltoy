@@ -81,6 +81,11 @@ await assert.rejects(
 
 assert.match(app, /function renderSuperPixelImageCard\(/);
 assert.match(app, /function renderSuperPixelVideoConfirmCard\(/);
+assert.match(app, /function superPixelVideoDownloadName\(/, "Super Pixel 视频下载必须生成稳定文件名");
+assert.match(app, /function superPixelVideoDownloadHref\(/, "Super Pixel 视频下载必须经过统一地址处理");
+assert.match(app, /\/api\/canvas\/video-download\?url=/, "远程 Super Pixel 视频必须使用同源下载代理");
+assert.match(app, /className = "super-pixel-tool-card-download"/, "完成的视频卡必须提供独立下载按钮");
+assert.match(app, /download\.textContent = "下载视频"/, "下载按钮文案必须明确");
 assert.match(app, /function handleSuperPixelStreamEvent\(/);
 assert.match(app, /function superPixelAssistantFailureMessage\(/);
 assert.match(app, /function startSuperPixelImagePoll\(/);
@@ -109,6 +114,30 @@ function functionSource(name) {
   }
   throw new Error(`${name} source is incomplete`);
 }
+
+const superPixelVideoDownloadName = new Function(
+  `${functionSource("superPixelVideoDownloadName")}; return superPixelVideoDownloadName;`,
+)();
+const superPixelVideoDownloadHref = new Function(
+  "superPixelVideoDownloadName",
+  `${functionSource("superPixelVideoDownloadHref")}; return superPixelVideoDownloadHref;`,
+)(superPixelVideoDownloadName);
+const downloadMessage = { callId: "call_2", videoUrl: "https://cdn.example/021785492224176000000.mp4" };
+assert.equal(
+  superPixelVideoDownloadName(downloadMessage),
+  "pixel-toy-superpixel-video-call_2.mp4",
+  "Super Pixel 下载文件名不得沿用远程随机数字文件名",
+);
+assert.equal(
+  superPixelVideoDownloadHref(downloadMessage),
+  "/api/canvas/video-download?url=https%3A%2F%2Fcdn.example%2F021785492224176000000.mp4&name=pixel-toy-superpixel-video-call_2.mp4",
+  "远程 Super Pixel 视频必须改走同源下载代理并携带稳定文件名",
+);
+assert.equal(
+  superPixelVideoDownloadHref({ videoUrl: "/media?path=%2Ftmp%2Fvideo.mp4" }),
+  "/media?path=%2Ftmp%2Fvideo.mp4",
+  "同源本地视频不应被错误改写成远程代理地址",
+);
 
 const cancelSuperPixelVideoCard = new Function(
   "renderSuperPixelMessages",

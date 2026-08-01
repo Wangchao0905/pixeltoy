@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=asset-replace-20260731" />
+    <link rel="stylesheet" href="/styles.css?v=storyboard-progress-20260731" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -1032,7 +1032,7 @@
             <div class="modern-progress-label"><span>制作进度</span><strong id="modernSeriesProgressLabel">0%</strong></div>
             <button id="modernVisualBibleButton" class="modern-bible-entry" type="button">
               <span class="modern-bible-swatch" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span><b>全剧视觉圣经</b><small>风格与资产规则</small></span><em aria-hidden="true">&gt;</em>
+              <span><b>Film Studio</b><small>全剧视觉方向</small></span><em aria-hidden="true">&gt;</em>
             </button>
           </footer>
         </aside>
@@ -1128,6 +1128,30 @@
             </section>
           </section>
 
+          <section id="modernFilmStudioPanel" class="modern-film-studio-panel" aria-label="Film Studio 全剧视觉方向">
+            <header class="modern-film-studio-head">
+              <div>
+                <span class="modern-eyebrow">FILM STUDIO / VISUAL DIRECTION</span>
+                <h2>Film Studio</h2>
+                <p>从剧本与资产描述自动提取视觉意图，优先提供不重复的空镜、大场景和鲜明色彩参考。参考只约束色彩、光线、材质与构图，不替换人物、场景或道具身份。</p>
+              </div>
+              <div class="modern-film-studio-actions">
+                <button id="modernFilmStudioDiscover" class="is-primary" type="button">自动生成 3–5 张候选</button>
+                <button id="modernFilmStudioApply" type="button" disabled>添加到视频配置</button>
+              </div>
+            </header>
+            <div class="modern-film-studio-statusbar">
+              <span id="modernFilmStudioStatus" aria-live="polite">等待提取视觉意图</span>
+              <span id="modernFilmStudioSignals" class="modern-film-studio-signals"></span>
+              <span id="modernFilmStudioSelection" class="modern-film-studio-selection">未选择参考图</span>
+            </div>
+            <div id="modernFilmStudioCandidates" class="modern-film-studio-candidates" aria-live="polite"></div>
+            <div class="modern-film-studio-directive-wrap">
+              <span class="modern-eyebrow">ACTIVE VISUAL BIBLE</span>
+              <p id="modernFilmStudioDirective">选择参考图后，这里会显示写入视频提示词的全剧视觉方向。</p>
+            </div>
+          </section>
+
           <section id="modernKitBar" class="modern-kit-bar" aria-label="Reference Kit 连续性控制">
             <div><span class="modern-kit-mark">KIT</span><div><span class="modern-eyebrow">ASSET DOCUMENT → KIT → VIDEO</span><strong>镜头引用资产</strong></div></div>
             <div><span id="modernKitShot">当前镜头</span><b id="modernKitNames">未分配</b></div>
@@ -1211,11 +1235,22 @@
                 <b class="storyboard-document-format">16:9</b>
               </div>
               <div class="storyboard-document-actions">
-                <span id="modernStoryboardActionStatus" class="modern-storyboard-action-status" aria-live="polite">故事板预览不回流资产库</span>
+                <span id="modernStoryboardActionStatus" class="modern-storyboard-action-status" aria-live="polite">当前页可单张生成或重新生成</span>
                 <button id="modernStoryboardExport" type="button">导出分镜表</button>
-                <button id="modernStoryboardGeneratePage" class="is-primary" type="button">生成当前故事板</button>
+                <button id="modernStoryboardRetryPanel" type="button" title="只重新生成当前 15 秒故事板">单张重新生成</button>
+                <button id="modernStoryboardGeneratePage" class="is-primary" type="button" title="只生成当前 15 秒故事板">单张生成</button>
               </div>
             </header>
+
+            <section id="modernStoryboardRunStatus" class="modern-storyboard-run-status is-idle" aria-live="polite" aria-atomic="false" data-state="idle">
+              <div class="modern-storyboard-run-indicator">
+                <span class="modern-storyboard-run-pulse" aria-hidden="true"></span>
+                <div><strong id="modernStoryboardRunStatusLabel">队列空闲</strong><small id="modernStoryboardRunStage">等待提交</small></div>
+              </div>
+              <div class="modern-storyboard-run-current"><span class="modern-eyebrow">当前任务</span><strong id="modernStoryboardRunCurrent">尚未提交</strong><small id="modernStoryboardRunDetail">选择单张生成或单张重新生成，其他 PART 不受影响。</small></div>
+              <div class="modern-storyboard-run-progress"><div class="modern-storyboard-run-progress-head"><span>阶段进度</span><strong id="modernStoryboardRunPercent">—</strong></div><div id="modernStoryboardRunMeter" class="modern-storyboard-run-meter" role="progressbar" aria-label="故事板生成阶段进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="modernStoryboardRunFill"></span></div></div>
+              <div class="modern-storyboard-run-summary"><span class="modern-storyboard-run-summary-label">队列</span><strong id="modernStoryboardRunQueue">未启动</strong></div>
+            </section>
 
             <div class="storyboard-document-board">
               <header class="storyboard-document-head">
@@ -1252,7 +1287,6 @@
 
             <div class="storyboard-document-selection" aria-live="polite">
               <div><span>当前故事板</span><strong id="modernStoryboardSelectedPanel">PART 01 · 15 秒九宫格</strong><small id="modernStoryboardSelectedCopy">点击故事板格子查看 GPT 生成的镜头描述。</small></div>
-              <button id="modernStoryboardRetryPanel" type="button">重新生成当前故事板</button>
             </div>
           </section>
 
@@ -1462,7 +1496,7 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=asset-source-fix-20260801"></script>
+    <script src="/app.js?v=storyboard-progress-20260731"></script>
     <script src="/auth-modal.js?v=auth-modal-20260730"></script>
   </body>
 </html>

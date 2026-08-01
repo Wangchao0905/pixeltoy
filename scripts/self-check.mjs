@@ -245,11 +245,11 @@ assert(server.includes('suffix: "PRODUCTION_BOARD"'), "storyboard assets must us
 assert(server.includes("const PRODUCTION_BOARD_MAX_SECONDS = 15;"), "Production Board must cap each board at a 15-second story unit");
 assert(server.includes("const VIDEO_MAX_SECONDS = 15;"), "video clips must remain capped at 15 seconds");
 assert(server.includes("const STORYBOARD_MIN_PANELS = 9;") && server.includes("const STORYBOARD_MAX_PANELS = 9;") && server.includes("const STORYBOARD_BOARD_COLUMNS = 3;"), "Production Board must use a fixed 3x3 nine-panel grid");
-assert(storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_9_16"), "Production Board job route must render the whole board as a 9:16 vertical sheet");
-assert(storyboardJobRoute.includes('aspectRatio: "9:16"'), "Production Board generation metadata must describe the full board as 9:16");
-assert(!storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_16_9"), "Production Board job route must not make the whole board 16:9 landscape");
-assert(!storyboardJobRoute.includes('aspectRatio: "16:9"'), "Production Board generation must not mark the whole board as 16:9");
-assert(server.includes("Create ONE 9:16 vertical (portrait)"), "Production Board prompt must make the whole board a 9:16 vertical sheet");
+assert(storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_16_9"), "Production Board job route must render the whole board as a 16:9 horizontal sheet");
+assert(storyboardJobRoute.includes('aspectRatio: "16:9"'), "Production Board generation metadata must describe the full board as 16:9");
+assert(!storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_9_16"), "Production Board job route must not make the whole board 9:16 portrait");
+assert(!storyboardJobRoute.includes('aspectRatio: "9:16"'), "Production Board generation must not mark the whole board as 9:16");
+assert(server.includes("Create ONE 16:9 horizontal"), "Production Board prompt must make the whole board a 16:9 horizontal sheet");
 assert(productionBoardPrompt.includes("exactly ${panelCount} equal-size storyboard panels"), "Production Board prompt must require nine equal-sized panels");
 assert(productionBoardPrompt.includes("integrated lower Production Tab"), "Production Board prompt must reserve a readable production tab in every panel");
 assert(productionBoardPrompt.includes("deterministic post-process"), "Production Board prompt must keep all production copy readable by reserving it for deterministic typesetting");
@@ -271,15 +271,14 @@ assert(assetRunner.includes('"PRODUCTION TAB"'), "Production Board renderer must
 assert(assetRunner.includes("visible identity anchors"), "Production Board must render character turnarounds and product references as visible identity anchors");
 assert(!productionBoardPrompt.includes("ESTABLISHING SHOT:"), "Production Board must not reserve a separate large establishing-shot panel");
 assert(!productionBoardPrompt.includes("below the establishing shot"), "Production Board grid must start immediately below the header");
-assert(server.includes("竖版 9:16 工作纸"), "Production Board policy must describe the whole board as a 9:16 vertical sheet");
-assert(server.includes("true standing-phone-screen vertical camera view"), "Production Board prompt must require each panel to represent a vertical 9:16 camera view");
+assert(server.includes("15 秒 16:9 横版九宫格故事板"), "Production Board policy must describe the whole board as a 16:9 horizontal sheet");
 assert(server.includes("Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips"), "Production Board prompt must keep technical reference markup out of the final board");
 assert(server.includes("function buildStoryboardPanelAssetBindings"), "Production Board must retain backend panel-to-asset binding");
 assert(assetRunner.includes("Preserve the production-tab and visible-reference layout"), "Production Board edits must preserve the readable production tab and reference layout");
 assert(server.includes("storyboardDisablesTailFrameContinuity: false"), "Production Board must not globally disable tail-frame continuity");
-assert(styles.includes(".storyboard-card img {\n  display: block;\n  width: 100%;\n  aspect-ratio: 9 / 16;"), "Production Board preview cards must show the 9:16 vertical board");
-assert(styles.includes(".storyboard-missing-preview {\n  aspect-ratio: 9 / 16;"), "Production Board missing previews must show the 9:16 vertical board shape");
-assert(styles.includes("body.is-studio .storyboard-card img,\nbody.is-studio .storyboard-card .asset-missing-preview,\nbody.is-studio .storyboard-missing-preview {\n  aspect-ratio: 9 / 16 !important;"), "studio storyboard previews must show the 9:16 vertical board");
+assert(styles.includes(".storyboard-card img {\n  display: block;\n  width: 100%;\n  aspect-ratio: 16 / 9;"), "Production Board preview cards must show the 16:9 horizontal board");
+assert(styles.includes(".storyboard-missing-preview {\n  aspect-ratio: 16 / 9;"), "Production Board missing previews must show the 16:9 horizontal board shape");
+assert(styles.includes("body.is-studio .storyboard-card img,\nbody.is-studio .storyboard-card .asset-missing-preview,\nbody.is-studio .storyboard-missing-preview {\n  aspect-ratio: 16 / 9 !important;"), "studio storyboard previews must show the 16:9 horizontal board");
 assert(html.includes('id="configPromptMode"'), "video config UI must expose prompt/Production Board mode selection");
 assert(app.includes('promptMode: $("#configPromptMode")?.value || "prompt"'), "frontend must submit the selected video prompt mode");
 assert(app.includes('enableStoryboards: ($("#configPromptMode")?.value || "prompt") === "production_board"'), "frontend must enable storyboards only in Production Board mode");
@@ -618,10 +617,10 @@ assert(server.includes("Math.floor(((idx + 1) * total) / count)"), "panel text m
 assert(server.includes("const sameSegmentPanels = panelSegments.reduce"), "panel plan must compute each panel's local index within its own segment run");
 assert(server.includes("const sliceByPart = (arr, i) =>"), "over-length storyboard segments must partition beat/dialogue across parts instead of copying them verbatim");
 
-// Storyboard board format: a 9:16 vertical sheet with nine equal panels in a 3x3 grid. Each panel pairs a cinematic frame with a deterministic production tab and visible identity anchors.
-assert(server.includes("true standing-phone-screen vertical camera view"), "server storyboard prompt must make each panel represent a vertical 9:16 camera view");
-assert(assetRunner.includes("9:16 vertical (portrait) sheet"), "storyboard generation contract must describe the whole board as a 9:16 vertical sheet");
-assert(!assetRunner.includes("one 16:9 landscape sheet"), "storyboard generation contract must not describe the whole board as a 16:9 landscape sheet");
+// Storyboard board format: a 16:9 horizontal sheet with nine equal panels in a 3x3 grid. Each panel pairs a cinematic frame with a deterministic production tab and visible identity anchors.
+assert(server.includes("16:9 横版九宫格故事板"), "server storyboard prompt must make the board landscape");
+assert(assetRunner.includes("16:9 horizontal (landscape) sheet"), "storyboard generation contract must describe the whole board as a 16:9 horizontal sheet");
+assert(!assetRunner.includes("one 9:16 vertical (portrait) sheet"), "storyboard generation contract must not describe the whole board as a 9:16 vertical sheet");
 assert(assetRunner.includes("3-column grid") && assetRunner.includes("9 equal-size panels in a 3 columns x 3 rows grid"), "storyboard generation contract must specify an equal-size three-column, nine-panel grid");
 assert(!assetRunner.includes("2-column grid"), "storyboard renderer must not retain the retired 2-column grid");
 assert(!server.includes("外层制作板为 16:9 排版"), "storyboard planner must not retain the legacy 16:9 board contract");
@@ -630,7 +629,7 @@ assert(server.includes("可见身份参考"), "storyboard guidance must retain v
 assert(assetRunner.includes("P1-P9: show chronological story beats"), "storyboard renderer must retain the nine-panel fallback for the 3x3 contract");
 assert(assetRunner.includes("visible reference thumbnails"), "storyboard renderer must add visible reference thumbnails to the final board");
 assert(!assetRunner.includes("16:9 landscape Production Board"), "storyboard edits must preserve the vertical Production Board contract");
-assert(assetRunner.includes("production-board-imagegen-v17-production-tabs-visible-references"), "storyboard renderer revision must invalidate boards without readable production tabs");
+assert(assetRunner.includes("production-board-imagegen-v18-landscape-full-panels"), "storyboard renderer revision must invalidate portrait or blank-panel boards");
 assert(assetRunner.includes("function stampStoryboardProductionTabs"), "storyboard renderer must overlay production tabs after image generation");
 assert(assetRunner.includes("stampStoryboardProductionTabs(asset, out, assetReferenceImages);"), "storyboard renderer must typeset production tabs on every completed board");
 assert(assetRunner.includes("PRODUCTION TAB"), "storyboard renderer must render the production tab label on the final board");

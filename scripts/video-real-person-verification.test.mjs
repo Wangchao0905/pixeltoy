@@ -52,6 +52,7 @@ const migratedStyle = __test.videoPrompt.migrateInvalidVideoStyleLocks({
 assert.equal(migratedStyle.data.assets[0].globalStyle, "", "历史资产职业字段必须从全局风格中清除");
 assert.equal(migratedStyle.data.shots[0].videoStylePreset, "photoreal", "受污染镜头必须恢复真人实拍预设");
 assert.match(migratedStyle.data.shots[0].prompt, /真人电影实拍质感/u, "受污染镜头必须写入真人实拍约束");
+assert.doesNotMatch(migratedStyle.data.shots[0].prompt, /插画师的职业气质|视觉风格硬约束/u, "行内旧风格和硬约束也必须被清除");
 
 const assets = [
   { name: "SB001_BOARD", manifestType: "Storyboard", url: "https://cdn.example.com/board.png" },

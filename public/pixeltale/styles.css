@@ -174,7 +174,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .form-panel h3, .artifact-card h3, .timeline-card h3 { margin: 0 0 13px; font-size: 13px; font-weight: 600; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
-.field { display: grid; gap: 6px; margin-bottom: 14px; }
+.field { display: grid; align-content: start; gap: 6px; margin-bottom: 14px; }
 .field:last-child { margin-bottom: 0; }
 .field label { color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: 0; }
 .field input, .field select, .field textarea { width: 100%; border: 1px solid rgba(94, 140, 166, 0.28); border-radius: 4px; padding: 9px 10px; color: var(--ink); background: rgba(255, 255, 255, 0.65); font-size: 13px; line-height: 1.45; }

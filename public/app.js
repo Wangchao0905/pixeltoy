@@ -6868,8 +6868,6 @@ function renderModernSelectedShot(data, shot, index) {
   $("#modernStillStatus").textContent = shot?.storyboardRefs?.length ? "已确认" : "待生成";
   $("#modernMotionStatus").textContent = status;
   $("#modernMotionStatus").className = `is-${shot?.status || "waiting"}`;
-  $("#modernStillLineage").className = shot?.storyboardRefs?.length ? "is-done" : "";
-  $("#modernMotionLineage").className = shot?.status === "complete" ? "is-done" : "";
   const activeTab = state.modernStudio.copyTab;
   $$('[data-modern-copy-tab]').forEach((button) => button.classList.toggle("is-active", button.dataset.modernCopyTab === activeTab));
   $("#modernCopyLabel").textContent = activeTab === "prompt" ? "视频提示词" : activeTab === "dialogue" ? "对白 / OS" : "剧情";

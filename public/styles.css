@@ -17828,7 +17828,7 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .modern-kit-bar { display: grid; grid-template-columns: minmax(230px,1.2fr) minmax(170px,1fr) minmax(120px,.7fr) auto; gap: 18px; align-items: center; margin: 18px 26px 0; padding: 12px 14px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }.modern-kit-bar > div { min-width: 0; display: flex; gap: 10px; align-items: center; }.modern-kit-bar > div > span:not(.modern-kit-mark) { color: var(--modern-quiet); font-size: 11px; }.modern-kit-bar strong, .modern-kit-bar b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }/* 徽章是标签不是动作，不用动作色。 */
 .modern-kit-mark { display: grid; place-items: center; width: 33px; height: 28px; border: 1px solid var(--mv-line-2); border-radius: var(--mv-r-s); background: var(--mv-s3); color: var(--mv-mut); font-family: var(--mono); font-size: 11px; }.modern-kit-bar button { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line-strong); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 12px; }.modern-kit-bar button:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }.modern-kit-bar button.is-active { border-color: rgba(200,255,46,.42); background: rgba(200,255,46,.1); color: var(--mv-lime); }
 .modern-sequence { margin: 18px 26px 0; }.modern-sequence > header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 10px; }.modern-sequence > header > div { display: grid; gap: 4px; }.modern-sequence > header strong { font-size: 15px; }.modern-sequence > header > span { color: var(--modern-quiet); font-family: var(--mono); font-size: 11px; }.modern-shot-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 550; }.modern-shot-card small { display: block; margin-top: 3px; color: var(--modern-quiet); font-size: 10px; }
-.modern-workbench { margin: 22px 26px 28px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }.modern-shot-commandbar { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 18px; align-items: center; padding: 13px 15px; border-bottom: 1px solid var(--modern-line); }.modern-selected-shot { display: flex; gap: 11px; align-items: center; min-width: 0; }.modern-selected-shot > span { color: var(--mv-qt); font-family: var(--mono); font-size: 15px; }.modern-selected-shot h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }.modern-selected-shot p { margin: 4px 0 0; color: var(--modern-quiet); font-size: 11px; }.modern-shot-lineage { display: flex; gap: 7px; align-items: center; color: var(--modern-quiet); font-family: var(--mono); font-size: 10px; }.modern-shot-lineage span.is-done { color: #a8d65c; }.modern-shot-lineage i { width: 16px; height: 1px; background: var(--modern-line-strong); }.modern-shot-action { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line-strong); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 12px; }.modern-shot-action:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
+.modern-workbench { margin: 22px 26px 28px; border: 1px solid var(--modern-line); border-radius: 5px; background: var(--modern-surface); }.modern-shot-commandbar { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 18px; align-items: center; padding: 13px 15px; border-bottom: 1px solid var(--modern-line); }.modern-selected-shot { display: flex; gap: 11px; align-items: center; min-width: 0; }.modern-selected-shot > span { color: var(--mv-qt); font-family: var(--mono); font-size: 15px; }.modern-selected-shot h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }.modern-selected-shot p { margin: 4px 0 0; color: var(--modern-quiet); font-size: 11px; }.modern-shot-action { min-height: 30px; padding: 0 11px; border: 1px solid var(--modern-line-strong); border-radius: 4px; background: transparent; color: var(--modern-muted); font-size: 12px; }.modern-shot-action:hover { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
 .modern-video-params { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; margin-top: 6px; color: var(--modern-quiet); font-size: 10px; }
 .modern-selected-shot > div { min-width: 0; }
 .modern-video-param-controls { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
@@ -18818,7 +18818,7 @@ body.is-studio-modern .modern-kit-bar { margin: 16px 26px 0; border-radius: 5px;
    Keep the bar focused on the decisions needed before video generation. */
 body.is-studio-modern .modern-shot-commandbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 14px;
   align-items: stretch;
   min-height: 64px;
@@ -18882,11 +18882,12 @@ body.is-studio-modern .modern-video-param-caption small {
 }
 body.is-studio-modern .modern-video-param-controls {
   display: grid;
-  grid-template-columns: minmax(148px, 1.1fr) minmax(66px, .4fr) minmax(72px, .45fr) minmax(150px, 1.08fr) minmax(142px, .9fr) minmax(142px, .9fr) minmax(92px, .62fr);
+  grid-template-columns: minmax(148px, 1.08fr) minmax(66px, .45fr) minmax(72px, .5fr) minmax(150px, 1.15fr) minmax(168px, 1fr) minmax(168px, 1fr) minmax(100px, .7fr);
   gap: 8px;
   align-items: stretch;
   min-width: 0;
-  width: min(100%, 884px);
+  flex: 1 1 auto;
+  width: auto;
 }
 body.is-studio-modern .modern-video-param {
   display: grid;
@@ -19044,28 +19045,6 @@ body.is-studio-modern .modern-video-param-dialect select:disabled,
   cursor: not-allowed;
   opacity: .55;
 }
-body.is-studio-modern .modern-command-status {
-  display: grid;
-  align-content: center;
-  gap: 5px;
-  min-width: 112px;
-  padding: 0 12px;
-  border-left: 1px solid var(--mv-line);
-}
-body.is-studio-modern .modern-command-status-label {
-  color: var(--mv-qt);
-  font-family: var(--mono);
-  font-size: 8.5px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-body.is-studio-modern .modern-command-status .modern-shot-lineage {
-  gap: 6px;
-  font-size: 9px;
-}
-body.is-studio-modern .modern-command-status .modern-shot-lineage i {
-  width: 10px;
-}
 body.is-studio-modern .modern-shot-actions {
   display: flex;
   align-items: center;
@@ -19095,7 +19074,6 @@ body.is-studio-modern .modern-shot-actions .modern-video-action {
     row-gap: 9px;
   }
   body.is-studio-modern .modern-selected-shot { grid-column: 1; grid-row: 1; }
-  body.is-studio-modern .modern-command-status { grid-column: 2; grid-row: 1; }
   body.is-studio-modern .modern-shot-actions { grid-column: 3; grid-row: 1; }
   body.is-studio-modern .modern-video-params {
     grid-column: 1 / -1;
@@ -19108,16 +19086,9 @@ body.is-studio-modern .modern-shot-actions .modern-video-action {
   body.is-studio-modern .modern-shot-commandbar {
     grid-template-columns: auto minmax(0, 1fr);
   }
-  body.is-studio-modern .modern-command-status {
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: end;
-    min-width: 0;
-    padding-right: 0;
-  }
   body.is-studio-modern .modern-shot-actions {
     grid-column: 1 / -1;
-    grid-row: 4;
+    grid-row: 3;
     width: 100%;
   }
   body.is-studio-modern .modern-shot-actions .modern-video-action { flex: 1 1 0; }

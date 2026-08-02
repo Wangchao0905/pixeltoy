@@ -9706,9 +9706,10 @@ function episodeRootForFile(filePath) {
   return scanEpisodeRoots().find((episodeRoot) => isInside(episodeRoot, file) || isInside(workDirForEpisode(episodeRoot), file)) || "";
 }
 
-// ===== 成片组装器（阶段 D）：各 shot 本地 mp4 → 归一化 1080x1920/24fps/h264+aac → 硬切拼成 rough_cut.mp4 =====
+// ===== 成片组装器（阶段 D）：各 shot 本地 mp4 → 原生规格/24fps/h264+aac → 硬切拼成 rough_cut.mp4 =====
 const FINAL_CUT_DIR = "11_final_cut";
-const FINAL_CUT_TARGET = { w: 1080, h: 1920, fps: 24 };
+const FINAL_CUT_FALLBACK_TARGET = { w: 1080, h: 1920, fps: 24 };
+const FINAL_CUT_ASSEMBLY_VERSION = "native-source-v1";
 const finalCutJobs = new Map();
 function finalCutJobKey(episodeRoot) {
   return path.resolve(episodeRoot);
@@ -9734,6 +9735,27 @@ function ffprobeReadable(file) {
   } catch {
     return false;
   }
+}
+function ffprobeVideoDimensions(file) {
+  try {
+    const out = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", file], { encoding: "utf8", timeout: 20000 });
+    const [width, height] = String(out || "").trim().split(/[,x]/).map((value) => Number(value));
+    return Number.isFinite(width) && Number.isFinite(height) && width > 1 && height > 1 ? { width, height } : null;
+  } catch {
+    return null;
+  }
+}
+function finalCutNativeTarget(dimensions = []) {
+  const candidates = dimensions
+    .filter((item) => Number(item?.width) > 1 && Number(item?.height) > 1)
+    .map((item) => ({ width: Math.floor(Number(item.width) / 2) * 2, height: Math.floor(Number(item.height) / 2) * 2 }))
+    .filter((item) => item.width > 1 && item.height > 1)
+    .sort((a, b) => (a.width * a.height) - (b.width * b.height));
+  if (!candidates.length) return { ...FINAL_CUT_FALLBACK_TARGET };
+  return { w: candidates[0].width, h: candidates[0].height, fps: FINAL_CUT_FALLBACK_TARGET.fps };
+}
+function finalCutTargetForClips(clips = []) {
+  return finalCutNativeTarget(clips.map((clip) => ffprobeVideoDimensions(clip.file)).filter(Boolean));
 }
 function runFfmpegAssembly(args, timeoutMs = 20 * 60 * 1000) {
   return new Promise((resolve, reject) => {
@@ -9800,8 +9822,9 @@ function readFinalCutManifest(episodeRoot) {
     return null;
   }
 }
-function finalCutOutputIsCurrent({ outputMtime = 0, outputSignature = "", clips = [], missing = [], total = 0 } = {}) {
+function finalCutOutputIsCurrent({ outputMtime = 0, outputSignature = "", outputAssemblyVersion = FINAL_CUT_ASSEMBLY_VERSION, clips = [], missing = [], total = 0 } = {}) {
   if (!Number(outputMtime) || !Number(total) || missing.length || clips.length !== Number(total)) return false;
+  if (outputAssemblyVersion !== FINAL_CUT_ASSEMBLY_VERSION) return false;
   if (outputSignature) return outputSignature === finalCutClipSignature(clips);
   return clips.every((clip) => Number(clip?.mtimeMs || 0) <= Number(outputMtime));
 }
@@ -9816,6 +9839,7 @@ function finalCutStatus(episodeRoot) {
   const outputCurrent = !!outputStat && finalCutOutputIsCurrent({
     outputMtime: outputStat.mtimeMs,
     outputSignature: manifest?.signature || "",
+    outputAssemblyVersion: manifest?.assemblyVersion || "legacy-1080-v1",
     clips,
     missing,
     total,
@@ -9862,7 +9886,8 @@ async function runFinalCutAssembly(episodeRoot, job) {
     job.total = clips.length;
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
     fs.mkdirSync(tmpDir, { recursive: true });
-    const normFilter = `scale=${FINAL_CUT_TARGET.w}:${FINAL_CUT_TARGET.h}:force_original_aspect_ratio=decrease,pad=${FINAL_CUT_TARGET.w}:${FINAL_CUT_TARGET.h}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${FINAL_CUT_TARGET.fps},format=yuv420p,setsar=1`;
+    const finalTarget = finalCutTargetForClips(clips);
+    const normFilter = `scale=${finalTarget.w}:${finalTarget.h}:force_original_aspect_ratio=decrease,pad=${finalTarget.w}:${finalTarget.h}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${finalTarget.fps},format=yuv420p,setsar=1`;
     const normFiles = [];
     for (let i = 0; i < clips.length; i += 1) {
       const clip = clips[i];
@@ -9873,8 +9898,8 @@ async function runFinalCutAssembly(episodeRoot, job) {
       const target = path.join(tmpDir, `norm_${String(i).padStart(3, "0")}.mp4`);
       const hasAudio = ffprobeClipHasAudio(clip.file);
       const args = hasAudio
-        ? ["-y", "-i", clip.file, "-vf", normFilter, "-r", String(FINAL_CUT_TARGET.fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", target]
-        : ["-y", "-i", clip.file, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-vf", normFilter, "-r", String(FINAL_CUT_TARGET.fps), "-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", target];
+        ? ["-y", "-i", clip.file, "-vf", normFilter, "-r", String(finalTarget.fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", target]
+        : ["-y", "-i", clip.file, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-vf", normFilter, "-r", String(finalTarget.fps), "-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", target];
       await runFfmpegAssembly(args);
       normFiles.push(target);
     }
@@ -9903,7 +9928,9 @@ async function runFinalCutAssembly(episodeRoot, job) {
     const manifest = finalCutManifestFile(episodeRoot);
     const manifestTemp = path.join(tmpDir, "rough_cut.meta.json");
     fs.writeFileSync(manifestTemp, `${JSON.stringify({
-      version: 1,
+      version: 2,
+      assemblyVersion: FINAL_CUT_ASSEMBLY_VERSION,
+      target: finalTarget,
       signature: finalCutClipSignature(clips),
       clips: clips.map(({ name, version, mtimeMs, size }) => ({ name, version, mtimeMs, size })),
       assembledAt: new Date().toISOString(),
@@ -9955,7 +9982,7 @@ function maybeAutoAssembleFinalCut(episodeRoot) {
     const out = finalCutOutputFile(episodeRoot);
     const outMtime = fs.existsSync(out) ? fs.statSync(out).mtimeMs : 0;
     const manifest = readFinalCutManifest(episodeRoot);
-    if (finalCutOutputIsCurrent({ outputMtime: outMtime, outputSignature: manifest?.signature || "", clips, missing, total })) return;
+    if (finalCutOutputIsCurrent({ outputMtime: outMtime, outputSignature: manifest?.signature || "", outputAssemblyVersion: manifest?.assemblyVersion || "legacy-1080-v1", clips, missing, total })) return;
     const started = startFinalCutAssembly(episodeRoot);
     if (started?.running) autoFinalCutSignatures.set(key, signature);
   } catch {
@@ -25458,6 +25485,7 @@ module.exports = {
     finalCut: {
       finalCutClipSignature,
       finalCutOutputIsCurrent,
+      finalCutNativeTarget,
       finalCutStatus,
     },
     videoRetry: {

@@ -6964,6 +6964,8 @@ function hydrateConfigInputs(configText) {
     setModernVideoPromptMode(pendingMode || (hasProductionBoardConfig ? "production_board" : "prompt"));
     setVideoDialectControls(settings.dialectStyle || config.dialectStyle || "none");
     setVideoSfxControls(settings.sfxStyle || config.sfxStyle || "none");
+    const verification = $("#modernRealPersonVerification");
+    if (verification) verification.checked = settings.enableRealPersonVerification === true;
   } catch {
     $("#modernParamModel").value = "seedance-2-0-fast";
     $("#modernParamResolution").value = "480p";
@@ -6971,6 +6973,8 @@ function hydrateConfigInputs(configText) {
     setModernVideoPromptMode("prompt");
     setVideoDialectControls("none");
     setVideoSfxControls("none");
+    const verification = $("#modernRealPersonVerification");
+    if (verification) verification.checked = false;
   }
 }
 
@@ -10181,6 +10185,7 @@ async function refreshVideoConfig({ silent } = { silent: false }) {
       dialogueLanguage: state.dialogueLanguage,
       dialectStyle: selectedVideoDialectStyle(),
       sfxStyle: selectedVideoSfxStyle(),
+      enableRealPersonVerification: $("#modernRealPersonVerification")?.checked === true,
       durationMode: state.durationMode,
       enableStoryboards: promptMode === "production_board",
       tailFrameContinuity: promptMode !== "production_board",
@@ -10195,12 +10200,12 @@ async function refreshVideoConfig({ silent } = { silent: false }) {
   }
 }
 
-async function saveVideoSettings({ silent = true, modelName = "", ratio = "", resolution = "", dialectStyle = "", sfxStyle = "" } = {}) {
+async function saveVideoSettings({ silent = true, modelName = "", ratio = "", resolution = "", dialectStyle = "", sfxStyle = "", enableRealPersonVerification } = {}) {
   if (!state.selectedId) return;
   const existingConfig = videoConfigDataFromProject();
   if (!Array.isArray(existingConfig.shots) || !existingConfig.shots.length) {
     await refreshVideoConfig({ silent });
-    return;
+    return saveVideoSettings({ silent, modelName, ratio, resolution, dialectStyle, sfxStyle, enableRealPersonVerification });
   }
   const project = state.project?.project || {};
   const globalModel = modelName || existingConfig.modelName || $("#modernParamModel")?.value || project.model || "seedance-2-0-fast";
@@ -10214,11 +10219,16 @@ async function saveVideoSettings({ silent = true, modelName = "", ratio = "", re
       ratio: globalRatio,
       dialectStyle: dialectStyle || selectedVideoDialectStyle(),
       sfxStyle: sfxStyle || selectedVideoSfxStyle(),
+      enableRealPersonVerification:
+        typeof enableRealPersonVerification === "boolean"
+          ? enableRealPersonVerification
+          : $("#modernRealPersonVerification")?.checked === true,
     }),
   });
   setProjectState(data.state);
   renderWorkspace();
   if (!silent) toast("视频设置已保存，已生成片段保持不变");
+  return data;
 }
 
 function renderSeriesPreflightResult(result = {}) {
@@ -11290,6 +11300,19 @@ function bind() {
       syncSfxControlAvailability();
       saveVideoSettings({ silent: true }).catch((error) => toast(error.message));
     });
+  });
+  $("#modernRealPersonVerification")?.addEventListener("change", (event) => {
+    const enabled = event.currentTarget.checked === true;
+    saveVideoSettings({ silent: true, enableRealPersonVerification: enabled })
+      .then((data) => {
+        const targets = Array.isArray(data?.verification?.targets) ? data.verification.targets : [];
+        toast(enabled
+          ? targets.length
+            ? `真人验证已开启：${targets.length} 张人物图开始认证`
+            : "真人验证已开启：当前没有待认证的人物图"
+          : "真人验证已关闭");
+      })
+      .catch((error) => toast(error.message));
   });
 }
 

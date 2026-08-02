@@ -18868,7 +18868,7 @@ body.is-studio-modern .modern-video-param-caption small {
 }
 body.is-studio-modern .modern-video-param-controls {
   display: grid;
-  grid-template-columns: minmax(148px, 1.1fr) minmax(66px, .4fr) minmax(72px, .45fr) minmax(150px, 1.08fr) minmax(142px, .9fr) minmax(142px, .9fr);
+  grid-template-columns: minmax(148px, 1.1fr) minmax(66px, .4fr) minmax(72px, .45fr) minmax(150px, 1.08fr) minmax(142px, .9fr) minmax(142px, .9fr) minmax(92px, .62fr);
   gap: 8px;
   align-items: stretch;
   min-width: 0;

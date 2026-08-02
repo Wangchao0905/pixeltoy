@@ -200,6 +200,7 @@ let runtimeAssetAnalyzerKeySource = "";
 const jobs = new Map();
 const jobChildren = new Map();
 const projectVideoQueues = new Map();
+const projectRealPersonVerificationJobs = new Map();
 let superPixelFetch = (...args) => fetch(...args);
 
 const MIME = {
@@ -12134,6 +12135,10 @@ function isWorkflowArkPersonAutoCertificationAsset(asset = {}, options = {}) {
     && isArkPersonReferenceAsset(asset);
 }
 
+function realPersonVerificationEnabled(config = {}) {
+  return config?.enableRealPersonVerification === true || config?.settings?.enableRealPersonVerification === true;
+}
+
 // AI 生成判定(不含画风约束):供“放宽到角色类”复用。
 function isCanvasAiGeneratedAsset(asset = {}) {
   if (asset.aiGenerated === true || compactLine(asset.verificationType || asset.verification_type) === "ai-generated") return true;
@@ -14804,8 +14809,9 @@ function referenceAssetSource(episodeRoot, assetByName, name) {
 
 // 批量链路:把单个超写实素材认证进火山虚拟人像库并轮询到 active。永不抛错——
 // 失败/超时返回非 active 状态,交由就绪校验停止对应片段(不静默删引用、不卡死整批)。
-async function ensureBatchArkVirtualPerson(asset, deadlineTs) {
+async function ensureBatchArkVirtualPerson(asset, deadlineTs, options = {}) {
   const existing = (asset && asset.arkPersonAsset) || {};
+  const forceRealPersonVerification = options.forceRealPersonVerification === true;
   const existingUrl = compactLine(existing.assetUrl || "");
   if (existing.enabled === true && compactLine(existing.status || "").toLowerCase() === "active" && /^asset:\/\//i.test(existingUrl)) {
     return { status: "active", assetUrl: existingUrl, assetId: compactLine(existing.assetId || ""), error: "" };
@@ -14815,7 +14821,14 @@ async function ensureBatchArkVirtualPerson(asset, deadlineTs) {
     let assetUrl = existingUrl;
     let status = compactLine(existing.status || "").toLowerCase();
     if (!assetId) {
-      const created = await createArkVirtualPersonAsset({ asset: { ...asset, aiGenerated: true, verificationType: compactLine(asset.verificationType || "") || "ai-generated" } });
+      const created = await createArkVirtualPersonAsset({
+        asset: {
+          ...asset,
+          manualCertification: forceRealPersonVerification,
+          aiGenerated: true,
+          verificationType: compactLine(asset.verificationType || "") || "ai-generated",
+        },
+      });
       assetId = compactLine(created.assetId || "");
       assetUrl = compactLine(created.assetUrl || (assetId ? `asset://${assetId}` : ""));
       status = compactLine(created.status || "processing").toLowerCase();
@@ -14836,12 +14849,15 @@ async function ensureBatchArkVirtualPerson(asset, deadlineTs) {
 
 // 项目短剧统一按模型边界筛选 Ark 人物轨;person-reference 继续走 Gravitex。
 function arkPersonReferenceNames(episodeRoot, config = {}, names = [], shot = {}) {
-  const usesGravitexPersonRef = projectVideoModelForShot(config, shot) === "seedance-2-0-person-reference";
-  if (usesGravitexPersonRef) return [];
+  const model = projectVideoModelForShot(config, shot);
+  if (!isArkPersonTargetModel(model)) return [];
+  const forceRealPersonVerification = realPersonVerificationEnabled(config);
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   return [...new Set((Array.isArray(names) ? names : []).map(compactLine).filter(Boolean))].filter((name) => {
     const asset = referenceAssetSource(episodeRoot, assetByName, name);
-    return asset && isWorkflowArkPersonAutoCertificationAsset(asset, { workflowContext: true });
+    return asset && (forceRealPersonVerification
+      ? isCharacterRefAsset(asset)
+      : isWorkflowArkPersonAutoCertificationAsset(asset, { workflowContext: true }));
   });
 }
 
@@ -14849,6 +14865,7 @@ async function ensureArkPersonAssetsForNames(episodeRoot, configRecord, names, d
   let config = configRecord && configRecord.data ? configRecord.data : {};
   const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, names, shot);
   if (!arkPersonNames.length) return config;
+  const forceRealPersonVerification = realPersonVerificationEnabled(config);
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   const arkGroupId = arkVirtualPersonConfig().groupId;
   for (const name of arkPersonNames) {
@@ -14863,7 +14880,7 @@ async function ensureArkPersonAssetsForNames(episodeRoot, configRecord, names, d
     const alreadyActive = existing.enabled === true && compactLine(existing.status || "").toLowerCase() === "active" && /^asset:\/\//i.test(existingUrl);
     const r = alreadyActive
       ? { status: "active", assetUrl: existingUrl, assetId: compactLine(existing.assetId || ""), error: "" }
-      : await ensureBatchArkVirtualPerson(asset, deadlineTs);
+      : await ensureBatchArkVirtualPerson(asset, deadlineTs, { forceRealPersonVerification });
     mergeConfigAssetPatch(config, name, {
       arkPersonAsset: {
         enabled: true,
@@ -14879,6 +14896,33 @@ async function ensureArkPersonAssetsForNames(episodeRoot, configRecord, names, d
   }
   if (configRecord) configRecord.data = config;
   return config;
+}
+
+function scheduleProjectRealPersonVerification(episodeRoot, configRecord) {
+  const config = configRecord?.data || {};
+  if (!realPersonVerificationEnabled(config)) return { started: false, targets: [] };
+  const names = videoSubmissionReferenceNames(config, Array.isArray(config.shots) ? config.shots : []);
+  const targets = arkPersonReferenceNames(episodeRoot, config, names);
+  if (!targets.length) return { started: false, targets: [] };
+  const key = `${episodeRoot}::${currentRunNamespace(episodeRoot, config)}`;
+  if (projectRealPersonVerificationJobs.get(key)?.running) return { started: false, targets, running: true };
+  const job = { running: true, targets, startedAt: new Date().toISOString(), error: "" };
+  projectRealPersonVerificationJobs.set(key, job);
+  setImmediate(() => {
+    ensureArkPersonAssetsForNames(episodeRoot, configRecord, targets, Date.now() + PREPARE_REFS_TIMEOUT_MS)
+      .then((nextConfig) => syncProjectShotsToCanvasState(episodeRoot, nextConfig, nextConfig.shots || []))
+      .catch((error) => {
+        job.error = compactLine(error?.message || "人物素材认证失败");
+      })
+      .finally(() => {
+        job.running = false;
+        job.finishedAt = new Date().toISOString();
+        setTimeout(() => {
+          if (projectRealPersonVerificationJobs.get(key) === job && job.running !== true) projectRealPersonVerificationJobs.delete(key);
+        }, 60_000);
+      });
+  });
+  return { started: true, targets, running: true };
 }
 
 async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, options = {}) {
@@ -21204,6 +21248,10 @@ function updateVideoSettingsInConfig(rawConfig = {}, body = {}) {
   const sfxStyle = normalizeVideoSfxStyle(
     body.sfxStyle ?? rawConfig.sfxStyle ?? previousSettings.sfxStyle ?? "none",
   );
+  const enableRealPersonVerification =
+    typeof body.enableRealPersonVerification === "boolean"
+      ? body.enableRealPersonVerification
+      : realPersonVerificationEnabled(rawConfig);
   const shots = Array.isArray(rawConfig.shots)
     ? rawConfig.shots.map((shot) => {
         if (!shot || typeof shot !== "object") return shot;
@@ -21229,6 +21277,7 @@ function updateVideoSettingsInConfig(rawConfig = {}, body = {}) {
       resolution,
       dialectStyle,
       sfxStyle,
+      enableRealPersonVerification,
     },
     shots,
     videoSettingsUpdatedAt: new Date().toISOString(),
@@ -22493,6 +22542,10 @@ async function buildVideoConfig(episodeRoot, body = {}) {
       sfxStyle: requestedSfxStyle,
       durationMode: requestedDurationMode,
       enableSound: previous.settings?.enableSound || "on",
+      enableRealPersonVerification:
+        typeof body.enableRealPersonVerification === "boolean"
+          ? body.enableRealPersonVerification
+          : realPersonVerificationEnabled(previous),
       count: Number(previous.settings?.count || 1),
       search_enabled: Number(previous.settings?.search_enabled || 0),
       autoCompliance: Number(previous.settings?.autoCompliance ?? 1),
@@ -24718,8 +24771,12 @@ async function handleApi(req, res, url) {
     if (!configRecord?.data || !Array.isArray(configRecord.data.shots)) throw new Error("请先生成视频配置");
     const config = updateVideoSettingsInConfig(configRecord.data, body);
     writeVideoConfigRecord(configRecord, config);
+    configRecord.data = config;
     syncProjectShotsToCanvasState(episodeRoot, config, config.shots);
-    return send(res, 200, { ok: true, state: fullProjectState(episodeRoot) });
+    const verification = realPersonVerificationEnabled(config)
+      ? scheduleProjectRealPersonVerification(episodeRoot, configRecord)
+      : { started: false, targets: [] };
+    return send(res, 200, { ok: true, verification, state: fullProjectState(episodeRoot) });
   }
 
   if (req.method === "POST" && action === "asset-extract") {
@@ -24808,7 +24865,11 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && action === "config") {
     ensureWorkflowNamespace(episodeRoot, "config request");
     const result = await buildVideoConfig(episodeRoot, await readBody(req));
-    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+    const configRecord = readVideoConfig(episodeRoot);
+    const verification = realPersonVerificationEnabled(configRecord?.data)
+      ? scheduleProjectRealPersonVerification(episodeRoot, configRecord)
+      : { started: false, targets: [] };
+    return send(res, 200, { ok: true, result, verification, state: fullProjectState(episodeRoot) });
   }
 
   if (req.method === "POST" && action === "video-config-shot") {
@@ -25302,6 +25363,10 @@ module.exports = {
       projectShotVideoReferenceNames,
       projectShotAllVideoReferenceAssets,
       projectShotUsableVideoReferenceAssets,
+    },
+    videoVerification: {
+      arkPersonReferenceNames,
+      realPersonVerificationEnabled,
     },
     projectVideo: {
       generateProjectVideoShot,

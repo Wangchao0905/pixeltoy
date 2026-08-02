@@ -9340,6 +9340,23 @@ body.is-explore-ui .explore-canvas-library {
   white-space: nowrap;
 }
 
+.explore-topbar nav > .explore-tool-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 43px;
+  padding: 0 8px;
+  color: var(--explore-muted);
+  font-size: 11px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.explore-topbar nav > .explore-tool-link:hover,
+.explore-topbar nav > .explore-tool-link:focus-visible {
+  color: #dce8f7;
+  background: transparent;
+}
+
 .explore-topbar nav > button:hover {
   background: transparent;
   color: #dce8f7;

@@ -20,6 +20,9 @@ const {
 } = require("./server/reference-kits.js");
 const { buildTeamProjectProgressFacts, calculateTeamProjectProgress, selectVideoConfigRecord } = require("./server/team-progress.js");
 const { createAssetLibrary } = require("./server/asset-library.js");
+const { createPixelTaleAgent } = require("./server/pixeltale-agent.js");
+const { writeVisualAssetDocument: buildVisualAssetDocument } = require("./server/pixeltale-visual-assets.js");
+const { safeFileName: safeScriptFileName, writeScriptDocument: buildScriptDocument } = require("./server/pixeltale-script-document.js");
 const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
 const { ensureThumbnail } = require("./server/thumbnailer.js");
 const fsRequestCache = require("./server/fs-request-cache.js");
@@ -120,6 +123,7 @@ const CANVAS_STATE_DIR = path.join(APP_ROOT, ".pixel-toys-canvas-states");
 const canvasStateScanCache = createCanvasStateScanCache({ fs, path, resolveEpisodeRoot: episodeRootFromCanvasProjectId });
 const CANVAS_PUBLIC_ASSET_DIR = path.join(APP_ROOT, ".pixel-toys-public-assets");
 const HIDDEN_SCENE_REFERENCE_DIR = path.join(APP_ROOT, ".pixel-toys-hidden-scene-references");
+const PIXELTALE_SESSION_ROOT = path.join(APP_ROOT, ".pixel-tale-sessions");
 const CANVAS_VIDEO_DEFAULT_WIDTH = 780;
 const CANVAS_VIDEO_DEFAULT_HEIGHT = 780;
 const CANVAS_VIDEO_MIN_WIDTH = 420;
@@ -710,6 +714,14 @@ function isPublicStaticPath(pathname = "") {
   );
 }
 
+function isPixelTalePath(pathname = "") {
+  return pathname === "/pixeltale.html" || pathname.startsWith("/pixeltale/") || pathname === "/api/pixeltale" || pathname.startsWith("/api/pixeltale/");
+}
+
+function isPixelTaleApiPath(pathname = "") {
+  return pathname === "/api/pixeltale" || pathname.startsWith("/api/pixeltale/");
+}
+
 function isStandaloneImageGenerationApiPath(pathname = "") {
   return pathname === "/api/canvas/image-generation" || /^\/api\/canvas\/image-generations\/[^/]+$/.test(pathname);
 }
@@ -717,7 +729,7 @@ function isStandaloneImageGenerationApiPath(pathname = "") {
 function requireAuth(req, res, url) {
   if (process.env.PIXEL_TOYS_AUTH_DISABLED === "1") return true;
   if (isAuthorizedMcpRequest(req)) return true;
-  if (isAuthApiPath(url.pathname) || isPublicStaticPath(url.pathname)) return true;
+  if (isAuthApiPath(url.pathname) || isPublicStaticPath(url.pathname) || isPixelTalePath(url.pathname) || isPixelTaleApiPath(url.pathname)) return true;
   if (url.pathname === "/admin.html" || isAdminApiPath(url.pathname)) {
     const user = currentUserFromRequest(req);
     if (!user) {
@@ -2170,6 +2182,40 @@ function loadLocalEnv() {
 
 loadLocalEnv();
 
+const pixelTaleAgent = createPixelTaleAgent({
+  env: process.env,
+  readPixelTaleState,
+  writePixelTaleState,
+  writeHandoffFile(storyRoot, payload) {
+    const handoffDir = path.join(storyRoot, "handoffs");
+    fs.mkdirSync(handoffDir, { recursive: true });
+    const file = path.join(handoffDir, `${payload.id}.json`);
+    fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    return file;
+  },
+  writeVisualAssetDocument(storyRoot, payload) {
+    const handoffDir = path.join(storyRoot, "handoffs");
+    const outputFile = path.join(handoffDir, `${payload.id}_visual_assets.docx`);
+    return buildVisualAssetDocument({
+      templateFile: path.join(APP_ROOT, "server", "templates", "visual-assets-template.docx"),
+      scriptFile: path.join(APP_ROOT, "server", "pixeltale-visual-assets.py"),
+      outputFile,
+      payload,
+    });
+  },
+  writeScriptDocument(storyRoot, payload) {
+    const handoffDir = path.join(storyRoot, "handoffs");
+    const title = safeScriptFileName(payload.title || "PixelTale");
+    const version = Math.max(1, Number(payload.version || 1));
+    const outputFile = path.join(handoffDir, `${title}_正式剧本_v${version}.docx`);
+    return buildScriptDocument({
+      scriptFile: path.join(APP_ROOT, "server", "pixeltale-script-document.py"),
+      outputFile,
+      payload,
+    });
+  },
+});
+
 function imageApiKey() {
   for (const name of IMAGE_API_KEY_ENV_NAMES) {
     if (process.env[name]) return process.env[name];
@@ -3619,6 +3665,44 @@ function writeWorkflowState(episodeRoot, state) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`, "utf8");
   return state;
+}
+
+function pixelTaleStatePath(storyRoot) {
+  return path.join(storyRoot, "pixel_tale_state.json");
+}
+
+function readPixelTaleState(storyRoot) {
+  const file = pixelTaleStatePath(storyRoot);
+  if (!fs.existsSync(file)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writePixelTaleState(storyRoot, state) {
+  const file = pixelTaleStatePath(storyRoot);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  return state;
+}
+
+function standalonePixelTaleSessionId(req, url) {
+  const header = Array.isArray(req.headers["x-pixeltale-session"])
+    ? req.headers["x-pixeltale-session"][0]
+    : req.headers["x-pixeltale-session"];
+  const candidate = compactLine(header || url?.searchParams?.get("session") || "guest");
+  return /^[A-Za-z0-9_-]{16,128}$/.test(candidate) ? candidate : "guest";
+}
+
+function standalonePixelTaleParams(req, url) {
+  const sessionId = standalonePixelTaleSessionId(req, url);
+  return {
+    pixelTaleRoot: path.join(PIXELTALE_SESSION_ROOT, sessionId),
+    projectId: `standalone:${sessionId}`,
+    project: { id: "story-forge", title: "独立编剧工作区", episode: "SESSION" },
+  };
 }
 
 function projectReferenceKits(workflow = {}) {
@@ -24605,6 +24689,84 @@ async function handleApi(req, res, url) {
       return send(res, 200, { ok: true, loading: true, project: lightweightProjectSummary(episodeRoot) });
     }
     return send(res, 200, fullProjectState(episodeRoot));
+  }
+
+  const standalonePixelTaleMatch = url.pathname.match(/^\/api\/pixeltale(?:\/(.*))?$/);
+  if (standalonePixelTaleMatch) {
+    const action = standalonePixelTaleMatch[1] || "";
+    const params = standalonePixelTaleParams(req, url);
+
+    if (req.method === "GET" && action === "") {
+      return send(res, 200, { ok: true, agent: pixelTaleAgent.status(params) }, { "Cache-Control": "no-store" });
+    }
+
+    if (req.method === "GET" && action === "visual-assets/download") {
+      const agent = pixelTaleAgent.status(params);
+      const fileName = path.basename(agent.visualAssetDocument?.fileName || "");
+      const handoffDir = path.join(params.pixelTaleRoot, "handoffs");
+      const file = path.join(handoffDir, fileName);
+      if (!fileName || !isInside(handoffDir, file) || !fs.existsSync(file)) return fail(res, 404, "视觉资产文档不存在");
+      return send(res, 200, fs.readFileSync(file), {
+        "Content-Type": MIME[".docx"],
+        "Content-Disposition": contentDispositionName(file),
+        "Cache-Control": "no-store",
+      });
+    }
+
+    if (req.method === "GET" && action === "script/download") {
+      const agent = pixelTaleAgent.status(params);
+      const fileName = path.basename(agent.scriptDocument?.fileName || "");
+      const handoffDir = path.join(params.pixelTaleRoot, "handoffs");
+      const file = path.join(handoffDir, fileName);
+      if (!fileName || !isInside(handoffDir, file) || !fs.existsSync(file)) return fail(res, 404, "正式剧本 DOCX 不存在");
+      return send(res, 200, fs.readFileSync(file), {
+        "Content-Type": MIME[".docx"],
+        "Content-Disposition": contentDispositionName(file),
+        "Cache-Control": "no-store",
+      });
+    }
+
+    if (req.method === "POST" && action === "settings") {
+      const body = await readBody(req);
+      const agent = pixelTaleAgent.saveSettings({ ...params, mode: body.mode, routes: body.routes || body.modelRoute, input: body.input });
+      return send(res, 200, { ok: true, agent });
+    }
+
+    if (req.method === "POST" && action === "runs") {
+      const body = await readBody(req);
+      const result = await pixelTaleAgent.run({
+        ...params,
+        stage: body.stage,
+        mode: body.mode,
+        input: body.input,
+        routes: body.routes || body.modelRoute,
+      });
+      return send(res, 200, { ok: true, result });
+    }
+
+    const runMatch = action.match(/^runs\/([^/]+)$/);
+    if (req.method === "GET" && runMatch) {
+      const runId = decodeURIComponent(runMatch[1]);
+      const agent = pixelTaleAgent.status(params);
+      const run = agent.runs.find((item) => item.runId === runId);
+      if (!run) return fail(res, 404, "Story Forge run not found");
+      return send(res, 200, { ok: true, run, artifacts: agent.artifacts.filter((item) => run.artifactIds.includes(item.id)), agent });
+    }
+
+    const approveMatch = action.match(/^artifacts\/([^/]+)\/approve$/);
+    if (req.method === "POST" && approveMatch) {
+      const artifactId = decodeURIComponent(approveMatch[1]);
+      const body = await readBody(req);
+      const result = pixelTaleAgent.approve({ ...params, artifactId, selectedTitle: body.selectedTitle });
+      return send(res, 200, { ok: true, result });
+    }
+
+    if (req.method === "POST" && action === "handoff") {
+      const result = await pixelTaleAgent.handoff(params);
+      return send(res, 200, { ok: true, result });
+    }
+
+    return fail(res, 404, "Story Forge endpoint not found");
   }
 
   const projectMatch = url.pathname.match(/^\/api\/project\/([^/]+)(?:\/(.+))?$/);

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PixelTale / Story Forge</title>
+    <link rel="stylesheet" href="/pixeltale/styles.css?v=pixeltale-creative-dna-20260803" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#brief" aria-label="PixelTale Story Forge">
+          <span class="brand-mark">PX</span>
+          <span class="brand-copy">
+            <strong>PixelTale</strong>
+            <small>STORY FORGE</small>
+          </span>
+        </a>
+
+        <div class="workspace-context" aria-label="独立编剧工作区">
+          <span class="eyebrow">INDEPENDENT AGENT</span>
+          <strong>Story Forge Session</strong>
+          <span class="context-divider">/</span>
+          <strong>LOCAL DRAFT</strong>
+        </div>
+
+        <div class="top-actions">
+          <div class="segmented" role="group" aria-label="剧作模式">
+            <button type="button" data-mode="tk" class="mode-button is-active">TK 短剧</button>
+            <button type="button" data-mode="long" class="mode-button">普通长剧</button>
+          </div>
+          <span id="saveStatus" class="save-status"><i></i>已保存</span>
+          <button id="openModelRouting" class="tool-button" type="button">创作分工</button>
+        </div>
+      </header>
+
+      <div class="workspace-grid">
+        <aside class="story-rail" aria-label="剧作结构">
+          <div class="rail-heading">
+            <span class="eyebrow">STORY MAP</span>
+            <h1>剧作结构</h1>
+            <span id="modeLabel" class="mode-label">TK SHORT DRAMA</span>
+          </div>
+          <nav id="stageNav" class="stage-nav" aria-label="创作阶段">
+            <button type="button" class="stage-link is-active" data-stage="brief"><span>01</span><strong>创作规格</strong><em class="stage-status">进行中</em><i></i></button>
+            <button type="button" class="stage-link" data-stage="title"><span>02</span><strong>选择剧名</strong><em class="stage-status">待解锁</em><i></i></button>
+            <button type="button" class="stage-link" data-stage="proposal"><span>03</span><strong>故事提案</strong><em class="stage-status">待解锁</em><i></i></button>
+            <button type="button" class="stage-link" data-stage="characters"><span>04</span><strong>人物与世界</strong><em class="stage-status">待解锁</em><i></i></button>
+            <button type="button" class="stage-link" data-stage="arc"><span>05</span><strong>分集 / 章节</strong><em class="stage-status">待解锁</em><i></i></button>
+            <button type="button" class="stage-link" data-stage="scenes"><span>06</span><strong>场景与镜头</strong><em class="stage-status">待解锁</em><i></i></button>
+            <button type="button" class="stage-link" data-stage="dialogue"><span>07</span><strong>对白本土化</strong><em class="stage-status">待解锁</em><i></i></button>
+            <button type="button" class="stage-link" data-stage="handoff"><span>08</span><strong>导出正式文件</strong><em class="stage-status">待解锁</em><i></i></button>
+          </nav>
+          <div class="rail-footer">
+            <div class="mini-stat"><span>已确认</span><strong id="approvedCount">0 / 7</strong></div>
+            <div class="progress-track"><span id="progressBar"></span></div>
+            <button id="newDraft" class="rail-action" type="button"><span aria-hidden="true">+</span> 新建草稿</button>
+          </div>
+        </aside>
+
+        <main class="content-stage">
+          <div id="stageContent" class="stage-content"></div>
+        </main>
+
+        <aside class="agent-rail" aria-label="PixelTale Agent">
+          <div class="agent-head">
+            <div class="agent-identity">
+              <span class="agent-mark">P</span>
+              <div><strong>PixelTale Agent</strong><small>编剧编排器 · 在线</small></div>
+            </div>
+            <button id="agentMenu" class="icon-button" type="button" title="Agent 设置">...</button>
+          </div>
+
+          <section class="agent-task">
+            <div class="section-row"><span>NEXT STEP</span><span id="flowStepCounter">01 / 08</span></div>
+            <h2 id="agentTaskTitle">填写创作规格</h2>
+            <p id="agentTaskCopy">完成当前阶段后，下一步会自动解锁。</p>
+          </section>
+
+          <section class="model-team">
+            <div class="section-row"><span>CREATIVE TEAM</span><button id="openModelRoutingSide" type="button" class="text-button">调整分工</button></div>
+            <div id="modelTeamCards" class="model-team-cards"></div>
+          </section>
+
+          <section class="agent-context">
+            <div class="section-row"><span>上下文</span><button id="editContext" type="button" class="text-button">编辑</button></div>
+            <div id="contextChips" class="context-chips">
+              <span>TK 短剧</span><span>English Dialogue</span><span>9:16</span>
+            </div>
+          </section>
+
+          <section class="agent-run">
+            <div class="agent-status-row"><span>流程状态</span><strong id="agentStatus">等待输入</strong></div>
+            <p class="agent-status-note">按顺序完成当前阶段，确认后才会解锁下一阶段。</p>
+          </section>
+
+          <section class="agent-notes">
+            <div class="section-row"><span>依据与风险</span><span class="risk-count">1</span></div>
+            <div id="riskNote" class="risk-note"><span class="risk-dot"></span><span>钩子必须在集尾留下一个未回答的问题。</span></div>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="handoff-bar">
+        <div class="handoff-summary"><span class="handoff-kicker">STORY FORGE OUTPUT</span><strong id="handoffSummary">完成阶段确认后可导出正式文件</strong></div>
+        <div class="handoff-actions">
+          <button type="button" data-open-stage="handoff" class="handoff-button">前往导出中心 <span>→</span></button>
+        </div>
+      </footer>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <dialog id="routingDialog" class="routing-dialog" aria-labelledby="routingTitle">
+      <form method="dialog" class="routing-card">
+        <div class="routing-head"><div><span class="eyebrow">CREATIVE ROUTING</span><h2 id="routingTitle">创作分工</h2></div><button value="cancel" class="dialog-close" aria-label="关闭">×</button></div>
+        <p class="routing-copy">默认分工服务于速度、连续性和 TK 钩子。改派只影响下一次运行。</p>
+        <div class="routing-list">
+          <label><span>总编排与结构复核</span><select data-route="orchestration"><option value="chatgpt">结构总编</option><option value="claude">故事监修</option><option value="grok">钩子编导</option></select></label>
+          <label><span>人物、世界与长剧连续性</span><select data-route="continuity"><option value="claude">故事监修</option><option value="chatgpt">结构总编</option><option value="grok">钩子编导</option></select></label>
+          <label><span>TK 钩子、反转与口语化</span><select data-route="hooks"><option value="grok">钩子编导</option><option value="chatgpt">结构总编</option><option value="claude">故事监修</option></select></label>
+          <label><span>英文对白最终复核</span><select data-route="dialogueReview"><option value="claude">故事监修</option><option value="chatgpt">结构总编</option><option value="grok">钩子编导</option></select></label>
+        </div>
+        <div class="routing-footer"><span id="routingSaved">默认分工</span><button value="save" id="saveRouting" class="stage-primary">保存分工</button></div>
+      </form>
+    </dialog>
+    <script src="/pixeltale/app.js?v=pixeltale-creative-dna-20260803"></script>
+  </body>
+</html>

@@ -9,6 +9,7 @@
     "verify:deploy": "node scripts/verify-deploy.mjs",
     "test:final-cut": "node scripts/final-cut-stale.test.mjs",
     "test:film-studio": "node scripts/film-studio.test.mjs",
+    "test:pixeltale": "node scripts/pixeltale-workflow.test.mjs",
     "test:seedance-director": "node scripts/seedance-director.test.mjs",
     "test:modern-series-nav": "node scripts/modern-series-nav-toggle.test.mjs",
     "test:storyboard-tail-anchor": "node scripts/storyboard-tail-anchor.test.mjs",

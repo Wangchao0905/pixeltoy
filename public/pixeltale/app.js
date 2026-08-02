@@ -1,4 +1,6 @@
 const SESSION_STORAGE_KEY = "pixeltale.story-forge-session";
+const PENDING_MODE_KEY = "pixeltale.story-forge-pending-mode";
+const PENDING_NOTICE_KEY = "pixeltale.story-forge-pending-notice";
 
 function createSessionId() {
   const existing = (() => {
@@ -14,8 +16,18 @@ function createSessionId() {
 
 const sessionId = createSessionId();
 
+function pendingMode() {
+  try {
+    const mode = sessionStorage.getItem(PENDING_MODE_KEY);
+    sessionStorage.removeItem(PENDING_MODE_KEY);
+    return mode === "long" ? "long" : "tk";
+  } catch {
+    return "tk";
+  }
+}
+
 const state = {
-  mode: "tk",
+  mode: pendingMode(),
   stage: "brief",
   approved: new Set(),
   busy: false,
@@ -209,6 +221,20 @@ function showToast(message) {
   node.classList.add("is-visible");
   clearTimeout(state.toastTimer);
   state.toastTimer = setTimeout(() => node.classList.remove("is-visible"), 2400);
+}
+
+function userFacingError(error) {
+  const message = String(error?.message || "运行失败，请重试").trim();
+  if (/API Key|未配置|未接入|provider/i.test(message)) {
+    return `${message} 请打开“创作分工”，确认对应模型已接入后再试。`;
+  }
+  if (/核心冲突|创作规格需要/i.test(message)) {
+    return "请在“创作想法”中写清主角、目标和阻碍，再点击“生成创作规格”。";
+  }
+  if (/超时|网络|请求失败|HTTP \d{3}|fetch/i.test(message)) {
+    return `${message} 当前输入已保留，可以稍后重试。`;
+  }
+  return message;
 }
 
 async function request(suffix, options = {}) {
@@ -477,6 +503,9 @@ function renderNextStep() {
   const action = nextStepMeta();
   const disabled = state.busy || action.disabled;
   const guidedClass = !disabled && action.kind !== "busy" ? " is-next-action" : "";
+  const actionCopy = state.lastError
+    ? `生成失败：${state.lastError} 当前输入已保留，修改后可以重新生成。`
+    : action.copy;
   let button = "";
   if (action.kind === "run") {
     const target = action.stage === "brief" ? " id=\"runBrief\"" : ` data-run-stage=\"${action.stage}\"`;
@@ -490,7 +519,7 @@ function renderNextStep() {
   } else if (action.kind === "busy") {
     button = `<span class="next-step-busy">处理中 · 请稍候</span>`;
   }
-  return `<section class="next-step-card${action.kind !== "busy" ? " is-guided" : " is-busy"}" data-next-kind="${action.kind}" aria-label="下一步"><div class="next-step-copy"><span class="card-label"><i></i>NEXT ACTION</span><strong>${escapeHtml(action.title)}</strong><p>${escapeHtml(action.copy)}</p></div>${button}</section>`;
+  return `<section class="next-step-card${action.kind !== "busy" ? " is-guided" : " is-busy"}" data-next-kind="${action.kind}" aria-label="下一步"><div class="next-step-copy"><span class="card-label"><i></i>NEXT ACTION</span><strong>${escapeHtml(action.title)}</strong><p>${escapeHtml(actionCopy)}</p>${state.lastError ? `<p class="next-step-error" role="alert">错误已保留在当前步骤，修订后可再次提交。</p>` : ""}</div>${button}</section>`;
 }
 
 function renderShellState() {
@@ -499,6 +528,7 @@ function renderShellState() {
   $("#modeLabel").textContent = modeLabel();
   $("#agentTaskTitle").textContent = action.title;
   $("#agentTaskCopy").textContent = state.lastError || action.copy;
+  $("#agentTaskCopy").setAttribute("role", state.lastError ? "alert" : "status");
   $("#flowStepCounter").textContent = `${String(stageIndex(flowStage) + 1).padStart(2, "0")} / ${stageOrder.length}`;
   $("#agentStatus").textContent = state.busy
     ? "PixelTale 正在生成并复核..."
@@ -868,8 +898,8 @@ async function runCurrentStage(stage = state.stage) {
     if (state.lastError) throw new Error(state.lastError);
     showToast(payload.result?.status === "needs_review" ? "已生成，但三模型审核存在共识问题或意见冲突" : "已生成并完成三模型交叉审核，等待确认");
   } catch (error) {
-    state.lastError = error.message;
-    showToast(error.message);
+    state.lastError = userFacingError(error);
+    showToast(state.lastError);
   } finally {
     state.busy = false;
     renderStage();
@@ -885,8 +915,8 @@ async function approveArtifact(artifactId) {
     updateAgentState(payload.result?.state);
     showToast("本阶段已确认，进入下一阶段");
   } catch (error) {
-    state.lastError = error.message;
-    showToast(error.message);
+    state.lastError = userFacingError(error);
+    showToast(state.lastError);
   } finally {
     state.busy = false;
     renderStage();
@@ -903,8 +933,8 @@ async function createHandoff() {
     updateAgentState(payload.result?.state);
     showToast("已生成正式剧本与视觉资产文件");
   } catch (error) {
-    state.lastError = error.message;
-    showToast(error.message);
+    state.lastError = userFacingError(error);
+    showToast(state.lastError);
   } finally {
     state.busy = false;
     renderStage();
@@ -919,8 +949,8 @@ async function syncAgentState({ silent = false } = {}) {
     renderStage();
     if (!silent) showToast("已同步独立编剧会话");
   } catch (error) {
-    state.lastError = error.message;
-    if (!silent) showToast(error.message);
+    state.lastError = userFacingError(error);
+    if (!silent) showToast(state.lastError);
   }
 }
 
@@ -937,7 +967,7 @@ async function saveRouting(event) {
     const payload = await request("/settings", { method: "POST", body: JSON.stringify({ mode: modeValue(), routes: state.routes, input: state.input }) });
     updateAgentState(payload.agent);
   } catch (error) {
-    showToast(error.message);
+    showToast(userFacingError(error));
     return;
   }
   $("#routingSaved").textContent = "已保存";
@@ -949,9 +979,11 @@ async function saveRouting(event) {
 function bindStageActions() {
   $("#runBrief")?.addEventListener("click", () => {
     if (!$("#idea")?.value.trim()) {
+      state.lastError = "请在“创作想法”中写清主角、目标和阻碍，再点击“生成创作规格”。";
+      $("#briefError").textContent = state.lastError;
       $("#briefError")?.classList.add("is-visible");
       $("#idea")?.focus();
-      showToast("创作规格还缺少核心冲突");
+      showToast(state.lastError);
       return;
     }
     runCurrentStage("brief");
@@ -1006,7 +1038,7 @@ $$('[data-mode]').forEach((button) => button.addEventListener("click", async () 
     const payload = await request("/settings", { method: "POST", body: JSON.stringify({ mode: modeValue(), routes: state.routes, input: state.input }) });
     updateAgentState(payload.agent);
     renderStage();
-  } catch (error) { showToast(error.message); }
+  } catch (error) { showToast(userFacingError(error)); }
 }));
 
 $$('[data-stage]').forEach((button) => button.addEventListener("click", () => {
@@ -1024,20 +1056,21 @@ $("#openModelRoutingSide").addEventListener("click", openRoutingDialog);
 $("#saveRouting").addEventListener("click", saveRouting);
 $("#editContext").addEventListener("click", () => { state.stage = "brief"; renderStage(); $("#idea")?.focus(); });
 $("#agentMenu").addEventListener("click", () => showToast("Agent 状态独立保存于 Story Forge 会话"));
-$("#newDraft").addEventListener("click", () => {
-  state.stage = "brief";
-  state.lastError = "";
-  state.documentError = "";
-  state.input.idea = "";
-  state.input.storyTitle = "";
-  state.input.openingImpactSeconds = 3;
-  state.input.openingPromise = "mainline_promise";
-  state.input.hookCadence = "every_episode";
-  state.input.dialogueMode = "localized_english";
-  state.input.handoffScope = "confirmed_versioned";
-  renderStage();
-  showToast("已打开新的创作规格，提交后会生成新的版本");
-});
+function startNewDraft() {
+  try {
+    sessionStorage.setItem(PENDING_MODE_KEY, state.mode);
+    sessionStorage.setItem(PENDING_NOTICE_KEY, "已创建新的剧集会话，请从创作规格开始。");
+    const freshSession = typeof crypto?.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(SESSION_STORAGE_KEY, freshSession);
+  } catch {
+    // A fresh in-memory session will still be created after reload.
+  }
+  window.location.reload();
+}
+
+$("#newDraft").addEventListener("click", startNewDraft);
 $$('[data-open-stage]').forEach((button) => button.addEventListener("click", () => {
   const target = button.dataset.openStage;
   if (!stageAccessible(target)) return showToast(`请先完成“${stageMeta[workflowStage()]?.title || "当前阶段"}”`);
@@ -1047,3 +1080,12 @@ $$('[data-open-stage]').forEach((button) => button.addEventListener("click", () 
 
 renderStage();
 syncAgentState({ silent: true });
+try {
+  const notice = sessionStorage.getItem(PENDING_NOTICE_KEY);
+  if (notice) {
+    sessionStorage.removeItem(PENDING_NOTICE_KEY);
+    showToast(notice);
+  }
+} catch {
+  // Ignore storage restrictions; the new session is still usable.
+}

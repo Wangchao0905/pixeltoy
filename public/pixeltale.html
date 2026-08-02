@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/pixel-toy-symbol.png" />
     <title>PixelTale / Story Forge</title>
-    <link rel="stylesheet" href="/pixeltale/styles.css?v=pixeltale-audience-select-20260803" />
+    <link rel="stylesheet" href="/pixeltale/styles.css?v=pixeltale-workflow-20260803" />
   </head>
   <body>
     <div class="app-shell">
@@ -55,7 +55,7 @@
           <div class="rail-footer">
             <div class="mini-stat"><span>已确认</span><strong id="approvedCount">0 / 7</strong></div>
             <div class="progress-track"><span id="progressBar"></span></div>
-            <button id="newDraft" class="rail-action" type="button"><span aria-hidden="true">+</span> 新建草稿</button>
+            <button id="newDraft" class="rail-action" type="button"><span aria-hidden="true">+</span> 新建剧集</button>
           </div>
         </aside>
 
@@ -99,7 +99,7 @@
 
           <section class="agent-run">
             <div class="agent-status-row"><span>流程状态</span><strong id="agentStatus">等待输入</strong></div>
-            <p class="agent-status-note">按顺序完成当前阶段，确认后才会解锁下一阶段。</p>
+            <p class="agent-status-note">只需完成右侧“下一步”操作；确认后才会解锁下一阶段。</p>
           </section>
 
           <section class="agent-notes">
@@ -132,6 +132,6 @@
         <div class="routing-footer"><span id="routingSaved">默认分工</span><button value="save" id="saveRouting" class="stage-primary">保存分工</button></div>
       </form>
     </dialog>
-    <script src="/pixeltale/app.js?v=pixeltale-audience-select-20260803"></script>
+    <script src="/pixeltale/app.js?v=pixeltale-workflow-20260803"></script>
   </body>
 </html>

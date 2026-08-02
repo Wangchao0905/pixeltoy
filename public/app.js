@@ -1764,6 +1764,42 @@ function projectDurationModeFrom(data) {
   return value === DURATION_MODE_FREE || value === DURATION_MODE_TK ? value : "";
 }
 
+function modernVideoParameterPolicy(data, ratio = "9:16") {
+  const mode = normalizeDurationMode(projectDurationModeFrom(data) || state.durationMode);
+  const selectedRatio = String(ratio || "9:16");
+  const free = mode === DURATION_MODE_FREE;
+  return {
+    free,
+    heroRatio: free ? `${selectedRatio} 自由可选` : `${selectedRatio} 已锁定`,
+    ratioAriaLabel: free ? "自由选择视频比例" : "视频比例",
+    parameterHint: free ? "自由模式：模型、比例、规格可调" : "用于当前片段",
+  };
+}
+
+function applyModernVideoParameterPolicy(data, ratio) {
+  const policy = modernVideoParameterPolicy(data, ratio);
+  const heroRatio = $("#modernHeroRatio");
+  if (heroRatio) {
+    heroRatio.textContent = policy.heroRatio;
+    heroRatio.classList.toggle("is-free", policy.free);
+  }
+  const caption = $("#modernSelectedShotMeta .modern-video-param-caption small");
+  if (caption) caption.textContent = policy.parameterHint;
+  const labels = {
+    modernParamRatio: policy.ratioAriaLabel,
+    modernParamResolution: policy.free ? "自由选择视频规格" : "视频分辨率",
+    modernParamModel: policy.free ? "自由选择视频模型" : "视频模型",
+  };
+  ["modernParamRatio", "modernParamResolution", "modernParamModel"].forEach((id) => {
+    const control = $(`#${id}`);
+    if (!control) return;
+    if (policy.free) control.disabled = false;
+    control.setAttribute("aria-label", labels[id]);
+    control.closest(".modern-video-param")?.classList.toggle("is-free", policy.free);
+  });
+  return policy;
+}
+
 function setProjectState(data) {
   state.project = data;
   const dialogueLanguage = projectDialogueLanguageFrom(data);
@@ -6185,6 +6221,7 @@ function renderModernStudio(data = state.project) {
   // target in sync so a later refresh cannot save a different shot's override.
   if (selected?.name) state.selectedVideoShotName = selected.name;
   const ratio = videoConfigDataFromProject()?.settings?.ratio || "9:16";
+  applyModernVideoParameterPolicy(data, ratio);
   const pct = total ? Math.round((completed / total) * 100) : 0;
   const projectName = project.seriesTitle || project.title || project.scriptTitle || title;
   // 服务端 episodeCode 与 episodeLabel 同值(server.js 7916/7942 与 7967/8001 均为
@@ -6219,7 +6256,6 @@ function renderModernStudio(data = state.project) {
   $("#modernEpisodeKicker").textContent = kicker && kicker !== episodeTitle ? kicker : "EPISODE";
   $("#modernEpisodeHeroTitle").textContent = episodeTitle;
   $("#modernEpisodeHeroCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
-  $("#modernHeroRatio").textContent = `${ratio} 已锁定`;
   $("#modernShotCount").textContent = total;
   $("#modernCompletedCount").textContent = `${pct}%`;
   $("#modernSeriesProgress").style.width = `${pct}%`;

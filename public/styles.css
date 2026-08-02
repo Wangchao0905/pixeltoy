@@ -18610,6 +18610,8 @@ body.is-studio-modern .modern-icon-button { width: 32px; padding: 0; }
 .modern-episode-copy { min-width: 0; }
 .modern-episode-kicker { display: flex; gap: 10px; align-items: center; color: var(--mv-qt); font-family: var(--mono); font-size: 11px; }
 .modern-episode-kicker b { padding: 3px 6px; border: 1px solid rgba(217,45,69,.38); border-radius: 3px; color: #f27a5b; font-weight: 500; }
+.modern-episode-kicker b.is-free { border-color: rgba(143,216,255,.34); background: rgba(143,216,255,.08); color: #9bdcff; }
+.modern-video-param.is-free > span { color: var(--mv-blue); }
 .modern-episode-copy h2 { margin: 7px 0 0; color: var(--mv-tx); font-size: 26px; line-height: 1; letter-spacing: 0; }
 .modern-episode-copy p { display: none; }
 .modern-episode-hero-stats { display: flex; gap: 16px; margin: 0; }

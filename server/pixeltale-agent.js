@@ -23,7 +23,9 @@ const DEFAULT_ROUTES = {
   continuity: "claude-opus-5",
   hooks: "grok-4.5",
   dialogueReview: "claude-sonnet-5",
+  consistency: "gpt-5.6-luna",
 };
+const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
 const DEFAULT_DIALOGUE_POLICY = "zh_story_en_localized_dialogue";
 const DEFAULT_CREATIVE_CONTROLS = {
   openingImpactSeconds: 3,
@@ -216,13 +218,25 @@ function modelForRoute(route, env = process.env) {
 function stageRoute(stage, mode, routes) {
   const normalized = normalizeMode(mode);
   const current = normalizeRoutes(routes);
+  let primary;
+  let reviewer;
   if (stage === "characters" || (stage === "arc" && normalized === "long_form_drama")) {
-    return { primary: current.continuity, reviewer: current.orchestration };
+    primary = current.continuity;
+    reviewer = current.orchestration;
+  } else if (stage === "arc" || stage === "dialogue") {
+    primary = current.hooks;
+    reviewer = current.dialogueReview;
+  } else {
+    primary = current.orchestration;
+    reviewer = current.continuity;
   }
-  if (stage === "arc" || stage === "dialogue") {
-    return { primary: stage === "dialogue" ? current.hooks : current.hooks, reviewer: current.dialogueReview };
-  }
-  return { primary: current.orchestration, reviewer: current.continuity };
+  return { primary, reviewer, consistency: current.consistency };
+}
+
+function crossReviewRoutes(route) {
+  const preferred = [route.primary, route.reviewer, route.consistency];
+  const fallbacks = ["gpt-5.6-terra", "claude-opus-5", "grok-4.5"];
+  return [...new Set([...preferred, ...fallbacks].map((item) => text(item, 100).toLowerCase()).filter(Boolean))].slice(0, 3);
 }
 
 function titleStylePrompt(mode) {
@@ -383,13 +397,14 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "重点寻找：前后设定冲突、因果断裂、角色动机缺口、市场本土化错误、模式节奏偏离、悬念提前泄露和无法执行的空泛表达。",
     "只有 cross_validation、consistency、adversarial 三项均为 true，并且阶段专项检查均通过时，pass 才能为 true；发现任一硬伤必须 pass=false，并在 required_changes 中给出可执行修订意见。",
     creativeControlPrompt(input, mode),
+    audiencePrompt(input),
     marketPrompt(input),
     stageParticipationPrompt(stage, input),
     "pass 只有在结构完整、因果清晰、可执行、符合模式节奏、没有把悬念提前解释，并且角色名、地名、社会细节和对白都符合目标市场时才为 true。",
     "TK 必查开头暴击、每集钩子、主动选择、反转和集尾悬念；长剧必查主线因果、人物弧线和伏笔回收位置。",
     "对白阶段还要检查英文是否自然口语化、是否保留中文剧情意图、是否像人物会说的话。",
     ...(stage === "title" ? ["剧名阶段必须检查恰好 5 个候选、名称不重复、五种风格确实拉开差异，并且每个候选都有风格、语气和理由。"] : []),
-    '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
+    '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"tag":"稳定短标签，如因果断裂、人物动机不足、钩子偏弱","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"dimensions":{"structure":{"score":0,"feedback":"结构意见"},"plot":{"score":0,"feedback":"剧情意见"},"design":{"score":0,"feedback":"设计意见"},"logic":{"score":0,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
   ].join("\n");
 }
 
@@ -406,6 +421,7 @@ function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input }) {
     },
     stage,
     mode,
+    audience: normalizeAudience(input.audience),
     creativeControls: normalizeCreativeControls(input),
     market: normalizeMarket(input),
     stageParticipation: normalizeStageOptions(input),
@@ -534,7 +550,7 @@ function validateContent(stage, content) {
   return value;
 }
 
-function validateReview(value) {
+function validateReview(value, { requireDimensions = false } = {}) {
   const review = asObject(value);
   if (typeof review.pass !== "boolean" || !Number.isFinite(Number(review.score)) || !Array.isArray(review.findings) || !Array.isArray(review.required_changes)) {
     const error = new Error("复核产物缺少 pass、score、findings 或 required_changes");
@@ -544,15 +560,165 @@ function validateReview(value) {
   const checks = asObject(review.checks);
   const hardChecks = ["cross_validation", "consistency", "adversarial"];
   const missingHardChecks = hardChecks.filter((key) => checks[key] !== true);
+  const rawDimensions = asObject(review.dimensions);
+  const dimensions = Object.fromEntries(REVIEW_DIMENSIONS.map((key) => {
+    const item = asObject(rawDimensions[key]);
+    const rawScore = Number(rawDimensions[key]?.score ?? rawDimensions[key]);
+    return [key, {
+      score: Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 0,
+      feedback: text(item.feedback || rawDimensions[key], 1200),
+    }];
+  }));
+  const issues = asArray(review.issues).map((item) => {
+    const entry = asObject(item);
+    const dimension = REVIEW_DIMENSIONS.includes(entry.dimension) ? entry.dimension : "logic";
+    return {
+      tag: text(entry.tag, 120),
+      dimension,
+      severity: ["high", "medium", "low"].includes(entry.severity) ? entry.severity : "medium",
+      feedback: text(entry.feedback, 1200),
+      fix: text(entry.fix || entry.suggestion, 1200),
+    };
+  }).filter((item) => item.tag && item.feedback);
+  const missingDimensions = requireDimensions ? REVIEW_DIMENSIONS.filter((key) => !Number.isFinite(Number(rawDimensions[key]?.score ?? rawDimensions[key]))) : [];
   const requiredChanges = review.required_changes.map((item) => text(item, 1000)).filter(Boolean).slice(0, 20);
   if (review.pass && missingHardChecks.length) {
     requiredChanges.unshift(`交叉审核硬门槛未满足：${missingHardChecks.join("、")}`);
   }
+  if (review.pass && missingDimensions.length) {
+    requiredChanges.unshift(`一致性维度未完成：${missingDimensions.join("、")}`);
+  }
   return {
-    pass: review.pass && missingHardChecks.length === 0,
+    pass: review.pass && missingHardChecks.length === 0 && missingDimensions.length === 0,
     score: Math.max(0, Math.min(100, Number(review.score))),
     findings: review.findings.map((item) => text(item, 1000)).filter(Boolean).slice(0, 20),
     required_changes: requiredChanges,
+    checks,
+    dimensions,
+    issues,
+  };
+}
+
+function providerForRoute(route) {
+  const raw = text(route, 100).toLowerCase();
+  return MODEL_PROVIDER_MAP[raw] || raw;
+}
+
+function pairwiseAgreement(scores) {
+  if (scores.length < 2) return 0;
+  let total = 0;
+  let pairs = 0;
+  for (let index = 0; index < scores.length; index += 1) {
+    for (let next = index + 1; next < scores.length; next += 1) {
+      total += Math.abs(scores[index] - scores[next]);
+      pairs += 1;
+    }
+  }
+  return Math.max(0, Math.min(100, Math.round(100 - total / pairs)));
+}
+
+function uniqueText(items, max = 20) {
+  return [...new Set(items.map((item) => text(item, 1200)).filter(Boolean))].slice(0, max);
+}
+
+function issueKey(tag) {
+  return text(tag, 120).toLowerCase().replace(/[\s：:，,。.!?！？；;]/g, "");
+}
+
+function sharedReviewIssues(feedbacks) {
+  const groups = new Map();
+  feedbacks.forEach((feedback) => {
+    const seen = new Set();
+    asArray(feedback.issues).forEach((issue) => {
+      const key = issueKey(issue.tag);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      const group = groups.get(key) || { tag: issue.tag, dimension: issue.dimension, models: new Map(), suggestions: [], evidence: [] };
+      group.models.set(feedback.model, feedback.provider);
+      if (issue.fix) group.suggestions.push(issue.fix);
+      if (issue.feedback) group.evidence.push(`${feedback.model}：${issue.feedback}`);
+      groups.set(key, group);
+    });
+  });
+  return [...groups.values()]
+    .filter((group) => group.models.size >= 2)
+    .map((group) => ({
+      tag: group.tag,
+      dimension: group.dimension,
+      modelCount: group.models.size,
+      models: [...group.models.keys()],
+      suggestions: uniqueText(group.suggestions, 5),
+      evidence: uniqueText(group.evidence, 5),
+    }));
+}
+
+function aggregateCrossReview(reviews = []) {
+  const feedbacks = reviews.map((item) => {
+    if (item.result) {
+      const review = item.result;
+      return {
+        provider: review.provider,
+        model: review.model,
+        status: "completed",
+        pass: review.content.pass,
+        score: review.content.score,
+        findings: review.content.findings,
+        required_changes: review.content.required_changes,
+        checks: review.content.checks,
+        dimensions: review.content.dimensions,
+        issues: review.content.issues,
+      };
+    }
+    return {
+      provider: providerForRoute(item.route),
+      model: item.model,
+      status: "failed",
+      pass: false,
+      score: 0,
+      findings: [item.error || "模型未返回审核意见"],
+      required_changes: ["该模型审核未完成，不能将一致性指数视为完整"],
+      checks: {},
+      dimensions: Object.fromEntries(REVIEW_DIMENSIONS.map((key) => [key, { score: 0, feedback: "审核未完成" }])),
+      issues: [],
+    };
+  });
+  const completed = feedbacks.filter((item) => item.status === "completed");
+  const dimensions = Object.fromEntries(REVIEW_DIMENSIONS.map((key) => {
+    const scores = completed.map((item) => Number(item.dimensions?.[key]?.score || 0));
+    const average = scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : 0;
+    return [key, { average, agreement: pairwiseAgreement(scores), scores }];
+  }));
+  const agreement = Math.round(REVIEW_DIMENSIONS.reduce((sum, key) => sum + dimensions[key].agreement, 0) / REVIEW_DIMENSIONS.length);
+  const quality = completed.length ? Math.round(completed.reduce((sum, item) => sum + item.score, 0) / completed.length) : 0;
+  const reviewCompletion = Math.round((completed.length / 3) * 100);
+  const index = Math.round(agreement * 0.45 + quality * 0.35 + reviewCompletion * 0.2);
+  const commonIssues = sharedReviewIssues(feedbacks);
+  const conflicts = REVIEW_DIMENSIONS
+    .filter((key) => completed.length >= 2 && dimensions[key].agreement < 75)
+    .map((key) => ({ dimension: key, agreement: dimensions[key].agreement, suggestion: `重新核对${key}维度的证据与取舍，直到三模型形成可执行的统一方案` }));
+  const pass = completed.length === 3 && feedbacks.every((item) => item.pass) && index >= 75 && commonIssues.length === 0 && conflicts.length === 0;
+  const checks = {
+    ...Object.fromEntries(["cross_validation", "consistency", "adversarial"].map((key) => [key, completed.length === 3 && completed.every((item) => item.checks?.[key] === true)])),
+    issues_converged: commonIssues.length === 0,
+    dimensions_agree: conflicts.length === 0,
+  };
+  const sharedChanges = commonIssues.map((issue) => `至少 ${issue.modelCount} 个模型共同指出【${issue.tag}】：${issue.suggestions[0] || "针对该问题补充具体修订并重新提交三模型审核"}`);
+  const conflictChanges = conflicts.map((item) => `【意见冲突 / ${item.dimension}】${item.suggestion}`);
+  const failedChanges = feedbacks.filter((item) => item.status === "failed").flatMap((item) => item.required_changes);
+  return {
+    pass,
+    score: index,
+    consensusIndex: index,
+    agreement,
+    quality,
+    reviewCompletion,
+    dimensions,
+    feedbacks,
+    commonIssues,
+    commonIssueCount: commonIssues.length,
+    conflicts,
+    findings: uniqueText([...commonIssues.map((item) => `共识问题【${item.tag}】（${item.modelCount} 个模型）`), ...conflicts.map((item) => `意见冲突：${item.dimension} 一致性 ${item.agreement}%`), ...feedbacks.flatMap((item) => item.findings)]),
+    required_changes: uniqueText([...sharedChanges, ...conflictChanges, ...failedChanges]),
     checks,
   };
 }
@@ -900,7 +1066,9 @@ function createPixelTaleAgent(options = {}) {
     const errors = [];
     let retryCount = 0;
     let primary;
-    let review;
+    let reviews = [];
+    let consensus;
+    let reviewRoutes = [];
     let primaryArtifact;
     let reviewArtifact;
     try {
@@ -929,28 +1097,38 @@ function createPixelTaleAgent(options = {}) {
       const content = validateContent(stage, primary.content);
       const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
       primaryArtifact = buildArtifact({ stage, mode, input: state.input, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
-      review = await callProvider({
-        provider: route.reviewer,
-        system: reviewSystemPrompt(stage, mode, state.input),
-        user: reviewUserPrompt({ stage, mode, input: state.input, artifact: primaryArtifact, previousArtifacts }),
-        env,
-        fetchImpl,
-      });
-      retryCount += review.attempts || 0;
-      const reviewContent = validateReview(review.content);
-      reviewArtifact = buildReviewArtifact({ stage, review: reviewContent, model: `${review.provider}:${review.model}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
-      primaryArtifact.status = reviewContent.pass ? "ready" : "needs_review";
+      reviewRoutes = crossReviewRoutes(route);
+      reviews = await Promise.all(reviewRoutes.map(async (reviewRoute) => {
+        try {
+          const result = await callProvider({
+            provider: reviewRoute,
+            system: reviewSystemPrompt(stage, mode, state.input),
+            user: reviewUserPrompt({ stage, mode, input: state.input, artifact: primaryArtifact, previousArtifacts }),
+            env,
+            fetchImpl,
+          });
+          retryCount += result.attempts || 0;
+          return { route: reviewRoute, result: { ...result, content: validateReview(result.content, { requireDimensions: true }) } };
+        } catch (error) {
+          return { route: reviewRoute, model: modelForRoute(reviewRoute, env), error: error.message };
+        }
+      }));
+      reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
+      consensus = aggregateCrossReview(reviews);
+      reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviewRoutes.map((item) => modelForRoute(item, env)).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
+      primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
       primaryArtifact.reviewId = reviewArtifact.id;
       state.artifacts.push(primaryArtifact, reviewArtifact);
-      const runStatus = reviewContent.pass ? "completed" : "needs_review";
-      const record = { runId, stage, mode, route, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModel: `${review.provider}:${review.model}`, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const runStatus = consensus.pass ? "completed" : "needs_review";
+      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${providerForRoute(item)}:${modelForRoute(item, env)}`), consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       persistState(params, state);
       return { ...publicRun(record), artifacts: [primaryArtifact, reviewArtifact].map(publicArtifact), state: publicState(state, env) };
     } catch (error) {
       errors.push({ code: error.code || "RUN_FAILED", message: error.message });
       if (primaryArtifact && !state.artifacts.some((artifact) => artifact.id === primaryArtifact.id)) state.artifacts.push(primaryArtifact);
-      const record = { runId, stage, mode, route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary, env), reviewModel: review ? `${review.provider}:${review.model}` : modelForRoute(route.reviewer, env), artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const fallbackReviewModels = reviewRoutes.length ? reviewRoutes : [route.reviewer];
+      const record = { runId, stage, mode, route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary, env), reviewModels: fallbackReviewModels.map((item) => `${providerForRoute(item)}:${modelForRoute(item, env)}`), artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       state.updatedAt = nowIso(now);
       persistState(params, state);
@@ -1133,5 +1311,7 @@ module.exports = {
   validateContent,
   validateReview,
   stageRoute,
+  aggregateCrossReview,
+  crossReviewRoutes,
   STAGES,
 };

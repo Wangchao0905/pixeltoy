@@ -24,7 +24,7 @@ const state = {
   lastError: "",
   documentError: "",
   agent: null,
-  routes: { orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "grok-4.5", dialogueReview: "claude-sonnet-5" },
+  routes: { orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "grok-4.5", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
   input: {
     platform: "TikTok / TikTok Series",
     audience: "male_drama",
@@ -298,6 +298,51 @@ function workflowStage() {
   }) || "handoff";
 }
 
+function latestConsensusReview() {
+  const current = artifactForStage(state.stage);
+  if (current) return reviewForArtifact(current);
+  for (const stage of [...stageOrder].reverse()) {
+    const artifact = artifactForStage(stage);
+    const review = reviewForArtifact(artifact);
+    if (review?.content?.consensusIndex !== undefined) return review;
+  }
+  return null;
+}
+
+function consensusMetrics() {
+  const review = latestConsensusReview();
+  const content = review?.content || {};
+  const interactionCompletion = Math.round((approvedStageCount() / (stageOrder.length - 1)) * 100);
+  const reviewCompletion = Number(content.reviewCompletion || 0);
+  const agreement = Number(content.agreement || 0);
+  const quality = Number(content.quality || 0);
+  const index = review
+    ? Math.max(0, Math.min(100, Math.round(agreement * 0.45 + quality * 0.25 + reviewCompletion * 0.15 + interactionCompletion * 0.15)))
+    : 0;
+  return { index, agreement, quality, reviewCompletion, interactionCompletion, content };
+}
+
+function renderConsensusMeter() {
+  const metrics = consensusMetrics();
+  const score = document.querySelector("#consensusScore");
+  const value = document.querySelector("#consensusValue");
+  const fill = document.querySelector("#consensusFill");
+  const label = document.querySelector("#consensusLabel");
+  const agreement = document.querySelector("#consensusAgreement");
+  const reviewCompletion = document.querySelector("#consensusReviewCompletion");
+  const interactionCompletion = document.querySelector("#consensusInteractionCompletion");
+  if (!score || !value || !fill || !label || !agreement || !reviewCompletion || !interactionCompletion) return;
+  const tone = metrics.index >= 90 ? "高度一致" : metrics.index >= 75 ? "可继续审查" : metrics.index > 0 ? "存在分歧" : "等待三模型反馈";
+  score.textContent = `${metrics.index}%`;
+  value.textContent = `指数 · ${tone}`;
+  label.textContent = metrics.index > 0 ? "三模型意见聚合" : "完成当前阶段后启动交叉审查";
+  fill.style.setProperty("--consensus-width", `${metrics.index}%`);
+  fill.parentElement?.classList.toggle("is-live", metrics.index > 0);
+  agreement.textContent = `${metrics.agreement}%`;
+  reviewCompletion.textContent = `${metrics.reviewCompletion}%`;
+  interactionCompletion.textContent = `${metrics.interactionCompletion}%`;
+}
+
 function stageStatus(stage) {
   if (stage === "handoff") return handoffReady() ? "可导出" : "待解锁";
   const artifact = artifactForStage(stage);
@@ -318,7 +363,7 @@ function nextStepMeta() {
   const flowStage = workflowStage();
   const flowMeta = stageMeta[flowStage];
   if (state.busy) {
-    return { kind: "busy", title: "正在生成并复核", copy: "请等待当前阶段完成，完成后会显示确认按钮。", flowStage };
+    return { kind: "busy", title: "正在生成并进行三模型交叉审核", copy: "三份独立意见完成聚合后，会显示一致性指数和修改建议。", flowStage };
   }
   if (state.stage !== flowStage) {
     return {
@@ -424,6 +469,7 @@ function renderShellState() {
             : "等待输入";
   $("#approvedCount").textContent = `${approvedStageCount()} / ${stageOrder.length - 1}`;
   $("#progressBar").style.width = `${Math.round((approvedStageCount() / (stageOrder.length - 1)) * 100)}%`;
+  renderConsensusMeter();
   $$(".mode-button").forEach((button) => button.classList.toggle("is-active", button.dataset.mode === state.mode));
   $$(".stage-link").forEach((button) => {
     const name = button.dataset.stage;
@@ -454,22 +500,23 @@ function renderShellState() {
 
 function activeRouteForStage() {
   const route = state.routes;
-  if (state.stage === "characters" || (state.stage === "arc" && state.mode === "long")) return { primary: route.continuity, reviewer: route.orchestration };
-  if (state.stage === "arc" || state.stage === "dialogue") return { primary: route.hooks, reviewer: route.dialogueReview };
-  return { primary: route.orchestration, reviewer: route.continuity };
+  if (state.stage === "characters" || (state.stage === "arc" && state.mode === "long")) return { primary: route.continuity, reviewer: route.orchestration, consistency: route.consistency };
+  if (state.stage === "arc" || state.stage === "dialogue") return { primary: route.hooks, reviewer: route.dialogueReview, consistency: route.consistency };
+  return { primary: route.orchestration, reviewer: route.continuity, consistency: route.consistency };
 }
 
 function renderModelTeam() {
   const route = activeRouteForStage();
-  const unique = [route.primary, route.reviewer, "gpt-5.6-sol", "claude-sonnet-5", "grok-4.5"].filter((id, index, list) => list.indexOf(id) === index).slice(0, 3);
+  const unique = [route.primary, route.reviewer, route.consistency, "gpt-5.6-terra", "claude-opus-5", "grok-4.5"].filter((id, index, list) => list.indexOf(id) === index).slice(0, 3);
   const status = state.agent?.providerStatus || {};
   $("#modelTeamCards").innerHTML = unique.map((id) => {
     const meta = modelMeta[id];
     const primary = id === route.primary;
     const reviewer = id === route.reviewer && !primary;
     const configured = status[meta.provider]?.configured;
-    const lane = primary ? "交叉审核反馈" : reviewer ? "互审一致性" : "候补交叉模型";
-    const stateLabel = configured ? (primary ? "反馈" : reviewer ? "对抗审核" : "候补") : "待接入";
+    const consistency = id === route.consistency && !primary && !reviewer;
+    const lane = primary ? "交叉审核反馈" : reviewer ? "互审一致性" : consistency ? "一致性审查" : "候补交叉模型";
+    const stateLabel = configured ? (primary ? "反馈" : reviewer ? "对抗审核" : consistency ? "第三审查" : "候补") : "待接入";
     return `<button class="model-card ${primary ? "is-primary" : reviewer ? "is-reviewer" : ""}" type="button" data-model-detail="${id}" title="${lane}：${meta.name}"><i></i><span><strong>${meta.name}</strong><small>${lane} · ${meta.role}</small></span><em>${stateLabel}</em></button>`;
   }).join("");
   $$('[data-model-detail]').forEach((button) => button.addEventListener("click", () => {
@@ -524,12 +571,7 @@ function updateMarketCountryList() {
 }
 
 function renderDnaPool() {
-  const groups = [
-    ["题材", "Story premise"],
-    ["爽点", "Payoff"],
-    ["爆火基因", "Shareability"],
-    ["叙事逻辑", "Engine"],
-  ];
+  const groups = [["题材", "Story premise"], ["爽点", "Payoff"], ["爆火基因", "Shareability"], ["叙事逻辑", "Engine"]];
   const groupMarkup = groups.map(([kind, label]) => {
     const items = inspirationPool.filter((item) => item.kind === kind);
     const chips = items.slice(0, 6).map((item) => `<button class="dna-chip" type="button" data-inspiration="${escapeHtml(item.keyword)}" title="添加“${escapeHtml(item.keyword)}”到创作想法"><span>${escapeHtml(item.keyword)}</span><small>${escapeHtml(item.source)}</small></button>`).join("");
@@ -783,7 +825,7 @@ async function runCurrentStage(stage = state.stage) {
     updateAgentState(payload.result?.state);
     state.lastError = payload.result?.status === "failed" ? (payload.result.errors || []).map((item) => item.message).join("；") : "";
     if (state.lastError) throw new Error(state.lastError);
-    showToast(payload.result?.status === "needs_review" ? "已生成，但复核未通过，请检查修订项" : "已生成并完成复核，等待确认");
+    showToast(payload.result?.status === "needs_review" ? "已生成，但三模型审核存在共识问题或意见冲突" : "已生成并完成三模型交叉审核，等待确认");
   } catch (error) {
     state.lastError = error.message;
     showToast(error.message);

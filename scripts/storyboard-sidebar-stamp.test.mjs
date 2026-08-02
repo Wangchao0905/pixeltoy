@@ -31,6 +31,12 @@ try {
   const sections = runner.storyboardSidebarSections(swatches.map(([n]) => path.join(dir, n)));
   assert.deepEqual(sections.map((s) => s.heading), ["CHARACTER / CASTING", "PROP REFERENCE", "LOCATION / SET"]);
   assert.equal(sections[0].slots.length, 2, "两张角色图都要进 casting 区");
+
+  // 回归:一集常有 3 个以上角色。上限写死 2 会静默丢掉第三张(生产上"小鸟"就这么消失的)。
+  const third = path.join(dir, "C003_BIRD_CHARACTER_SHEET.png");
+  execFileSync("python3", ["-c", py, `${third}|250,140,20`], { stdio: "pipe" });
+  const withThird = runner.storyboardSidebarSections([...swatches.map(([n]) => path.join(dir, n)), third]);
+  assert.equal(withThird[0].slots.length, 3, "第三张角色图不能被截断");
   assert.equal(sections[1].slots.length, 1, "一张道具图");
   assert.equal(sections[2].slots.length, 1, "一张场景图");
 

@@ -1617,11 +1617,22 @@ with Image.open(source_path) as source_file, Image.open(target_path) as target_f
     # 写死 2/2 在 4 列版式下会取到第 3 列,尾帧衔接就接错格子。
     source_x += (COLS - 1) * (source_w + source_gap)
     source_y += (ROWS - 1) * (source_h + source_gap)
-    anchor = source.crop((source_x, source_y, source_x + source_w, source_y + source_h))
-    if anchor.size != (target_w, target_h):
+    # 内缩 inset 再取、再贴:格子边线是模型自己画在 cell 内侧的,整格照搬会把
+    # 源格的边框也搬过来,盖在目标格自己的边框上——出来是双层边线夹着被压扁的
+    # 画面,看着就像"图像不完整"。只搬边框以内的画面,两边的边框各自保留。
+    inset = max(2, round(min(source_w, source_h) * 0.035))
+    t_inset = max(2, round(min(target_w, target_h) * 0.035))
+    anchor = source.crop((
+        source_x + inset,
+        source_y + inset,
+        source_x + source_w - inset,
+        source_y + source_h - inset,
+    ))
+    fit = (max(1, target_w - t_inset * 2), max(1, target_h - t_inset * 2))
+    if anchor.size != fit:
         resample = getattr(Image, "Resampling", Image).LANCZOS
-        anchor = anchor.resize((target_w, target_h), resample)
-    target.paste(anchor, (target_x, target_y))
+        anchor = anchor.resize(fit, resample)
+    target.paste(anchor, (target_x + t_inset, target_y + t_inset))
     target.save(target_path)
 `;
   execFileSync("python3", ["-c", py, sourcePath, outPath], {
@@ -1650,7 +1661,9 @@ function storyboardSidebarSections(referenceImages = []) {
   const usable = [...new Set(referenceImages || [])].filter(
     (image) => image && fs.existsSync(image) && fs.statSync(image).size > 100,
   );
-  const pick = (types) => usable.filter((image) => types.includes(referenceTypeFromName(image) || "")).slice(0, 2);
+  // 上限 4 不是 2:生产实测一集常有 3 个以上角色(雪怪/男孩/小鸟),
+  // 写死 2 会把第三张之后全部静默丢掉——小鸟就是这么消失的。
+  const pick = (types) => usable.filter((image) => types.includes(referenceTypeFromName(image) || "")).slice(0, 4);
   return [
     { heading: "CHARACTER / CASTING", slots: pick(["Character"]) },
     { heading: "PROP REFERENCE", slots: pick(["Prop", "Insert"]) },
@@ -1731,8 +1744,10 @@ for index, section in enumerate(sections):
     slots = section.get("slots") or []
     slot_top = y1 + head_h + pad
     slot_area = y2 - slot_top - pad
-    slot_h = slot_area // 2
-    for slot_index in range(2):
+    # 槽位数随实际资产数变化,不再固定两个:固定 2 会让第三张之后没有位置可贴。
+    slot_count = max(1, len(slots))
+    slot_h = slot_area // slot_count
+    for slot_index in range(slot_count):
         sy1 = slot_top + slot_index * slot_h
         sy2 = sy1 + slot_h - max(2, pad // 2)
         box = [inner_x1 + pad, sy1, inner_x2 - pad, sy2]

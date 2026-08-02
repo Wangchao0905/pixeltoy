@@ -94,10 +94,12 @@ try {
   );
   runner.applyStoryboardTailAnchor({ type: "Storyboard", name: "SB002_E01_V002_PRODUCTION_BOARD" }, currentBoard, previousBoard);
 
-  // PIL 叠字层默认关闭(它是生产上中文乱码的来源),所以整格都该被原样搬过来,
-  // 不再只比较"视觉区"那一条。这里显式不开 PIXEL_TOYS_STORYBOARD_STAMP_TABS。
+  // 搬运是"内缩"的:格子边线由模型画在 cell 内侧,整格照搬会把源格边框也搬来,
+  // 盖在目标格自己的边框上,出来是双层边线夹着压扁的画面(用户报的"图像不完整")。
+  // 所以断言改成:内缩区域的画面一致,而目标格最外圈仍是它自己的边框。
   const grid = boardGrid(1280, 720);
-  const probe = "from PIL import Image, ImageChops; import json,sys; a=Image.open(sys.argv[1]).convert('RGB'); b=Image.open(sys.argv[2]).convert('RGB'); sx,sy,dx,dy,w,h=map(int,sys.argv[3].split(',')); source=a.crop((sx,sy,sx+w,sy+h)); target=b.crop((dx,dy,dx+w,dy+h)); print(json.dumps({'equal': ImageChops.difference(source,target).getbbox() is None, 'source': source.getpixel((w//2,h//2)), 'target': target.getpixel((w//2,h//2))}))";
+  const inset = Math.max(2, Math.round(Math.min(grid.width, grid.height) * 0.035));
+  const probe = "from PIL import Image, ImageChops; import json,sys; a=Image.open(sys.argv[1]).convert('RGB'); b=Image.open(sys.argv[2]).convert('RGB'); sx,sy,dx,dy,w,h,ins=map(int,sys.argv[3].split(',')); source=a.crop((sx+ins,sy+ins,sx+w-ins,sy+h-ins)); target=b.crop((dx+ins,dy+ins,dx+w-ins,dy+h-ins)); print(json.dumps({'equal': ImageChops.difference(source,target).getbbox() is None, 'source': source.getpixel((source.width//2,source.height//2)), 'target': target.getpixel((target.width//2,target.height//2)), 'target_edge': b.getpixel((dx,dy))}))";
   const region = [
     grid.x + (COLS - 1) * (grid.width + grid.gap),
     grid.y + (ROWS - 1) * (grid.height + grid.gap),
@@ -105,11 +107,13 @@ try {
     grid.y,
     grid.width,
     grid.height,
+    inset,
   ].join(",");
   const pixels = JSON.parse(execFileSync("python3", ["-c", probe, previousBoard, currentBoard, region], { encoding: "utf8" }));
-  assert.equal(pixels.equal, true, "the next board's first panel must exactly equal the previous board's last panel");
-  assert.deepEqual(pixels.target, pixels.source, "the copied cell must preserve the prior board's pixels");
+  assert.equal(pixels.equal, true, "the inset content of the next board's first panel must equal the previous board's last panel");
+  assert.deepEqual(pixels.target, pixels.source, "the copied content must preserve the prior board's pixels");
   assert.deepEqual(pixels.source, [224, 70, 42], "the anchor must be cropped from the last cell, not a middle column");
+  assert.notDeepEqual(pixels.target_edge, [224, 70, 42], "目标格最外圈必须留给它自己的边框,不能被源格边框覆盖");
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }

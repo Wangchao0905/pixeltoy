@@ -37,7 +37,12 @@ const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRI
 // Production Boards are user-scoped, manually retryable jobs. Never let a
 // stale process environment turn one click into a second full upstream wait.
 const STORYBOARD_IMAGE_RETRIES = 0;
-const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v20-scripted-16x9-tabs";
+// 必须与 server.js 的 STORYBOARD_MAX_PANELS / STORYBOARD_BOARD_COLUMNS 一致。
+// 两边不一致时:服务端提示词声明 12 格,runner 的兜底画布和叠字层按 9 格切,
+// 板子会被切成错位网格。改一边就要改另一边。
+const STORYBOARD_BOARD_PANELS = 12;
+const STORYBOARD_BOARD_COLUMNS = 4;
+const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v21-sheet-4x3-handlettered";
 
 function usage() {
   console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--previous-storyboard <path>] [--storyboard-tail-anchor-map <json>] [--size 1280x720|2048x1152|3840x2160]");
@@ -367,7 +372,10 @@ function typeCounts(assets) {
 
 function fixedAssetPromptFor(asset) {
   if (asset.type === "Storyboard") {
-    return "Production Board output contract: one 16:9 horizontal (landscape) sheet — the whole sheet is wider than it is tall, exact 16:9 aspect ratio, full sheet visible, no cropping. The full sheet is exactly 9 equal-size panels in a 3 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel outer boundary is a landscape 16:9 cell with equal outer dimensions and uniform gutters; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Fill every panel with complete horizontal storyboard imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. A deterministic post-process may overlay a compact Production Tab inside each panel; do not leave any lower section blank or reserve an empty paper band. Do not render your own dialogue, production fields, tables, or technical notes. Do NOT add a header, footer, metadata table, caption band outside a panel, or any content outside the nine story panels.";
+    // 这段拼在服务端提示词**之后**,位置更强势。它必须和 server.js 的
+    // storyboardPromptForSlot 说同一件事,否则前面要页眉/页脚/侧栏/手写对白,
+    // 这里又禁掉,模型只能二选一——生产上表现为版式回退成裸网格。
+    return "Production Board output contract: one 16:9 horizontal (landscape) sheet on white paper — wider than it is tall, exact 16:9 aspect ratio, full sheet visible, no cropping. A thin black outer border frames the page. The sheet has a header band (~12% height), a main body, and a footer band (~7% height), separated by full-width horizontal rules. The main body is split into a left column (~80% width) holding exactly 12 equal-size panels in a 4 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P12 bottom-right), and a right sidebar (~20% width) holding three bordered reference sections stacked vertically. Every panel is a landscape cell with equal outer dimensions and uniform gutters, a small circular number marker in its upper-left corner, and one short caption line directly beneath it; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Fill every panel with complete horizontal storyboard imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. Hand-letter all captions, dialogue and field labels directly into the drawing in short English block capitals; keep them legible and keep them to the planned wording. Do not leave placeholder labels or blank ruled fields inside the panel area.";
   }
   if (asset.type === "Character") {
     return [
@@ -797,8 +805,10 @@ function compactStoryboardPanelLines(prompt) {
   return String(prompt || "")
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => /^P[1-9]\s+\d/.test(line))
-    .slice(0, 9)
+    // P\d+ 而非 P[1-9]:板子改成 12 格后,P10/P11/P12 会被单位数的字符组静默丢掉,
+    // 表现为最后三格没有剧情、也不进连续性锚点。
+    .filter((line) => /^P\d+\s+\d/.test(line))
+    .slice(0, STORYBOARD_BOARD_PANELS)
     .map((line) => line.replace(/\s+/g, " "))
     .join("\n");
 }
@@ -807,9 +817,9 @@ function storyboardPanelObjects(prompt) {
   return compactStoryboardPanelLines(prompt)
     .split(/\r?\n/)
     .filter(Boolean)
-    .slice(0, 9)
+    .slice(0, STORYBOARD_BOARD_PANELS)
     .map((line, index) => {
-      const match = line.match(/^(P[1-9])\s+([^:：]+)[:：]?\s*(.*)$/i);
+      const match = line.match(/^(P\d+)\s+([^:：]+)[:：]?\s*(.*)$/i);
       const raw = match ? match[3] : line;
       const field = (name) => {
         const matchField = raw.match(new RegExp(`(?:^|;)\\s*${name}=([\\s\\S]*?)(?=;\\s*(?:script|visual|camera|shot|lens|lighting|emotion|dialogue|sound|action|continuity)=|$)`, "i"));
@@ -935,13 +945,13 @@ def font(size, bold=False):
 
 caption_font = font(max(11, w // 54), True)
 
-# 16:9 横版板:整张就是固定 3×3 九格。每个外格保持横版 16:9，禁止页眉、页脚或大建立镜头占用网格空间。
+# 16:9 横版板:整张就是固定 4×3 十二格。每个外格保持横版 16:9，禁止大建立镜头占用网格空间。
+# 格数/列数由 JS 常量注入，别在这里写死——两边不一致会切出错位网格。
 margin = 22
 gap = 12
 panels = payload.get("panels") or []
-n_panels = len(panels)
-n_panels = 9
-cols = 3
+n_panels = ${STORYBOARD_BOARD_PANELS}
+cols = ${STORYBOARD_BOARD_COLUMNS}
 rows = (n_panels + cols - 1) // cols
 max_grid_w = w - margin * 2
 max_grid_h = h - margin * 2
@@ -1303,17 +1313,17 @@ function rescueStoryboardPromptFor(asset, referenceImages = []) {
   return [
     "Generate one professional cinematic Production Board image.",
     "The board is a single 16:9 horizontal (landscape) sheet — wider than it is tall — on warm off-white paper, full sheet visible, no cropping.",
-    "Draw exactly 9 equal-size storyboard panels in a 3-column grid, read left-to-right then top-to-bottom (P1 top-left through P9 bottom-right). Every panel is a landscape 16:9 outer cell with equal outer dimensions and even gutters. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells. Fill the entire area of every cell with the planned horizontal storyboard frame. A deterministic post-process may overlay compact production notes inside each panel, but no lower section may be left blank. Do not render your own letters, dialogue, tables, or technical notes.",
+    `Draw exactly ${STORYBOARD_BOARD_PANELS} equal-size storyboard panels in a ${STORYBOARD_BOARD_COLUMNS}-column grid, read left-to-right then top-to-bottom (P1 top-left through P${STORYBOARD_BOARD_PANELS} bottom-right), filling the left ~80% of the sheet below the header band. Every panel is a landscape outer cell with equal outer dimensions and even gutters, a small circular number marker upper-left, and a short caption line beneath it. P1 is an ordinary top-left cell, never a wide establishing strip; no panel may overlap, merge, or span multiple cells. Fill the entire area of every cell with the planned horizontal storyboard frame. Hand-letter the captions and dialogue in short English block capitals.`,
     "Each panel must be a distinct cinematic story frame, not repeated panels and not a UI wireframe: use the actual attached character, scene and prop identities with varied shot scales, camera angles, blocking, foreground/background staging, actor poses, eyelines, and cut points.",
     "Use a clean professional production-storyboard visual language with finished cinematic imagery, expressive performance and clear environmental continuity. Do not add colored technical diagrams or camera-frame overlays.",
-    "Do NOT add a header, footer, metadata table, caption band outside a panel, ASSET REFERENCES strip, or reference boxes. The board contains ONLY the nine equal cinematic story panels; any production notes are compact overlays inside those panels.",
+    "Include the sheet furniture: a header band with title / sequence / page fields, a right sidebar (~20% width) with bordered Character, Prop and Location reference sections, and a footer band with notes-timing on the left and director / animator / date fields on the right. Keep all of it hand-lettered and subordinate to the story panels.",
     "Do not paste source images as thumbnails; integrate their actual identities naturally into the story action in every relevant panel.",
     firstPromptLine(prompt, "Time coverage:", ""),
     firstPromptLine(prompt, "Source shots:", ""),
     firstPromptLine(prompt, "Story beat:", firstPromptLine(prompt, "Story beats to visualize:", "")),
     `Reference bindings: ${bindingNames}`,
     "Panel plan:",
-    compactStoryboardPanelLines(prompt) || "P1-P9: show chronological story beats with clear blocking, motion direction, and cut handoff.",
+    compactStoryboardPanelLines(prompt) || `P1-P${STORYBOARD_BOARD_PANELS}: show chronological story beats with clear blocking, motion direction, and cut handoff.`,
   ].filter(Boolean).join("\n");
 }
 
@@ -1569,30 +1579,44 @@ from PIL import Image
 source_path = sys.argv[1]
 target_path = sys.argv[2]
 
+COLS = ${STORYBOARD_BOARD_COLUMNS}
+ROWS = ${Math.ceil(STORYBOARD_BOARD_PANELS / STORYBOARD_BOARD_COLUMNS)}
+# 版式不再是"整张=裸网格"。新板有页眉(~12%)、页脚(~7%)和右侧栏(~20%),
+# 面板网格只占左上那块 body。旧代码按整幅居中切,换版式后会裁到页脚或侧栏,
+# 把唯一正常工作的尾帧衔接弄坏——所以这里必须按同一套比例反推 body 区域。
+HEADER_RATIO = 0.12
+FOOTER_RATIO = 0.07
+SIDEBAR_RATIO = 0.20
+
 def grid_geometry(width, height):
-    margin = max(12, round(width * 0.03))
-    gap = max(6, round(width * 0.0165))
-    max_grid_w = width - margin * 2
-    max_grid_h = height - margin * 2
+    gap = max(6, round(width * 0.0110))
+    body_top = round(height * HEADER_RATIO)
+    body_h = round(height * (1.0 - HEADER_RATIO - FOOTER_RATIO))
+    body_w = round(width * (1.0 - SIDEBAR_RATIO))
+    margin = max(8, round(width * 0.018))
+    max_grid_w = body_w - margin * 2
+    max_grid_h = body_h - margin * 2
     cell_w = min(
-        (max_grid_w - gap * 2) // 3,
-        int(((max_grid_h - gap * 2) / 3) * 16 / 9),
+        (max_grid_w - gap * (COLS - 1)) // COLS,
+        int(((max_grid_h - gap * (ROWS - 1)) / ROWS) * 16 / 9),
     )
     cell_w = max(40, cell_w)
     cell_h = max(40, round(cell_w * 9 / 16))
-    grid_w = cell_w * 3 + gap * 2
-    grid_h = cell_h * 3 + gap * 2
-    return max(0, (width - grid_w) // 2), max(0, (height - grid_h) // 2), cell_w, cell_h, gap
+    grid_w = cell_w * COLS + gap * (COLS - 1)
+    grid_h = cell_h * ROWS + gap * (ROWS - 1)
+    origin_x = max(0, margin + (max_grid_w - grid_w) // 2)
+    origin_y = max(0, body_top + margin + (max_grid_h - grid_h) // 2)
+    return origin_x, origin_y, cell_w, cell_h, gap
 
 with Image.open(source_path) as source_file, Image.open(target_path) as target_file:
     source = source_file.convert("RGB")
     target = target_file.convert("RGB")
     source_x, source_y, source_w, source_h, source_gap = grid_geometry(*source.size)
     target_x, target_y, target_w, target_h, target_gap = grid_geometry(*target.size)
-    # P9 is the third row, third column. Copy the whole cell now; the current
-    # board's P1 Production Tab is typeset immediately afterwards.
-    source_x += 2 * (source_w + source_gap)
-    source_y += 2 * (source_h + source_gap)
+    # 末格 = 最后一行、最后一列(4×3 时是 P12)。偏移必须由 COLS/ROWS 推,
+    # 写死 2/2 在 4 列版式下会取到第 3 列,尾帧衔接就接错格子。
+    source_x += (COLS - 1) * (source_w + source_gap)
+    source_y += (ROWS - 1) * (source_h + source_gap)
     anchor = source.crop((source_x, source_y, source_x + source_w, source_y + source_h))
     if anchor.size != (target_w, target_h):
         resample = getattr(Image, "Resampling", Image).LANCZOS
@@ -1622,7 +1646,13 @@ function storyboardVisibleReferences(asset, referenceImages = []) {
 
 function stampStoryboardProductionTabs(asset, outPath, referenceImages = []) {
   if (asset?.type !== "Storyboard" || !fs.existsSync(outPath)) return;
-  const panels = storyboardPanelObjects(asset.prompt).slice(0, 9);
+  // 默认关闭。这层 PIL 叠字是生产上"文字乱码"的直接来源:候选字体全是 macOS 路径
+  // (STHeiti / Hiragino / Supplemental Arial),生产是 Ubuntu,一个都不存在 →
+  // 落到 ImageFont.load_default() 的位图字体 → 中文全渲染成方块。
+  // 新版式改由模型手写英文说明,这层既多余又会盖住模型画的页脚/侧栏。
+  // 需要回退时设 PIXEL_TOYS_STORYBOARD_STAMP_TABS=1。
+  if (process.env.PIXEL_TOYS_STORYBOARD_STAMP_TABS !== "1") return;
+  const panels = storyboardPanelObjects(asset.prompt).slice(0, STORYBOARD_BOARD_PANELS);
   if (!panels.length) return;
   const references = storyboardVisibleReferences(asset, referenceImages);
   const py = String.raw`
@@ -1654,7 +1684,7 @@ w, h = img.size
 draw = ImageDraw.Draw(img)
 margin = max(12, round(w * 0.03))
 gap = max(6, round(w * 0.0165))
-cols, rows = 3, 3
+cols, rows = ${STORYBOARD_BOARD_COLUMNS}, ${Math.ceil(STORYBOARD_BOARD_PANELS / STORYBOARD_BOARD_COLUMNS)}
 max_grid_w = w - margin * 2
 max_grid_h = h - margin * 2
 cell_w = min(

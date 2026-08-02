@@ -2527,11 +2527,11 @@ function imageExploreStoryboardHistoryItemHtml(item = {}) {
       <button type="button" data-storyboard-remove="${id}" title="移除" aria-label="移除生成结果">×</button>
     </div>
     <div class="image-explore-storyboard-caption">
-      <strong>${escapeHtml(boardLabel)} · 3×3</strong>
+      <strong>${escapeHtml(boardLabel)}</strong>
       <span>${escapeHtml(board.timeRange || "0-15s")} · 每张 15 秒</span>
       <p>${escapeHtml(board.summary || "")}</p>
       <details class="image-explore-storyboard-details">
-        <summary>查看 9 格分镜</summary>
+        <summary>查看分镜格</summary>
         <div class="image-explore-storyboard-panels">${panelDetails}</div>
         <small class="image-explore-storyboard-continuity-detail">入：${escapeHtml(board.continuityIn || "起始状态")}<br />出：${escapeHtml(board.continuityOut || "本张结尾状态")}</small>
       </details>
@@ -2607,7 +2607,7 @@ function renderImageExploreView() {
   const storyboardOptions = $("#imageExploreStoryboardOptions");
   const storyboardMode = state.imageStudio.storyboardMode === true;
   const promptInput = $("#imageExplorePrompt");
-  if (promptInput) promptInput.placeholder = storyboardMode ? "输入故事或情节，生成连续九宫格故事板" : "Describe the scene you imagine";
+  if (promptInput) promptInput.placeholder = storyboardMode ? "输入故事或情节，生成连续故事板" : "Describe the scene you imagine";
   if (storyboardToggle) {
     storyboardToggle.classList.toggle("is-active", storyboardMode);
     storyboardToggle.setAttribute("aria-expanded", storyboardMode ? "true" : "false");
@@ -5463,7 +5463,7 @@ function parseModernStoryboardProgress(job = null, pages = [], localGenerating =
     stageIndex = 4;
     percent = 100;
     label = "已完成 · 可查看";
-    detail = "故事板已保存，点击任意 PART 查看 9 格剧情。";
+    detail = "故事板已保存，点击任意 PART 查看剧情。";
   } else if (status === "queued") {
     state = "queued";
     stage = "阶段 1 / 4 · 等待队列";
@@ -5486,17 +5486,17 @@ function parseModernStoryboardProgress(job = null, pages = [], localGenerating =
       label = "正在收尾 · 写入结果";
       detail = "图片已返回，正在登记 PART 与尾格承接关系。";
     } else if (hasActiveLine) {
-      stage = "阶段 2 / 4 · 绘制九宫格";
+      stage = "阶段 2 / 4 · 绘制故事板";
       stageIndex = 2;
       percent = 52;
-      label = "生成中 · 九宫格画面";
-      detail = "正在生成整张 16:9 九宫格，完成后写入连续性标记。";
+      label = "生成中 · 故事板画面";
+      detail = "正在生成整张 16:9 故事板，完成后写入连续性标记。";
     } else {
       stage = "阶段 1 / 4 · 准备提示词";
       stageIndex = 1;
       percent = 28;
       label = "已启动 · 准备中";
-      detail = "已提交，正在整理九宫格提示词与引用资产。";
+      detail = "已提交，正在整理故事板提示词与引用资产。";
     }
   }
   const current = activeName ? modernStoryboardRunPartLabel(activeName, pages) : targetNames[0] ? modernStoryboardRunPartLabel(targetNames[0], pages) : state === "idle" ? "尚未提交" : "等待分配 PART";
@@ -5791,7 +5791,9 @@ function storyboardPanelTimeRange(page, panelIndex) {
 function storyboardPanelDuration(panel, page) {
   const panelDuration = Number(panel?.duration);
   const boardDuration = Number(page?.duration) || STORYBOARD_PLOT_SECONDS;
-  const panelCount = Array.isArray(page?.panels) && page.panels.length ? page.panels.length : 9;
+  // 兜底值须跟服务端 STORYBOARD_MAX_PANELS 一致(4×3 十二格),否则没有 panels 数据时
+  // 每格时长会按 9 格算,显示成 1.7s 而实际是 1.25s。
+  const panelCount = Array.isArray(page?.panels) && page.panels.length ? page.panels.length : 12;
   const duration = Number.isFinite(panelDuration) && panelDuration > 0 ? panelDuration : boardDuration / panelCount;
   return `${duration.toFixed(1)}s`;
 }
@@ -5862,7 +5864,7 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
     timeline.innerHTML = pages.map((entry, index) => `${index ? '<span class="storyboard-document-sequence-connector" aria-hidden="true">尾格 → 首格</span>' : ""}<button type="button" class="storyboard-document-part ${index === currentIndex ? "is-current" : ""} ${entry.status === "complete" ? "is-complete" : ""}" data-storyboard-page-index="${index}"><header><b>PART ${String(index + 1).padStart(2, "0")}</b><small>${escapeHtml(modernStoryboardStatusLabel(entry.status))}</small></header><span>${formatStoryboardSeconds(entry.startSecond)} – ${formatStoryboardSeconds(entry.endSecond)}</span><footer>${entry.panels.filter((panel) => ["complete", "reused"].includes(panel.status)).length}/${entry.panels.length} 镜头格 · ${entry.carryIn ? "已承接" : "首 PART"}</footer></button>`).join("");
   }
 
-  $("#modernStoryboardSelectedPanel").textContent = `PART ${String(currentIndex + 1).padStart(2, "0")} · ${STORYBOARD_PLOT_SECONDS} 秒九宫格`;
+  $("#modernStoryboardSelectedPanel").textContent = `PART ${String(currentIndex + 1).padStart(2, "0")} · ${STORYBOARD_PLOT_SECONDS} 秒故事板`;
   $("#modernStoryboardSelectedCopy").textContent = selectedPanel.source === "reused-anchor"
     ? "本格与上一 PART 的最后一格为同一镜头对象，不重新生成。"
     : `剧情：${selectedPanel.copy} · 镜头：${selectedPanel.size}，${selectedPanel.camera} · 动作：${selectedPanel.action} · 对白：${selectedPanel.dialogue || "无"} · 声音：${selectedPanel.sound || "无"}`;
@@ -9018,7 +9020,7 @@ function renderStoryboardJob(job) {
   node.innerHTML = `
     <div class="status-row">
       <span class="pill ${jobStatusClass(job, hasFailures)}">Production Board：${jobStatusLabel}</span>
-      <span class="pill">16:9 横版 · 3×3 九格</span>
+      <span class="pill">16:9 横版故事板</span>
     </div>
     ${failureLine}
     ${progressLine}

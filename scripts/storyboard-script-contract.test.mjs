@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import serverModule from "../server.js";
 import runner from "./run_asset_generation.js";
 
@@ -8,8 +11,44 @@ assert.equal(typeof storyboard?.storyboardSegmentsFromShots, "function", "storyb
 assert.equal(typeof storyboard?.storyboardPanelPlanForGroup, "function", "storyboard panel plans must be testable");
 assert.equal(typeof storyboard?.storyboardPromptForSlot, "function", "storyboard prompt generation must be testable");
 assert.equal(typeof storyboard?.storyboardSlotHasScriptedContent, "function", "empty storyboard plans must be rejected");
+assert.equal(typeof storyboard?.productionBoardReferenceImagesForSlots, "function", "storyboard reference asset binding must be testable");
 assert.equal(typeof runner.storyboardPanelObjects, "function", "the renderer must retain per-panel production fields");
 assert.equal(typeof runner.parseAssets, "function", "the renderer must retain storyboard prompt documents");
+
+const referenceFixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixel-toys-storyboard-reference-"));
+const referenceEpisodeRoot = path.join(referenceFixtureRoot, "outputs", "E01");
+const referenceAssetsRoot = path.join(referenceFixtureRoot, "assets");
+try {
+  for (const directory of ["characters", "scenes", "props"]) fs.mkdirSync(path.join(referenceAssetsRoot, directory), { recursive: true });
+  for (const [directory, name] of [
+    ["characters", "C001_HERO"],
+    ["scenes", "S001_ROOM"],
+    ["props", "P001_KEY"],
+  ]) fs.writeFileSync(path.join(referenceAssetsRoot, directory, `${name}.png`), Buffer.alloc(1200, 7));
+  // 场景 label 必须用中文:manifestItemCompatibleWithType 对 Scene 的判定是中文地点启发式,
+  // 英文 label("Room"/"Hotel Lobby")会被判成人名而在 sanitizeManifestItems 里静默整项丢弃。
+  // 那是既有缺陷,不在本测试的射程内——这里只验参考图兜底,别让 fixture 踩它。
+  fs.mkdirSync(referenceEpisodeRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(referenceFixtureRoot, "project_asset_manifest.json"),
+    JSON.stringify({
+      confirmed: true,
+      items: [
+        { id: "C001_HERO", type: "Character", label: "Hero" },
+        { id: "S001_ROOM", type: "Scene", label: "旧公寓卧室" },
+        { id: "P001_KEY", type: "Prop", label: "Key" },
+      ],
+    }),
+  );
+  const references = storyboard.productionBoardReferenceImagesForSlots(referenceEpisodeRoot, [{ refs: [] }]);
+  assert.deepEqual(
+    references.map((file) => path.basename(file)),
+    ["C001_HERO.png", "S001_ROOM.png", "P001_KEY.png"],
+    "a storyboard with no slot refs must still attach the current project's production assets",
+  );
+} finally {
+  fs.rmSync(referenceFixtureRoot, { recursive: true, force: true });
+}
 
 const sourceShot = {
   name: "E01_V003_CHURCH_STANDOFF",
@@ -48,7 +87,7 @@ const panels = storyboard.storyboardPanelPlanForGroup({
   duration: 15,
   segments: [segment],
 });
-assert.equal(panels.length, 9, "a 15-second Production Board must retain nine panels");
+assert.equal(panels.length, 12, "a 15-second Production Board must fill the 4×3 twelve-panel grid");
 assert.ok(panels.every((panel) => panel.production?.script && !/waiting for script/i.test(panel.production.script)), "every panel must retain a concrete screenplay action");
 assert.ok(panels.some((panel) => panel.production?.script?.includes("伊莎贝拉")), "the screenplay action must survive into the panel plan");
 assert.ok(panels.some((panel) => panel.dialogue?.text === "Obey me."), "the planned dialogue must be assigned to a panel");

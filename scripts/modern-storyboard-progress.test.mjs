@@ -80,7 +80,7 @@ progress = progressContext.parseModernStoryboardProgress(
   pages,
   false,
 );
-assert.equal(progress.label, "生成中 · 九宫格画面", "a restarted request must clear the stale waiting-retry state");
+assert.equal(progress.label, "生成中 · 故事板画面", "a restarted request must clear the stale waiting-retry state");
 
 progress = progressContext.parseModernStoryboardProgress(
   { status: "complete", logs: "generated SB001_E01_V001_PRODUCTION_BOARD -> /tmp/old-board.png" },

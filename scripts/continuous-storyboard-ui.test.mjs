@@ -50,12 +50,15 @@ assert.match(js, /storyboardBoardMedia\(/, "generated storyboard sheet media mus
 assert.doesNotMatch(js, /15 秒剧情格/, "a nine-panel board must not label every cell as a separate 15-second storyboard");
 
 assert.match(server, /const STORYBOARD_MIN_PANELS = 9/);
-assert.match(server, /const STORYBOARD_MAX_PANELS = 9/);
+// 版式改成 4×3 十二格(照用户给的制作板参考图)。列数必须和上限一起钉:
+// 只钉上限的话 3 列×12 格会算出 4 行,提示词声明的网格和实际格数会不一致。
+assert.match(server, /const STORYBOARD_MAX_PANELS = 12/);
+assert.match(server, /const STORYBOARD_BOARD_COLUMNS = 4/);
 assert.match(server, /IMAGE_SIZE_BY_QUALITY_16_9\[String\(body\.quality/);
-assert.match(server, /16:9 horizontal professional film storyboard document/);
+assert.match(server, /16:9 horizontal production storyboard sheet on white paper/);
 assert.match(server, /black-and-white hand-drawn storyboard sketch/);
 assert.match(server, /continuitySourcePanelId/);
-assert.match(server, /Production Board 唯一视频参考|15 秒 16:9 横版九宫格故事板/);
+assert.match(server, /Production Board 唯一视频参考|15 秒 16:9 横版 4×3 十二格故事板/);
 assert.doesNotMatch(server, /Create ONE 9:16 vertical \(portrait\)/);
 
 for (const selector of [

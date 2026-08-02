@@ -891,30 +891,34 @@
         </aside>
 
         <main class="modern-main">
-          <header class="modern-topbar">
-            <div class="modern-breadcrumb"><span id="modernProjectCrumb">项目</span><i>/</i><h1 id="modernEpisodeTitle"><span id="modernEpisodeCrumb">制作台</span></h1><b id="modernRatioBadge" class="modern-ratio-badge">9:16</b></div>
-            <p id="modernEpisodeCopy" class="modern-top-description">加载项目后显示当前剧集和制作状态。</p>
-            <div class="modern-top-actions">
-              <button id="modernReturnProject" class="modern-quiet-button" type="button">返回项目</button>
-              <button id="modernQueueButton" class="modern-queue-button" type="button" hidden aria-hidden="true"><i></i><span id="modernQueueLabel"></span></button>
-              <button id="modernMoreActions" class="modern-quiet-button modern-icon-button" type="button" aria-label="更多操作" title="更多操作">...</button>
-            </div>
-            <span id="modernShotCount" hidden></span><span id="modernCompletedCount" hidden></span>
-          </header>
-
           <section class="modern-episode-hero" aria-labelledby="modernEpisodeHeroTitle">
             <div class="modern-episode-copy">
-              <div class="modern-episode-kicker"><span id="modernEpisodeKicker">EPISODE</span><b id="modernHeroRatio">9:16 已锁定</b></div>
-              <h2 id="modernEpisodeHeroTitle">制作台</h2>
-              <p id="modernEpisodeHeroCopy">加载项目后显示当前剧集和制作状态。</p>
+              <div class="modern-breadcrumb">
+                <span id="modernProjectCrumb">项目</span><i>/</i>
+                <h1 id="modernEpisodeTitle"><span id="modernEpisodeCrumb">制作台</span></h1>
+                <b id="modernRatioBadge" class="modern-ratio-badge">9:16</b>
+              </div>
+              <h2 id="modernEpisodeHeroTitle" class="modern-episode-compat-title">制作台</h2>
+              <p id="modernEpisodeHeroCopy" class="modern-episode-compat-copy">加载项目后显示当前剧集和制作状态。</p>
+              <span id="modernEpisodeKicker" class="modern-episode-compat-state">EPISODE</span>
+              <span id="modernHeroRatio" class="modern-episode-compat-state">9:16 已锁定</span>
             </div>
             <dl class="modern-episode-hero-stats">
               <div><dt>镜头</dt><dd id="modernHeroShotCount">0</dd></div>
               <div><dt>成片时长</dt><dd id="modernHeroDuration">00:00</dd></div>
             </dl>
-            <div class="modern-episode-video-actions" aria-label="视频生成操作">
-              <button id="modernVideoGenerate" class="modern-video-action modern-video-action-generate" type="button" disabled>生成全部视频</button>
+            <div class="modern-episode-actions">
+              <div class="modern-top-actions">
+                <button id="modernReturnProject" class="modern-quiet-button" type="button">返回项目</button>
+                <button id="modernQueueButton" class="modern-queue-button" type="button" hidden aria-hidden="true"><i></i><span id="modernQueueLabel"></span></button>
+                <button id="modernMoreActions" class="modern-quiet-button modern-icon-button" type="button" aria-label="更多操作" title="更多操作">...</button>
+              </div>
+              <div class="modern-episode-video-actions" aria-label="视频生成操作">
+                <button id="modernVideoGenerate" class="modern-video-action modern-video-action-generate" type="button" disabled>生成全部视频</button>
+              </div>
             </div>
+            <span id="modernEpisodeCopy" class="modern-episode-compat-state">加载项目后显示当前剧集和制作状态。</span>
+            <span id="modernShotCount" hidden></span><span id="modernCompletedCount" hidden></span>
           </section>
 
           <section class="modern-pipeline" aria-label="制作流程">

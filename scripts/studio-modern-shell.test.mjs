@@ -88,7 +88,7 @@ assert.ok(modernHeroStart >= 0 && modernPipelineStart > modernHeroStart, "modern
 const modernHeroHtml = html.slice(modernHeroStart, modernPipelineStart);
 assert.doesNotMatch(modernHeroHtml, /id="modernBuildConfig"/, "video config must not appear in the episode hero");
 assert.match(modernHeroHtml, /id="modernVideoGenerate"[^>]*class="[^"]*modern-video-action[^>]*disabled/, "video generation must start disabled in the hero");
-assert.match(css, /\.modern-episode-hero\s*\{[^}]*padding:\s*14px 26px/, "episode hero must stay compact");
+assert.match(css, /\.modern-episode-hero\s*\{[^}]*min-height:\s*82px[^}]*padding:\s*12px 26px/, "episode hero must stay compact");
 assert.match(css, /\.modern-episode-video-actions\s*\{[^}]*display:\s*flex/, "hero video action must stay compact");
 assert.match(css, /\.modern-episode-copy p\s*\{[^}]*display:\s*none/, "non-action hero description must not consume vertical space");
 const modernMotionStart = html.indexOf('aria-labelledby="modernMotionTitle"');
@@ -211,8 +211,10 @@ assert.match(css, /\.modern-asset-wall\s*\{[^}]*grid-column:\s*1/, "asset wall m
 assert.match(css, /\.modern-asset-wall-grid\s*\{[^}]*grid-template-columns:/, "asset wall must use a card grid");
 assert.match(html, /modern-episode-hero/, "episode hero must remain visible in the episode-led layout");
 assert.match(html, /modernEpisodeKicker/, "episode hero must expose its episode context");
-assert.match(html, /<header class="modern-topbar">[\s\S]*modernProjectCrumb[\s\S]*modernEpisodeTitle[\s\S]*modern-top-actions/, "topbar must contain navigation and queue actions");
-assert.match(css, /body\.is-studio-modern \.modern-topbar\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto[^}]*height:\s*54px/, "topbar must use the compact navigation layout");
+assert.doesNotMatch(html, /<header class="modern-topbar">/, "the duplicate topbar must be removed");
+assert.match(modernHeroHtml, /modernProjectCrumb[\s\S]*modernEpisodeTitle[\s\S]*modernRatioBadge/, "episode hero must carry project, episode, and ratio context");
+assert.match(modernHeroHtml, /modern-top-actions[\s\S]*modernReturnProject[\s\S]*modernMoreActions/, "episode hero must carry navigation actions");
+assert.match(css, /\.modern-episode-actions\s*\{[^}]*display:\s*flex/, "episode hero must group navigation and generation actions");
 assert.match(css, /\.modern-episode-hero\s*\{[^}]*display:\s*grid/, "episode hero must establish the first-viewport hierarchy");
 assert.match(js, /modernEpisodeKicker/, "runtime must assign the episode hero context");
 assert.doesNotMatch(css, /modern-batch-scope|modern-episode-secondary-action/, "removed range controls must not leave visual styles behind");

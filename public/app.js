@@ -5848,13 +5848,12 @@ function renderModernStoryboardStudio(data = state.project, shots = modernShotRe
   if (grid) {
     grid.innerHTML = pages.map((entry, index) => {
       const boardMedia = storyboardBoardMedia(data, entry);
-      const copy = String(entry.summary || entry.title || "等待故事板生成").replace(/\s+/g, " ").slice(0, 150);
       const status = modernStoryboardStatusLabel(entry.status);
       const frameStyle = boardMedia ? ` style="--storyboard-board-image: url('${escapeAttr(boardMedia)}');"` : "";
       return `<button type="button" class="storyboard-document-shot storyboard-document-board-card ${index === currentIndex ? "is-active" : ""} ${entry.status === "failed" ? "is-failed" : ""}" data-storyboard-page-index="${index}" aria-label="PART ${String(index + 1).padStart(2, "0")} · ${STORYBOARD_PLOT_SECONDS} 秒故事板">
         <header><b>PART ${String(index + 1).padStart(2, "0")}</b><span>${escapeHtml(`${formatStoryboardSeconds(entry.startSecond)} – ${formatStoryboardSeconds(entry.endSecond)}`)}</span></header>
         <div class="storyboard-document-shot-frame storyboard-document-board-frame${boardMedia ? " has-media" : ""}"${frameStyle}><span>${escapeHtml(status)}</span></div>
-        <div class="storyboard-document-shot-copy"><strong>${STORYBOARD_PLOT_SECONDS} 秒故事板</strong><p>${escapeHtml(copy)}</p><small>${entry.panels.length} 个镜头格 · ${entry.carryIn ? "承接上一 PART 尾格" : "首 PART"}</small><small>状态：${escapeHtml(status)}</small></div>
+        <div class="storyboard-document-shot-copy"><strong>${STORYBOARD_PLOT_SECONDS} 秒故事板</strong><small>${entry.panels.length} 个镜头格 · ${entry.carryIn ? "承接上一 PART 尾格" : "首 PART"}</small><small>状态：${escapeHtml(status)}</small></div>
       </button>`;
     }).join("");
   }

@@ -22225,6 +22225,9 @@ function storyboardPromptForSlot(slot) {
     "Header carries three horizontal information rows: (1) project title left, sequence identifier centre, page number right; (2) three aligned metadata fields with labels and underline rules; (3) one full-width sequence summary line.",
     `Main body splits into two columns: left column ~80% width holds exactly ${panelCount} equal storyboard panels in a ${gridLabel} grid, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Right sidebar ~20% width holds three vertically stacked reference sections with independent thin borders and centred headings: Character/Casting (two portrait slots), Prop Reference (two object slots), Location/Set (two environment slots).`,
     "Every panel is a landscape rectangle with equal gutters and thin borders, a small circular number marker in its upper-left corner, and one short caption line directly beneath it.",
+    // 侧栏必须是彩色实拍缩略图,与左侧线稿形成对比——这是参考图模板的核心特征。
+    // 不写明的话,下面"每格黑白线稿"和末尾的全局禁令会把侧栏一起画成素描。
+    "The six sidebar reference slots are full-colour realistic reference thumbnails, not sketches: reproduce each attached production asset inside its slot at photographic quality, matching that asset's own colours, materials and lighting. The monochrome pencil treatment applies only to the storyboard panels in the left column.",
     "Footer holds a notes/timing field on the left and director, animator, and date fields on the right.",
     "Render every panel as a black-and-white hand-drawn storyboard sketch: graphite/pencil linework, loose hatching, clear silhouettes, expressive blocking, rough but intentional speed lines, white paper, no color. This is a planning document, not a finished cinematic still and not an asset image.",
     "Maintain strong alignment, consistent margins, equal panel sizes, clear hierarchy. No extra panels, no merged cells, no floating cards, no decorative background elements.",
@@ -22242,7 +22245,9 @@ function storyboardPromptForSlot(slot) {
     dialogueRule,
     "Per-panel plan — follow exactly, one panel each, in order. Script, camera, dialogue, and sound are mandatory production instructions, not optional visual suggestions:",
     panelGuide,
-    "No watermark, no invented characters, no colour rendering, no photorealism, no 3D render, no polished key art.",
+    // 这条负向约束必须限定在面板区。原先是全局的("no colour rendering, no photorealism"),
+    // 于是把侧栏那六个本该彩色实拍的参考位也一起禁成了黑白素描。
+    "Within the storyboard panels only: no colour rendering, no photorealism, no 3D render, no polished key art. Across the whole sheet: no watermark and no invented characters.",
   ].join("\n");
 }
 

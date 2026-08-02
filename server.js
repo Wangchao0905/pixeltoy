@@ -6072,83 +6072,6 @@ function stripVideoPromptDirectives(prompt = "") {
   return text;
 }
 
-const REAL_FILM_STYLE_PROMPT = "视觉风格：严格依据已绑定正式资产图的真人电影实拍质感；保持真实皮肤、自然人体比例、真实材质与自然电影光影，禁止二维动画、卡通、插画、CG 渲染。";
-
-function stripInvalidLegacyVideoStyleLock(prompt = "") {
-  const lines = String(prompt || "").split(/\r?\n/u);
-  let removedInvalidStyle = false;
-  const kept = [];
-  for (const rawLine of lines) {
-    const line = String(rawLine || "");
-    const styleMatch = line.match(/^\s*视觉风格\s*[：:]\s*(.+?)\s*$/u);
-    if (styleMatch && !usableGlobalStyleDirective(styleMatch[1])) {
-      removedInvalidStyle = true;
-      continue;
-    }
-    if (removedInvalidStyle && /^\s*视觉风格硬约束\s*[：:]/u.test(line)) continue;
-    kept.push(line);
-  }
-  return kept.join("\n").replace(/^\n+|\n+$/g, "");
-}
-
-function restorePhotorealStylePrompt(prompt = "") {
-  const text = String(prompt || "").trim();
-  if (!text || /真人电影实拍质感/u.test(text)) return text;
-  if (/^画面\s*[：:]/mu.test(text)) {
-    return text.replace(/^(画面\s*[：:]\s*)/mu, `$1${REAL_FILM_STYLE_PROMPT} `);
-  }
-  return `${REAL_FILM_STYLE_PROMPT}\n${text}`;
-}
-
-function migrateInvalidVideoStyleLocks(config = {}) {
-  if (!config || typeof config !== "object") return { data: config, changed: false };
-  let changed = false;
-  let invalidStyleFound = false;
-  const assets = Array.isArray(config.assets)
-    ? config.assets.map((asset) => {
-        const storedStyle = compactLine(asset?.globalStyle || "");
-        if (storedStyle && !usableGlobalStyleDirective(storedStyle)) {
-          invalidStyleFound = true;
-          changed = true;
-          return { ...asset, globalStyle: "" };
-        }
-        return asset;
-      })
-    : config.assets;
-  const shots = Array.isArray(config.shots)
-    ? config.shots.map((shot) => {
-        const directive = compactLine(shot?.videoStyleDirective || "");
-        const prompt = String(shot?.prompt || "");
-        const cleanPrompt = stripInvalidLegacyVideoStyleLock(prompt);
-        const hasInvalidDirective = !!directive && !usableGlobalStyleDirective(directive);
-        const wasCleaned = cleanPrompt !== prompt;
-        if (!hasInvalidDirective && !wasCleaned) return shot;
-        invalidStyleFound = true;
-        changed = true;
-        return {
-          ...shot,
-          videoStylePreset: "photoreal",
-          videoStyleDirective: "",
-          prompt: restorePhotorealStylePrompt(cleanPrompt),
-        };
-      })
-    : config.shots;
-  if (!invalidStyleFound) return { data: config, changed };
-  return {
-    data: {
-      ...config,
-      assets,
-      shots,
-      styleMigration: {
-        ...(config.styleMigration || {}),
-        invalidAssetStyleLockRemovedAt: new Date().toISOString(),
-        restoredStylePreset: "photoreal",
-      },
-    },
-    changed: true,
-  };
-}
-
 function applyVideoPromptDirectives(prompt = "", dialectStyle = "none", sfxStyle = "none") {
   const basePrompt = stripVideoPromptDirectives(prompt);
   return cleanVideoPromptForSubmission(
@@ -7680,10 +7603,7 @@ function readVideoConfig(episodeRoot, options = {}) {
   const configPath = locateConfig(episodeRoot, options);
   if (!configPath) return null;
   try {
-    const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    const migrated = migrateInvalidVideoStyleLocks(parsed);
-    if (migrated.changed) writeText(configPath, `${JSON.stringify(migrated.data, null, 2)}\n`);
-    return { file: configPath, data: migrated.data };
+    return { file: configPath, data: JSON.parse(fs.readFileSync(configPath, "utf8")) };
   } catch {
     return { file: configPath, data: null };
   }
@@ -17087,22 +17007,10 @@ function canonicalAssetGlobalStyle(source = "") {
   return trimGlobalStyleValue(extractGlobalStyleGuidance(source) || extractAssetStyleGuidance(source));
 }
 
-function styleIsOccupationDescription(value = "") {
-  const style = compactLine(value);
-  if (!style) return false;
-  return /(?:插画|漫画|动画|摄影|电影|服装|游戏|概念)师(?:的)?(?:职业气质|职业身份|职业设定|身份设定|职业)?(?:[，,。；;]|$)/u.test(style);
-}
-
-function usableGlobalStyleDirective(value = "") {
-  const style = compactLine(value);
-  return style && !styleIsOccupationDescription(style) ? style : "";
-}
-
 function documentStyleIsNonPhotoreal(globalStyle = "") {
   const style = compactLine(globalStyle);
   if (!style) return false;
-  if (styleIsOccupationDescription(style)) return false;
-  const nonPhotoreal = /恶搞之家|family\s*guy|美式电视动画|二维动画|卡通|漫画|插画(?!师)|动漫|赛璐璐|平涂|粗黑(?:色)?描边|toon|cartoon|comic|illustration|cel[-\s]?shad|2d\s+animation/iu.test(style);
+  const nonPhotoreal = /恶搞之家|family\s*guy|美式电视动画|二维动画|卡通|漫画|插画|动漫|赛璐璐|平涂|粗黑(?:色)?描边|toon|cartoon|comic|illustration|cel[-\s]?shad|2d\s+animation/iu.test(style);
   const explicitPhotoreal = /超写实|写实摄影|真人摄影|实拍感|photoreal(?:istic)?|photo[-\s]?real|live[-\s]?action/iu.test(style) &&
     !/(?:禁止|不做|不得|避免|不要)[^。；;，,]{0,16}(?:超写实|写实摄影|真人摄影|实拍感|photoreal|photo[-\s]?real|live[-\s]?action)/iu.test(style);
   return nonPhotoreal && !explicitPhotoreal;
@@ -17133,13 +17041,17 @@ function assetStylePromptLine(globalStyle = "") {
 }
 
 function applyCanonicalAssetDocumentStyle(assets = [], source = "") {
-  // 只有资产文档中明确标注的“全局视觉风格”可成为全剧约束。人物职业、
-  // 场景描述和单个资产 visual 字段只能描述该资产，绝不能提升为视频全局画风。
-  const documentStyle = usableGlobalStyleDirective(extractGlobalStyleGuidance(source));
+  const documentStyle = canonicalAssetGlobalStyle(source);
   return (assets || []).map((asset) => {
+    const ownStyle = trimGlobalStyleValue(
+      asset?.globalStyle ||
+        extractAssetStyleGuidance(asset?.visual) ||
+        extractAssetStyleGuidance(asset?.evidence) ||
+        extractAssetStyleGuidance(asset?.textToImagePromptOverride),
+    );
     return {
       ...asset,
-      globalStyle: documentStyle,
+      globalStyle: documentStyle || ownStyle,
     };
   });
 }
@@ -21125,12 +21037,16 @@ function normalizeManifestItem(item, index = 0) {
 
 function hydrateManifestGlobalStyle(rawManifest, source = "") {
   const manifest = normalizeAssetManifest(rawManifest || {});
-  // 旧版会从单个资产 visual/evidence 反推全局画风，导致职业描述污染所有视频镜头。
-  // 迁移时只保留资产文档明确声明的全局风格，其他旧值一律不再作为全局约束。
-  const globalStyle = usableGlobalStyleDirective(extractGlobalStyleGuidance(source));
+  const globalStyle = trimGlobalStyleValue(extractGlobalStyleGuidance(source) || extractAssetStyleGuidance(source));
   if (!manifest.items.length) return manifest;
   const items = manifest.items.map((item) => {
-    const effectiveGlobalStyle = globalStyle;
+    const storedGlobalStyle = trimGlobalStyleValue(item.globalStyle);
+    const effectiveGlobalStyle =
+      globalStyle ||
+      storedGlobalStyle ||
+      extractAssetStyleGuidance(item.visual) ||
+      extractAssetStyleGuidance(item.evidence) ||
+      trimGlobalStyleValue(extractAssetStyleGuidance(item.textToImagePrompt));
     const asset = {
       type: item.type,
       name: item.id,
@@ -22317,24 +22233,27 @@ function videoStylePresetFromProductionAssets(productionAssets = [], body = {}) 
   return mode === "manual" && manualPreset ? normalizeAssetStylePreset(manualPreset) : "";
 }
 
-// 视频全局风格只接受明确的手动选择，或资产文档写明并已随 manifest 继承的全局风格。
-// 单张资产的职业、外观和视觉描述不得影响整集视频。
+// 正式资产图的 preset 只是历史元数据。资产文档里的明确风格文字（例如“恶搞之家
+// 式美式电视动画”）才是视频提示词可用的主来源；只提取风格相关句，不把人物/场景
+// 事实误当成全剧风格。
 function videoStyleDirectiveFromProductionAssets(productionAssets = [], body = {}) {
   const directives = [];
   const push = (value) => {
-    const clean = usableGlobalStyleDirective(value);
+    const clean = compactLine(value || "");
     if (clean && !directives.includes(clean)) directives.push(clean);
   };
   const manualMode = compactLine(body.videoStyleMode || "").toLowerCase() === "manual";
   if (manualMode) push(body.videoStyleDirective || body.videoStyle || "");
   for (const asset of productionAssets || []) {
-    const explicit = usableGlobalStyleDirective(asset?.globalStyle || "");
+    const explicit = canonicalAssetGlobalStyle(asset?.globalStyle || "");
     if (explicit) push(explicit);
   }
   if (directives.length) return directives.slice(0, 2).join("；").slice(0, 720);
-  return productionAssets.length
-    ? "严格依据已绑定的正式人物、场景、道具资产图决定画面风格；保持其已确认的造型、材质、色彩、光影和渲染媒介，不从剧本文字、职业描述或单张资产说明推断全局画风。"
-    : "";
+  for (const asset of productionAssets || []) {
+    const source = [asset?.textToImagePrompt, asset?.visual, asset?.evidence].filter(Boolean).join("\n");
+    push(extractAssetStyleGuidance(source));
+  }
+  return directives.slice(0, 3).join("；").slice(0, 720);
 }
 
 // 资产图提示词只由 manifest 中的资产文档提示词生成；不再存在 preset 覆盖器。
@@ -25376,7 +25295,6 @@ module.exports = {
       buildRuleAssets,
       extractGlobalStyleGuidance,
       extractAssetStyleGuidance,
-      documentStyleIsNonPhotoreal,
       hydrateManifestGlobalStyle,
       parseDocxDocumentXml,
       parseStructuredAssetDescriptions,
@@ -25406,8 +25324,6 @@ module.exports = {
       seedanceNaturalLanguagePromptForShot,
       storyboardSeedancePrompt,
       videoStyleDirectiveFromProductionAssets,
-      stripInvalidLegacyVideoStyleLock,
-      migrateInvalidVideoStyleLocks,
       normalizeVideoDialectStyle,
       videoDialectPromptDirective,
       injectVideoDialectPrompt,

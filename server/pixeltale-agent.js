@@ -141,6 +141,17 @@ function marketPrompt(input = {}) {
   ].join("\n");
 }
 
+function normalizeAudience(value) {
+  const raw = text(value, 80).toLowerCase();
+  return ["female", "female_drama", "女频", "女性"].includes(raw) ? "female_drama" : "male_drama";
+}
+
+function audiencePrompt(input = {}) {
+  return normalizeAudience(input.audience) === "female_drama"
+    ? "目标受众：女性观众，采用女频短剧风格。优先强化人物关系、情感张力、身份与选择的代价、情绪回报和关系反转；不要把女性角色写成被动的剧情工具。"
+    : "目标受众：男性观众，采用男频短剧风格。优先强化目标驱动、能力成长、竞争对抗、资源升级、行动回报和清晰的胜负推进；不要用空泛旁白替代主角行动。";
+}
+
 function stageParticipationPrompt(stage, input = {}) {
   const participation = normalizeStageOptions(input);
   const choices = participation.stageOptions[stage] || {};
@@ -330,6 +341,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
     "中文字段服务中文剧情；英文对白必须本土化、口语化，符合人物关系、年龄、阶层和冲突强度。",
     `当前阶段：${stage}。当前模式：${modeLabel(mode)}。`,
     creativeControlPrompt(controls, mode),
+    audiencePrompt(input),
     marketPrompt(input),
     stageParticipationPrompt(stage, input),
     ...tkRules,
@@ -352,6 +364,7 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project }) {
     project: { id: text(project?.id, 300), title: text(project?.title, 300), episode: text(project?.episode, 100) },
     mode,
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
+    audience: normalizeAudience(input.audience),
     creativeControls: normalizeCreativeControls(input),
     market: normalizeMarket(input),
     stageParticipation: normalizeStageOptions(input),
@@ -407,6 +420,7 @@ function visualAssetSystemPrompt(mode, input = {}) {
     "只收在全剧中重复出现或明确需要保持连续性的主要人物、场景、道具，不收一次性背景和临时群众。",
     "输出严格 JSON，不要 Markdown、代码围栏或解释。字段值使用中文；name_en 可使用英文；prompt_zh 必须是可直接用于文生图的完整中文画面描述，不含剧情台词。",
     `当前模式：${modeLabel(mode)}。人物要锁定外观、服装、识别色与姿态；场景要锁定光线、色调、材质、空间布局与氛围；道具要锁定材质、形态、尺寸与特殊质感。`,
+    audiencePrompt(input),
     marketPrompt(input),
     '输出契约：{"characters":[{"id":"P01","name_zh":"中文名","name_en":"English name","type":"人物","aliases":"别名","gender":"性别","age_phase":"年龄相","body":"体型","hair_color":"发型发色","facial_features":"面部特征","eye_color":"瞳色","costume_accessories":"服装配饰","palette":"识别色","posture":"气质姿态","prompt_zh":"中文文生图提示词"}],"scenes":[{"id":"S01","name_zh":"场景名","name_en":"English name","type":"场景","aliases":"别名","indoor_outdoor":"室内外","lighting":"光线","palette":"色调","materials":"建筑材质","layout":"空间布局","atmosphere":"氛围气味","prompt_zh":"中文文生图提示词"}],"props":[{"id":"PR01","name_zh":"道具名","name_en":"English name","type":"道具","aliases":"别名","materials":"材质","appearance":"颜色形态","size":"尺寸","texture":"特殊质感","prompt_zh":"中文文生图提示词"}],"consistency_notes":["全剧统一视觉规则"]}',
   ].join("\n");
@@ -417,6 +431,7 @@ function visualAssetUserPrompt({ mode, input, approvedArtifacts, project }) {
     task: "从已确认的全剧结构中提取并补全视觉资产设计，确保同一资产在不同单元中可复用且外观连续。",
     project,
     mode,
+    audience: normalizeAudience(input.audience),
     market: normalizeMarket(input),
     approvedArtifacts: approvedArtifacts.map((item) => ({ stage: item.stage, content: item.content })),
   }, null, 2).slice(0, 240000);
@@ -427,6 +442,7 @@ function visualAssetReviewSystemPrompt(mode, input = {}) {
     "你是 PixelTale 的视觉资产复核 Agent。检查视觉资产文档数据，不要重写全文。",
     "输出严格 JSON，不要 Markdown、代码围栏或额外文字。",
     `当前模式：${modeLabel(mode)}。检查重复资产筛选、编号唯一性、字段完整性、人物与场景连续性、文生图提示词可执行性。`,
+    audiencePrompt(input),
     marketPrompt(input),
     '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"recurrence":true,"identity":true,"prompt":true}}',
   ].join("\n");
@@ -661,7 +677,7 @@ function normalizeState(raw, params) {
     projectId: text(source.projectId || params.projectId, 500),
     mode: normalizeMode(source.mode || params.mode),
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
-    input: { ...asObject(source.input), ...normalizeCreativeControls(source.input), ...normalizeMarket(source.input), ...normalizeStageOptions(source.input) },
+    input: { ...asObject(source.input), audience: normalizeAudience(source.input?.audience), ...normalizeCreativeControls(source.input), ...normalizeMarket(source.input), ...normalizeStageOptions(source.input) },
     stage: source.stage === "handoff" ? "handoff" : normalizeStage(source.stage),
     routes: normalizeRoutes(source.routes),
     artifacts: asArray(source.artifacts),

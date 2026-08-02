@@ -162,7 +162,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .artifact-meta { color: var(--muted); font: 9px var(--meta-font); }
 .stage-content h2 { margin: 13px 0 9px; font-size: 32px; font-weight: 600; letter-spacing: 0; line-height: 1.16; }
 .stage-intro { max-width: 660px; margin: 0 0 28px; color: var(--muted); font-size: 14px; line-height: 1.7; }
-.content-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(210px, 0.75fr); gap: 12px; }
+.content-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(210px, 0.75fr); align-items: start; gap: 12px; }
 .form-panel, .metric-card, .artifact-card, .timeline-card {
   padding: 17px;
   border: 1px solid var(--line);
@@ -210,6 +210,24 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .control-range::-moz-range-track { height: 4px; border-radius: 999px; background: linear-gradient(90deg, var(--coral), rgba(255, 107, 122, 0.18)); }
 .control-range::-moz-range-thumb { width: 12px; height: 12px; border: 3px solid #fff; border-radius: 50%; background: var(--coral); box-shadow: 0 0 0 1px rgba(255, 107, 122, 0.55), 0 3px 10px rgba(255, 107, 122, 0.24); }
 .control-scale { display: flex; justify-content: space-between; color: var(--faint); font: 9px var(--meta-font); }
+.creative-controls { align-self: start; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--frost); box-shadow: var(--soft-shadow); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+.creative-controls-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.creative-controls-head .card-label { margin-bottom: 5px; }
+.creative-controls-head h3 { margin: 0; font-size: 17px; font-weight: 650; }
+.creative-controls-count { color: var(--blue); font: 700 9px var(--meta-font); white-space: nowrap; }
+.creative-control-list { display: grid; }
+.creative-control-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(132px, 1.15fr); align-items: center; gap: 12px; min-height: 66px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.creative-control-row.is-accent { grid-template-columns: minmax(0, 0.82fr) minmax(145px, 1.18fr); }
+.creative-control-copy { min-width: 0; }
+.creative-control-copy label { display: block; color: var(--ink); font-size: 12px; font-weight: 600; line-height: 1.35; }
+.creative-control-copy small { display: block; margin-top: 3px; color: var(--faint); font-size: 9px; line-height: 1.45; }
+.creative-control-row select { width: 100%; min-height: 34px; border: 1px solid rgba(94, 140, 166, 0.28); border-radius: 4px; padding: 6px 8px; color: var(--ink); background: rgba(255, 255, 255, 0.68); font-size: 11px; }
+.creative-control-row select:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.92); }
+.creative-control-row select:focus { border-color: var(--blue); outline: none; box-shadow: 0 0 0 3px rgba(47, 155, 255, 0.12); }
+.creative-control-range { min-width: 0; }
+.creative-control-range output { display: block; margin-bottom: 2px; color: var(--coral); font-size: 15px; font-weight: 650; text-align: right; }
+.creative-control-range .control-range { width: 100%; }
+.creative-controls-note { margin: 11px 0 0; color: var(--faint); font: 9px var(--meta-font); line-height: 1.45; }
 .market-panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(47, 155, 255, 0.22); background: rgba(247, 252, 255, 0.72); box-shadow: 0 8px 22px rgba(31, 72, 101, 0.06); }
 .market-panel-head { display: grid; gap: 3px; margin-bottom: 11px; }
 .market-panel-head .card-label { margin-bottom: 0; }
@@ -491,6 +509,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .inspiration-node small { font-size: 6px; }
   .inspiration-footer { align-items: flex-start; flex-direction: column; gap: 3px; }
   .content-grid, .form-row, .handoff-grid { grid-template-columns: 1fr; }
+  .creative-control-row, .creative-control-row.is-accent { grid-template-columns: 1fr; align-items: start; gap: 7px; }
+  .creative-control-range output { text-align: left; }
   .title-picker-head { flex-direction: column; gap: 8px; }
   .title-options { grid-template-columns: 1fr; }
   .title-option:last-child { grid-column: auto; }

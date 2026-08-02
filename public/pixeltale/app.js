@@ -27,7 +27,7 @@ const state = {
   routes: { orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "grok-4.5", dialogueReview: "claude-sonnet-5" },
   input: {
     platform: "TikTok / TikTok Series",
-    audience: "18-34 · English-speaking audience",
+    audience: "male_drama",
     episodeScale: "24 episodes",
     duration: "60-90 sec",
     episodeCount: 24,
@@ -132,6 +132,14 @@ function modeValue() {
 
 function modeLabel() {
   return state.mode === "tk" ? "TK SHORT DRAMA" : "LONG-FORM DRAMA";
+}
+
+function audienceValue(value = state.input.audience) {
+  return ["female", "female_drama", "女频", "女性"].includes(String(value || "").trim().toLowerCase()) ? "female_drama" : "male_drama";
+}
+
+function audienceLabel(value = state.input.audience) {
+  return audienceValue(value) === "female_drama" ? "女频" : "男频";
 }
 
 function currentMeta() {
@@ -436,7 +444,7 @@ function renderShellState() {
     button.querySelector("i")?.setAttribute("aria-label", artifact && state.approved.has(artifact.id) ? "已确认" : "未确认");
   });
   const liveMarketCountry = $("#marketCountry")?.value || state.input.marketCountry;
-  const context = ["独立编剧 Agent", state.mode === "tk" ? "TK 短剧" : "普通长剧", `市场 · ${marketCountryLabel(liveMarketCountry)}`, "English Dialogue", state.mode === "tk" ? "9:16" : "16:9"];
+  const context = ["独立编剧 Agent", state.mode === "tk" ? "TK 短剧" : "普通长剧", audienceLabel(), `市场 · ${marketCountryLabel(liveMarketCountry)}`, "English Dialogue", state.mode === "tk" ? "9:16" : "16:9"];
   $("#contextChips").innerHTML = context.map((item) => `<span>${escapeHtml(item)}</span>`).join("");
   renderModelTeam();
   const ready = handoffReady();
@@ -478,7 +486,7 @@ function collectBriefInput() {
   state.input = {
     ...state.input,
     platform: $("#platform")?.value || state.input.platform,
-    audience: $("#audience")?.value || state.input.audience,
+    audience: $("#audience")?.value || audienceValue(),
     idea: $("#idea")?.value || "",
   };
   return state.input;
@@ -652,13 +660,17 @@ function renderCreativeControls() {
   const long = state.mode === "long";
   const { impact, openingPromise, hookCadence, dialogueMode, handoffScope, options } = creativeControlValues();
   const opening = long
-    ? `<label class="control-label" for="openingPromise">${long ? "开场承诺" : "开头暴击"}</label><select id="openingPromise" data-creative-control>${selectOptions(options.openingPromise, openingPromise)}</select>`
-    : `<div class="control-heading"><label for="openingImpactRange">开头暴击窗口</label><output id="openingImpactValue" for="openingImpactRange">0-${impact}s</output></div><input id="openingImpactRange" class="control-range" type="range" min="0" max="5" step="1" value="${impact}" /><div class="control-scale"><span>0s</span><span>5s</span></div>`;
-  return `<section class="metric-stack creative-controls" aria-label="可调整创作参数">
-    <div class="metric-card control-card accent">${opening}</div>
-    <div class="metric-card control-card lime"><label class="control-label" for="hookCadence">${long ? "章节推进" : "每集钩子"}</label><select id="hookCadence" data-creative-control>${selectOptions(options.hookCadence, hookCadence)}</select></div>
-    <div class="metric-card control-card"><label class="control-label" for="dialogueMode">对白策略</label><select id="dialogueMode" data-creative-control>${selectOptions([["localized_english", "英文口语化本土化"], ["localized_english_sharp", "英文强口语 / 强冲突"], ["localized_english_subtle", "英文克制 / 低解释"]], dialogueMode)}</select></div>
-    <div class="metric-card control-card"><label class="control-label" for="handoffScope">输出范围</label><select id="handoffScope" data-creative-control>${selectOptions([["confirmed_versioned", "已确认 · 版本化"], ["confirmed_with_reviews", "已确认 + 复核记录"], ["script_and_assets", "剧本 + 视觉资产"]], handoffScope)}</select></div>
+    ? `<div class="creative-control-copy"><label for="openingPromise">开场承诺</label><small>先决定观众为什么继续看</small></div><select id="openingPromise" data-creative-control>${selectOptions(options.openingPromise, openingPromise)}</select>`
+    : `<div class="creative-control-copy"><label for="openingImpactRange">开头暴击窗口</label><small>前 5 秒建立首个冲突</small></div><div class="creative-control-range"><output id="openingImpactValue" for="openingImpactRange">0-${impact}s</output><input id="openingImpactRange" class="control-range" type="range" min="0" max="5" step="1" value="${impact}" /><div class="control-scale"><span>0s</span><span>5s</span></div></div>`;
+  return `<section class="creative-controls" aria-label="可调整创作参数">
+    <div class="creative-controls-head"><div><span class="card-label"><i></i>CREATIVE CONTROLS</span><h3>创作参数</h3></div><span class="creative-controls-count">4 项</span></div>
+    <div class="creative-control-list">
+      <div class="creative-control-row is-accent">${opening}</div>
+      <div class="creative-control-row"><div class="creative-control-copy"><label for="hookCadence">${long ? "章节推进" : "每集钩子"}</label><small>安排下一次追更理由</small></div><select id="hookCadence" data-creative-control>${selectOptions(options.hookCadence, hookCadence)}</select></div>
+      <div class="creative-control-row"><div class="creative-control-copy"><label for="dialogueMode">对白策略</label><small>决定对白的口语密度</small></div><select id="dialogueMode" data-creative-control>${selectOptions([["localized_english", "英文口语化本土化"], ["localized_english_sharp", "英文强口语 / 强冲突"], ["localized_english_subtle", "英文克制 / 低解释"]], dialogueMode)}</select></div>
+      <div class="creative-control-row"><div class="creative-control-copy"><label for="handoffScope">输出范围</label><small>决定交付包包含哪些内容</small></div><select id="handoffScope" data-creative-control>${selectOptions([["confirmed_versioned", "已确认 · 版本化"], ["confirmed_with_reviews", "已确认 + 复核记录"], ["script_and_assets", "剧本 + 视觉资产"]], handoffScope)}</select></div>
+    </div>
+    <p class="creative-controls-note">参数会自动保存，并作用于下一次生成。</p>
   </section>`;
 }
 
@@ -675,7 +687,7 @@ function renderBrief() {
     <div class="content-grid">
       <section class="form-panel">
         <h3>创作规格</h3>
-        <div class="form-row"><div class="field"><label for="platform">发布平台</label><select id="platform"><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>Web drama</option></select></div><div class="field"><label for="audience">目标受众</label><input id="audience" value="${escapeHtml(state.input.audience)}" /></div></div>
+        <div class="form-row"><div class="field"><label for="platform">发布平台</label><select id="platform"><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>Web drama</option></select></div><div class="field"><label for="audience">目标受众</label><select id="audience"><option value="male_drama" ${audienceValue() === "male_drama" ? "selected" : ""}>男频 · 男性观众</option><option value="female_drama" ${audienceValue() === "female_drama" ? "selected" : ""}>女频 · 女性观众</option></select><p class="small-note">选择后会同步对应的短剧叙事风格。</p></div></div>
         <div class="market-panel"><div class="market-panel-head"><span class="card-label"><i></i>MARKET LOCALIZATION</span><strong>投放市场决定人名、地名与社会语境</strong></div><div class="form-row"><div class="field"><label for="marketRegion">受众地区</label><select id="marketRegion">${selectOptions(Object.entries(marketRegionLabels), marketRegion)}</select></div><div class="field"><label for="marketCountry">投放国家 / 地区</label><select id="marketCountry">${marketCountryOptions(marketRegion, marketCountry)}</select></div></div><div class="field"><label for="localizationNote">本土化补充 <span class="optional">可选</span></label><input id="localizationNote" value="${escapeHtml(state.input.localizationNote || "")}" placeholder="例如：芝加哥蓝领社区、伦敦金融区或曼谷大学校园" /></div><p class="small-note">中文撰写剧情；角色与地名保留目标市场自然名称。英文对白按当地语境口语化，不做字对字翻译。</p></div>
         <div class="form-row"><div class="field slider-field"><div class="slider-label"><label for="episodeScaleRange">${long ? "章节数量" : "计划集数"}</label><output id="episodeScaleValue" for="episodeScaleRange">${episodeCount} ${config.episode.unit}</output></div><input id="episodeScaleRange" type="range" min="${config.episode.min}" max="${config.episode.max}" step="${config.episode.step}" value="${episodeCount}" /><div class="slider-scale"><span id="episodeScaleMin">${config.episode.min} ${config.episode.unit}</span><span id="episodeScaleMax">${config.episode.max} ${config.episode.unit}</span></div></div><div class="field slider-field"><div class="slider-label"><label for="durationRange">${long ? "单章时长" : "单集时长"}</label><output id="durationValue" for="durationRange">${durationValue} ${config.duration.unit}</output></div><input id="durationRange" type="range" min="${config.duration.min}" max="${config.duration.max}" step="${config.duration.step}" value="${durationValue}" /><div class="slider-scale"><span id="durationMin">${config.duration.min} ${config.duration.unit}</span><span id="durationMax">${config.duration.max} ${config.duration.unit}</span></div></div></div>
         <div class="field"><label for="idea">创作想法 <span aria-hidden="true">*</span></label><textarea id="idea" placeholder="用中文写下主角、欲望和核心冲突">${escapeHtml(idea)}</textarea><p class="small-note">中文描述剧情；英文对白会在对白阶段完成口语化本土化，不做逐句直译。</p></div>

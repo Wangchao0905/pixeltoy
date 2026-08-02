@@ -18600,27 +18600,33 @@ body.is-studio-modern .modern-icon-button { width: 32px; padding: 0; }
 
 .modern-episode-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(340px, auto);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 28px;
   align-items: center;
-  min-height: 82px;
-  padding: 12px 26px;
+  min-height: 104px;
+  padding: 17px 26px 16px;
   border-bottom: 1px solid var(--mv-line);
-  background: var(--mv-bg);
+  background: linear-gradient(105deg, rgba(255,255,255,.025), transparent 48%), var(--mv-bg);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
 }
-.modern-episode-copy { display: grid; min-width: 0; gap: 0; }
-.modern-episode-copy .modern-breadcrumb { gap: 9px; }
+.modern-episode-copy { display: grid; min-width: 0; gap: 8px; }
+.modern-episode-context { display: flex; gap: 8px; align-items: center; min-width: 0; color: var(--mv-qt); font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+.modern-episode-context i { color: var(--mv-line-2); font-style: normal; }
+.modern-episode-context #modernProjectCrumb { overflow: hidden; color: var(--mv-mut); font-family: inherit; letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
+.modern-episode-beacon { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--modern-signal); box-shadow: 0 0 0 3px rgba(217,45,69,.12), 0 0 10px rgba(217,45,69,.45); }
+.modern-episode-title-row { display: flex; gap: 12px; align-items: baseline; min-width: 0; }
+.modern-episode-title-row h2 { margin: 0; overflow: hidden; color: var(--mv-tx); font-size: 27px; font-weight: 650; line-height: 1; letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; }
+.modern-episode-ratio { display: inline-flex; flex: none; align-items: center; min-height: 23px; padding: 0 8px; border: 1px solid rgba(217,45,69,.35); border-radius: 5px; background: rgba(217,45,69,.08); color: #f2a0a6; font-family: var(--mono); font-size: 10px; }
 .modern-episode-compat-title,
 .modern-episode-compat-copy,
 .modern-episode-compat-state { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.modern-episode-hero .modern-breadcrumb h1 { font-size: 17px; }
 .modern-episode-kicker { display: flex; gap: 10px; align-items: center; color: var(--mv-qt); font-family: var(--mono); font-size: 11px; }
 .modern-episode-kicker b { padding: 3px 6px; border: 1px solid rgba(217,45,69,.38); border-radius: 3px; color: #f27a5b; font-weight: 500; }
 .modern-episode-kicker b.is-free { border-color: rgba(143,216,255,.34); background: rgba(143,216,255,.08); color: #9bdcff; }
 .modern-video-param.is-free > span { color: var(--mv-blue); }
 .modern-episode-copy h2 { margin: 7px 0 0; color: var(--mv-tx); font-size: 26px; line-height: 1; letter-spacing: 0; }
 .modern-episode-copy p { display: none; }
-.modern-episode-hero-stats { display: flex; gap: 16px; margin: 0; }
+.modern-episode-hero-stats { display: flex; gap: 18px; margin: 0; padding-left: 18px; border-left: 1px solid var(--mv-line); }
 .modern-episode-hero-stats div { min-width: 56px; }
 .modern-episode-hero-stats dt { color: var(--mv-qt); font-family: var(--mono); font-size: 10px; letter-spacing: .1em; }
 .modern-episode-hero-stats dd { margin: 3px 0 0; color: var(--mv-tx); font-family: var(--mono); font-size: 16px; }
@@ -18631,15 +18637,13 @@ body.is-studio-modern .modern-icon-button { width: 32px; padding: 0; }
 .modern-episode-hero .modern-episode-action small { color: rgba(255,255,255,.72); }
 .modern-episode-hero .modern-episode-action i { color: rgba(255,255,255,.72); }
 
-/* 视频生成是本集的主入口；配置按钮固定在当前镜头命令栏。 */
-.modern-episode-video-actions { display: flex; align-self: center; min-width: 0; }
+/* 视频生成是本集的主入口；配置和生成按钮固定在视频工作区命令栏。 */
 .modern-video-action { min-height: 36px; padding: 0 11px; border: 1px solid var(--mv-line-2); border-radius: 4px; background: var(--mv-s2); color: var(--mv-mut); font-size: 11px; font-weight: 600; letter-spacing: 0; cursor: pointer; }
 .modern-video-action:hover:not(:disabled) { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
 .modern-video-action-config { border-color: rgba(217,45,69,.58); background: rgba(217,45,69,.1); color: #f2a0a6; }
 .modern-video-action-config:hover:not(:disabled) { background: rgba(217,45,69,.18); color: #fff; }
 .modern-video-action-generate { border-color: var(--modern-signal); background: var(--modern-signal); color: #fff; box-shadow: 0 7px 20px -12px rgba(217,45,69,.9); }
 .modern-video-action-generate:hover:not(:disabled) { filter: brightness(1.06); color: #fff; }
-.modern-episode-video-actions .modern-video-action-generate { width: 100%; min-width: 174px; }
 .modern-video-action:disabled { border-color: var(--mv-line); background: var(--mv-s1); color: var(--mv-qt); cursor: not-allowed; opacity: .62; box-shadow: none; }
 
 body.is-studio-modern .modern-pipeline { padding: 15px 26px 0; }
@@ -18679,7 +18683,6 @@ body.is-studio-modern .modern-kit-bar { margin: 16px 26px 0; border-radius: 5px;
   .modern-episode-hero-stats { margin-top: 18px; }
   .modern-episode-actions { display: grid; gap: 12px; margin-top: 14px; }
   .modern-episode-actions .modern-top-actions { justify-content: flex-start; }
-  .modern-episode-video-actions { width: 100%; min-width: 0; }
 }
 
 /* Video takes stay together below the workbench. The frame is intentionally
@@ -19063,7 +19066,14 @@ body.is-studio-modern .modern-command-status .modern-shot-lineage {
 body.is-studio-modern .modern-command-status .modern-shot-lineage i {
   width: 10px;
 }
-body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
+body.is-studio-modern .modern-shot-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+body.is-studio-modern .modern-shot-actions .modern-video-action {
   align-self: center;
   min-width: 142px;
   min-height: 36px;
@@ -19086,7 +19096,7 @@ body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
   }
   body.is-studio-modern .modern-selected-shot { grid-column: 1; grid-row: 1; }
   body.is-studio-modern .modern-command-status { grid-column: 2; grid-row: 1; }
-  body.is-studio-modern .modern-shot-commandbar > .modern-video-action { grid-column: 3; grid-row: 1; }
+  body.is-studio-modern .modern-shot-actions { grid-column: 3; grid-row: 1; }
   body.is-studio-modern .modern-video-params {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -19105,11 +19115,12 @@ body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
     min-width: 0;
     padding-right: 0;
   }
-  body.is-studio-modern .modern-shot-commandbar > .modern-video-action {
+  body.is-studio-modern .modern-shot-actions {
     grid-column: 1 / -1;
     grid-row: 4;
     width: 100%;
   }
+  body.is-studio-modern .modern-shot-actions .modern-video-action { flex: 1 1 0; }
   body.is-studio-modern .modern-video-params {
     grid-row: 2;
     align-items: stretch;

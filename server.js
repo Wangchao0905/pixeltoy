@@ -9826,7 +9826,7 @@ function finalCutStatus(episodeRoot) {
     const stat = outputStat;
     output = {
       url: `/media?path=${encodeURIComponent(out)}&v=${Math.round(stat.mtimeMs)}`,
-      downloadUrl: `/media?path=${encodeURIComponent(out)}&v=${Math.round(stat.mtimeMs)}&download=1`,
+      downloadUrl: `/media?path=${encodeURIComponent(out)}&v=${Math.round(stat.mtimeMs)}&download=1&final_cut=1`,
       updatedAt: stat.mtime.toISOString(),
       size: stat.size,
     };
@@ -25124,12 +25124,25 @@ async function proxyVideoDownload(req, res, url) {
   await pipeline(upstream.body, res);
 }
 
+// 成片下载仍由 /media 完成鉴权；仅在 Nginx 明确声明支持内部重定向时，
+// 才把当前项目的 rough_cut.mp4 交给 Nginx 静态发送。直连 Node/本地开发继续走下方流式回退。
+function finalCutAccelRedirect(req, file) {
+  if (compactLine(req.headers["x-pixel-toy-final-cut-accel"]) !== "1") return "";
+  const episodeRoot = episodeRootForFile(file);
+  if (!episodeRoot || path.resolve(file) !== path.resolve(finalCutOutputFile(episodeRoot))) return "";
+  const relative = path.relative(DEFAULT_PROJECT_ROOT, file);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return "";
+  const encodedRelative = relative.split(path.sep).map((segment) => encodeURIComponent(segment)).join("/");
+  return `/_pixel-toy-final-cut/${encodedRelative}`;
+}
+
 function serveMedia(req, res, file, options = {}) {
   const stat = fs.statSync(file);
   const ext = path.extname(file).toLowerCase();
   const contentType = MIME[ext] || "application/octet-stream";
   const range = req.headers.range;
   const disposition = options.download ? { "Content-Disposition": contentDispositionName(file) } : {};
+  const accelRedirect = compactLine(options.accelRedirect || "");
   // Versioned URLs (/media?...&v=<mtime-size-ino>) are content-addressed: any
   // change to the file changes v and therefore the URL, so we can cache them
   // hard. This stops every page refresh from re-downloading all asset images.
@@ -25141,6 +25154,16 @@ function serveMedia(req, res, file, options = {}) {
     : options.cacheSeconds
       ? `public, max-age=${options.cacheSeconds}`
       : "no-store";
+  if (accelRedirect) {
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": cacheControl,
+      ...disposition,
+      "X-Accel-Redirect": accelRedirect,
+      "X-Accel-Buffering": "no",
+    });
+    return res.end();
+  }
   if (!range) {
     res.writeHead(200, {
       "Content-Type": contentType,
@@ -25209,7 +25232,8 @@ const handleRequest = async (req, res) => {
         const thumb = await ensureThumbnail(file, thumbParam);
         if (thumb) return serveMedia(req, res, thumb, { cacheSeconds: 86400 });
       }
-      return serveMedia(req, res, file, { download });
+      const accelRedirect = download && url.searchParams.get("final_cut") === "1" ? finalCutAccelRedirect(req, file) : "";
+      return serveMedia(req, res, file, { download, accelRedirect });
     }
     if (url.pathname === "/api/canvas/video-download") return await proxyVideoDownload(req, res, url);
     if (url.pathname.startsWith("/public-assets/")) {

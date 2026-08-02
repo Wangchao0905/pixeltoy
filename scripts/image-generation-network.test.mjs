@@ -71,6 +71,12 @@ vm.runInContext(`${extractFunction(imageGen, "shouldFallbackToResponses")}; glob
 if (!fallbackContext.shouldFallbackToResponses({ detail: { status: 503, body: '{"error":{"message":"No available compatible accounts"}}' } })) {
   throw new Error("503 no-account text generation failures must fall back to the Responses image tool");
 }
+if (!fallbackContext.shouldFallbackToResponses({ detail: { status: 502, body: "Bad Gateway" } })) {
+  throw new Error("502 gateway failures must fall back to the Responses image tool");
+}
+if (!fallbackContext.shouldFallbackToResponses({ detail: { status: 504, body: "Gateway Timeout" } })) {
+  throw new Error("504 gateway failures must fall back to the Responses image tool");
+}
 if (fallbackContext.shouldFallbackToResponses({ detail: { status: 503, body: '{"error":{"message":"service temporarily unavailable"}}' } })) {
   throw new Error("generic 503 failures must not trigger an unbounded second generation route");
 }

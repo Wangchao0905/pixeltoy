@@ -302,6 +302,10 @@ async function readImageResponse(response, timeoutSeconds = 0) {
 function shouldFallbackToResponses(error) {
   const status = Number(error?.detail?.status || 0);
   const text = `${error?.message || ""} ${error?.detail?.body || ""}`.toLowerCase();
+  // A 502/504 is emitted by the gateway or its upstream before a generation
+  // task is accepted. The Responses image tool is a separate route and can
+  // remain available when the legacy images route is unhealthy.
+  if (status === 502 || status === 504) return true;
   // The gateway can have capacity for the Responses image tool while its
   // legacy /images/generations account pool is empty. Keep this fallback
   // narrow: a generic 503 should not trigger a second paid request.

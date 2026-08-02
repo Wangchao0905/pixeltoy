@@ -23,6 +23,7 @@ const { createAssetLibrary } = require("./server/asset-library.js");
 const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
 const { ensureThumbnail } = require("./server/thumbnailer.js");
 const fsRequestCache = require("./server/fs-request-cache.js");
+const { createCanvasStateScanCache } = require("./server/canvas-state-scan-cache.js");
 fsRequestCache.install(fs);
 fsRequestCache.assertInstalled(fs);
 const {
@@ -116,6 +117,7 @@ const VIDEO_API_REQUEST_TIMEOUT_MS = Math.max(10_000, Number(process.env.VIDEO_A
 const PROJECT_VIDEO_RANGE_CHUNK_BYTES = Math.max(64 * 1024, Number(process.env.PROJECT_VIDEO_RANGE_CHUNK_BYTES || 128 * 1024));
 const PROJECT_VIDEO_RANGE_CONCURRENCY = Math.max(1, Math.min(16, Number(process.env.PROJECT_VIDEO_RANGE_CONCURRENCY || 16)));
 const CANVAS_STATE_DIR = path.join(APP_ROOT, ".pixel-toys-canvas-states");
+const canvasStateScanCache = createCanvasStateScanCache({ fs, path, resolveEpisodeRoot: episodeRootFromCanvasProjectId });
 const CANVAS_PUBLIC_ASSET_DIR = path.join(APP_ROOT, ".pixel-toys-public-assets");
 const HIDDEN_SCENE_REFERENCE_DIR = path.join(APP_ROOT, ".pixel-toys-hidden-scene-references");
 const CANVAS_VIDEO_DEFAULT_WIDTH = 780;
@@ -1561,14 +1563,17 @@ function readCanvasState(projectId = "") {
 
 function canvasStatesForEpisodeRoot(episodeRoot = "") {
   const root = path.resolve(episodeRoot || "");
-  if (!root || !fs.existsSync(CANVAS_STATE_DIR)) return [];
+  // existsSync(root) 这一条是**承重的**,别当冗余检查删掉:索引里缓存的 episodeRoot
+  // 是当初解析出来的,集目录事后被删时那个凭证(画布文件的 mtime+size)不会变,
+  // 于是 entry.episodeRoot === root 仍会命中,把已删项目的 state 照原样发出去。
+  // 这里短路掉是唯一的防线。不清整个索引:查询根不存在只说明这一次查询无效,
+  // 与其余 180 多个条目无关,清掉等于让下一次合法轮询白付一次全量重读。
+  if (!root || !fs.existsSync(root) || !fs.existsSync(CANVAS_STATE_DIR)) return [];
   const states = [];
-  for (const file of fs.readdirSync(CANVAS_STATE_DIR)) {
-    if (!file.endsWith(".json")) continue;
+  for (const file of canvasStateScanCache.filesForEpisodeRoot(CANVAS_STATE_DIR, root)) {
     try {
-      const state = JSON.parse(fs.readFileSync(path.join(CANVAS_STATE_DIR, file), "utf8"));
-      const canvasEpisodeRoot = episodeRootFromCanvasProjectId(state.projectId || "");
-      if (canvasEpisodeRoot && path.resolve(canvasEpisodeRoot) === root) states.push(state);
+      const state = JSON.parse(fs.readFileSync(file, "utf8"));
+      states.push(state);
     } catch {
       // Ignore malformed canvas state files.
     }
@@ -25193,6 +25198,9 @@ module.exports = {
       tools: CANVAS_AGENT_TOOLS,
       action: canvasAgentActionResult,
       executeTool: executeCanvasAgentTool,
+    },
+    canvasState: {
+      canvasStatesForEpisodeRoot,
     },
     draft: {
       buildDraft,

@@ -1,10 +1,12 @@
 // 防复发闸门:断言一次 /status（fullProjectState）在请求级缓存下的 syscall 数
-// 不超过阈值。有人往热路径加了重复读，这条测试直接变红。
+// 足够少。有人往热路径加了重复读,这条测试直接变红。
 //
-// 这里不使用总读盘次数或总读盘比率。fullProjectState 也会扫描共享画布目录,
-// 唯一文件的数量随开发机环境变化；把这些不可去重的读取计入分母会让缓存正常时
-// 也出现假红。改用两个真正与缓存契约对应的不变量:
-//   A. 节省量:开缓存必须消除足够多的重复读取。
+// 这里不使用总读盘次数的绝对阈值,也不直接使用全量读盘比值。fullProjectState
+// 会扫描共享画布目录,里面唯一路径的文件数量随开发机环境变化;缓存无法消除
+// 这类读取,把它们计入分子和分母会让正常缓存的比值随环境漂移。比值只有在新增
+// 读取也属于可去重的重复读取时才与环境无关。因此 A/B 只统计落在本次夹具临时
+// 项目目录内的读,不按某个共享目录名维护白名单:
+//   A. 比值:开缓存的读次数 / 不开缓存的读次数 <= 0.15。
 //   B. 重复读:同一请求内同一路径不得被重复读超过少量几次。
 //      —— 这是缓存的契约本身。有人绕过缓存(比如改用 fs.promises.readFile)时,
 //      重复数会立刻涨回去。优化前重复 930 次 readFile + 2892 次 stat/exists。
@@ -17,7 +19,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const APP = process.cwd();
-const MIN_SAVED_READS = 1000; // 当前热路径实测可消除约 1,400 次重复读取，留出合理余量。
+const MAX_CACHED_RATIO = 0.15;
 const MAX_DUPES = 5; // 实测 0 次。留一点余量,免得热路径里加一处同步写就假红
 
 // 关键:计数器必须在 server.js 加载之前装上。
@@ -31,7 +33,10 @@ for (const name of ["readFileSync", "statSync", "existsSync", "readdirSync"]) {
   realFs[name] = r;
   fs[name] = function (...args) {
     syscalls += 1;
-    if (trace) trace.push(`${name} ${args[0]}`);
+    if (trace) {
+      const file = typeof args[0] === "string" ? path.resolve(args[0]) : null;
+      trace.push({ name, file });
+    }
     return r.apply(this, args);
   };
 }
@@ -44,6 +49,14 @@ const tmp = fs.mkdtempSync(path.join(APP, ".tmp-fs-cache-budget-"));
 const episodeRoot = path.join(tmp, "outputs", "e01");
 fs.mkdirSync(episodeRoot, { recursive: true });
 fs.writeFileSync(path.join(episodeRoot, "e01_script.md"), "# 测试\n\n场景 1\n");
+
+function isFixturePath(file) {
+  return file === tmp || file?.startsWith(`${tmp}${path.sep}`);
+}
+
+function fixtureReads(entries) {
+  return entries.filter(({ file }) => isFixturePath(file));
+}
 
 try {
   const src = fs
@@ -73,25 +86,35 @@ try {
 
   // 不开缓存(没有 ALS store,= 优化前的行为)
   syscalls = 0;
+  trace = [];
   fullProjectState(episodeRoot);
-  const passthrough = syscalls;
+  const passthroughTrace = fixtureReads(trace);
+  const passthrough = passthroughTrace.length;
 
   // 开缓存,同时记录每一次读的路径
   syscalls = 0;
   trace = [];
   fsRequestCache.runInRequest(() => fullProjectState(episodeRoot));
-  const cached = syscalls;
+  const cachedTrace = fixtureReads(trace);
+  const cached = cachedTrace.length;
+  // 断言 B 刻意统计**全部**读,不限夹具内。重复读天生与环境无关:共享画布目录里
+  // 每个文件只被读一次,贡献 0 次重复,不管那儿攒了 24 个还是 1290 个文件
+  // (实测主副本全量 2634 次读 / 2634 个唯一路径 / 重复 0 次)。把它也缩到夹具内
+  // 是白送掉捕获能力 —— 夹具外新增的重复读会变得完全不可见。
   const seen = new Map();
-  for (const key of trace) seen.set(key, (seen.get(key) || 0) + 1);
+  for (const { name, file } of trace) {
+    const key = `${name} ${file}`;
+    seen.set(key, (seen.get(key) || 0) + 1);
+  }
   trace = null;
   const dupes = [...seen.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
   const worst = [...seen.entries()].filter(([, c]) => c > 1).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const saved = passthrough - cached;
+  const ratio = cached / passthrough;
 
   assert.ok(
-    saved >= MIN_SAVED_READS,
-    `请求级 fs 缓存去重不足:开缓存 ${cached} 次 / 不开 ${passthrough} 次,` +
-    `仅节省 ${saved} 次，低于下限 ${MIN_SAVED_READS}。\n` +
+    passthrough > 0 && ratio <= MAX_CACHED_RATIO,
+    `请求级 fs 缓存去重不足:夹具内开缓存 ${cached} 次 / 不开 ${passthrough} 次,` +
+    `比值 ${ratio.toFixed(3)}，高于上限 ${MAX_CACHED_RATIO}。\n` +
     `常见原因:缓存被摘掉、handler 不再被 runInRequest 包住、` +
     `或热路径里新增了写操作导致缓存被反复清空。`
   );
@@ -146,8 +169,8 @@ try {
   }
 
   console.log(
-    `fs-cache budget test passed: ${passthrough} → ${cached} 次读盘 ` +
-    `(节省 ${saved} 次 ≥ ${MIN_SAVED_READS}), 重复读 ${dupes} 次 ≤ ${MAX_DUPES}`
+    `fs-cache budget test passed: 夹具内 ${passthrough} → ${cached} 次读盘 ` +
+    `(比值 ${ratio.toFixed(3)} ≤ ${MAX_CACHED_RATIO}), 重复读 ${dupes} 次 ≤ ${MAX_DUPES}`
   );
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

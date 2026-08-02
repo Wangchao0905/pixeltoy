@@ -28,8 +28,11 @@ const IMAGE_API_KEY_ENV_NAMES = [
 const IMAGE_GEN_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || process.env.IMAGE_GEN_IMAGE_MODEL || "gpt-image-2";
 const IMAGE_GEN_ORCHESTRATION_MODEL = process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_MODEL || "gpt-5.4-mini";
 const DEFAULT_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10);
-const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_TIMEOUT_SECONDS || "180", 10);
-const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "120", 10);
+// 生产实测:同一张 Production Board 成功耗时横跨 31s ~ 430s,失败的 7 次全部是
+// 180s 上限砍断(日志里 payload 明写 "timeout": 180)。故事板是**最慢**的资产类型
+// ——一张板要一次画完 9 格,不能沿用比它快的单图预算。
+const STORYBOARD_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_IMAGE_TIMEOUT_SECONDS || "900", 10);
+const STORYBOARD_RESCUE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_STORYBOARD_RESCUE_TIMEOUT_SECONDS || "300", 10);
 const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRIES || "2", 10);
 // Production Boards are user-scoped, manually retryable jobs. Never let a
 // stale process environment turn one click into a second full upstream wait.
@@ -1442,19 +1445,20 @@ function boundedTimeoutSeconds(value, fallback) {
 }
 
 function boundedStoryboardTimeoutSeconds(value, fallback) {
-  const parsed = Number.parseInt(String(value || ""), 10);
+  const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  // A Production Board is a single 16:9 sheet. Letting an upstream request
-  // occupy a worker for fifteen minutes makes a recoverable gateway stall look
-  // like an endless generation to the user.
-  return Math.max(60, Math.min(parsed, 180));
+  // 卡死不靠这个数字兜底,靠 image-gen.js 在消费 SSE 期间保持 abort signal 有效
+  // (网关可以先发 headers 再停止推流)。上限压到 180 只会把**诚实的慢**也砍掉:
+  // 生产上 7 次连续失败都是被 180 砍的,同一张板另有 430s 成功的记录。
+  // 这里的上限与其它资产一致(900),让环境变量真正可调,而不是被静默夹掉。
+  return Math.max(60, Math.min(parsed, 900));
 }
 
 function timeoutSecondsFor(asset, stage = "primary") {
   if (asset?.type === "Storyboard") {
     return stage === "rescue"
-      ? boundedStoryboardTimeoutSeconds(STORYBOARD_RESCUE_TIMEOUT_SECONDS, 120)
-      : boundedStoryboardTimeoutSeconds(STORYBOARD_IMAGE_TIMEOUT_SECONDS, 180);
+      ? boundedStoryboardTimeoutSeconds(STORYBOARD_RESCUE_TIMEOUT_SECONDS, 300)
+      : boundedStoryboardTimeoutSeconds(STORYBOARD_IMAGE_TIMEOUT_SECONDS, 900);
   }
   return boundedTimeoutSeconds(DEFAULT_IMAGE_TIMEOUT_SECONDS, 900);
 }
@@ -1464,7 +1468,11 @@ function execTimeoutMsFor(seconds) {
 }
 
 function boundedRetryCount(value, fallback) {
-  const parsed = Number.parseInt(String(value || ""), 10);
+  // `??` 而非 `||`:这个函数里 0 是**有意义的取值**(不重试),而 0 是 falsy。
+  // 写成 String(value || "") 会把 0 变成空串 → NaN → 返回 fallback,于是
+  // STORYBOARD_IMAGE_RETRIES = 0 被静默变成 1 次重试。生产日志实证:
+  // 单次上限 180s 的任务总耗时恒为 373s = 180 + 12(退避) + 180。
+  const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
   return Math.max(0, Math.min(parsed, 4));
 }

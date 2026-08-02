@@ -12,5 +12,7 @@ assert.match(app, /function startNewDraft\(\)[\s\S]*localStorage\.setItem\(SESSI
 assert.match(app, /function userFacingError\(error\)/, "provider errors must be normalized for users");
 assert.match(app, /next-step-error[\s\S]*role="alert"/, "run errors must remain visible beside the next action");
 assert.match(app, /const actionCopy = state\.lastError[\s\S]*生成失败：\$\{state\.lastError\}/, "next action must explain a failed run");
+assert.match(app, /function renderBriefArtifact\(\)/, "brief output must show its generated artifact and review state");
+assert.match(app, /复核未通过[\s\S]*修改后重新生成/, "brief review failures must explain how to continue");
 
 console.log("pixeltale workflow contract ok");

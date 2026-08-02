@@ -492,9 +492,9 @@ function nextStepMeta() {
   return {
     kind: "run",
     stage: flowStage,
-    title: `修订${flowMeta.title}`,
-    copy: "复核发现需要修订的内容。重新生成会建立新版本，修订项会保留在当前阶段。",
-    label: `重新生成${flowMeta.title} →`,
+    title: `${flowMeta.title}需要修订`,
+    copy: "生成已经完成，但交叉审核未通过。修改当前阶段内容后重新生成，审核通过后才能确认并进入下一步。",
+    label: "修改后重新生成 →",
     flowStage,
   };
 }
@@ -649,7 +649,7 @@ function updateMarketCountryList() {
 function renderInspirationPool() {
   const audienceGender = audienceGenderLabels[state.input.audienceGender] ? state.input.audienceGender : "all";
   const recommended = audienceDnaRecommendations[audienceGender] || new Set();
-  const nodes = inspirationPool.map((item) => `<button class="inspiration-node${recommended.has(item.keyword) ? " is-recommended" : ""}" type="button" data-inspiration="${escapeHtml(item.keyword)}" style="--node-x:${item.x}%;--node-y:${item.y}%;--node-r:${item.r}deg;--node-duration:${item.duration}s;--node-delay:${item.delay}s" title="添加“${escapeHtml(item.keyword)}”到创作想法"><span>${escapeHtml(item.keyword)}</span><small>${escapeHtml(item.kind)} · ${escapeHtml(item.source)}</small></button>`).join("");
+  const nodes = inspirationPool.map((item) => `<button class="inspiration-node${recommended.has(item.keyword) ? " is-recommended" : ""}" type="button" data-inspiration="${escapeHtml(item.keyword)}" style="--node-x:${item.x}%;--node-y:${item.y}%;--node-r:${item.r}deg" title="添加“${escapeHtml(item.keyword)}”到创作想法"><span>${escapeHtml(item.keyword)}</span><small>${escapeHtml(item.kind)} · ${escapeHtml(item.source)}</small></button>`).join("");
   const recommendation = audienceGender === "all" ? "选择受众方向后推荐标签会高亮" : `${audienceGenderLabels[audienceGender]} · ${recommended.size} 个 DNA 推荐`;
   return `<section class="inspiration-pool" aria-labelledby="inspirationPoolTitle"><div class="inspiration-pool-head"><div><span class="card-label"><i></i>STORY DNA</span><h3 id="inspirationPoolTitle">灵感池</h3><p>近五年热剧的题材、爽点、爆火基因、叙事逻辑与主角身份，点击即可加入创作想法。</p></div><div class="inspiration-meta"><span class="inspiration-period">2021—2026</span><span class="inspiration-recommendation${audienceGender === "all" ? "" : " is-active"}"><i></i>${recommendation}</span></div></div><div class="inspiration-orbit" role="list">${nodes}<span class="inspiration-core" aria-hidden="true"><i></i><strong>STORY<br />DNA</strong><small>可点击采样</small></span></div><div class="inspiration-footer"><span>Netflix · HBO · Sony Pictures TV · DNA 提炼</span><span>不复制具体作品</span></div></section>`;
 }
@@ -786,6 +786,25 @@ function renderCreativeControls() {
   </section>`;
 }
 
+function renderBriefArtifact() {
+  const artifact = artifactForStage("brief");
+  if (!artifact) return "";
+  const review = reviewForArtifact(artifact);
+  const reviewContent = review?.content || {};
+  const passed = artifact.status === "ready" && reviewContent.pass !== false;
+  const changes = (Array.isArray(reviewContent.required_changes) ? reviewContent.required_changes : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .slice(0, 8);
+  const findings = (Array.isArray(reviewContent.findings) ? reviewContent.findings : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .slice(0, 8);
+  const feedback = changes.length ? changes : findings;
+  const status = passed ? "已生成 · 复核通过 · 待确认" : review ? "已生成 · 复核未通过" : "已生成 · 等待复核";
+  return `<section class="artifact-card live-artifact brief-result" aria-labelledby="briefResultTitle"><div class="stage-kicker"><span class="card-label"><i></i>STORY SPECIFICATION</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(status)}</span></div><h3 id="briefResultTitle">第一步生成结果</h3><div class="structured-content">${renderValue(artifact.content)}</div><div class="review-summary ${passed ? "is-passed" : "is-needs-review"}"><strong>${passed ? "复核通过，可以确认并进入下一步" : review ? "复核未通过，需要先修订" : "正在等待复核结果"}</strong><p>${passed ? "点击底部“确认并进入选择剧名”，才会推进到第二步。" : review ? "修改上方创作规格或创作想法后，点击底部“修改后重新生成”。" : "三模型复核完成后，这里会显示具体处理方式。"}</p>${feedback.length ? `<ul>${feedback.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</div></section>`;
+}
+
 function renderBrief() {
   const long = state.mode === "long";
   const idea = state.input.idea || "";
@@ -808,6 +827,7 @@ function renderBrief() {
       </section>
       ${renderCreativeControls()}
     </div>
+    ${renderBriefArtifact()}
     ${renderInspirationPool()}
     ${renderNextStep()}`;
 }

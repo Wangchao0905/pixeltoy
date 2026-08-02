@@ -9445,6 +9445,7 @@ async function generateVideoSegment(shotName = "", { forceRegenerate = false } =
       forceRegenerate,
       dialectStyle: selectedVideoDialectStyle(),
       sfxStyle: selectedVideoSfxStyle(),
+      enableRealPersonVerification: $("#modernRealPersonVerification")?.checked === true,
     }),
   });
   setProjectState(data.state);
@@ -9466,6 +9467,7 @@ async function generateVideoConfigForSegment(shotName = "") {
       assetAnalyzerModel: state.assetAnalyzerModel,
       dialectStyle: selectedVideoDialectStyle(),
       sfxStyle: selectedVideoSfxStyle(),
+      enableRealPersonVerification: $("#modernRealPersonVerification")?.checked === true,
     }),
   });
   setProjectState(data.state);
@@ -9492,6 +9494,7 @@ async function generateAllVideoSegments() {
     body: JSON.stringify({
       dialectStyle: selectedVideoDialectStyle(),
       sfxStyle: selectedVideoSfxStyle(),
+      enableRealPersonVerification: $("#modernRealPersonVerification")?.checked === true,
     }),
   });
   setProjectState(data.state);

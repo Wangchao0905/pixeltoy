@@ -48,8 +48,38 @@ const enabled = __test.videoSettings.updateVideoSettingsInConfig(original, { ena
 assert.equal(enabled.settings.enableRealPersonVerification, true, "开关必须保存到视频设置");
 assert.equal(original.settings.enableRealPersonVerification, false, "设置更新不得修改旧配置对象");
 
+assert.equal(
+  typeof __test.videoVerification?.applyRequestedRealPersonVerification,
+  "function",
+  "视频提交必须能用当前开关值覆盖尚未落盘的旧设置",
+);
+const requestRecord = { data: original };
+const requestConfig = __test.videoVerification.applyRequestedRealPersonVerification(requestRecord, {
+  enableRealPersonVerification: true,
+});
+assert.equal(
+  requestConfig.settings.enableRealPersonVerification,
+  true,
+  "用户已开启真人验证时，提交视频不能继续使用旧的 false 配置",
+);
+assert.equal(
+  requestRecord.data.settings.enableRealPersonVerification,
+  true,
+  "提交路径必须把当前开关值写回配置，供认证队列和后续片段复用",
+);
+
 assert.match(html, /id="modernRealPersonVerification"/, "视频参数区域必须显示真人验证开关");
 assert.match(app, /enableRealPersonVerification/, "前端必须将真人验证状态写入视频设置接口");
+assert.match(
+  app,
+  /video-generate[\s\S]*?enableRealPersonVerification:/,
+  "单片段提交必须携带当前真人验证开关，不能只依赖异步设置保存",
+);
+assert.match(
+  app,
+  /video-generate-all[\s\S]*?enableRealPersonVerification:/,
+  "批量提交必须携带当前真人验证开关，不能只依赖异步设置保存",
+);
 assert.match(server, /function scheduleProjectRealPersonVerification\(/, "开启开关后必须立即启动人物素材认证");
 assert.match(server, /scheduleProjectRealPersonVerification\(episodeRoot, configRecord\)/, "视频设置接口必须在开启真人验证后启动后台认证");
 

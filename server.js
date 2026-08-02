@@ -16290,7 +16290,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
   if (!shotName) throw new Error("缺少要生成的视频片段");
   const authUser = body.authUser || null;
   const configRecord = readVideoConfig(episodeRoot);
-  let config = configRecord?.data || {};
+  let config = applyRequestedRealPersonVerification(configRecord, body) || configRecord?.data || {};
   const fallback = canvasVideoFallbackForShot(episodeRoot, shotName);
   if (!Array.isArray(config.shots) || !config.shots.length) config = fallback?.config || config;
   config = { ...config, episodeRoot };
@@ -21289,6 +21289,19 @@ function updateVideoSettingsInConfig(rawConfig = {}, body = {}) {
   };
 }
 
+// 参数切换和“生成视频”是两个独立请求。用户刚切换真人验证就提交时，
+// 后者可能先抵达服务端；提交请求携带当前值后，以它为准落盘，避免按旧配置直传人物图。
+function applyRequestedRealPersonVerification(configRecord, body = {}) {
+  const requested = body?.enableRealPersonVerification;
+  const current = configRecord?.data;
+  if (!current || typeof requested !== "boolean") return current || {};
+  if (current.settings?.enableRealPersonVerification === requested) return current;
+  const next = updateVideoSettingsInConfig(current, { enableRealPersonVerification: requested });
+  writeVideoConfigRecord(configRecord, next);
+  configRecord.data = next;
+  return next;
+}
+
 function manifestItemsToAssets(manifest) {
   return (manifest?.items || []).map((item) => ({
     type: item.type,
@@ -25373,6 +25386,7 @@ module.exports = {
       projectShotUsableVideoReferenceAssets,
     },
     videoVerification: {
+      applyRequestedRealPersonVerification,
       arkPersonReferenceNames,
       realPersonVerificationEnabled,
     },

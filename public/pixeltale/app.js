@@ -27,7 +27,8 @@ const state = {
   routes: { orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "grok-4.5", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
   input: {
     platform: "TikTok / TikTok Series",
-    audience: "male_drama",
+    audience: "18-34 · English-speaking audience",
+    audienceGender: "all",
     episodeScale: "24 episodes",
     duration: "60-90 sec",
     episodeCount: 24,
@@ -113,7 +114,65 @@ const inspirationPool = [
   { keyword: "悬念续燃", kind: "叙事逻辑", source: "Sony TV", x: 90, y: 94, r: 4, duration: 73, delay: -44 },
   { keyword: "信息错位", kind: "叙事逻辑", source: "HBO", x: 17, y: 42, r: 7, duration: 56, delay: -67 },
   { keyword: "终局回收", kind: "叙事逻辑", source: "Netflix", x: 48, y: 96, r: -6, duration: 79, delay: -31 },
+  { keyword: "职场权谋", kind: "题材", source: "HBO", x: 8, y: 5, r: -4, duration: 82, delay: -19 },
+  { keyword: "法律惊案", kind: "题材", source: "Sony TV", x: 31, y: 7, r: 3, duration: 74, delay: -41 },
+  { keyword: "科技惊悚", kind: "题材", source: "Netflix", x: 55, y: 5, r: -2, duration: 88, delay: -64 },
+  { keyword: "宫廷复仇", kind: "题材", source: "HBO", x: 78, y: 8, r: 4, duration: 76, delay: -26 },
+  { keyword: "都市爱情", kind: "题材", source: "Sony TV", x: 93, y: 17, r: -3, duration: 83, delay: -56 },
+  { keyword: "历史秘闻", kind: "题材", source: "Netflix", x: 47, y: 30, r: 5, duration: 71, delay: -35 },
+  { keyword: "绝地翻盘", kind: "爽点", source: "Netflix", x: 7, y: 37, r: 4, duration: 85, delay: -23 },
+  { keyword: "身份曝光", kind: "爽点", source: "HBO", x: 29, y: 45, r: -4, duration: 72, delay: -47 },
+  { keyword: "权力反噬", kind: "爽点", source: "Sony TV", x: 70, y: 28, r: 3, duration: 81, delay: -15 },
+  { keyword: "旧爱重逢", kind: "爽点", source: "Netflix", x: 94, y: 35, r: -5, duration: 77, delay: -52 },
+  { keyword: "逆风破局", kind: "爽点", source: "HBO", x: 31, y: 58, r: 5, duration: 89, delay: -31 },
+  { keyword: "致命交易", kind: "爽点", source: "Sony TV", x: 71, y: 51, r: -3, duration: 73, delay: -62 },
+  { keyword: "情绪共鸣", kind: "爆火基因", source: "Netflix", x: 11, y: 59, r: -4, duration: 84, delay: -28 },
+  { keyword: "反转名场", kind: "爆火基因", source: "HBO", x: 40, y: 38, r: 4, duration: 78, delay: -43 },
+  { keyword: "设定代入", kind: "爆火基因", source: "Sony TV", x: 61, y: 59, r: -5, duration: 86, delay: -12 },
+  { keyword: "反派魅力", kind: "爆火基因", source: "Netflix", x: 91, y: 61, r: 3, duration: 75, delay: -48 },
+  { keyword: "金句传播", kind: "爆火基因", source: "HBO", x: 10, y: 79, r: 5, duration: 90, delay: -38 },
+  { keyword: "追更惯性", kind: "爆火基因", source: "Netflix", x: 53, y: 80, r: -3, duration: 79, delay: -57 },
+  { keyword: "伏笔回收", kind: "叙事逻辑", source: "HBO", x: 28, y: 69, r: 4, duration: 87, delay: -21 },
+  { keyword: "多线交汇", kind: "叙事逻辑", source: "Sony TV", x: 73, y: 76, r: -4, duration: 76, delay: -45 },
+  { keyword: "视角反转", kind: "叙事逻辑", source: "Netflix", x: 92, y: 87, r: 3, duration: 82, delay: -29 },
+  { keyword: "秘密递交", kind: "叙事逻辑", source: "HBO", x: 36, y: 93, r: -5, duration: 91, delay: -55 },
+  { keyword: "关系重组", kind: "叙事逻辑", source: "Sony TV", x: 61, y: 96, r: 4, duration: 74, delay: -16 },
+  { keyword: "真相代价", kind: "叙事逻辑", source: "Netflix", x: 79, y: 96, r: -3, duration: 88, delay: -66 },
+  { keyword: "失势继承人", kind: "主角身份", source: "角色原型", x: 18, y: 14, r: 3, duration: 77, delay: -34 },
+  { keyword: "隐姓天才", kind: "主角身份", source: "角色原型", x: 80, y: 19, r: -4, duration: 84, delay: -59 },
+  { keyword: "单亲母亲", kind: "主角身份", source: "角色原型", x: 11, y: 50, r: 5, duration: 72, delay: -20 },
+  { keyword: "复仇新娘", kind: "主角身份", source: "角色原型", x: 90, y: 48, r: -3, duration: 89, delay: -49 },
+  { keyword: "破产千金", kind: "主角身份", source: "角色原型", x: 21, y: 84, r: 4, duration: 80, delay: -27 },
+  { keyword: "失忆警探", kind: "主角身份", source: "角色原型", x: 44, y: 70, r: -5, duration: 86, delay: -61 },
+  { keyword: "卧底律师", kind: "主角身份", source: "角色原型", x: 67, y: 86, r: 3, duration: 75, delay: -18 },
+  { keyword: "叛逃公主", kind: "主角身份", source: "角色原型", x: 95, y: 72, r: -4, duration: 92, delay: -53 },
 ];
+
+const audienceDnaRecommendations = {
+  male: new Set([
+    "末日生存", "高概念谜案", "罪案追踪", "职场权谋", "科技惊悚", "法律惊案",
+    "反杀翻盘", "越级打脸", "权力反噬", "绝地翻盘", "逆风破局", "致命交易",
+    "一眼设定", "视觉记忆", "世界观钩子", "反派魅力", "设定代入",
+    "倒计时", "线索递进", "双线并进", "信息错位", "伏笔回收", "多线交汇",
+    "隐姓天才", "失忆警探", "卧底律师",
+  ]),
+  female: new Set([
+    "身份悬疑", "家族权斗", "青春暗黑", "都市爱情", "宫廷复仇", "神秘小镇",
+    "真相揭露", "禁忌拉扯", "复仇清算", "身份曝光", "旧爱重逢", "情感失控",
+    "角色上头", "CP上头", "社交梗点", "反差人设", "情绪共鸣", "金句传播", "追更惯性",
+    "误导再翻", "悬念续燃", "视角反转", "关系重组", "秘密递交",
+    "失势继承人", "单亲母亲", "复仇新娘", "破产千金", "叛逃公主",
+  ]),
+};
+
+const audienceGenderLabels = { all: "全部受众", male: "男性受众", female: "女性受众" };
+
+function audienceDisplayValue() {
+  const raw = String(state.input.audience || "").trim();
+  return ["male", "female", "male_drama", "female_drama", "男频", "女频", "男性", "女性"].includes(raw.toLowerCase())
+    ? "18-34 · English-speaking audience"
+    : raw || "18-34 · English-speaking audience";
+}
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -132,14 +191,6 @@ function modeValue() {
 
 function modeLabel() {
   return state.mode === "tk" ? "TK SHORT DRAMA" : "LONG-FORM DRAMA";
-}
-
-function audienceValue(value = state.input.audience) {
-  return ["female", "female_drama", "女频", "女性"].includes(String(value || "").trim().toLowerCase()) ? "female_drama" : "male_drama";
-}
-
-function audienceLabel(value = state.input.audience) {
-  return audienceValue(value) === "female_drama" ? "女频" : "男频";
 }
 
 function currentMeta() {
@@ -490,7 +541,7 @@ function renderShellState() {
     button.querySelector("i")?.setAttribute("aria-label", artifact && state.approved.has(artifact.id) ? "已确认" : "未确认");
   });
   const liveMarketCountry = $("#marketCountry")?.value || state.input.marketCountry;
-  const context = ["独立编剧 Agent", state.mode === "tk" ? "TK 短剧" : "普通长剧", audienceLabel(), `市场 · ${marketCountryLabel(liveMarketCountry)}`, "English Dialogue", state.mode === "tk" ? "9:16" : "16:9"];
+  const context = ["独立编剧 Agent", state.mode === "tk" ? "TK 短剧" : "普通长剧", `市场 · ${marketCountryLabel(liveMarketCountry)}`, "English Dialogue", state.mode === "tk" ? "9:16" : "16:9"];
   $("#contextChips").innerHTML = context.map((item) => `<span>${escapeHtml(item)}</span>`).join("");
   renderModelTeam();
   const ready = handoffReady();
@@ -533,7 +584,8 @@ function collectBriefInput() {
   state.input = {
     ...state.input,
     platform: $("#platform")?.value || state.input.platform,
-    audience: $("#audience")?.value || audienceValue(),
+    audience: $("#audience")?.value || state.input.audience,
+    audienceGender: $("[data-audience-gender].is-active")?.dataset.audienceGender || state.input.audienceGender || "all",
     idea: $("#idea")?.value || "",
   };
   return state.input;
@@ -570,14 +622,12 @@ function updateMarketCountryList() {
   state.input.marketCountry = nextCountry;
 }
 
-function renderDnaPool() {
-  const groups = [["题材", "Story premise"], ["爽点", "Payoff"], ["爆火基因", "Shareability"], ["叙事逻辑", "Engine"]];
-  const groupMarkup = groups.map(([kind, label]) => {
-    const items = inspirationPool.filter((item) => item.kind === kind);
-    const chips = items.slice(0, 6).map((item) => `<button class="dna-chip" type="button" data-inspiration="${escapeHtml(item.keyword)}" title="添加“${escapeHtml(item.keyword)}”到创作想法"><span>${escapeHtml(item.keyword)}</span><small>${escapeHtml(item.source)}</small></button>`).join("");
-    return `<div class="dna-group"><div class="dna-group-head"><strong>${escapeHtml(kind)}</strong><span>${escapeHtml(label)} · ${items.length}</span></div><div class="dna-chips">${chips}</div></div>`;
-  }).join("");
-  return `<section class="dna-pool" aria-labelledby="dnaPoolTitle"><div class="dna-pool-head"><div><span class="card-label"><i></i>CREATIVE DNA</span><h3 id="dnaPoolTitle">DNA</h3><p>从题材、爽点、传播基因和叙事引擎中采样，点击标签即可加入创作想法。</p></div><div class="dna-status" aria-label="DNA 采样状态"><strong>${inspirationPool.length}</strong><span>可采样基因</span><em>4 类</em></div></div><div class="dna-grid" role="list">${groupMarkup}</div><div class="dna-pool-footer"><span>近五年热剧结构提炼 · 不复制具体作品</span><span>点击标签采样 →</span></div></section>`;
+function renderInspirationPool() {
+  const audienceGender = audienceGenderLabels[state.input.audienceGender] ? state.input.audienceGender : "all";
+  const recommended = audienceDnaRecommendations[audienceGender] || new Set();
+  const nodes = inspirationPool.map((item) => `<button class="inspiration-node${recommended.has(item.keyword) ? " is-recommended" : ""}" type="button" data-inspiration="${escapeHtml(item.keyword)}" style="--node-x:${item.x}%;--node-y:${item.y}%;--node-r:${item.r}deg;--node-duration:${item.duration}s;--node-delay:${item.delay}s" title="添加“${escapeHtml(item.keyword)}”到创作想法"><span>${escapeHtml(item.keyword)}</span><small>${escapeHtml(item.kind)} · ${escapeHtml(item.source)}</small></button>`).join("");
+  const recommendation = audienceGender === "all" ? "选择受众方向后推荐标签会高亮" : `${audienceGenderLabels[audienceGender]} · ${recommended.size} 个 DNA 推荐`;
+  return `<section class="inspiration-pool" aria-labelledby="inspirationPoolTitle"><div class="inspiration-pool-head"><div><span class="card-label"><i></i>STORY DNA</span><h3 id="inspirationPoolTitle">灵感池</h3><p>近五年热剧的题材、爽点、爆火基因、叙事逻辑与主角身份，点击即可加入创作想法。</p></div><div class="inspiration-meta"><span class="inspiration-period">2021—2026</span><span class="inspiration-recommendation${audienceGender === "all" ? "" : " is-active"}"><i></i>${recommendation}</span></div></div><div class="inspiration-orbit" role="list">${nodes}<span class="inspiration-core" aria-hidden="true"><i></i><strong>STORY<br />DNA</strong><small>可点击采样</small></span></div><div class="inspiration-footer"><span>Netflix · HBO · Sony Pictures TV · DNA 提炼</span><span>不复制具体作品</span></div></section>`;
 }
 
 function addInspirationToIdea(keyword) {
@@ -702,23 +752,20 @@ function renderCreativeControls() {
   const long = state.mode === "long";
   const { impact, openingPromise, hookCadence, dialogueMode, handoffScope, options } = creativeControlValues();
   const opening = long
-    ? `<div class="creative-control-copy"><label for="openingPromise">开场承诺</label><small>先决定观众为什么继续看</small></div><select id="openingPromise" data-creative-control>${selectOptions(options.openingPromise, openingPromise)}</select>`
-    : `<div class="creative-control-copy"><label for="openingImpactRange">开头暴击窗口</label><small>前 5 秒建立首个冲突</small></div><div class="creative-control-range"><output id="openingImpactValue" for="openingImpactRange">0-${impact}s</output><input id="openingImpactRange" class="control-range" type="range" min="0" max="5" step="1" value="${impact}" /><div class="control-scale"><span>0s</span><span>5s</span></div></div>`;
-  return `<section class="creative-controls" aria-label="可调整创作参数">
-    <div class="creative-controls-head"><div><span class="card-label"><i></i>CREATIVE CONTROLS</span><h3>创作参数</h3></div><span class="creative-controls-count">4 项</span></div>
-    <div class="creative-control-list">
-      <div class="creative-control-row is-accent">${opening}</div>
-      <div class="creative-control-row"><div class="creative-control-copy"><label for="hookCadence">${long ? "章节推进" : "每集钩子"}</label><small>安排下一次追更理由</small></div><select id="hookCadence" data-creative-control>${selectOptions(options.hookCadence, hookCadence)}</select></div>
-      <div class="creative-control-row"><div class="creative-control-copy"><label for="dialogueMode">对白策略</label><small>决定对白的口语密度</small></div><select id="dialogueMode" data-creative-control>${selectOptions([["localized_english", "英文口语化本土化"], ["localized_english_sharp", "英文强口语 / 强冲突"], ["localized_english_subtle", "英文克制 / 低解释"]], dialogueMode)}</select></div>
-      <div class="creative-control-row"><div class="creative-control-copy"><label for="handoffScope">输出范围</label><small>决定交付包包含哪些内容</small></div><select id="handoffScope" data-creative-control>${selectOptions([["confirmed_versioned", "已确认 · 版本化"], ["confirmed_with_reviews", "已确认 + 复核记录"], ["script_and_assets", "剧本 + 视觉资产"]], handoffScope)}</select></div>
-    </div>
-    <p class="creative-controls-note">参数会自动保存，并作用于下一次生成。</p>
+    ? `<label class="control-label" for="openingPromise">${long ? "开场承诺" : "开头暴击"}</label><select id="openingPromise" data-creative-control>${selectOptions(options.openingPromise, openingPromise)}</select>`
+    : `<div class="control-heading"><label for="openingImpactRange">开头暴击窗口</label><output id="openingImpactValue" for="openingImpactRange">0-${impact}s</output></div><input id="openingImpactRange" class="control-range" type="range" min="0" max="5" step="1" value="${impact}" /><div class="control-scale"><span>0s</span><span>5s</span></div>`;
+  return `<section class="metric-stack creative-controls" aria-label="可调整创作参数">
+    <div class="metric-card control-card accent">${opening}</div>
+    <div class="metric-card control-card lime"><label class="control-label" for="hookCadence">${long ? "章节推进" : "每集钩子"}</label><select id="hookCadence" data-creative-control>${selectOptions(options.hookCadence, hookCadence)}</select></div>
+    <div class="metric-card control-card"><label class="control-label" for="dialogueMode">对白策略</label><select id="dialogueMode" data-creative-control>${selectOptions([["localized_english", "英文口语化本土化"], ["localized_english_sharp", "英文强口语 / 强冲突"], ["localized_english_subtle", "英文克制 / 低解释"]], dialogueMode)}</select></div>
+    <div class="metric-card control-card"><label class="control-label" for="handoffScope">输出范围</label><select id="handoffScope" data-creative-control>${selectOptions([["confirmed_versioned", "已确认 · 版本化"], ["confirmed_with_reviews", "已确认 + 复核记录"], ["script_and_assets", "剧本 + 视觉资产"]], handoffScope)}</select></div>
   </section>`;
 }
 
 function renderBrief() {
   const long = state.mode === "long";
   const idea = state.input.idea || "";
+  const audience = audienceDisplayValue();
   const { config, episodeCount, durationValue } = briefRangeValues();
   const marketRegion = state.input.marketRegion || "north_america";
   const marketCountry = state.input.marketCountry || "united_states";
@@ -729,7 +776,8 @@ function renderBrief() {
     <div class="content-grid">
       <section class="form-panel">
         <h3>创作规格</h3>
-        <div class="form-row"><div class="field"><label for="platform">发布平台</label><select id="platform"><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>Web drama</option></select></div><div class="field"><label for="audience">目标受众</label><select id="audience"><option value="male_drama" ${audienceValue() === "male_drama" ? "selected" : ""}>男频 · 男性观众</option><option value="female_drama" ${audienceValue() === "female_drama" ? "selected" : ""}>女频 · 女性观众</option></select><p class="small-note">选择后会同步对应的短剧叙事风格。</p></div></div>
+        <div class="form-row"><div class="field"><label for="platform">发布平台</label><select id="platform"><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>Web drama</option></select></div><div class="field"><label for="audience">目标受众</label><input id="audience" value="${escapeHtml(audience)}" /></div></div>
+        <div class="field audience-preference"><label>受众偏好方向</label><div class="audience-gender-control" role="group" aria-label="受众偏好方向"><button type="button" class="${state.input.audienceGender === "all" ? "is-active" : ""}" data-audience-gender="all">全部</button><button type="button" class="${state.input.audienceGender === "male" ? "is-active" : ""}" data-audience-gender="male">男性</button><button type="button" class="${state.input.audienceGender === "female" ? "is-active" : ""}" data-audience-gender="female">女性</button></div><p class="small-note">仅用于 DNA 标签的选题优先推荐，仍可自由组合全部标签。</p></div>
         <div class="market-panel"><div class="market-panel-head"><span class="card-label"><i></i>MARKET LOCALIZATION</span><strong>投放市场决定人名、地名与社会语境</strong></div><div class="form-row"><div class="field"><label for="marketRegion">受众地区</label><select id="marketRegion">${selectOptions(Object.entries(marketRegionLabels), marketRegion)}</select></div><div class="field"><label for="marketCountry">投放国家 / 地区</label><select id="marketCountry">${marketCountryOptions(marketRegion, marketCountry)}</select></div></div><div class="field"><label for="localizationNote">本土化补充 <span class="optional">可选</span></label><input id="localizationNote" value="${escapeHtml(state.input.localizationNote || "")}" placeholder="例如：芝加哥蓝领社区、伦敦金融区或曼谷大学校园" /></div><p class="small-note">中文撰写剧情；角色与地名保留目标市场自然名称。英文对白按当地语境口语化，不做字对字翻译。</p></div>
         <div class="form-row"><div class="field slider-field"><div class="slider-label"><label for="episodeScaleRange">${long ? "章节数量" : "计划集数"}</label><output id="episodeScaleValue" for="episodeScaleRange">${episodeCount} ${config.episode.unit}</output></div><input id="episodeScaleRange" type="range" min="${config.episode.min}" max="${config.episode.max}" step="${config.episode.step}" value="${episodeCount}" /><div class="slider-scale"><span id="episodeScaleMin">${config.episode.min} ${config.episode.unit}</span><span id="episodeScaleMax">${config.episode.max} ${config.episode.unit}</span></div></div><div class="field slider-field"><div class="slider-label"><label for="durationRange">${long ? "单章时长" : "单集时长"}</label><output id="durationValue" for="durationRange">${durationValue} ${config.duration.unit}</output></div><input id="durationRange" type="range" min="${config.duration.min}" max="${config.duration.max}" step="${config.duration.step}" value="${durationValue}" /><div class="slider-scale"><span id="durationMin">${config.duration.min} ${config.duration.unit}</span><span id="durationMax">${config.duration.max} ${config.duration.unit}</span></div></div></div>
         <div class="field"><label for="idea">创作想法 <span aria-hidden="true">*</span></label><textarea id="idea" placeholder="用中文写下主角、欲望和核心冲突">${escapeHtml(idea)}</textarea><p class="small-note">中文描述剧情；英文对白会在对白阶段完成口语化本土化，不做逐句直译。</p></div>
@@ -737,7 +785,7 @@ function renderBrief() {
       </section>
       ${renderCreativeControls()}
     </div>
-    ${renderDnaPool()}
+    ${renderInspirationPool()}
     ${renderNextStep()}`;
 }
 
@@ -935,6 +983,12 @@ function bindStageActions() {
   $("#marketRegion")?.addEventListener("change", () => { updateMarketCountryList(); syncMarketControls(); renderShellState(); void persistCreativeSettings(); });
   $("#marketCountry")?.addEventListener("change", () => { syncMarketControls(); renderShellState(); void persistCreativeSettings(); });
   $("#localizationNote")?.addEventListener("change", () => { syncMarketControls(); renderShellState(); void persistCreativeSettings(); });
+  $$('[data-audience-gender]').forEach((button) => button.addEventListener("click", () => {
+    collectBriefInput();
+    state.input.audienceGender = button.dataset.audienceGender || "all";
+    renderStage();
+    void persistCreativeSettings();
+  }));
   $("#openingImpactRange")?.addEventListener("input", syncCreativeControls);
   $("#openingImpactRange")?.addEventListener("change", () => { syncCreativeControls(); void persistCreativeSettings(); });
   $$('[data-creative-control]').forEach((control) => control.addEventListener("change", () => { syncCreativeControls(); void persistCreativeSettings(); }));

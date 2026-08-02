@@ -143,15 +143,25 @@ function marketPrompt(input = {}) {
   ].join("\n");
 }
 
-function normalizeAudience(value) {
-  const raw = text(value, 80).toLowerCase();
-  return ["female", "female_drama", "女频", "女性"].includes(raw) ? "female_drama" : "male_drama";
+function normalizeAudience(input = {}) {
+  const source = typeof input === "string" ? { audience: input } : asObject(input);
+  const selected = text(source.audienceGender, 40).toLowerCase();
+  if (["all", "male", "female"].includes(selected)) return selected;
+  const raw = text(source.audience, 80).toLowerCase();
+  if (["female", "female_drama", "女频", "女性"].includes(raw)) return "female";
+  if (["male", "male_drama", "男频", "男性"].includes(raw)) return "male";
+  return "all";
 }
 
 function audiencePrompt(input = {}) {
-  return normalizeAudience(input.audience) === "female_drama"
-    ? "目标受众：女性观众，采用女频短剧风格。优先强化人物关系、情感张力、身份与选择的代价、情绪回报和关系反转；不要把女性角色写成被动的剧情工具。"
-    : "目标受众：男性观众，采用男频短剧风格。优先强化目标驱动、能力成长、竞争对抗、资源升级、行动回报和清晰的胜负推进；不要用空泛旁白替代主角行动。";
+  const direction = normalizeAudience(input);
+  const guidance = direction === "female"
+    ? "优先强化人物关系、情感张力、身份与选择的代价、情绪回报和关系反转；不要把女性角色写成被动的剧情工具。"
+    : direction === "male"
+      ? "优先强化目标驱动、能力成长、竞争对抗、资源升级、行动回报和清晰的胜负推进；不要用空泛旁白替代主角行动。"
+      : "在目标驱动、人物关系、情感张力与悬念推进之间保持平衡，并以用户创作想法为最高优先级。";
+  const label = { all: "全部受众", male: "男性受众", female: "女性受众" }[direction];
+  return `目标受众偏好方向：${label}。${guidance} 此方向只决定选题、人物关系、爽点和钩子的优先级，不得把任何性别写成固定审美或刻板角色。`;
 }
 
 function stageParticipationPrompt(stage, input = {}) {
@@ -378,7 +388,7 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project }) {
     project: { id: text(project?.id, 300), title: text(project?.title, 300), episode: text(project?.episode, 100) },
     mode,
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
-    audience: normalizeAudience(input.audience),
+    audience: normalizeAudience(input),
     creativeControls: normalizeCreativeControls(input),
     market: normalizeMarket(input),
     stageParticipation: normalizeStageOptions(input),
@@ -421,7 +431,7 @@ function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input }) {
     },
     stage,
     mode,
-    audience: normalizeAudience(input.audience),
+    audience: normalizeAudience(input),
     creativeControls: normalizeCreativeControls(input),
     market: normalizeMarket(input),
     stageParticipation: normalizeStageOptions(input),
@@ -447,7 +457,7 @@ function visualAssetUserPrompt({ mode, input, approvedArtifacts, project }) {
     task: "从已确认的全剧结构中提取并补全视觉资产设计，确保同一资产在不同单元中可复用且外观连续。",
     project,
     mode,
-    audience: normalizeAudience(input.audience),
+    audience: normalizeAudience(input),
     market: normalizeMarket(input),
     approvedArtifacts: approvedArtifacts.map((item) => ({ stage: item.stage, content: item.content })),
   }, null, 2).slice(0, 240000);
@@ -843,7 +853,7 @@ function normalizeState(raw, params) {
     projectId: text(source.projectId || params.projectId, 500),
     mode: normalizeMode(source.mode || params.mode),
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
-    input: { ...asObject(source.input), audience: normalizeAudience(source.input?.audience), ...normalizeCreativeControls(source.input), ...normalizeMarket(source.input), ...normalizeStageOptions(source.input) },
+    input: { ...asObject(source.input), audienceGender: normalizeAudience(source.input), ...normalizeCreativeControls(source.input), ...normalizeMarket(source.input), ...normalizeStageOptions(source.input) },
     stage: source.stage === "handoff" ? "handoff" : normalizeStage(source.stage),
     routes: normalizeRoutes(source.routes),
     artifacts: asArray(source.artifacts),
@@ -1054,6 +1064,7 @@ function createPixelTaleAgent(options = {}) {
     state.input = {
       ...asObject(state.input),
       ...asObject(params.input),
+      audienceGender: normalizeAudience({ ...asObject(state.input), ...asObject(params.input) }),
       ...normalizeCreativeControls({ ...asObject(state.input), ...asObject(params.input) }),
       ...normalizeMarket({ ...asObject(state.input), ...asObject(params.input) }),
       ...normalizeStageOptions({ ...asObject(state.input), ...asObject(params.input) }),
@@ -1288,6 +1299,7 @@ function createPixelTaleAgent(options = {}) {
       state.input = {
         ...asObject(state.input),
         ...asObject(params.input),
+        audienceGender: normalizeAudience({ ...asObject(state.input), ...asObject(params.input) }),
         ...normalizeCreativeControls({ ...asObject(state.input), ...asObject(params.input) }),
         ...normalizeMarket({ ...asObject(state.input), ...asObject(params.input) }),
         ...normalizeStageOptions({ ...asObject(state.input), ...asObject(params.input) }),

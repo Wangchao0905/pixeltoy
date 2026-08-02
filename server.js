@@ -6075,7 +6075,17 @@ function stripVideoPromptDirectives(prompt = "") {
 const REAL_FILM_STYLE_PROMPT = "视觉风格：严格依据已绑定正式资产图的真人电影实拍质感；保持真实皮肤、自然人体比例、真实材质与自然电影光影，禁止二维动画、卡通、插画、CG 渲染。";
 
 function stripInvalidLegacyVideoStyleLock(prompt = "") {
-  const lines = String(prompt || "").split(/\r?\n/u);
+  let text = String(prompt || "");
+  const inlineInvalidStyle = /视觉风格\s*[：:]\s*(?:插画|漫画|动画|摄影|电影|服装|游戏|概念)师(?:的)?(?:职业气质|职业身份|职业设定|身份设定|职业)?\s*[；;]?\s*/gu;
+  const removedInlineStyle = inlineInvalidStyle.test(text);
+  inlineInvalidStyle.lastIndex = 0;
+  if (removedInlineStyle) {
+    text = text
+      .replace(inlineInvalidStyle, "")
+      .replace(/视觉风格约束\s*[：:]\s*严格遵循资产文档中明确的画风、线条、色彩、材质和光影，不得自行转换为其他风格\s*/gu, "")
+      .replace(/(?:\r?\n)?视觉风格硬约束\s*[：:][^\r\n]*/gu, "");
+  }
+  const lines = text.split(/\r?\n/u);
   let removedInvalidStyle = false;
   const kept = [];
   for (const rawLine of lines) {

@@ -24740,6 +24740,7 @@ async function handleApi(req, res, url) {
         mode: body.mode,
         input: body.input,
         routes: body.routes || body.modelRoute,
+        revisionPlan: body.revisionPlan,
       });
       return send(res, 200, { ok: true, result });
     }

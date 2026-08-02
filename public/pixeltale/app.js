@@ -73,8 +73,8 @@ const modelMeta = {
 
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];
 const stageMeta = {
-  brief: { kicker: "01 / BRIEF", title: "先把故事说清楚", task: "建立故事规格", copy: "确认平台、受众和单集节奏，先建立可执行的创作规格。" },
-  title: { kicker: "02 / TITLE", title: "选择剧名", task: "确定故事的第一张名片", copy: "根据创作规格生成 5 个风格各异的候选名，选定后才进入故事提案。" },
+  brief: { kicker: "01 / BRIEF", title: "故事架构", task: "建立故事架构", copy: "确认平台、受众和单集节奏，先建立可执行的故事架构。" },
+  title: { kicker: "02 / TITLE", title: "选择剧名", task: "确定故事的第一张名片", copy: "根据故事架构生成 5 个风格各异的候选名，选定后才进入故事提案。" },
   proposal: { kicker: "03 / PROPOSAL", title: "故事提案", task: "给出可追更的核心命题", copy: "检查冲突、人物欲望和每集继续观看的理由。" },
   characters: { kicker: "04 / CHARACTERS", title: "人物与世界", task: "锁定人物关系和世界规则", copy: "让角色的选择推动剧情，而不是让设定替角色行动。" },
   arc: { kicker: "05 / ARC", title: "分集与章节", task: "把主线拆成可拍的推进", copy: "短剧优先检查钩子与反转，长剧优先检查因果与人物弧线。" },
@@ -229,7 +229,7 @@ function userFacingError(error) {
     return `${message} 请打开“创作分工”，确认对应模型已接入后再试。`;
   }
   if (/核心冲突|创作规格需要/i.test(message)) {
-    return "请在“创作想法”中写清主角、目标和阻碍，再点击“生成创作规格”。";
+    return "请在“创作想法”中写清主角、目标和阻碍，再点击“生成故事架构”。";
   }
   if (/超时|网络|请求失败|HTTP \d{3}|fetch/i.test(message)) {
     return `${message} 当前输入已保留，可以稍后重试。`;
@@ -460,9 +460,9 @@ function nextStepMeta() {
     return {
       kind: "run",
       stage: flowStage,
-      title: brief ? "生成创作规格" : titleStage ? "生成 5 个剧名候选" : `生成${flowMeta.title}`,
-      copy: brief ? "填好平台、节奏和核心冲突后，生成并复核创作规格；确认后进入剧名选择。" : titleStage ? "根据创作规格生成 5 个风格各异的剧名，并逐个说明命名理由。" : `完成${flowMeta.title}，生成结果通过复核后，下一步是确认本阶段。`,
-      label: brief ? "生成创作规格 →" : titleStage ? "生成 5 个剧名 →" : `生成${flowMeta.title} →`,
+      title: brief ? "生成故事架构" : titleStage ? "生成 5 个剧名候选" : `生成${flowMeta.title}`,
+      copy: brief ? "填好平台、节奏和核心冲突后，生成并复核故事架构；确认后进入剧名选择。" : titleStage ? "根据故事架构生成 5 个风格各异的剧名，并逐个说明命名理由。" : `完成${flowMeta.title}，生成结果通过复核后，下一步是确认本阶段。`,
+      label: brief ? "生成故事架构 →" : titleStage ? "生成 5 个剧名 →" : `生成${flowMeta.title} →`,
       flowStage,
     };
   }
@@ -792,17 +792,9 @@ function renderBriefArtifact() {
   const review = reviewForArtifact(artifact);
   const reviewContent = review?.content || {};
   const passed = artifact.status === "ready" && reviewContent.pass !== false;
-  const changes = (Array.isArray(reviewContent.required_changes) ? reviewContent.required_changes : [])
-    .map((item) => String(item || "").trim())
-    .filter(Boolean)
-    .slice(0, 8);
-  const findings = (Array.isArray(reviewContent.findings) ? reviewContent.findings : [])
-    .map((item) => String(item || "").trim())
-    .filter(Boolean)
-    .slice(0, 8);
-  const feedback = changes.length ? changes : findings;
   const status = passed ? "已生成 · 复核通过 · 待确认" : review ? "已生成 · 复核未通过" : "已生成 · 等待复核";
-  return `<section class="artifact-card live-artifact brief-result" aria-labelledby="briefResultTitle"><div class="stage-kicker"><span class="card-label"><i></i>STORY SPECIFICATION</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(status)}</span></div><h3 id="briefResultTitle">第一步生成结果</h3><div class="structured-content">${renderValue(artifact.content)}</div><div class="review-summary ${passed ? "is-passed" : "is-needs-review"}"><strong>${passed ? "复核通过，可以确认并进入下一步" : review ? "复核未通过，需要先修订" : "正在等待复核结果"}</strong><p>${passed ? "点击底部“确认并进入选择剧名”，才会推进到第二步。" : review ? "修改上方创作规格或创作想法后，点击底部“修改后重新生成”。" : "三模型复核完成后，这里会显示具体处理方式。"}</p>${feedback.length ? `<ul>${feedback.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</div></section>`;
+  const reviewPanel = review ? renderReviewPanel(reviewContent, { passed, stage: "brief" }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
+  return `<section class="artifact-card live-artifact brief-result" aria-labelledby="briefResultTitle"><div class="stage-kicker"><span class="card-label"><i></i>STORY ARCHITECTURE</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(status)}</span></div><h3 id="briefResultTitle">故事架构生成结果</h3><div class="structured-content">${renderValue(artifact.content)}</div>${reviewPanel}</section>`;
 }
 
 function renderBrief() {
@@ -818,12 +810,12 @@ function renderBrief() {
     <p class="stage-intro">${long ? "先锁定主线、人物弧线和章节尺度，再把故事拆成可持续推进的长剧结构。" : "先锁定平台节奏和追更机制，再把一句想法变成一集接一集的故事。"}</p>
     <div class="content-grid">
       <section class="form-panel">
-        <h3>创作规格</h3>
+        <h3>故事架构</h3>
         <div class="form-row"><div class="field"><label for="platform">发布平台</label><select id="platform"><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>Web drama</option></select></div><div class="field"><label for="audienceGender">目标受众</label><select id="audienceGender" aria-label="目标受众"><option value="all" ${audienceGender === "all" ? "selected" : ""}>全部</option><option value="male" ${audienceGender === "male" ? "selected" : ""}>男性</option><option value="female" ${audienceGender === "female" ? "selected" : ""}>女性</option></select></div></div>
         <div class="market-panel"><div class="market-panel-head"><span class="card-label"><i></i>MARKET LOCALIZATION</span><strong>投放市场决定人名、地名与社会语境</strong></div><div class="form-row"><div class="field"><label for="marketRegion">受众地区</label><select id="marketRegion">${selectOptions(Object.entries(marketRegionLabels), marketRegion)}</select></div><div class="field"><label for="marketCountry">投放国家 / 地区</label><select id="marketCountry">${marketCountryOptions(marketRegion, marketCountry)}</select></div></div><div class="field"><label for="localizationNote">本土化补充 <span class="optional">可选</span></label><input id="localizationNote" value="${escapeHtml(state.input.localizationNote || "")}" placeholder="例如：芝加哥蓝领社区、伦敦金融区或曼谷大学校园" /></div></div>
         <div class="form-row"><div class="field slider-field"><div class="slider-label"><label for="episodeScaleRange">${long ? "章节数量" : "计划集数"}</label><output id="episodeScaleValue" for="episodeScaleRange">${episodeCount} ${config.episode.unit}</output></div><input id="episodeScaleRange" type="range" min="${config.episode.min}" max="${config.episode.max}" step="${config.episode.step}" value="${episodeCount}" /><div class="slider-scale"><span id="episodeScaleMin">${config.episode.min} ${config.episode.unit}</span><span id="episodeScaleMax">${config.episode.max} ${config.episode.unit}</span></div></div><div class="field slider-field"><div class="slider-label"><label for="durationRange">${long ? "单章时长" : "单集时长"}</label><output id="durationValue" for="durationRange">${durationValue} ${config.duration.unit}</output></div><input id="durationRange" type="range" min="${config.duration.min}" max="${config.duration.max}" step="${config.duration.step}" value="${durationValue}" /><div class="slider-scale"><span id="durationMin">${config.duration.min} ${config.duration.unit}</span><span id="durationMax">${config.duration.max} ${config.duration.unit}</span></div></div></div>
         <div class="field"><label for="idea">创作想法 <span aria-hidden="true">*</span></label><textarea id="idea" placeholder="用中文写下主角、欲望和核心冲突">${escapeHtml(idea)}</textarea><p class="small-note">中文描述剧情；英文对白会在对白阶段完成口语化本土化，不做逐句直译。</p></div>
-        <div id="briefError" class="error-message ${state.lastError ? "is-visible" : ""}" role="alert">${escapeHtml(state.lastError || "先写下一个可识别的冲突，PixelTale 才能建立故事规格。")}</div>
+        <div id="briefError" class="error-message ${state.lastError ? "is-visible" : ""}" role="alert">${escapeHtml(state.lastError || "先写下一个可识别的冲突，PixelTale 才能建立故事架构。")}</div>
       </section>
       ${renderCreativeControls()}
     </div>
@@ -832,19 +824,136 @@ function renderBrief() {
     ${renderNextStep()}`;
 }
 
+const fieldLabelMap = {
+  title_zh: "剧名",
+  logline_zh: "一句话梗概",
+  core_conflict_zh: "核心冲突",
+  viewer_question_zh: "观众悬念",
+  episode_promise_zh: "单集承诺",
+  mode_rules: "模式规则",
+  candidates: "剧名候选",
+  style_zh: "风格标签",
+  tone_zh: "语气与气质",
+  reason_zh: "命名理由",
+  selection_note_zh: "选择建议",
+  premise_zh: "核心命题",
+  protagonist_goal_zh: "主角目标",
+  antagonistic_force_zh: "对抗力量",
+  season_or_series_engine_zh: "持续推进引擎",
+  first_impact_zh: "开头暴击",
+  episode_hook_zh: "集尾钩子",
+  reversal: "反转",
+  characters: "人物",
+  relationships: "人物关系",
+  world_rules: "世界规则",
+  id: "编号",
+  name_zh: "角色名",
+  name_en: "英文名",
+  role: "角色定位",
+  desire_zh: "欲望",
+  fear_zh: "恐惧",
+  secret_zh: "秘密",
+  arc_zh: "人物弧线",
+  voice_rules_en: "英文声线规则",
+  visual_profile: "视觉设定",
+  gender: "性别",
+  age_phase: "年龄阶段",
+  body: "体型",
+  hair_color: "发型与发色",
+  facial_features: "面部特征",
+  eye_color: "瞳色",
+  costume_accessories: "服装配饰",
+  palette: "识别色",
+  posture: "姿态气质",
+  prompt_zh: "中文生成提示词",
+  from: "关系起点",
+  to: "关系终点",
+  dynamic_zh: "关系变化",
+  unit: "单位",
+  units: "分集 / 章节",
+  number: "序号",
+  promise_zh: "本集承诺",
+  impact_zh: "开头冲击",
+  causal_turn_zh: "因果转折",
+  hook_zh: "集尾强钩子",
+  cliffhanger_question_zh: "悬念问题",
+  payoff_zh: "推进与回收",
+  arc_summary_zh: "整体推进",
+  scenes: "场景",
+  unit_number: "集 / 章编号",
+  purpose_zh: "场景目的",
+  location_zh: "地点",
+  action_zh: "动作推进",
+  visual_intent_zh: "画面意图",
+  recurring: "是否重复出现",
+  aliases: "别名",
+  indoor_outdoor: "室内外",
+  lighting: "光线",
+  materials: "材质",
+  layout: "空间布局",
+  atmosphere: "氛围",
+  props: "道具",
+  description_zh: "描述",
+  appearance: "外观",
+  size: "尺寸",
+  texture: "质感",
+  shot_plan: "镜头计划",
+  shot_id: "镜头编号",
+  type: "类型",
+  duration_seconds: "时长（秒）",
+  dialogue_refs: "对白引用",
+  lines: "对白",
+  scene_id: "场景编号",
+  speaker: "说话人",
+  intent_zh: "剧情意图",
+  dialogue_en: "英文对白",
+  subtext_zh: "潜台词",
+  delivery_en: "表演提示",
+  localization_checks: "本土化检查",
+  consistency_notes: "一致性说明",
+};
+
+function fieldLabel(key) {
+  const raw = String(key || "");
+  if (fieldLabelMap[raw]) return fieldLabelMap[raw];
+  return raw.replace(/_(?:zh|en)$/i, "").replaceAll("_", " ");
+}
+
 function renderValue(value, depth = 0) {
   if (value === null || value === undefined || value === "") return "";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return `<span class="value-text">${escapeHtml(value)}</span>`;
   if (Array.isArray(value)) return `<ul class="structured-list">${value.map((item) => `<li>${renderValue(item, depth + 1)}</li>`).join("")}</ul>`;
   if (depth > 4) return `<span class="value-text">${escapeHtml(JSON.stringify(value))}</span>`;
-  return `<dl class="structured-data">${Object.entries(value).map(([key, item]) => `<div><dt>${escapeHtml(key)}</dt><dd>${renderValue(item, depth + 1)}</dd></div>`).join("")}</dl>`;
+  return `<dl class="structured-data">${Object.entries(value).map(([key, item]) => `<div><dt>${escapeHtml(fieldLabel(key))}</dt><dd>${renderValue(item, depth + 1)}</dd></div>`).join("")}</dl>`;
+}
+
+function reviewIssueGroups(reviewContent = {}) {
+  if (Array.isArray(reviewContent.reviewIssues) && reviewContent.reviewIssues.length) return reviewContent.reviewIssues;
+  return (Array.isArray(reviewContent.required_changes) ? reviewContent.required_changes : [])
+    .map((item) => ({ tag: "待修订项", dimension: "logic", severity: "medium", modelCount: 0, models: [], suggestions: [String(item || "")], evidence: [] }))
+    .filter((item) => item.suggestions[0]);
+}
+
+function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage } = {}) {
+  if (passed) return `<div class="review-summary is-passed"><strong>复核通过，可以确认并进入下一步</strong><p>三模型已完成全量检查，当前版本可以继续确认。</p></div>`;
+  const issues = reviewIssueGroups(reviewContent);
+  const issueList = issues.length
+    ? `<div class="review-issue-list">${issues.map((issue, index) => {
+      const source = Number(issue.modelCount) >= 2 ? `${issue.modelCount} 个模型共同指出` : issue.models?.length ? `${issue.models.length} 个模型指出` : "审核清单";
+      const suggestions = (Array.isArray(issue.suggestions) ? issue.suggestions : []).filter(Boolean);
+      const evidence = (Array.isArray(issue.evidence) ? issue.evidence : []).filter(Boolean);
+      return `<article class="review-issue review-issue-${escapeHtml(issue.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(issue.tag || "待修订项")}</strong><span class="review-issue-severity">${escapeHtml(issue.severity || "medium")} · ${escapeHtml(source)}</span></div>${suggestions.length ? `<ul>${suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}${evidence.length ? `<details><summary>查看问题证据</summary><ul>${evidence.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></details>` : ""}</article>`;
+    }).join("")}</div>`
+    : `<p class="review-empty">审核模型没有返回结构化问题，请按复核结果重新提交。</p>`;
+  const countLabel = issues.length ? `已汇总 ${issues.length} 项问题` : "等待完整问题清单";
+  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>复核未通过，需要一次性修订</strong><p>三模型已完成全量检查，下面是本次版本的完整问题清单；修订后会重新执行完整复核。</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${issueList}<button type="button" class="stage-secondary review-auto-fix" data-auto-revise="${escapeHtml(stage)}">AI 按完整清单修订并重新生成 →</button></div>`;
 }
 
 function renderTitleStage() {
   const meta = currentMeta();
   const artifact = artifactForStage("title");
   if (!artifact) {
-    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 5 个候选剧名</h3><p>创作规格确认后，系统会根据你的描述生成 5 个方向不同的中文剧名，并说明每个名称的气质与理由。</p></section>${renderNextStep()}`;
+    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 5 个候选剧名</h3><p>故事架构确认后，系统会根据你的描述生成 5 个方向不同的中文剧名，并说明每个名称的气质与理由。</p></section>${renderNextStep()}`;
   }
   const candidates = Array.isArray(artifact.content?.candidates) ? artifact.content.candidates : [];
   const selectedTitle = state.input.storyTitle || "";
@@ -856,7 +965,8 @@ function renderTitleStage() {
     return `<button class="title-option${selected ? " is-selected" : ""}" type="button" role="radio" aria-checked="${selected}" data-title-choice="${escapeHtml(title)}"><span class="title-option-number">0${index + 1}</span><span class="title-option-body"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(candidate?.style_zh || "风格未标注")} · ${escapeHtml(candidate?.tone_zh || "")}</small><p>${escapeHtml(candidate?.reason_zh || "")}</p></span><i aria-hidden="true"></i></button>`;
   }).join("");
   const reviewLabel = state.approved.has(artifact.id) ? "本阶段已确认" : reviewContent.pass ? "互审一致性通过 · 等待选择" : `交叉审核反馈：${(reviewContent.required_changes || []).join("；") || "需要继续检查"}`;
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div><span class="card-label"><i></i>TITLE OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的名字</h3></div><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">5 个候选分别强调悬疑、传播、诗意、人物命运和极简记忆点。选定后会作为后续提案与正式剧本的统一剧名。</p><div class="card-footer"><small>${escapeHtml(reviewLabel)}</small>${state.approved.has(artifact.id) ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${selectedTitle ? "可确认" : "等待选择"}</span>`}</div></section>${renderNextStep()}`;
+  const reviewPanel = review ? renderReviewPanel(reviewContent, { passed: state.approved.has(artifact.id) || reviewContent.pass, stage: "title" }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div><span class="card-label"><i></i>TITLE OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的名字</h3></div><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">5 个候选分别强调悬疑、传播、诗意、人物命运和极简记忆点。选定后会作为后续提案与正式剧本的统一剧名。</p><div class="card-footer"><small>${escapeHtml(reviewLabel)}</small>${state.approved.has(artifact.id) ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${selectedTitle ? "可确认" : "等待选择"}</span>`}</div></section>${reviewPanel}${renderNextStep()}`;
 }
 
 function renderArtifactStage() {
@@ -868,8 +978,9 @@ function renderArtifactStage() {
   const review = reviewForArtifact(artifact);
   const reviewContent = review?.content || {};
   const approved = state.approved.has(artifact.id);
-  const reviewLabel = approved ? "本阶段已确认" : reviewContent.pass ? "互审一致性通过 · 等待确认" : `交叉审核反馈：${(reviewContent.required_changes || []).join("；") || "需要继续检查"}`;
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)}</small>${approved ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${reviewContent.pass ? "等待确认" : "待修订"}</span>`}</div></section>${renderNextStep()}`;
+  const reviewLabel = approved ? "本阶段已确认" : reviewContent.pass ? "互审一致性通过 · 等待确认" : "交叉审核已汇总完整修订清单";
+  const reviewPanel = review ? renderReviewPanel(reviewContent, { passed: approved || reviewContent.pass, stage: state.stage }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)}</small>${approved ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${reviewContent.pass ? "等待确认" : "待修订"}</span>`}</div>${reviewPanel}</section>${renderNextStep()}`;
 }
 
 function renderHandoff() {
@@ -895,7 +1006,7 @@ function renderHandoff() {
   const documentActions = scriptReady
     ? `<div class="document-delivery-actions"><button type="button" class="stage-primary" data-download-script ${state.documentBusy ? "disabled" : ""}>下载剧本 DOCX <span aria-hidden="true">↓</span></button><button type="button" class="stage-secondary" data-save-script ${state.documentBusy ? "disabled" : ""}>选择文件夹并保存</button></div>`
     : "";
-  return `<div class="stage-kicker"><span class="eyebrow">${currentMeta().kicker}</span><span class="artifact-meta">${ready ? "READY" : "LOCKED"}</span></div><h2>${currentMeta().title}</h2><p class="stage-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认创作规格、剧名、提案、人物与世界、分集结构、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "中文剧情 + English Dialogue" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待人物与世界"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>${renderNextStep()}`;
+  return `<div class="stage-kicker"><span class="eyebrow">${currentMeta().kicker}</span><span class="artifact-meta">${ready ? "READY" : "LOCKED"}</span></div><h2>${currentMeta().title}</h2><p class="stage-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集结构、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "中文剧情 + English Dialogue" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待人物与世界"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>${renderNextStep()}`;
 }
 
 function renderStage() {
@@ -905,14 +1016,14 @@ function renderStage() {
   renderShellState();
 }
 
-async function runCurrentStage(stage = state.stage) {
+async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) {
   if (stage === "brief") collectBriefInput();
   if (stage === "title") state.input.storyTitle = "";
   state.lastError = "";
   state.busy = true;
   renderStage();
   try {
-    const payload = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes }) });
+    const payload = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan }) });
     updateAgentState(payload.result?.state);
     state.lastError = payload.result?.status === "failed" ? (payload.result.errors || []).map((item) => item.message).join("；") : "";
     if (state.lastError) throw new Error(state.lastError);
@@ -924,6 +1035,27 @@ async function runCurrentStage(stage = state.stage) {
     state.busy = false;
     renderStage();
   }
+}
+
+async function runAutoRevision(stage = state.stage) {
+  const artifact = artifactForStage(stage);
+  const review = reviewForArtifact(artifact);
+  const content = review?.content || {};
+  const issues = reviewIssueGroups(content);
+  if (!artifact || !issues.length) {
+    showToast("当前没有可执行的完整修订清单");
+    return;
+  }
+  const plan = [
+    "请一次性修订当前阶段的全部复核问题。保留没有问题的内容，不要只修复其中一项。",
+    ...issues.map((issue, index) => {
+      const evidence = Array.isArray(issue.evidence) && issue.evidence.length ? `证据：${issue.evidence.join("；")}` : "";
+      const fixes = Array.isArray(issue.suggestions) && issue.suggestions.length ? issue.suggestions.join("；") : "请根据问题证据提出具体修订";
+      return `${index + 1}. ${issue.tag || "待修订项"}（${issue.severity || "medium"}）：${fixes}${evidence ? `；${evidence}` : ""}`;
+    }),
+  ].join("\n");
+  showToast(`已汇总 ${issues.length} 项问题，正在一次性修订并重新复核`);
+  await runCurrentStage(stage, { revisionPlan: plan });
 }
 
 async function approveArtifact(artifactId) {
@@ -999,7 +1131,7 @@ async function saveRouting(event) {
 function bindStageActions() {
   $("#runBrief")?.addEventListener("click", () => {
     if (!$("#idea")?.value.trim()) {
-      state.lastError = "请在“创作想法”中写清主角、目标和阻碍，再点击“生成创作规格”。";
+      state.lastError = "请在“创作想法”中写清主角、目标和阻碍，再点击“生成故事架构”。";
       $("#briefError").textContent = state.lastError;
       $("#briefError")?.classList.add("is-visible");
       $("#idea")?.focus();
@@ -1009,6 +1141,7 @@ function bindStageActions() {
     runCurrentStage("brief");
   });
   $$('[data-run-stage]').forEach((button) => button.addEventListener("click", () => runCurrentStage(button.dataset.runStage)));
+  $$('[data-auto-revise]').forEach((button) => button.addEventListener("click", () => runAutoRevision(button.dataset.autoRevise || state.stage)));
   $$('[data-approve-artifact]').forEach((button) => button.addEventListener("click", () => approveArtifact(button.dataset.approveArtifact)));
   $$('[data-title-choice]').forEach((button) => button.addEventListener("click", () => {
     if (state.approved.has(artifactForStage("title")?.id)) return;
@@ -1079,7 +1212,7 @@ $("#agentMenu").addEventListener("click", () => showToast("Agent 状态独立保
 function startNewDraft() {
   try {
     sessionStorage.setItem(PENDING_MODE_KEY, state.mode);
-    sessionStorage.setItem(PENDING_NOTICE_KEY, "已创建新的剧集会话，请从创作规格开始。");
+    sessionStorage.setItem(PENDING_NOTICE_KEY, "已创建新的剧集会话，请从故事架构开始。");
     const freshSession = typeof crypto?.randomUUID === "function"
       ? crypto.randomUUID()
       : `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;

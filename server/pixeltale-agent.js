@@ -405,6 +405,8 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     `检查阶段：${stage}；模式：${modeLabel(mode)}。`,
     "先独立重建本阶段验收标准，再逐项比对待审产物、用户规格和已确认上下文；不要因为产物写得流畅就默认通过。",
     "重点寻找：前后设定冲突、因果断裂、角色动机缺口、市场本土化错误、模式节奏偏离、悬念提前泄露和无法执行的空泛表达。",
+    "必须穷举本次产物中所有需要修订的问题，不要只返回最严重的一项；每个独立问题都要在 issues 中单独列出，并为每个问题给出证据和可执行修订建议。",
+    "required_changes 必须覆盖 issues 中的全部问题；如果多个问题互不相同，不得合并成一句笼统意见。",
     "只有 cross_validation、consistency、adversarial 三项均为 true，并且阶段专项检查均通过时，pass 才能为 true；发现任一硬伤必须 pass=false，并在 required_changes 中给出可执行修订意见。",
     creativeControlPrompt(input, mode),
     audiencePrompt(input),
@@ -635,31 +637,45 @@ function issueKey(tag) {
   return text(tag, 120).toLowerCase().replace(/[\s：:，,。.!?！？；;]/g, "");
 }
 
-function sharedReviewIssues(feedbacks) {
+const issueSeverityRank = { high: 0, medium: 1, low: 2 };
+
+function groupedReviewIssues(feedbacks) {
   const groups = new Map();
   feedbacks.forEach((feedback) => {
     const seen = new Set();
     asArray(feedback.issues).forEach((issue) => {
-      const key = issueKey(issue.tag);
+      const key = issueKey(issue.tag) || issueKey(`${issue.dimension}:${issue.feedback}`);
       if (!key || seen.has(key)) return;
       seen.add(key);
-      const group = groups.get(key) || { tag: issue.tag, dimension: issue.dimension, models: new Map(), suggestions: [], evidence: [] };
+      const group = groups.get(key) || {
+        tag: issue.tag || `${issue.dimension} 维度问题`,
+        dimension: issue.dimension,
+        severity: issue.severity,
+        models: new Map(),
+        suggestions: [],
+        evidence: [],
+      };
       group.models.set(feedback.model, feedback.provider);
+      if ((issueSeverityRank[issue.severity] ?? 1) < (issueSeverityRank[group.severity] ?? 1)) group.severity = issue.severity;
       if (issue.fix) group.suggestions.push(issue.fix);
       if (issue.feedback) group.evidence.push(`${feedback.model}：${issue.feedback}`);
       groups.set(key, group);
     });
   });
-  return [...groups.values()]
-    .filter((group) => group.models.size >= 2)
-    .map((group) => ({
+  return [...groups.values()].map((group) => ({
       tag: group.tag,
       dimension: group.dimension,
+      severity: group.severity,
       modelCount: group.models.size,
       models: [...group.models.keys()],
       suggestions: uniqueText(group.suggestions, 5),
       evidence: uniqueText(group.evidence, 5),
-    }));
+    }))
+    .sort((left, right) => (issueSeverityRank[left.severity] ?? 1) - (issueSeverityRank[right.severity] ?? 1) || right.modelCount - left.modelCount || left.tag.localeCompare(right.tag, "zh-CN"));
+}
+
+function sharedReviewIssues(feedbacks) {
+  return groupedReviewIssues(feedbacks).filter((group) => group.modelCount >= 2);
 }
 
 function aggregateCrossReview(reviews = []) {
@@ -702,17 +718,29 @@ function aggregateCrossReview(reviews = []) {
   const quality = completed.length ? Math.round(completed.reduce((sum, item) => sum + item.score, 0) / completed.length) : 0;
   const reviewCompletion = Math.round((completed.length / 3) * 100);
   const index = Math.round(agreement * 0.45 + quality * 0.35 + reviewCompletion * 0.2);
-  const commonIssues = sharedReviewIssues(feedbacks);
+  const structuredIssues = groupedReviewIssues(feedbacks);
+  const reviewerChanges = uniqueText(feedbacks.flatMap((item) => item.required_changes || []), 60);
+  const structuredIssueText = structuredIssues.flatMap((issue) => [...issue.suggestions, ...issue.evidence]);
+  const supplementalIssues = reviewerChanges
+    .filter((change) => !structuredIssueText.some((known) => known === change || known.includes(change) || change.includes(known)))
+    .map((change) => ({ tag: "审核修订项", dimension: "logic", severity: "medium", modelCount: 1, models: [], suggestions: [change], evidence: [] }));
+  const reviewIssues = [...structuredIssues, ...supplementalIssues];
+  const commonIssues = reviewIssues.filter((issue) => issue.modelCount >= 2);
+  const independentIssues = reviewIssues.filter((issue) => issue.modelCount === 1);
   const conflicts = REVIEW_DIMENSIONS
     .filter((key) => completed.length >= 2 && dimensions[key].agreement < 75)
     .map((key) => ({ dimension: key, agreement: dimensions[key].agreement, suggestion: `重新核对${key}维度的证据与取舍，直到三模型形成可执行的统一方案` }));
-  const pass = completed.length === 3 && feedbacks.every((item) => item.pass) && index >= 75 && commonIssues.length === 0 && conflicts.length === 0;
+  const pass = completed.length === 3 && feedbacks.every((item) => item.pass) && index >= 75 && reviewIssues.length === 0 && reviewerChanges.length === 0 && conflicts.length === 0;
   const checks = {
     ...Object.fromEntries(["cross_validation", "consistency", "adversarial"].map((key) => [key, completed.length === 3 && completed.every((item) => item.checks?.[key] === true)])),
-    issues_converged: commonIssues.length === 0,
+    issues_converged: reviewIssues.length === 0,
     dimensions_agree: conflicts.length === 0,
   };
-  const sharedChanges = commonIssues.map((issue) => `至少 ${issue.modelCount} 个模型共同指出【${issue.tag}】：${issue.suggestions[0] || "针对该问题补充具体修订并重新提交三模型审核"}`);
+  const issueChanges = reviewIssues.map((issue) => {
+    const source = issue.modelCount >= 2 ? `至少 ${issue.modelCount} 个模型共同指出` : `单个模型指出`;
+    const suggestions = issue.suggestions.length ? issue.suggestions.join("；") : "针对该问题补充具体修订并重新提交三模型审核";
+    return `${source}【${issue.severity} / ${issue.tag}】：${suggestions}`;
+  });
   const conflictChanges = conflicts.map((item) => `【意见冲突 / ${item.dimension}】${item.suggestion}`);
   const failedChanges = feedbacks.filter((item) => item.status === "failed").flatMap((item) => item.required_changes);
   return {
@@ -724,11 +752,15 @@ function aggregateCrossReview(reviews = []) {
     reviewCompletion,
     dimensions,
     feedbacks,
+    reviewIssues,
+    issueCount: reviewIssues.length,
     commonIssues,
     commonIssueCount: commonIssues.length,
+    independentIssues,
+    independentIssueCount: independentIssues.length,
     conflicts,
     findings: uniqueText([...commonIssues.map((item) => `共识问题【${item.tag}】（${item.modelCount} 个模型）`), ...conflicts.map((item) => `意见冲突：${item.dimension} 一致性 ${item.agreement}%`), ...feedbacks.flatMap((item) => item.findings)]),
-    required_changes: uniqueText([...sharedChanges, ...conflictChanges, ...failedChanges]),
+    required_changes: uniqueText([...issueChanges, ...conflictChanges, ...reviewerChanges, ...failedChanges], 60),
     checks,
   };
 }
@@ -1059,6 +1091,7 @@ function createPixelTaleAgent(options = {}) {
     const state = stateFor({ ...params, projectId, mode: params.mode || params.input?.mode });
     const mode = normalizeMode(params.mode || params.input?.mode || state.mode);
     const routes = params.routes ? normalizeRoutes(params.routes) : normalizeRoutes(state.routes);
+    const revisionPlan = text(params.revisionPlan, 14000);
     state.mode = mode;
     state.routes = routes;
     state.input = {
@@ -1069,6 +1102,15 @@ function createPixelTaleAgent(options = {}) {
       ...normalizeMarket({ ...asObject(state.input), ...asObject(params.input) }),
       ...normalizeStageOptions({ ...asObject(state.input), ...asObject(params.input) }),
     };
+    const runInput = revisionPlan
+      ? {
+        ...state.input,
+        stageGuidance: {
+          ...asObject(state.input.stageGuidance),
+          [stage]: revisionPlan,
+        },
+      }
+      : state.input;
     state.updatedAt = nowIso(now);
     const startedAt = nowIso(now);
     const runId = id("run", randomUUID);
@@ -1099,22 +1141,22 @@ function createPixelTaleAgent(options = {}) {
       }
       primary = await callProvider({
         provider: route.primary,
-        system: stageSystemPrompt(stage, mode, state.input),
-        user: stageUserPrompt({ stage, mode, input: state.input, previousArtifacts, project: params.project }),
+        system: stageSystemPrompt(stage, mode, runInput),
+        user: stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project }),
         env,
         fetchImpl,
       });
       retryCount += primary.attempts || 0;
       const content = validateContent(stage, primary.content);
       const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
-      primaryArtifact = buildArtifact({ stage, mode, input: state.input, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
+      primaryArtifact = buildArtifact({ stage, mode, input: runInput, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
       reviewRoutes = crossReviewRoutes(route);
       reviews = await Promise.all(reviewRoutes.map(async (reviewRoute) => {
         try {
           const result = await callProvider({
             provider: reviewRoute,
-            system: reviewSystemPrompt(stage, mode, state.input),
-            user: reviewUserPrompt({ stage, mode, input: state.input, artifact: primaryArtifact, previousArtifacts }),
+            system: reviewSystemPrompt(stage, mode, runInput),
+            user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts }),
             env,
             fetchImpl,
           });

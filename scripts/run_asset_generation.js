@@ -375,7 +375,7 @@ function fixedAssetPromptFor(asset) {
     // 这段拼在服务端提示词**之后**,位置更强势。它必须和 server.js 的
     // storyboardPromptForSlot 说同一件事,否则前面要页眉/页脚/侧栏/手写对白,
     // 这里又禁掉,模型只能二选一——生产上表现为版式回退成裸网格。
-    return "Production Board output contract: one 16:9 horizontal (landscape) sheet on white paper — wider than it is tall, exact 16:9 aspect ratio, full sheet visible, no cropping. A thin black outer border frames the page. The sheet has a header band (~12% height), a main body, and a footer band (~7% height), separated by full-width horizontal rules. The main body is split into a left column (~80% width) holding exactly 12 equal-size panels in a 4 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P12 bottom-right), and a right sidebar (~20% width) holding three bordered reference sections stacked vertically, whose slots are full-colour realistic reference thumbnails of the attached assets — the monochrome pencil treatment applies to the storyboard panels only, never to the sidebar. Every panel is a landscape cell with equal outer dimensions and uniform gutters, a small circular number marker in its upper-left corner, and one short caption line directly beneath it; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Fill every panel with complete horizontal storyboard imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. Hand-letter all captions, dialogue and field labels directly into the drawing in short English block capitals; keep them legible and keep them to the planned wording. Do not leave placeholder labels or blank ruled fields inside the panel area.";
+    return "Production Board output contract: one 16:9 horizontal (landscape) sheet on white paper — wider than it is tall, exact 16:9 aspect ratio, full sheet visible, no cropping. A thin black outer border frames the page. The sheet has a header band (~12% height), a main body, and a footer band (~7% height), separated by full-width horizontal rules. The main body is split into a left column (~80% width) holding exactly 12 equal-size panels in a 4 columns x 3 rows grid, read left-to-right then top-to-bottom (P1 top-left through P12 bottom-right), and a reserved blank white strip on the right (~20% width) where nothing is drawn — a deterministic post-process pastes the real reference assets there. Every panel is a landscape cell with equal outer dimensions and uniform gutters, a small circular number marker in its upper-left corner, and one short caption line directly beneath it; P1 is an ordinary top-left cell, never a wide establishing strip. Do not allow any panel to overlap, merge, or span multiple cells. Fill every panel with complete horizontal storyboard imagery that inherits the actual referenced Character, Scene, Prop, and Insert assets, so this one Production Board can be the only video reference later. Hand-letter all captions, dialogue and field labels directly into the drawing in short English block capitals; keep them legible and keep them to the planned wording. Do not leave placeholder labels or blank ruled fields inside the panel area.";
   }
   if (asset.type === "Character") {
     return [
@@ -1644,6 +1644,132 @@ function storyboardVisibleReferences(asset, referenceImages = []) {
     .slice(0, 4);
 }
 
+// 侧栏参考位:按类型各取两张真实资产。让模型画这些位只会得到"对资产图的彩色再
+// 创作"(扩散模型没有精确复制能力),所以这一栏必须由确定性后处理贴原始 PNG。
+function storyboardSidebarSections(referenceImages = []) {
+  const usable = [...new Set(referenceImages || [])].filter(
+    (image) => image && fs.existsSync(image) && fs.statSync(image).size > 100,
+  );
+  const pick = (types) => usable.filter((image) => types.includes(referenceTypeFromName(image) || "")).slice(0, 2);
+  return [
+    { heading: "CHARACTER / CASTING", slots: pick(["Character"]) },
+    { heading: "PROP REFERENCE", slots: pick(["Prop", "Insert"]) },
+    { heading: "LOCATION / SET", slots: pick(["Scene"]) },
+  ];
+}
+
+// 用确定性后处理绘制右侧参考栏:三个分区、每区两个位、贴真实资产 PNG。
+// 提示词已要求模型把右 20% 完全留白,所以这里独占该区域,坐标不依赖模型输出。
+// 几何比例必须与 applyStoryboardTailAnchor 的 grid_geometry 一致。
+function stampStoryboardSidebar(asset, outPath, referenceImages = []) {
+  if (asset?.type !== "Storyboard" || !fs.existsSync(outPath)) return false;
+  const sections = storyboardSidebarSections(referenceImages);
+  if (!sections.some((section) => section.slots.length)) return false;
+  const py = String.raw`
+import json, sys
+from PIL import Image, ImageDraw, ImageFont
+
+path = sys.argv[1]
+payload = json.loads(sys.stdin.read())
+sections = payload.get("sections") or []
+
+HEADER_RATIO = 0.12
+FOOTER_RATIO = 0.07
+SIDEBAR_RATIO = 0.20
+INK = (38, 38, 36)
+PAPER = (255, 255, 255)
+SLOT_BG = (243, 241, 235)
+
+def font(size):
+    # 生产是 Ubuntu:macOS 字体路径一律不存在,落到 load_default() 会得到
+    # 极小的位图字体。DejaVu 是 Debian/Ubuntu 基础字体,标题是纯英文足够用。
+    for candidate in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    ]:
+        try:
+            return ImageFont.truetype(candidate, size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+with Image.open(path) as source:
+    img = source.convert("RGB")
+w, h = img.size
+draw = ImageDraw.Draw(img)
+
+strip_x = round(w * (1.0 - SIDEBAR_RATIO))
+body_top = round(h * HEADER_RATIO)
+body_bottom = h - round(h * FOOTER_RATIO)
+pad = max(6, round(w * 0.008))
+
+# 先把整条侧栏刷白:模型即使违反"留白"也会被覆盖,保证结果确定。
+draw.rectangle([strip_x, body_top, w - pad, body_bottom], fill=PAPER)
+
+inner_x1 = strip_x + pad
+inner_x2 = w - pad
+avail_h = body_bottom - body_top - pad * 2
+section_h = avail_h // max(1, len(sections))
+head_h = max(16, round(section_h * 0.16))
+
+for index, section in enumerate(sections):
+    y1 = body_top + pad + index * section_h
+    y2 = y1 + section_h - pad
+    draw.rectangle([inner_x1, y1, inner_x2, y2], outline=INK, width=2)
+    title = str(section.get("heading") or "")
+    size = max(9, round(w * 0.0085))
+    f = font(size)
+    tw = draw.textlength(title, font=f)
+    while tw > (inner_x2 - inner_x1 - 8) and size > 7:
+        size -= 1
+        f = font(size)
+        tw = draw.textlength(title, font=f)
+    draw.text((inner_x1 + ((inner_x2 - inner_x1) - tw) / 2, y1 + max(2, (head_h - size) // 2)), title, fill=INK, font=f)
+    draw.line([inner_x1, y1 + head_h, inner_x2, y1 + head_h], fill=INK, width=1)
+
+    slots = section.get("slots") or []
+    slot_top = y1 + head_h + pad
+    slot_area = y2 - slot_top - pad
+    slot_h = slot_area // 2
+    for slot_index in range(2):
+        sy1 = slot_top + slot_index * slot_h
+        sy2 = sy1 + slot_h - max(2, pad // 2)
+        box = [inner_x1 + pad, sy1, inner_x2 - pad, sy2]
+        draw.rectangle(box, fill=SLOT_BG, outline=(120, 116, 108), width=1)
+        if slot_index >= len(slots):
+            continue
+        try:
+            with Image.open(slots[slot_index]) as ref:
+                thumb = ref.convert("RGB")
+                bw = box[2] - box[0] - 4
+                bh = box[3] - box[1] - 4
+                scale = min(bw / thumb.width, bh / thumb.height)
+                tw2 = max(1, round(thumb.width * scale))
+                th2 = max(1, round(thumb.height * scale))
+                resample = getattr(Image, "Resampling", Image).LANCZOS
+                thumb = thumb.resize((tw2, th2), resample)
+                img.paste(thumb, (box[0] + 2 + (bw - tw2) // 2, box[1] + 2 + (bh - th2) // 2))
+        except Exception as error:
+            print("sidebar thumb failed: %s" % error, file=sys.stderr)
+
+img.save(path)
+print("sidebar stamped")
+`;
+  try {
+    execFileSync("python3", ["-c", py, outPath], {
+      input: JSON.stringify({ sections }),
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 90_000,
+    });
+    return true;
+  } catch (error) {
+    console.error(`${new Date().toISOString()} ${asset.name}: sidebar stamp failed: ${error.message}`);
+    return false;
+  }
+}
+
 function stampStoryboardProductionTabs(asset, outPath, referenceImages = []) {
   if (asset?.type !== "Storyboard" || !fs.existsSync(outPath)) return;
   // 默认关闭。这层 PIL 叠字是生产上"文字乱码"的直接来源:候选字体全是 macOS 路径
@@ -2252,6 +2378,9 @@ async function main() {
       }
       ensureStoryboardCanvas(asset, out, args.size);
       if (previousBoard) applyStoryboardTailAnchor(asset, out, previousBoard);
+      // 顺序要紧:尾帧锚点先贴(它裁的是左栏第一格),再画侧栏。反过来侧栏会被
+      // 尾帧那步的整格粘贴逻辑无视,但两者区域不重叠,保持此序更易推理。
+      stampStoryboardSidebar(asset, out, assetReferenceImages);
       stampStoryboardProductionTabs(asset, out, assetReferenceImages);
       fs.writeFileSync(path.join(logsDir, `${asset.name}.json`), raw ? `${raw}\n` : "");
       writePromptMeta(
@@ -2348,4 +2477,6 @@ module.exports = {
   applyStoryboardTailAnchor,
   previousStoryboardPath,
   stampStoryboardProductionTabs,
+  stampStoryboardSidebar,
+  storyboardSidebarSections,
 };

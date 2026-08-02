@@ -22223,11 +22223,12 @@ function storyboardPromptForSlot(slot) {
     "Create ONE 16:9 horizontal production storyboard sheet on white paper, covering exactly 15 seconds of one continuous scripted beat. Full sheet visible, no cropping.",
     "Thin black outer border around the entire page. Four regions, in this order: header (~12% of canvas height), main body, footer (~7%), each separated by full-width horizontal rules.",
     "Header carries three horizontal information rows: (1) project title left, sequence identifier centre, page number right; (2) three aligned metadata fields with labels and underline rules; (3) one full-width sequence summary line.",
-    `Main body splits into two columns: left column ~80% width holds exactly ${panelCount} equal storyboard panels in a ${gridLabel} grid, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). Right sidebar ~20% width holds three vertically stacked reference sections with independent thin borders and centred headings: Character/Casting (two portrait slots), Prop Reference (two object slots), Location/Set (two environment slots).`,
+    `Main body splits into two columns: left column ~80% width holds exactly ${panelCount} equal storyboard panels in a ${gridLabel} grid, read left-to-right then top-to-bottom (P1 top-left through P${panelCount} bottom-right). The right 20% is a reserved blank strip — draw nothing there.`,
     "Every panel is a landscape rectangle with equal gutters and thin borders, a small circular number marker in its upper-left corner, and one short caption line directly beneath it.",
-    // 侧栏必须是彩色实拍缩略图,与左侧线稿形成对比——这是参考图模板的核心特征。
-    // 不写明的话,下面"每格黑白线稿"和末尾的全局禁令会把侧栏一起画成素描。
-    "The six sidebar reference slots are full-colour realistic reference thumbnails, not sketches: reproduce each attached production asset inside its slot at photographic quality, matching that asset's own colours, materials and lighting. The monochrome pencil treatment applies only to the storyboard panels in the left column.",
+    // 侧栏交给确定性后处理(runner 的 stampStoryboardSidebar)贴真实资产 PNG。
+    // 扩散模型没有"精确复制"能力,让它画参考位只会得到对资产图的彩色再创作
+    // ——生产实测:白色毛绒生物、黄色小鸡,都不是真实角色图。所以这里要求留白。
+    "Leave the right 20% of the sheet completely blank white — no border, no boxes, no headings, no thumbnails, no text in that strip. A deterministic post-process owns that area and will paste the real reference assets there. Everything you draw must fit inside the left 80% (panels) plus the header and footer bands.",
     "Footer holds a notes/timing field on the left and director, animator, and date fields on the right.",
     "Render every panel as a black-and-white hand-drawn storyboard sketch: graphite/pencil linework, loose hatching, clear silhouettes, expressive blocking, rough but intentional speed lines, white paper, no color. This is a planning document, not a finished cinematic still and not an asset image.",
     "Maintain strong alignment, consistent margins, equal panel sizes, clear hierarchy. No extra panels, no merged cells, no floating cards, no decorative background elements.",

@@ -5297,6 +5297,9 @@ function modernStoryboardStatusForPanel(panel = {}) {
 }
 
 const STORYBOARD_PLOT_SECONDS = 15;
+// 与 server.js 的 STORYBOARD_MAX_PANELS / STORYBOARD_BOARD_COLUMNS 保持一致。
+// 面板数、跨板步长和尾格索引全部派生，改一个常量三处全对。
+const STORYBOARD_BOARD_PANELS = 12;
 
 function modernStoryboardPages(data = state.project, shots = modernShotRecords(data)) {
   const slots = Array.isArray(data?.storyboardSlots) ? data.storyboardSlots : [];
@@ -5343,15 +5346,15 @@ function modernStoryboardPages(data = state.project, shots = modernShotRecords(d
   return Array.from({ length: boardCount }, (_, boardIndex) => {
     const slot = slots[boardIndex] || {};
     const rawPanels = Array.isArray(slot.panels) ? slot.panels : [];
-    let panels = Array.from({ length: 9 }, (_, panelIndex) => {
-      const shot = shots[boardIndex * 8 + Math.max(0, panelIndex - (boardIndex > 0 ? 1 : 0))] || null;
+    let panels = Array.from({ length: STORYBOARD_BOARD_PANELS }, (_, panelIndex) => {
+      const shot = shots[boardIndex * (STORYBOARD_BOARD_PANELS - 1) + Math.max(0, panelIndex - (boardIndex > 0 ? 1 : 0))] || null;
       return boardPanel(rawPanels[panelIndex], panelIndex, shot, boardIndex, slot.duration || STORYBOARD_PLOT_SECONDS);
     });
     if (slot.generated || slot.status === "ready") {
       panels = panels.map((panel) => ({ ...panel, status: panel.source === "reused-anchor" ? "reused" : "complete" }));
     }
     if (boardIndex > 0) {
-      const previousBoard = slots[boardIndex - 1]?.panels?.[8];
+      const previousBoard = slots[boardIndex - 1]?.panels?.[STORYBOARD_BOARD_PANELS - 1];
       const carry = previousBoard || null;
       panels[0] = {
         ...panels[0],

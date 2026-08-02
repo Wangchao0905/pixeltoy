@@ -16,6 +16,43 @@ assert.equal(
   "真人验证开关需要暴露引用选择逻辑供回归测试",
 );
 
+assert.equal(
+  __test.assetParser.documentStyleIsNonPhotoreal("插画师的职业气质"),
+  false,
+  "人物职业描述不能被误判为二维插画风格",
+);
+assert.equal(
+  __test.assetParser.documentStyleIsNonPhotoreal("二维插画风格，赛璐璐上色"),
+  true,
+  "明确的二维插画风格仍需保留非真人约束",
+);
+assert.doesNotMatch(
+  __test.videoPrompt.videoStyleDirectiveFromProductionAssets([
+    { globalStyle: "插画师的职业气质" },
+  ]),
+  /插画师的职业气质/u,
+  "单个资产的职业描述不能升级为全片视频风格",
+);
+assert.doesNotMatch(
+  __test.videoPrompt.stripInvalidLegacyVideoStyleLock([
+    "视觉风格：插画师的职业气质",
+    "视觉风格硬约束：必须保持上述二维/卡通/动画风格；禁止超写实、真人摄影、照片质感、写实皮肤与写实材质，禁止 3D、CG、游戏角色渲染、PBR、景深虚化和电影级写实打光。",
+    "镜号 1（4 秒）",
+  ].join("\n")),
+  /插画师的职业气质|视觉风格硬约束/u,
+  "历史错误风格锁必须在读取配置时被清除",
+);
+const migratedStyle = __test.videoPrompt.migrateInvalidVideoStyleLocks({
+  assets: [{ globalStyle: "插画师的职业气质" }],
+  shots: [{
+    videoStyleDirective: "插画师的职业气质",
+    prompt: "画面：视觉风格：插画师的职业气质 人物站在窗前\n视觉风格硬约束：必须保持上述二维/卡通/动画风格；禁止超写实、真人摄影。",
+  }],
+});
+assert.equal(migratedStyle.data.assets[0].globalStyle, "", "历史资产职业字段必须从全局风格中清除");
+assert.equal(migratedStyle.data.shots[0].videoStylePreset, "photoreal", "受污染镜头必须恢复真人实拍预设");
+assert.match(migratedStyle.data.shots[0].prompt, /真人电影实拍质感/u, "受污染镜头必须写入真人实拍约束");
+
 const assets = [
   { name: "SB001_BOARD", manifestType: "Storyboard", url: "https://cdn.example.com/board.png" },
   { name: "C001_HERO", manifestType: "Character", url: "https://cdn.example.com/hero.png" },

@@ -179,11 +179,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .field textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
 .field input:hover, .field select:hover, .field textarea:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.9); }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue); outline: none; box-shadow: 0 0 0 3px rgba(47, 155, 255, 0.12); }
-.audience-preference { margin: -2px 0 14px; }
-.audience-gender-control { display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid rgba(94, 140, 166, 0.24); border-radius: 5px; background: rgba(255, 255, 255, 0.58); }
-.audience-gender-control button { min-width: 58px; min-height: 27px; border: 0; border-radius: 3px; padding: 0 9px; color: var(--muted); background: transparent; font-size: 11px; font-weight: 600; transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease; }
-.audience-gender-control button:hover { color: var(--ink); background: rgba(47, 155, 255, 0.08); }
-.audience-gender-control button.is-active { color: var(--ink); background: var(--lime); box-shadow: 0 2px 7px rgba(100, 130, 0, 0.18); }
 .slider-field { gap: 8px; }
 .slider-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .slider-label output { color: var(--ink); font-size: 15px; font-weight: 650; white-space: nowrap; }

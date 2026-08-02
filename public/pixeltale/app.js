@@ -167,13 +167,6 @@ const audienceDnaRecommendations = {
 
 const audienceGenderLabels = { all: "全部受众", male: "男性受众", female: "女性受众" };
 
-function audienceDisplayValue() {
-  const raw = String(state.input.audience || "").trim();
-  return ["male", "female", "male_drama", "female_drama", "男频", "女频", "男性", "女性"].includes(raw.toLowerCase())
-    ? "18-34 · English-speaking audience"
-    : raw || "18-34 · English-speaking audience";
-}
-
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
@@ -581,11 +574,12 @@ function collectBriefInput() {
   syncBriefRanges();
   syncCreativeControls();
   syncMarketControls();
+  const audienceGender = $("#audienceGender")?.value || state.input.audienceGender || "all";
   state.input = {
     ...state.input,
     platform: $("#platform")?.value || state.input.platform,
-    audience: $("#audience")?.value || state.input.audience,
-    audienceGender: $("[data-audience-gender].is-active")?.dataset.audienceGender || state.input.audienceGender || "all",
+    audience: audienceGender,
+    audienceGender,
     idea: $("#idea")?.value || "",
   };
   return state.input;
@@ -765,7 +759,7 @@ function renderCreativeControls() {
 function renderBrief() {
   const long = state.mode === "long";
   const idea = state.input.idea || "";
-  const audience = audienceDisplayValue();
+  const audienceGender = audienceGenderLabels[state.input.audienceGender] ? state.input.audienceGender : "all";
   const { config, episodeCount, durationValue } = briefRangeValues();
   const marketRegion = state.input.marketRegion || "north_america";
   const marketCountry = state.input.marketCountry || "united_states";
@@ -776,8 +770,7 @@ function renderBrief() {
     <div class="content-grid">
       <section class="form-panel">
         <h3>创作规格</h3>
-        <div class="form-row"><div class="field"><label for="platform">发布平台</label><select id="platform"><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>Web drama</option></select></div><div class="field"><label for="audience">目标受众</label><input id="audience" value="${escapeHtml(audience)}" /></div></div>
-        <div class="field audience-preference"><label>受众偏好方向</label><div class="audience-gender-control" role="group" aria-label="受众偏好方向"><button type="button" class="${state.input.audienceGender === "all" ? "is-active" : ""}" data-audience-gender="all">全部</button><button type="button" class="${state.input.audienceGender === "male" ? "is-active" : ""}" data-audience-gender="male">男性</button><button type="button" class="${state.input.audienceGender === "female" ? "is-active" : ""}" data-audience-gender="female">女性</button></div><p class="small-note">仅用于 DNA 标签的选题优先推荐，仍可自由组合全部标签。</p></div>
+        <div class="form-row"><div class="field"><label for="platform">发布平台</label><select id="platform"><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>Web drama</option></select></div><div class="field"><label for="audienceGender">目标受众</label><select id="audienceGender" aria-label="目标受众"><option value="all" ${audienceGender === "all" ? "selected" : ""}>全部</option><option value="male" ${audienceGender === "male" ? "selected" : ""}>男性</option><option value="female" ${audienceGender === "female" ? "selected" : ""}>女性</option></select></div></div>
         <div class="market-panel"><div class="market-panel-head"><span class="card-label"><i></i>MARKET LOCALIZATION</span><strong>投放市场决定人名、地名与社会语境</strong></div><div class="form-row"><div class="field"><label for="marketRegion">受众地区</label><select id="marketRegion">${selectOptions(Object.entries(marketRegionLabels), marketRegion)}</select></div><div class="field"><label for="marketCountry">投放国家 / 地区</label><select id="marketCountry">${marketCountryOptions(marketRegion, marketCountry)}</select></div></div><div class="field"><label for="localizationNote">本土化补充 <span class="optional">可选</span></label><input id="localizationNote" value="${escapeHtml(state.input.localizationNote || "")}" placeholder="例如：芝加哥蓝领社区、伦敦金融区或曼谷大学校园" /></div></div>
         <div class="form-row"><div class="field slider-field"><div class="slider-label"><label for="episodeScaleRange">${long ? "章节数量" : "计划集数"}</label><output id="episodeScaleValue" for="episodeScaleRange">${episodeCount} ${config.episode.unit}</output></div><input id="episodeScaleRange" type="range" min="${config.episode.min}" max="${config.episode.max}" step="${config.episode.step}" value="${episodeCount}" /><div class="slider-scale"><span id="episodeScaleMin">${config.episode.min} ${config.episode.unit}</span><span id="episodeScaleMax">${config.episode.max} ${config.episode.unit}</span></div></div><div class="field slider-field"><div class="slider-label"><label for="durationRange">${long ? "单章时长" : "单集时长"}</label><output id="durationValue" for="durationRange">${durationValue} ${config.duration.unit}</output></div><input id="durationRange" type="range" min="${config.duration.min}" max="${config.duration.max}" step="${config.duration.step}" value="${durationValue}" /><div class="slider-scale"><span id="durationMin">${config.duration.min} ${config.duration.unit}</span><span id="durationMax">${config.duration.max} ${config.duration.unit}</span></div></div></div>
         <div class="field"><label for="idea">创作想法 <span aria-hidden="true">*</span></label><textarea id="idea" placeholder="用中文写下主角、欲望和核心冲突">${escapeHtml(idea)}</textarea><p class="small-note">中文描述剧情；英文对白会在对白阶段完成口语化本土化，不做逐句直译。</p></div>
@@ -983,12 +976,13 @@ function bindStageActions() {
   $("#marketRegion")?.addEventListener("change", () => { updateMarketCountryList(); syncMarketControls(); renderShellState(); void persistCreativeSettings(); });
   $("#marketCountry")?.addEventListener("change", () => { syncMarketControls(); renderShellState(); void persistCreativeSettings(); });
   $("#localizationNote")?.addEventListener("change", () => { syncMarketControls(); renderShellState(); void persistCreativeSettings(); });
-  $$('[data-audience-gender]').forEach((button) => button.addEventListener("click", () => {
+  $("#audienceGender")?.addEventListener("change", () => {
     collectBriefInput();
-    state.input.audienceGender = button.dataset.audienceGender || "all";
+    state.input.audienceGender = $("#audienceGender")?.value || "all";
+    state.input.audience = state.input.audienceGender;
     renderStage();
     void persistCreativeSettings();
-  }));
+  });
   $("#openingImpactRange")?.addEventListener("input", syncCreativeControls);
   $("#openingImpactRange")?.addEventListener("change", () => { syncCreativeControls(); void persistCreativeSettings(); });
   $$('[data-creative-control]').forEach((control) => control.addEventListener("change", () => { syncCreativeControls(); void persistCreativeSettings(); }));

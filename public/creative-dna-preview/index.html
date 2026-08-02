@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pixel Toys · DNA 创作规格预览</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!--
+      THESIS: DNA is the first production decision; the page refuses the old stack of equal-height setting cards.
+      OWN-WORLD: A pale studio board, cobalt data ink, coral signal, and restrained graphite controls make the form feel like a working brief.
+      STORY: The creator locks visual and narrative DNA first, then tunes delivery specifications and the opening rhythm.
+      FIRST VIEWPORT: DNA spans the top of the workbench; creation specs occupy the main column while only actionable timing controls sit at right.
+      FORM: A two-column operate surface with one vertical reading order, built for fast repeat configuration and later API binding.
+    -->
+    <div class="studio-shell">
+      <header class="studio-topbar">
+        <a class="brand" href="#" aria-label="返回 Pixel Toys 项目页">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">PIXEL TOYS</span>
+        </a>
+        <div class="topbar-context">
+          <span class="context-kicker">TK MODE / EP 01</span>
+          <strong>短剧创作配置</strong>
+        </div>
+        <div class="topbar-actions">
+          <span class="save-state"><i aria-hidden="true"></i>已保存</span>
+          <button class="icon-button" type="button" aria-label="关闭预览" title="关闭预览">×</button>
+        </div>
+      </header>
+
+      <main class="workbench">
+        <section class="dna-panel" aria-labelledby="dna-title">
+          <div class="section-heading section-heading-dna">
+            <div>
+              <span class="kicker">CREATIVE DNA</span>
+              <h1 id="dna-title">DNA <small>你的作品识别码</small></h1>
+              <p>先锁定会贯穿整部剧的视觉、叙事和节奏基因；下面的提示词与镜头配置都会继承它。</p>
+            </div>
+            <div class="dna-health" aria-label="DNA 完整度">
+              <span>DNA 完整度</span>
+              <strong id="dnaHealthValue">72%</strong>
+              <div class="health-track" aria-hidden="true"><i id="dnaHealthBar"></i></div>
+            </div>
+          </div>
+
+          <div class="dna-toolbar" role="tablist" aria-label="DNA 分类">
+            <button class="dna-tab is-active" type="button" role="tab" aria-selected="true" data-dna-tab="visual">视觉基因</button>
+            <button class="dna-tab" type="button" role="tab" aria-selected="false" data-dna-tab="story">叙事基因</button>
+            <button class="dna-tab" type="button" role="tab" aria-selected="false" data-dna-tab="rhythm">节奏基因</button>
+            <span class="dna-toolbar-note"><i aria-hidden="true"></i><span id="dnaTabNote">点击标签即可加入 DNA</span></span>
+          </div>
+
+          <div class="dna-content" data-dna-content="visual">
+            <div class="dna-feature">
+              <div class="feature-visual" aria-hidden="true">
+                <span class="sun-orb"></span><span class="horizon-line"></span><span class="frame-corner frame-corner-tl"></span><span class="frame-corner frame-corner-br"></span>
+              </div>
+              <div class="feature-copy">
+                <span class="feature-label">主视觉方向</span>
+                <strong>冷蓝夜景 · 红色信号</strong>
+                <p>高反差城市夜景，冷色环境里保留一处醒目的暖色行动线。</p>
+                <button class="text-button" type="button" data-toast="视觉方向编辑器已打开">编辑方向 <span aria-hidden="true">↗</span></button>
+              </div>
+            </div>
+            <div class="dna-chip-group" aria-label="视觉 DNA 标签">
+              <span class="group-label">视觉关键词</span>
+              <div class="chip-list">
+                <button class="dna-chip is-selected" type="button" data-dna-chip="冷蓝夜景">冷蓝夜景 <b aria-hidden="true">✓</b></button>
+                <button class="dna-chip is-selected" type="button" data-dna-chip="红色信号">红色信号 <b aria-hidden="true">✓</b></button>
+                <button class="dna-chip" type="button" data-dna-chip="手持纪实">手持纪实</button>
+                <button class="dna-chip" type="button" data-dna-chip="潮湿反光">潮湿反光</button>
+                <button class="dna-chip" type="button" data-dna-chip="窄幅构图">窄幅构图</button>
+                <button class="dna-chip add-chip" type="button" data-toast="新增 DNA 标签">＋ 添加标签</button>
+              </div>
+            </div>
+            <div class="dna-footer-row">
+              <div class="dna-reference-note"><span class="reference-dot" aria-hidden="true"></span><span><b>已绑定 3 张参考图</b><small>会作为视频配置的全局视觉参考</small></span></div>
+              <button class="outline-button" type="button" data-toast="参考图选择器已打开">管理参考图 <span aria-hidden="true">→</span></button>
+            </div>
+          </div>
+
+          <div class="dna-content is-hidden" data-dna-content="story">
+            <div class="story-dna-grid">
+              <label class="dna-input"><span>核心母题</span><input value="重生之后，主动夺回选择权" /></label>
+              <label class="dna-input"><span>情绪曲线</span><select><option>压抑 → 失控 → 反击</option><option>轻快 → 误会 → 和解</option></select></label>
+              <label class="dna-input dna-input-wide"><span>人物关系基因</span><textarea rows="2">主角与对手保持近距离博弈；每次靠近都带来新的代价。</textarea></label>
+            </div>
+          </div>
+
+          <div class="dna-content is-hidden" data-dna-content="rhythm">
+            <div class="rhythm-dna-grid">
+              <label class="dna-input"><span>剪辑呼吸</span><select><option>短促、连续切点</option><option>长镜头、留白</option></select></label>
+              <label class="dna-input"><span>动作密度</span><select><option>中高 · 每 3 秒一个变化</option><option>低 · 以表演为主</option></select></label>
+              <div class="rhythm-meter"><span>每集节奏目标</span><strong>90 秒 / 12 个镜头</strong><div><i></i></div></div>
+            </div>
+          </div>
+        </section>
+
+        <div class="lower-grid">
+          <section class="spec-panel" aria-labelledby="spec-title">
+            <div class="section-heading compact-heading">
+              <div>
+                <span class="kicker">PRODUCTION SPEC</span>
+                <h2 id="spec-title">创作规格</h2>
+              </div>
+              <span class="inherit-badge"><i aria-hidden="true"></i>DNA 已继承</span>
+            </div>
+            <div class="spec-grid">
+              <label class="field"><span>发布平台</span><select><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>小红书</option></select></label>
+              <label class="field"><span>目标受众</span><input value="18–34 · English-speaking audience" /></label>
+              <label class="field"><span>受众地区</span><select><option>北美</option><option>东南亚</option><option>欧洲</option></select></label>
+              <label class="field"><span>投放国家 / 地区</span><select><option>美国</option><option>加拿大</option><option>英国</option></select></label>
+              <label class="field field-wide"><span>本土化补充 <em>可选</em></span><input placeholder="例如：芝加哥蓝领社区、伦敦金融区或曼谷大学校园" /></label>
+              <div class="spec-rule field-wide"><span class="rule-dot" aria-hidden="true"></span><p>中文写剧本；角色与地名保留目标市场自然称呼。英文对白按当地语境口语化，不做逐字直译。</p></div>
+              <label class="field field-wide"><span>创作想法 <em>必填</em></span><textarea rows="4">网关，重生 + 取消婚约 + 复仇逆袭，奇幻，科幻，爽文</textarea></label>
+            </div>
+            <div class="spec-metrics">
+              <label class="range-field"><span><b>计划集数</b><strong id="episodeCount">30 集</strong></span><input id="episodeRange" type="range" min="3" max="60" value="30" /><small><i>3 集</i><i>60 集</i></small></label>
+              <label class="range-field"><span><b>单集时长</b><strong id="episodeDuration">90 秒</strong></span><input id="durationRange" type="range" min="15" max="180" value="90" step="15" /><small><i>15 秒</i><i>180 秒</i></small></label>
+            </div>
+          </section>
+
+          <aside class="decision-rail" aria-label="发布决策">
+            <section class="rail-block rail-block-signal">
+              <div class="rail-block-head"><span class="kicker">OPENING SIGNAL</span><strong>开头暴击窗口</strong><b id="openingWindow">0–3s</b></div>
+              <input id="openingRange" type="range" min="0" max="5" value="3" aria-label="开头暴击窗口秒数" />
+              <div class="range-labels"><span>0s</span><span>5s</span></div>
+              <p>在首个动作完成前交代冲突，不用旁白解释。</p>
+            </section>
+            <section class="rail-block">
+              <label class="field"><span>每集钩子</span><select><option>每集强钩子</option><option>中段悬念</option><option>情绪收束</option></select></label>
+            </section>
+            <section class="rail-block">
+              <label class="field"><span>对白策略</span><select><option>英文口语化本土化</option><option>中文对白</option><option>少对白、强动作</option></select></label>
+            </section>
+            <section class="rail-block rail-block-last">
+              <label class="field"><span>输出范围</span><select><option>已确认 · 版本化</option><option>草稿 · 可编辑</option><option>仅生成样片</option></select></label>
+            </section>
+          </aside>
+        </div>
+      </main>
+      <footer class="studio-footer"><span>DNA 会写入分镜草稿、资产提示词和视频配置。</span><button class="primary-button" type="button" data-toast="创作规格已保存">保存创作规格 <span aria-hidden="true">↗</span></button></footer>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

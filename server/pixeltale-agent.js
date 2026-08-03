@@ -1150,7 +1150,9 @@ function nextStage(stage) {
 function nextRequiredStage(state) {
   const approved = new Set(state.approvedArtifactIds);
   return STAGES.find((stage) => {
-    const artifact = approvedForStage(state, stage);
+    // A newer rerun supersedes an older approval. The latest artifact is the
+    // only version that can release this stage and its downstream stages.
+    const artifact = artifactForStage(state, stage);
     return !artifact || !approved.has(artifact.id);
   }) || "handoff";
 }

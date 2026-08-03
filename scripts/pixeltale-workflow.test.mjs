@@ -268,6 +268,7 @@ const testModels = [
 const titleSets = [
   ["The Last Tenant", "Room Zero", "Borrowed Silence", "On Hold"],
   ["The Hollow Key", "Northbound", "Glass Witness", "After the Signal"],
+  ["Night Index", "Dead Air", "The Counterfeit Room", "Last Exit"],
 ];
 const titleOutput = (index = 0) => ({
   candidates: titleSets[Math.min(index, titleSets.length - 1)].map((title, candidateIndex) => ({
@@ -357,6 +358,11 @@ assert.equal(regeneratedTitleRun.artifacts[0].version, 2, "regeneration must cre
 assert.equal(routedCalls.length, 1, "regeneration must still call only one model");
 assert.deepEqual(routedCalls[0].input.excludedTitles.sort(), titleSets[0].slice().sort(), "regeneration must ask the model to avoid every previous candidate");
 assert.equal(new Set(regeneratedTitleRun.artifacts[0].content.candidates.map((candidate) => candidate.title_en).filter((title) => titleSets[0].includes(title))).size, 0, "controlled regeneration must increase the available title choices");
+
+runAgent.approve({ ...titleParams, artifactId: regeneratedTitleRun.artifacts[0].id, selectedTitle: titleSets[1][0] });
+const rerunAfterTitleApproval = await runAgent.run(titleParams);
+assert.equal(rerunAfterTitleApproval.artifacts[0].version, 3, "a rerun after approval must create a new title version");
+assert.doesNotThrow(() => runAgent.approve({ ...titleParams, artifactId: rerunAfterTitleApproval.artifacts[0].id, selectedTitle: titleSets[2][0] }), "the latest rerun must remain the stage that requires confirmation");
 
 const primaryFallback = await callStagePrimary({
   route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "deepseek-v4-pro" },

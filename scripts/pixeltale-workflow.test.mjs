@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(root, "public/pixeltale.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const { createPixelTaleAgent, aggregateCrossReview, buildRevisionContract } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevisionContract } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 assert.match(html, /id="newDraft"[^>]*>[^<]*<span[^>]*>\+<\/span>\s*新建剧集/, "new story action must be explicit");
 assert.match(app, /function startNewDraft\(\)[\s\S]*localStorage\.setItem\(SESSION_STORAGE_KEY[\s\S]*window\.location\.reload\(\)/, "new story must rotate the session before reloading");
@@ -154,5 +154,20 @@ assert.equal(revisionRun.status, "completed", `revision must run as a distinct, 
 assert.equal(revisionRun.revision.allResolved, true, "the run record must prove all revision contract items were closed");
 const finalReview = revisionRun.state.artifacts.find((artifact) => artifact.id === revisionRun.artifacts[1].id);
 assert.equal(finalReview.content.revision.closure.allResolved, true, "the persisted review must retain item-by-item closure evidence");
+
+const primaryFallback = await callStagePrimary({
+  route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "grok-4.5" },
+  system: "stage generation",
+  user: "{}",
+  env: { PIXELTALE_CHATGPT_API_KEY: "test", PIXELTALE_CLAUDE_API_KEY: "test", PIXELTALE_GROK_API_KEY: "test" },
+  fetchImpl: async (_url, options) => {
+    const request = JSON.parse(options.body);
+    if (request.model === "gpt-5.6-terra") throw new Error("upstream connection reset");
+    return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }) };
+  },
+});
+assert.equal(primaryFallback.provider, "claude", "a timed-out primary must advance to the next configured stage model");
+assert.equal(primaryFallback.fallback, true, "fallback execution must remain visible to the run record");
+assert.equal(primaryFallback.fallbackFailures.length, 1, "only the failed primary should be recorded before recovery");
 
 console.log("pixeltale workflow contract ok");

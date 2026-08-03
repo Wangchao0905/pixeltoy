@@ -888,14 +888,14 @@ class ProviderError extends Error {
   }
 }
 
-async function callProvider({ provider, system, user, env = process.env, fetchImpl = globalThis.fetch }) {
+async function callProvider({ provider, system, user, env = process.env, fetchImpl = globalThis.fetch, timeoutMs: timeoutOverride, maxRetries: retryOverride }) {
   const routeValue = text(provider, 100).toLowerCase();
   const resolvedProvider = MODEL_PROVIDER_MAP[routeValue] || routeValue;
   const config = { ...providerConfig(resolvedProvider, env), model: MODEL_PROVIDER_MAP[routeValue] ? routeValue : providerConfig(resolvedProvider, env).model };
   if (!config.key) throw new ProviderError(`${config.label} 未配置 API Key`, { code: "PROVIDER_NOT_CONFIGURED" });
   if (typeof fetchImpl !== "function") throw new ProviderError("当前运行时没有 fetch", { code: "FETCH_UNAVAILABLE" });
-  const timeoutMs = Math.max(5000, Number(env.PIXELTALE_MODEL_TIMEOUT_MS || 120000));
-  const maxRetries = Math.max(0, Math.min(1, Number(env.PIXELTALE_MAX_RETRIES ?? 1)));
+  const timeoutMs = Math.max(5000, Number(timeoutOverride ?? (env.PIXELTALE_MODEL_TIMEOUT_MS || 120000)));
+  const maxRetries = Math.max(0, Math.min(1, Number(retryOverride ?? (env.PIXELTALE_MAX_RETRIES ?? 1))));
   const directAnthropic = resolvedProvider === "claude" && config.protocol === "anthropic";
   const endpoint = directAnthropic ? `${config.baseUrl}/messages` : `${config.baseUrl}/chat/completions`;
   const body = directAnthropic
@@ -964,6 +964,28 @@ async function callProvider({ provider, system, user, env = process.env, fetchIm
     }
   }
   throw new ProviderError(`${config.label} 请求失败`, { code: "PROVIDER_ERROR" });
+}
+
+function canFallbackFrom(error) {
+  return ["TIMEOUT", "NETWORK_ERROR", "EMPTY_RESPONSE"].includes(error?.code)
+    || (error?.code === "HTTP_ERROR" && (error.status === 429 || error.status >= 500));
+}
+
+async function callStagePrimary({ route, system, user, env = process.env, fetchImpl = globalThis.fetch }) {
+  const providers = crossReviewRoutes(route);
+  const timeoutMs = Math.max(15_000, Number(env.PIXELTALE_STAGE_TIMEOUT_MS || 60_000));
+  const failures = [];
+  for (const provider of providers) {
+    try {
+      const result = await callProvider({ provider, system, user, env, fetchImpl, timeoutMs, maxRetries: 0 });
+      return { ...result, fallback: provider !== route.primary, fallbackFailures: failures };
+    } catch (error) {
+      failures.push({ provider, code: error?.code || "PROVIDER_ERROR", message: error?.message || "主创模型请求失败" });
+      if (!canFallbackFrom(error)) throw error;
+    }
+  }
+  const detail = failures.map((item) => item.message).join("；");
+  throw new ProviderError(`所有主创模型均未在响应窗口内完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE" });
 }
 
 function emptyState({ projectId, mode = "tk", now = () => new Date() }) {
@@ -1272,8 +1294,8 @@ function createPixelTaleAgent(options = {}) {
           throw error;
         }
       }
-      primary = await callProvider({
-        provider: route.primary,
+      primary = await callStagePrimary({
+        route,
         system: stageSystemPrompt(stage, mode, runInput),
         user: revisionContract
           ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
@@ -1317,7 +1339,7 @@ function createPixelTaleAgent(options = {}) {
       primaryArtifact.reviewId = reviewArtifact.id;
       state.artifacts.push(primaryArtifact, reviewArtifact);
       const runStatus = consensus.pass ? "completed" : "needs_review";
-      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${providerForRoute(item)}:${modelForRoute(item, env)}`), consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${providerForRoute(item)}:${modelForRoute(item, env)}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       persistState(params, state);
       return { ...publicRun(record), artifacts: [primaryArtifact, reviewArtifact].map(publicArtifact), state: publicState(state, env) };
@@ -1502,6 +1524,7 @@ function createPixelTaleAgent(options = {}) {
 module.exports = {
   createPixelTaleAgent,
   callProvider,
+  callStagePrimary,
   providerConfig,
   providerStatus,
   normalizeMode,

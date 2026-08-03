@@ -1051,7 +1051,12 @@ function renderTitleStage() {
   const approved = state.approved.has(artifact.id);
   const statusLabel = approved ? "本阶段已确认" : "单模型生成完成 · 等待人工选择";
   const regenerate = approved ? "" : `<button class="stage-secondary title-regenerate" type="button" data-regenerate-title${state.busy ? " disabled" : ""}>重新生成 4 个</button>`;
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">ENGLISH RELEASE TITLE · 4 OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的英文片名</h3><p>正式发行只使用英文片名。中文释义和命名信息用于创作者快速比较。</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核</small>${approved ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${selectedTitle ? "可确认" : "等待选择"}</span>`}</div></section>${renderNextStep()}`;
+  const inlineApproval = approved
+    ? `<span class="review-button is-disabled">已确认版本</span>`
+    : selectedTitle && !state.busy
+      ? `<button class="review-button review-button-action" type="button" data-flow-action="approve" data-approve-artifact="${escapeHtml(artifact.id)}">确认剧名并进入故事提案 →</button>`
+      : `<span class="review-button is-disabled">等待选择</span>`;
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">ENGLISH RELEASE TITLE · 4 OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的英文片名</h3><p>正式发行只使用英文片名。中文释义和命名信息用于创作者快速比较。</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核</small>${inlineApproval}</div></section>${renderNextStep()}`;
 }
 
 function renderArtifactStage() {
@@ -1065,7 +1070,12 @@ function renderArtifactStage() {
   const approved = state.approved.has(artifact.id);
   const reviewLabel = approved ? "本阶段已确认" : reviewContent.pass ? "互审一致性通过 · 等待确认" : "交叉审核已汇总完整修订清单";
   const reviewPanel = review ? renderReviewPanel(reviewContent, { passed: approved || reviewContent.pass, stage: state.stage }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)}</small>${approved ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${reviewContent.pass ? "等待确认" : "待修订"}</span>`}</div>${reviewPanel}</section>${renderNextStep()}`;
+  const inlineApproval = approved
+    ? `<span class="review-button is-disabled">已确认版本</span>`
+    : reviewContent.pass && artifact.status === "ready" && !state.busy
+      ? `<button class="review-button review-button-action" type="button" data-flow-action="approve" data-approve-artifact="${escapeHtml(artifact.id)}">确认${escapeHtml(meta.title)}并进入下一阶段 →</button>`
+      : `<span class="review-button is-disabled">${reviewContent.pass ? "等待确认" : "待修订"}</span>`;
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)}</small>${inlineApproval}</div>${reviewPanel}</section>${renderNextStep()}`;
 }
 
 function renderHandoff() {

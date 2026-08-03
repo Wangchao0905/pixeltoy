@@ -34,6 +34,7 @@ assert.match(app, /const fieldLabelMap = \{[\s\S]*title_zh: "剧名"/, "structur
 assert.match(app, /data-regenerate-title/, "title selection must expose a regenerate action before approval");
 assert.match(app, /生成 4 个剧名候选[\s\S]*重新生成 4 个/, "title UI must expose exactly four title choices");
 assert.match(app, /中文释义只供创作者对照，不会写入后续正式标题/, "title UI must distinguish the English release title from its Chinese explanation");
+assert.match(app, /review-button-action[\s\S]*data-approve-artifact/, "approved artifacts must expose a clickable inline confirmation action");
 assert.match(app, /单模型生成完成 · 等待人工选择[\s\S]*不进入交叉审核/, "title UI must explain its single-model no-review policy");
 assert.match(agent, /正式发行片名必须使用自然英文/, "title generation must follow the release language instead of returning Chinese names");
 assert.match(agent, /人物身份或关系、地点或机构、异常物件或意象、带双重含义的极简短语/, "title generation must enforce four distinct naming genes");

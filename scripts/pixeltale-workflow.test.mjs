@@ -39,7 +39,7 @@ assert.match(app, /执行交叉修订并复审/, "review output must offer one-c
 assert.match(app, /revisionPlan/, "automatic revision must pass a scoped revision plan");
 assert.match(app, /revision-closure/, "revision output must expose item-by-item closure evidence");
 assert.match(styles, /\.review-issue-list \{[\s\S]*max-height: 420px;/, "review issues must stay readable in a bounded panel");
-assert.match(agent, /必须穷举本次产物中所有需要修订的问题/, "review prompts must require exhaustive findings");
+assert.match(agent, /只返回最多 3 个会阻断下一阶段的问题/, "review prompts must stay concise and stage-scoped");
 assert.match(agent, /revisionClosureProtocol/, "review prompts must require closure evidence for every revision item");
 assert.match(agent, /BRIEF_SPEC_MATCH/, "brief review must use stable stage-specific criterion ids");
 assert.match(agent, /不得要求人物表、分集表、场景表或对白等尚未到达阶段的产物/, "a reviewer must not demand deliverables from later stages");

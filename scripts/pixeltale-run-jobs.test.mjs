@@ -68,7 +68,7 @@ try {
   assert.equal(job.result.status, "completed", "two-review quorum must release the generated brief");
   assert.equal(job.result.state.runs.length, 1, "duplicate starts must not create duplicate Agent runs");
   assert.equal(requestedTokenBudgets[0], 1_800, "brief authoring must use the brief-sized output budget");
-  assert.deepEqual(requestedTokenBudgets.slice(1).sort((a, b) => a - b), [1_800, 1_800, 1_800], "brief reviewers must use the brief-sized review budget");
+  assert.deepEqual(requestedTokenBudgets.slice(1).sort((a, b) => a - b), [1_200, 1_200, 1_200], "brief reviewers must use the compact brief review budget");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");
 } finally {
   superPixel.setFetch();

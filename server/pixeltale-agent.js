@@ -27,13 +27,13 @@ const STAGE_OUTPUT_TOKEN_BUDGETS = Object.freeze({
   dialogue: 12_000,
 });
 const REVIEW_OUTPUT_TOKEN_BUDGETS = Object.freeze({
-  brief: 1_800,
-  title: 2_000,
-  proposal: 2_400,
-  characters: 3_600,
-  arc: 5_000,
-  scenes: 5_000,
-  dialogue: 5_000,
+  brief: 1_200,
+  title: 1_400,
+  proposal: 1_800,
+  characters: 2_800,
+  arc: 4_000,
+  scenes: 4_000,
+  dialogue: 4_000,
 });
 const STAGE_REVIEW_CRITERIA = Object.freeze({
   brief: {
@@ -413,11 +413,12 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "输出严格 JSON，不要 Markdown、代码围栏或额外文字。",
     `检查阶段：${stage}；模式：${modeLabel(mode)}。`,
     "只审核当前阶段的交付契约，不得要求人物表、分集表、场景表或对白等尚未到达阶段的产物。",
+    ...(stage === "brief" ? ["brief 只评价 title_zh、logline_zh、core_conflict_zh、viewer_question_zh、episode_promise_zh 和 mode_rules；不得要求分段规划、命名配角、警务流程或完整事件解释。"] : []),
     `本阶段唯一审核标准：${Object.entries(criteria).map(([id, description]) => `${id}=${description}`).join("；")}。`,
     "逐项比对待审产物、用户规格和已确认上下文；不要因为产物写得流畅就默认通过。",
     "重点寻找：前后设定冲突、因果断裂、角色动机缺口、市场本土化错误、模式节奏偏离、悬念提前泄露和无法执行的空泛表达。",
-    "必须穷举本次产物中所有需要修订的问题，不要只返回最严重的一项；每个独立问题都要在 issues 中单独列出，并为每个问题给出证据和可执行修订建议。",
-    "required_changes 必须覆盖 issues 中的全部问题；如果多个问题互不相同，不得合并成一句笼统意见。",
+    "只返回最多 3 个会阻断下一阶段的问题；每项使用一个标准 ID、一句证据和一句可执行修改，不写二次策划案。",
+    "required_changes 必须与 issues 一一对应，不得追加未在 issues 中举证的新要求。",
     "若输入包含 revisionClosureProtocol，则必须逐条返回 revision_closures：每条合同项只能标记 resolved、partial 或 unresolved，并写明修订证据和未完成时的剩余修改；不得遗漏合同编号。",
     "只有 cross_validation、consistency、adversarial 三项均为 true，并且阶段专项检查均通过时，pass 才能为 true；发现任一硬伤必须 pass=false，并在 required_changes 中给出可执行修订意见。",
     creativeControlPrompt(input, mode),
@@ -653,9 +654,9 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
       feedback: text(entry.feedback, 1200),
       fix: text(entry.fix || entry.suggestion, 1200),
     };
-  }).filter((item) => item.tag && item.feedback);
+  }).filter((item) => item.tag && item.feedback).slice(0, 3);
   const missingDimensions = requireDimensions ? REVIEW_DIMENSIONS.filter((key) => !Number.isFinite(Number(rawDimensions[key]?.score ?? rawDimensions[key]))) : [];
-  const requiredChanges = review.required_changes.map((item) => text(item, 1000)).filter(Boolean).slice(0, 20);
+  const requiredChanges = review.required_changes.map((item) => text(item, 1000)).filter(Boolean).slice(0, 6);
   const contractItems = asArray(revisionContract?.items);
   const revisionClosures = asArray(review.revision_closures).map((item) => {
     const entry = asObject(item);
@@ -681,7 +682,7 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
   return {
     pass: review.pass && missingHardChecks.length === 0 && missingDimensions.length === 0 && missingClosures.length === 0,
     score: Math.max(0, Math.min(100, Number(review.score))),
-    findings: review.findings.map((item) => text(item, 1000)).filter(Boolean).slice(0, 20),
+    findings: review.findings.map((item) => text(item, 1000)).filter(Boolean).slice(0, 6),
     required_changes: requiredChanges,
     checks,
     dimensions,

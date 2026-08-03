@@ -1283,6 +1283,10 @@ function sanitizeCanvasState(body = {}) {
         generatedAssetId: compactLine(node.generatedAssetId || "").slice(0, 120),
         videoLocalFile: compactLine(node.videoLocalFile || "").slice(0, 12000),
         taskId: compactLine(node.taskId).slice(0, 260),
+        // 必须持久化:前端每次提交生成时新造一个 videoPreviewVersion,预览签名靠它
+        // 强制换播放器。这里不存 → loadProject 拿回恒为空 → 同一模块重新生成后
+        // 签名不变(部分 provider 会复用同一 videoUrl)→ 一直显示旧视频。
+        videoPreviewVersion: compactLine(node.videoPreviewVersion || "").slice(0, 120),
         taskProvider: compactLine(node.taskProvider).slice(0, 80),
         submittedAt: compactLine(node.submittedAt || "").slice(0, 80),
         progress: node.progress === null ? null : Number.isFinite(Number(node.progress)) ? Number(node.progress) : undefined,

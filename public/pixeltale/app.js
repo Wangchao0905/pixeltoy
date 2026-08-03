@@ -1042,12 +1042,16 @@ function renderTitleStage() {
   const options = candidates.map((candidate, index) => {
     const title = String(candidate?.title_en || candidate?.title_zh || "");
     const selected = title === selectedTitle;
-    return `<button class="title-option${selected ? " is-selected" : ""}" type="button" role="radio" aria-checked="${selected}" data-title-choice="${escapeHtml(title)}"><span class="title-option-number">0${index + 1}</span><span class="title-option-body"><strong lang="en">${escapeHtml(title)}</strong><span class="title-option-translation">中文释义 · ${escapeHtml(candidate?.explanation_zh || "仅供创作者参考")}</span><small>${escapeHtml(candidate?.naming_gene_zh || "命名基因未标注")} · ${escapeHtml(candidate?.style_zh || "风格未标注")} · ${escapeHtml(candidate?.tone_zh || "")}</small><p>${escapeHtml(candidate?.reason_zh || "")}</p></span><i aria-hidden="true"></i></button>`;
+    const namingGene = candidate?.naming_gene_zh || "命名基因未标注";
+    const style = candidate?.style_zh || "风格未标注";
+    const tone = candidate?.tone_zh || "语气未标注";
+    const reason = candidate?.reason_zh || "暂无命名依据";
+    return `<button class="title-option${selected ? " is-selected" : ""}" type="button" role="radio" aria-checked="${selected}" aria-label="选择英文片名 ${escapeHtml(title)}" data-title-choice="${escapeHtml(title)}"><span class="title-option-top"><span class="title-option-number">0${index + 1}</span><span class="title-option-gene">${escapeHtml(namingGene)}</span></span><span class="title-option-body"><strong lang="en">${escapeHtml(title)}</strong><span class="title-option-translation">中文释义 · ${escapeHtml(candidate?.explanation_zh || "仅供创作者参考")}</span><span class="title-option-meta"><em>${escapeHtml(style)}</em><em>${escapeHtml(tone)}</em></span><span class="title-option-reason">${escapeHtml(reason)}</span></span><i aria-hidden="true"></i></button>`;
   }).join("");
   const approved = state.approved.has(artifact.id);
   const statusLabel = approved ? "本阶段已确认" : "单模型生成完成 · 等待人工选择";
   const regenerate = approved ? "" : `<button class="stage-secondary title-regenerate" type="button" data-regenerate-title${state.busy ? " disabled" : ""}>重新生成 4 个</button>`;
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div><span class="card-label"><i></i>ENGLISH RELEASE TITLE</span><h3 id="titlePickerHeading">选一个最适合这部剧的英文片名</h3></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">英文片名用于正式发行；中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核</small>${approved ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${selectedTitle ? "可确认" : "等待选择"}</span>`}</div></section>${renderNextStep()}`;
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">ENGLISH RELEASE TITLE · 4 OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的英文片名</h3><p>正式发行只使用英文片名。中文释义和命名信息用于创作者快速比较。</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核</small>${approved ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${selectedTitle ? "可确认" : "等待选择"}</span>`}</div></section>${renderNextStep()}`;
 }
 
 function renderArtifactStage() {
@@ -1175,6 +1179,15 @@ async function runAutoRevision(stage = state.stage) {
 }
 
 async function approveArtifact(artifactId) {
+  const requiredStage = workflowStage();
+  const artifact = (state.agent?.artifacts || []).find((item) => item.id === artifactId);
+  if (!artifact || artifact.stage !== requiredStage) {
+    state.stage = requiredStage;
+    state.lastError = "";
+    renderStage();
+    showToast(`请先完成“${stageMeta[requiredStage]?.title || "当前阶段"}”`);
+    return;
+  }
   state.busy = true;
   state.lastError = "";
   renderShellState();

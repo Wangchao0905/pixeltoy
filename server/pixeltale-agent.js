@@ -3,6 +3,7 @@ const path = require("node:path");
 const { fallbackVisualAssets } = require("./pixeltale-visual-assets.js");
 
 const STAGES = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"];
+const STAGE_LABELS = Object.freeze({ brief: "故事架构", title: "剧名选择", proposal: "故事提案", characters: "人物与世界", arc: "分集与章节", scenes: "场景与镜头", dialogue: "对白本土化" });
 const DEFAULT_ROUTES = {
   orchestration: "gpt-5.6-terra",
   continuity: "claude-opus-5",
@@ -1470,7 +1471,7 @@ function createPixelTaleAgent(options = {}) {
     }
     const requiredStage = nextRequiredStage(state);
     if (artifact.stage !== requiredStage) {
-      const error = new Error(`请先确认“${requiredStage}”阶段的产物`);
+      const error = new Error(`请先确认“${STAGE_LABELS[requiredStage] || requiredStage}”阶段的产物`);
       error.code = "STAGE_OUT_OF_ORDER";
       error.statusCode = 409;
       throw error;

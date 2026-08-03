@@ -46,6 +46,14 @@ try {
     ["C001_HERO.png", "S001_ROOM.png", "P001_KEY.png"],
     "a storyboard with no slot refs must still attach the current project's production assets",
   );
+
+  // 回归:refs 只命中一类时,其余类型必须补齐。生产上某分镜 refs 只写了 C001_咕咚,
+  // 于是同项目 5 张场景图全被丢掉——面板背景只能靠模型编,侧栏 LOCATION 区也空着。
+  const onlyCharacter = storyboard.productionBoardReferenceImagesForSlots(referenceEpisodeRoot, [{ refs: ["C001_HERO"] }]);
+  const names = onlyCharacter.map((file) => path.basename(file));
+  assert.ok(names.includes("C001_HERO.png"), "命中的角色图必须保留");
+  assert.ok(names.includes("S001_ROOM.png"), "refs 没写场景也要补一张,否则面板背景全靠编");
+  assert.ok(names.includes("P001_KEY.png"), "道具同理需要补齐");
 } finally {
   fs.rmSync(referenceFixtureRoot, { recursive: true, force: true });
 }

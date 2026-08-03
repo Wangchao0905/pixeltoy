@@ -7447,7 +7447,19 @@ function productionBoardReferenceImagesForSlots(episodeRoot, slots = []) {
       return asset.manifestType !== "Storyboard" && filePath && fs.existsSync(filePath);
     });
   const selected = wanted.size ? allCandidates.filter((asset) => wanted.has(asset.assetName)) : [];
-  const references = selected.length ? selected : allCandidates;
+  // 精确匹配到的集合往往只覆盖一类。生产实测:某分镜 refs 只写了 C001_咕咚,
+  // 于是同项目 5 张场景图全被丢掉——面板背景只能靠模型编,侧栏 LOCATION 区也空着。
+  // 所以按类型补齐:匹配结果缺哪类,就从本项目同类资产里补一张进来。
+  const topUpByType = (base) => {
+    const picked = [...base];
+    for (const type of ["Character", "Scene", "Prop"]) {
+      if (picked.some((asset) => asset.manifestType === type)) continue;
+      const extra = allCandidates.find((asset) => asset.manifestType === type && !picked.includes(asset));
+      if (extra) picked.push(extra);
+    }
+    return picked;
+  };
+  const references = selected.length ? topUpByType(selected) : allCandidates;
   return references
     .sort((a, b) => {
       const order = { Character: 0, Scene: 1, Prop: 2, Insert: 3 };

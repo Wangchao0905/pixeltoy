@@ -12,9 +12,9 @@ const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevis
 
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
 assert.match(agent, /modelRouter\.reviewModels\(route\)/, "cross-review must be selected by the SuperPixel router");
-assert.doesNotMatch(agent, /PIXELTALE_(CHATGPT|CLAUDE|GROK)_API_KEY/, "PixelTale must not own provider credentials");
+assert.doesNotMatch(agent, /PIXELTALE_(CHATGPT|CLAUDE|GROK|DEEPSEEK)_API_KEY/, "PixelTale must not own provider credentials");
 assert.match(app, /syncRoutingModelOptions\(agent\.modelOptions \|\| \[\]\)/, "model choices must be synchronized from SuperPixel's returned registry");
-assert.match(app, /\["chatgpt", "claude", "grok"\]/, "review UI must represent all three SuperPixel model families");
+assert.match(app, /\["chatgpt", "claude", "deepseek"\]/, "review UI must represent all three SuperPixel model families");
 
 assert.match(html, /id="newDraft"[^>]*>[^<]*<span[^>]*>\+<\/span>\s*新建剧集/, "new story action must be explicit");
 const pixelTaleStylesStamp = html.match(/pixeltale\/styles\.css\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
@@ -91,7 +91,7 @@ const aggregated = aggregateCrossReview([
   },
   {
     result: {
-      provider: "grok",
+      provider: "deepseek",
       model: "review-c",
       content: {
         pass: false,
@@ -137,14 +137,14 @@ assert.equal(closed.revision.closure.allResolved, true, "closure evidence must b
 const quorumPass = aggregateCrossReview([
   resolvedReview("review-a"),
   resolvedReview("review-b"),
-  { route: "grok-4.5", model: "grok-4.5", error: "upstream timeout" },
+  { route: "deepseek-v4-pro", model: "deepseek-v4-pro", error: "upstream timeout" },
 ]);
 assert.equal(quorumPass.pass, true, "two agreeing completed reviewers must not be discarded by one unavailable reviewer");
 assert.deepEqual(quorumPass.quorum, { required: 2, completed: 2, passing: 2, met: true }, "the canonical review result must expose quorum evidence");
 const noQuorum = aggregateCrossReview([
   resolvedReview("review-a"),
   { route: "claude-opus-5", model: "claude-opus-5", error: "upstream timeout" },
-  { route: "grok-4.5", model: "grok-4.5", error: "upstream timeout" },
+  { route: "deepseek-v4-pro", model: "deepseek-v4-pro", error: "upstream timeout" },
 ]);
 assert.equal(noQuorum.pass, false, "one reviewer can never release a stage");
 
@@ -180,11 +180,11 @@ const fakeFetch = async (_url, options) => {
 const testModels = [
   { id: "gpt-5.6-terra", provider: "chatgpt", configured: true },
   { id: "claude-opus-5", provider: "claude", configured: true },
-  { id: "grok-4.5", provider: "grok", configured: true },
+  { id: "deepseek-v4-pro", provider: "deepseek", configured: true },
 ];
 const testRouter = {
   models: () => testModels,
-  status: () => Object.fromEntries(["chatgpt", "claude", "grok"].map((provider) => [provider, { provider, configured: true }])),
+  status: () => Object.fromEntries(["chatgpt", "claude", "deepseek"].map((provider) => [provider, { provider, configured: true }])),
   stageModels: (route) => [route.primary, route.reviewer, route.consistency],
   reviewModels: () => testModels.map(({ id: model, provider }) => ({ model, provider, configured: true })),
   call: async ({ model, system, user }) => {
@@ -211,7 +211,7 @@ const finalReview = revisionRun.state.artifacts.find((artifact) => artifact.id =
 assert.equal(finalReview.content.revision.closure.allResolved, true, "the persisted review must retain item-by-item closure evidence");
 
 const primaryFallback = await callStagePrimary({
-  route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "grok-4.5" },
+  route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "deepseek-v4-pro" },
   system: "stage generation",
   user: "{}",
   modelRouter: {
@@ -235,7 +235,7 @@ let elapsedMs = 0;
 const timedCalls = [];
 await assert.rejects(
   () => callStagePrimary({
-    route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "grok-4.5" },
+    route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "deepseek-v4-pro" },
     system: "stage generation",
     user: "{}",
     totalTimeoutMs: 15_000,

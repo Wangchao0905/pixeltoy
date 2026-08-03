@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 process.env.ASSET_ANALYZER_API_KEY ||= "sk-test-asset-analyzer-000000000000";
 process.env.STORYBOARD_API_KEY ||= "sk-test-storyboard-0000000000000000";
 process.env.XAI_API_KEY ||= "sk-test-grok-00000000000000000000000";
+process.env.DEEPSEEK_API_KEY ||= "sk-test-deepseek-0000000000000000000";
 
 const require = createRequire(import.meta.url);
 const server = require("../server.js");

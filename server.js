@@ -2475,13 +2475,14 @@ const SUPER_PIXEL_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const SUPER_PIXEL_CLAUDE_MODELS = new Set(["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
 const SUPER_PIXEL_GPT_MODELS = new Set(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"]);
 const SUPER_PIXEL_GROK_MODELS = new Set(["grok-4.5", "grok-4.5-latest", "grok-4.3"]);
+const SUPER_PIXEL_DEEPSEEK_MODELS = new Set(["deepseek-v4-pro"]);
 // PixelTale follows the SuperPixel writing roster exposed for creative work.
-// Legacy Grok aliases remain available to SuperPixel itself, but cannot leak
-// into the scriptwriting team where the approved Grok model is 4.5 only.
+// Grok remains available to SuperPixel media tools, but PixelTale's third
+// independent writing reviewer is DeepSeek.
 const SUPER_PIXEL_WRITING_MODEL_IDS = Object.freeze([
   ...SUPER_PIXEL_GPT_MODELS,
   ...SUPER_PIXEL_CLAUDE_MODELS,
-  "grok-4.5",
+  ...SUPER_PIXEL_DEEPSEEK_MODELS,
 ]);
 
 function superPixelModelConfig(model) {
@@ -2494,6 +2495,9 @@ function superPixelModelConfig(model) {
   if (SUPER_PIXEL_GROK_MODELS.has(model)) {
     return { apiKey: process.env.XAI_API_KEY, kind: "grok" };
   }
+  if (SUPER_PIXEL_DEEPSEEK_MODELS.has(model)) {
+    return { apiKey: process.env.DEEPSEEK_API_KEY, kind: "deepseek" };
+  }
   return null;
 }
 
@@ -2501,6 +2505,7 @@ function superPixelModelProvider(model) {
   if (SUPER_PIXEL_GPT_MODELS.has(model)) return "chatgpt";
   if (SUPER_PIXEL_CLAUDE_MODELS.has(model)) return "claude";
   if (SUPER_PIXEL_GROK_MODELS.has(model)) return "grok";
+  if (SUPER_PIXEL_DEEPSEEK_MODELS.has(model)) return "deepseek";
   return "";
 }
 
@@ -2517,7 +2522,7 @@ function superPixelTextModelOptions() {
 
 function superPixelTextModelStatus() {
   const options = superPixelTextModelOptions();
-  return Object.fromEntries(["chatgpt", "claude", "grok"].map((provider) => {
+  return Object.fromEntries(["chatgpt", "claude", "deepseek"].map((provider) => {
     const models = options.filter((item) => item.provider === provider);
     return [provider, {
       provider,
@@ -2680,7 +2685,7 @@ function superPixelTextStageModels(route = {}) {
 function superPixelTextReviewModels(route = {}) {
   const options = superPixelTextModelOptions();
   const preferred = uniqueModelIds([route.reviewer, route.consistency, route.primary]);
-  return ["chatgpt", "claude", "grok"].map((provider) => {
+  return ["chatgpt", "claude", "deepseek"].map((provider) => {
     const candidates = [...preferred, ...options.map((item) => item.id)]
       .map((id) => options.find((item) => item.id === id))
       .filter((item) => item?.provider === provider);
@@ -3095,6 +3100,9 @@ function openAiCompatBaseUrl(kind = "asset") {
     return (process.env.STORYBOARD_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.apikey.fun/v1").replace(/\/+$/, "");
   }
   if (kind === "grok") return grokApiBaseUrl();
+  if (kind === "deepseek") {
+    return (process.env.DEEPSEEK_API_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.apikey.fun/v1").replace(/\/+$/, "");
+  }
   return (process.env.ASSET_ANALYZER_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.apikey.fun/v1").replace(/\/+$/, "");
 }
 

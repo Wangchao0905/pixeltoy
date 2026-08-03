@@ -6,7 +6,7 @@ const STAGES = ["brief", "title", "proposal", "characters", "arc", "scenes", "di
 const DEFAULT_ROUTES = {
   orchestration: "gpt-5.6-terra",
   continuity: "claude-opus-5",
-  hooks: "grok-4.5",
+  hooks: "deepseek-v4-pro",
   dialogueReview: "claude-sonnet-5",
   consistency: "gpt-5.6-luna",
 };
@@ -437,7 +437,7 @@ function reviewerIdentity(provider) {
   return {
     chatgpt: "结构与规格审查员：核对阶段契约、因果结构和用户要求是否完整兑现。",
     claude: "连续性与本土化审查员：核对人物动机、前后连续性、地区文化和语言自然度。",
-    grok: "钩子与受众对抗审查员：从目标受众视角攻击节奏、爽点、反转和追更动力。",
+    deepseek: "钩子与受众对抗审查员：从目标受众视角攻击节奏、爽点、反转和追更动力。",
   }[providerForRoute(provider)] || "独立交叉审查员：基于证据给出可执行结论。";
 }
 
@@ -695,7 +695,7 @@ function providerForRoute(route) {
   const raw = text(route, 100).toLowerCase();
   if (raw.startsWith("gpt-")) return "chatgpt";
   if (raw.startsWith("claude-")) return "claude";
-  if (raw.startsWith("grok-")) return "grok";
+  if (raw.startsWith("deepseek-")) return "deepseek";
   return "superpixel";
 }
 

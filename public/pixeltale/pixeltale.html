@@ -115,14 +115,14 @@
         <div class="routing-head"><div><span class="eyebrow">CREATIVE ROUTING</span><h2 id="routingTitle">创作分工</h2></div><button value="cancel" class="dialog-close" aria-label="关闭">×</button></div>
         <p class="routing-copy">默认分工服务于速度、连续性和 TK 钩子。改派只影响下一次运行。</p>
         <div class="routing-list">
-          <label><span>总编排与结构复核</span><select data-route="orchestration"><option value="chatgpt">结构总编</option><option value="claude">故事监修</option><option value="grok">钩子编导</option></select></label>
-          <label><span>人物、世界与长剧连续性</span><select data-route="continuity"><option value="claude">故事监修</option><option value="chatgpt">结构总编</option><option value="grok">钩子编导</option></select></label>
-          <label><span>TK 钩子、反转与口语化</span><select data-route="hooks"><option value="grok">钩子编导</option><option value="chatgpt">结构总编</option><option value="claude">故事监修</option></select></label>
-          <label><span>英文对白最终复核</span><select data-route="dialogueReview"><option value="claude">故事监修</option><option value="chatgpt">结构总编</option><option value="grok">钩子编导</option></select></label>
+          <label><span>总编排与结构复核</span><select data-route="orchestration"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="claude-opus-5">Claude Opus 5</option><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></select></label>
+          <label><span>人物、世界与长剧连续性</span><select data-route="continuity"><option value="claude-opus-5">Claude Opus 5</option><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></select></label>
+          <label><span>TK 钩子、反转与口语化</span><select data-route="hooks"><option value="deepseek-v4-pro">DeepSeek V4 Pro</option><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="claude-opus-5">Claude Opus 5</option></select></label>
+          <label><span>英文对白最终复核</span><select data-route="dialogueReview"><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></select></label>
         </div>
         <div class="routing-footer"><span id="routingSaved">默认分工</span><button value="save" id="saveRouting" class="stage-primary">保存分工</button></div>
       </form>
     </dialog>
-    <script src="/pixeltale/app.js?v=pixeltale-creative-controls-20260803"></script>
+    <script src="/pixeltale/app.js?v=pixeltale-deepseek-20260803"></script>
   </body>
 </html>

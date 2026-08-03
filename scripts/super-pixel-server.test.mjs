@@ -29,8 +29,10 @@ fs.writeFileSync(sessionsPath, `${JSON.stringify(sessions, null, 2)}\n`);
 process.env.ASSET_ANALYZER_API_KEY = "test-super-pixel-asset-key";
 process.env.STORYBOARD_API_KEY = "test-super-pixel-storyboard-key";
 process.env.XAI_API_KEY = "test-super-pixel-grok-key";
+process.env.DEEPSEEK_API_KEY = "test-super-pixel-deepseek-key";
 process.env.ASSET_ANALYZER_BASE_URL = "https://asset.example/v1";
 process.env.STORYBOARD_BASE_URL = "https://storyboard.example/v1";
+process.env.DEEPSEEK_API_BASE_URL = "https://deepseek.example/v1";
 const require = createRequire(import.meta.url);
 const { __test } = require("../server.js");
 
@@ -230,13 +232,13 @@ try {
   const textModels = textRouter.models();
   assert.deepEqual(
     new Set(textModels.map((item) => item.provider)),
-    new Set(["chatgpt", "claude", "grok"]),
+    new Set(["chatgpt", "claude", "deepseek"]),
     "PixelTale router must use SuperPixel's registered model families",
   );
   assert.deepEqual(
-    textModels.filter((item) => item.provider === "grok").map((item) => item.id),
-    ["grok-4.5"],
-    "PixelTale must keep the approved Grok 4.5-only writing roster",
+    textModels.filter((item) => item.provider === "deepseek").map((item) => item.id),
+    ["deepseek-v4-pro"],
+    "PixelTale must use DeepSeek V4 Pro as its third writing family",
   );
   // A stalled gateway used to abort all three authors on one blocked channel,
   // because the three configured roles commonly resolve to a single provider.
@@ -258,7 +260,7 @@ try {
   });
   assert.deepEqual(
     reviewerModels.map((item) => item.provider),
-    ["chatgpt", "claude", "grok"],
+    ["chatgpt", "claude", "deepseek"],
     "cross-review must reserve one distinct SuperPixel model family per reviewer",
   );
   assert.equal(new Set(reviewerModels.map((item) => item.model)).size, 3, "cross-review models must be distinct");
@@ -273,6 +275,10 @@ try {
   assert.deepEqual(textResult.content, { ok: true });
   assert.equal(textCalls[0].url, "https://storyboard.example/v1/chat/completions", "text router must reuse SuperPixel's model gateway");
   assert.equal(textCalls[0].headers.Authorization, "Bearer test-super-pixel-storyboard-key", "text router must reuse SuperPixel's credential source");
+  const deepseekResult = await textRouter.call({ model: "deepseek-v4-pro", system: "return JSON", user: "{}", purpose: "pixeltale" });
+  assert.equal(deepseekResult.model, "deepseek-v4-pro");
+  assert.equal(textCalls[1].url, "https://deepseek.example/v1/chat/completions", "DeepSeek must use its configured OpenAI-compatible gateway");
+  assert.equal(textCalls[1].headers.Authorization, "Bearer test-super-pixel-deepseek-key", "DeepSeek must use its own credential source");
   assert.equal(textCalls[0].body.stream, false, "PixelTale structured output must be a non-streaming SuperPixel request");
 } finally {
   __test.superPixel.setFetch(null);

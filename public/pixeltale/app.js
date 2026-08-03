@@ -36,7 +36,7 @@ const state = {
   lastError: "",
   documentError: "",
   agent: null,
-  routes: { orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "grok-4.5", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
+  routes: { orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
   input: {
     platform: "TikTok / TikTok Series",
     audience: "18-34 · English-speaking audience",
@@ -68,7 +68,7 @@ const modelMeta = {
   "claude-opus-5": { name: "Claude Opus 5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "claude-sonnet-5": { name: "Claude Sonnet 5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "claude-haiku-4-5": { name: "Claude Haiku 4.5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
-  "grok-4.5": { name: "Grok 4.5", provider: "grok", role: "TK 钩子 / 口语化", detail: "开头暴击、反转、探索欲与英文对白口语化" },
+  "deepseek-v4-pro": { name: "DeepSeek V4 Pro", provider: "deepseek", role: "TK 钩子 / 受众对抗", detail: "开头暴击、反转、探索欲与目标受众追更动力" },
 };
 
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];
@@ -343,17 +343,17 @@ function updateAgentState(agent) {
 }
 
 function modelInfo(id) {
-  const fallback = { name: id, provider: id.startsWith("claude-") ? "claude" : id.startsWith("grok-") ? "grok" : "chatgpt", role: "创作模型", detail: "由 SuperPixel 统一接入与路由" };
+  const fallback = { name: id, provider: id.startsWith("claude-") ? "claude" : id.startsWith("deepseek-") ? "deepseek" : "chatgpt", role: "创作模型", detail: "由 SuperPixel 统一接入与路由" };
   return modelMeta[id] || fallback;
 }
 
 function syncRoutingModelOptions(options) {
   if (!Array.isArray(options) || !options.length) return;
-  const groups = { chatgpt: [], claude: [], grok: [] };
+  const groups = { chatgpt: [], claude: [], deepseek: [] };
   options.forEach((option) => {
     if (groups[option?.provider]) groups[option.provider].push(option);
   });
-  const labels = { chatgpt: "GPT", claude: "Claude", grok: "Grok" };
+  const labels = { chatgpt: "GPT", claude: "Claude", deepseek: "DeepSeek" };
   $$('[data-route]').forEach((select) => {
     const selected = state.routes[select.dataset.route] || select.value;
     select.innerHTML = Object.entries(groups).map(([provider, entries]) => entries.length
@@ -610,7 +610,7 @@ function renderModelTeam() {
   const route = activeRouteForStage();
   const options = Array.isArray(state.agent?.modelOptions) ? state.agent.modelOptions : [];
   const preferred = [route.reviewer, route.consistency, route.primary];
-  const reviewTeam = ["chatgpt", "claude", "grok"].map((provider) => {
+  const reviewTeam = ["chatgpt", "claude", "deepseek"].map((provider) => {
     const candidates = [...preferred, ...options.map((item) => item.id)]
       .map((id) => options.find((item) => item.id === id))
       .filter((item) => item?.provider === provider);

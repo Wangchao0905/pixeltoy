@@ -3738,7 +3738,6 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
   }
   const assetLookup = assetLookupFromAssets(assets);
   const invalidShots = [];
-  const missingBlockingRefsByShot = [];
   const shots = plan.shots.map((plannedShot, index) => {
     const videoDesign = sanitizeSeedanceDesign(plannedShot?.design);
     const refs = (Array.isArray(plannedShot?.refs) ? plannedShot.refs : []).map(compactLine).filter(Boolean);
@@ -3747,12 +3746,13 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
     // only use images that have actually finished generating. Missing files are
     // reported to the caller and never treated as references for this run.
     const availableRefs = refs.filter((ref) => assetLookup.has(ref));
-    // 主体资产(人物/场景/故事板)缺图不能静默剔除后继续,否则用户拿到一个"成功"
-    // 但引用被清空的配置,生成出一批没有人物的废片。
-    const missingBlockingRefs = blockingRefsMissing(missingRefs, assetLookup);
-    if (!plannedShot?.id || !plannedShot?.beat || !refs.length || missingBlockingRefs.length || !hasCompleteSeedanceDesign(videoDesign)) {
+    // 未生成的资产**不阻塞视频配置生成**。原先主体资产(人物/场景/故事板)缺图会
+    // 直接抛错,于是"还没出图"就等于配置根本生成不出来——但配置本身是剧本层面的
+    // 产物,和图有没有画好无关。缺图记录在 unavailableRefs / missingAssets 里,
+    // 由 buildVideoConfig 的 referenceWarnings 提示,再由 configReadiness 在
+    // **提交出片**时拦住(缺少资产图：<name>)。那才是缺图真正致命的地方。
+    if (!plannedShot?.id || !plannedShot?.beat || !refs.length || !hasCompleteSeedanceDesign(videoDesign)) {
       invalidShots.push(plannedShot?.id || `镜头${index + 1}`);
-      if (missingBlockingRefs.length) missingBlockingRefsByShot.push({ shot: compactLine(plannedShot?.id) || `镜头${index + 1}`, refs: missingBlockingRefs });
       return null;
     }
     return {
@@ -3774,13 +3774,11 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
       y: 620 + Math.floor(index / 3) * 320,
     };
   });
-  if (missingBlockingRefsByShot.length) {
-    const detail = missingBlockingRefsByShot.map((entry) => `${entry.shot}（缺 ${entry.refs.join("、")}）`).join("；");
-    throw new Error(`视频配置引用校验失败：以下镜头缺少人物/场景资产图，请先生成这些资产图再提交：${detail}`);
-  }
   if (invalidShots.length || shots.some((shot) => !shot)) {
     throw new Error(`模型导演设计引用的资产或镜头无效：${invalidShots.join("、")}。请重新生成分镜草稿。`);
   }
+  // 缺图不再抛错。buildVideoConfig 已从 shot.unavailableRefs 生成同样的
+  // referenceWarnings 提示,真正的闸门在 configReadiness(提交出片时拦)。
   return { model: compactLine(plan.model), shots };
 }
 
@@ -22993,9 +22991,14 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     if (!storyboardSlots.length) {
       throw new Error("故事板模式未找到与当前模型导演镜头对应的故事板，请重新生成故事板后再生成视频配置。");
     }
+    // 未生成的故事板同样不阻塞配置生成。配置是剧本层面的产物,和板子画完没画完
+    // 无关。缺板的槽位会让该镜头 storyboardRefs 为空,configReadiness 在提交出片
+    // 时以「N 个片段缺少 Production Board 绑定」拦住——那才是真正致命的点。
     const missingStoryboardSlots = storyboardSlots.filter((slot) => !slot.asset || slot.partialCoverage);
     if (missingStoryboardSlots.length) {
-      throw new Error(`故事板模式尚未完成：缺少 ${missingStoryboardSlots.map((slot) => slot.label || slot.id).join("、")}。请先生成对应故事板，再生成视频配置。`);
+      referenceWarnings.push(
+        `以下故事板尚未生成或覆盖不全，对应片段暂无 Production Board 绑定：${missingStoryboardSlots.map((slot) => slot.label || slot.id).join("、")}`,
+      );
     }
     shots = productionBoardShotsFromSlots(modelShots, storyboardSlots, dialogueLanguage, assetLookup);
     shots.forEach((shot) => {

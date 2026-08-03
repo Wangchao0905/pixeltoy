@@ -180,6 +180,11 @@ const advisoryContract = buildRevisionContract({
   required_changes: ["单模型建议只供参考"],
 }, { stage: "brief", sourceArtifactId: "artifact_v3", id: "revision_test_3" });
 assert.equal(advisoryContract.items.length, 0, "single-model advice must never create a mandatory revision contract");
+const staleConsensusContract = buildRevisionContract({
+  commonIssues: [{ tag: "旧单模型问题", modelCount: 1, suggestions: ["不得执行"] }],
+  reviewIssues: [{ tag: "真实共识问题", modelCount: 2, suggestions: ["按两个模型的共同证据修订"] }],
+}, { stage: "brief", sourceArtifactId: "artifact_v4", id: "revision_test_4" });
+assert.deepEqual(staleConsensusContract.items.map((item) => item.tag), ["真实共识问题"], "legacy commonIssues must still obey the two-model quorum");
 const resolvedReview = (model) => ({
   result: {
     provider: "chatgpt",

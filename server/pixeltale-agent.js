@@ -797,8 +797,9 @@ function sharedReviewIssues(feedbacks) {
 }
 
 function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
-  const freshIssues = asArray(review.commonIssues).length
-    ? asArray(review.commonIssues)
+  const freshCommonIssues = asArray(review.commonIssues).filter((item) => Number(item.modelCount) >= REVIEW_QUORUM);
+  const freshIssues = freshCommonIssues.length
+    ? freshCommonIssues
     : asArray(review.reviewIssues).filter((item) => Number(item.modelCount) >= REVIEW_QUORUM);
   const inheritedIssues = asArray(review.revision?.contract?.items)
     .filter((item) => {
@@ -832,8 +833,8 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
       dimension: REVIEW_DIMENSIONS.includes(issue.dimension) ? issue.dimension : "logic",
       severity: ["high", "medium", "low"].includes(issue.severity) ? issue.severity : "medium",
       modelCount: Math.max(0, Number(issue.modelCount) || 0),
-      evidence: uniqueText(issue.evidence, 4),
-      requiredEdit: uniqueText(issue.suggestions, 4),
+      evidence: uniqueText(asArray(issue.evidence), 4),
+      requiredEdit: uniqueText(asArray(issue.suggestions), 4),
       acceptance: `修订版本必须消除“${text(issue.tag || "审核修订项", 160)}”的证据，并与用户规格和已确认上下文保持一致。`,
     })),
   };

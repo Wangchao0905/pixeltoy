@@ -537,32 +537,26 @@ function nextStepMeta() {
   };
 }
 
-function renderNextStep() {
-  const action = nextStepMeta();
+function renderAgentTaskAction(action) {
   const disabled = state.busy || action.disabled;
   const guidedClass = !disabled && action.kind !== "busy" ? " is-next-action" : "";
-  const actionCopy = state.lastError
-    ? action.kind === "auto-revise"
-      ? `生成失败：${state.lastError} 当前输入已保留，修订后可以再次提交。`
-      : `上次提交失败：${state.lastError} 当前输入已保留，请重新提交并审核。`
-    : action.copy;
-  let button = "";
   if (action.kind === "run") {
-    const target = action.stage === "brief" ? " id=\"runBrief\"" : ` data-run-stage=\"${action.stage}\"`;
-    button = `<button${target} class="stage-primary${guidedClass}" data-flow-action="run" type="button" ${disabled ? "disabled" : ""}>${action.label}</button>`;
-  } else if (action.kind === "auto-revise") {
-    button = `<button class="stage-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${action.label}</button>`;
-  } else if (action.kind === "approve") {
-    button = `<button class="stage-primary${guidedClass}" type="button" data-flow-action="approve" data-approve-artifact="${escapeHtml(action.artifactId)}" ${disabled ? "disabled" : ""}>${action.label}</button>`;
-  } else if (action.kind === "handoff") {
-    button = `<button id="confirmHandoff" class="stage-primary${guidedClass}" data-flow-action="handoff" type="button" ${disabled ? "disabled" : ""}>${action.label}</button>`;
-  } else if (action.kind === "return") {
-    button = `<button class="stage-secondary${guidedClass}" data-flow-action="return" type="button" data-return-current>${action.label}</button>`;
-  } else if (action.kind === "busy") {
-    button = `<span class="next-step-busy">处理中 · 请稍候</span>`;
+    const id = action.stage === "brief" ? "runBrief" : "agentRunStage";
+    return `<button id="${id}" class="stage-primary agent-task-primary${guidedClass}" data-flow-action="run" data-run-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
-  const errorHint = action.kind === "auto-revise" ? "错误已保留在当前步骤，修订后可再次提交。" : "错误已保留在当前步骤，点击下一步可重新提交。";
-  return `<section class="next-step-card${action.kind !== "busy" ? " is-guided" : " is-busy"}" data-next-kind="${action.kind}" aria-label="下一步"><div class="next-step-copy"><span class="card-label"><i></i>NEXT ACTION</span><strong>${escapeHtml(action.title)}</strong><p>${escapeHtml(actionCopy)}</p>${state.lastError ? `<p class="next-step-error" role="alert">${errorHint}</p>` : ""}</div>${button}</section>`;
+  if (action.kind === "auto-revise") {
+    return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+  }
+  if (action.kind === "approve") {
+    return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="approve" data-approve-artifact="${escapeHtml(action.artifactId)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+  }
+  if (action.kind === "handoff") {
+    return `<button id="confirmHandoff" class="stage-primary agent-task-primary${guidedClass}" data-flow-action="handoff" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+  }
+  if (action.kind === "return") {
+    return `<button class="stage-secondary agent-task-primary${guidedClass}" data-flow-action="return" data-return-current type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+  }
+  return action.kind === "busy" ? `<span class="agent-task-busy" role="status">处理中 · 请稍候</span>` : "";
 }
 
 function renderShellState() {
@@ -572,6 +566,8 @@ function renderShellState() {
   $("#agentTaskTitle").textContent = action.title;
   $("#agentTaskCopy").textContent = state.lastError || action.copy;
   $("#agentTaskCopy").setAttribute("role", state.lastError ? "alert" : "status");
+  $("#agentTaskAction").innerHTML = renderAgentTaskAction(action);
+  bindAgentTaskAction();
   $("#flowStepCounter").textContent = `${String(stageIndex(flowStage) + 1).padStart(2, "0")} / ${stageOrder.length}`;
   $("#agentStatus").textContent = state.busy
     ? "PixelTale 正在生成并复核..."
@@ -869,8 +865,7 @@ function renderBrief() {
       ${renderCreativeControls()}
     </div>
     ${renderBriefArtifact()}
-    ${renderInspirationPool()}
-    ${renderNextStep()}`;
+    ${renderInspirationPool()}`;
 }
 
 const fieldLabelMap = {
@@ -1035,7 +1030,7 @@ function renderTitleStage() {
   const meta = currentMeta();
   const artifact = artifactForStage("title");
   if (!artifact) {
-    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 4 个英文候选剧名</h3><p>系统会读取剧本 DNA、发行平台和目标市场，用一个指定模型生成 4 个命名基因不同的英文片名，并附中文释义。</p></section>${renderNextStep()}`;
+    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 4 个英文候选剧名</h3><p>系统会读取剧本 DNA、发行平台和目标市场，用一个指定模型生成 4 个命名基因不同的英文片名，并附中文释义。下一步操作位于右侧。</p></section>`;
   }
   const candidates = Array.isArray(artifact.content?.candidates) ? artifact.content.candidates : [];
   const selectedTitle = state.input.storyTitle || "";
@@ -1051,35 +1046,23 @@ function renderTitleStage() {
   const approved = state.approved.has(artifact.id);
   const statusLabel = approved ? "本阶段已确认" : "单模型生成完成 · 等待人工选择";
   const regenerate = approved ? "" : `<button class="stage-secondary title-regenerate" type="button" data-regenerate-title${state.busy ? " disabled" : ""}>重新生成 4 个</button>`;
-  const inlineApproval = approved
-    ? `<span class="review-button is-disabled">已确认版本</span>`
-    : selectedTitle && !state.busy
-      ? `<button class="review-button review-button-action" type="button" data-flow-action="approve" data-approve-artifact="${escapeHtml(artifact.id)}">确认剧名并进入故事提案 →</button>`
-      : `<span class="review-button is-disabled">等待选择</span>`;
-  const nextAction = nextStepMeta();
-  const nextStepMarkup = nextAction.kind === "approve" && !nextAction.disabled ? "" : renderNextStep();
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">ENGLISH RELEASE TITLE · 4 OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的英文片名</h3><p>正式发行只使用英文片名。中文释义和命名信息用于创作者快速比较。</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核</small>${inlineApproval}</div></section>${nextStepMarkup}`;
+  const inlineStatus = approved ? "已确认版本" : selectedTitle ? "已选择 · 请在右侧确认后进入故事提案" : "等待选择剧名 · 确认入口在右侧";
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">ENGLISH RELEASE TITLE · 4 OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的英文片名</h3><p>正式发行只使用英文片名。中文释义和命名信息用于创作者快速比较。</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核 · ${escapeHtml(inlineStatus)}</small></div></section>`;
 }
 
 function renderArtifactStage() {
   const meta = currentMeta();
   const artifact = artifactForStage(state.stage);
   if (!artifact) {
-    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>本阶段尚未有服务端产物</h3><p>完成上一阶段确认后，这里会生成当前阶段的结构化产物，并返回编排与复核结果。</p></section>${renderNextStep()}`;
+    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>本阶段尚未有服务端产物</h3><p>完成上一阶段确认后，这里会生成当前阶段的结构化产物，并返回编排与复核结果。下一步操作位于右侧。</p></section>`;
   }
   const review = reviewForArtifact(artifact);
   const reviewContent = review?.content || {};
   const approved = state.approved.has(artifact.id);
   const reviewLabel = approved ? "本阶段已确认" : reviewContent.pass ? "互审一致性通过 · 等待确认" : "交叉审核已汇总完整修订清单";
   const reviewPanel = review ? renderReviewPanel(reviewContent, { passed: approved || reviewContent.pass, stage: state.stage }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
-  const inlineApproval = approved
-    ? `<span class="review-button is-disabled">已确认版本</span>`
-    : reviewContent.pass && artifact.status === "ready" && !state.busy
-      ? `<button class="review-button review-button-action" type="button" data-flow-action="approve" data-approve-artifact="${escapeHtml(artifact.id)}">确认${escapeHtml(meta.title)}并进入下一阶段 →</button>`
-      : `<span class="review-button is-disabled">${reviewContent.pass ? "等待确认" : "待修订"}</span>`;
-  const nextAction = nextStepMeta();
-  const nextStepMarkup = nextAction.kind === "approve" && !nextAction.disabled ? "" : renderNextStep();
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)}</small>${inlineApproval}</div>${reviewPanel}</section>${nextStepMarkup}`;
+  const inlineStatus = approved ? "已确认版本" : reviewContent.pass ? "互审一致性通过 · 请在右侧确认" : "待修订 · 请在右侧执行交叉修订";
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${reviewPanel}</section>`;
 }
 
 function renderHandoff() {
@@ -1105,7 +1088,7 @@ function renderHandoff() {
   const documentActions = scriptReady
     ? `<div class="document-delivery-actions"><button type="button" class="stage-primary" data-download-script ${state.documentBusy ? "disabled" : ""}>下载剧本 DOCX <span aria-hidden="true">↓</span></button><button type="button" class="stage-secondary" data-save-script ${state.documentBusy ? "disabled" : ""}>选择文件夹并保存</button></div>`
     : "";
-  return `<div class="stage-kicker"><span class="eyebrow">${currentMeta().kicker}</span><span class="artifact-meta">${ready ? "READY" : "LOCKED"}</span></div><h2>${currentMeta().title}</h2><p class="stage-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集结构、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "中文剧情 + English Dialogue" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待人物与世界"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>${renderNextStep()}`;
+  return `<div class="stage-kicker"><span class="eyebrow">${currentMeta().kicker}</span><span class="artifact-meta">${ready ? "READY" : "LOCKED"}</span></div><h2>${currentMeta().title}</h2><p class="stage-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集结构、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "中文剧情 + English Dialogue" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待人物与世界"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>`;
 }
 
 function renderStage() {
@@ -1271,35 +1254,53 @@ async function saveRouting(event) {
   showToast("创作分工已保存到 PixelTale");
 }
 
-function bindStageActions() {
-  $("#runBrief")?.addEventListener("click", () => {
-    if (!$("#idea")?.value.trim()) {
-      state.lastError = "请在“创作想法”中写清主角、目标和阻碍，再点击“生成故事架构”。";
-      $("#briefError").textContent = state.lastError;
-      $("#briefError")?.classList.add("is-visible");
-      $("#idea")?.focus();
-      showToast(state.lastError);
+function bindAgentTaskAction() {
+  const button = $("#agentTaskAction [data-flow-action]");
+  if (!button) return;
+  button.addEventListener("click", () => {
+    const action = button.dataset.flowAction;
+    if (action === "run") {
+      const stage = button.dataset.runStage || state.stage;
+      if (stage === "brief" && !$("#idea")?.value.trim()) {
+        state.lastError = "请在“创作想法”中写清主角、目标和阻碍，再点击“生成故事架构”。";
+        $("#briefError").textContent = state.lastError;
+        $("#briefError")?.classList.add("is-visible");
+        $("#idea")?.focus();
+        showToast(state.lastError);
+        return;
+      }
+      void runCurrentStage(stage);
       return;
     }
-    runCurrentStage("brief");
+    if (action === "auto-revise") {
+      void runAutoRevision(button.dataset.autoRevise || state.stage);
+      return;
+    }
+    if (action === "approve") {
+      void approveArtifact(button.dataset.approveArtifact);
+      return;
+    }
+    if (action === "handoff") {
+      void createHandoff();
+      return;
+    }
+    if (action === "return") {
+      state.stage = workflowStage();
+      state.lastError = "";
+      renderStage();
+    }
   });
-  $$('[data-run-stage]').forEach((button) => button.addEventListener("click", () => runCurrentStage(button.dataset.runStage)));
-  $$('[data-auto-revise]').forEach((button) => button.addEventListener("click", () => runAutoRevision(button.dataset.autoRevise || state.stage)));
-  $$('[data-approve-artifact]').forEach((button) => button.addEventListener("click", () => approveArtifact(button.dataset.approveArtifact)));
+}
+
+function bindStageActions() {
   $$('[data-title-choice]').forEach((button) => button.addEventListener("click", () => {
     if (state.approved.has(artifactForStage("title")?.id)) return;
     state.input.storyTitle = button.dataset.titleChoice || "";
     renderStage();
   }));
   $("[data-regenerate-title]")?.addEventListener("click", () => runCurrentStage("title"));
-  $("#confirmHandoff")?.addEventListener("click", createHandoff);
   $("[data-download-script]")?.addEventListener("click", () => void runDocumentAction(downloadScriptDocument));
   $("[data-save-script]")?.addEventListener("click", () => void runDocumentAction(saveScriptDocument));
-  $$('[data-return-current]').forEach((button) => button.addEventListener("click", () => {
-    state.stage = workflowStage();
-    state.lastError = "";
-    renderStage();
-  }));
   $("#episodeScaleRange")?.addEventListener("input", syncBriefRanges);
   $("#durationRange")?.addEventListener("input", syncBriefRanges);
   $("#marketRegion")?.addEventListener("change", () => { updateMarketCountryList(); syncMarketControls(); renderShellState(); void persistCreativeSettings(); });

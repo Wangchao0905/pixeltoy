@@ -838,8 +838,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .card-footer { margin-top: 18px; padding-top: 14px; border-color: var(--pt-line); }
 .card-footer small { color: var(--pt-muted); }
 .review-button.is-disabled { border-color: var(--pt-line); color: var(--pt-muted); background: rgba(23, 25, 28, 0.035); }
-.review-button-action { display: inline-flex; align-items: center; justify-content: center; border-color: var(--pt-green-ink); color: var(--pt-ink); background: var(--pt-green); cursor: pointer; box-shadow: 0 6px 16px rgba(120, 154, 0, 0.14); }
-.review-button-action:hover { border-color: var(--pt-green-ink); color: var(--pt-ink); background: #c5f94a; box-shadow: 0 8px 20px rgba(120, 154, 0, 0.20); }
 .review-summary { margin-top: 17px; padding: 16px; border: 1px solid rgba(40, 120, 232, 0.15); border-left: 3px solid var(--pt-blue); border-radius: 12px; background: rgba(244, 249, 255, 0.72); }
 .review-summary.is-passed { border-color: rgba(120, 154, 0, 0.22); border-left-color: var(--pt-green-ink); background: rgba(249, 255, 231, 0.78); }
 .review-summary.is-needs-review { border-color: rgba(220, 89, 107, 0.20); border-left-color: var(--pt-red); background: rgba(255, 248, 249, 0.78); }
@@ -892,6 +890,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .agent-task { margin: 18px 0 0; padding: 18px; border: 1px solid rgba(120, 154, 0, 0.20); border-radius: 16px; background: rgba(249, 255, 231, 0.78); box-shadow: var(--pt-shadow-soft); }
 .agent-task h2 { margin: 10px 0 7px; color: var(--pt-ink); font-size: 19px; letter-spacing: -0.025em; }
 .agent-task p { color: var(--pt-muted); font-size: 11px; line-height: 1.62; }
+.agent-task-action { margin-top: 16px; }
+.agent-task-primary { width: 100%; min-height: 42px; }
+.agent-task-busy { display: block; margin-top: 14px; color: var(--pt-blue); font: 700 9px var(--meta-font); letter-spacing: 0.04em; }
 .model-team, .consensus-panel, .agent-context, .agent-run { padding: 18px 0; border-color: var(--pt-line); }
 .section-row { color: var(--pt-muted); }
 .model-team-cards { gap: 7px; margin-top: 11px; }
@@ -957,7 +958,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 @media (max-width: 980px) {
   .app-shell { grid-template-rows: 64px minmax(0, 1fr) 60px; }
   .workspace-grid { grid-template-columns: 204px minmax(0, 1fr); }
-  .agent-rail { display: none; }
+  .agent-rail { display: block; grid-column: 1 / -1; border-top: 1px solid var(--pt-line); border-left: 0; }
   .top-actions .save-status { display: none; }
   .stage-content { width: min(900px, calc(100% - 30px)); }
 }

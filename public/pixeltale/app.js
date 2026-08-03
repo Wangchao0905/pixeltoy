@@ -74,7 +74,7 @@ const modelMeta = {
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];
 const stageMeta = {
   brief: { kicker: "01 / BRIEF", title: "故事架构", task: "建立故事架构", copy: "确认平台、受众和单集节奏，先建立可执行的故事架构。" },
-  title: { kicker: "02 / TITLE", title: "选择剧名", task: "确定故事的第一张名片", copy: "根据故事架构生成 5 个风格各异的候选名，选定后才进入故事提案。" },
+  title: { kicker: "02 / TITLE", title: "选择剧名", task: "确定故事的第一张名片", copy: "根据剧本 DNA、目标市场和发行属性生成 5 个英文正式片名，中文释义仅供创作者参考。" },
   proposal: { kicker: "03 / PROPOSAL", title: "故事提案", task: "给出可追更的核心命题", copy: "检查冲突、人物欲望和每集继续观看的理由。" },
   characters: { kicker: "04 / CHARACTERS", title: "人物与世界", task: "锁定人物关系和世界规则", copy: "让角色的选择推动剧情，而不是让设定替角色行动。" },
   arc: { kicker: "05 / ARC", title: "分集与章节", task: "把主线拆成可拍的推进", copy: "短剧优先检查钩子与反转，长剧优先检查因果与人物弧线。" },
@@ -367,6 +367,7 @@ function artifactForStage(stage) {
   const artifacts = state.agent?.artifacts || [];
   return artifacts
     .filter((item) => item.stage === stage && item.type === `pixeltale_${stage}`)
+    .filter((item) => stage !== "title" || (Array.isArray(item.content?.candidates) && item.content.candidates.length === 5 && item.content.candidates.every((candidate) => candidate?.title_en)))
     .sort((a, b) => Number(a.version || 0) - Number(b.version || 0))
     .at(-1) || null;
 }
@@ -458,6 +459,7 @@ function nextStepMeta() {
   const flowStage = workflowStage();
   const flowMeta = stageMeta[flowStage];
   if (state.busy) {
+    if (flowStage === "title") return { kind: "busy", title: "正在生成 5 个英文剧名", copy: "由总编排中指定的单个模型生成，完成后直接进入人工选择，不执行交叉审核。", flowStage };
     return { kind: "busy", title: "正在生成并进行三模型交叉审核", copy: "三份独立意见完成聚合后，会显示一致性指数和修改建议。", flowStage };
   }
   if (state.stage !== flowStage) {
@@ -486,7 +488,7 @@ function nextStepMeta() {
       kind: "run",
       stage: flowStage,
       title: brief ? "生成故事架构" : titleStage ? "生成 5 个剧名候选" : `生成${flowMeta.title}`,
-      copy: brief ? "填好平台、节奏和核心冲突后，生成并复核故事架构；确认后进入剧名选择。" : titleStage ? "根据故事架构生成 5 个风格各异的剧名，并逐个说明命名理由。" : `完成${flowMeta.title}，生成结果通过复核后，下一步是确认本阶段。`,
+      copy: brief ? "填好平台、节奏和核心冲突后，生成并复核故事架构；确认后进入剧名选择。" : titleStage ? "根据剧本 DNA、投放市场和发行平台生成 5 个英文剧名，并附中文释义。" : `完成${flowMeta.title}，生成结果通过复核后，下一步是确认本阶段。`,
       label: brief ? "生成故事架构 →" : titleStage ? "生成 5 个剧名 →" : `生成${flowMeta.title} →`,
       flowStage,
     };
@@ -509,7 +511,7 @@ function nextStepMeta() {
       kind: "approve",
       artifactId: artifact.id,
       title: `确认${flowMeta.title}`,
-      copy: `复核已通过。确认后自动进入“${nextLabel}”，已确认版本不会被覆盖。`,
+      copy: flowStage === "title" ? `确认所选英文剧名后自动进入“${nextLabel}”，中文释义不会写入正式片名。` : `复核已通过。确认后自动进入“${nextLabel}”，已确认版本不会被覆盖。`,
       label: `确认并进入${nextLabel} →`,
       flowStage,
     };
@@ -859,6 +861,8 @@ function renderBrief() {
 
 const fieldLabelMap = {
   title_zh: "剧名",
+  title_en: "英文正式剧名",
+  explanation_zh: "中文释义",
   logline_zh: "一句话梗概",
   core_conflict_zh: "核心冲突",
   viewer_question_zh: "观众悬念",
@@ -868,6 +872,7 @@ const fieldLabelMap = {
   style_zh: "风格标签",
   tone_zh: "语气与气质",
   reason_zh: "命名理由",
+  naming_gene_zh: "命名基因",
   selection_note_zh: "选择建议",
   premise_zh: "核心命题",
   protagonist_goal_zh: "主角目标",
@@ -1000,20 +1005,19 @@ function renderTitleStage() {
   const meta = currentMeta();
   const artifact = artifactForStage("title");
   if (!artifact) {
-    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 5 个候选剧名</h3><p>故事架构确认后，系统会根据你的描述生成 5 个方向不同的中文剧名，并说明每个名称的气质与理由。</p></section>${renderNextStep()}`;
+    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 5 个英文候选剧名</h3><p>系统会读取剧本 DNA、发行平台和目标市场，用一个指定模型生成 5 个命名基因不同的英文片名，并附中文释义。</p></section>${renderNextStep()}`;
   }
   const candidates = Array.isArray(artifact.content?.candidates) ? artifact.content.candidates : [];
   const selectedTitle = state.input.storyTitle || "";
-  const review = reviewForArtifact(artifact);
-  const reviewContent = review?.content || {};
   const options = candidates.map((candidate, index) => {
-    const title = String(candidate?.title_zh || "");
+    const title = String(candidate?.title_en || candidate?.title_zh || "");
     const selected = title === selectedTitle;
-    return `<button class="title-option${selected ? " is-selected" : ""}" type="button" role="radio" aria-checked="${selected}" data-title-choice="${escapeHtml(title)}"><span class="title-option-number">0${index + 1}</span><span class="title-option-body"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(candidate?.style_zh || "风格未标注")} · ${escapeHtml(candidate?.tone_zh || "")}</small><p>${escapeHtml(candidate?.reason_zh || "")}</p></span><i aria-hidden="true"></i></button>`;
+    return `<button class="title-option${selected ? " is-selected" : ""}" type="button" role="radio" aria-checked="${selected}" data-title-choice="${escapeHtml(title)}"><span class="title-option-number">0${index + 1}</span><span class="title-option-body"><strong lang="en">${escapeHtml(title)}</strong><span class="title-option-translation">中文释义 · ${escapeHtml(candidate?.explanation_zh || "仅供创作者参考")}</span><small>${escapeHtml(candidate?.naming_gene_zh || "命名基因未标注")} · ${escapeHtml(candidate?.style_zh || "风格未标注")} · ${escapeHtml(candidate?.tone_zh || "")}</small><p>${escapeHtml(candidate?.reason_zh || "")}</p></span><i aria-hidden="true"></i></button>`;
   }).join("");
-  const reviewLabel = state.approved.has(artifact.id) ? "本阶段已确认" : reviewContent.pass ? "互审一致性通过 · 等待选择" : `交叉审核反馈：${(reviewContent.required_changes || []).join("；") || "需要继续检查"}`;
-  const reviewPanel = review ? renderReviewPanel(reviewContent, { passed: state.approved.has(artifact.id) || reviewContent.pass, stage: "title" }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div><span class="card-label"><i></i>TITLE OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的名字</h3></div><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">5 个候选分别强调悬疑、传播、诗意、人物命运和极简记忆点。选定后会作为后续提案与正式剧本的统一剧名。</p><div class="card-footer"><small>${escapeHtml(reviewLabel)}</small>${state.approved.has(artifact.id) ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${selectedTitle ? "可确认" : "等待选择"}</span>`}</div></section>${reviewPanel}${renderNextStep()}`;
+  const approved = state.approved.has(artifact.id);
+  const statusLabel = approved ? "本阶段已确认" : "单模型生成完成 · 等待人工选择";
+  const regenerate = approved ? "" : `<button class="stage-secondary title-regenerate" type="button" data-regenerate-title${state.busy ? " disabled" : ""}>重新生成 5 个</button>`;
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div><span class="card-label"><i></i>ENGLISH RELEASE TITLE</span><h3 id="titlePickerHeading">选一个最适合这部剧的英文片名</h3></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">英文片名用于正式发行；中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核</small>${approved ? `<span class="review-button is-disabled">已确认版本</span>` : `<span class="review-button is-disabled">${selectedTitle ? "可确认" : "等待选择"}</span>`}</div></section>${renderNextStep()}`;
 }
 
 function renderArtifactStage() {
@@ -1103,7 +1107,9 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
     state.lastError = payload.result?.status === "failed" ? (payload.result.errors || []).map((item) => item.message).join("；") : "";
     if (state.lastError) throw new Error(state.lastError);
     const revision = payload.result?.revision;
-    showToast(payload.result?.status === "needs_review"
+    showToast(stage === "title" && payload.result?.status === "completed"
+      ? "已由指定模型生成 5 个英文剧名，可选择或重新生成"
+      : payload.result?.status === "needs_review"
       ? (revision ? "交叉修订已执行，但仍有问题未通过逐项关闭" : "已生成，但三模型审核存在共识问题或意见冲突")
       : (revision ? "交叉修订已逐项复审关闭，等待确认" : "已生成并完成三模型交叉审核，等待确认"));
   } catch (error) {
@@ -1226,6 +1232,7 @@ function bindStageActions() {
     state.input.storyTitle = button.dataset.titleChoice || "";
     renderStage();
   }));
+  $("[data-regenerate-title]")?.addEventListener("click", () => runCurrentStage("title"));
   $("#confirmHandoff")?.addEventListener("click", createHandoff);
   $("[data-download-script]")?.addEventListener("click", () => void runDocumentAction(downloadScriptDocument));
   $("[data-save-script]")?.addEventListener("click", () => void runDocumentAction(saveScriptDocument));

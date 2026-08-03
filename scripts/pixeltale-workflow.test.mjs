@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(root, "public/pixeltale.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevisionContract, validateReview } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevisionContract, validateContent, validateReview } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
 assert.match(agent, /modelRouter\.reviewModels\(route\)/, "cross-review must be selected by the SuperPixel router");
@@ -31,6 +31,12 @@ assert.match(app, /参考建议，不阻断确认/, "single-model opinions must 
 assert.match(app, /kind: "auto-revise"[\s\S]*执行交叉修订并复审/, "review flow must expose one canonical revision action");
 assert.doesNotMatch(app, /review-auto-fix/, "review panel must not expose a duplicate revision button");
 assert.match(app, /const fieldLabelMap = \{[\s\S]*title_zh: "剧名"/, "structured fields must have Chinese display labels");
+assert.match(app, /data-regenerate-title/, "title selection must expose a regenerate action before approval");
+assert.match(app, /中文释义只供创作者对照，不会写入后续正式标题/, "title UI must distinguish the English release title from its Chinese explanation");
+assert.match(app, /单模型生成完成 · 等待人工选择[\s\S]*不进入交叉审核/, "title UI must explain its single-model no-review policy");
+assert.match(agent, /正式发行片名必须使用自然英文/, "title generation must follow the release language instead of returning Chinese names");
+assert.match(agent, /人物身份或称谓、地点或机构、异常物件或意象、关系或阵营张力、带双重含义的极简短语/, "title generation must enforce five distinct naming genes");
+assert.match(agent, /Billionaire、CEO、Mafia、Reborn、Revenge/, "title generation must reject generic web-fiction naming templates");
 assert.match(app, /fieldLabel\(key\)/, "nested structured fields must use the display label map");
 assert.match(styles, /\.app-shell \{ height: 100vh; height: 100dvh;[\s\S]*overflow: hidden; \}/, "desktop shell must stay within the viewport");
 assert.match(styles, /\.stage-content \{ width: min\(1180px,/, "wide screens must use the central workspace");
@@ -226,16 +232,50 @@ const testModels = [
   { id: "claude-opus-5", provider: "claude", configured: true },
   { id: "deepseek-v4-pro", provider: "deepseek", configured: true },
 ];
+const titleSets = [
+  ["The Last Tenant", "Room Zero", "Borrowed Silence", "Two Doors Apart", "Ash at Noon"],
+  ["The Hollow Key", "Northbound", "Glass Witness", "Static Between Us", "After the Signal"],
+];
+const titleOutput = (index = 0) => ({
+  candidates: titleSets[Math.min(index, titleSets.length - 1)].map((title, candidateIndex) => ({
+    title_en: title,
+    explanation_zh: `中文释义 ${candidateIndex + 1}`,
+    style_zh: "国际流媒体",
+    tone_zh: "克制而有悬念",
+    naming_gene_zh: ["人物身份或称谓", "地点或机构", "异常物件或意象", "关系或阵营张力", "双重含义极简短语"][candidateIndex],
+    reason_zh: "承接主角进入禁区的故事 DNA，并适配英语市场封面传播。",
+  })),
+  selection_note_zh: "优先选择与核心异常意象绑定最紧的片名。",
+});
+assert.throws(
+  () => validateContent("title", { ...titleOutput(), candidates: titleOutput().candidates.map((candidate, index) => index === 0 ? { ...candidate, title_en: "暗门" } : candidate) }, { mode: "tk_short_drama" }),
+  (error) => error.code === "SCHEMA_INVALID",
+  "Chinese formal titles must be rejected before persistence",
+);
+assert.throws(
+  () => validateContent("title", { ...titleOutput(), candidates: titleOutput().candidates.map((candidate, index) => index === 0 ? { ...candidate, title_en: "Billionaire Revenge" } : candidate) }, { mode: "tk_short_drama" }),
+  (error) => error.code === "SCHEMA_INVALID",
+  "generic web-fiction title templates must be rejected before persistence",
+);
+const routedCalls = [];
+let reviewModelSelections = 0;
+let generatedTitleSets = 0;
 const testRouter = {
   models: () => testModels,
   status: () => Object.fromEntries(["chatgpt", "claude", "deepseek"].map((provider) => [provider, { provider, configured: true }])),
   stageModels: (route) => [route.primary, route.reviewer, route.consistency],
-  reviewModels: () => testModels.map(({ id: model, provider }) => ({ model, provider, configured: true })),
-  call: async ({ model, system, user }) => {
+  reviewModels: () => {
+    reviewModelSelections += 1;
+    return testModels.map(({ id: model, provider }) => ({ model, provider, configured: true }));
+  },
+  call: async ({ model, system, user, purpose }) => {
     const input = JSON.parse(user);
+    routedCalls.push({ model, purpose, system, input });
     const output = /交叉审核 Agent/.test(system)
       ? reviewOutput(input.revisionClosureProtocol)
-      : { title_zh: "暗门", logline_zh: "主角必须在代价逼近前打开一扇暗门。", core_conflict_zh: "真相与生存冲突。", viewer_question_zh: "她会付出什么代价？" };
+      : input.currentStage === "title"
+        ? titleOutput(generatedTitleSets++)
+        : { title_zh: "暗门", logline_zh: "主角必须在代价逼近前打开一扇暗门。", core_conflict_zh: "真相与生存冲突。", viewer_question_zh: "她会付出什么代价？" };
     return { provider: testModels.find((item) => item.id === model)?.provider || "superpixel", model, content: output, attempts: 0, trace: [{ model }] };
   },
 };
@@ -253,6 +293,33 @@ assert.equal(revisionRun.status, "completed", `revision must run as a distinct, 
 assert.equal(revisionRun.revision.allResolved, true, "the run record must prove all revision contract items were closed");
 const finalReview = revisionRun.state.artifacts.find((artifact) => artifact.id === revisionRun.artifacts[1].id);
 assert.equal(finalReview.content.revision.closure.allResolved, true, "the persisted review must retain item-by-item closure evidence");
+
+runAgent.approve({ ...runParams, artifactId: revisionRun.artifacts[0].id });
+routedCalls.length = 0;
+reviewModelSelections = 0;
+const titleParams = { ...runParams, stage: "title", mode: "tk_short_drama", input: { ...runParams.input, platform: "TikTok / TikTok Series", marketCountry: "united_states", audienceGender: "all" } };
+const titleRun = await runAgent.run(titleParams);
+assert.equal(titleRun.status, "completed", "title generation must complete without waiting for cross-review");
+assert.equal(routedCalls.length, 1, "title generation must call exactly one assigned author model");
+assert.equal(routedCalls[0].model, "gpt-5.6-terra", "title generation must use the configured orchestration model");
+assert.equal(routedCalls[0].purpose, "pixeltale:title:author", "title generation must remain an author-only request");
+assert.equal(reviewModelSelections, 0, "title generation must never select cross-review models");
+assert.deepEqual(titleRun.reviewModels, [], "title run record must expose zero reviewers");
+assert.deepEqual(titleRun.route, { primary: "gpt-5.6-terra" }, "title route must contain only the assigned author model");
+assert.equal(titleRun.artifacts.length, 1, "title run must persist only the primary artifact");
+assert.equal(titleRun.artifacts[0].status, "ready", "a valid title artifact must be ready for human selection");
+assert.equal(titleRun.artifacts[0].reviewId, "", "title artifact must not reference a review artifact");
+assert.equal(titleRun.artifacts[0].content.candidates.length, 5, "title contract must retain exactly five options");
+assert.ok(titleRun.artifacts[0].content.candidates.every((candidate) => /^[^\u3400-\u9fff]*[A-Za-z][^\u3400-\u9fff]*$/u.test(candidate.title_en)), "all formal titles must be English and contain no Chinese characters");
+assert.match(routedCalls[0].system, /剧本 DNA[\s\S]*目标受众和发行场景/, "title prompt must bind naming to story DNA and distribution attributes");
+assert.deepEqual(routedCalls[0].input.excludedTitles, [], "the first title run must not invent an exclusion history");
+
+routedCalls.length = 0;
+const regeneratedTitleRun = await runAgent.run(titleParams);
+assert.equal(regeneratedTitleRun.artifacts[0].version, 2, "regeneration must create a new title artifact version");
+assert.equal(routedCalls.length, 1, "regeneration must still call only one model");
+assert.deepEqual(routedCalls[0].input.excludedTitles.sort(), titleSets[0].slice().sort(), "regeneration must ask the model to avoid every previous candidate");
+assert.equal(new Set(regeneratedTitleRun.artifacts[0].content.candidates.map((candidate) => candidate.title_en).filter((title) => titleSets[0].includes(title))).size, 0, "controlled regeneration must increase the available title choices");
 
 const primaryFallback = await callStagePrimary({
   route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "deepseek-v4-pro" },

@@ -322,7 +322,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .title-picker { margin-top: 18px; padding: 17px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.62); box-shadow: var(--soft-shadow); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 .title-picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .title-picker-head h3 { margin: 1px 0 0; font-size: 18px; font-weight: 600; }
+.title-picker-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 .title-selection-status { flex: 0 0 auto; color: var(--lime-ink); font: 700 9px var(--meta-font); }
+.title-regenerate { flex: 0 0 auto; }
 .title-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
 .title-option { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) 8px; gap: 10px; min-height: 112px; padding: 13px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: rgba(255, 255, 255, 0.58); text-align: left; transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease; }
 .title-option:last-child { grid-column: 1 / -1; }
@@ -330,8 +332,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .title-option.is-selected { border-color: var(--lime-ink); background: rgba(196, 255, 14, 0.12); box-shadow: 0 0 0 2px rgba(196, 255, 14, 0.17); }
 .title-option-number { color: var(--faint); font: 700 10px var(--meta-font); }
 .title-option-body { min-width: 0; }
-.title-option-body strong, .title-option-body small, .title-option-body p { display: block; }
+.title-option-body strong, .title-option-body small, .title-option-body p, .title-option-translation { display: block; }
 .title-option-body strong { font-size: 17px; font-weight: 650; line-height: 1.25; }
+.title-option-translation { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .title-option-body small { margin-top: 5px; color: var(--blue); font: 700 9px var(--meta-font); }
 .title-option-body p { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .title-option > i { align-self: start; width: 8px; height: 8px; margin-top: 3px; border: 1px solid #9bb1bf; border-radius: 50%; background: transparent; }
@@ -522,6 +525,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .inspiration-meta { justify-items: start; }
   .content-grid, .form-row, .handoff-grid { grid-template-columns: 1fr; }
   .title-picker-head { flex-direction: column; gap: 8px; }
+  .title-picker-actions { width: 100%; justify-content: space-between; }
   .title-options { grid-template-columns: 1fr; }
   .title-option:last-child { grid-column: auto; }
   .next-step-card { position: static; flex-direction: column; align-items: stretch; gap: 12px; }

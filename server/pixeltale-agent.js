@@ -117,6 +117,9 @@ const STAGE_OPTIONS = {
   scenes: { sceneRhythm: ["close_pressure", "visual_mystery", "daily_contrast", "scale_escalation"] },
   dialogue: { dialogueEnergy: ["direct", "restrained", "witty", "intimate"] },
 };
+const RESERVED_TITLE_REFERENCES = new Set([
+  "wednesday", "you", "stranger things", "squid game", "the diplomat", "the residence", "house of the dragon", "euphoria", "the wire", "succession", "the last of us", "black mirror",
+]);
 const CREATIVE_CONTROL_VALUES = {
   openingPromise: ["mainline_promise", "character_crisis", "world_mystery"],
   hookCadence: ["every_episode", "double_hook", "key_unit"],
@@ -298,12 +301,20 @@ function stageRoute(stage, mode, routes, availableModels = []) {
   return { primary, reviewer, consistency: current.consistency };
 }
 
-function titleStylePrompt(mode) {
+function titleStylePrompt(mode, input = {}) {
+  const market = normalizeMarket(input);
+  const profile = MARKET_PROFILES[market.marketCountry];
+  const platform = text(input.platform, 120) || "国际流媒体 / 短视频平台";
   return [
     "剧名必须输出 5 个候选，不能少于或多于 5 个，名称之间不得只是同义词替换。",
-    "五个候选必须分别体现：冷峻悬疑、强钩子商业、诗意隐喻、人物命运、极简国际化短标题。",
-    `结合${modeLabel(mode)}的节奏和受众，名称要有记忆点、可传播、适合海报与视频封面。`,
-    "每个候选都要说明风格、语气和命名理由；不要使用‘未命名故事’等占位名称。",
+    `正式发行片名必须使用自然英文，适配${profile.label}市场与“${platform}”的传播语感；中文只能写在 explanation_zh、style_zh、tone_zh、naming_gene_zh 和 reason_zh 中供创作者参考。`,
+    "先读取 userInput 中的剧本 DNA、受众、平台和发行属性，再读取 approvedContext 中已确认的 brief；每个候选必须绑定一个本剧独有的身份、地点、关系、物件、秘密或异常意象，不能只套类型词。",
+    "五个候选必须分别使用不同命名基因：人物身份或称谓、地点或机构、异常物件或意象、关系或阵营张力、带双重含义的极简短语。naming_gene_zh 必须明确写出所用基因。",
+    `结合${modeLabel(mode)}节奏：TK 短剧优先 1-5 个英文单词，普通长剧优先 1-7 个英文单词；朗读自然、海报上可瞬间识别、搜索时有区分度。`,
+    "片名要保留解释空间和语义张力，不要把剧情梗概、反转答案或人物结局直接写进标题。",
+    "禁止廉价网文或移动短剧模板词组，包括 Billionaire、CEO、Mafia、Reborn、Revenge、Forbidden Love、Secret Love、Contract Wife、Fake Marriage；禁止冒号副标题、夸张营销句、陈词滥调和生硬中译英。",
+    "只提炼欧美流媒体热剧常见的短、准、独特和可延展特征；不得复制、近似改写或拼接任何现有影视作品名。",
+    "每个候选的 explanation_zh 用一句中文解释英文片名的字面义与剧情含义；reason_zh 说明它如何承接本剧 DNA、目标受众和发行场景。",
   ].join("\n");
 }
 
@@ -334,10 +345,12 @@ function responseContent(payload) {
 }
 
 function stageOutputContract(stage, mode) {
-  const common = `\n所有中文剧情字段必须使用中文；对白字段必须是自然、口语化、符合人物身份与语境的英文。不要逐字直译。模式：${modeLabel(mode)}。`;
+  const common = stage === "title"
+    ? `\n正式片名字段 title_en 必须使用英文；其余带 _zh 的解释字段使用中文。模式：${modeLabel(mode)}。`
+    : `\n所有中文剧情字段必须使用中文；对白字段必须是自然、口语化、符合人物身份与语境的英文。不要逐字直译。模式：${modeLabel(mode)}。`;
   const contracts = {
     brief: `{"title_zh":"故事名","logline_zh":"一句话梗概","core_conflict_zh":"核心冲突","viewer_question_zh":"观众要追问的问题","episode_promise_zh":"每集持续兑现的承诺","mode_rules":["模式约束"]}`,
-    title: `{"candidates":[{"title_zh":"候选剧名","style_zh":"风格标签","tone_zh":"语气与气质","reason_zh":"命名理由"},{"title_zh":"候选剧名","style_zh":"风格标签","tone_zh":"语气与气质","reason_zh":"命名理由"},{"title_zh":"候选剧名","style_zh":"风格标签","tone_zh":"语气与气质","reason_zh":"命名理由"},{"title_zh":"候选剧名","style_zh":"风格标签","tone_zh":"语气与气质","reason_zh":"命名理由"},{"title_zh":"候选剧名","style_zh":"风格标签","tone_zh":"语气与气质","reason_zh":"命名理由"}],"selection_note_zh":"选择建议"}`,
+    title: `{"candidates":[{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"}],"selection_note_zh":"选择建议"}`,
     proposal: `{"title_zh":"故事名","premise_zh":"核心命题","logline_zh":"一句话梗概","viewer_question_zh":"核心悬念","protagonist_goal_zh":"主角目标","antagonistic_force_zh":"对抗力量","season_or_series_engine_zh":"持续推进引擎","first_impact_zh":"开头暴击","episode_hook_zh":"集尾钩子","reversal_zh":"首个反转"}`,
     characters: `{"characters":[{"id":"C001","name_zh":"按目标市场生成的角色显示名，不得翻译为中文名","name_en":"English or romanized display name","role":"protagonist","desire_zh":"欲望","fear_zh":"恐惧","secret_zh":"秘密","arc_zh":"人物弧线","voice_rules_en":["英文声线规则"],"visual_profile":{"gender":"性别","age_phase":"年龄相","body":"体型","hair_color":"发型发色","facial_features":"面部特征","eye_color":"瞳色","costume_accessories":"服装配饰","palette":"识别色","posture":"气质姿态","prompt_zh":"中文文生图提示词"}}],"relationships":[{"from":"C001","to":"C002","dynamic_zh":"关系变化"}],"world_rules":["不可违反的世界规则"]}`,
     arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
@@ -362,7 +375,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
       "伏笔必须绑定后续回收位置，不用只制造氛围的伪伏笔。",
       "人物弧线通过选择体现，不用旁白宣告成长。",
     ];
-  const titleRules = stage === "title" ? [titleStylePrompt(mode)] : [];
+  const titleRules = stage === "title" ? [titleStylePrompt(mode, input)] : [];
   const selectedTitleRule = stage !== "title" && text(input.storyTitle, 200)
     ? [`用户已确认剧名为“${text(input.storyTitle, 200)}”，后续产物必须沿用，不得擅自改名。`]
     : [];
@@ -382,7 +395,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
   ].join("\n");
 }
 
-function stageUserPrompt({ stage, mode, input, previousArtifacts, project }) {
+function stageUserPrompt({ stage, mode, input, previousArtifacts, project, excludedTitles = [] }) {
   const prior = previousArtifacts.map((artifact) => ({
     stage: artifact.stage,
     type: artifact.type,
@@ -391,7 +404,7 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project }) {
     content: artifact.content,
   }));
   return JSON.stringify({
-    task: "基于创作规格和已确认结构，生成当前阶段唯一可审核的结构化产物。",
+    task: stage === "title" ? "基于剧本 DNA、发行属性和已确认故事架构，生成 5 个全新的英文正式片名候选。" : "基于创作规格和已确认结构，生成当前阶段唯一可审核的结构化产物。",
     project: { id: text(project?.id, 300), title: text(project?.title, 300), episode: text(project?.episode, 100) },
     mode,
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
@@ -400,6 +413,7 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project }) {
     market: normalizeMarket(input),
     stageParticipation: normalizeStageOptions(input),
     currentStage: stage,
+    ...(stage === "title" ? { excludedTitles: uniqueText(excludedTitles, 100) } : {}),
     userInput: asObject(input),
     approvedContext: prior,
   }, null, 2).slice(0, 180000);
@@ -569,7 +583,7 @@ function validateVisualAssets(value) {
   };
 }
 
-function validateContent(stage, content) {
+function validateContent(stage, content, input = {}) {
   const value = asObject(content);
   const required = {
     brief: ["title_zh", "logline_zh", "core_conflict_zh", "viewer_question_zh"],
@@ -588,22 +602,42 @@ function validateContent(stage, content) {
   }
   if (stage === "title") {
     const candidates = asArray(value.candidates).map((candidate) => asObject(candidate));
-    const names = candidates.map((candidate) => text(candidate.title_zh, 200)).filter(Boolean);
+    const names = candidates.map((candidate) => text(candidate.title_en, 200)).filter(Boolean);
+    const normalizedNames = names.map((name) => name.toLowerCase());
+    const namingGenes = candidates.map((candidate) => text(candidate.naming_gene_zh, 300).toLowerCase()).filter(Boolean);
+    const excludedTitles = new Set(asArray(input.excludedTitles).map((name) => text(name, 200).toLowerCase()).filter(Boolean));
+    const maxWords = normalizeMode(input.mode) === "long_form_drama" ? 7 : 5;
+    const invalidReleaseTitle = names.some((name) => {
+      const words = name.match(/[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g) || [];
+      return /[\u3400-\u9fff]/u.test(name)
+        || !/[A-Za-z]/.test(name)
+        || words.length < 1
+        || words.length > maxWords
+        || name.includes(":")
+        || RESERVED_TITLE_REFERENCES.has(name.toLowerCase())
+        || excludedTitles.has(name.toLowerCase())
+        || /\b(billionaire|ceo|mafia|reborn|revenge|forbidden love|secret love|contract wife|fake marriage)\b/i.test(name);
+    });
     const invalid = candidates.length !== 5
       || names.length !== 5
-      || new Set(names).size !== 5
-      || candidates.some((candidate) => !text(candidate.style_zh, 200) || !text(candidate.tone_zh, 300) || !text(candidate.reason_zh, 1000));
+      || new Set(normalizedNames).size !== 5
+      || namingGenes.length !== 5
+      || new Set(namingGenes).size !== 5
+      || invalidReleaseTitle
+      || candidates.some((candidate) => !/[\u3400-\u9fff]/u.test(text(candidate.explanation_zh, 500)) || !text(candidate.style_zh, 200) || !text(candidate.tone_zh, 300) || !text(candidate.naming_gene_zh, 300) || !text(candidate.reason_zh, 1000));
     if (invalid) {
-      const error = new Error("剧名产物必须包含 5 个不重复且说明完整的候选");
+      const error = new Error(`剧名产物必须包含 5 个不重复、符合发行语言且说明完整的英文候选（每个不超过 ${maxWords} 个单词）`);
       error.code = "SCHEMA_INVALID";
       throw error;
     }
     return {
       ...value,
       candidates: candidates.map((candidate) => ({
-        title_zh: text(candidate.title_zh, 200),
+        title_en: text(candidate.title_en, 200),
+        explanation_zh: text(candidate.explanation_zh, 500),
         style_zh: text(candidate.style_zh, 200),
         tone_zh: text(candidate.tone_zh, 300),
+        naming_gene_zh: text(candidate.naming_gene_zh, 300),
         reason_zh: text(candidate.reason_zh, 1000),
       })),
       selection_note_zh: text(value.selection_note_zh, 1000),
@@ -1315,19 +1349,37 @@ function createPixelTaleAgent(options = {}) {
           throw error;
         }
       }
-      primary = await callStagePrimary({
-        route,
-        stage,
-        system: stageSystemPrompt(stage, mode, runInput),
-        user: revisionContract
-          ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
-          : stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project }),
-        modelRouter,
-      });
+      const excludedTitles = stage === "title"
+        ? state.artifacts.filter((artifact) => artifact.stage === "title" && artifact.type === "pixeltale_title").flatMap((artifact) => asArray(artifact.content?.candidates).map((candidate) => candidate?.title_en || candidate?.title_zh))
+        : [];
+      const system = stageSystemPrompt(stage, mode, runInput);
+      const user = revisionContract
+        ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
+        : stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, excludedTitles });
+      primary = stage === "title"
+        ? await callProvider({
+          provider: route.primary,
+          system,
+          user,
+          modelRouter,
+          timeoutMs: STAGE_PRIMARY_MODEL_TIMEOUT_MS,
+          maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS.title,
+          purpose: "pixeltale:title:author",
+        })
+        : await callStagePrimary({ route, stage, system, user, modelRouter });
       retryCount += primary.attempts || 0;
-      const content = validateContent(stage, primary.content);
+      const content = validateContent(stage, primary.content, { ...runInput, mode, excludedTitles });
       const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
       primaryArtifact = buildArtifact({ stage, mode, input: runInput, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
+      if (stage === "title") {
+        primaryArtifact.status = "ready";
+        primaryArtifact.reviewId = "";
+        state.artifacts.push(primaryArtifact);
+        const record = { runId, stage, mode, route: { primary: route.primary }, status: "completed", primaryModel: `${primary.provider}:${primary.model}`, reviewModels: [], primaryFallback: null, consensusIndex: null, agreement: null, reviewCompletion: null, revision: null, artifactIds: [primaryArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+        state.runs.push(record);
+        persistState(params, state);
+        return { ...publicRun(record), artifacts: [primaryArtifact].map(publicArtifact), state: publicState(state, modelRouter) };
+      }
       if (revisionContract) {
         primaryArtifact.revision = {
           sourceArtifactId: revisionBase.id,
@@ -1379,8 +1431,8 @@ function createPixelTaleAgent(options = {}) {
     } catch (error) {
       errors.push({ code: error.code || "RUN_FAILED", message: error.message });
       if (primaryArtifact && !state.artifacts.some((artifact) => artifact.id === primaryArtifact.id)) state.artifacts.push(primaryArtifact);
-      const fallbackReviewModels = reviewRoutes.length ? reviewRoutes : [route.reviewer];
-      const record = { runId, stage, mode, route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary), reviewModels: fallbackReviewModels.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: error?.fallbackFailures?.length ? { attempted: error.fallbackFailures.length, recovered: false, failures: error.fallbackFailures, budget: error.primaryBudget || null } : null, artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const fallbackReviewModels = stage === "title" ? [] : (reviewRoutes.length ? reviewRoutes : [route.reviewer]);
+      const record = { runId, stage, mode, route: stage === "title" ? { primary: route.primary } : route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary), reviewModels: fallbackReviewModels.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: error?.fallbackFailures?.length ? { attempted: error.fallbackFailures.length, recovered: false, failures: error.fallbackFailures, budget: error.primaryBudget || null } : null, artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       state.updatedAt = nowIso(now);
       persistState(params, state);
@@ -1414,7 +1466,7 @@ function createPixelTaleAgent(options = {}) {
     if (artifact.stage === "title") {
       const selectedTitle = text(params.selectedTitle, 200);
       const candidates = asArray(artifact.content?.candidates);
-      if (!selectedTitle || !candidates.some((candidate) => text(candidate?.title_zh, 200) === selectedTitle)) {
+      if (!selectedTitle || !candidates.some((candidate) => text(candidate?.title_en, 200) === selectedTitle)) {
         const error = new Error("请从 5 个候选中选择一个剧名");
         error.code = "TITLE_SELECTION_REQUIRED";
         error.statusCode = 409;

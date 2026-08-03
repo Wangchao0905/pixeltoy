@@ -973,8 +973,12 @@ function applyCanvasViewport() {
   const transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) scale(${scale})`;
   const nodes = qs("#canvasNodes");
   const links = qs("#canvasLinks");
+  const linksGroup = qs("#canvasLinksContent");
   if (nodes) nodes.style.transform = transform;
-  if (links) links.style.transform = transform;
+  if (links) links.style.transform = "none";
+  if (linksGroup) {
+    linksGroup.setAttribute("transform", `translate(${Math.round(x)} ${Math.round(y)}) scale(${scale})`);
+  }
   const readout = qs("#canvasZoomReadout");
   if (readout) readout.textContent = `${Math.round(scale * 100)}%`;
 }
@@ -4332,7 +4336,8 @@ const nodeResizeObserver = typeof ResizeObserver !== "undefined"
 
 function renderLinks() {
   const svg = qs("#canvasLinks");
-  svg.innerHTML = "";
+  const content = qs("#canvasLinksContent") || svg;
+  content.innerHTML = "";
   const paths = [];
   canvasState.connections.forEach((connection, index) => {
     const source = canvasState.nodes.find((node) => node.id === connection.from);
@@ -4348,7 +4353,7 @@ function renderLinks() {
   if (canvasState.drag?.snapGuides?.y != null) {
     paths.push(`<line class="snap-guide" x1="-100000" x2="100000" y1="${canvasState.drag.snapGuides.y}" y2="${canvasState.drag.snapGuides.y}" />`);
   }
-  svg.innerHTML = paths.join("");
+  content.innerHTML = paths.join("");
 }
 
 function handleConnectionCutPointerDown(event) {

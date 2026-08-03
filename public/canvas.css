@@ -347,7 +347,6 @@ body.canvas-page {
   overflow: visible;
   pointer-events: auto;
   transform-origin: 0 0;
-  will-change: transform;
 }
 
 .canvas-links path {

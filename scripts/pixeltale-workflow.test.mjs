@@ -16,14 +16,16 @@ assert.match(app, /function userFacingError\(error\)/, "provider errors must be 
 assert.match(app, /next-step-error[\s\S]*role="alert"/, "run errors must remain visible beside the next action");
 assert.match(app, /const actionCopy = state\.lastError[\s\S]*生成失败：\$\{state\.lastError\}/, "next action must explain a failed run");
 assert.match(app, /function renderBriefArtifact\(\)/, "brief output must show its generated artifact and review state");
-assert.match(app, /复核未通过，需要一次性修订[\s\S]*AI 按完整清单修订并重新生成/, "brief review failures must explain how to continue");
+assert.match(app, /复核未通过，需要一次性修订[\s\S]*统一操作入口位于下方/, "brief review failures must explain how to continue");
+assert.match(app, /kind: "auto-revise"[\s\S]*按完整审核清单修订并重新生成/, "review flow must expose one canonical revision action");
+assert.doesNotMatch(app, /review-auto-fix/, "review panel must not expose a duplicate revision button");
 assert.match(app, /const fieldLabelMap = \{[\s\S]*title_zh: "剧名"/, "structured fields must have Chinese display labels");
 assert.match(app, /fieldLabel\(key\)/, "nested structured fields must use the display label map");
 assert.match(styles, /\.app-shell \{ height: 100vh; height: 100dvh;[\s\S]*overflow: hidden; \}/, "desktop shell must stay within the viewport");
 assert.match(styles, /\.stage-content \{ width: min\(1180px,/, "wide screens must use the central workspace");
 assert.match(styles, /\.inspiration-pool \{[\s\S]*height: 360px;/, "inspiration pool must not push the workflow down");
 assert.match(app, /function renderReviewPanel\(reviewContent = \{\}, \{ passed/, "review output must expose a complete issue panel");
-assert.match(app, /AI 按完整清单修订并重新生成/, "review output must offer one-click full-list revision");
+assert.match(app, /按完整审核清单修订并重新生成/, "review output must offer one-click full-list revision");
 assert.match(app, /revisionPlan/, "automatic revision must pass a scoped revision plan");
 assert.match(styles, /\.review-issue-list \{[\s\S]*max-height: 420px;/, "review issues must stay readable in a bounded panel");
 assert.match(agent, /必须穷举本次产物中所有需要修订的问题/, "review prompts must require exhaustive findings");

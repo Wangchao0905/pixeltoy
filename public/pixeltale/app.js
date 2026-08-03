@@ -490,11 +490,11 @@ function nextStepMeta() {
     };
   }
   return {
-    kind: "run",
+    kind: "auto-revise",
     stage: flowStage,
     title: `${flowMeta.title}需要修订`,
-    copy: "生成已经完成，但交叉审核未通过。修改当前阶段内容后重新生成，审核通过后才能确认并进入下一步。",
-    label: "修改后重新生成 →",
+    copy: "三模型已经汇总全部问题。点击唯一的下一步按钮，系统会携带完整审核清单一次性修订、重新生成并再次复核。",
+    label: "按完整审核清单修订并重新生成 →",
     flowStage,
   };
 }
@@ -510,6 +510,8 @@ function renderNextStep() {
   if (action.kind === "run") {
     const target = action.stage === "brief" ? " id=\"runBrief\"" : ` data-run-stage=\"${action.stage}\"`;
     button = `<button${target} class="stage-primary${guidedClass}" data-flow-action="run" type="button" ${disabled ? "disabled" : ""}>${action.label}</button>`;
+  } else if (action.kind === "auto-revise") {
+    button = `<button class="stage-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${action.label}</button>`;
   } else if (action.kind === "approve") {
     button = `<button class="stage-primary${guidedClass}" type="button" data-flow-action="approve" data-approve-artifact="${escapeHtml(action.artifactId)}" ${disabled ? "disabled" : ""}>${action.label}</button>`;
   } else if (action.kind === "handoff") {
@@ -946,7 +948,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     }).join("")}</div>`
     : `<p class="review-empty">审核模型没有返回结构化问题，请按复核结果重新提交。</p>`;
   const countLabel = issues.length ? `已汇总 ${issues.length} 项问题` : "等待完整问题清单";
-  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>复核未通过，需要一次性修订</strong><p>三模型已完成全量检查，下面是本次版本的完整问题清单；修订后会重新执行完整复核。</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${issueList}<button type="button" class="stage-secondary review-auto-fix" data-auto-revise="${escapeHtml(stage)}">AI 按完整清单修订并重新生成 →</button></div>`;
+  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>复核未通过，需要一次性修订</strong><p>三模型已完成全量检查，下面是本次版本的完整问题清单；修订后会重新执行完整复核。</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${issueList}<p class="review-panel-note">统一操作入口位于下方“下一步”。点击后会携带这份完整清单修订并再次复核。</p></div>`;
 }
 
 function renderTitleStage() {

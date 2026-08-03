@@ -297,8 +297,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .review-issue details { margin-top: 6px; color: var(--faint); font-size: 10px; }
 .review-issue summary { cursor: pointer; }
 .review-empty { color: var(--muted); }
-.review-auto-fix { margin-top: 12px; border-color: var(--ink); color: #fff; background: var(--ink); }
-.review-auto-fix:hover { border-color: var(--blue); color: #fff; background: #1d2e3a; }
+.review-panel-note { margin-top: 12px !important; color: var(--muted); font-size: 10px !important; }
 .artifact-card.is-selected { border-color: rgba(47, 155, 255, 0.66); box-shadow: 0 0 0 2px rgba(47, 155, 255, 0.18), var(--soft-shadow); }
 .title-picker { margin-top: 18px; padding: 17px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.62); box-shadow: var(--soft-shadow); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 .title-picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }

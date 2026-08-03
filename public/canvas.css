@@ -7047,32 +7047,13 @@ body.canvas-page {
   stroke-dasharray: 3 6;
 }
 
-.canvas-links path.active-link {
-  stroke: rgba(255, 255, 255, 0.78);
-}
-
+.canvas-links path.active-link,
 .canvas-links path.image-link {
-  stroke: #a36cf0;
+  stroke: #fff;
 }
 
 .canvas-links path.video-link {
-  stroke: #4c8d62;
-}
-
-.canvas-links path.image-link.draft-link {
-  stroke: rgba(163, 108, 240, 0.52);
-}
-
-.canvas-links path.image-link.pending-link {
-  stroke: rgba(163, 108, 240, 0.72);
-}
-
-.canvas-links path.video-link.draft-link {
-  stroke: rgba(76, 141, 98, 0.52);
-}
-
-.canvas-links path.video-link.pending-link {
-  stroke: rgba(76, 141, 98, 0.72);
+  stroke: #fff;
 }
 
 .snap-guide {

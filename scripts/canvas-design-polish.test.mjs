@@ -17,8 +17,8 @@ assert.doesNotMatch(canvas, /node-spinner/, "generation status must not render s
 assert.match(css, /\.blank-canvas\s*\{\s*background:\s*#000;/, "canvas background must be pure black");
 assert.match(css, /\.blank-canvas::before\s*\{[\s\S]*?linear-gradient\(#070707 1px/, "canvas grid must use a near-black hairline");
 assert.match(css, /\.blank-canvas::before\s*\{[\s\S]*?background-size:\s*24px\s+24px/, "canvas grid must use a fixed screen-sized rhythm");
-assert.match(css, /\.canvas-links path\.image-link\s*\{[\s\S]*?stroke:\s*#a36cf0/, "image connections must be purple");
-assert.match(css, /\.canvas-links path\.video-link\s*\{[\s\S]*?stroke:\s*#4c8d62/, "video connections must be dark green");
+assert.match(css, /\.canvas-links path\.active-link,[\s\S]*?\.canvas-links path\.image-link\s*\{[\s\S]*?stroke:\s*#fff/, "image connections must be pure white");
+assert.match(css, /\.canvas-links path\.video-link\s*\{[\s\S]*?stroke:\s*#fff/, "video connections must be pure white");
 assert.match(css, /\.generation-progress-track\s*\{/, "static generation progress track styles must exist");
 assert.doesNotMatch(html, /class="context-icon|class="context-arrow/, "creation menus must display text without decorative icons");
 assert.match(css, /\.canvas-context-menu\s*\{[\s\S]*?width:\s*248px[\s\S]*?background:\s*rgba\(10,\s*12,\s*14,\s*0\.96\)/, "creation menu must use the compact dark surface");

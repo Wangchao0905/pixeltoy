@@ -411,11 +411,12 @@ await assert.rejects(
 assert.equal(timedCalls.length, 3, "the author race must start one request for each distinct model family");
 assert.equal(new Set(timedCalls.map((item) => item.model)).size, 3, "the author race must never duplicate a model");
 assert.ok(timedCalls.every((item) => item.timeoutMs === 14_000), "each concurrent author must receive the bounded timeout");
-assert.match(agent, /STAGE_PRIMARY_BUDGET_MS = 80_000/, "production primary generation must fit inside one bounded race window");
-assert.match(agent, /STAGE_PRIMARY_MODEL_TIMEOUT_MS = 70_000/, "a single author must have measured latency headroom without creating an eleven-minute retry chain");
+assert.match(agent, /characters: \{ total: 240_000, model: 210_000 \}/, "characters and world generation needs a longer bounded model window");
+assert.match(agent, /arc: \{ total: 300_000, model: 270_000 \}/, "long-form arc generation needs a bounded long-stage window");
+assert.match(agent, /const REVIEW_MODEL_TIMEOUT_MS = 120_000/, "review calls must have enough time for structured feedback");
 assert.ok(
-  Number(agent.match(/STAGE_PRIMARY_BUDGET_MS = ([\d_]+)/)[1].replace(/_/g, "")) <= 300_000,
-  "the primary budget must stay inside the 300 second Nginx upstream window",
+  Number(agent.match(/characters: \{ total: ([\d_]+), model: ([\d_]+) \}/)[1].replace(/_/g, "")) <= 300_000,
+  "the longest primary budget must stay bounded for background job recovery",
 );
 assert.match(agent, /modelRouter\.stageModels\(route\)\.slice\(0, 3\)/, "primary fallback must never walk the full writing roster sequentially");
 assert.match(agent, /Promise\.any\(attempts\)/, "distinct author candidates must race instead of waiting serially");

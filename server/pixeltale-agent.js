@@ -11,10 +11,17 @@ const DEFAULT_ROUTES = {
   dialogueReview: "claude-sonnet-5",
   consistency: "gpt-5.6-luna",
 };
-const STAGE_PRIMARY_BUDGET_MS = 80_000;
-const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 70_000;
+const STAGE_PRIMARY_TIMINGS = Object.freeze({
+  brief: { total: 120_000, model: 100_000 },
+  title: { total: 90_000, model: 80_000 },
+  proposal: { total: 150_000, model: 120_000 },
+  characters: { total: 240_000, model: 210_000 },
+  arc: { total: 300_000, model: 270_000 },
+  scenes: { total: 300_000, model: 270_000 },
+  dialogue: { total: 300_000, model: 270_000 },
+});
 const MIN_STAGE_PRIMARY_ATTEMPT_MS = 3_000;
-const REVIEW_MODEL_TIMEOUT_MS = 80_000;
+const REVIEW_MODEL_TIMEOUT_MS = 120_000;
 const REVIEW_QUORUM = 2;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
 const STAGE_OUTPUT_TOKEN_BUDGETS = Object.freeze({
@@ -988,6 +995,10 @@ function canFallbackFrom(error) {
   return error?.retryable === true || ["TIMEOUT", "NETWORK_ERROR", "EMPTY_RESPONSE", "INVALID_JSON", "SCHEMA_INVALID"].includes(error?.code);
 }
 
+function stagePrimaryTiming(stage) {
+  return STAGE_PRIMARY_TIMINGS[stage] || STAGE_PRIMARY_TIMINGS.proposal;
+}
+
 async function callStagePrimary({
   route,
   system,
@@ -995,16 +1006,19 @@ async function callStagePrimary({
   stage = "brief",
   modelRouter,
   nowMs = () => Date.now(),
-  totalTimeoutMs = STAGE_PRIMARY_BUDGET_MS,
-  perModelTimeoutMs = STAGE_PRIMARY_MODEL_TIMEOUT_MS,
+  totalTimeoutMs,
+  perModelTimeoutMs,
 }) {
   if (!modelRouter || typeof modelRouter.stageModels !== "function") {
     throw new ProviderError("PixelTale 未接入 SuperPixel 主创模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
   }
   const providers = uniqueText(modelRouter.stageModels(route).slice(0, 3), 3);
   const failures = [];
+  const timing = stagePrimaryTiming(stage);
+  const totalBudgetMs = totalTimeoutMs ?? timing.total;
+  const perModelBudgetMs = perModelTimeoutMs ?? timing.model;
   const startedAtMs = nowMs();
-  const deadlineMs = startedAtMs + Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, totalTimeoutMs);
+  const deadlineMs = startedAtMs + Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, totalBudgetMs);
   if (!providers.length) {
     throw new ProviderError("SuperPixel 没有可用的主创模型", { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });
   }
@@ -1016,7 +1030,7 @@ async function callStagePrimary({
       failures.push({ provider, code: error.code, message: error.message });
       throw error;
     }
-    const timeoutMs = Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelTimeoutMs, remainingMs));
+    const timeoutMs = Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelBudgetMs, remainingMs));
     try {
       const result = await callProvider({
         provider,
@@ -1045,15 +1059,15 @@ async function callStagePrimary({
       fallback: winner.provider !== route.primary,
       fallbackFailures: failureSnapshot,
       racedModels: providers,
-      primaryBudget: { totalTimeoutMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) },
+      primaryBudget: { totalTimeoutMs: totalBudgetMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) },
     };
   } catch {
     raceController.abort();
   }
   const detail = failures.map((item) => item.message).join("；");
-  const error = new ProviderError(`SuperPixel 主创模型未能在 ${Math.round(totalTimeoutMs / 1000)} 秒响应窗口内完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });
+  const error = new ProviderError(`SuperPixel 主创模型未能在 ${Math.round(totalBudgetMs / 1000)} 秒响应窗口内完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });
   error.fallbackFailures = failures;
-  error.primaryBudget = { totalTimeoutMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) };
+  error.primaryBudget = { totalTimeoutMs: totalBudgetMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) };
   throw error;
 }
 
@@ -1383,7 +1397,7 @@ function createPixelTaleAgent(options = {}) {
           system,
           user,
           modelRouter,
-          timeoutMs: STAGE_PRIMARY_MODEL_TIMEOUT_MS,
+          timeoutMs: stagePrimaryTiming("title").model,
           maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS.title,
           purpose: "pixeltale:title:author",
         })

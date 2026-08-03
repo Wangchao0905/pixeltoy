@@ -493,8 +493,8 @@ function nextStepMeta() {
     kind: "auto-revise",
     stage: flowStage,
     title: `${flowMeta.title}需要修订`,
-    copy: "三模型已经汇总全部问题。点击唯一的下一步按钮，系统会携带完整审核清单一次性修订、重新生成并再次复核。",
-    label: "按完整审核清单修订并重新生成 →",
+    copy: "三模型已经汇总全部问题。点击唯一的下一步按钮，本阶段主创会按问题合同定向修订，三模型随后逐项复审关闭。",
+    label: "执行交叉修订并复审 →",
     flowStage,
   };
 }
@@ -937,7 +937,10 @@ function reviewIssueGroups(reviewContent = {}) {
 }
 
 function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage } = {}) {
-  if (passed) return `<div class="review-summary is-passed"><strong>复核通过，可以确认并进入下一步</strong><p>三模型已完成全量检查，当前版本可以继续确认。</p></div>`;
+  const revision = reviewContent.revision || null;
+  const closure = revision?.closure;
+  const closurePanel = closure?.required ? `<section class="revision-closure ${closure.allResolved ? "is-resolved" : "is-open"}"><div class="revision-closure-head"><div><span class="card-label"><i></i>REVISION CLOSURE</span><strong>${closure.allResolved ? "本轮修订已逐项关闭" : "本轮修订仍有未关闭项"}</strong><p>责任方：${escapeHtml(revision?.owner || "本阶段主创")}。每项均由三模型复审，不以重新生成替代验收。</p></div><span>${escapeHtml(`${closure.items.filter((item) => item.status === "resolved").length} / ${closure.items.length}`)}</span></div><div class="revision-closure-list">${closure.items.map((item) => `<article class="revision-closure-item is-${escapeHtml(item.status || "unresolved")}"><div><b>${escapeHtml(item.id)}</b><strong>${escapeHtml(item.tag)}</strong></div><em>${escapeHtml(item.status === "resolved" ? "已关闭" : item.status === "partial" ? "部分完成" : "未关闭")}</em>${item.remainingFix?.length ? `<p>${escapeHtml(item.remainingFix.join("；"))}</p>` : `<p>${escapeHtml(item.acceptance || "已满足修订验收条件")}</p>`}</article>`).join("")}</div></section>` : "";
+  if (passed) return `<div class="review-summary is-passed"><strong>复核通过，可以确认并进入下一步</strong><p>三模型已完成全量检查，当前版本可以继续确认。</p>${closurePanel}</div>`;
   const issues = reviewIssueGroups(reviewContent);
   const issueList = issues.length
     ? `<div class="review-issue-list">${issues.map((issue, index) => {
@@ -948,7 +951,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     }).join("")}</div>`
     : `<p class="review-empty">审核模型没有返回结构化问题，请按复核结果重新提交。</p>`;
   const countLabel = issues.length ? `已汇总 ${issues.length} 项问题` : "等待完整问题清单";
-  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>复核未通过，需要一次性修订</strong><p>三模型已完成全量检查，下面是本次版本的完整问题清单；修订后会重新执行完整复核。</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${issueList}<p class="review-panel-note">统一操作入口位于下方“下一步”。点击后会携带这份完整清单修订并再次复核。</p></div>`;
+  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>复核未通过，需要一次性修订</strong><p>三模型已完成全量检查，下面是本次版本的完整问题清单；修订后会重新执行完整复核。</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${closurePanel}${issueList}<p class="review-panel-note">统一操作入口位于下方“下一步”。修订版本会绑定本清单，复审必须逐项给出关闭结论。</p></div>`;
 }
 
 function renderTitleStage() {
@@ -1029,7 +1032,10 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
     updateAgentState(payload.result?.state);
     state.lastError = payload.result?.status === "failed" ? (payload.result.errors || []).map((item) => item.message).join("；") : "";
     if (state.lastError) throw new Error(state.lastError);
-    showToast(payload.result?.status === "needs_review" ? "已生成，但三模型审核存在共识问题或意见冲突" : "已生成并完成三模型交叉审核，等待确认");
+    const revision = payload.result?.revision;
+    showToast(payload.result?.status === "needs_review"
+      ? (revision ? "交叉修订已执行，但仍有问题未通过逐项关闭" : "已生成，但三模型审核存在共识问题或意见冲突")
+      : (revision ? "交叉修订已逐项复审关闭，等待确认" : "已生成并完成三模型交叉审核，等待确认"));
   } catch (error) {
     state.lastError = userFacingError(error);
     showToast(state.lastError);
@@ -1056,7 +1062,7 @@ async function runAutoRevision(stage = state.stage) {
       return `${index + 1}. ${issue.tag || "待修订项"}（${issue.severity || "medium"}）：${fixes}${evidence ? `；${evidence}` : ""}`;
     }),
   ].join("\n");
-  showToast(`已汇总 ${issues.length} 项问题，正在一次性修订并重新复核`);
+  showToast(`已锁定 ${issues.length} 项问题，正在执行定向修订与逐项复审`);
   await runCurrentStage(stage, { revisionPlan: plan });
 }
 

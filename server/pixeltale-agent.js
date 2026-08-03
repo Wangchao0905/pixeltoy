@@ -407,6 +407,7 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "重点寻找：前后设定冲突、因果断裂、角色动机缺口、市场本土化错误、模式节奏偏离、悬念提前泄露和无法执行的空泛表达。",
     "必须穷举本次产物中所有需要修订的问题，不要只返回最严重的一项；每个独立问题都要在 issues 中单独列出，并为每个问题给出证据和可执行修订建议。",
     "required_changes 必须覆盖 issues 中的全部问题；如果多个问题互不相同，不得合并成一句笼统意见。",
+    "若输入包含 revisionClosureProtocol，则必须逐条返回 revision_closures：每条合同项只能标记 resolved、partial 或 unresolved，并写明修订证据和未完成时的剩余修改；不得遗漏合同编号。",
     "只有 cross_validation、consistency、adversarial 三项均为 true，并且阶段专项检查均通过时，pass 才能为 true；发现任一硬伤必须 pass=false，并在 required_changes 中给出可执行修订意见。",
     creativeControlPrompt(input, mode),
     audiencePrompt(input),
@@ -416,11 +417,37 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "TK 必查开头暴击、每集钩子、主动选择、反转和集尾悬念；长剧必查主线因果、人物弧线和伏笔回收位置。",
     "对白阶段还要检查英文是否自然口语化、是否保留中文剧情意图、是否像人物会说的话。",
     ...(stage === "title" ? ["剧名阶段必须检查恰好 5 个候选、名称不重复、五种风格确实拉开差异，并且每个候选都有风格、语气和理由。"] : []),
-    '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"tag":"稳定短标签，如因果断裂、人物动机不足、钩子偏弱","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"dimensions":{"structure":{"score":0,"feedback":"结构意见"},"plot":{"score":0,"feedback":"剧情意见"},"design":{"score":0,"feedback":"设计意见"},"logic":{"score":0,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
+    '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"tag":"稳定短标签，如因果断裂、人物动机不足、钩子偏弱","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改"}],"dimensions":{"structure":{"score":0,"feedback":"结构意见"},"plot":{"score":0,"feedback":"剧情意见"},"design":{"score":0,"feedback":"设计意见"},"logic":{"score":0,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
   ].join("\n");
 }
 
-function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input }) {
+function revisionUserPrompt({ stage, mode, input, previousArtifacts, project, baseArtifact, revisionContract, revisionPlan }) {
+  const prior = previousArtifacts.map((artifact) => ({
+    stage: artifact.stage,
+    type: artifact.type,
+    version: artifact.version,
+    status: artifact.status,
+    content: artifact.content,
+  }));
+  return JSON.stringify({
+    task: "基于已审核版本执行定向修订。只解决修订合同中的问题，保留没有问题的有效内容，不得重置故事方向、改变已确认上下文或用空泛改写回避问题。",
+    project: { id: text(project?.id, 300), title: text(project?.title, 300), episode: text(project?.episode, 100) },
+    mode,
+    dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
+    creativeControls: normalizeCreativeControls(input),
+    audience: normalizeAudience(input),
+    market: normalizeMarket(input),
+    stageParticipation: normalizeStageOptions(input),
+    currentStage: stage,
+    userRevisionDirection: text(revisionPlan, 14000),
+    sourceArtifact: { id: baseArtifact.id, version: baseArtifact.version, content: baseArtifact.content },
+    revisionContract,
+    approvedContext: prior,
+  }, null, 2).slice(0, 180000);
+}
+
+function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input, revisionContract = null }) {
+  const revisionItems = asArray(revisionContract?.items);
   return JSON.stringify({
     reviewProtocol: {
       type: "adversarial_cross_validation",
@@ -439,6 +466,18 @@ function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input }) {
     stageParticipation: normalizeStageOptions(input),
     artifact,
     approvedContext: previousArtifacts.map((item) => ({ stage: item.stage, content: item.content })).slice(-6),
+    ...(revisionItems.length ? {
+      revisionClosureProtocol: {
+        sourceArtifactId: text(revisionContract.sourceArtifactId, 200),
+        contractId: text(revisionContract.id, 200),
+        instructions: [
+          "逐条核验修订合同；不得只评价整体质量。",
+          "每个合同编号都必须在 revision_closures 中出现。",
+          "只有修改确实满足该条验收条件时才能标记 resolved；证据不足必须标记 partial 或 unresolved。",
+        ],
+        items: revisionItems,
+      },
+    } : {}),
   }, null, 2).slice(0, 180000);
 }
 
@@ -562,7 +601,7 @@ function validateContent(stage, content) {
   return value;
 }
 
-function validateReview(value, { requireDimensions = false } = {}) {
+function validateReview(value, { requireDimensions = false, revisionContract = null } = {}) {
   const review = asObject(value);
   if (typeof review.pass !== "boolean" || !Number.isFinite(Number(review.score)) || !Array.isArray(review.findings) || !Array.isArray(review.required_changes)) {
     const error = new Error("复核产物缺少 pass、score、findings 或 required_changes");
@@ -594,20 +633,37 @@ function validateReview(value, { requireDimensions = false } = {}) {
   }).filter((item) => item.tag && item.feedback);
   const missingDimensions = requireDimensions ? REVIEW_DIMENSIONS.filter((key) => !Number.isFinite(Number(rawDimensions[key]?.score ?? rawDimensions[key]))) : [];
   const requiredChanges = review.required_changes.map((item) => text(item, 1000)).filter(Boolean).slice(0, 20);
+  const contractItems = asArray(revisionContract?.items);
+  const revisionClosures = asArray(review.revision_closures).map((item) => {
+    const entry = asObject(item);
+    return {
+      issueId: text(entry.issue_id || entry.issueId, 160),
+      status: ["resolved", "partial", "unresolved"].includes(text(entry.status, 40).toLowerCase())
+        ? text(entry.status, 40).toLowerCase()
+        : "unresolved",
+      evidence: text(entry.evidence, 1200),
+      remainingFix: text(entry.remaining_fix || entry.remainingFix, 1200),
+    };
+  }).filter((item) => item.issueId);
+  const missingClosures = contractItems.filter((item) => !revisionClosures.some((closure) => closure.issueId === item.id));
   if (review.pass && missingHardChecks.length) {
     requiredChanges.unshift(`交叉审核硬门槛未满足：${missingHardChecks.join("、")}`);
   }
   if (review.pass && missingDimensions.length) {
     requiredChanges.unshift(`一致性维度未完成：${missingDimensions.join("、")}`);
   }
+  if (contractItems.length && missingClosures.length) {
+    requiredChanges.unshift(`修订关闭证明缺失：${missingClosures.map((item) => item.id).join("、")}`);
+  }
   return {
-    pass: review.pass && missingHardChecks.length === 0 && missingDimensions.length === 0,
+    pass: review.pass && missingHardChecks.length === 0 && missingDimensions.length === 0 && missingClosures.length === 0,
     score: Math.max(0, Math.min(100, Number(review.score))),
     findings: review.findings.map((item) => text(item, 1000)).filter(Boolean).slice(0, 20),
     required_changes: requiredChanges,
     checks,
     dimensions,
     issues,
+    revisionClosures,
   };
 }
 
@@ -678,7 +734,56 @@ function sharedReviewIssues(feedbacks) {
   return groupedReviewIssues(feedbacks).filter((group) => group.modelCount >= 2);
 }
 
-function aggregateCrossReview(reviews = []) {
+function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
+  const issues = asArray(review.reviewIssues);
+  const fallback = issues.length ? [] : asArray(review.required_changes).map((change) => ({
+    tag: "审核修订项",
+    dimension: "logic",
+    severity: "medium",
+    modelCount: 0,
+    models: [],
+    suggestions: [change],
+    evidence: [],
+  }));
+  return {
+    id: text(contractId, 200),
+    stage,
+    sourceArtifactId: text(sourceArtifactId, 200),
+    items: [...issues, ...fallback].slice(0, 24).map((issue, index) => ({
+      id: `${stage}-R${String(index + 1).padStart(2, "0")}`,
+      tag: text(issue.tag || "审核修订项", 160),
+      dimension: REVIEW_DIMENSIONS.includes(issue.dimension) ? issue.dimension : "logic",
+      severity: ["high", "medium", "low"].includes(issue.severity) ? issue.severity : "medium",
+      modelCount: Math.max(0, Number(issue.modelCount) || 0),
+      evidence: uniqueText(issue.evidence, 4),
+      requiredEdit: uniqueText(issue.suggestions, 4),
+      acceptance: `修订版本必须消除“${text(issue.tag || "审核修订项", 160)}”的证据，并与用户规格和已确认上下文保持一致。`,
+    })),
+  };
+}
+
+function aggregateRevisionClosure(feedbacks = [], revisionContract = null) {
+  const items = asArray(revisionContract?.items);
+  if (!items.length) return { required: false, allResolved: true, items: [] };
+  const closureItems = items.map((item) => {
+    const responses = feedbacks.map((feedback) => {
+      const closure = asArray(feedback.revisionClosures).find((entry) => entry.issueId === item.id);
+      return closure || { status: "unresolved", evidence: "该审核模型未提供该修订项的关闭证明", remainingFix: "补充逐项复审结论" };
+    });
+    const counts = Object.fromEntries(["resolved", "partial", "unresolved"].map((status) => [status, responses.filter((entry) => entry.status === status).length]));
+    const resolved = counts.resolved >= 2 && counts.partial === 0 && counts.unresolved === 0;
+    return {
+      ...item,
+      status: resolved ? "resolved" : counts.resolved ? "partial" : "unresolved",
+      resolvedBy: counts.resolved,
+      responses: responses.map((entry) => ({ status: entry.status, evidence: entry.evidence, remainingFix: entry.remainingFix })),
+      remainingFix: uniqueText(responses.filter((entry) => entry.status !== "resolved").map((entry) => entry.remainingFix || entry.evidence), 4),
+    };
+  });
+  return { required: true, allResolved: closureItems.every((item) => item.status === "resolved"), items: closureItems };
+}
+
+function aggregateCrossReview(reviews = [], revisionContract = null) {
   const feedbacks = reviews.map((item) => {
     if (item.result) {
       const review = item.result;
@@ -693,6 +798,7 @@ function aggregateCrossReview(reviews = []) {
         checks: review.content.checks,
         dimensions: review.content.dimensions,
         issues: review.content.issues,
+        revisionClosures: review.content.revisionClosures,
       };
     }
     return {
@@ -706,6 +812,7 @@ function aggregateCrossReview(reviews = []) {
       checks: {},
       dimensions: Object.fromEntries(REVIEW_DIMENSIONS.map((key) => [key, { score: 0, feedback: "审核未完成" }])),
       issues: [],
+      revisionClosures: [],
     };
   });
   const completed = feedbacks.filter((item) => item.status === "completed");
@@ -730,11 +837,13 @@ function aggregateCrossReview(reviews = []) {
   const conflicts = REVIEW_DIMENSIONS
     .filter((key) => completed.length >= 2 && dimensions[key].agreement < 75)
     .map((key) => ({ dimension: key, agreement: dimensions[key].agreement, suggestion: `重新核对${key}维度的证据与取舍，直到三模型形成可执行的统一方案` }));
-  const pass = completed.length === 3 && feedbacks.every((item) => item.pass) && index >= 75 && reviewIssues.length === 0 && reviewerChanges.length === 0 && conflicts.length === 0;
+  const revisionClosure = aggregateRevisionClosure(feedbacks, revisionContract);
+  const pass = completed.length === 3 && feedbacks.every((item) => item.pass) && index >= 75 && reviewIssues.length === 0 && reviewerChanges.length === 0 && conflicts.length === 0 && revisionClosure.allResolved;
   const checks = {
     ...Object.fromEntries(["cross_validation", "consistency", "adversarial"].map((key) => [key, completed.length === 3 && completed.every((item) => item.checks?.[key] === true)])),
     issues_converged: reviewIssues.length === 0,
     dimensions_agree: conflicts.length === 0,
+    revision_contract_closed: revisionClosure.allResolved,
   };
   const issueChanges = reviewIssues.map((issue) => {
     const source = issue.modelCount >= 2 ? `至少 ${issue.modelCount} 个模型共同指出` : `单个模型指出`;
@@ -743,6 +852,9 @@ function aggregateCrossReview(reviews = []) {
   });
   const conflictChanges = conflicts.map((item) => `【意见冲突 / ${item.dimension}】${item.suggestion}`);
   const failedChanges = feedbacks.filter((item) => item.status === "failed").flatMap((item) => item.required_changes);
+  const closureChanges = revisionClosure.items
+    .filter((item) => item.status !== "resolved")
+    .map((item) => `【${item.id} / ${item.tag}】修订关闭未通过：${item.remainingFix.join("；") || "请按验收条件补充修订"}`);
   return {
     pass,
     score: index,
@@ -760,8 +872,9 @@ function aggregateCrossReview(reviews = []) {
     independentIssueCount: independentIssues.length,
     conflicts,
     findings: uniqueText([...commonIssues.map((item) => `共识问题【${item.tag}】（${item.modelCount} 个模型）`), ...conflicts.map((item) => `意见冲突：${item.dimension} 一致性 ${item.agreement}%`), ...feedbacks.flatMap((item) => item.findings)]),
-    required_changes: uniqueText([...issueChanges, ...conflictChanges, ...reviewerChanges, ...failedChanges], 60),
+    required_changes: uniqueText([...issueChanges, ...conflictChanges, ...reviewerChanges, ...failedChanges, ...closureChanges], 60),
     checks,
+    revision: revisionContract ? { contract: revisionContract, closure: revisionClosure } : null,
   };
 }
 
@@ -933,7 +1046,7 @@ function publicState(state, env) {
 }
 
 function artifactForStage(state, stage) {
-  return state.artifacts.filter((artifact) => artifact.stage === stage).sort((a, b) => Number(a.version || 0) - Number(b.version || 0)).at(-1) || null;
+  return state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).sort((a, b) => Number(a.version || 0) - Number(b.version || 0)).at(-1) || null;
 }
 
 function approvedForStage(state, stage) {
@@ -1116,6 +1229,8 @@ function createPixelTaleAgent(options = {}) {
     const runId = id("run", randomUUID);
     const route = stageRoute(stage, mode, routes);
     const previousArtifacts = STAGES.map((item) => approvedForStage(state, item)).filter(Boolean);
+    const revisionBase = revisionPlan ? artifactForStage(state, stage) : null;
+    const sourceReview = revisionBase?.reviewId ? state.artifacts.find((artifact) => artifact.id === revisionBase.reviewId) : null;
     const errors = [];
     let retryCount = 0;
     let primary;
@@ -1124,6 +1239,7 @@ function createPixelTaleAgent(options = {}) {
     let reviewRoutes = [];
     let primaryArtifact;
     let reviewArtifact;
+    let revisionContract = null;
     try {
       const requiredStage = nextRequiredStage(state);
       const requestedIndex = STAGES.indexOf(stage);
@@ -1139,10 +1255,29 @@ function createPixelTaleAgent(options = {}) {
         error.code = "INPUT_INVALID";
         throw error;
       }
+      if (revisionPlan) {
+        if (!revisionBase || revisionBase.status !== "needs_review" || !sourceReview?.content) {
+          const error = new Error("当前阶段没有可执行的待修订版本");
+          error.code = "REVISION_SOURCE_INVALID";
+          throw error;
+        }
+        revisionContract = buildRevisionContract(sourceReview.content, {
+          stage,
+          sourceArtifactId: revisionBase.id,
+          id: `revision_${runId}`,
+        });
+        if (!revisionContract.items.length) {
+          const error = new Error("交叉审核没有返回可执行的修订项，无法开始修订");
+          error.code = "REVISION_CONTRACT_EMPTY";
+          throw error;
+        }
+      }
       primary = await callProvider({
         provider: route.primary,
         system: stageSystemPrompt(stage, mode, runInput),
-        user: stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project }),
+        user: revisionContract
+          ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
+          : stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project }),
         env,
         fetchImpl,
       });
@@ -1150,30 +1285,39 @@ function createPixelTaleAgent(options = {}) {
       const content = validateContent(stage, primary.content);
       const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
       primaryArtifact = buildArtifact({ stage, mode, input: runInput, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
+      if (revisionContract) {
+        primaryArtifact.revision = {
+          sourceArtifactId: revisionBase.id,
+          contractId: revisionContract.id,
+          itemCount: revisionContract.items.length,
+          owner: "本阶段主创",
+        };
+      }
       reviewRoutes = crossReviewRoutes(route);
       reviews = await Promise.all(reviewRoutes.map(async (reviewRoute) => {
         try {
           const result = await callProvider({
             provider: reviewRoute,
             system: reviewSystemPrompt(stage, mode, runInput),
-            user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts }),
+            user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts, revisionContract }),
             env,
             fetchImpl,
           });
           retryCount += result.attempts || 0;
-          return { route: reviewRoute, result: { ...result, content: validateReview(result.content, { requireDimensions: true }) } };
+          return { route: reviewRoute, result: { ...result, content: validateReview(result.content, { requireDimensions: true, revisionContract }) } };
         } catch (error) {
           return { route: reviewRoute, model: modelForRoute(reviewRoute, env), error: error.message };
         }
       }));
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
-      consensus = aggregateCrossReview(reviews);
+      consensus = aggregateCrossReview(reviews, revisionContract);
+      if (consensus.revision) consensus.revision.owner = "本阶段主创";
       reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviewRoutes.map((item) => modelForRoute(item, env)).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
       primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
       primaryArtifact.reviewId = reviewArtifact.id;
       state.artifacts.push(primaryArtifact, reviewArtifact);
       const runStatus = consensus.pass ? "completed" : "needs_review";
-      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${providerForRoute(item)}:${modelForRoute(item, env)}`), consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${providerForRoute(item)}:${modelForRoute(item, env)}`), consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       persistState(params, state);
       return { ...publicRun(record), artifacts: [primaryArtifact, reviewArtifact].map(publicArtifact), state: publicState(state, env) };
@@ -1365,6 +1509,8 @@ module.exports = {
   validateContent,
   validateReview,
   stageRoute,
+  buildRevisionContract,
+  aggregateRevisionClosure,
   aggregateCrossReview,
   crossReviewRoutes,
   STAGES,

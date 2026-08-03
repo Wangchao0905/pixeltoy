@@ -68,8 +68,8 @@ try {
   assert.equal(job.status, "completed", `background run must complete: ${JSON.stringify(job)}`);
   assert.equal(job.result.status, "completed", "two-review quorum must release the generated brief");
   assert.equal(job.result.state.runs.length, 1, "duplicate starts must not create duplicate Agent runs");
-  assert.equal(requestedTokenBudgets[0], 1_800, "brief authoring must use the brief-sized output budget");
-  assert.deepEqual(requestedTokenBudgets.slice(1).sort((a, b) => a - b), [1_200, 1_200, 1_200], "brief reviewers must use the compact brief review budget");
+  assert.deepEqual(requestedTokenBudgets.slice(0, 3).sort((a, b) => a - b), [1_800, 1_800, 3_600], "the brief author race must use compact budgets plus DeepSeek reasoning headroom");
+  assert.deepEqual(requestedTokenBudgets.slice(3).sort((a, b) => a - b), [1_200, 1_200, 2_400], "brief reviewers must use compact budgets plus DeepSeek reasoning headroom");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");
 } finally {
   superPixel.setFetch();

@@ -275,7 +275,6 @@ assert.equal(primaryFallback.provider, "claude", "a timed-out primary must advan
 assert.equal(primaryFallback.fallback, true, "fallback execution must remain visible to the run record");
 assert.equal(primaryFallback.fallbackFailures.length, 1, "only the failed primary should be recorded before recovery");
 
-let elapsedMs = 0;
 const timedCalls = [];
 await assert.rejects(
   () => callStagePrimary({
@@ -284,12 +283,11 @@ await assert.rejects(
     user: "{}",
     totalTimeoutMs: 15_000,
     perModelTimeoutMs: 14_000,
-    nowMs: () => elapsedMs,
+    nowMs: () => 0,
     modelRouter: {
       stageModels: (route) => [route.primary, route.reviewer, route.consistency, "gpt-5.6-sol"],
       call: async ({ model, timeoutMs }) => {
         timedCalls.push({ model, timeoutMs });
-        elapsedMs += timeoutMs;
         const error = new Error("upstream request timed out");
         error.code = "TIMEOUT";
         error.retryable = true;
@@ -297,18 +295,20 @@ await assert.rejects(
       },
     },
   }),
-  (error) => error.code === "STAGE_GENERATION_UNAVAILABLE" && error.fallbackFailures.some((item) => item.code === "STAGE_TIMEOUT_BUDGET_EXHAUSTED"),
-  "the primary stage must stop before starting another request after its total budget is exhausted",
+  (error) => error.code === "STAGE_GENERATION_UNAVAILABLE" && error.fallbackFailures.length === 3,
+  "the primary stage must fail only after every distinct race candidate fails",
 );
-assert.equal(timedCalls.length, 1, "the stage budget must prevent a second model request after a 14 second failure in a 15 second window");
-assert.equal(timedCalls[0].timeoutMs, 14_000, "each primary attempt must receive the bounded per-model timeout");
-assert.match(agent, /STAGE_PRIMARY_BUDGET_MS = 210_000/, "production primary generation must have one bounded attempt for each provider family");
+assert.equal(timedCalls.length, 3, "the author race must start one request for each distinct model family");
+assert.equal(new Set(timedCalls.map((item) => item.model)).size, 3, "the author race must never duplicate a model");
+assert.ok(timedCalls.every((item) => item.timeoutMs === 14_000), "each concurrent author must receive the bounded timeout");
+assert.match(agent, /STAGE_PRIMARY_BUDGET_MS = 80_000/, "production primary generation must fit inside one bounded race window");
 assert.match(agent, /STAGE_PRIMARY_MODEL_TIMEOUT_MS = 70_000/, "a single author must have measured latency headroom without creating an eleven-minute retry chain");
 assert.ok(
   Number(agent.match(/STAGE_PRIMARY_BUDGET_MS = ([\d_]+)/)[1].replace(/_/g, "")) <= 300_000,
   "the primary budget must stay inside the 300 second Nginx upstream window",
 );
 assert.match(agent, /modelRouter\.stageModels\(route\)\.slice\(0, 3\)/, "primary fallback must never walk the full writing roster sequentially");
+assert.match(agent, /Promise\.any\(attempts\)/, "distinct author candidates must race instead of waiting serially");
 assert.doesNotMatch(agent, /\.\.\.providers, \.\.\.providers|flatMap\(\(provider\) => \[provider, provider\]\)/, "a stage must never repeat the same three-model sweep");
 assert.match(agent, /brief: 1_800/, "brief generation must not request the universal 12k output budget");
 assert.match(agent, /REVIEW_QUORUM = 2/, "two independent completed reviews must form quorum");

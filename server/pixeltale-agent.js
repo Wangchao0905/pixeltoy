@@ -10,7 +10,7 @@ const DEFAULT_ROUTES = {
   dialogueReview: "claude-sonnet-5",
   consistency: "gpt-5.6-luna",
 };
-const STAGE_PRIMARY_BUDGET_MS = 210_000;
+const STAGE_PRIMARY_BUDGET_MS = 80_000;
 const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 70_000;
 const MIN_STAGE_PRIMARY_ATTEMPT_MS = 3_000;
 const REVIEW_MODEL_TIMEOUT_MS = 80_000;
@@ -926,11 +926,11 @@ class ProviderError extends Error {
   }
 }
 
-async function callProvider({ provider, system, user, modelRouter, timeoutMs, maxTokens, purpose = "pixeltale" }) {
+async function callProvider({ provider, system, user, modelRouter, timeoutMs, maxTokens, purpose = "pixeltale", signal }) {
   if (!modelRouter || typeof modelRouter.call !== "function") {
     throw new ProviderError("PixelTale 未接入 SuperPixel 文本模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
   }
-  return modelRouter.call({ model: modelForRoute(provider), system, user, purpose, timeoutMs, maxTokens });
+  return modelRouter.call({ model: modelForRoute(provider), system, user, purpose, timeoutMs, maxTokens, signal });
 }
 
 function canFallbackFrom(error) {
@@ -950,15 +950,20 @@ async function callStagePrimary({
   if (!modelRouter || typeof modelRouter.stageModels !== "function") {
     throw new ProviderError("PixelTale 未接入 SuperPixel 主创模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
   }
-  const providers = modelRouter.stageModels(route).slice(0, 3);
+  const providers = uniqueText(modelRouter.stageModels(route).slice(0, 3), 3);
   const failures = [];
   const startedAtMs = nowMs();
   const deadlineMs = startedAtMs + Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, totalTimeoutMs);
-  for (const provider of providers) {
+  if (!providers.length) {
+    throw new ProviderError("SuperPixel 没有可用的主创模型", { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });
+  }
+  const raceController = new AbortController();
+  const attempts = providers.map(async (provider) => {
     const remainingMs = deadlineMs - nowMs();
     if (remainingMs < MIN_STAGE_PRIMARY_ATTEMPT_MS) {
-      failures.push({ provider, code: "STAGE_TIMEOUT_BUDGET_EXHAUSTED", message: "主创阶段的响应预算已用尽，未再启动新的模型请求" });
-      break;
+      const error = new ProviderError("主创阶段的响应预算已用尽，未启动该模型请求", { code: "STAGE_TIMEOUT_BUDGET_EXHAUSTED", retryable: true });
+      failures.push({ provider, code: error.code, message: error.message });
+      throw error;
     }
     const timeoutMs = Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelTimeoutMs, remainingMs));
     try {
@@ -970,17 +975,29 @@ async function callStagePrimary({
         timeoutMs,
         maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal,
         purpose: `pixeltale:${stage}:author`,
+        signal: raceController.signal,
       });
-      return {
-        ...result,
-        fallback: provider !== route.primary,
-        fallbackFailures: failures,
-        primaryBudget: { totalTimeoutMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) },
-      };
+      return { provider, result };
     } catch (error) {
-      failures.push({ provider, code: error?.code || "PROVIDER_ERROR", message: error?.message || "主创模型请求失败" });
-      if (!canFallbackFrom(error)) throw error;
+      if (error?.code !== "REQUEST_CANCELLED") {
+        failures.push({ provider, code: error?.code || "PROVIDER_ERROR", message: error?.message || "主创模型请求失败" });
+      }
+      throw error;
     }
+  });
+  try {
+    const winner = await Promise.any(attempts);
+    const failureSnapshot = failures.slice();
+    raceController.abort();
+    return {
+      ...winner.result,
+      fallback: winner.provider !== route.primary,
+      fallbackFailures: failureSnapshot,
+      racedModels: providers,
+      primaryBudget: { totalTimeoutMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) },
+    };
+  } catch {
+    raceController.abort();
   }
   const detail = failures.map((item) => item.message).join("；");
   const error = new ProviderError(`SuperPixel 主创模型未能在 ${Math.round(totalTimeoutMs / 1000)} 秒响应窗口内完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });

@@ -8,6 +8,7 @@ const crypto = require("node:crypto");
 const { spawn, execFileSync } = require("node:child_process");
 const { pipeline } = require("node:stream/promises");
 const { pathToFileURL, fileURLToPath } = require("node:url");
+const { jsonrepair } = require("jsonrepair");
 const { collectReferencedAssetNames, classifyReferenceAssets, evaluateReferenceReadiness, runWithConcurrency, runWithDependencies } = require("./scripts/video-ref-prep.js");
 const { analyzeSeriesPreflight } = require("./scripts/series-preflight.js");
 const { createTeamStore } = require("./server/team-store.js");
@@ -2545,6 +2546,8 @@ function superPixelTextResponseContent(payload) {
   const message = payload?.choices?.[0]?.message?.content;
   if (typeof message === "string") return message;
   if (Array.isArray(message)) return message.map((item) => typeof item === "string" ? item : item?.text || "").join("");
+  const reasoning = payload?.choices?.[0]?.message?.reasoning_content;
+  if (typeof reasoning === "string" && reasoning.includes("{") && reasoning.includes("}")) return reasoning;
   return "";
 }
 
@@ -2552,14 +2555,19 @@ function parseSuperPixelTextJson(raw, label) {
   const value = String(raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   const start = value.indexOf("{");
   const end = value.lastIndexOf("}");
+  const candidate = start >= 0 && end > start ? value.slice(start, end + 1) : value;
   try {
-    return JSON.parse(start >= 0 && end > start ? value.slice(start, end + 1) : value);
-  } catch (error) {
-    throw superPixelTextError(`${label} 未返回合法 JSON`, { code: "INVALID_JSON", retryable: true });
+    return JSON.parse(candidate);
+  } catch {
+    try {
+      return JSON.parse(jsonrepair(candidate));
+    } catch (error) {
+      throw superPixelTextError(`${label} 未返回合法 JSON`, { code: "INVALID_JSON", retryable: true });
+    }
   }
 }
 
-async function callSuperPixelTextModel({ model, system, user, purpose = "text", timeoutMs: requestedTimeoutMs, maxTokens: requestedMaxTokens }) {
+async function callSuperPixelTextModel({ model, system, user, purpose = "text", timeoutMs: requestedTimeoutMs, maxTokens: requestedMaxTokens, signal: externalSignal }) {
   const normalizedModel = compactLine(model || "");
   const config = superPixelModelConfig(normalizedModel);
   const provider = superPixelModelProvider(normalizedModel);
@@ -2575,8 +2583,14 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
   const configuredTimeoutMs = Number(requestedTimeoutMs ?? process.env.SUPER_PIXEL_TEXT_TIMEOUT_MS ?? 120_000);
   const timeoutMs = Math.max(3_000, Number.isFinite(configuredTimeoutMs) ? configuredTimeoutMs : 120_000);
   const parsedMaxTokens = Number(requestedMaxTokens);
-  const maxTokens = Math.max(256, Math.min(12_000, Number.isFinite(parsedMaxTokens) ? Math.floor(parsedMaxTokens) : 4_000));
+  const contentMaxTokens = Math.max(256, Math.min(12_000, Number.isFinite(parsedMaxTokens) ? Math.floor(parsedMaxTokens) : 4_000));
+  const maxTokens = config.kind === "deepseek"
+    ? Math.min(12_000, Math.max(contentMaxTokens * 2, contentMaxTokens + 1_024))
+    : contentMaxTokens;
   const controller = new AbortController();
+  const abortFromExternal = () => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) abortFromExternal();
+  else externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const request = {
     model: normalizedModel,
@@ -2635,6 +2649,9 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
     };
   } catch (error) {
     if (error?.name === "AbortError") {
+      if (externalSignal?.aborted) {
+        throw superPixelTextError(`${normalizedModel} 请求已由主创竞速取消`, { code: "REQUEST_CANCELLED", retryable: false, trace: [...trace, { requestId, event: "cancelled", elapsedMs: Date.now() - startedAt }] });
+      }
       throw superPixelTextError(`${normalizedModel} 请求超时（${Math.round(timeoutMs / 1000)} 秒，追踪号 ${requestId}）`, { code: "TIMEOUT", retryable: true, trace: [...trace, { requestId, event: "timeout", elapsedMs: Date.now() - startedAt }] });
     }
     if (error?.code) {
@@ -2645,6 +2662,7 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
     throw superPixelTextError(`${normalizedModel} 请求失败：${error?.message || "未知错误"}`, { code: "NETWORK_ERROR", retryable: true, trace });
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", abortFromExternal);
   }
 }
 

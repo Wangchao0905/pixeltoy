@@ -267,19 +267,32 @@ try {
 
   const textCalls = [];
   __test.superPixel.setFetch(async (url, options) => {
-    textCalls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
-    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }), { status: 200 });
+    const requestBody = JSON.parse(options.body);
+    textCalls.push({ url, headers: options.headers, body: requestBody });
+    const content = requestBody.model === "deepseek-v4-pro" ? "```json\n{ok:true,}\n```" : JSON.stringify({ ok: true });
+    return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
   });
   const textResult = await textRouter.call({ model: "gpt-5.6-sol", system: "return JSON", user: "{}", purpose: "pixeltale" });
   assert.equal(textResult.model, "gpt-5.6-sol");
   assert.deepEqual(textResult.content, { ok: true });
   assert.equal(textCalls[0].url, "https://storyboard.example/v1/chat/completions", "text router must reuse SuperPixel's model gateway");
   assert.equal(textCalls[0].headers.Authorization, "Bearer test-super-pixel-storyboard-key", "text router must reuse SuperPixel's credential source");
-  const deepseekResult = await textRouter.call({ model: "deepseek-v4-pro", system: "return JSON", user: "{}", purpose: "pixeltale" });
+  const deepseekResult = await textRouter.call({ model: "deepseek-v4-pro", system: "return JSON", user: "{}", purpose: "pixeltale", maxTokens: 1_200 });
   assert.equal(deepseekResult.model, "deepseek-v4-pro");
+  assert.deepEqual(deepseekResult.content, { ok: true }, "DeepSeek's common JSON formatting defects must be repaired locally");
   assert.equal(textCalls[1].url, "https://deepseek.example/v1/chat/completions", "DeepSeek must use its configured OpenAI-compatible gateway");
   assert.equal(textCalls[1].headers.Authorization, "Bearer test-super-pixel-deepseek-key", "DeepSeek must use its own credential source");
+  assert.equal(textCalls[1].body.max_tokens, 2_400, "DeepSeek must receive separate reasoning-token headroom");
   assert.equal(textCalls[0].body.stream, false, "PixelTale structured output must be a non-streaming SuperPixel request");
+
+  __test.superPixel.setFetch(async (_url, { signal }) => {
+    await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+    throw Object.assign(new Error("aborted"), { name: "AbortError" });
+  });
+  const raceController = new AbortController();
+  const cancelledText = textRouter.call({ model: "gpt-5.6-sol", system: "return JSON", user: "{}", purpose: "pixeltale", signal: raceController.signal });
+  raceController.abort();
+  await assert.rejects(cancelledText, (error) => error.code === "REQUEST_CANCELLED", "losing author requests must be cancelled after a valid winner returns");
 } finally {
   __test.superPixel.setFetch(null);
   if (originalUsers) fs.writeFileSync(usersPath, originalUsers);

@@ -15,7 +15,6 @@ const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 70_000;
 const MIN_STAGE_PRIMARY_ATTEMPT_MS = 3_000;
 const REVIEW_MODEL_TIMEOUT_MS = 80_000;
 const REVIEW_QUORUM = 2;
-const REVIEW_PASS_INDEX = 85;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
 const STAGE_OUTPUT_TOKEN_BUDGETS = Object.freeze({
   brief: 1_800,
@@ -800,7 +799,7 @@ function aggregateRevisionClosure(feedbacks = [], revisionContract = null) {
       return closure || { status: "unresolved", evidence: "该审核模型未提供该修订项的关闭证明", remainingFix: "补充逐项复审结论" };
     });
     const counts = Object.fromEntries(["resolved", "partial", "unresolved"].map((status) => [status, responses.filter((entry) => entry.status === status).length]));
-    const resolved = counts.resolved >= 2 && counts.partial === 0 && counts.unresolved === 0;
+    const resolved = counts.resolved >= REVIEW_QUORUM;
     return {
       ...item,
       status: resolved ? "resolved" : counts.resolved ? "partial" : "unresolved",
@@ -867,13 +866,15 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
   const independentIssues = reviewIssues.filter((issue) => issue.modelCount === 1);
   const conflicts = REVIEW_DIMENSIONS
     .filter((key) => completed.length >= 2 && dimensions[key].agreement < 75)
-    .map((key) => ({ dimension: key, agreement: dimensions[key].agreement, suggestion: `重新核对${key}维度的证据与取舍，直到三模型形成可执行的统一方案` }));
+    .map((key) => ({ dimension: key, agreement: dimensions[key].agreement, suggestion: `已完成模型对${key}维度评分差异较大，建议人工核对证据与取舍` }));
   const revisionClosure = aggregateRevisionClosure(completed, revisionContract);
   const quorumMet = completed.length >= REVIEW_QUORUM;
   const passingReviews = completed.filter((item) => item.pass).length;
-  const pass = quorumMet && passingReviews >= REVIEW_QUORUM && index >= REVIEW_PASS_INDEX && commonIssues.length === 0 && conflicts.length === 0 && revisionClosure.allResolved;
+  const pass = quorumMet && commonIssues.length === 0 && revisionClosure.allResolved;
   const checks = {
-    ...Object.fromEntries(["cross_validation", "consistency", "adversarial"].map((key) => [key, quorumMet && completed.filter((item) => item.pass).every((item) => item.checks?.[key] === true)])),
+    cross_validation: quorumMet,
+    consistency: commonIssues.length === 0,
+    adversarial: completed.filter((item) => item.checks?.adversarial === true).length >= REVIEW_QUORUM,
     issues_converged: commonIssues.length === 0,
     dimensions_agree: conflicts.length === 0,
     revision_contract_closed: revisionClosure.allResolved,
@@ -883,7 +884,6 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     const suggestions = issue.suggestions.length ? issue.suggestions.join("；") : "针对该问题补充具体修订并重新提交三模型审核";
     return `${source}【${issue.severity} / ${issue.tag}】：${suggestions}`;
   });
-  const conflictChanges = conflicts.map((item) => `【意见冲突 / ${item.dimension}】${item.suggestion}`);
   const closureChanges = revisionClosure.items
     .filter((item) => item.status !== "resolved")
     .map((item) => `【${item.id} / ${item.tag}】修订关闭未通过：${item.remainingFix.join("；") || "请按验收条件补充修订"}`);
@@ -905,7 +905,12 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     independentIssueCount: independentIssues.length,
     conflicts,
     findings: uniqueText([...commonIssues.map((item) => `共识问题【${item.tag}】（${item.modelCount} 个模型）`), ...conflicts.map((item) => `意见冲突：${item.dimension} 一致性 ${item.agreement}%`), ...feedbacks.flatMap((item) => item.findings)]),
-    required_changes: uniqueText([...issueChanges, ...conflictChanges, ...closureChanges], 60),
+    required_changes: uniqueText([...issueChanges, ...closureChanges], 60),
+    advisories: {
+      independentIssues,
+      conflicts,
+      failedReviews: feedbacks.filter((item) => item.status === "failed").map((item) => ({ provider: item.provider, model: item.model, message: item.findings[0] })),
+    },
     checks,
     revision: revisionContract ? { contract: revisionContract, closure: revisionClosure } : null,
   };

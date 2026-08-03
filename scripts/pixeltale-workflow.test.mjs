@@ -26,7 +26,8 @@ assert.match(app, /function userFacingError\(error\)/, "provider errors must be 
 assert.match(app, /next-step-error[\s\S]*role="alert"/, "run errors must remain visible beside the next action");
 assert.match(app, /const actionCopy = state\.lastError[\s\S]*生成失败：\$\{state\.lastError\}/, "next action must explain a failed run");
 assert.match(app, /function renderBriefArtifact\(\)/, "brief output must show its generated artifact and review state");
-assert.match(app, /复核未通过，需要一次性修订[\s\S]*统一操作入口位于下方/, "brief review failures must explain how to continue");
+assert.match(app, /共识复核未通过，需要定向修订[\s\S]*统一操作入口位于下方/, "brief review failures must explain how to continue");
+assert.match(app, /参考建议，不阻断确认/, "single-model opinions must be visibly separated from mandatory revisions");
 assert.match(app, /kind: "auto-revise"[\s\S]*执行交叉修订并复审/, "review flow must expose one canonical revision action");
 assert.doesNotMatch(app, /review-auto-fix/, "review panel must not expose a duplicate revision button");
 assert.match(app, /const fieldLabelMap = \{[\s\S]*title_zh: "剧名"/, "structured fields must have Chinese display labels");
@@ -113,6 +114,43 @@ assert.equal(aggregated.pass, false, "any unresolved issue must keep the artifac
 assert.ok(!aggregated.required_changes.some((item) => item.includes("节奏偏弱")), "a single-model opinion must remain advisory until independently confirmed");
 assert.ok(aggregated.required_changes.some((item) => item.includes("人物动机不足")), "two-model agreement must become a mandatory change");
 
+const advisoryOnly = aggregateCrossReview([
+  {
+    result: {
+      provider: "chatgpt",
+      model: "review-a",
+      content: {
+        pass: true,
+        score: 92,
+        findings: [],
+        required_changes: [],
+        issues: [],
+        dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 92, feedback: "通过" }])),
+        checks: { cross_validation: true, consistency: true, adversarial: true },
+      },
+    },
+  },
+  {
+    result: {
+      provider: "claude",
+      model: "review-b",
+      content: {
+        pass: false,
+        score: 68,
+        findings: ["可以进一步强化开场"],
+        required_changes: ["考虑提前异常事件"],
+        issues: [{ criterionId: "BRIEF_OPENING_PROMISE", tag: "开场力度", dimension: "structure", severity: "medium", feedback: "开场较平", fix: "考虑提前异常事件" }],
+        dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 68, feedback: "有优化空间" }])),
+        checks: { cross_validation: true, consistency: true, adversarial: true },
+      },
+    },
+  },
+  { route: "deepseek-v4-pro", model: "deepseek-v4-pro", error: "upstream timeout" },
+]);
+assert.equal(advisoryOnly.pass, true, "one model's unconfirmed issue must remain advisory when review quorum is met");
+assert.equal(advisoryOnly.required_changes.length, 0, "advisory-only feedback must not create a mandatory revision contract");
+assert.equal(advisoryOnly.independentIssueCount, 1, "the independent opinion must remain visible to the user");
+
 const contract = buildRevisionContract(aggregated, { stage: "brief", sourceArtifactId: "artifact_v1", id: "revision_test" });
 const resolvedReview = (model) => ({
   result: {
@@ -151,9 +189,15 @@ assert.equal(noQuorum.pass, false, "one reviewer can never release a stage");
 const partial = resolvedReview("review-c");
 partial.result.content.revisionClosures[0].status = "partial";
 partial.result.content.revisionClosures[0].remainingFix = "补出主角的明确选择";
-const notClosed = aggregateCrossReview([resolvedReview("review-a"), resolvedReview("review-b"), partial], contract);
-assert.equal(notClosed.pass, false, "a partial closure must keep the revision behind the review gate");
-assert.equal(notClosed.revision.closure.items[0].status, "partial", "the unresolved contract item must remain visible");
+const majorityClosed = aggregateCrossReview([resolvedReview("review-a"), resolvedReview("review-b"), partial], contract);
+assert.equal(majorityClosed.pass, true, "two resolved votes must close a revision despite one dissenting reviewer");
+assert.equal(majorityClosed.revision.closure.items[0].status, "resolved", "the two-model closure consensus must be retained");
+const unresolved = resolvedReview("review-b");
+unresolved.result.content.revisionClosures[0].status = "unresolved";
+unresolved.result.content.revisionClosures[0].remainingFix = "仍缺少明确选择";
+const notClosed = aggregateCrossReview([resolvedReview("review-a"), partial, unresolved], contract);
+assert.equal(notClosed.pass, false, "fewer than two resolved votes must keep the revision behind the review gate");
+assert.equal(notClosed.revision.closure.items[0].status, "partial", "an unconfirmed closure must remain visible");
 
 const stateStore = new Map();
 let uuidSequence = 0;

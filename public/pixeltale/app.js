@@ -970,9 +970,20 @@ function reviewIssueGroups(reviewContent = {}) {
 function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage } = {}) {
   const revision = reviewContent.revision || null;
   const closure = revision?.closure;
-  const closurePanel = closure?.required ? `<section class="revision-closure ${closure.allResolved ? "is-resolved" : "is-open"}"><div class="revision-closure-head"><div><span class="card-label"><i></i>REVISION CLOSURE</span><strong>${closure.allResolved ? "本轮修订已逐项关闭" : "本轮修订仍有未关闭项"}</strong><p>责任方：${escapeHtml(revision?.owner || "本阶段主创")}。每项均由三模型复审，不以重新生成替代验收。</p></div><span>${escapeHtml(`${closure.items.filter((item) => item.status === "resolved").length} / ${closure.items.length}`)}</span></div><div class="revision-closure-list">${closure.items.map((item) => `<article class="revision-closure-item is-${escapeHtml(item.status || "unresolved")}"><div><b>${escapeHtml(item.id)}</b><strong>${escapeHtml(item.tag)}</strong></div><em>${escapeHtml(item.status === "resolved" ? "已关闭" : item.status === "partial" ? "部分完成" : "未关闭")}</em>${item.remainingFix?.length ? `<p>${escapeHtml(item.remainingFix.join("；"))}</p>` : `<p>${escapeHtml(item.acceptance || "已满足修订验收条件")}</p>`}</article>`).join("")}</div></section>` : "";
-  if (passed) return `<div class="review-summary is-passed"><strong>复核通过，可以确认并进入下一步</strong><p>三模型已完成全量检查，当前版本可以继续确认。</p>${closurePanel}</div>`;
-  const issues = reviewIssueGroups(reviewContent);
+  const closurePanel = closure?.required ? `<section class="revision-closure ${closure.allResolved ? "is-resolved" : "is-open"}"><div class="revision-closure-head"><div><span class="card-label"><i></i>REVISION CLOSURE</span><strong>${closure.allResolved ? "本轮修订已逐项关闭" : "本轮修订仍有未关闭项"}</strong><p>责任方：${escapeHtml(revision?.owner || "本阶段主创")}。每项至少由两个模型确认关闭，不以重新生成替代验收。</p></div><span>${escapeHtml(`${closure.items.filter((item) => item.status === "resolved").length} / ${closure.items.length}`)}</span></div><div class="revision-closure-list">${closure.items.map((item) => `<article class="revision-closure-item is-${escapeHtml(item.status || "unresolved")}"><div><b>${escapeHtml(item.id)}</b><strong>${escapeHtml(item.tag)}</strong></div><em>${escapeHtml(item.status === "resolved" ? "已关闭" : item.status === "partial" ? "部分完成" : "未关闭")}</em>${item.remainingFix?.length ? `<p>${escapeHtml(item.remainingFix.join("；"))}</p>` : `<p>${escapeHtml(item.acceptance || "已满足修订验收条件")}</p>`}</article>`).join("")}</div></section>` : "";
+  const independentIssues = Array.isArray(reviewContent.independentIssues) ? reviewContent.independentIssues : [];
+  const conflicts = Array.isArray(reviewContent.conflicts) ? reviewContent.conflicts : [];
+  const failedReviews = Array.isArray(reviewContent.advisories?.failedReviews) ? reviewContent.advisories.failedReviews : [];
+  const advisoryItems = [
+    ...independentIssues.map((item) => `${item.tag || "单模型意见"}：${item.suggestions?.join("；") || item.evidence?.join("；") || "建议人工复核"}`),
+    ...conflicts.map((item) => `意见分歧 / ${item.dimension}：${item.suggestion}`),
+    ...failedReviews.map((item) => `${item.model || "审核模型"} 未完成：${item.message || "未返回审核意见"}`),
+  ].filter(Boolean);
+  const advisoryPanel = advisoryItems.length ? `<section class="review-advisories"><strong>参考建议，不阻断确认</strong><ul>${advisoryItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>` : "";
+  if (passed) return `<div class="review-summary is-passed"><strong>共识审核通过，可以确认并进入下一步</strong><p>至少两个模型完成独立审核，且没有两个模型共同确认的阻断问题。</p>${closurePanel}${advisoryPanel}</div>`;
+  const issues = Array.isArray(reviewContent.commonIssues) && reviewContent.commonIssues.length
+    ? reviewContent.commonIssues
+    : (Array.isArray(reviewContent.required_changes) && reviewContent.required_changes.length ? reviewIssueGroups(reviewContent) : []);
   const issueList = issues.length
     ? `<div class="review-issue-list">${issues.map((issue, index) => {
       const source = Number(issue.modelCount) >= 2 ? `${issue.modelCount} 个模型共同指出` : issue.models?.length ? `${issue.models.length} 个模型指出` : "审核清单";
@@ -980,9 +991,9 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
       const evidence = (Array.isArray(issue.evidence) ? issue.evidence : []).filter(Boolean);
       return `<article class="review-issue review-issue-${escapeHtml(issue.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(issue.tag || "待修订项")}</strong><span class="review-issue-severity">${escapeHtml(issue.severity || "medium")} · ${escapeHtml(source)}</span></div>${suggestions.length ? `<ul>${suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}${evidence.length ? `<details><summary>查看问题证据</summary><ul>${evidence.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></details>` : ""}</article>`;
     }).join("")}</div>`
-    : `<p class="review-empty">审核模型没有返回结构化问题，请按复核结果重新提交。</p>`;
-  const countLabel = issues.length ? `已汇总 ${issues.length} 项问题` : "等待完整问题清单";
-  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>复核未通过，需要一次性修订</strong><p>三模型已完成全量检查，下面是本次版本的完整问题清单；修订后会重新执行完整复核。</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${closurePanel}${issueList}<p class="review-panel-note">统一操作入口位于下方“下一步”。修订版本会绑定本清单，复审必须逐项给出关闭结论。</p></div>`;
+    : `<p class="review-empty">当前阻断来自修订关闭状态，请按上方未关闭项继续修订。</p>`;
+  const countLabel = issues.length ? `${issues.length} 项二模型共识问题` : "等待修订项关闭";
+  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>共识复核未通过，需要定向修订</strong><p>只有至少两个模型共同确认的问题会进入强制修订清单。</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${closurePanel}${issueList}${advisoryPanel}<p class="review-panel-note">统一操作入口位于下方“下一步”。修订版本会绑定强制清单，复审必须逐项给出关闭结论。</p></div>`;
 }
 
 function renderTitleStage() {

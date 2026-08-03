@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(root, "public/pixeltale.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevisionContract } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevisionContract, validateReview } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
 assert.match(agent, /modelRouter\.reviewModels\(route\)/, "cross-review must be selected by the SuperPixel router");
@@ -41,6 +41,19 @@ assert.match(app, /revision-closure/, "revision output must expose item-by-item 
 assert.match(styles, /\.review-issue-list \{[\s\S]*max-height: 420px;/, "review issues must stay readable in a bounded panel");
 assert.match(agent, /必须穷举本次产物中所有需要修订的问题/, "review prompts must require exhaustive findings");
 assert.match(agent, /revisionClosureProtocol/, "review prompts must require closure evidence for every revision item");
+assert.match(agent, /BRIEF_SPEC_MATCH/, "brief review must use stable stage-specific criterion ids");
+assert.match(agent, /不得要求人物表、分集表、场景表或对白等尚未到达阶段的产物/, "a reviewer must not demand deliverables from later stages");
+
+const wrappedReview = validateReview({ review: {
+  pass: true,
+  score: 92,
+  findings: [],
+  required_changes: [],
+  issues: [],
+  dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 92, feedback: "通过" }])),
+  checks: { cross_validation: true, consistency: true, adversarial: true },
+} }, { requireDimensions: true });
+assert.equal(wrappedReview.pass, true, "common review/result wrapper objects must normalize to the canonical review schema");
 
 const aggregated = aggregateCrossReview([
   {
@@ -261,6 +274,7 @@ const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 assert.match(serverSource, /function startPixelTaleRun\(/, "the server must execute PixelTale stages as background jobs");
 assert.match(serverSource, /activePixelTaleRuns/, "the server must deduplicate concurrent runs for the same stage");
 assert.match(serverSource, /max_tokens: maxTokens/, "the SuperPixel router must honor the stage output budget");
+assert.match(serverSource, /fallbackModels/, "a review role must have a same-provider model fallback without changing its identity");
 assert.match(fs.readFileSync(path.join(root, "server.js"), "utf8"), /uniqueModelIds\(\[route\.primary, route\.reviewer, route\.consistency\]\)/, "SuperPixel stage candidates must remain the configured three-role chain");
 
 console.log("pixeltale workflow contract ok");

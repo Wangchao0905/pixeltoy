@@ -35,6 +35,51 @@ const REVIEW_OUTPUT_TOKEN_BUDGETS = Object.freeze({
   scenes: 5_000,
   dialogue: 5_000,
 });
+const STAGE_REVIEW_CRITERIA = Object.freeze({
+  brief: {
+    BRIEF_SPEC_MATCH: "创作规格与用户输入一致",
+    BRIEF_PROJECT_ISOLATION: "没有混入其他项目或旧故事",
+    BRIEF_CORE_CONFLICT: "核心冲突包含主角、目标、阻碍与代价",
+    BRIEF_AUDIENCE_MARKET: "受众与目标市场方向成立",
+    BRIEF_OPENING_PROMISE: "开头暴击与观众追问明确",
+    BRIEF_SERIES_ENGINE: "持续追更的问题与每集承诺明确",
+    BRIEF_PRODUCTION_FEASIBILITY: "概念可继续发展且不存在明显制作死角",
+  },
+  title: {
+    TITLE_COUNT_VARIETY: "恰好五个且风格有区分",
+    TITLE_CONCEPT_MATCH: "名称准确承接核心概念",
+    TITLE_MARKET_FIT: "符合目标市场与受众的传播语感",
+  },
+  proposal: {
+    PROPOSAL_CAUSAL_CHAIN: "目标、阻碍、代价和行动形成因果链",
+    PROPOSAL_FIRST_IMPACT: "首个冲击可视且立即改变局面",
+    PROPOSAL_PROMISED_PAYOFF: "故事承诺与首个反转可兑现",
+  },
+  characters: {
+    CHARACTER_LOCALIZATION: "姓名、身份和社会细节符合地区",
+    CHARACTER_MOTIVATION: "欲望、恐惧、秘密和选择相互支撑",
+    CHARACTER_RELATIONSHIP_ENGINE: "人物关系能够持续制造行动与冲突",
+    CHARACTER_WORLD_CONSISTENCY: "人物设定不违反已确认世界规则",
+  },
+  arc: {
+    ARC_UNIT_COUNT: "单元数量与创作规格一致",
+    ARC_CAUSAL_PROGRESS: "每个单元都推进主因果链",
+    ARC_REVERSAL_HOOK: "反转与集尾钩子有证据且不重复",
+    ARC_PAYOFF_LEDGER: "伏笔、承诺和回收位置可追踪",
+  },
+  scenes: {
+    SCENE_REFERENCE_INTEGRITY: "人物、地点和事件引用有效",
+    SCENE_STATE_CHANGE: "每场戏都改变信息、关系或行动状态",
+    SCENE_DURATION: "镜头与动作适配单集时长",
+    SCENE_DIRECTABILITY: "场面可拍摄、可表演且可制作",
+  },
+  dialogue: {
+    DIALOGUE_REFERENCE_INTEGRITY: "说话人与场景引用有效",
+    DIALOGUE_INTENT_MATCH: "英文对白准确兑现中文剧情意图",
+    DIALOGUE_LOCALIZATION: "口语、身份、地区和关系语感自然",
+    DIALOGUE_VOICE_TIMING: "人物声线可区分且时长可执行",
+  },
+});
 const DEFAULT_DIALOGUE_POLICY = "zh_story_en_localized_dialogue";
 const DEFAULT_CREATIVE_CONTROLS = {
   openingImpactSeconds: 3,
@@ -362,11 +407,14 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project }) {
 }
 
 function reviewSystemPrompt(stage, mode, input = {}) {
+  const criteria = STAGE_REVIEW_CRITERIA[stage] || {};
   return [
     "你是 PixelTale 的交叉审核 Agent。你不是润色员，也不是顺从的二次生成器；必须对上一个模型的产物进行独立、对抗式复核。",
     "输出严格 JSON，不要 Markdown、代码围栏或额外文字。",
     `检查阶段：${stage}；模式：${modeLabel(mode)}。`,
-    "先独立重建本阶段验收标准，再逐项比对待审产物、用户规格和已确认上下文；不要因为产物写得流畅就默认通过。",
+    "只审核当前阶段的交付契约，不得要求人物表、分集表、场景表或对白等尚未到达阶段的产物。",
+    `本阶段唯一审核标准：${Object.entries(criteria).map(([id, description]) => `${id}=${description}`).join("；")}。`,
+    "逐项比对待审产物、用户规格和已确认上下文；不要因为产物写得流畅就默认通过。",
     "重点寻找：前后设定冲突、因果断裂、角色动机缺口、市场本土化错误、模式节奏偏离、悬念提前泄露和无法执行的空泛表达。",
     "必须穷举本次产物中所有需要修订的问题，不要只返回最严重的一项；每个独立问题都要在 issues 中单独列出，并为每个问题给出证据和可执行修订建议。",
     "required_changes 必须覆盖 issues 中的全部问题；如果多个问题互不相同，不得合并成一句笼统意见。",
@@ -377,10 +425,10 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     marketPrompt(input),
     stageParticipationPrompt(stage, input),
     "pass 只有在结构完整、因果清晰、可执行、符合模式节奏、没有把悬念提前解释，并且角色名、地名、社会细节和对白都符合目标市场时才为 true。",
-    "TK 必查开头暴击、每集钩子、主动选择、反转和集尾悬念；长剧必查主线因果、人物弧线和伏笔回收位置。",
+    "模式规则只能检查当前阶段已有字段：brief 检查开头承诺与追更问题，arc 才检查逐集钩子、反转与回收；不得提前索要后续资产。",
     "对白阶段还要检查英文是否自然口语化、是否保留中文剧情意图、是否像人物会说的话。",
     ...(stage === "title" ? ["剧名阶段必须检查恰好 5 个候选、名称不重复、五种风格确实拉开差异，并且每个候选都有风格、语气和理由。"] : []),
-    '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"tag":"稳定短标签，如因果断裂、人物动机不足、钩子偏弱","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改"}],"dimensions":{"structure":{"score":0,"feedback":"结构意见"},"plot":{"score":0,"feedback":"剧情意见"},"design":{"score":0,"feedback":"设计意见"},"logic":{"score":0,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
+    '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改"}],"dimensions":{"structure":{"score":0,"feedback":"结构意见"},"plot":{"score":0,"feedback":"剧情意见"},"design":{"score":0,"feedback":"设计意见"},"logic":{"score":0,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
   ].join("\n");
 }
 
@@ -573,7 +621,10 @@ function validateContent(stage, content) {
 }
 
 function validateReview(value, { requireDimensions = false, revisionContract = null } = {}) {
-  const review = asObject(value);
+  const root = asObject(value);
+  const review = typeof root.pass === "boolean"
+    ? root
+    : [root.review, root.result, root.evaluation, root.data].map(asObject).find((item) => typeof item.pass === "boolean") || root;
   if (typeof review.pass !== "boolean" || !Number.isFinite(Number(review.score)) || !Array.isArray(review.findings) || !Array.isArray(review.required_changes)) {
     const error = new Error("复核产物缺少 pass、score、findings 或 required_changes");
     error.code = "SCHEMA_INVALID";
@@ -595,6 +646,7 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
     const entry = asObject(item);
     const dimension = REVIEW_DIMENSIONS.includes(entry.dimension) ? entry.dimension : "logic";
     return {
+      criterionId: text(entry.criterion_id || entry.criterionId, 120).toUpperCase(),
       tag: text(entry.tag, 120),
       dimension,
       severity: ["high", "medium", "low"].includes(entry.severity) ? entry.severity : "medium",
@@ -674,10 +726,11 @@ function groupedReviewIssues(feedbacks) {
   feedbacks.forEach((feedback) => {
     const seen = new Set();
     asArray(feedback.issues).forEach((issue) => {
-      const key = issueKey(issue.tag) || issueKey(`${issue.dimension}:${issue.feedback}`);
+      const key = issueKey(issue.criterionId) || issueKey(issue.tag) || issueKey(`${issue.dimension}:${issue.feedback}`);
       if (!key || seen.has(key)) return;
       seen.add(key);
       const group = groups.get(key) || {
+        criterionId: issue.criterionId,
         tag: issue.tag || `${issue.dimension} 维度问题`,
         dimension: issue.dimension,
         severity: issue.severity,
@@ -693,6 +746,7 @@ function groupedReviewIssues(feedbacks) {
     });
   });
   return [...groups.values()].map((group) => ({
+      criterionId: group.criterionId,
       tag: group.tag,
       dimension: group.dimension,
       severity: group.severity,
@@ -874,7 +928,7 @@ async function callProvider({ provider, system, user, modelRouter, timeoutMs, ma
 }
 
 function canFallbackFrom(error) {
-  return error?.retryable === true || ["TIMEOUT", "NETWORK_ERROR", "EMPTY_RESPONSE"].includes(error?.code);
+  return error?.retryable === true || ["TIMEOUT", "NETWORK_ERROR", "EMPTY_RESPONSE", "INVALID_JSON", "SCHEMA_INVALID"].includes(error?.code);
 }
 
 async function callStagePrimary({
@@ -1263,31 +1317,39 @@ function createPixelTaleAgent(options = {}) {
       reviews = await Promise.all(reviewRoutes.map(async (reviewRoute) => {
         const reviewModel = reviewRoute.model || reviewRoute;
         const role = reviewerIdentity(reviewModel);
-        try {
-          const result = await callProvider({
-            provider: reviewModel,
-            system: `${reviewSystemPrompt(stage, mode, runInput)}\n本次固定身份：${role}`,
-            user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts, revisionContract }),
-            modelRouter,
-            timeoutMs: REVIEW_MODEL_TIMEOUT_MS,
-            maxTokens: REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000,
-            purpose: `pixeltale:${stage}:review`,
-          });
-          retryCount += result.attempts || 0;
-          return { route: reviewRoute, role, result: { ...result, content: validateReview(result.content, { requireDimensions: true, revisionContract }) } };
-        } catch (error) {
-          return { route: reviewModel, model: reviewModel, role, error: error.message };
+        const reviewCandidates = uniqueText([reviewModel, ...asArray(reviewRoute.fallbackModels)], 2);
+        let lastError;
+        for (const candidate of reviewCandidates) {
+          try {
+            const result = await callProvider({
+              provider: candidate,
+              system: `${reviewSystemPrompt(stage, mode, runInput)}\n本次固定身份：${role}`,
+              user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts, revisionContract }),
+              modelRouter,
+              timeoutMs: REVIEW_MODEL_TIMEOUT_MS,
+              maxTokens: REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000,
+              purpose: `pixeltale:${stage}:review`,
+            });
+            const content = validateReview(result.content, { requireDimensions: true, revisionContract });
+            retryCount += result.attempts || 0;
+            return { route: reviewRoute, selectedModel: reviewModel, role, result: { ...result, content } };
+          } catch (error) {
+            lastError = error;
+            retryCount += 1;
+            if (!canFallbackFrom(error)) break;
+          }
         }
+        return { route: reviewModel, model: reviewCandidates.at(-1) || reviewModel, selectedModel: reviewModel, role, error: lastError?.message || "审核模型请求失败" };
       }));
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
       consensus = aggregateCrossReview(reviews, revisionContract);
       if (consensus.revision) consensus.revision.owner = "本阶段主创";
-      reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviewRoutes.map((item) => modelForRoute(item.model || item)).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
+      reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviews.map((item) => item.result?.model || item.model).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
       primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
       primaryArtifact.reviewId = reviewArtifact.id;
       state.artifacts.push(primaryArtifact, reviewArtifact);
       const runStatus = consensus.pass ? "completed" : "needs_review";
-      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true, failures: primary.fallbackFailures, budget: primary.primaryBudget } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviews.map((item) => item.result ? `${item.result.provider}:${item.result.model}` : `${providerForRoute(item.model)}:${item.model}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true, failures: primary.fallbackFailures, budget: primary.primaryBudget } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       persistState(params, state);
       return { ...publicRun(record), artifacts: [primaryArtifact, reviewArtifact].map(publicArtifact), state: publicState(state, modelRouter) };

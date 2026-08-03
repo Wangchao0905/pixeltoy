@@ -2686,7 +2686,8 @@ function superPixelTextReviewModels(route = {}) {
       .filter((item) => item?.provider === provider);
     const configured = candidates.find((item) => item.configured);
     const selected = configured || candidates[0];
-    return { provider, model: selected?.id || "", configured: !!selected?.configured };
+    const fallbackModels = uniqueModelIds(candidates.filter((item) => item.configured).map((item) => item.id)).filter((id) => id !== selected?.id);
+    return { provider, model: selected?.id || "", configured: !!selected?.configured, fallbackModels };
   });
 }
 

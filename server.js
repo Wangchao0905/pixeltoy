@@ -2368,6 +2368,14 @@ const SUPER_PIXEL_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const SUPER_PIXEL_CLAUDE_MODELS = new Set(["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
 const SUPER_PIXEL_GPT_MODELS = new Set(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"]);
 const SUPER_PIXEL_GROK_MODELS = new Set(["grok-4.5", "grok-4.5-latest", "grok-4.3"]);
+// PixelTale follows the SuperPixel writing roster exposed for creative work.
+// Legacy Grok aliases remain available to SuperPixel itself, but cannot leak
+// into the scriptwriting team where the approved Grok model is 4.5 only.
+const SUPER_PIXEL_WRITING_MODEL_IDS = Object.freeze([
+  ...SUPER_PIXEL_GPT_MODELS,
+  ...SUPER_PIXEL_CLAUDE_MODELS,
+  "grok-4.5",
+]);
 
 function superPixelModelConfig(model) {
   if (SUPER_PIXEL_CLAUDE_MODELS.has(model)) {
@@ -2390,12 +2398,7 @@ function superPixelModelProvider(model) {
 }
 
 function superPixelTextModelOptions() {
-  const models = [
-    ...SUPER_PIXEL_GPT_MODELS,
-    ...SUPER_PIXEL_CLAUDE_MODELS,
-    ...SUPER_PIXEL_GROK_MODELS,
-  ];
-  return models.map((id) => {
+  return SUPER_PIXEL_WRITING_MODEL_IDS.map((id) => {
     const config = superPixelModelConfig(id);
     return {
       id,

@@ -233,6 +233,11 @@ try {
     new Set(["chatgpt", "claude", "grok"]),
     "PixelTale router must use SuperPixel's registered model families",
   );
+  assert.deepEqual(
+    textModels.filter((item) => item.provider === "grok").map((item) => item.id),
+    ["grok-4.5"],
+    "PixelTale must keep the approved Grok 4.5-only writing roster",
+  );
   const reviewerModels = textRouter.reviewModels({
     primary: "gpt-5.6-terra",
     reviewer: "claude-opus-5",

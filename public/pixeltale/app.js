@@ -69,8 +69,6 @@ const modelMeta = {
   "claude-sonnet-5": { name: "Claude Sonnet 5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "claude-haiku-4-5": { name: "Claude Haiku 4.5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "grok-4.5": { name: "Grok 4.5", provider: "grok", role: "TK 钩子 / 口语化", detail: "开头暴击、反转、探索欲与英文对白口语化" },
-  "grok-4.5-latest": { name: "Grok 4.5 Latest", provider: "grok", role: "TK 钩子 / 口语化", detail: "开头暴击、反转、探索欲与英文对白口语化" },
-  "grok-4.3": { name: "Grok 4.3", provider: "grok", role: "TK 钩子 / 口语化", detail: "开头暴击、反转、探索欲与英文对白口语化" },
 };
 
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];

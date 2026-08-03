@@ -797,21 +797,36 @@ function sharedReviewIssues(feedbacks) {
 }
 
 function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
-  const issues = asArray(review.commonIssues).length ? asArray(review.commonIssues) : asArray(review.reviewIssues).filter((item) => Number(item.modelCount) >= 2);
-  const fallback = issues.length ? [] : asArray(review.required_changes).map((change) => ({
-    tag: "审核修订项",
-    dimension: "logic",
-    severity: "medium",
-    modelCount: 0,
-    models: [],
-    suggestions: [change],
-    evidence: [],
-  }));
+  const freshIssues = asArray(review.commonIssues).length
+    ? asArray(review.commonIssues)
+    : asArray(review.reviewIssues).filter((item) => Number(item.modelCount) >= REVIEW_QUORUM);
+  const inheritedIssues = asArray(review.revision?.contract?.items)
+    .filter((item) => {
+      const closure = asArray(review.revision?.closure?.items).find((entry) => entry.id === item.id);
+      return !closure || closure.status !== "resolved";
+    })
+    .map((item) => {
+      const closure = asArray(review.revision?.closure?.items).find((entry) => entry.id === item.id);
+      return {
+        criterionId: item.criterionId,
+        tag: item.tag,
+        dimension: item.dimension,
+        severity: item.severity,
+        modelCount: item.modelCount,
+        models: item.models,
+        suggestions: uniqueText([...(asArray(item.requiredEdit)), ...(asArray(closure?.remainingFix))], 4),
+        evidence: uniqueText([...(asArray(item.evidence)), ...(asArray(closure?.remainingFix))], 4),
+      };
+    });
+  const issues = [...freshIssues, ...inheritedIssues].filter((issue, index, all) => {
+    const key = issueKey(issue.criterionId) || issueKey(issue.tag) || `issue-${index}`;
+    return all.findIndex((candidate) => (issueKey(candidate.criterionId) || issueKey(candidate.tag)) === key) === index;
+  });
   return {
     id: text(contractId, 200),
     stage,
     sourceArtifactId: text(sourceArtifactId, 200),
-    items: [...issues, ...fallback].slice(0, 24).map((issue, index) => ({
+    items: issues.slice(0, 24).map((issue, index) => ({
       id: `${stage}-R${String(index + 1).padStart(2, "0")}`,
       tag: text(issue.tag || "审核修订项", 160),
       dimension: REVIEW_DIMENSIONS.includes(issue.dimension) ? issue.dimension : "logic",
@@ -1344,7 +1359,7 @@ function createPixelTaleAgent(options = {}) {
           id: `revision_${runId}`,
         });
         if (!revisionContract.items.length) {
-          const error = new Error("交叉审核没有返回可执行的修订项，无法开始修订");
+          const error = new Error("当前审核没有形成二模型共识修订项，不能安全开始定向修订；请重新生成并审核");
           error.code = "REVISION_CONTRACT_EMPTY";
           throw error;
         }

@@ -159,6 +159,27 @@ assert.equal(advisoryOnly.required_changes.length, 0, "advisory-only feedback mu
 assert.equal(advisoryOnly.independentIssueCount, 1, "the independent opinion must remain visible to the user");
 
 const contract = buildRevisionContract(aggregated, { stage: "brief", sourceArtifactId: "artifact_v1", id: "revision_test" });
+const inheritedContract = buildRevisionContract({
+  commonIssues: [],
+  reviewIssues: [{ tag: "单模型建议", modelCount: 1, suggestions: ["不应形成强制修订"] }],
+  required_changes: ["单模型建议不得直接变成修订合同"],
+  revision: {
+    contract: {
+      items: [{ id: "brief-R01", tag: "开场冲击", dimension: "structure", severity: "high", modelCount: 2, requiredEdit: ["补足首个冲击"], evidence: ["开头没有立即改变局面"] }],
+    },
+    closure: {
+      items: [{ id: "brief-R01", status: "unresolved", remainingFix: ["补足首个冲击并明确代价"] }],
+    },
+  },
+}, { stage: "brief", sourceArtifactId: "artifact_v2", id: "revision_test_2" });
+assert.equal(inheritedContract.items.length, 1, "an unresolved prior revision item must be carried into the next revision contract");
+assert.deepEqual(inheritedContract.items[0].requiredEdit, ["补足首个冲击", "补足首个冲击并明确代价"], "inherited contract must retain both the original edit and the latest remaining fix");
+const advisoryContract = buildRevisionContract({
+  commonIssues: [],
+  reviewIssues: [{ tag: "单模型建议", modelCount: 1, suggestions: ["只供参考"] }],
+  required_changes: ["单模型建议只供参考"],
+}, { stage: "brief", sourceArtifactId: "artifact_v3", id: "revision_test_3" });
+assert.equal(advisoryContract.items.length, 0, "single-model advice must never create a mandatory revision contract");
 const resolvedReview = (model) => ({
   result: {
     provider: "chatgpt",

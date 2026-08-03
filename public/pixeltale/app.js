@@ -516,6 +516,17 @@ function nextStepMeta() {
       flowStage,
     };
   }
+  const reviewContent = reviewForArtifact(artifact)?.content || {};
+  if (!reviewIssueGroups(reviewContent).length) {
+    return {
+      kind: "run",
+      stage: flowStage,
+      title: `${flowMeta.title}审核未完成`,
+      copy: "本轮没有形成二模型共识修订合同，不能安全执行定向修订。重新生成当前阶段并重新审核。",
+      label: `重新生成${flowMeta.title}并审核 →`,
+      flowStage,
+    };
+  }
   return {
     kind: "auto-revise",
     stage: flowStage,
@@ -531,7 +542,9 @@ function renderNextStep() {
   const disabled = state.busy || action.disabled;
   const guidedClass = !disabled && action.kind !== "busy" ? " is-next-action" : "";
   const actionCopy = state.lastError
-    ? `生成失败：${state.lastError} 当前输入已保留，修改后可以重新生成。`
+    ? action.kind === "auto-revise"
+      ? `生成失败：${state.lastError} 当前输入已保留，修订后可以再次提交。`
+      : `上次提交失败：${state.lastError} 当前输入已保留，请重新提交并审核。`
     : action.copy;
   let button = "";
   if (action.kind === "run") {
@@ -548,7 +561,8 @@ function renderNextStep() {
   } else if (action.kind === "busy") {
     button = `<span class="next-step-busy">处理中 · 请稍候</span>`;
   }
-  return `<section class="next-step-card${action.kind !== "busy" ? " is-guided" : " is-busy"}" data-next-kind="${action.kind}" aria-label="下一步"><div class="next-step-copy"><span class="card-label"><i></i>NEXT ACTION</span><strong>${escapeHtml(action.title)}</strong><p>${escapeHtml(actionCopy)}</p>${state.lastError ? `<p class="next-step-error" role="alert">错误已保留在当前步骤，修订后可再次提交。</p>` : ""}</div>${button}</section>`;
+  const errorHint = action.kind === "auto-revise" ? "错误已保留在当前步骤，修订后可再次提交。" : "错误已保留在当前步骤，点击下一步可重新提交。";
+  return `<section class="next-step-card${action.kind !== "busy" ? " is-guided" : " is-busy"}" data-next-kind="${action.kind}" aria-label="下一步"><div class="next-step-copy"><span class="card-label"><i></i>NEXT ACTION</span><strong>${escapeHtml(action.title)}</strong><p>${escapeHtml(actionCopy)}</p>${state.lastError ? `<p class="next-step-error" role="alert">${errorHint}</p>` : ""}</div>${button}</section>`;
 }
 
 function renderShellState() {
@@ -966,10 +980,26 @@ function renderValue(value, depth = 0) {
 }
 
 function reviewIssueGroups(reviewContent = {}) {
-  if (Array.isArray(reviewContent.reviewIssues) && reviewContent.reviewIssues.length) return reviewContent.reviewIssues;
-  return (Array.isArray(reviewContent.required_changes) ? reviewContent.required_changes : [])
-    .map((item) => ({ tag: "待修订项", dimension: "logic", severity: "medium", modelCount: 0, models: [], suggestions: [String(item || "")], evidence: [] }))
-    .filter((item) => item.suggestions[0]);
+  const freshIssues = Array.isArray(reviewContent.commonIssues) && reviewContent.commonIssues.length
+    ? reviewContent.commonIssues
+    : (Array.isArray(reviewContent.reviewIssues) ? reviewContent.reviewIssues.filter((item) => Number(item.modelCount) >= 2) : []);
+  const pendingClosures = Array.isArray(reviewContent.revision?.closure?.items)
+    ? reviewContent.revision.closure.items.filter((item) => item.status !== "resolved").map((item) => ({
+      id: item.id,
+      tag: item.tag || "未关闭修订项",
+      dimension: item.dimension || "logic",
+      severity: item.severity || "medium",
+      modelCount: Number(item.modelCount) || 2,
+      models: item.models || [],
+      suggestions: Array.isArray(item.remainingFix) && item.remainingFix.length ? item.remainingFix : [item.acceptance || "按原修订合同补齐并重新复审"],
+      evidence: Array.isArray(item.evidence) ? item.evidence : [],
+    }))
+    : [];
+  const candidates = [...freshIssues, ...pendingClosures];
+  return candidates.filter((item, index, all) => {
+    const key = String(item.criterionId || item.tag || item.id || index).toLowerCase();
+    return all.findIndex((candidate) => String(candidate.criterionId || candidate.tag || candidate.id || "").toLowerCase() === key) === index;
+  });
 }
 
 function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage } = {}) {
@@ -986,9 +1016,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   ].filter(Boolean);
   const advisoryPanel = advisoryItems.length ? `<section class="review-advisories"><strong>参考建议，不阻断确认</strong><ul>${advisoryItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>` : "";
   if (passed) return `<div class="review-summary is-passed"><strong>共识审核通过，可以确认并进入下一步</strong><p>至少两个模型完成独立审核，且没有两个模型共同确认的阻断问题。</p>${closurePanel}${advisoryPanel}</div>`;
-  const issues = Array.isArray(reviewContent.commonIssues) && reviewContent.commonIssues.length
-    ? reviewContent.commonIssues
-    : (Array.isArray(reviewContent.required_changes) && reviewContent.required_changes.length ? reviewIssueGroups(reviewContent) : []);
+  const issues = reviewIssueGroups(reviewContent);
   const issueList = issues.length
     ? `<div class="review-issue-list">${issues.map((issue, index) => {
       const source = Number(issue.modelCount) >= 2 ? `${issue.modelCount} 个模型共同指出` : issue.models?.length ? `${issue.models.length} 个模型指出` : "审核清单";
@@ -996,9 +1024,11 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
       const evidence = (Array.isArray(issue.evidence) ? issue.evidence : []).filter(Boolean);
       return `<article class="review-issue review-issue-${escapeHtml(issue.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(issue.tag || "待修订项")}</strong><span class="review-issue-severity">${escapeHtml(issue.severity || "medium")} · ${escapeHtml(source)}</span></div>${suggestions.length ? `<ul>${suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}${evidence.length ? `<details><summary>查看问题证据</summary><ul>${evidence.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></details>` : ""}</article>`;
     }).join("")}</div>`
-    : `<p class="review-empty">当前阻断来自修订关闭状态，请按上方未关闭项继续修订。</p>`;
-  const countLabel = issues.length ? `${issues.length} 项二模型共识问题` : "等待修订项关闭";
-  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>共识复核未通过，需要定向修订</strong><p>只有至少两个模型共同确认的问题会进入强制修订清单。</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${closurePanel}${issueList}${advisoryPanel}<p class="review-panel-note">统一操作入口位于下方“下一步”。修订版本会绑定强制清单，复审必须逐项给出关闭结论。</p></div>`;
+    : `<p class="review-empty">当前没有形成二模型共识修订项，请重新生成当前阶段并重新审核。</p>`;
+  const countLabel = issues.length ? `${issues.length} 项二模型共识修订项` : "等待重新审核";
+  const summaryTitle = issues.length ? "共识复核未通过，需要定向修订" : "审核未完成，需要重新提交";
+  const summaryCopy = issues.length ? "只有至少两个模型共同确认的问题会进入强制修订清单。" : "当前没有可安全执行的二模型共识修订合同，单模型建议和失败记录不会触发强制改稿。";
+  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>${summaryTitle}</strong><p>${summaryCopy}</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${closurePanel}${issueList}${advisoryPanel}<p class="review-panel-note">统一操作入口位于下方“下一步”。${issues.length ? "修订版本会绑定强制清单，复审必须逐项给出关闭结论。" : "请重新提交当前阶段，系统会保留现有输入并重新执行审核。"}</p></div>`;
 }
 
 function renderTitleStage() {

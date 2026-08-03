@@ -3,21 +3,6 @@ const path = require("node:path");
 const { fallbackVisualAssets } = require("./pixeltale-visual-assets.js");
 
 const STAGES = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"];
-const PROVIDERS = ["chatgpt", "claude", "grok"];
-const MODEL_PROVIDER_MAP = Object.freeze({
-  "gpt-5.6-terra": "chatgpt",
-  "gpt-5.6-sol": "chatgpt",
-  "gpt-5.6-luna": "chatgpt",
-  "claude-opus-5": "claude",
-  "claude-sonnet-5": "claude",
-  "claude-haiku-4-5": "claude",
-  "grok-4.5": "grok",
-});
-const DEFAULT_MODEL_BY_PROVIDER = Object.freeze({
-  chatgpt: "gpt-5.6-terra",
-  claude: "claude-opus-5",
-  grok: "grok-4.5",
-});
 const DEFAULT_ROUTES = {
   orchestration: "gpt-5.6-terra",
   continuity: "claude-opus-5",
@@ -210,24 +195,26 @@ function normalizeStage(value) {
   return STAGES.includes(stage) ? stage : "brief";
 }
 
-function normalizeRoutes(value = {}) {
+function normalizeRoutes(value = {}, availableModels = []) {
   const routes = { ...DEFAULT_ROUTES };
+  const allowed = new Set(asArray(availableModels).map((item) => text(typeof item === "string" ? item : item?.id, 100).toLowerCase()).filter(Boolean));
   for (const key of Object.keys(routes)) {
     const raw = text(value?.[key], 100).toLowerCase();
-    if (MODEL_PROVIDER_MAP[raw]) routes[key] = raw;
-    else if (PROVIDERS.includes(raw)) routes[key] = DEFAULT_MODEL_BY_PROVIDER[raw];
+    if (!raw) continue;
+    // No provider aliases or hidden defaults: PixelTale only accepts model IDs
+    // registered by the injected SuperPixel router.
+    if (!allowed.size || allowed.has(raw)) routes[key] = raw;
   }
   return routes;
 }
 
-function modelForRoute(route, env = process.env) {
-  const raw = text(route, 100).toLowerCase();
-  return MODEL_PROVIDER_MAP[raw] ? raw : providerConfig(raw, env).model;
+function modelForRoute(route) {
+  return text(route, 100).toLowerCase();
 }
 
-function stageRoute(stage, mode, routes) {
+function stageRoute(stage, mode, routes, availableModels = []) {
   const normalized = normalizeMode(mode);
-  const current = normalizeRoutes(routes);
+  const current = normalizeRoutes(routes, availableModels);
   let primary;
   let reviewer;
   if (stage === "characters" || (stage === "arc" && normalized === "long_form_drama")) {
@@ -243,12 +230,6 @@ function stageRoute(stage, mode, routes) {
   return { primary, reviewer, consistency: current.consistency };
 }
 
-function crossReviewRoutes(route) {
-  const preferred = [route.primary, route.reviewer, route.consistency];
-  const fallbacks = ["gpt-5.6-terra", "claude-opus-5", "grok-4.5"];
-  return [...new Set([...preferred, ...fallbacks].map((item) => text(item, 100).toLowerCase()).filter(Boolean))].slice(0, 3);
-}
-
 function titleStylePrompt(mode) {
   return [
     "剧名必须输出 5 个候选，不能少于或多于 5 个，名称之间不得只是同义词替换。",
@@ -256,48 +237,6 @@ function titleStylePrompt(mode) {
     `结合${modeLabel(mode)}的节奏和受众，名称要有记忆点、可传播、适合海报与视频封面。`,
     "每个候选都要说明风格、语气和命名理由；不要使用‘未命名故事’等占位名称。",
   ].join("\n");
-}
-
-function providerConfig(provider, env = process.env) {
-  const configs = {
-    chatgpt: {
-      label: "ChatGPT",
-      key: env.PIXELTALE_CHATGPT_API_KEY || env.OPENAI_API_KEY || env.STORYBOARD_API_KEY || "",
-      baseUrl: env.PIXELTALE_CHATGPT_BASE_URL || env.STORYBOARD_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-      model: env.PIXELTALE_CHATGPT_MODEL || env.STORYBOARD_MODEL || env.OPENAI_MODEL || "gpt-4o-mini",
-      protocol: "openai_compat",
-    },
-    claude: {
-      label: "Claude",
-      key: env.PIXELTALE_CLAUDE_API_KEY || env.ANTHROPIC_API_KEY || env.CLAUDE_API_KEY || env.ASSET_ANALYZER_API_KEY || "",
-      baseUrl: env.PIXELTALE_CLAUDE_BASE_URL || env.ANTHROPIC_BASE_URL || env.ASSET_ANALYZER_BASE_URL || env.OPENAI_BASE_URL || "https://api.anthropic.com/v1",
-      model: env.PIXELTALE_CLAUDE_MODEL || env.CLAUDE_MODEL || env.ASSET_ANALYZER_MODEL || "claude-sonnet-4-5",
-      protocol: text(env.PIXELTALE_CLAUDE_PROTOCOL || "openai_compat", 40).toLowerCase(),
-    },
-    grok: {
-      label: "Grok",
-      key: env.PIXELTALE_GROK_API_KEY || env.XAI_API_KEY || env.GROK_API_KEY || "",
-      baseUrl: env.PIXELTALE_GROK_BASE_URL || env.XAI_BASE_URL || "https://api.x.ai/v1",
-      model: env.PIXELTALE_GROK_MODEL || env.GROK_MODEL || "grok-3-mini",
-      protocol: "openai_compat",
-    },
-  };
-  const config = configs[provider];
-  if (!config) throw new Error(`未知模型 provider：${provider}`);
-  return { ...config, baseUrl: config.baseUrl.replace(/\/+$/, "") };
-}
-
-function providerStatus(env = process.env) {
-  return Object.fromEntries(PROVIDERS.map((provider) => {
-    const config = providerConfig(provider, env);
-    return [provider, {
-      provider,
-      label: config.label,
-      configured: !!config.key,
-      model: config.model,
-      protocol: config.protocol,
-    }];
-  }));
 }
 
 function stripJsonFence(value) {
@@ -669,7 +608,10 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
 
 function providerForRoute(route) {
   const raw = text(route, 100).toLowerCase();
-  return MODEL_PROVIDER_MAP[raw] || raw;
+  if (raw.startsWith("gpt-")) return "chatgpt";
+  if (raw.startsWith("claude-")) return "claude";
+  if (raw.startsWith("grok-")) return "grok";
+  return "superpixel";
 }
 
 function pairwiseAgreement(scores) {
@@ -888,96 +830,26 @@ class ProviderError extends Error {
   }
 }
 
-async function callProvider({ provider, system, user, env = process.env, fetchImpl = globalThis.fetch, timeoutMs: timeoutOverride, maxRetries: retryOverride }) {
-  const routeValue = text(provider, 100).toLowerCase();
-  const resolvedProvider = MODEL_PROVIDER_MAP[routeValue] || routeValue;
-  const config = { ...providerConfig(resolvedProvider, env), model: MODEL_PROVIDER_MAP[routeValue] ? routeValue : providerConfig(resolvedProvider, env).model };
-  if (!config.key) throw new ProviderError(`${config.label} 未配置 API Key`, { code: "PROVIDER_NOT_CONFIGURED" });
-  if (typeof fetchImpl !== "function") throw new ProviderError("当前运行时没有 fetch", { code: "FETCH_UNAVAILABLE" });
-  const timeoutMs = Math.max(5000, Number(timeoutOverride ?? (env.PIXELTALE_MODEL_TIMEOUT_MS || 120000)));
-  const maxRetries = Math.max(0, Math.min(1, Number(retryOverride ?? (env.PIXELTALE_MAX_RETRIES ?? 1))));
-  const directAnthropic = resolvedProvider === "claude" && config.protocol === "anthropic";
-  const endpoint = directAnthropic ? `${config.baseUrl}/messages` : `${config.baseUrl}/chat/completions`;
-  const body = directAnthropic
-    ? {
-      model: config.model,
-      max_tokens: 12000,
-      temperature: 0.25,
-      system,
-      messages: [{ role: "user", content: user }],
-    }
-    : {
-      model: config.model,
-      temperature: 0.25,
-      response_format: { type: "json_object" },
-      messages: [{ role: "system", content: system }, { role: "user", content: user }],
-    };
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const headers = {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.key}`,
-      };
-      if (directAnthropic) {
-        headers["x-api-key"] = config.key;
-        headers["anthropic-version"] = env.PIXELTALE_ANTHROPIC_VERSION || "2023-06-01";
-        delete headers.Authorization;
-      }
-      let response = await fetchImpl(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: controller.signal });
-      let raw = await response.text();
-      if (!directAnthropic && response.status === 400 && /response_format|json_object/i.test(raw)) {
-        const compatibilityBody = { ...body };
-        delete compatibilityBody.response_format;
-        response = await fetchImpl(endpoint, { method: "POST", headers, body: JSON.stringify(compatibilityBody), signal: controller.signal });
-        raw = await response.text();
-      }
-      if (!response.ok) {
-        const retryable = response.status === 429 || response.status >= 500;
-        if ((response.status === 401 || response.status === 403) || !retryable || attempt >= maxRetries) {
-          throw new ProviderError(`${config.label} HTTP ${response.status}: ${raw.slice(0, 500)}`, { status: response.status, retryable: false, code: response.status === 401 || response.status === 403 ? "AUTH_ERROR" : "HTTP_ERROR" });
-        }
-        continue;
-      }
-      const payload = parseJson(raw, `${config.label} 响应`);
-      const content = responseContent(payload);
-      if (!content) throw new ProviderError(`${config.label} 响应没有可解析内容`, { retryable: attempt < maxRetries, code: "EMPTY_RESPONSE" });
-      try {
-        return { provider: resolvedProvider, model: config.model, content: parseJson(content, `${config.label} 输出`), attempts: attempt };
-      } catch (error) {
-        if (attempt >= maxRetries) throw error;
-      }
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        if (attempt >= maxRetries) throw new ProviderError(`${config.label} 请求超时（${Math.round(timeoutMs / 1000)} 秒）`, { retryable: false, code: "TIMEOUT" });
-        continue;
-      }
-      if (error instanceof ProviderError) {
-        if (error.code === "INVALID_JSON" && attempt < maxRetries) continue;
-        throw error;
-      }
-      if (attempt >= maxRetries) throw new ProviderError(`${config.label} 请求失败：${error.message}`, { retryable: false, code: "NETWORK_ERROR" });
-    } finally {
-      clearTimeout(timer);
-    }
+async function callProvider({ provider, system, user, modelRouter }) {
+  if (!modelRouter || typeof modelRouter.call !== "function") {
+    throw new ProviderError("PixelTale 未接入 SuperPixel 文本模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
   }
-  throw new ProviderError(`${config.label} 请求失败`, { code: "PROVIDER_ERROR" });
+  return modelRouter.call({ model: modelForRoute(provider), system, user, purpose: "pixeltale" });
 }
 
 function canFallbackFrom(error) {
-  return ["TIMEOUT", "NETWORK_ERROR", "EMPTY_RESPONSE"].includes(error?.code)
-    || (error?.code === "HTTP_ERROR" && (error.status === 429 || error.status >= 500));
+  return error?.retryable === true || ["TIMEOUT", "NETWORK_ERROR", "EMPTY_RESPONSE"].includes(error?.code);
 }
 
-async function callStagePrimary({ route, system, user, env = process.env, fetchImpl = globalThis.fetch }) {
-  const providers = crossReviewRoutes(route);
-  const timeoutMs = Math.max(15_000, Number(env.PIXELTALE_STAGE_TIMEOUT_MS || 60_000));
+async function callStagePrimary({ route, system, user, modelRouter }) {
+  if (!modelRouter || typeof modelRouter.stageModels !== "function") {
+    throw new ProviderError("PixelTale 未接入 SuperPixel 主创模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
+  }
+  const providers = modelRouter.stageModels(route);
   const failures = [];
   for (const provider of providers) {
     try {
-      const result = await callProvider({ provider, system, user, env, fetchImpl, timeoutMs, maxRetries: 0 });
+      const result = await callProvider({ provider, system, user, modelRouter });
       return { ...result, fallback: provider !== route.primary, fallbackFailures: failures };
     } catch (error) {
       failures.push({ provider, code: error?.code || "PROVIDER_ERROR", message: error?.message || "主创模型请求失败" });
@@ -985,7 +857,7 @@ async function callStagePrimary({ route, system, user, env = process.env, fetchI
     }
   }
   const detail = failures.map((item) => item.message).join("；");
-  throw new ProviderError(`所有主创模型均未在响应窗口内完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE" });
+  throw new ProviderError(`SuperPixel 可用主创模型均未完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE" });
 }
 
 function emptyState({ projectId, mode = "tk", now = () => new Date() }) {
@@ -1053,17 +925,14 @@ function publicRun(run) {
   return safeRun;
 }
 
-function publicState(state, env) {
-  const configuredProviders = providerStatus(env);
-  const publicProviderStatus = Object.fromEntries(PROVIDERS.map((provider) => [provider, {
-    provider,
-    configured: !!configuredProviders[provider]?.configured,
-  }]));
+function publicState(state, modelRouter) {
+  const publicProviderStatus = typeof modelRouter?.status === "function" ? modelRouter.status() : {};
   return {
     ...state,
     artifacts: asArray(state.artifacts).map(publicArtifact),
     runs: asArray(state.runs).map(publicRun),
     providerStatus: publicProviderStatus,
+    modelOptions: typeof modelRouter?.models === "function" ? modelRouter.models() : [],
   };
 }
 
@@ -1186,8 +1055,7 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
 }
 
 function createPixelTaleAgent(options = {}) {
-  const env = options.env || process.env;
-  const fetchImpl = options.fetch || globalThis.fetch;
+  const modelRouter = options.modelRouter;
   const now = options.now || (() => new Date());
   const randomUUID = options.randomUUID || crypto.randomUUID;
   const readPixelTaleState = options.readPixelTaleState;
@@ -1196,15 +1064,22 @@ function createPixelTaleAgent(options = {}) {
   const writeVisualAssetDocument = options.writeVisualAssetDocument;
   const writeScriptDocument = options.writeScriptDocument;
   if (typeof readPixelTaleState !== "function" || typeof writePixelTaleState !== "function") throw new Error("PixelTale Agent 缺少独立 state adapter");
+  if (!modelRouter || typeof modelRouter.call !== "function" || typeof modelRouter.models !== "function") throw new Error("PixelTale Agent 必须使用 SuperPixel 文本模型路由");
+
+  function availableModels() {
+    return asArray(modelRouter.models());
+  }
 
   function stateFor(params) {
-    return readState({
+    const state = readState({
       ...params,
       stateRoot: params.pixelTaleRoot || params.episodeRoot,
       readPixelTaleState,
       writePixelTaleState,
       now,
     });
+    state.routes = normalizeRoutes(state.routes, availableModels());
+    return state;
   }
 
   function persistState(params, state) {
@@ -1217,7 +1092,7 @@ function createPixelTaleAgent(options = {}) {
 
   function status(params) {
     const state = stateFor(params);
-    return publicState(state, env);
+    return publicState(state, modelRouter);
   }
 
   async function run(params = {}) {
@@ -1225,7 +1100,7 @@ function createPixelTaleAgent(options = {}) {
     const stage = normalizeStage(params.stage);
     const state = stateFor({ ...params, projectId, mode: params.mode || params.input?.mode });
     const mode = normalizeMode(params.mode || params.input?.mode || state.mode);
-    const routes = params.routes ? normalizeRoutes(params.routes) : normalizeRoutes(state.routes);
+    const routes = params.routes ? normalizeRoutes(params.routes, availableModels()) : normalizeRoutes(state.routes, availableModels());
     const revisionPlan = text(params.revisionPlan, 14000);
     state.mode = mode;
     state.routes = routes;
@@ -1249,7 +1124,7 @@ function createPixelTaleAgent(options = {}) {
     state.updatedAt = nowIso(now);
     const startedAt = nowIso(now);
     const runId = id("run", randomUUID);
-    const route = stageRoute(stage, mode, routes);
+    const route = stageRoute(stage, mode, routes, availableModels());
     const previousArtifacts = STAGES.map((item) => approvedForStage(state, item)).filter(Boolean);
     const revisionBase = revisionPlan ? artifactForStage(state, stage) : null;
     const sourceReview = revisionBase?.reviewId ? state.artifacts.find((artifact) => artifact.id === revisionBase.reviewId) : null;
@@ -1300,8 +1175,7 @@ function createPixelTaleAgent(options = {}) {
         user: revisionContract
           ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
           : stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project }),
-        env,
-        fetchImpl,
+        modelRouter,
       });
       retryCount += primary.attempts || 0;
       const content = validateContent(stage, primary.content);
@@ -1315,43 +1189,42 @@ function createPixelTaleAgent(options = {}) {
           owner: "本阶段主创",
         };
       }
-      reviewRoutes = crossReviewRoutes(route);
+      reviewRoutes = modelRouter.reviewModels(route);
       reviews = await Promise.all(reviewRoutes.map(async (reviewRoute) => {
         try {
           const result = await callProvider({
-            provider: reviewRoute,
+            provider: reviewRoute.model || reviewRoute,
             system: reviewSystemPrompt(stage, mode, runInput),
             user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts, revisionContract }),
-            env,
-            fetchImpl,
+            modelRouter,
           });
           retryCount += result.attempts || 0;
           return { route: reviewRoute, result: { ...result, content: validateReview(result.content, { requireDimensions: true, revisionContract }) } };
         } catch (error) {
-          return { route: reviewRoute, model: modelForRoute(reviewRoute, env), error: error.message };
+          return { route: reviewRoute.model || reviewRoute, model: reviewRoute.model || reviewRoute, error: error.message };
         }
       }));
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
       consensus = aggregateCrossReview(reviews, revisionContract);
       if (consensus.revision) consensus.revision.owner = "本阶段主创";
-      reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviewRoutes.map((item) => modelForRoute(item, env)).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
+      reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviewRoutes.map((item) => modelForRoute(item.model || item)).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
       primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
       primaryArtifact.reviewId = reviewArtifact.id;
       state.artifacts.push(primaryArtifact, reviewArtifact);
       const runStatus = consensus.pass ? "completed" : "needs_review";
-      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${providerForRoute(item)}:${modelForRoute(item, env)}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       persistState(params, state);
-      return { ...publicRun(record), artifacts: [primaryArtifact, reviewArtifact].map(publicArtifact), state: publicState(state, env) };
+      return { ...publicRun(record), artifacts: [primaryArtifact, reviewArtifact].map(publicArtifact), state: publicState(state, modelRouter) };
     } catch (error) {
       errors.push({ code: error.code || "RUN_FAILED", message: error.message });
       if (primaryArtifact && !state.artifacts.some((artifact) => artifact.id === primaryArtifact.id)) state.artifacts.push(primaryArtifact);
       const fallbackReviewModels = reviewRoutes.length ? reviewRoutes : [route.reviewer];
-      const record = { runId, stage, mode, route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary, env), reviewModels: fallbackReviewModels.map((item) => `${providerForRoute(item)}:${modelForRoute(item, env)}`), artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary), reviewModels: fallbackReviewModels.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       state.updatedAt = nowIso(now);
       persistState(params, state);
-      return { ...publicRun(record), artifacts: primaryArtifact ? [primaryArtifact].map(publicArtifact) : [], state: publicState(state, env) };
+      return { ...publicRun(record), artifacts: primaryArtifact ? [primaryArtifact].map(publicArtifact) : [], state: publicState(state, modelRouter) };
     }
   }
 
@@ -1395,7 +1268,7 @@ function createPixelTaleAgent(options = {}) {
     state.stage = nextStage(artifact.stage);
     state.updatedAt = nowIso(now);
     persistState(params, state);
-    return { artifact: publicArtifact(artifact), state: publicState(state, env) };
+    return { artifact: publicArtifact(artifact), state: publicState(state, modelRouter) };
   }
 
   async function handoff(params = {}) {
@@ -1418,16 +1291,14 @@ function createPixelTaleAgent(options = {}) {
         provider: visualRoute.primary,
         system: visualAssetSystemPrompt(state.mode, state.input),
         user: visualAssetUserPrompt({ mode: state.mode, input: state.input, approvedArtifacts, project: params.project }),
-        env,
-        fetchImpl,
+        modelRouter,
       });
       visualAssets = validateVisualAssets(primary.content);
       const review = await callProvider({
         provider: visualRoute.reviewer,
         system: visualAssetReviewSystemPrompt(state.mode, state.input),
         user: visualAssetReviewUserPrompt({ mode: state.mode, input: state.input, visualAssets }),
-        env,
-        fetchImpl,
+        modelRouter,
       });
       const reviewContent = validateReview(review.content);
       visualAssetReview = {
@@ -1496,13 +1367,13 @@ function createPixelTaleAgent(options = {}) {
     state.stage = "handoff";
     state.updatedAt = nowIso(now);
     persistState(params, state);
-    return { handoff, payload, state: publicState(state, env) };
+    return { handoff, payload, state: publicState(state, modelRouter) };
   }
 
   function saveSettings(params = {}) {
     const state = stateFor(params);
     if (params.mode) state.mode = normalizeMode(params.mode);
-    if (params.routes) state.routes = normalizeRoutes(params.routes);
+    if (params.routes) state.routes = normalizeRoutes(params.routes, availableModels());
     if (params.input) {
       state.input = {
         ...asObject(state.input),
@@ -1515,18 +1386,16 @@ function createPixelTaleAgent(options = {}) {
     }
     state.updatedAt = nowIso(now);
     persistState(params, state);
-    return publicState(state, env);
+    return publicState(state, modelRouter);
   }
 
-  return { status, run, approve, handoff, saveSettings, providerStatus: () => providerStatus(env), constants: { STAGES, DEFAULT_ROUTES, DEFAULT_DIALOGUE_POLICY } };
+  return { status, run, approve, handoff, saveSettings, providerStatus: () => modelRouter.status(), constants: { STAGES, DEFAULT_ROUTES, DEFAULT_DIALOGUE_POLICY } };
 }
 
 module.exports = {
   createPixelTaleAgent,
   callProvider,
   callStagePrimary,
-  providerConfig,
-  providerStatus,
   normalizeMode,
   normalizeRoutes,
   validateContent,
@@ -1535,6 +1404,5 @@ module.exports = {
   buildRevisionContract,
   aggregateRevisionClosure,
   aggregateCrossReview,
-  crossReviewRoutes,
   STAGES,
 };

@@ -10,7 +10,17 @@ const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevisionContract } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
+assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
+assert.match(agent, /modelRouter\.reviewModels\(route\)/, "cross-review must be selected by the SuperPixel router");
+assert.doesNotMatch(agent, /PIXELTALE_(CHATGPT|CLAUDE|GROK)_API_KEY/, "PixelTale must not own provider credentials");
+assert.match(app, /syncRoutingModelOptions\(agent\.modelOptions \|\| \[\]\)/, "model choices must be synchronized from SuperPixel's returned registry");
+assert.match(app, /\["chatgpt", "claude", "grok"\]/, "review UI must represent all three SuperPixel model families");
+
 assert.match(html, /id="newDraft"[^>]*>[^<]*<span[^>]*>\+<\/span>\s*新建剧集/, "new story action must be explicit");
+const pixelTaleStylesStamp = html.match(/pixeltale\/styles\.css\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
+const pixelTaleAppStamp = html.match(/pixeltale\/app\.js\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
+assert.ok(pixelTaleStylesStamp && pixelTaleAppStamp, "PixelTale static assets must carry cache stamps");
+assert.equal(pixelTaleAppStamp, pixelTaleStylesStamp, "PixelTale styles and app cache stamps must stay synchronized");
 assert.match(app, /function startNewDraft\(\)[\s\S]*localStorage\.setItem\(SESSION_STORAGE_KEY[\s\S]*window\.location\.reload\(\)/, "new story must rotate the session before reloading");
 assert.match(app, /function userFacingError\(error\)/, "provider errors must be normalized for users");
 assert.match(app, /next-step-error[\s\S]*role="alert"/, "run errors must remain visible beside the next action");
@@ -139,9 +149,26 @@ const fakeFetch = async (_url, options) => {
     : { title_zh: "暗门", logline_zh: "主角必须在代价逼近前打开一扇暗门。", core_conflict_zh: "真相与生存冲突。", viewer_question_zh: "她会付出什么代价？" };
   return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(output) } }] }) };
 };
+const testModels = [
+  { id: "gpt-5.6-terra", provider: "chatgpt", configured: true },
+  { id: "claude-opus-5", provider: "claude", configured: true },
+  { id: "grok-4.5", provider: "grok", configured: true },
+];
+const testRouter = {
+  models: () => testModels,
+  status: () => Object.fromEntries(["chatgpt", "claude", "grok"].map((provider) => [provider, { provider, configured: true }])),
+  stageModels: (route) => [route.primary, route.reviewer, route.consistency],
+  reviewModels: () => testModels.map(({ id: model, provider }) => ({ model, provider, configured: true })),
+  call: async ({ model, system, user }) => {
+    const input = JSON.parse(user);
+    const output = /交叉审核 Agent/.test(system)
+      ? reviewOutput(input.revisionClosureProtocol)
+      : { title_zh: "暗门", logline_zh: "主角必须在代价逼近前打开一扇暗门。", core_conflict_zh: "真相与生存冲突。", viewer_question_zh: "她会付出什么代价？" };
+    return { provider: testModels.find((item) => item.id === model)?.provider || "superpixel", model, content: output, attempts: 0, trace: [{ model }] };
+  },
+};
 const runAgent = createPixelTaleAgent({
-  env: { PIXELTALE_CHATGPT_API_KEY: "test", PIXELTALE_CLAUDE_API_KEY: "test", PIXELTALE_GROK_API_KEY: "test", PIXELTALE_MAX_RETRIES: "0" },
-  fetch: fakeFetch,
+  modelRouter: testRouter,
   readPixelTaleState: (stateRoot) => stateStore.get(stateRoot) || {},
   writePixelTaleState: (stateRoot, state) => stateStore.set(stateRoot, state),
   randomUUID: () => `${String(++uuidSequence).padStart(12, "0")}-1234-1234-1234-123456789abc`,
@@ -159,11 +186,17 @@ const primaryFallback = await callStagePrimary({
   route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "grok-4.5" },
   system: "stage generation",
   user: "{}",
-  env: { PIXELTALE_CHATGPT_API_KEY: "test", PIXELTALE_CLAUDE_API_KEY: "test", PIXELTALE_GROK_API_KEY: "test" },
-  fetchImpl: async (_url, options) => {
-    const request = JSON.parse(options.body);
-    if (request.model === "gpt-5.6-terra") throw new Error("upstream connection reset");
-    return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }) };
+  modelRouter: {
+    stageModels: (route) => [route.primary, route.reviewer, route.consistency],
+    call: async ({ model }) => {
+      if (model === "gpt-5.6-terra") {
+        const error = new Error("upstream connection reset");
+        error.code = "NETWORK_ERROR";
+        error.retryable = true;
+        throw error;
+      }
+      return { provider: "claude", model, content: { ok: true }, attempts: 0, trace: [{ model }] };
+    },
   },
 });
 assert.equal(primaryFallback.provider, "claude", "a timed-out primary must advance to the next configured stage model");

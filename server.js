@@ -2183,7 +2183,9 @@ function loadLocalEnv() {
 loadLocalEnv();
 
 const pixelTaleAgent = createPixelTaleAgent({
-  env: process.env,
+  // PixelTale owns story state and review rules only. All model registration,
+  // credentials, upstream calls, and failover belong to SuperPixel.
+  modelRouter: pixelTaleSuperPixelRouter(),
   readPixelTaleState,
   writePixelTaleState,
   writeHandoffFile(storyRoot, payload) {
@@ -2378,6 +2380,175 @@ function superPixelModelConfig(model) {
     return { apiKey: process.env.XAI_API_KEY, kind: "grok" };
   }
   return null;
+}
+
+function superPixelModelProvider(model) {
+  if (SUPER_PIXEL_GPT_MODELS.has(model)) return "chatgpt";
+  if (SUPER_PIXEL_CLAUDE_MODELS.has(model)) return "claude";
+  if (SUPER_PIXEL_GROK_MODELS.has(model)) return "grok";
+  return "";
+}
+
+function superPixelTextModelOptions() {
+  const models = [
+    ...SUPER_PIXEL_GPT_MODELS,
+    ...SUPER_PIXEL_CLAUDE_MODELS,
+    ...SUPER_PIXEL_GROK_MODELS,
+  ];
+  return models.map((id) => {
+    const config = superPixelModelConfig(id);
+    return {
+      id,
+      provider: superPixelModelProvider(id),
+      configured: !!config?.apiKey,
+    };
+  });
+}
+
+function superPixelTextModelStatus() {
+  const options = superPixelTextModelOptions();
+  return Object.fromEntries(["chatgpt", "claude", "grok"].map((provider) => {
+    const models = options.filter((item) => item.provider === provider);
+    return [provider, {
+      provider,
+      configured: models.some((item) => item.configured),
+      models: models.map(({ id, configured }) => ({ id, configured })),
+    }];
+  }));
+}
+
+function superPixelTextError(message, { code = "SUPER_PIXEL_TEXT_ERROR", status = 0, retryable = false, trace = [] } = {}) {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  error.retryable = retryable;
+  error.trace = trace;
+  return error;
+}
+
+function superPixelTextResponseContent(payload) {
+  const message = payload?.choices?.[0]?.message?.content;
+  if (typeof message === "string") return message;
+  if (Array.isArray(message)) return message.map((item) => typeof item === "string" ? item : item?.text || "").join("");
+  return "";
+}
+
+function parseSuperPixelTextJson(raw, label) {
+  const value = String(raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const start = value.indexOf("{");
+  const end = value.lastIndexOf("}");
+  try {
+    return JSON.parse(start >= 0 && end > start ? value.slice(start, end + 1) : value);
+  } catch (error) {
+    throw superPixelTextError(`${label} 未返回合法 JSON`, { code: "INVALID_JSON", retryable: true });
+  }
+}
+
+async function callSuperPixelTextModel({ model, system, user, purpose = "text" }) {
+  const normalizedModel = compactLine(model || "");
+  const config = superPixelModelConfig(normalizedModel);
+  const provider = superPixelModelProvider(normalizedModel);
+  const trace = [{ model: normalizedModel, provider, purpose }];
+  if (!config || !provider) throw superPixelTextError(`SuperPixel 未注册文本模型：${normalizedModel}`, { code: "MODEL_UNSUPPORTED", trace });
+  if (!config.apiKey) throw superPixelTextError(`SuperPixel 模型未配置：${normalizedModel}`, { code: "MODEL_NOT_CONFIGURED", trace });
+
+  const timeoutMs = Math.max(15_000, Number(process.env.SUPER_PIXEL_TEXT_TIMEOUT_MS || 120_000));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const request = {
+    model: normalizedModel,
+    stream: false,
+    temperature: 0.25,
+    max_tokens: 12000,
+    response_format: { type: "json_object" },
+    messages: [{ role: "system", content: String(system || "") }, { role: "user", content: String(user || "") }],
+  };
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${config.apiKey}`,
+  };
+  try {
+    let response = await superPixelFetch(openAiCompatUrl("/v1/chat/completions", config.kind), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+    let raw = await response.text();
+    // SuperPixel chat already supports OpenAI-compatible providers that do not
+    // implement response_format. Keep the same compatibility behavior here.
+    if (response.status === 400 && /response_format|json_object/i.test(raw)) {
+      const compatibilityRequest = { ...request };
+      delete compatibilityRequest.response_format;
+      response = await superPixelFetch(openAiCompatUrl("/v1/chat/completions", config.kind), {
+        method: "POST",
+        headers,
+        body: JSON.stringify(compatibilityRequest),
+        signal: controller.signal,
+      });
+      raw = await response.text();
+      trace.push({ model: normalizedModel, provider, purpose, compatibilityRetry: true });
+    }
+    if (!response.ok) {
+      throw superPixelTextError(superPixelUpstreamFailureMessage(response.status, raw), {
+        code: "HTTP_ERROR",
+        status: response.status,
+        retryable: response.status === 429 || response.status >= 500,
+        trace,
+      });
+    }
+    const payload = parseSuperPixelTextJson(raw, `${normalizedModel} 上游响应`);
+    const content = superPixelTextResponseContent(payload);
+    if (!content) throw superPixelTextError(`${normalizedModel} 未返回文本内容`, { code: "EMPTY_RESPONSE", retryable: true, trace });
+    return {
+      provider,
+      model: normalizedModel,
+      content: parseSuperPixelTextJson(content, `${normalizedModel} 输出`),
+      attempts: 0,
+      trace,
+    };
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw superPixelTextError(`${normalizedModel} 请求超时（${Math.round(timeoutMs / 1000)} 秒）`, { code: "TIMEOUT", retryable: true, trace });
+    }
+    if (error?.code) throw error;
+    throw superPixelTextError(`${normalizedModel} 请求失败：${error?.message || "未知错误"}`, { code: "NETWORK_ERROR", retryable: true, trace });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function uniqueModelIds(values) {
+  return [...new Set(values.map((item) => compactLine(typeof item === "string" ? item : item?.model || "")).filter(Boolean))];
+}
+
+function superPixelTextStageModels(route = {}) {
+  const configured = superPixelTextModelOptions().filter((item) => item.configured).map((item) => item.id);
+  return uniqueModelIds([route.primary, route.reviewer, route.consistency, ...configured]).filter((model) => configured.includes(model));
+}
+
+function superPixelTextReviewModels(route = {}) {
+  const options = superPixelTextModelOptions();
+  const preferred = uniqueModelIds([route.reviewer, route.consistency, route.primary]);
+  return ["chatgpt", "claude", "grok"].map((provider) => {
+    const candidates = [...preferred, ...options.map((item) => item.id)]
+      .map((id) => options.find((item) => item.id === id))
+      .filter((item) => item?.provider === provider);
+    const configured = candidates.find((item) => item.configured);
+    const selected = configured || candidates[0];
+    return { provider, model: selected?.id || "", configured: !!selected?.configured };
+  });
+}
+
+function pixelTaleSuperPixelRouter() {
+  return {
+    call: callSuperPixelTextModel,
+    models: superPixelTextModelOptions,
+    status: superPixelTextModelStatus,
+    stageModels: superPixelTextStageModels,
+    reviewModels: superPixelTextReviewModels,
+  };
 }
 
 function superPixelUpstreamFailureMessage(status, raw = "") {
@@ -25514,6 +25685,10 @@ module.exports = {
       resolveReferences: resolveSuperPixelReferenceImages,
       executeTool: executeSuperPixelTool,
       maxImages: SUPER_PIXEL_MAX_IMAGES_PER_MESSAGE,
+      textRouter: pixelTaleSuperPixelRouter,
+      textModels: superPixelTextModelOptions,
+      textReviewModels: superPixelTextReviewModels,
+      callText: callSuperPixelTextModel,
     },
     canvasAgent: {
       handle: handleCanvasAgentChat,

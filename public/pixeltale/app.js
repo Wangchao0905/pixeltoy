@@ -69,6 +69,8 @@ const modelMeta = {
   "claude-sonnet-5": { name: "Claude Sonnet 5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "claude-haiku-4-5": { name: "Claude Haiku 4.5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "grok-4.5": { name: "Grok 4.5", provider: "grok", role: "TK 钩子 / 口语化", detail: "开头暴击、反转、探索欲与英文对白口语化" },
+  "grok-4.5-latest": { name: "Grok 4.5 Latest", provider: "grok", role: "TK 钩子 / 口语化", detail: "开头暴击、反转、探索欲与英文对白口语化" },
+  "grok-4.3": { name: "Grok 4.3", provider: "grok", role: "TK 钩子 / 口语化", detail: "开头暴击、反转、探索欲与英文对白口语化" },
 };
 
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];
@@ -336,6 +338,28 @@ function updateAgentState(agent) {
   state.routes = { ...state.routes, ...(agent.routes || {}) };
   state.input = { ...state.input, ...(agent.input || {}) };
   state.approved = new Set(agent.approvedArtifactIds || []);
+  syncRoutingModelOptions(agent.modelOptions || []);
+}
+
+function modelInfo(id) {
+  const fallback = { name: id, provider: id.startsWith("claude-") ? "claude" : id.startsWith("grok-") ? "grok" : "chatgpt", role: "创作模型", detail: "由 SuperPixel 统一接入与路由" };
+  return modelMeta[id] || fallback;
+}
+
+function syncRoutingModelOptions(options) {
+  if (!Array.isArray(options) || !options.length) return;
+  const groups = { chatgpt: [], claude: [], grok: [] };
+  options.forEach((option) => {
+    if (groups[option?.provider]) groups[option.provider].push(option);
+  });
+  const labels = { chatgpt: "GPT", claude: "Claude", grok: "Grok" };
+  $$('[data-route]').forEach((select) => {
+    const selected = state.routes[select.dataset.route] || select.value;
+    select.innerHTML = Object.entries(groups).map(([provider, entries]) => entries.length
+      ? `<optgroup label="${labels[provider]}">${entries.map((entry) => `<option value="${escapeHtml(entry.id)}"${entry.configured ? "" : " disabled"}>${escapeHtml(modelInfo(entry.id).name)}${entry.configured ? "" : "（未接入）"}</option>`).join("")}</optgroup>`
+      : "").join("");
+    if ([...select.options].some((option) => option.value === selected && !option.disabled)) select.value = selected;
+  });
 }
 
 function artifactForStage(stage) {
@@ -583,22 +607,28 @@ function activeRouteForStage() {
 
 function renderModelTeam() {
   const route = activeRouteForStage();
-  const unique = [route.primary, route.reviewer, route.consistency, "gpt-5.6-terra", "claude-opus-5", "grok-4.5"].filter((id, index, list) => list.indexOf(id) === index).slice(0, 3);
+  const options = Array.isArray(state.agent?.modelOptions) ? state.agent.modelOptions : [];
+  const preferred = [route.reviewer, route.consistency, route.primary];
+  const reviewTeam = ["chatgpt", "claude", "grok"].map((provider) => {
+    const candidates = [...preferred, ...options.map((item) => item.id)]
+      .map((id) => options.find((item) => item.id === id))
+      .filter((item) => item?.provider === provider);
+    return candidates.find((item) => item.configured) || candidates[0];
+  }).filter(Boolean);
   const status = state.agent?.providerStatus || {};
-  $("#modelTeamCards").innerHTML = unique.map((id) => {
-    const meta = modelMeta[id];
-    const primary = id === route.primary;
-    const reviewer = id === route.reviewer && !primary;
-    const configured = status[meta.provider]?.configured;
-    const consistency = id === route.consistency && !primary && !reviewer;
-    const lane = primary ? "交叉审核反馈" : reviewer ? "互审一致性" : consistency ? "一致性审查" : "候补交叉模型";
-    const stateLabel = configured ? (primary ? "反馈" : reviewer ? "对抗审核" : consistency ? "第三审查" : "候补") : "待接入";
-    return `<button class="model-card ${primary ? "is-primary" : reviewer ? "is-reviewer" : ""}" type="button" data-model-detail="${id}" title="${lane}：${meta.name}"><i></i><span><strong>${meta.name}</strong><small>${lane} · ${meta.role}</small></span><em>${stateLabel}</em></button>`;
+  $("#modelTeamCards").innerHTML = reviewTeam.map((entry) => {
+    const id = entry.id;
+    const meta = modelInfo(id);
+    const configured = entry.configured && status[entry.provider]?.configured;
+    const lane = entry.provider === "chatgpt" ? "结构与因果审查" : entry.provider === "claude" ? "人物与连续性审查" : "钩子与本土化审查";
+    const stateLabel = configured ? "待复审" : "审核未接入";
+    return `<button class="model-card ${entry.provider === "chatgpt" ? "is-primary" : entry.provider === "claude" ? "is-reviewer" : ""}" type="button" data-model-detail="${id}" title="${lane}：${meta.name}"><i></i><span><strong>${meta.name}</strong><small>${lane} · ${meta.role}</small></span><em>${stateLabel}</em></button>`;
   }).join("");
   $$('[data-model-detail]').forEach((button) => button.addEventListener("click", () => {
     const id = button.dataset.modelDetail;
-    const statusText = status[modelMeta[id].provider]?.configured ? "已接入" : "待接入";
-    showToast(`${modelMeta[id].name}：${modelMeta[id].detail} · ${statusText}`);
+    const meta = modelInfo(id);
+    const statusText = status[meta.provider]?.configured ? "已接入" : "待接入";
+    showToast(`${meta.name}：${meta.detail} · ${statusText}`);
   }));
 }
 

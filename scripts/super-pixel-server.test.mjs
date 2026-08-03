@@ -28,6 +28,7 @@ fs.writeFileSync(sessionsPath, `${JSON.stringify(sessions, null, 2)}\n`);
 
 process.env.ASSET_ANALYZER_API_KEY = "test-super-pixel-asset-key";
 process.env.STORYBOARD_API_KEY = "test-super-pixel-storyboard-key";
+process.env.XAI_API_KEY = "test-super-pixel-grok-key";
 process.env.ASSET_ANALYZER_BASE_URL = "https://asset.example/v1";
 process.env.STORYBOARD_BASE_URL = "https://storyboard.example/v1";
 const require = createRequire(import.meta.url);
@@ -224,6 +225,37 @@ try {
   disconnectReq.emit("close");
   await pending;
   assert.equal(upstreamAborted, true, "客户端断开必须 abort 上游请求");
+
+  const textRouter = __test.superPixel.textRouter();
+  const textModels = textRouter.models();
+  assert.deepEqual(
+    new Set(textModels.map((item) => item.provider)),
+    new Set(["chatgpt", "claude", "grok"]),
+    "PixelTale router must use SuperPixel's registered model families",
+  );
+  const reviewerModels = textRouter.reviewModels({
+    primary: "gpt-5.6-terra",
+    reviewer: "claude-opus-5",
+    consistency: "gpt-5.6-luna",
+  });
+  assert.deepEqual(
+    reviewerModels.map((item) => item.provider),
+    ["chatgpt", "claude", "grok"],
+    "cross-review must reserve one distinct SuperPixel model family per reviewer",
+  );
+  assert.equal(new Set(reviewerModels.map((item) => item.model)).size, 3, "cross-review models must be distinct");
+
+  const textCalls = [];
+  __test.superPixel.setFetch(async (url, options) => {
+    textCalls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }), { status: 200 });
+  });
+  const textResult = await textRouter.call({ model: "gpt-5.6-sol", system: "return JSON", user: "{}", purpose: "pixeltale" });
+  assert.equal(textResult.model, "gpt-5.6-sol");
+  assert.deepEqual(textResult.content, { ok: true });
+  assert.equal(textCalls[0].url, "https://storyboard.example/v1/chat/completions", "text router must reuse SuperPixel's model gateway");
+  assert.equal(textCalls[0].headers.Authorization, "Bearer test-super-pixel-storyboard-key", "text router must reuse SuperPixel's credential source");
+  assert.equal(textCalls[0].body.stream, false, "PixelTale structured output must be a non-streaming SuperPixel request");
 } finally {
   __test.superPixel.setFetch(null);
   if (originalUsers) fs.writeFileSync(usersPath, originalUsers);

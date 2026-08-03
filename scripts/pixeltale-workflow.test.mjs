@@ -230,7 +230,7 @@ await assert.rejects(
 );
 assert.equal(timedCalls.length, 1, "the stage budget must prevent a second model request after a 14 second failure in a 15 second window");
 assert.equal(timedCalls[0].timeoutMs, 14_000, "each primary attempt must receive the bounded per-model timeout");
-assert.match(agent, /STAGE_PRIMARY_BUDGET_MS = 45_000/, "production primary generation must stay below the proxy timeout window");
+assert.match(agent, /STAGE_PRIMARY_BUDGET_MS = 120_000/, "production primary generation must reserve time for parallel cross-review inside the proxy window");
 assert.match(agent, /modelRouter\.stageModels\(route\)\.slice\(0, 3\)/, "primary fallback must never walk the full writing roster sequentially");
 assert.match(fs.readFileSync(path.join(root, "server.js"), "utf8"), /uniqueModelIds\(\[route\.primary, route\.reviewer, route\.consistency\]\)/, "SuperPixel stage candidates must remain the configured three-role chain");
 

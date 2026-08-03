@@ -10,8 +10,10 @@ const DEFAULT_ROUTES = {
   dialogueReview: "claude-sonnet-5",
   consistency: "gpt-5.6-luna",
 };
-const STAGE_PRIMARY_BUDGET_MS = 45_000;
-const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 14_000;
+// Production Nginx permits a 300-second upstream response window. Reserve the
+// rest for the parallel cross-review instead of aborting every author at 14s.
+const STAGE_PRIMARY_BUDGET_MS = 120_000;
+const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 40_000;
 const MIN_STAGE_PRIMARY_ATTEMPT_MS = 3_000;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
 const DEFAULT_DIALOGUE_POLICY = "zh_story_en_localized_dialogue";

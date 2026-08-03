@@ -45,7 +45,7 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     BRIEF_PRODUCTION_FEASIBILITY: "概念可继续发展且不存在明显制作死角",
   },
   title: {
-    TITLE_COUNT_VARIETY: "恰好五个且风格有区分",
+    TITLE_COUNT_VARIETY: "恰好四个且风格有区分",
     TITLE_CONCEPT_MATCH: "名称准确承接核心概念",
     TITLE_MARKET_FIT: "符合目标市场与受众的传播语感",
   },
@@ -306,10 +306,10 @@ function titleStylePrompt(mode, input = {}) {
   const profile = MARKET_PROFILES[market.marketCountry];
   const platform = text(input.platform, 120) || "国际流媒体 / 短视频平台";
   return [
-    "剧名必须输出 5 个候选，不能少于或多于 5 个，名称之间不得只是同义词替换。",
+    "剧名必须输出恰好 4 个候选，不能少于或多于 4 个，名称之间不得只是同义词替换。",
     `正式发行片名必须使用自然英文，适配${profile.label}市场与“${platform}”的传播语感；中文只能写在 explanation_zh、style_zh、tone_zh、naming_gene_zh 和 reason_zh 中供创作者参考。`,
     "先读取 userInput 中的剧本 DNA、受众、平台和发行属性，再读取 approvedContext 中已确认的 brief；每个候选必须绑定一个本剧独有的身份、地点、关系、物件、秘密或异常意象，不能只套类型词。",
-    "五个候选必须分别使用不同命名基因：人物身份或称谓、地点或机构、异常物件或意象、关系或阵营张力、带双重含义的极简短语。naming_gene_zh 必须明确写出所用基因。",
+    "四个候选必须分别使用不同命名基因：人物身份或关系、地点或机构、异常物件或意象、带双重含义的极简短语。naming_gene_zh 必须明确写出所用基因。",
     `结合${modeLabel(mode)}节奏：TK 短剧优先 1-5 个英文单词，普通长剧优先 1-7 个英文单词；朗读自然、海报上可瞬间识别、搜索时有区分度。`,
     "片名要保留解释空间和语义张力，不要把剧情梗概、反转答案或人物结局直接写进标题。",
     "禁止廉价网文或移动短剧模板词组，包括 Billionaire、CEO、Mafia、Reborn、Revenge、Forbidden Love、Secret Love、Contract Wife、Fake Marriage；禁止冒号副标题、夸张营销句、陈词滥调和生硬中译英。",
@@ -350,7 +350,7 @@ function stageOutputContract(stage, mode) {
     : `\n所有中文剧情字段必须使用中文；对白字段必须是自然、口语化、符合人物身份与语境的英文。不要逐字直译。模式：${modeLabel(mode)}。`;
   const contracts = {
     brief: `{"title_zh":"故事名","logline_zh":"一句话梗概","core_conflict_zh":"核心冲突","viewer_question_zh":"观众要追问的问题","episode_promise_zh":"每集持续兑现的承诺","mode_rules":["模式约束"]}`,
-    title: `{"candidates":[{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"}],"selection_note_zh":"选择建议"}`,
+    title: `{"candidates":[{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"}],"selection_note_zh":"选择建议"}`,
     proposal: `{"title_zh":"故事名","premise_zh":"核心命题","logline_zh":"一句话梗概","viewer_question_zh":"核心悬念","protagonist_goal_zh":"主角目标","antagonistic_force_zh":"对抗力量","season_or_series_engine_zh":"持续推进引擎","first_impact_zh":"开头暴击","episode_hook_zh":"集尾钩子","reversal_zh":"首个反转"}`,
     characters: `{"characters":[{"id":"C001","name_zh":"按目标市场生成的角色显示名，不得翻译为中文名","name_en":"English or romanized display name","role":"protagonist","desire_zh":"欲望","fear_zh":"恐惧","secret_zh":"秘密","arc_zh":"人物弧线","voice_rules_en":["英文声线规则"],"visual_profile":{"gender":"性别","age_phase":"年龄相","body":"体型","hair_color":"发型发色","facial_features":"面部特征","eye_color":"瞳色","costume_accessories":"服装配饰","palette":"识别色","posture":"气质姿态","prompt_zh":"中文文生图提示词"}}],"relationships":[{"from":"C001","to":"C002","dynamic_zh":"关系变化"}],"world_rules":["不可违反的世界规则"]}`,
     arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
@@ -404,7 +404,7 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project, exclu
     content: artifact.content,
   }));
   return JSON.stringify({
-    task: stage === "title" ? "基于剧本 DNA、发行属性和已确认故事架构，生成 5 个全新的英文正式片名候选。" : "基于创作规格和已确认结构，生成当前阶段唯一可审核的结构化产物。",
+    task: stage === "title" ? "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的英文正式片名候选。" : "基于创作规格和已确认结构，生成当前阶段唯一可审核的结构化产物。",
     project: { id: text(project?.id, 300), title: text(project?.title, 300), episode: text(project?.episode, 100) },
     mode,
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
@@ -441,7 +441,7 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "pass 只有在结构完整、因果清晰、可执行、符合模式节奏、没有把悬念提前解释，并且角色名、地名、社会细节和对白都符合目标市场时才为 true。",
     "模式规则只能检查当前阶段已有字段：brief 检查开头承诺与追更问题，arc 才检查逐集钩子、反转与回收；不得提前索要后续资产。",
     "对白阶段还要检查英文是否自然口语化、是否保留中文剧情意图、是否像人物会说的话。",
-    ...(stage === "title" ? ["剧名阶段必须检查恰好 5 个候选、名称不重复、五种风格确实拉开差异，并且每个候选都有风格、语气和理由。"] : []),
+    ...(stage === "title" ? ["剧名阶段必须检查恰好 4 个候选、名称不重复、四种命名基因确实拉开差异，并且每个候选都有风格、语气、命名基因和理由。"] : []),
     '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改"}],"dimensions":{"structure":{"score":0,"feedback":"结构意见"},"plot":{"score":0,"feedback":"剧情意见"},"design":{"score":0,"feedback":"设计意见"},"logic":{"score":0,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
   ].join("\n");
 }
@@ -618,15 +618,15 @@ function validateContent(stage, content, input = {}) {
         || excludedTitles.has(name.toLowerCase())
         || /\b(billionaire|ceo|mafia|reborn|revenge|forbidden love|secret love|contract wife|fake marriage)\b/i.test(name);
     });
-    const invalid = candidates.length !== 5
-      || names.length !== 5
-      || new Set(normalizedNames).size !== 5
-      || namingGenes.length !== 5
-      || new Set(namingGenes).size !== 5
+    const invalid = candidates.length !== 4
+      || names.length !== 4
+      || new Set(normalizedNames).size !== 4
+      || namingGenes.length !== 4
+      || new Set(namingGenes).size !== 4
       || invalidReleaseTitle
       || candidates.some((candidate) => !/[\u3400-\u9fff]/u.test(text(candidate.explanation_zh, 500)) || !text(candidate.style_zh, 200) || !text(candidate.tone_zh, 300) || !text(candidate.naming_gene_zh, 300) || !text(candidate.reason_zh, 1000));
     if (invalid) {
-      const error = new Error(`剧名产物必须包含 5 个不重复、符合发行语言且说明完整的英文候选（每个不超过 ${maxWords} 个单词）`);
+      const error = new Error(`剧名产物必须包含 4 个不重复、符合发行语言且说明完整的英文候选（每个不超过 ${maxWords} 个单词）`);
       error.code = "SCHEMA_INVALID";
       throw error;
     }
@@ -1467,7 +1467,7 @@ function createPixelTaleAgent(options = {}) {
       const selectedTitle = text(params.selectedTitle, 200);
       const candidates = asArray(artifact.content?.candidates);
       if (!selectedTitle || !candidates.some((candidate) => text(candidate?.title_en, 200) === selectedTitle)) {
-        const error = new Error("请从 5 个候选中选择一个剧名");
+        const error = new Error("请从 4 个候选中选择一个剧名");
         error.code = "TITLE_SELECTION_REQUIRED";
         error.statusCode = 409;
         throw error;

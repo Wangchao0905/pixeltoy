@@ -32,10 +32,11 @@ assert.match(app, /kind: "auto-revise"[\s\S]*执行交叉修订并复审/, "revi
 assert.doesNotMatch(app, /review-auto-fix/, "review panel must not expose a duplicate revision button");
 assert.match(app, /const fieldLabelMap = \{[\s\S]*title_zh: "剧名"/, "structured fields must have Chinese display labels");
 assert.match(app, /data-regenerate-title/, "title selection must expose a regenerate action before approval");
+assert.match(app, /生成 4 个剧名候选[\s\S]*重新生成 4 个/, "title UI must expose exactly four title choices");
 assert.match(app, /中文释义只供创作者对照，不会写入后续正式标题/, "title UI must distinguish the English release title from its Chinese explanation");
 assert.match(app, /单模型生成完成 · 等待人工选择[\s\S]*不进入交叉审核/, "title UI must explain its single-model no-review policy");
 assert.match(agent, /正式发行片名必须使用自然英文/, "title generation must follow the release language instead of returning Chinese names");
-assert.match(agent, /人物身份或称谓、地点或机构、异常物件或意象、关系或阵营张力、带双重含义的极简短语/, "title generation must enforce five distinct naming genes");
+assert.match(agent, /人物身份或关系、地点或机构、异常物件或意象、带双重含义的极简短语/, "title generation must enforce four distinct naming genes");
 assert.match(agent, /Billionaire、CEO、Mafia、Reborn、Revenge/, "title generation must reject generic web-fiction naming templates");
 assert.match(app, /fieldLabel\(key\)/, "nested structured fields must use the display label map");
 assert.match(styles, /\.app-shell \{ height: 100vh; height: 100dvh;[\s\S]*overflow: hidden; \}/, "desktop shell must stay within the viewport");
@@ -233,8 +234,8 @@ const testModels = [
   { id: "deepseek-v4-pro", provider: "deepseek", configured: true },
 ];
 const titleSets = [
-  ["The Last Tenant", "Room Zero", "Borrowed Silence", "Two Doors Apart", "Ash at Noon"],
-  ["The Hollow Key", "Northbound", "Glass Witness", "Static Between Us", "After the Signal"],
+  ["The Last Tenant", "Room Zero", "Borrowed Silence", "On Hold"],
+  ["The Hollow Key", "Northbound", "Glass Witness", "After the Signal"],
 ];
 const titleOutput = (index = 0) => ({
   candidates: titleSets[Math.min(index, titleSets.length - 1)].map((title, candidateIndex) => ({
@@ -242,7 +243,7 @@ const titleOutput = (index = 0) => ({
     explanation_zh: `中文释义 ${candidateIndex + 1}`,
     style_zh: "国际流媒体",
     tone_zh: "克制而有悬念",
-    naming_gene_zh: ["人物身份或称谓", "地点或机构", "异常物件或意象", "关系或阵营张力", "双重含义极简短语"][candidateIndex],
+    naming_gene_zh: ["人物身份或关系", "地点或机构", "异常物件或意象", "双重含义极简短语"][candidateIndex],
     reason_zh: "承接主角进入禁区的故事 DNA，并适配英语市场封面传播。",
   })),
   selection_note_zh: "优先选择与核心异常意象绑定最紧的片名。",
@@ -309,7 +310,7 @@ assert.deepEqual(titleRun.route, { primary: "gpt-5.6-terra" }, "title route must
 assert.equal(titleRun.artifacts.length, 1, "title run must persist only the primary artifact");
 assert.equal(titleRun.artifacts[0].status, "ready", "a valid title artifact must be ready for human selection");
 assert.equal(titleRun.artifacts[0].reviewId, "", "title artifact must not reference a review artifact");
-assert.equal(titleRun.artifacts[0].content.candidates.length, 5, "title contract must retain exactly five options");
+assert.equal(titleRun.artifacts[0].content.candidates.length, 4, "title contract must retain exactly four options");
 assert.ok(titleRun.artifacts[0].content.candidates.every((candidate) => /^[^\u3400-\u9fff]*[A-Za-z][^\u3400-\u9fff]*$/u.test(candidate.title_en)), "all formal titles must be English and contain no Chinese characters");
 assert.match(routedCalls[0].system, /剧本 DNA[\s\S]*目标受众和发行场景/, "title prompt must bind naming to story DNA and distribution attributes");
 assert.deepEqual(routedCalls[0].input.excludedTitles, [], "the first title run must not invent an exclusion history");

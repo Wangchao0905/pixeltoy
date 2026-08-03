@@ -5,6 +5,7 @@ import path from "node:path";
 const root = path.resolve(new URL("..", import.meta.url).pathname);
 const canvas = fs.readFileSync(path.join(root, "public/canvas.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/canvas.css"), "utf8");
+const html = fs.readFileSync(path.join(root, "public/canvas.html"), "utf8");
 
 assert.match(canvas, /function snapNodePosition\(/, "canvas nodes must expose magnetic snap calculation");
 assert.match(canvas, /snapNodePosition\(node, drag\)/, "node dragging must apply magnetic snapping");
@@ -19,5 +20,9 @@ assert.match(css, /\.blank-canvas::before\s*\{[\s\S]*?background-size:\s*24px\s+
 assert.match(css, /\.canvas-links path\.image-link\s*\{[\s\S]*?stroke:\s*#a36cf0/, "image connections must be purple");
 assert.match(css, /\.canvas-links path\.video-link\s*\{[\s\S]*?stroke:\s*#4c8d62/, "video connections must be dark green");
 assert.match(css, /\.generation-progress-track\s*\{/, "static generation progress track styles must exist");
+assert.match(html, /class="context-icon image"[^>]*>[\s\S]*?<svg/, "image creation action must use a line icon");
+assert.match(html, /class="context-icon video"[^>]*>[\s\S]*?<svg/, "video creation action must use a line icon");
+assert.match(css, /\.canvas-context-menu\s*\{[\s\S]*?width:\s*280px[\s\S]*?background:\s*rgba\(10,\s*12,\s*14,\s*0\.96\)/, "creation menu must use the compact dark surface");
+assert.match(css, /\.canvas-context-menu button:focus-visible\s*\{/, "creation menu items must keep a visible keyboard focus state");
 
 console.log("canvas design polish tests passed");

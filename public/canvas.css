@@ -7035,7 +7035,7 @@ body.canvas-page {
 
 .canvas-links path {
   stroke: rgba(255, 255, 255, 0.78);
-  stroke-width: 0.75;
+  stroke-width: 1;
   stroke-linecap: round;
   filter: none;
   shape-rendering: geometricPrecision;
@@ -7044,7 +7044,7 @@ body.canvas-page {
 .canvas-links path.draft-link,
 .canvas-links path.pending-link {
   stroke: rgba(255, 255, 255, 0.42);
-  stroke-dasharray: 3 6;
+  stroke-dasharray: none;
 }
 
 .canvas-links path.active-link,
@@ -7054,6 +7054,14 @@ body.canvas-page {
 
 .canvas-links path.video-link {
   stroke: #fff;
+}
+
+.canvas-links path.active-link,
+.canvas-links path.image-link,
+.canvas-links path.video-link,
+.canvas-links path.draft-link,
+.canvas-links path.pending-link {
+  vector-effect: non-scaling-stroke;
 }
 
 .snap-guide {

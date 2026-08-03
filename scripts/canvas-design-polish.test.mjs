@@ -19,6 +19,8 @@ assert.match(css, /\.blank-canvas::before\s*\{[\s\S]*?linear-gradient\(#070707 1
 assert.match(css, /\.blank-canvas::before\s*\{[\s\S]*?background-size:\s*24px\s+24px/, "canvas grid must use a fixed screen-sized rhythm");
 assert.match(css, /\.canvas-links path\.active-link,[\s\S]*?\.canvas-links path\.image-link\s*\{[\s\S]*?stroke:\s*#fff/, "image connections must be pure white");
 assert.match(css, /\.canvas-links path\.video-link\s*\{[\s\S]*?stroke:\s*#fff/, "video connections must be pure white");
+assert.doesNotMatch(css, /stroke-dasharray:\s*3\s+6/, "canvas connections must not use a dashed pattern");
+assert.match(css, /\.canvas-links path\.active-link,[\s\S]*?\.canvas-links path\.pending-link\s*\{[\s\S]*?vector-effect:\s*non-scaling-stroke/, "canvas connections must remain continuous at zoom levels");
 assert.match(css, /\.generation-progress-track\s*\{/, "static generation progress track styles must exist");
 assert.doesNotMatch(html, /class="context-icon|class="context-arrow/, "creation menus must display text without decorative icons");
 assert.match(css, /\.canvas-context-menu\s*\{[\s\S]*?width:\s*248px[\s\S]*?background:\s*rgba\(10,\s*12,\s*14,\s*0\.96\)/, "creation menu must use the compact dark surface");

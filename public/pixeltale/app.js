@@ -981,7 +981,7 @@ function renderValue(value, depth = 0) {
 
 function reviewIssueGroups(reviewContent = {}) {
   const freshIssues = Array.isArray(reviewContent.commonIssues) && reviewContent.commonIssues.length
-    ? reviewContent.commonIssues
+    ? reviewContent.commonIssues.filter((item) => Number(item.modelCount) >= 2)
     : (Array.isArray(reviewContent.reviewIssues) ? reviewContent.reviewIssues.filter((item) => Number(item.modelCount) >= 2) : []);
   const pendingClosures = Array.isArray(reviewContent.revision?.closure?.items)
     ? reviewContent.revision.closure.items.filter((item) => item.status !== "resolved").map((item) => ({
@@ -1134,6 +1134,8 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
     const accepted = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan }) });
     const payload = { result: await waitForRunJob(accepted.job?.jobId) };
     updateAgentState(payload.result?.state);
+    // The run response may contain the last approved stage; keep the stage the user just ran visible.
+    state.stage = stage;
     state.lastError = payload.result?.status === "failed" ? (payload.result.errors || []).map((item) => item.message).join("；") : "";
     if (state.lastError) throw new Error(state.lastError);
     const revision = payload.result?.revision;

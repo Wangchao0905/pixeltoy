@@ -317,11 +317,15 @@ const finalReview = revisionRun.state.artifacts.find((artifact) => artifact.id =
 assert.equal(finalReview.content.revision.closure.allResolved, true, "the persisted review must retain item-by-item closure evidence");
 
 runAgent.approve({ ...runParams, artifactId: revisionRun.artifacts[0].id });
+const staleState = stateStore.get("revision-e2e");
+staleState.stage = "brief";
+stateStore.set("revision-e2e", staleState);
 routedCalls.length = 0;
 reviewModelSelections = 0;
 const titleParams = { ...runParams, stage: "title", mode: "tk_short_drama", input: { ...runParams.input, platform: "TikTok / TikTok Series", marketCountry: "united_states", audienceGender: "all" } };
 const titleRun = await runAgent.run(titleParams);
 assert.equal(titleRun.status, "completed", "title generation must complete without waiting for cross-review");
+assert.equal(titleRun.state.stage, "title", "a run must keep the requested editor stage even when the stored session stage is stale");
 assert.equal(routedCalls.length, 1, "title generation must call exactly one assigned author model");
 assert.equal(routedCalls[0].model, "gpt-5.6-terra", "title generation must use the configured orchestration model");
 assert.equal(routedCalls[0].purpose, "pixeltale:title:author", "title generation must remain an author-only request");

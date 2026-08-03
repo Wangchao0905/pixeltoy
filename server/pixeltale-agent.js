@@ -1299,6 +1299,8 @@ function createPixelTaleAgent(options = {}) {
     const revisionPlan = text(params.revisionPlan, 14000);
     state.mode = mode;
     state.routes = routes;
+    // Keep the active editor stage stable while a run is in progress. Approval still controls workflow advancement.
+    state.stage = stage;
     state.input = {
       ...asObject(state.input),
       ...asObject(params.input),

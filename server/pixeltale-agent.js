@@ -10,12 +10,23 @@ const DEFAULT_ROUTES = {
   dialogueReview: "claude-sonnet-5",
   consistency: "gpt-5.6-luna",
 };
-// Production Nginx permits a 300-second upstream response window. Reserve the
-// rest for the parallel cross-review instead of aborting every author at 14s.
-const STAGE_PRIMARY_BUDGET_MS = 270_000;
-const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 90_000;
+const STAGE_PRIMARY_BUDGET_MS = 210_000;
+const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 70_000;
 const MIN_STAGE_PRIMARY_ATTEMPT_MS = 3_000;
+const REVIEW_MODEL_TIMEOUT_MS = 80_000;
+const REVIEW_QUORUM = 2;
+const REVIEW_PASS_INDEX = 85;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
+const STAGE_OUTPUT_TOKEN_BUDGETS = Object.freeze({
+  brief: 1_800,
+  title: 2_400,
+  proposal: 2_800,
+  characters: 7_000,
+  arc: 12_000,
+  scenes: 12_000,
+  dialogue: 12_000,
+  review: 5_000,
+});
 const DEFAULT_DIALOGUE_POLICY = "zh_story_en_localized_dialogue";
 const DEFAULT_CREATIVE_CONTROLS = {
   openingImpactSeconds: 3,
@@ -365,6 +376,14 @@ function reviewSystemPrompt(stage, mode, input = {}) {
   ].join("\n");
 }
 
+function reviewerIdentity(provider) {
+  return {
+    chatgpt: "结构与规格审查员：核对阶段契约、因果结构和用户要求是否完整兑现。",
+    claude: "连续性与本土化审查员：核对人物动机、前后连续性、地区文化和语言自然度。",
+    grok: "钩子与受众对抗审查员：从目标受众视角攻击节奏、爽点、反转和追更动力。",
+  }[providerForRoute(provider)] || "独立交叉审查员：基于证据给出可执行结论。";
+}
+
 function revisionUserPrompt({ stage, mode, input, previousArtifacts, project, baseArtifact, revisionContract, revisionPlan }) {
   const prior = previousArtifacts.map((artifact) => ({
     stage: artifact.stage,
@@ -682,7 +701,7 @@ function sharedReviewIssues(feedbacks) {
 }
 
 function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
-  const issues = asArray(review.reviewIssues);
+  const issues = asArray(review.commonIssues).length ? asArray(review.commonIssues) : asArray(review.reviewIssues).filter((item) => Number(item.modelCount) >= 2);
   const fallback = issues.length ? [] : asArray(review.required_changes).map((change) => ({
     tag: "审核修订项",
     dimension: "logic",
@@ -737,6 +756,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
       return {
         provider: review.provider,
         model: review.model,
+        role: item.role || reviewerIdentity(review.model),
         status: "completed",
         pass: review.content.pass,
         score: review.content.score,
@@ -751,6 +771,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     return {
       provider: providerForRoute(item.route),
       model: item.model,
+      role: item.role || reviewerIdentity(item.route),
       status: "failed",
       pass: false,
       score: 0,
@@ -772,8 +793,8 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
   const quality = completed.length ? Math.round(completed.reduce((sum, item) => sum + item.score, 0) / completed.length) : 0;
   const reviewCompletion = Math.round((completed.length / 3) * 100);
   const index = Math.round(agreement * 0.45 + quality * 0.35 + reviewCompletion * 0.2);
-  const structuredIssues = groupedReviewIssues(feedbacks);
-  const reviewerChanges = uniqueText(feedbacks.flatMap((item) => item.required_changes || []), 60);
+  const structuredIssues = groupedReviewIssues(completed);
+  const reviewerChanges = uniqueText(completed.flatMap((item) => item.required_changes || []), 60);
   const structuredIssueText = structuredIssues.flatMap((issue) => [...issue.suggestions, ...issue.evidence]);
   const supplementalIssues = reviewerChanges
     .filter((change) => !structuredIssueText.some((known) => known === change || known.includes(change) || change.includes(known)))
@@ -784,21 +805,22 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
   const conflicts = REVIEW_DIMENSIONS
     .filter((key) => completed.length >= 2 && dimensions[key].agreement < 75)
     .map((key) => ({ dimension: key, agreement: dimensions[key].agreement, suggestion: `重新核对${key}维度的证据与取舍，直到三模型形成可执行的统一方案` }));
-  const revisionClosure = aggregateRevisionClosure(feedbacks, revisionContract);
-  const pass = completed.length === 3 && feedbacks.every((item) => item.pass) && index >= 75 && reviewIssues.length === 0 && reviewerChanges.length === 0 && conflicts.length === 0 && revisionClosure.allResolved;
+  const revisionClosure = aggregateRevisionClosure(completed, revisionContract);
+  const quorumMet = completed.length >= REVIEW_QUORUM;
+  const passingReviews = completed.filter((item) => item.pass).length;
+  const pass = quorumMet && passingReviews >= REVIEW_QUORUM && index >= REVIEW_PASS_INDEX && commonIssues.length === 0 && conflicts.length === 0 && revisionClosure.allResolved;
   const checks = {
-    ...Object.fromEntries(["cross_validation", "consistency", "adversarial"].map((key) => [key, completed.length === 3 && completed.every((item) => item.checks?.[key] === true)])),
-    issues_converged: reviewIssues.length === 0,
+    ...Object.fromEntries(["cross_validation", "consistency", "adversarial"].map((key) => [key, quorumMet && completed.filter((item) => item.pass).every((item) => item.checks?.[key] === true)])),
+    issues_converged: commonIssues.length === 0,
     dimensions_agree: conflicts.length === 0,
     revision_contract_closed: revisionClosure.allResolved,
   };
-  const issueChanges = reviewIssues.map((issue) => {
-    const source = issue.modelCount >= 2 ? `至少 ${issue.modelCount} 个模型共同指出` : `单个模型指出`;
+  const issueChanges = commonIssues.map((issue) => {
+    const source = `至少 ${issue.modelCount} 个模型共同指出`;
     const suggestions = issue.suggestions.length ? issue.suggestions.join("；") : "针对该问题补充具体修订并重新提交三模型审核";
     return `${source}【${issue.severity} / ${issue.tag}】：${suggestions}`;
   });
   const conflictChanges = conflicts.map((item) => `【意见冲突 / ${item.dimension}】${item.suggestion}`);
-  const failedChanges = feedbacks.filter((item) => item.status === "failed").flatMap((item) => item.required_changes);
   const closureChanges = revisionClosure.items
     .filter((item) => item.status !== "resolved")
     .map((item) => `【${item.id} / ${item.tag}】修订关闭未通过：${item.remainingFix.join("；") || "请按验收条件补充修订"}`);
@@ -809,6 +831,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     agreement,
     quality,
     reviewCompletion,
+    quorum: { required: REVIEW_QUORUM, completed: completed.length, passing: passingReviews, met: quorumMet },
     dimensions,
     feedbacks,
     reviewIssues,
@@ -819,7 +842,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     independentIssueCount: independentIssues.length,
     conflicts,
     findings: uniqueText([...commonIssues.map((item) => `共识问题【${item.tag}】（${item.modelCount} 个模型）`), ...conflicts.map((item) => `意见冲突：${item.dimension} 一致性 ${item.agreement}%`), ...feedbacks.flatMap((item) => item.findings)]),
-    required_changes: uniqueText([...issueChanges, ...conflictChanges, ...reviewerChanges, ...failedChanges, ...closureChanges], 60),
+    required_changes: uniqueText([...issueChanges, ...conflictChanges, ...closureChanges], 60),
     checks,
     revision: revisionContract ? { contract: revisionContract, closure: revisionClosure } : null,
   };
@@ -835,11 +858,11 @@ class ProviderError extends Error {
   }
 }
 
-async function callProvider({ provider, system, user, modelRouter, timeoutMs }) {
+async function callProvider({ provider, system, user, modelRouter, timeoutMs, maxTokens, purpose = "pixeltale" }) {
   if (!modelRouter || typeof modelRouter.call !== "function") {
     throw new ProviderError("PixelTale 未接入 SuperPixel 文本模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
   }
-  return modelRouter.call({ model: modelForRoute(provider), system, user, purpose: "pixeltale", timeoutMs });
+  return modelRouter.call({ model: modelForRoute(provider), system, user, purpose, timeoutMs, maxTokens });
 }
 
 function canFallbackFrom(error) {
@@ -850,6 +873,7 @@ async function callStagePrimary({
   route,
   system,
   user,
+  stage = "brief",
   modelRouter,
   nowMs = () => Date.now(),
   totalTimeoutMs = STAGE_PRIMARY_BUDGET_MS,
@@ -870,7 +894,15 @@ async function callStagePrimary({
     }
     const timeoutMs = Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelTimeoutMs, remainingMs));
     try {
-      const result = await callProvider({ provider, system, user, modelRouter, timeoutMs });
+      const result = await callProvider({
+        provider,
+        system,
+        user,
+        modelRouter,
+        timeoutMs,
+        maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal,
+        purpose: `pixeltale:${stage}:author`,
+      });
       return {
         ...result,
         fallback: provider !== route.primary,
@@ -1200,6 +1232,7 @@ function createPixelTaleAgent(options = {}) {
       }
       primary = await callStagePrimary({
         route,
+        stage,
         system: stageSystemPrompt(stage, mode, runInput),
         user: revisionContract
           ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
@@ -1220,17 +1253,22 @@ function createPixelTaleAgent(options = {}) {
       }
       reviewRoutes = modelRouter.reviewModels(route);
       reviews = await Promise.all(reviewRoutes.map(async (reviewRoute) => {
+        const reviewModel = reviewRoute.model || reviewRoute;
+        const role = reviewerIdentity(reviewModel);
         try {
           const result = await callProvider({
-            provider: reviewRoute.model || reviewRoute,
-            system: reviewSystemPrompt(stage, mode, runInput),
+            provider: reviewModel,
+            system: `${reviewSystemPrompt(stage, mode, runInput)}\n本次固定身份：${role}`,
             user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts, revisionContract }),
             modelRouter,
+            timeoutMs: REVIEW_MODEL_TIMEOUT_MS,
+            maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS.review,
+            purpose: `pixeltale:${stage}:review`,
           });
           retryCount += result.attempts || 0;
-          return { route: reviewRoute, result: { ...result, content: validateReview(result.content, { requireDimensions: true, revisionContract }) } };
+          return { route: reviewRoute, role, result: { ...result, content: validateReview(result.content, { requireDimensions: true, revisionContract }) } };
         } catch (error) {
-          return { route: reviewRoute.model || reviewRoute, model: reviewRoute.model || reviewRoute, error: error.message };
+          return { route: reviewModel, model: reviewModel, role, error: error.message };
         }
       }));
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));

@@ -1052,6 +1052,33 @@ function renderStage() {
   renderShellState();
 }
 
+const RUN_POLL_INTERVAL_MS = 2_000;
+const RUN_POLL_TIMEOUT_MS = 8 * 60 * 1_000;
+
+async function waitForRunJob(jobId) {
+  if (!jobId) throw new Error("服务未返回运行任务号，请重新生成当前阶段");
+  const deadline = Date.now() + RUN_POLL_TIMEOUT_MS;
+  let consecutiveFailures = 0;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, RUN_POLL_INTERVAL_MS));
+    try {
+      const job = (await request(`/run-jobs/${encodeURIComponent(jobId)}`)).job;
+      consecutiveFailures = 0;
+      if (job?.status === "completed") return job.result;
+      if (job?.status === "failed") {
+        const terminalError = new Error(job.error || "本次运行失败");
+        terminalError.terminal = true;
+        throw terminalError;
+      }
+    } catch (error) {
+      if (error?.terminal) throw error;
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= 5) throw error;
+    }
+  }
+  throw new Error("当前阶段运行超过 8 分钟仍未完成，输入已保留，请稍后重新进入页面查看结果");
+}
+
 async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) {
   if (stage === "brief") collectBriefInput();
   if (stage === "title") state.input.storyTitle = "";
@@ -1059,7 +1086,8 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
   state.busy = true;
   renderStage();
   try {
-    const payload = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan }) });
+    const accepted = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan }) });
+    const payload = { result: await waitForRunJob(accepted.job?.jobId) };
     updateAgentState(payload.result?.state);
     state.lastError = payload.result?.status === "failed" ? (payload.result.errors || []).map((item) => item.message).join("；") : "";
     if (state.lastError) throw new Error(state.lastError);

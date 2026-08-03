@@ -97,7 +97,8 @@ assert.equal(aggregated.commonIssueCount, 1, "shared issue count must remain ava
 assert.ok(aggregated.independentIssueCount >= 1, "independent issue count must remain available");
 assert.equal(aggregated.reviewIssues[0].suggestions.length, 2, "all suggestions for a shared issue must be retained");
 assert.equal(aggregated.pass, false, "any unresolved issue must keep the artifact behind the review gate");
-assert.ok(aggregated.required_changes.some((item) => item.includes("节奏偏弱")), "independent issues must become actionable changes");
+assert.ok(!aggregated.required_changes.some((item) => item.includes("节奏偏弱")), "a single-model opinion must remain advisory until independently confirmed");
+assert.ok(aggregated.required_changes.some((item) => item.includes("人物动机不足")), "two-model agreement must become a mandatory change");
 
 const contract = buildRevisionContract(aggregated, { stage: "brief", sourceArtifactId: "artifact_v1", id: "revision_test" });
 const resolvedReview = (model) => ({
@@ -119,6 +120,20 @@ const resolvedReview = (model) => ({
 const closed = aggregateCrossReview([resolvedReview("review-a"), resolvedReview("review-b"), resolvedReview("review-c")], contract);
 assert.equal(closed.pass, true, "a revised artifact must pass only after every contract item is closed");
 assert.equal(closed.revision.closure.allResolved, true, "closure evidence must be retained for the approved revision");
+
+const quorumPass = aggregateCrossReview([
+  resolvedReview("review-a"),
+  resolvedReview("review-b"),
+  { route: "grok-4.5", model: "grok-4.5", error: "upstream timeout" },
+]);
+assert.equal(quorumPass.pass, true, "two agreeing completed reviewers must not be discarded by one unavailable reviewer");
+assert.deepEqual(quorumPass.quorum, { required: 2, completed: 2, passing: 2, met: true }, "the canonical review result must expose quorum evidence");
+const noQuorum = aggregateCrossReview([
+  resolvedReview("review-a"),
+  { route: "claude-opus-5", model: "claude-opus-5", error: "upstream timeout" },
+  { route: "grok-4.5", model: "grok-4.5", error: "upstream timeout" },
+]);
+assert.equal(noQuorum.pass, false, "one reviewer can never release a stage");
 
 const partial = resolvedReview("review-c");
 partial.result.content.revisionClosures[0].status = "partial";
@@ -230,13 +245,22 @@ await assert.rejects(
 );
 assert.equal(timedCalls.length, 1, "the stage budget must prevent a second model request after a 14 second failure in a 15 second window");
 assert.equal(timedCalls[0].timeoutMs, 14_000, "each primary attempt must receive the bounded per-model timeout");
-assert.match(agent, /STAGE_PRIMARY_BUDGET_MS = 270_000/, "production primary generation must reserve time for parallel cross-review inside the proxy window");
-assert.match(agent, /STAGE_PRIMARY_MODEL_TIMEOUT_MS = 90_000/, "a single author must survive the gateway's measured latency spikes instead of aborting at 40s");
+assert.match(agent, /STAGE_PRIMARY_BUDGET_MS = 210_000/, "production primary generation must have one bounded attempt for each provider family");
+assert.match(agent, /STAGE_PRIMARY_MODEL_TIMEOUT_MS = 70_000/, "a single author must have measured latency headroom without creating an eleven-minute retry chain");
 assert.ok(
   Number(agent.match(/STAGE_PRIMARY_BUDGET_MS = ([\d_]+)/)[1].replace(/_/g, "")) <= 300_000,
   "the primary budget must stay inside the 300 second Nginx upstream window",
 );
 assert.match(agent, /modelRouter\.stageModels\(route\)\.slice\(0, 3\)/, "primary fallback must never walk the full writing roster sequentially");
+assert.doesNotMatch(agent, /\.\.\.providers, \.\.\.providers|flatMap\(\(provider\) => \[provider, provider\]\)/, "a stage must never repeat the same three-model sweep");
+assert.match(agent, /brief: 1_800/, "brief generation must not request the universal 12k output budget");
+assert.match(agent, /REVIEW_QUORUM = 2/, "two independent completed reviews must form quorum");
+assert.match(app, /async function waitForRunJob/, "long PixelTale runs must be polled instead of held inside one proxy request");
+assert.match(app, /accepted\.job\?\.jobId/, "the stage runner must poll the exact accepted job");
+const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
+assert.match(serverSource, /function startPixelTaleRun\(/, "the server must execute PixelTale stages as background jobs");
+assert.match(serverSource, /activePixelTaleRuns/, "the server must deduplicate concurrent runs for the same stage");
+assert.match(serverSource, /max_tokens: maxTokens/, "the SuperPixel router must honor the stage output budget");
 assert.match(fs.readFileSync(path.join(root, "server.js"), "utf8"), /uniqueModelIds\(\[route\.primary, route\.reviewer, route\.consistency\]\)/, "SuperPixel stage candidates must remain the configured three-role chain");
 
 console.log("pixeltale workflow contract ok");

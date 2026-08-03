@@ -2218,6 +2218,113 @@ const pixelTaleAgent = createPixelTaleAgent({
   },
 });
 
+const pixelTaleRunJobs = new Map();
+const activePixelTaleRuns = new Map();
+const PIXEL_TALE_JOB_MEMORY_TTL_MS = 30 * 60 * 1_000;
+
+function prunePixelTaleRunJobs() {
+  const cutoff = Date.now() - PIXEL_TALE_JOB_MEMORY_TTL_MS;
+  for (const [jobId, job] of pixelTaleRunJobs) {
+    if (job.status !== "running" && Number(job.finishedAt || job.updatedAt || 0) < cutoff) pixelTaleRunJobs.delete(jobId);
+  }
+}
+
+function pixelTaleRunJobFile(storyRoot, jobId) {
+  if (!/^ptrun_[A-Za-z0-9-]{20,80}$/.test(String(jobId || ""))) return "";
+  return path.join(storyRoot, "run-jobs", `${jobId}.json`);
+}
+
+function persistPixelTaleRunJob(storyRoot, job) {
+  const file = pixelTaleRunJobFile(storyRoot, job.jobId);
+  if (!file) throw new Error("PixelTale 运行任务号无效");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  const persisted = { ...job };
+  delete persisted.result;
+  fs.writeFileSync(temporary, `${JSON.stringify(persisted, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  fs.renameSync(temporary, file);
+}
+
+function readPixelTaleRunJob(storyRoot, jobId) {
+  const memoryJob = pixelTaleRunJobs.get(jobId);
+  if (memoryJob) return memoryJob;
+  const file = pixelTaleRunJobFile(storyRoot, jobId);
+  if (!file || !fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function pixelTaleRunResult(params, job) {
+  if (job.result) return job.result;
+  if (!job.runId) return null;
+  const state = pixelTaleAgent.status(params);
+  const run = state.runs.find((item) => item.runId === job.runId);
+  if (!run) return null;
+  return { ...run, artifacts: state.artifacts.filter((item) => run.artifactIds.includes(item.id)), state };
+}
+
+function startPixelTaleRun(params) {
+  prunePixelTaleRunJobs();
+  const stage = compactLine(params.stage || "brief");
+  const activeKey = `${params.pixelTaleRoot}:${stage}`;
+  const activeJobId = activePixelTaleRuns.get(activeKey);
+  const activeJob = activeJobId ? pixelTaleRunJobs.get(activeJobId) : null;
+  if (activeJob?.status === "running") return { jobId: activeJob.jobId, status: "running", stage, reused: true };
+
+  const job = {
+    jobId: `ptrun_${crypto.randomUUID()}`,
+    status: "running",
+    stage,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  pixelTaleRunJobs.set(job.jobId, job);
+  activePixelTaleRuns.set(activeKey, job.jobId);
+  persistPixelTaleRunJob(params.pixelTaleRoot, job);
+  pixelTaleAgent.run(params).then((result) => {
+    Object.assign(job, {
+      status: "completed",
+      result,
+      runId: result.runId,
+      resultStatus: result.status,
+      updatedAt: Date.now(),
+      finishedAt: Date.now(),
+    });
+    persistPixelTaleRunJob(params.pixelTaleRoot, job);
+  }).catch((error) => {
+    Object.assign(job, {
+      status: "failed",
+      error: String(error?.message || "PixelTale 运行失败"),
+      errorCode: error?.code || "RUN_FAILED",
+      updatedAt: Date.now(),
+      finishedAt: Date.now(),
+    });
+    persistPixelTaleRunJob(params.pixelTaleRoot, job);
+  }).finally(() => {
+    if (activePixelTaleRuns.get(activeKey) === job.jobId) activePixelTaleRuns.delete(activeKey);
+  });
+  return { jobId: job.jobId, status: "running", stage, reused: false };
+}
+
+function getPixelTaleRunJob(params, jobId) {
+  const job = readPixelTaleRunJob(params.pixelTaleRoot, jobId);
+  if (!job) return { status: "failed", error: "运行任务不存在或已过期，请重新生成", errorCode: "JOB_NOT_FOUND" };
+  if (job.status === "running" && !pixelTaleRunJobs.has(job.jobId)) {
+    return { jobId: job.jobId, status: "failed", error: "服务更新中断了本次生成，输入和既有产物均已保留，请重新生成当前阶段", errorCode: "RUN_INTERRUPTED" };
+  }
+  if (job.status === "completed") {
+    const result = pixelTaleRunResult(params, job);
+    return result
+      ? { jobId: job.jobId, status: "completed", result }
+      : { jobId: job.jobId, status: "failed", error: "运行已结束但结果索引缺失，请重新生成当前阶段", errorCode: "RUN_RESULT_MISSING" };
+  }
+  if (job.status === "failed") return { jobId: job.jobId, status: "failed", error: job.error, errorCode: job.errorCode };
+  return { jobId: job.jobId, status: "running", stage: job.stage, elapsedMs: Math.max(0, Date.now() - job.createdAt) };
+}
+
 function imageApiKey() {
   for (const name of IMAGE_API_KEY_ENV_NAMES) {
     if (process.env[name]) return process.env[name];
@@ -2447,11 +2554,13 @@ function parseSuperPixelTextJson(raw, label) {
   }
 }
 
-async function callSuperPixelTextModel({ model, system, user, purpose = "text", timeoutMs: requestedTimeoutMs }) {
+async function callSuperPixelTextModel({ model, system, user, purpose = "text", timeoutMs: requestedTimeoutMs, maxTokens: requestedMaxTokens }) {
   const normalizedModel = compactLine(model || "");
   const config = superPixelModelConfig(normalizedModel);
   const provider = superPixelModelProvider(normalizedModel);
-  const trace = [{ model: normalizedModel, provider, purpose }];
+  const requestId = `spt_${crypto.randomUUID()}`;
+  const startedAt = Date.now();
+  const trace = [{ requestId, model: normalizedModel, provider, purpose, inputChars: String(system || "").length + String(user || "").length }];
   if (!config || !provider) throw superPixelTextError(`SuperPixel 未注册文本模型：${normalizedModel}`, { code: "MODEL_UNSUPPORTED", trace });
   if (!config.apiKey) throw superPixelTextError(`SuperPixel 模型未配置：${normalizedModel}`, { code: "MODEL_NOT_CONFIGURED", trace });
 
@@ -2460,19 +2569,22 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
   // SuperPixel text callers retain the configured two-minute default.
   const configuredTimeoutMs = Number(requestedTimeoutMs ?? process.env.SUPER_PIXEL_TEXT_TIMEOUT_MS ?? 120_000);
   const timeoutMs = Math.max(3_000, Number.isFinite(configuredTimeoutMs) ? configuredTimeoutMs : 120_000);
+  const parsedMaxTokens = Number(requestedMaxTokens);
+  const maxTokens = Math.max(256, Math.min(12_000, Number.isFinite(parsedMaxTokens) ? Math.floor(parsedMaxTokens) : 4_000));
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const request = {
     model: normalizedModel,
     stream: false,
     temperature: 0.25,
-    max_tokens: 12000,
+    max_tokens: maxTokens,
     response_format: { type: "json_object" },
     messages: [{ role: "system", content: String(system || "") }, { role: "user", content: String(user || "") }],
   };
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
+    Connection: "close",
     Authorization: `Bearer ${config.apiKey}`,
   };
   try {
@@ -2482,6 +2594,7 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
       body: JSON.stringify(request),
       signal: controller.signal,
     });
+    trace.push({ requestId, event: "headers", status: response.status, elapsedMs: Date.now() - startedAt, maxTokens, timeoutMs });
     let raw = await response.text();
     // SuperPixel chat already supports OpenAI-compatible providers that do not
     // implement response_format. Keep the same compatibility behavior here.
@@ -2495,7 +2608,7 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
         signal: controller.signal,
       });
       raw = await response.text();
-      trace.push({ model: normalizedModel, provider, purpose, compatibilityRetry: true });
+      trace.push({ requestId, event: "compatibility_retry", status: response.status, elapsedMs: Date.now() - startedAt });
     }
     if (!response.ok) {
       throw superPixelTextError(superPixelUpstreamFailureMessage(response.status, raw), {
@@ -2513,13 +2626,17 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
       model: normalizedModel,
       content: parseSuperPixelTextJson(content, `${normalizedModel} 输出`),
       attempts: 0,
-      trace,
+      trace: [...trace, { requestId, event: "completed", elapsedMs: Date.now() - startedAt, outputChars: content.length }],
     };
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw superPixelTextError(`${normalizedModel} 请求超时（${Math.round(timeoutMs / 1000)} 秒）`, { code: "TIMEOUT", retryable: true, trace });
+      throw superPixelTextError(`${normalizedModel} 请求超时（${Math.round(timeoutMs / 1000)} 秒，追踪号 ${requestId}）`, { code: "TIMEOUT", retryable: true, trace: [...trace, { requestId, event: "timeout", elapsedMs: Date.now() - startedAt }] });
     }
-    if (error?.code) throw error;
+    if (error?.code) {
+      error.trace = [...trace, { requestId, event: error.code.toLowerCase(), elapsedMs: Date.now() - startedAt }];
+      if (error.code === "INVALID_JSON" && !error.message.includes(requestId)) error.message = `${error.message}（追踪号 ${requestId}）`;
+      throw error;
+    }
     throw superPixelTextError(`${normalizedModel} 请求失败：${error?.message || "未知错误"}`, { code: "NETWORK_ERROR", retryable: true, trace });
   } finally {
     clearTimeout(timer);
@@ -3885,7 +4002,9 @@ function readPixelTaleState(storyRoot) {
 function writePixelTaleState(storyRoot, state) {
   const file = pixelTaleStatePath(storyRoot);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  fs.renameSync(temporary, file);
   return state;
 }
 
@@ -25103,7 +25222,7 @@ async function handleApi(req, res, url) {
 
     if (req.method === "POST" && action === "runs") {
       const body = await readBody(req);
-      const result = await pixelTaleAgent.run({
+      const job = startPixelTaleRun({
         ...params,
         stage: body.stage,
         mode: body.mode,
@@ -25111,7 +25230,13 @@ async function handleApi(req, res, url) {
         routes: body.routes || body.modelRoute,
         revisionPlan: body.revisionPlan,
       });
-      return send(res, 200, { ok: true, result });
+      return send(res, 202, { ok: true, job }, { "Cache-Control": "no-store" });
+    }
+
+    const runJobMatch = action.match(/^run-jobs\/([^/]+)$/);
+    if (req.method === "GET" && runJobMatch) {
+      const job = getPixelTaleRunJob(params, decodeURIComponent(runJobMatch[1]));
+      return send(res, 200, { ok: true, job }, { "Cache-Control": "no-store" });
     }
 
     const runMatch = action.match(/^runs\/([^/]+)$/);
@@ -25888,6 +26013,10 @@ module.exports = {
       modelProvider: superPixelModelProvider,
       textReviewModels: superPixelTextReviewModels,
       callText: callSuperPixelTextModel,
+    },
+    pixelTaleRuns: {
+      start: startPixelTaleRun,
+      get: getPixelTaleRunJob,
     },
     canvasAgent: {
       handle: handleCanvasAgentChat,

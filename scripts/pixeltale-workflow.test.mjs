@@ -203,4 +203,35 @@ assert.equal(primaryFallback.provider, "claude", "a timed-out primary must advan
 assert.equal(primaryFallback.fallback, true, "fallback execution must remain visible to the run record");
 assert.equal(primaryFallback.fallbackFailures.length, 1, "only the failed primary should be recorded before recovery");
 
+let elapsedMs = 0;
+const timedCalls = [];
+await assert.rejects(
+  () => callStagePrimary({
+    route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "grok-4.5" },
+    system: "stage generation",
+    user: "{}",
+    totalTimeoutMs: 15_000,
+    perModelTimeoutMs: 14_000,
+    nowMs: () => elapsedMs,
+    modelRouter: {
+      stageModels: (route) => [route.primary, route.reviewer, route.consistency, "gpt-5.6-sol"],
+      call: async ({ model, timeoutMs }) => {
+        timedCalls.push({ model, timeoutMs });
+        elapsedMs += timeoutMs;
+        const error = new Error("upstream request timed out");
+        error.code = "TIMEOUT";
+        error.retryable = true;
+        throw error;
+      },
+    },
+  }),
+  (error) => error.code === "STAGE_GENERATION_UNAVAILABLE" && error.fallbackFailures.some((item) => item.code === "STAGE_TIMEOUT_BUDGET_EXHAUSTED"),
+  "the primary stage must stop before starting another request after its total budget is exhausted",
+);
+assert.equal(timedCalls.length, 1, "the stage budget must prevent a second model request after a 14 second failure in a 15 second window");
+assert.equal(timedCalls[0].timeoutMs, 14_000, "each primary attempt must receive the bounded per-model timeout");
+assert.match(agent, /STAGE_PRIMARY_BUDGET_MS = 45_000/, "production primary generation must stay below the proxy timeout window");
+assert.match(agent, /modelRouter\.stageModels\(route\)\.slice\(0, 3\)/, "primary fallback must never walk the full writing roster sequentially");
+assert.match(fs.readFileSync(path.join(root, "server.js"), "utf8"), /uniqueModelIds\(\[route\.primary, route\.reviewer, route\.consistency\]\)/, "SuperPixel stage candidates must remain the configured three-role chain");
+
 console.log("pixeltale workflow contract ok");

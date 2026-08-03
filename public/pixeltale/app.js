@@ -225,6 +225,9 @@ function showToast(message) {
 
 function userFacingError(error) {
   const message = String(error?.message || "运行失败，请重试").trim();
+  if (/\b504\b|Gateway Timeout/i.test(message)) {
+    return "服务响应窗口已超时，当前输入已保留。请立即重试；若持续发生，系统会记录模型回退轨迹供排查。";
+  }
   if (/API Key|未配置|未接入|provider/i.test(message)) {
     return `${message} 请打开“创作分工”，确认对应模型已接入后再试。`;
   }

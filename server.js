@@ -2447,7 +2447,7 @@ function parseSuperPixelTextJson(raw, label) {
   }
 }
 
-async function callSuperPixelTextModel({ model, system, user, purpose = "text" }) {
+async function callSuperPixelTextModel({ model, system, user, purpose = "text", timeoutMs: requestedTimeoutMs }) {
   const normalizedModel = compactLine(model || "");
   const config = superPixelModelConfig(normalizedModel);
   const provider = superPixelModelProvider(normalizedModel);
@@ -2455,7 +2455,11 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text" }
   if (!config || !provider) throw superPixelTextError(`SuperPixel 未注册文本模型：${normalizedModel}`, { code: "MODEL_UNSUPPORTED", trace });
   if (!config.apiKey) throw superPixelTextError(`SuperPixel 模型未配置：${normalizedModel}`, { code: "MODEL_NOT_CONFIGURED", trace });
 
-  const timeoutMs = Math.max(15_000, Number(process.env.SUPER_PIXEL_TEXT_TIMEOUT_MS || 120_000));
+  // PixelTale supplies a shorter request budget so its sequential fallback can
+  // complete before the reverse proxy closes the browser connection. Other
+  // SuperPixel text callers retain the configured two-minute default.
+  const configuredTimeoutMs = Number(requestedTimeoutMs ?? process.env.SUPER_PIXEL_TEXT_TIMEOUT_MS ?? 120_000);
+  const timeoutMs = Math.max(3_000, Number.isFinite(configuredTimeoutMs) ? configuredTimeoutMs : 120_000);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const request = {
@@ -2528,7 +2532,9 @@ function uniqueModelIds(values) {
 
 function superPixelTextStageModels(route = {}) {
   const configured = superPixelTextModelOptions().filter((item) => item.configured).map((item) => item.id);
-  return uniqueModelIds([route.primary, route.reviewer, route.consistency, ...configured]).filter((model) => configured.includes(model));
+  // A stage has a deliberate three-role chain. Trying every configured model
+  // serially makes a single browser request exceed the proxy response window.
+  return uniqueModelIds([route.primary, route.reviewer, route.consistency]).filter((model) => configured.includes(model));
 }
 
 function superPixelTextReviewModels(route = {}) {

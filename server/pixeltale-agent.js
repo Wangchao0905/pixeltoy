@@ -10,6 +10,9 @@ const DEFAULT_ROUTES = {
   dialogueReview: "claude-sonnet-5",
   consistency: "gpt-5.6-luna",
 };
+const STAGE_PRIMARY_BUDGET_MS = 45_000;
+const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 14_000;
+const MIN_STAGE_PRIMARY_ATTEMPT_MS = 3_000;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
 const DEFAULT_DIALOGUE_POLICY = "zh_story_en_localized_dialogue";
 const DEFAULT_CREATIVE_CONTROLS = {
@@ -830,34 +833,58 @@ class ProviderError extends Error {
   }
 }
 
-async function callProvider({ provider, system, user, modelRouter }) {
+async function callProvider({ provider, system, user, modelRouter, timeoutMs }) {
   if (!modelRouter || typeof modelRouter.call !== "function") {
     throw new ProviderError("PixelTale 未接入 SuperPixel 文本模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
   }
-  return modelRouter.call({ model: modelForRoute(provider), system, user, purpose: "pixeltale" });
+  return modelRouter.call({ model: modelForRoute(provider), system, user, purpose: "pixeltale", timeoutMs });
 }
 
 function canFallbackFrom(error) {
   return error?.retryable === true || ["TIMEOUT", "NETWORK_ERROR", "EMPTY_RESPONSE"].includes(error?.code);
 }
 
-async function callStagePrimary({ route, system, user, modelRouter }) {
+async function callStagePrimary({
+  route,
+  system,
+  user,
+  modelRouter,
+  nowMs = () => Date.now(),
+  totalTimeoutMs = STAGE_PRIMARY_BUDGET_MS,
+  perModelTimeoutMs = STAGE_PRIMARY_MODEL_TIMEOUT_MS,
+}) {
   if (!modelRouter || typeof modelRouter.stageModels !== "function") {
     throw new ProviderError("PixelTale 未接入 SuperPixel 主创模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
   }
-  const providers = modelRouter.stageModels(route);
+  const providers = modelRouter.stageModels(route).slice(0, 3);
   const failures = [];
+  const startedAtMs = nowMs();
+  const deadlineMs = startedAtMs + Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, totalTimeoutMs);
   for (const provider of providers) {
+    const remainingMs = deadlineMs - nowMs();
+    if (remainingMs < MIN_STAGE_PRIMARY_ATTEMPT_MS) {
+      failures.push({ provider, code: "STAGE_TIMEOUT_BUDGET_EXHAUSTED", message: "主创阶段的响应预算已用尽，未再启动新的模型请求" });
+      break;
+    }
+    const timeoutMs = Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelTimeoutMs, remainingMs));
     try {
-      const result = await callProvider({ provider, system, user, modelRouter });
-      return { ...result, fallback: provider !== route.primary, fallbackFailures: failures };
+      const result = await callProvider({ provider, system, user, modelRouter, timeoutMs });
+      return {
+        ...result,
+        fallback: provider !== route.primary,
+        fallbackFailures: failures,
+        primaryBudget: { totalTimeoutMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) },
+      };
     } catch (error) {
       failures.push({ provider, code: error?.code || "PROVIDER_ERROR", message: error?.message || "主创模型请求失败" });
       if (!canFallbackFrom(error)) throw error;
     }
   }
   const detail = failures.map((item) => item.message).join("；");
-  throw new ProviderError(`SuperPixel 可用主创模型均未完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE" });
+  const error = new ProviderError(`SuperPixel 主创模型未能在 ${Math.round(totalTimeoutMs / 1000)} 秒响应窗口内完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });
+  error.fallbackFailures = failures;
+  error.primaryBudget = { totalTimeoutMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) };
+  throw error;
 }
 
 function emptyState({ projectId, mode = "tk", now = () => new Date() }) {
@@ -1212,7 +1239,7 @@ function createPixelTaleAgent(options = {}) {
       primaryArtifact.reviewId = reviewArtifact.id;
       state.artifacts.push(primaryArtifact, reviewArtifact);
       const runStatus = consensus.pass ? "completed" : "needs_review";
-      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviewRoutes.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true, failures: primary.fallbackFailures, budget: primary.primaryBudget } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       persistState(params, state);
       return { ...publicRun(record), artifacts: [primaryArtifact, reviewArtifact].map(publicArtifact), state: publicState(state, modelRouter) };
@@ -1220,7 +1247,7 @@ function createPixelTaleAgent(options = {}) {
       errors.push({ code: error.code || "RUN_FAILED", message: error.message });
       if (primaryArtifact && !state.artifacts.some((artifact) => artifact.id === primaryArtifact.id)) state.artifacts.push(primaryArtifact);
       const fallbackReviewModels = reviewRoutes.length ? reviewRoutes : [route.reviewer];
-      const record = { runId, stage, mode, route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary), reviewModels: fallbackReviewModels.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary), reviewModels: fallbackReviewModels.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: error?.fallbackFailures?.length ? { attempted: error.fallbackFailures.length, recovered: false, failures: error.fallbackFailures, budget: error.primaryBudget || null } : null, artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       state.updatedAt = nowIso(now);
       persistState(params, state);

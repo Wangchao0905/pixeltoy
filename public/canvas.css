@@ -354,6 +354,7 @@ body.canvas-page {
   stroke: rgba(45, 140, 255, 0.95);
   stroke-linecap: square;
   stroke-width: 0.5;
+  stroke-opacity: 0.52;
   filter: none;
   shape-rendering: crispEdges;
 }
@@ -7035,6 +7036,7 @@ body.canvas-page {
 .canvas-links path {
   stroke: rgba(255, 255, 255, 0.78);
   stroke-width: 0.5;
+  stroke-opacity: 0.52;
   stroke-linecap: round;
   filter: none;
   shape-rendering: geometricPrecision;
@@ -7043,7 +7045,13 @@ body.canvas-page {
 .canvas-links path.draft-link,
 .canvas-links path.pending-link {
   stroke: rgba(255, 255, 255, 0.42);
+  stroke-opacity: 0.34;
   stroke-dasharray: none;
+}
+
+.connection-link:hover .active-link,
+.connection-link:focus-within .active-link {
+  stroke-opacity: 1;
 }
 
 .canvas-links path.active-link,

@@ -7043,19 +7043,20 @@ body.canvas-page {
 }
 
 .blank-canvas {
-  background: #0d1318;
+  background: #000;
 }
 
 .blank-canvas::before {
   background-image:
-    linear-gradient(#18252b 1px, transparent 1px),
-    linear-gradient(90deg, #18252b 1px, transparent 1px);
+    linear-gradient(#070707 1px, transparent 1px),
+    linear-gradient(90deg, #070707 1px, transparent 1px);
+  background-position: 0 0;
   background-size: 24px 24px;
-  opacity: 0.84;
+  opacity: 1;
 }
 
 .blank-canvas::after {
-  background: linear-gradient(180deg, transparent, rgba(3, 6, 10, 0.38));
+  background: none;
 }
 
 .canvas-links path {
@@ -7074,6 +7075,30 @@ body.canvas-page {
 
 .canvas-links path.active-link {
   stroke: rgba(255, 255, 255, 0.78);
+}
+
+.canvas-links path.image-link {
+  stroke: #a36cf0;
+}
+
+.canvas-links path.video-link {
+  stroke: #4c8d62;
+}
+
+.canvas-links path.image-link.draft-link {
+  stroke: rgba(163, 108, 240, 0.52);
+}
+
+.canvas-links path.image-link.pending-link {
+  stroke: rgba(163, 108, 240, 0.72);
+}
+
+.canvas-links path.video-link.draft-link {
+  stroke: rgba(76, 141, 98, 0.52);
+}
+
+.canvas-links path.video-link.pending-link {
+  stroke: rgba(76, 141, 98, 0.72);
 }
 
 .snap-guide {

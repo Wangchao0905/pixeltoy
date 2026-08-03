@@ -4769,17 +4769,25 @@ function bezierGeometry(from, to) {
   return { d, mid: { x, y } };
 }
 
-function bezierPath(from, to, className = "active-link") {
+function connectionToneFor(source) {
+  if (source?.kind === "video") return "video-link";
+  if (source?.kind === "image" || source?.kind === "asset") return "image-link";
+  return "";
+}
+
+function typedBezierPath(from, to, className, tone) {
   const { d } = bezierGeometry(from, to);
-  return `<path class="${className}" d="${d}" />`;
+  const classes = [className, tone].filter(Boolean).join(" ");
+  return `<path class="${classes}" d="${d}" />`;
 }
 
 function connectionPath(source, target, index) {
   const { d, mid } = bezierGeometry(nodePortPoint(source, "output"), nodePortPoint(target, "input"));
+  const tone = connectionToneFor(source);
   return `
     <g class="connection-link" data-connection-index="${index}">
       <path class="connection-hitbox" d="${d}" />
-      <path class="active-link" d="${d}" />
+      <path class="active-link ${tone}" d="${d}" />
       <g class="connection-cut" data-connection-cut="${index}" data-connection-index="${index}" transform="translate(${mid.x} ${mid.y})">
         <circle r="13"></circle>
         <text x="0" y="0" text-anchor="middle" dominant-baseline="central">✂</text>
@@ -4791,13 +4799,13 @@ function connectionPath(source, target, index) {
 function draftConnectionPath() {
   const source = canvasState.nodes.find((node) => node.id === canvasState.connectDrag.from);
   if (!source) return "";
-  return bezierPath(nodePortPoint(source, "output"), canvasState.connectDrag.to, "draft-link");
+  return typedBezierPath(nodePortPoint(source, "output"), canvasState.connectDrag.to, "draft-link", connectionToneFor(source));
 }
 
 function pendingConnectionPath() {
   const source = canvasState.nodes.find((node) => node.id === canvasState.pendingConnection.from);
   if (!source) return "";
-  return bezierPath(nodePortPoint(source, "output"), canvasState.pendingConnection.to, "pending-link");
+  return typedBezierPath(nodePortPoint(source, "output"), canvasState.pendingConnection.to, "pending-link", connectionToneFor(source));
 }
 
 function startConnectionDrag(event, nodeId, port) {

@@ -12,8 +12,8 @@ const DEFAULT_ROUTES = {
 };
 // Production Nginx permits a 300-second upstream response window. Reserve the
 // rest for the parallel cross-review instead of aborting every author at 14s.
-const STAGE_PRIMARY_BUDGET_MS = 120_000;
-const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 40_000;
+const STAGE_PRIMARY_BUDGET_MS = 270_000;
+const STAGE_PRIMARY_MODEL_TIMEOUT_MS = 90_000;
 const MIN_STAGE_PRIMARY_ATTEMPT_MS = 3_000;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
 const DEFAULT_DIALOGUE_POLICY = "zh_story_en_localized_dialogue";

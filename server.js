@@ -2531,10 +2531,33 @@ function uniqueModelIds(values) {
 }
 
 function superPixelTextStageModels(route = {}) {
-  const configured = superPixelTextModelOptions().filter((item) => item.configured).map((item) => item.id);
+  const options = superPixelTextModelOptions();
+  const configured = options.filter((item) => item.configured).map((item) => item.id);
   // A stage has a deliberate three-role chain. Trying every configured model
   // serially makes a single browser request exceed the proxy response window.
-  return uniqueModelIds([route.primary, route.reviewer, route.consistency]).filter((model) => configured.includes(model));
+  const roleChain = uniqueModelIds([route.primary, route.reviewer, route.consistency]).filter((model) => configured.includes(model));
+  // The three configured roles frequently resolve to one provider, so a stalled
+  // upstream aborted all of them on the same blocked channel. Keep the author's
+  // own model first, then prefer a different provider for each retry so the
+  // fallback can actually leave a degraded gateway.
+  const primaryModel = roleChain[0] || "";
+  const usedProviders = new Set([superPixelModelProvider(primaryModel)].filter(Boolean));
+  const chain = primaryModel ? [primaryModel] : [];
+  for (const model of [...roleChain, ...configured]) {
+    if (chain.length >= 3) break;
+    if (chain.includes(model)) continue;
+    const provider = superPixelModelProvider(model);
+    if (provider && usedProviders.has(provider)) continue;
+    chain.push(model);
+    if (provider) usedProviders.add(provider);
+  }
+  // If cross-provider candidates are unavailable (only one provider has keys),
+  // fall back to the remaining same-provider roles rather than returning fewer.
+  for (const model of [...roleChain, ...configured]) {
+    if (chain.length >= 3) break;
+    if (!chain.includes(model)) chain.push(model);
+  }
+  return chain;
 }
 
 function superPixelTextReviewModels(route = {}) {
@@ -25847,6 +25870,7 @@ module.exports = {
       maxImages: SUPER_PIXEL_MAX_IMAGES_PER_MESSAGE,
       textRouter: pixelTaleSuperPixelRouter,
       textModels: superPixelTextModelOptions,
+      modelProvider: superPixelModelProvider,
       textReviewModels: superPixelTextReviewModels,
       callText: callSuperPixelTextModel,
     },

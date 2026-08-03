@@ -238,6 +238,19 @@ try {
     ["grok-4.5"],
     "PixelTale must keep the approved Grok 4.5-only writing roster",
   );
+  // A stalled gateway used to abort all three authors on one blocked channel,
+  // because the three configured roles commonly resolve to a single provider.
+  const sameProviderChain = textRouter.stageModels({
+    primary: "gpt-5.6-sol",
+    reviewer: "gpt-5.6-terra",
+    consistency: "gpt-5.6-luna",
+  });
+  assert.equal(sameProviderChain[0], "gpt-5.6-sol", "the configured author must still run first");
+  assert.equal(sameProviderChain.length, 3, "the primary chain must keep exactly three attempts");
+  assert.ok(
+    new Set(sameProviderChain.map((id) => __test.superPixel.modelProvider(id))).size >= 2,
+    "primary fallback must leave the author's provider so a degraded channel cannot abort every attempt",
+  );
   const reviewerModels = textRouter.reviewModels({
     primary: "gpt-5.6-terra",
     reviewer: "claude-opus-5",

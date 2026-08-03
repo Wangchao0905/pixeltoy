@@ -25,7 +25,15 @@ const STAGE_OUTPUT_TOKEN_BUDGETS = Object.freeze({
   arc: 12_000,
   scenes: 12_000,
   dialogue: 12_000,
-  review: 5_000,
+});
+const REVIEW_OUTPUT_TOKEN_BUDGETS = Object.freeze({
+  brief: 1_800,
+  title: 2_000,
+  proposal: 2_400,
+  characters: 3_600,
+  arc: 5_000,
+  scenes: 5_000,
+  dialogue: 5_000,
 });
 const DEFAULT_DIALOGUE_POLICY = "zh_story_en_localized_dialogue";
 const DEFAULT_CREATIVE_CONTROLS = {
@@ -1262,7 +1270,7 @@ function createPixelTaleAgent(options = {}) {
             user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts, revisionContract }),
             modelRouter,
             timeoutMs: REVIEW_MODEL_TIMEOUT_MS,
-            maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS.review,
+            maxTokens: REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000,
             purpose: `pixeltale:${stage}:review`,
           });
           retryCount += result.attempts || 0;

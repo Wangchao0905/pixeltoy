@@ -147,6 +147,7 @@ const canvasState = {
   viewportMoveTimer: null,
   dragFrame: 0,
   layoutChanged: false,
+  magnetEnabled: true,
   marqueeFrame: 0,
   connectionFrame: 0,
   hotspotFrame: 0,
@@ -238,6 +239,7 @@ const IMAGE_NODE_DEFAULTS = {
 const VIDEO_EDITOR_DEFAULT_WIDTH = 620;
 const VIDEO_EDITOR_DEFAULT_HEIGHT = 650;
 const CANVAS_MIN_SCALE = 0.02;
+const CANVAS_SNAP_DISTANCE = 16;
 const CANVAS_ZOOM_SPEED = 0.0048;
 const ASSET_NODE_DEFAULT_WIDTH = 400;
 const ASSET_NODE_DEFAULT_HEIGHT = 280;
@@ -2105,20 +2107,15 @@ function renderVideoPreview(node) {
   if (node.status === "running") {
     const progress = videoProgressValue(node);
     const hasProgress = hasRealVideoProgress(node);
+    const progressWidth = hasProgress ? progress : 24;
     return `
-      <div class="video-node-status">
-        <div class="video-tetris-rain" aria-hidden="true">
-          <span class="video-tetris-piece shape-i piece-cyan" style="--x: 12%; --delay: -0.1s; --duration: 3.1s;"><i></i><i></i><i></i><i></i></span>
-          <span class="video-tetris-piece shape-o piece-yellow" style="--x: 28%; --delay: -1.3s; --duration: 3.8s;"><i></i><i></i><i></i><i></i></span>
-          <span class="video-tetris-piece shape-t piece-violet" style="--x: 45%; --delay: -0.8s; --duration: 3.4s;"><i></i><i></i><i></i><i></i></span>
-          <span class="video-tetris-piece shape-l piece-green" style="--x: 64%; --delay: -2s; --duration: 4.1s;"><i></i><i></i><i></i><i></i></span>
-          <span class="video-tetris-piece shape-s piece-pink" style="--x: 82%; --delay: -1.7s; --duration: 3.6s;"><i></i><i></i><i></i><i></i></span>
-          <span class="video-tetris-piece shape-t piece-cyan" style="--x: 72%; --delay: -0.35s; --duration: 4.4s;"><i></i><i></i><i></i><i></i></span>
+      <div class="video-node-status generation-status" aria-label="${hasProgress ? `视频生成 ${progress}%` : "视频生成处理中"}">
+        <div class="generation-status-row">
+          <strong>视频生成</strong>
+          <em>${hasProgress ? `${progress}%` : "处理中"}</em>
         </div>
-        <div class="video-tetris-status" aria-label="${hasProgress ? `画面正在拼装 ${progress}%` : "画面正在拼装"}">
-          <strong>画面正在拼装</strong>
-          <em>${hasProgress ? `${progress}%` : "等待进度"}</em>
-        </div>
+        <div class="generation-progress-track" aria-hidden="true"><i style="width: ${progressWidth}%"></i></div>
+        <span class="generation-status-message">${escapeHtml(node.statusMessage || "任务已提交，等待接口进度")}</span>
       </div>
     `;
   }
@@ -3185,13 +3182,17 @@ function toggleLivenessLibraryPanel(open = undefined) {
 
 function syncRunningVideoPreview(preview, node) {
   if (!preview || node?.status !== "running") return false;
-  const status = preview.querySelector(".video-tetris-status");
+  const status = preview.querySelector(".generation-status");
   if (!status) return false;
   const progress = videoProgressValue(node);
   const hasProgress = hasRealVideoProgress(node);
-  const progressLabel = status.querySelector("em");
-  if (progressLabel) progressLabel.textContent = hasProgress ? `${progress}%` : "等待进度";
-  status.setAttribute("aria-label", hasProgress ? `画面正在拼装 ${progress}%` : "画面正在拼装");
+  const progressLabel = status.querySelector(".generation-status-row em");
+  if (progressLabel) progressLabel.textContent = hasProgress ? `${progress}%` : "处理中";
+  const progressFill = status.querySelector(".generation-progress-track i");
+  if (progressFill) progressFill.style.width = `${hasProgress ? progress : 24}%`;
+  const message = status.querySelector(".generation-status-message");
+  if (message) message.textContent = node.statusMessage || "任务已提交，等待接口进度";
+  status.setAttribute("aria-label", hasProgress ? `视频生成 ${progress}%` : "视频生成处理中");
   return true;
 }
 
@@ -3559,7 +3560,11 @@ function imagePreviewSig(node) {
 function renderImagePreview(node) {
   const status = String(node.status || "idle");
   if (status === "running") {
-    return `<div class="image-preview-state running"><span class="node-spinner"></span><span>${escapeHtml(node.statusMessage || "生成中")}</span></div>`;
+    return `<div class="image-preview-state running generation-status" aria-label="图片生成处理中">
+      <div class="generation-status-row"><strong>图片生成</strong><em>处理中</em></div>
+      <div class="generation-progress-track" aria-hidden="true"><i style="width: 24%"></i></div>
+      <span class="generation-status-message">${escapeHtml(node.statusMessage || "任务已提交，等待接口进度")}</span>
+    </div>`;
   }
   if (node.imageUrl) {
     const asset = primaryAssetForNode(node);
@@ -4337,6 +4342,12 @@ function renderLinks() {
   });
   if (canvasState.connectDrag) paths.push(draftConnectionPath());
   if (canvasState.pendingConnection) paths.push(pendingConnectionPath());
+  if (canvasState.drag?.snapGuides?.x != null) {
+    paths.push(`<line class="snap-guide" x1="${canvasState.drag.snapGuides.x}" x2="${canvasState.drag.snapGuides.x}" y1="-100000" y2="100000" />`);
+  }
+  if (canvasState.drag?.snapGuides?.y != null) {
+    paths.push(`<line class="snap-guide" x1="-100000" x2="100000" y1="${canvasState.drag.snapGuides.y}" y2="${canvasState.drag.snapGuides.y}" />`);
+  }
   svg.innerHTML = paths.join("");
 }
 
@@ -4367,6 +4378,47 @@ function nodeBounds(node) {
     top: node.y,
     right: node.x + width,
     bottom: node.y + height,
+  };
+}
+
+function snapNodePosition(node, drag) {
+  if (!canvasState.magnetEnabled || !node || !drag) {
+    return { x: node?.x || 0, y: node?.y || 0, xGuide: null, yGuide: null };
+  }
+  const moving = nodeBounds(node);
+  const width = moving.right - moving.left;
+  const height = moving.bottom - moving.top;
+  const selected = new Set(drag.nodeIds || []);
+  const candidates = canvasState.nodes
+    .filter((other) => other && other.id !== node.id && !selected.has(other.id))
+    .map((other) => ({ node: other, bounds: nodeBounds(other) }));
+  let xMatch = { value: moving.left, guide: null, distance: Infinity };
+  let yMatch = { value: moving.top, guide: null, distance: Infinity };
+  for (const { bounds } of candidates) {
+    const xOptions = [
+      { value: bounds.left, guide: bounds.left },
+      { value: bounds.left + (bounds.right - bounds.left - width) / 2, guide: (bounds.left + bounds.right) / 2 },
+      { value: bounds.right - width, guide: bounds.right },
+    ];
+    const yOptions = [
+      { value: bounds.top, guide: bounds.top },
+      { value: bounds.top + (bounds.bottom - bounds.top - height) / 2, guide: (bounds.top + bounds.bottom) / 2 },
+      { value: bounds.bottom - height, guide: bounds.bottom },
+    ];
+    for (const option of xOptions) {
+      const distance = Math.abs(moving.left - option.value);
+      if (distance <= CANVAS_SNAP_DISTANCE && distance < xMatch.distance) xMatch = { ...option, distance };
+    }
+    for (const option of yOptions) {
+      const distance = Math.abs(moving.top - option.value);
+      if (distance <= CANVAS_SNAP_DISTANCE && distance < yMatch.distance) yMatch = { ...option, distance };
+    }
+  }
+  return {
+    x: xMatch.distance < Infinity ? xMatch.value : moving.left,
+    y: yMatch.distance < Infinity ? yMatch.value : moving.top,
+    xGuide: xMatch.distance < Infinity ? xMatch.guide : null,
+    yGuide: yMatch.distance < Infinity ? yMatch.guide : null,
   };
 }
 
@@ -4412,11 +4464,18 @@ function applyNodeDragFrame() {
   const point = drag.current || drag.start;
   const deltaX = point.x - drag.start.x;
   const deltaY = point.y - drag.start.y;
+  const primaryOrigin = drag.origins?.find((origin) => origin.id === drag.nodeId);
+  const primary = canvasState.nodes.find((item) => item.id === drag.nodeId);
+  const rawPrimary = primaryOrigin && primary ? { ...primary, x: primaryOrigin.x + deltaX, y: primaryOrigin.y + deltaY } : null;
+  const snapped = rawPrimary ? snapNodePosition(rawPrimary, drag) : { x: 0, y: 0, xGuide: null, yGuide: null };
+  drag.snapGuides = { x: snapped.xGuide, y: snapped.yGuide };
+  const snapOffsetX = rawPrimary ? snapped.x - rawPrimary.x : 0;
+  const snapOffsetY = rawPrimary ? snapped.y - rawPrimary.y : 0;
   for (const origin of drag.origins || []) {
     const node = canvasState.nodes.find((item) => item.id === origin.id);
     if (!node) continue;
-    node.x = origin.x + deltaX;
-    node.y = origin.y + deltaY;
+    node.x = origin.x + deltaX + snapOffsetX;
+    node.y = origin.y + deltaY + snapOffsetY;
     clampNodePosition(node);
     const element = qs(`[data-node-id="${node.id}"]`);
     positionNodeElement(element, node);
@@ -4440,6 +4499,7 @@ function endNodeDrag(event = {}) {
   const drag = canvasState.drag;
   canvasState.drag = null;
   if (!drag) return;
+  renderLinks();
   // 判定点击 vs 拖动:位移很小 = 点击 → 展开视频/图片节点(不在 pointerdown 展开,避免拖动时
   // 节点突然展开导致连线端点乱跳;展开只在"点击松手且没拖动"时发生)。真正拖动过才存布局。
   const moved =

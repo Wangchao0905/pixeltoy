@@ -6991,3 +6991,223 @@ body.canvas-page .canvas-topbar {
     transition: none;
   }
 }
+
+/* Product canvas polish: neutral modules, hairline white links, static generation state. */
+body.canvas-page {
+  background: #111214;
+}
+
+.generation-canvas-shell {
+  padding-top: 56px;
+  background: #111214;
+}
+
+.canvas-topbar {
+  min-height: 56px;
+  padding: 0 18px;
+  background: #171819;
+  border-bottom: 1px solid #292b2d;
+}
+
+.canvas-brand strong {
+  font-family: var(--canvas-ui-font);
+  font-size: 13px;
+  font-weight: 650;
+  text-shadow: none;
+}
+
+.canvas-button {
+  min-height: 31px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #aeb5ba;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.canvas-button:hover,
+.canvas-button:focus-visible {
+  border-color: #34383b;
+  background: #25282b;
+  color: #fff;
+}
+
+.canvas-back-button,
+.canvas-button.danger {
+  color: #aeb5ba;
+  background: transparent;
+  border-color: transparent;
+}
+
+.blank-canvas {
+  background: #0d1318;
+}
+
+.blank-canvas::before {
+  background-image:
+    linear-gradient(#18252b 1px, transparent 1px),
+    linear-gradient(90deg, #18252b 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.84;
+}
+
+.blank-canvas::after {
+  background: linear-gradient(180deg, transparent, rgba(3, 6, 10, 0.38));
+}
+
+.canvas-links path {
+  stroke: rgba(255, 255, 255, 0.78);
+  stroke-width: 0.75;
+  stroke-linecap: round;
+  filter: none;
+  shape-rendering: geometricPrecision;
+}
+
+.canvas-links path.draft-link,
+.canvas-links path.pending-link {
+  stroke: rgba(255, 255, 255, 0.42);
+  stroke-dasharray: 3 6;
+}
+
+.canvas-links path.active-link {
+  stroke: rgba(255, 255, 255, 0.78);
+}
+
+.snap-guide {
+  stroke: rgba(255, 255, 255, 0.42);
+  stroke-width: 0.75;
+  stroke-dasharray: 4 6;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.connection-cut circle {
+  fill: #202529;
+  stroke: rgba(255, 255, 255, 0.76);
+  stroke-width: 1;
+  filter: none;
+}
+
+.connection-cut text {
+  fill: rgba(255, 255, 255, 0.88);
+}
+
+.canvas-node {
+  border-color: #455057;
+  border-radius: 8px;
+  background: #202529;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.canvas-node.is-selected {
+  border-color: #c4f4f6;
+  box-shadow:
+    0 0 0 1px rgba(196, 244, 246, 0.2),
+    0 18px 36px rgba(0, 0, 0, 0.3);
+}
+
+.canvas-node.video-node {
+  border-radius: 8px;
+  background: #20272d;
+}
+
+.canvas-node.asset-node {
+  border: 1px solid #455057;
+  border-radius: 8px;
+  background: #202529;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+}
+
+.canvas-node.asset-node.is-selected {
+  border-color: #c4f4f6;
+  box-shadow: 0 0 0 1px rgba(196, 244, 246, 0.2), 0 18px 36px rgba(0, 0, 0, 0.3);
+}
+
+.node-port {
+  width: 12px;
+  height: 12px;
+  border: 1px solid #d8e1e3;
+  background: #192125;
+  box-shadow: 0 0 0 2px rgba(14, 18, 23, 0.9);
+}
+
+.node-port::after {
+  inset: 3px;
+  background: #c8f8fb;
+  box-shadow: none;
+}
+
+.generation-status {
+  box-sizing: border-box;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(192, 241, 244, 0.52);
+  border-radius: 5px;
+  background: rgba(14, 21, 24, 0.92);
+  color: #ecffff;
+}
+
+.generation-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.generation-status-row strong {
+  color: #ecffff;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.generation-status-row em {
+  color: #c8f9fb;
+  font-size: 11px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.generation-progress-track {
+  height: 4px;
+  overflow: hidden;
+  background: #3d484b;
+  border-radius: 1px;
+}
+
+.generation-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: #e9ffff;
+  transition: none;
+}
+
+.generation-status-message {
+  overflow: hidden;
+  color: #8ea3a6;
+  font-size: 9px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-node-status {
+  background: #12181c;
+  box-shadow: none;
+}
+
+.image-preview-state.running {
+  display: grid;
+  align-content: center;
+  min-height: 100%;
+}
+
+.video-tetris-rain,
+.node-spinner {
+  display: none !important;
+}

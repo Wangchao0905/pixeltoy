@@ -45,11 +45,11 @@ const STORYBOARD_BOARD_COLUMNS = 4;
 const STORYBOARD_RENDERER_VERSION = "production-board-imagegen-v21-sheet-4x3-handlettered";
 
 function usage() {
-  console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--previous-storyboard <path>] [--storyboard-tail-anchor-map <json>] [--size 1280x720|2048x1152|3840x2160]");
+  console.log("usage: run_asset_generation.js <asset_prompts.md> <episode_root> [--dry-run] [--force] [--asset-name <name>] [--edit-instruction <text>] [--reference-image <path>] [--asset-reference-map <json>] [--style-reference-image <path>] [--previous-storyboard <path>] [--storyboard-tail-anchor-map <json>] [--job-result <json>] [--size 1280x720|2048x1152|3840x2160]");
 }
 
 function parseArgs(argv) {
-  const args = { promptsPath: "", episodeRoot: "", dryRun: false, force: false, assetName: "", editInstruction: "", referenceImages: [], assetReferenceMap: "", styleReferenceImage: "", previousStoryboard: "", storyboardTailAnchorMap: "", size: "1280x720", concurrency: 1 };
+  const args = { promptsPath: "", episodeRoot: "", dryRun: false, force: false, assetName: "", editInstruction: "", referenceImages: [], assetReferenceMap: "", styleReferenceImage: "", previousStoryboard: "", storyboardTailAnchorMap: "", jobResultPath: "", size: "1280x720", concurrency: 1 };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") {
@@ -95,6 +95,10 @@ function parseArgs(argv) {
       args.storyboardTailAnchorMap = path.resolve(argv[++i] || "");
       continue;
     }
+    if (arg === "--job-result") {
+      args.jobResultPath = path.resolve(argv[++i] || "");
+      continue;
+    }
     if (arg === "--concurrency") {
       const parsed = Number.parseInt(argv[++i] || "", 10);
       args.concurrency = Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
@@ -119,6 +123,22 @@ function parseArgs(argv) {
   if (args.editInstruction && !args.assetName) throw new Error("--edit-instruction requires --asset-name");
   if (!/^\d+x\d+$/.test(args.size)) throw new Error(`invalid --size: ${args.size}`);
   return args;
+}
+
+function writeJobResult(filePath, result = {}) {
+  if (!filePath) return;
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const tempPath = `${filePath}.tmp-${process.pid}`;
+    fs.writeFileSync(
+      tempPath,
+      `${JSON.stringify({ ...result, pid: process.pid, finishedAt: new Date().toISOString() }, null, 2)}\n`,
+      "utf8",
+    );
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    console.error(`[pixel-assets] unable to write job result: ${error.message}`);
+  }
 }
 
 function readAssetReferenceMap(filePath = "") {
@@ -2474,10 +2494,18 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((error) => {
-    console.error(`[pixel-assets] ${error.message}`);
-    process.exit(1);
-  });
+  const resultFlagIndex = process.argv.indexOf("--job-result");
+  const jobResultPath = resultFlagIndex >= 0 ? path.resolve(process.argv[resultFlagIndex + 1] || "") : "";
+  main()
+    .then(() => {
+      const exitCode = Number(process.exitCode || 0);
+      writeJobResult(jobResultPath, { ok: exitCode === 0, exitCode });
+    })
+    .catch((error) => {
+      console.error(`[pixel-assets] ${error.message}`);
+      writeJobResult(jobResultPath, { ok: false, exitCode: 1, error: error?.message || String(error) });
+      process.exitCode = 1;
+    });
 }
 
 module.exports = {

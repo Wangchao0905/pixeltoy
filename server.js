@@ -4219,7 +4219,9 @@ function persistJob(job) {
 function markInterruptedPersistedJob(job) {
   const failureReason =
     job.failureReason ||
-    "任务已中断：本地服务或生图子进程在完成前退出，没有生成输出文件。请直接重新生成该故事板。";
+    (job.pid
+      ? "任务已中断：生图子进程在服务重启前后退出，没有写入完成标记或输出文件。请只重新生成当前 PART。"
+      : "任务已中断：服务重启时没有可恢复的生图进程，也没有生成输出文件。请只重新生成当前 PART。");
   const next = {
     ...job,
     status: "interrupted",
@@ -4260,6 +4262,85 @@ function readPersistedJobs(episodeRoot, options = {}) {
     })
     .filter(Boolean)
     .filter((job) => runNamespaceMatches(job, runNamespace));
+}
+
+function refreshPersistedJobLog(job) {
+  if (!job?.logPath || !fs.existsSync(job.logPath)) return job;
+  try {
+    job.logs = fs.readFileSync(job.logPath, "utf8").slice(-240000);
+  } catch {
+    // 日志只是状态展示辅助，读取失败不能阻塞任务回收。
+  }
+  return job;
+}
+
+function isProcessAlive(pid) {
+  const value = Number(pid);
+  if (!Number.isInteger(value) || value <= 0) return false;
+  try {
+    process.kill(value, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isWorkerProcessAlive(job) {
+  if (!isProcessAlive(job?.pid)) return false;
+  if (process.platform !== "linux") return true;
+  try {
+    const commandLine = fs.readFileSync(`/proc/${Number(job.pid)}/cmdline`, "utf8").replace(/\0/g, " ");
+    return commandLine.includes("run_asset_generation.js");
+  } catch {
+    return false;
+  }
+}
+
+function persistedJobResultPath(job) {
+  if (job?.resultPath) return job.resultPath;
+  return job?.metaPath ? job.metaPath.replace(/\.json$/i, ".result.json") : "";
+}
+
+function readPersistedJobResult(job) {
+  const file = persistedJobResultPath(job);
+  if (!file || !fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function reconcilePersistedJob(job) {
+  if (!job || job.status !== "running") return job;
+  refreshPersistedJobLog(job);
+  const result = readPersistedJobResult(job);
+  if (result) {
+    const exitCode = Number.isFinite(Number(result.exitCode)) ? Number(result.exitCode) : result.ok === true ? 0 : 1;
+    job.exitCode = exitCode;
+    job.status = exitCode === 0 ? "complete" : "failed";
+    job.finishedAt = job.finishedAt || result.finishedAt || new Date().toISOString();
+    if (job.status === "failed" && !job.failureReason) {
+      job.failureReason = compactLine(result.error || "生成子进程返回失败");
+    }
+    try {
+      enrichJobWithAssetFailures(job);
+    } catch {
+      // 结果标记已经足够恢复任务状态，失败明细只是附加信息。
+    }
+    persistJob(job);
+    return job;
+  }
+  if (isWorkerProcessAlive(job)) return job;
+  const hadPid = Number.isInteger(Number(job.pid)) && Number(job.pid) > 0;
+  job.status = "interrupted";
+  job.exitCode = job.exitCode == null ? -1 : job.exitCode;
+  job.finishedAt = job.finishedAt || new Date().toISOString();
+  job.failureReason = hadPid
+    ? "故事板生图子进程已退出，但没有写入完成标记或输出文件。请只重新生成当前 PART。"
+    : "服务重启时任务没有可恢复的生图进程，也没有检测到输出文件。请只重新生成当前 PART。";
+  persistJob(job);
+  return job;
 }
 
 function isPhotorealAssetStyle(style) {
@@ -8809,12 +8890,13 @@ function mergeJobs(episodeRoot, options = {}) {
   const runNamespace = normalizeRunNamespace(options.runNamespace || "");
   const live = [...jobs.values()].filter((job) => job.episodeRoot === episodeRoot && runNamespaceMatches(job, runNamespace));
   const byId = new Map();
-  for (const job of readPersistedJobs(episodeRoot, { runNamespace })) {
+  for (const persisted of readPersistedJobs(episodeRoot, { runNamespace })) {
+    const job = reconcilePersistedJob(persisted);
     const isLive = live.some((item) => item.id === job.id);
     const interrupted = job.status === "running" && !isLive;
     byId.set(job.id, interrupted ? markInterruptedPersistedJob(job) : job);
   }
-  for (const job of live) byId.set(job.id, job);
+  for (const job of live) byId.set(job.id, refreshPersistedJobLog(job));
   return [...byId.values()].sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
 }
 
@@ -8843,7 +8925,11 @@ function jobSummary(job) {
     }
   }
   const shouldShowFailureReason = ["failed", "interrupted", "canceled", "cancelled"].includes(job.status);
-  const storedFailureReason = staleFailureDetailsCleared ? "" : compactLine(job.failureReason || "");
+  const rawStoredFailureReason = staleFailureDetailsCleared ? "" : compactLine(job.failureReason || "");
+  const storedFailureReason =
+    job.status === "interrupted" && /本地服务或生图子进程在完成前退出，没有生成输出文件/u.test(rawStoredFailureReason)
+      ? "服务在故事板生成完成前重启，未检测到输出文件。请只重新生成当前 PART，其他 PART 不受影响。"
+      : rawStoredFailureReason;
   const failureDetailsReason = failureDetails?.length
     ? `[${failureDetails[0].category}] ${failureDetails.length} 个：${failureDetails.map((item) => item.name).join(", ")} → ${failureDetails[0].advice}`
     : "";
@@ -23275,6 +23361,8 @@ function startProcessJob({ episodeRoot, type, command, args, cwd, meta = {} }) {
     logs: "",
     metaPath: path.join(jobDir, `${stamp}_${type}_${id}.json`),
     logPath: path.join(jobDir, `${stamp}_${type}_${id}.log`),
+    resultPath: path.join(jobDir, `${stamp}_${type}_${id}.result.json`),
+    pid: null,
     ...meta,
   };
   jobs.set(id, job);
@@ -23298,10 +23386,52 @@ function startProcessJob({ episodeRoot, type, command, args, cwd, meta = {} }) {
     PIXEL_TOYS_ASSET_STYLE_LABEL: compactLine(meta.assetStyleLabel || ""),
   };
   const launch = () => {
-    const child = spawn(command, args, { cwd: cwd || episodeRoot, env: childEnv });
+    try {
+      if (job.resultPath) fs.rmSync(job.resultPath, { force: true });
+    } catch {
+      // 旧结果标记不应阻止新一轮生成，启动后会用新的标记覆盖它。
+    }
+    let logFd = null;
+    let child;
+    try {
+      fs.mkdirSync(path.dirname(job.logPath), { recursive: true });
+      logFd = fs.openSync(job.logPath, "a");
+      const workerArgs = [...args, "--job-result", job.resultPath];
+      child = spawn(command, workerArgs, {
+        cwd: cwd || episodeRoot,
+        env: childEnv,
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+      });
+    } catch (error) {
+      if (logFd != null) {
+        try {
+          fs.closeSync(logFd);
+        } catch {
+          // ignore log descriptor cleanup failures
+        }
+      }
+      job.status = "failed";
+      job.exitCode = -1;
+      job.finishedAt = new Date().toISOString();
+      job.failureReason = `进程无法启动：${compactLine(error.message)}`;
+      appendJobLog(job, `\n进程启动失败：${error.message}\n`);
+      return;
+    }
+    if (logFd != null) {
+      try {
+        fs.closeSync(logFd);
+      } catch {
+        // child already owns the inherited descriptor
+      }
+    }
+    job.pid = child.pid || null;
+    job.processStartedAt = new Date().toISOString();
+    persistJob(job);
     jobChildren.set(id, child);
-    child.stdout.on("data", (chunk) => appendJobLog(job, chunk.toString()));
-    child.stderr.on("data", (chunk) => appendJobLog(job, chunk.toString()));
+    // The worker owns the log file and is detached from the HTTP process tree.
+    // unref lets PM2 restart the server without killing an in-flight generation.
+    child.unref();
     child.on("error", (error) => {
       job.status = "failed";
       job.exitCode = job.exitCode == null ? -1 : job.exitCode;
@@ -23312,6 +23442,7 @@ function startProcessJob({ episodeRoot, type, command, args, cwd, meta = {} }) {
     });
     child.on("close", (code) => {
       jobChildren.delete(id);
+      refreshPersistedJobLog(job);
       job.exitCode = code;
       job.status = job.status === "canceled" ? "canceled" : code === 0 ? "complete" : "failed";
       job.finishedAt = new Date().toISOString();
@@ -23331,6 +23462,11 @@ function startProcessJob({ episodeRoot, type, command, args, cwd, meta = {} }) {
         job.autoRetryAttempt = attempt;
         job.autoRetryAt = retryAt;
         job.failureReason = `上游临时故障，正在自动重试（${attempt}/${AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS}）`;
+        try {
+          if (job.resultPath) fs.rmSync(job.resultPath, { force: true });
+        } catch {
+          // launch() will also remove stale markers before spawning the retry.
+        }
         job.status = "running";
         appendJobLog(job, `\n上游临时故障，正在自动重试（${attempt}/${AUTO_RETRYABLE_ASSET_JOB_MAX_ATTEMPTS}），将在 ${Math.round(delayMs / 1000)} 秒后继续。\n`);
         setTimeout(() => {
@@ -23364,6 +23500,21 @@ function cancelJob(episodeRoot, jobId = "") {
     setTimeout(() => {
       if (!child.killed) child.kill("SIGKILL");
     }, 2500);
+  } else if (isWorkerProcessAlive(job)) {
+    try {
+      process.kill(Number(job.pid), "SIGTERM");
+      setTimeout(() => {
+        if (isWorkerProcessAlive(job)) {
+          try {
+            process.kill(Number(job.pid), "SIGKILL");
+          } catch {
+            // worker exited between the liveness check and the hard stop
+          }
+        }
+      }, 2500);
+    } catch {
+      // 状态仍会落盘为 canceled，避免取消动作卡住页面。
+    }
   }
   job.status = "canceled";
   job.finishedAt = new Date().toISOString();

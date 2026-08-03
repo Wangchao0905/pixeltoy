@@ -12813,6 +12813,10 @@ function isCharacterRefAsset(asset = {}) {
 }
 
 // 进人像库资格：只接受 AI 生成的超写实人物。
+// 被判真人后强制认证的等待预算。比批量阶段0 短:画布是交互式提交,
+// 用户在等,超时就退回原图让错误如实浮现,不要无限期挂住。
+const ARK_REAL_PERSON_RETRY_CERT_MS = Number.parseInt(process.env.PIXEL_TOYS_ARK_REALPERSON_RETRY_MS || "120000", 10);
+
 function isArkPersonEligibleAsset(asset = {}) {
   return isArkPersonReferenceAsset(asset);
 }
@@ -13862,7 +13866,7 @@ function normalizeVideoGenerationErrorMessage(message = "") {
     return `视频接口触发版权限制：请对该镜头做原创化改写，避免使用疑似现有 IP、品牌、作品名、固定世界观术语或高度相似角色设定后重试。${requestId ? `Request ID: ${requestId}` : ""}`.trim();
   }
   if (/InputImageSensitiveContentDetected\.PrivacyInformation|input image may contain real person|真实人物|隐私/i.test(`${code} ${nested}`)) {
-    return "参考图被视频接口判定可能包含真实人物/隐私信息。AI 生成标记不会改变平台审核结果；请改用非人脸/风格化角色，或平台认可的可信 AI 产物。";
+    return "参考图被视频接口判定可能包含真实人物/隐私信息。系统已尝试把参考图认证为方舟私域虚拟人像（asset://）后自动重试；若仍失败，说明该图未能通过火山侧认证，请更换参考图或改用其它视频模型。";
   }
   if (/OutputAudioSensitiveContentDetected|output audio may contain sensitive|output audio.*sensitive/i.test(`${code} ${nested}`)) {
     return "生成的音频被海外火山判定含敏感信息。系统已尝试关闭音频重试；若仍失败，请在该模块手动关闭「音效」后再生成，或改用国内模型。";
@@ -13983,14 +13987,88 @@ async function callGrokJson(pathname, options = {}) {
   );
 }
 
+// 火山把「明显不含真人」的图也判成真人时的自救路径。
+// 背景:审核结果由火山自己的分类器决定,我们无法预测哪张会被误判——
+// 卡通风景照实测同样会中招。而 isArkPersonReferenceAsset 只放行
+// 「AI 生成的超写实人物」,风景/卡通两道判据都不过,于是从不认证、
+// 原图直传、被误判后只能报错收场。
+// 所以这里改成反应式:那个 400 本身就是火山说「我看到人了」的证据,
+// 拿它当触发条件强制认证成 asset:// 再重试一次,比猜判据可靠。
+function isArkRealPersonRejection(error) {
+  const text = `${compactLine(error?.code || "")} ${compactLine(error?.message || error || "")}`;
+  return /InputImageSensitiveContentDetected\.PrivacyInformation|input image may contain real person|真实人物|可能包含真实人物/i.test(text);
+}
+
+// 把本次提交用到的画布资产逐个强制认证成 asset://(manualCertification 绕过资格判据)。
+// 返回新的 body;认证不成功的资产原样保留,让重试仍走原图而不是直接失败。
+async function certifyCanvasAssetsForRealPersonRetry(body = {}) {
+  const sourceAssets = Array.isArray(body.assets) ? body.assets : [];
+  if (!sourceAssets.length) return { body, certified: [] };
+  const deadlineTs = Date.now() + ARK_REAL_PERSON_RETRY_CERT_MS;
+  const certified = [];
+  const assets = [];
+  for (const asset of sourceAssets) {
+    // 已经有可用 asset:// 的不重复认证。
+    if (arkPersonAssetReadyUrl(asset)) {
+      assets.push(asset);
+      continue;
+    }
+    // 视频资产不能进人像库,跳过。
+    if (asset?.mediaType === "video") {
+      assets.push(asset);
+      continue;
+    }
+    const result = await ensureBatchArkVirtualPerson(asset, deadlineTs, { forceRealPersonVerification: true });
+    if (result.status === "active" && /^asset:\/\//i.test(compactLine(result.assetUrl || ""))) {
+      certified.push(compactLine(asset.name || asset.id || "未命名素材"));
+      assets.push({
+        ...asset,
+        arkPersonAsset: {
+          ...(asset.arkPersonAsset || {}),
+          enabled: true,
+          status: "active",
+          assetId: result.assetId,
+          assetUrl: result.assetUrl,
+          boundAt: new Date().toISOString(),
+          error: "",
+        },
+      });
+      continue;
+    }
+    console.error(
+      `${new Date().toISOString()} ark real-person retry: 认证未成功 ${compactLine(asset.name || asset.id || "")} status=${result.status} err=${compactLine(result.error || "")}`,
+    );
+    assets.push(asset);
+  }
+  return { body: { ...body, assets }, certified };
+}
+
+// 提交 + 被判真人后强制认证重试一次。两个 Ark 入口(中国区 / BytePlus)共用。
+async function submitArkVideoWithRealPersonRetry(body, submitOnce) {
+  try {
+    return await submitOnce(body);
+  } catch (error) {
+    if (!isArkRealPersonRejection(error)) throw error;
+    const { body: certifiedBody, certified } = await certifyCanvasAssetsForRealPersonRetry(body);
+    if (!certified.length) throw error;
+    console.log(
+      `${new Date().toISOString()} ark real-person retry: 已认证 ${certified.join("、")},重新提交`,
+    );
+    return await submitOnce(certifiedBody);
+  }
+}
+
 async function createArkCanvasVideoGeneration(body = {}) {
-  const payload = await buildSeedanceGenerationPayload(body);
-  const raw = await callArkJson("/contents/generations/tasks", {
-    method: "POST",
-    body: JSON.stringify(payload),
+  // 走 submitArkVideoWithRealPersonRetry:被误判真人时强制认证成 asset:// 再重试一次。
+  return submitArkVideoWithRealPersonRetry(body, async (submitBody) => {
+    const payload = await buildSeedanceGenerationPayload(submitBody);
+    const raw = await callArkJson("/contents/generations/tasks", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    const result = normalizeSeedanceStatus(raw);
+    return { ...result, provider: "ark", request: { ...payload, prompt: payload.prompt || undefined, content: payload.content ? "[multimodal content]" : undefined } };
   });
-  const result = normalizeSeedanceStatus(raw);
-  return { ...result, provider: "ark", request: { ...payload, prompt: payload.prompt || undefined, content: payload.content ? "[multimodal content]" : undefined } };
 }
 
 async function getArkCanvasVideoGeneration(taskId) {
@@ -14003,13 +14081,16 @@ async function getArkCanvasVideoGeneration(taskId) {
 async function createBytePlusArkCanvasVideoGeneration(body = {}) {
   // BytePlus ModelArk 与火山中国区 Ark 的请求/响应结构一致,复用同一 payload 构造与状态解析;
   // 仅模型 ID 走 dreamina- 映射(通过 __provider 透传给 normalizeSeedanceModel)。
-  const payload = await buildSeedanceGenerationPayload({ ...body, __provider: "byteplus" });
-  const raw = await callBytePlusArkJson("/contents/generations/tasks", {
-    method: "POST",
-    body: JSON.stringify(payload),
+  // 同中国区:被误判真人时强制认证成 asset:// 再重试一次。
+  return submitArkVideoWithRealPersonRetry(body, async (submitBody) => {
+    const payload = await buildSeedanceGenerationPayload({ ...submitBody, __provider: "byteplus" });
+    const raw = await callBytePlusArkJson("/contents/generations/tasks", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    const result = normalizeSeedanceStatus(raw);
+    return { ...result, provider: "byteplus", request: { ...payload, prompt: payload.prompt || undefined, content: payload.content ? "[multimodal content]" : undefined } };
   });
-  const result = normalizeSeedanceStatus(raw);
-  return { ...result, provider: "byteplus", request: { ...payload, prompt: payload.prompt || undefined, content: payload.content ? "[multimodal content]" : undefined } };
 }
 
 async function getBytePlusArkCanvasVideoGeneration(taskId) {
@@ -15118,8 +15199,8 @@ async function createCanvasImageGeneration(body = {}) {
         "--image-model", modelConfig.model,
         "--out", outPath, "--timeout", timeout,
       ];
-      // path.delimiter(콜론)로 붙이면 https:// 가 잘려 두 번째 이미지가 조용히 사라진다.
-      // \n 은 URL 도 파일 경로도 포함할 수 없어서 안전한 구분자다.
+      // 用 path.delimiter(冒号)拼接会把 https:// 切碎,第二张起静默丢失。
+      // \n 不可能出现在 URL 或文件路径里,是安全的分隔符。
       if (referenceInputs.length > 1) args.push("--reference-image", referenceInputs.slice(1).join("\n"));
     } else {
       args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--out", outPath, "--timeout", timeout];

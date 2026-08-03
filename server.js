@@ -15100,7 +15100,9 @@ async function createCanvasImageGeneration(body = {}) {
         "--image-model", modelConfig.model,
         "--out", outPath, "--timeout", timeout,
       ];
-      if (referenceInputs.length > 1) args.push("--reference-image", referenceInputs.slice(1).join(path.delimiter));
+      // path.delimiter(콜론)로 붙이면 https:// 가 잘려 두 번째 이미지가 조용히 사라진다.
+      // \n 은 URL 도 파일 경로도 포함할 수 없어서 안전한 구분자다.
+      if (referenceInputs.length > 1) args.push("--reference-image", referenceInputs.slice(1).join("\n"));
     } else {
       args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--out", outPath, "--timeout", timeout];
     }

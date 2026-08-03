@@ -371,7 +371,9 @@ async function buildRequest(args, mode) {
     // 主图 + 附加参考图（--reference-image，多张用平台分隔符隔开）全部作为 input_image 传入，
     // gpt-image-2 会直接看到这些像素作为参考。此前只发主图，--reference-image 被静默丢弃。
     const extraReferences = String(args["reference-image"] || "")
-      .split(path.delimiter)
+      // \n (new join) 과 path.delimiter (legacy) 둘 다 허용한다.
+      // path.delimiter(콜론)만 쓰면 https:// 가 잘려 이후 이미지가 모두 폐기된다.
+      .split(/\n|:(?!\/\/)/)
       .map((item) => item.trim())
       .filter(Boolean);
     const allImages = [image, ...extraReferences];

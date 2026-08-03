@@ -2135,7 +2135,7 @@ async function runOne(asset, outPath, size, referenceImages = [], logsDir = os.t
         ...(!styleReferenceImage && referenceImages.length > 1 ? [referenceRoleFor(asset, "generate")] : []),
       ];
       const extraHidden = options.hiddenSceneReferences instanceof Set && extraImages.some((image) => options.hiddenSceneReferences.has(image));
-      imageArgs.push("--reference-image", extraImages.join(path.delimiter), "--reference-role", extraRoles[0] || referenceRoleFor(asset, "generate", { hiddenSceneReference: extraHidden }));
+      imageArgs.push("--reference-image", extraImages.join("\n"), "--reference-role", extraRoles[0] || referenceRoleFor(asset, "generate", { hiddenSceneReference: extraHidden }));
     }
     const output = await runImageGenWithRetry(
       imageArgs,
@@ -2217,7 +2217,7 @@ async function runEdit(asset, outPath, size, editInstruction, logsDir, reference
           "--timeout",
           String(primaryTimeoutSeconds),
           "--reference-image",
-          extraReferenceImages.join(path.delimiter),
+          extraReferenceImages.join("\n"),
           "--reference-first",
           "true",
           "--image-role",

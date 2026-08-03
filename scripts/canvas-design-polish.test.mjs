@@ -21,6 +21,7 @@ assert.match(css, /\.canvas-links path\.active-link,[\s\S]*?\.canvas-links path\
 assert.match(css, /\.canvas-links path\.video-link\s*\{[\s\S]*?stroke:\s*#fff/, "video connections must be pure white");
 assert.doesNotMatch(css, /stroke-dasharray:\s*3\s+6/, "canvas connections must not use a dashed pattern");
 assert.match(css, /\.canvas-links path\.active-link,[\s\S]*?\.canvas-links path\.pending-link\s*\{[\s\S]*?vector-effect:\s*non-scaling-stroke/, "canvas connections must remain continuous at zoom levels");
+assert.match(css, /\.canvas-links path\s*\{[\s\S]*?stroke-width:\s*0\.5;/, "canvas connections must stay visually hairline-thin");
 assert.match(html, /<svg id="canvasLinks"[^>]*>\s*<g id="canvasLinksContent"><\/g>\s*<\/svg>/, "canvas links must scale inside the SVG coordinate system");
 assert.match(canvas, /const content = qs\("#canvasLinksContent"\) \|\| svg;/, "link rendering must target the inner SVG group");
 assert.match(canvas, /linksGroup\.setAttribute\("transform", `translate\(\$\{Math\.round\(x\)\} \$\{Math\.round\(y\)\}\) scale\(\$\{scale\}\)`\)/, "canvas zoom must use an SVG group transform for stable strokes");

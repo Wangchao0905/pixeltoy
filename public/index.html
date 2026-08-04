@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=pixeltale-entry-20260803" />
+    <link rel="stylesheet" href="/styles.css?v=pixeltale-entry-20260804-auth-carousel-3" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -393,11 +393,63 @@
             <div class="auth-dialog-brand">
               <span class="auth-dialog-brand-mark pixel-toys-wordmark" aria-hidden="true"></span>
               <span>PIXEL TOYS</span>
+              <span class="auth-dialog-brand-status"><i aria-hidden="true"></i> LIVE PREVIEW</span>
             </div>
-            <div class="auth-dialog-intro-copy">
-              <span class="auth-dialog-kicker">PRODUCTION SPACE</span>
-              <h2>进入你的<br /><em>制作空间</em></h2>
-              <p>脚本、资产、故事板和视频片段，都从这里继续。</p>
+            <div class="auth-media-carousel" data-auth-carousel aria-roledescription="轮播">
+              <div class="auth-media-viewport" data-auth-carousel-viewport>
+                <article class="auth-media-slide is-active" data-auth-slide aria-roledescription="幻灯片" aria-label="1 / 4">
+                  <video data-auth-carousel-media src="/auth-media/clip-01.mp4" poster="/auth-media/clip-01.jpg" muted loop playsinline preload="metadata"></video>
+                  <div class="auth-media-wash" aria-hidden="true"></div>
+                  <div class="auth-media-slide-copy">
+                    <span class="auth-dialog-kicker">PRODUCTION SPACE</span>
+                    <h2>把每个想法<br /><em>变成一幕</em></h2>
+                    <p>从脚本出发，保留镜头的质感与节奏。</p>
+                  </div>
+                  <span class="auth-media-timecode">VIDEO 01 <i>/</i> 04</span>
+                </article>
+                <article class="auth-media-slide" data-auth-slide aria-roledescription="幻灯片" aria-label="2 / 4" aria-hidden="true">
+                  <video data-auth-carousel-media src="/auth-media/clip-02.mp4" poster="/auth-media/clip-02.jpg" muted loop playsinline preload="metadata"></video>
+                  <div class="auth-media-wash" aria-hidden="true"></div>
+                  <div class="auth-media-slide-copy">
+                    <span class="auth-dialog-kicker">VISUAL LANGUAGE</span>
+                    <h2>先确定画面<br /><em>再让它动起来</em></h2>
+                    <p>让风格、资产和镜头语言保持同一条线。</p>
+                  </div>
+                  <span class="auth-media-timecode">VIDEO 02 <i>/</i> 04</span>
+                </article>
+                <article class="auth-media-slide" data-auth-slide aria-roledescription="幻灯片" aria-label="3 / 4" aria-hidden="true">
+                  <video data-auth-carousel-media src="/auth-media/clip-03.mp4" poster="/auth-media/clip-03.jpg" muted loop playsinline preload="metadata"></video>
+                  <div class="auth-media-wash" aria-hidden="true"></div>
+                  <div class="auth-media-slide-copy">
+                    <span class="auth-dialog-kicker">STORY IN MOTION</span>
+                    <h2>一个空间<br /><em>承载整部作品</em></h2>
+                    <p>保存你的项目，让下一次进入时从上次进度继续。</p>
+                  </div>
+                  <span class="auth-media-timecode">VIDEO 03 <i>/</i> 04</span>
+                </article>
+                <article class="auth-media-slide" data-auth-slide aria-roledescription="幻灯片" aria-label="4 / 4" aria-hidden="true">
+                  <video data-auth-carousel-media src="/auth-media/clip-04.mp4" poster="/auth-media/clip-04.jpg" muted loop playsinline preload="metadata"></video>
+                  <div class="auth-media-wash" aria-hidden="true"></div>
+                  <div class="auth-media-slide-copy">
+                    <span class="auth-dialog-kicker">SHOT LIBRARY</span>
+                    <h2>从素材库<br /><em>挑选你的下一镜</em></h2>
+                    <p>用真实的画面参考，快速找到作品的方向。</p>
+                  </div>
+                  <span class="auth-media-timecode">VIDEO 04 <i>/</i> 04</span>
+                </article>
+              </div>
+              <div class="auth-media-controls">
+                <div class="auth-media-progress" role="tablist" aria-label="选择预览素材">
+                  <button type="button" class="is-active" data-auth-carousel-dot="0" role="tab" aria-selected="true" aria-label="第 1 个预览素材"><span></span></button>
+                  <button type="button" data-auth-carousel-dot="1" role="tab" aria-selected="false" aria-label="第 2 个预览素材"><span></span></button>
+                  <button type="button" data-auth-carousel-dot="2" role="tab" aria-selected="false" aria-label="第 3 个预览素材"><span></span></button>
+                  <button type="button" data-auth-carousel-dot="3" role="tab" aria-selected="false" aria-label="第 4 个预览素材"><span></span></button>
+                </div>
+                <div class="auth-media-arrows">
+                  <button type="button" data-auth-carousel-prev aria-label="上一个预览素材" title="上一个">←</button>
+                  <button type="button" data-auth-carousel-next aria-label="下一个预览素材" title="下一个">→</button>
+                </div>
+              </div>
             </div>
             <div class="auth-dialog-signal" aria-hidden="true">
               <span class="auth-signal-line"></span>
@@ -1360,6 +1412,6 @@
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
     <script src="/app.js?v=pixeltale-admin-only-20260804"></script>
-    <script src="/auth-modal.js?v=auth-modal-20260730"></script>
+    <script src="/auth-modal.js?v=auth-modal-20260804-carousel-3"></script>
   </body>
 </html>

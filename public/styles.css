@@ -679,7 +679,9 @@ label span {
 }
 
 .auth-dialog {
-  width: min(760px, calc(100vw - 32px));
+  width: min(920px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  min-width: 0;
   max-height: min(720px, calc(100dvh - 32px));
   overflow: hidden;
   border: 1px solid rgba(150, 196, 255, 0.24);
@@ -699,8 +701,10 @@ label span {
 
 .auth-dialog-shell {
   display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(330px, 1fr);
-  min-height: 480px;
+  grid-template-columns: minmax(390px, 1.08fr) minmax(360px, 0.92fr);
+  min-height: 560px;
+  min-width: 0;
+  width: 100%;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.025)),
     rgba(7, 15, 29, 0.94);
@@ -711,9 +715,11 @@ label span {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  justify-content: space-between;
+  gap: 18px;
   overflow: hidden;
-  padding: 30px;
+  width: 100%;
+  max-width: 100%;
+  padding: 22px;
   border-right: 1px solid rgba(150, 196, 255, 0.14);
   background:
     radial-gradient(circle at 18% 20%, rgba(47, 155, 255, 0.25), transparent 15rem),
@@ -721,15 +727,7 @@ label span {
 }
 
 .auth-dialog-intro::after {
-  position: absolute;
-  right: -90px;
-  bottom: -100px;
-  width: 240px;
-  height: 240px;
-  border: 1px solid rgba(98, 183, 255, 0.24);
-  border-radius: 50%;
-  content: "";
-  box-shadow: 0 0 0 22px rgba(98, 183, 255, 0.04), 0 0 0 44px rgba(98, 183, 255, 0.025);
+  display: none;
 }
 
 .auth-dialog-brand,
@@ -745,10 +743,34 @@ label span {
   letter-spacing: 0.08em;
 }
 
+.auth-dialog-brand-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: rgba(198, 212, 233, 0.58);
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+}
+
+.auth-dialog-brand-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #67d9ff;
+  box-shadow: 0 0 0 4px rgba(103, 217, 255, 0.1), 0 0 16px rgba(103, 217, 255, 0.7);
+}
+
 .auth-dialog-brand-mark {
   display: block;
   width: 26px;
   height: 26px;
+  border-radius: 7px;
+  background-image: url("/pixel-toys-logo-agent.gif?v=20260804");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
 }
 
 .auth-dialog-intro-copy {
@@ -756,6 +778,208 @@ label span {
   z-index: 1;
   margin: auto 0;
   padding: 44px 0;
+}
+
+.auth-media-carousel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 100%;
+}
+
+.auth-media-viewport {
+  position: relative;
+  min-height: 0;
+  flex: 0 1 auto;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid rgba(166, 210, 255, 0.2);
+  border-radius: 16px;
+  background: #050b14;
+  box-shadow:
+    0 22px 42px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.auth-media-viewport::before {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: inherit;
+  content: "";
+}
+
+.auth-media-slide {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: end;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(1.025);
+  transition: opacity 360ms ease, transform 700ms cubic-bezier(0.2, 0.75, 0.2, 1);
+  pointer-events: none;
+}
+
+.auth-media-slide.is-active {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.auth-media-slide > video,
+.auth-media-slide > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #050b14;
+}
+
+.auth-media-slide:nth-child(2) > img {
+  object-position: center;
+}
+
+.auth-media-slide:nth-child(3) > img {
+  object-fit: contain;
+  padding: 12%;
+  background: #03060b;
+}
+
+.auth-media-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(2, 7, 15, 0.08) 24%, rgba(2, 7, 15, 0.24) 52%, rgba(2, 7, 15, 0.94) 100%),
+    linear-gradient(110deg, rgba(25, 102, 189, 0.18), transparent 52%);
+  pointer-events: none;
+}
+
+.auth-media-slide-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 34ch;
+  padding: 28px 24px 26px;
+}
+
+.auth-media-slide-copy h2 {
+  margin: 11px 0 0;
+  color: #f3f8ff;
+  font-size: clamp(26px, 3.2vw, 39px);
+  font-weight: 720;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+}
+
+.auth-media-slide-copy h2 em {
+  color: #73c7ff;
+  font-style: normal;
+}
+
+.auth-media-slide-copy p {
+  max-width: 29ch;
+  margin: 12px 0 0;
+  color: rgba(216, 229, 249, 0.74);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.auth-media-timecode {
+  position: absolute;
+  right: 16px;
+  bottom: 17px;
+  z-index: 2;
+  color: rgba(222, 237, 255, 0.66);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.auth-media-timecode i {
+  margin: 0 4px;
+  color: rgba(222, 237, 255, 0.36);
+  font-style: normal;
+}
+
+.auth-media-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 2px 0;
+}
+
+.auth-media-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.auth-media-progress button {
+  width: 34px;
+  height: 4px;
+  min-height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(172, 210, 247, 0.22);
+  box-shadow: none;
+}
+
+.auth-media-progress button span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #72caff;
+}
+
+.auth-media-progress button.is-active {
+  background: rgba(114, 202, 255, 0.28);
+  box-shadow: none;
+}
+
+.auth-media-progress button.is-active span {
+  width: 100%;
+  transition: width 5.2s linear;
+}
+
+.auth-media-arrows {
+  display: flex;
+  gap: 6px;
+}
+
+.auth-media-arrows button {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  min-height: 29px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(150, 196, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(7, 15, 29, 0.52);
+  color: rgba(222, 237, 255, 0.82);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.auth-media-arrows button:hover,
+.auth-media-arrows button:focus-visible {
+  border-color: rgba(114, 202, 255, 0.64);
+  background: rgba(48, 135, 220, 0.18);
+  color: #fff;
 }
 
 .auth-dialog-kicker,
@@ -813,6 +1037,9 @@ label span {
   align-content: center;
   gap: 18px;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
   padding: 32px clamp(24px, 4vw, 48px);
 }
 
@@ -838,7 +1065,7 @@ label span {
   border-color: rgba(150, 196, 255, 0.18);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.04);
-  color: transparent;
+  color: rgba(216, 229, 249, 0.72);
 }
 
 .auth-dialog-close::before,
@@ -958,7 +1185,9 @@ label span {
 
 @media (max-width: 680px) {
   .auth-dialog {
-    width: min(100vw - 20px, 480px);
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+    min-width: 0;
     max-height: calc(100dvh - 20px);
     border-radius: 18px;
   }
@@ -971,10 +1200,37 @@ label span {
   }
 
   .auth-dialog-intro {
-    min-height: 164px;
+    min-height: 0;
     padding: 22px 22px 20px;
     border-right: 0;
     border-bottom: 1px solid rgba(150, 196, 255, 0.14);
+  }
+
+  .auth-media-carousel {
+    height: auto;
+    flex: none;
+  }
+
+  .auth-media-slide-copy {
+    padding: 22px 18px 20px;
+  }
+
+  .auth-media-slide-copy h2 {
+    font-size: 27px;
+  }
+
+  .auth-media-slide-copy p {
+    margin-top: 9px;
+    font-size: 11px;
+  }
+
+  .auth-media-timecode {
+    right: 13px;
+    bottom: 13px;
+  }
+
+  .auth-media-controls {
+    padding-top: 9px;
   }
 
   .auth-dialog-intro-copy {
@@ -994,12 +1250,64 @@ label span {
   }
 
   .auth-dialog-intro::after {
-    right: -70px;
-    bottom: -170px;
+    display: none;
   }
 
   .auth-dialog-panel {
     padding: 23px 22px 25px;
+  }
+}
+
+/* The dialog also applies this class from its measured width. It keeps the
+   compact composition reliable when a host embeds the page with a non-default
+   viewport or browser zoom. */
+.auth-dialog.is-compact {
+  width: calc(100vw - 20px);
+  max-width: calc(100vw - 20px);
+}
+
+.auth-dialog.is-compact .auth-dialog-shell {
+  display: block;
+  min-height: 0;
+  max-height: calc(100dvh - 20px);
+  overflow: auto;
+}
+
+.auth-dialog.is-compact .auth-dialog-intro {
+  min-height: 0;
+  padding: 22px 22px 20px;
+  border-right: 0;
+  border-bottom: 1px solid rgba(150, 196, 255, 0.14);
+}
+
+.auth-dialog.is-compact .auth-media-carousel {
+  height: auto;
+  flex: none;
+}
+
+.auth-dialog.is-compact .auth-media-slide-copy {
+  padding: 22px 18px 20px;
+}
+
+.auth-dialog.is-compact .auth-media-slide-copy h2 {
+  font-size: 27px;
+}
+
+.auth-dialog.is-compact .auth-dialog-signal {
+  display: none;
+}
+
+.auth-dialog.is-compact .auth-dialog-panel {
+  padding: 23px 22px 25px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-media-slide {
+    transition: none;
+  }
+
+  .auth-media-progress button.is-active span {
+    transition: none;
   }
 }
 
@@ -12411,6 +12719,16 @@ body.admin-page .admin-table td:first-child span {
   margin-top: 4px;
   color: rgba(169, 188, 217, 0.78);
   font-size: 12px;
+  line-height: 1.35;
+}
+
+/* Model lists are intentionally allowed to wrap so a long model name never
+   pushes the quota and action columns out of the admin table. */
+body.admin-page .admin-table td:nth-child(7) span,
+body.admin-page .admin-table td:nth-child(9) span {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: normal;
   line-height: 1.35;
 }
 

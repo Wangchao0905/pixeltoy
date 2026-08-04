@@ -9,6 +9,11 @@ if (authDialog && authForm) {
   const emailCodeField = document.querySelector("#authModalEmailCodeField");
   const sendEmailCodeButton = document.querySelector("#authModalSendEmailCode");
   const tabs = [...document.querySelectorAll("[data-auth-mode]")];
+  const carousel = document.querySelector("[data-auth-carousel]");
+  const carouselSlides = carousel ? [...carousel.querySelectorAll("[data-auth-slide]")] : [];
+  const carouselDots = carousel ? [...carousel.querySelectorAll("[data-auth-carousel-dot]")] : [];
+  const carouselPrev = carousel?.querySelector("[data-auth-carousel-prev]");
+  const carouselNext = carousel?.querySelector("[data-auth-carousel-next]");
   const params = new URLSearchParams(window.location.search);
   let mode = "login";
   let pendingNext = "/";
@@ -16,6 +21,67 @@ if (authDialog && authForm) {
   let emailCodeRequestInFlight = false;
   let emailCodeCountdown = 0;
   let emailCodeTimer = 0;
+  let carouselIndex = 0;
+  let carouselTimer = 0;
+  const carouselReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+
+  function syncAuthDialogLayout() {
+    if (!authDialog) return;
+    const width = authDialog.getBoundingClientRect().width;
+    const viewportWidth = Math.min(window.innerWidth || Infinity, window.screen?.width || Infinity);
+    authDialog.classList.toggle("is-compact", (width > 0 && width < 700) || viewportWidth < 700);
+  }
+
+  function pauseCarouselMedia() {
+    carouselSlides.forEach((slide) => {
+      const media = slide.querySelector("video");
+      if (media) media.pause();
+    });
+  }
+
+  function stopCarousel() {
+    window.clearTimeout(carouselTimer);
+    carouselTimer = 0;
+    pauseCarouselMedia();
+  }
+
+  function scheduleCarousel() {
+    window.clearTimeout(carouselTimer);
+    carouselTimer = 0;
+    if (!carousel || carouselReducedMotion || carouselSlides.length < 2 || !authDialog.open) return;
+    carouselTimer = window.setTimeout(() => {
+      setCarouselSlide(carouselIndex + 1);
+    }, 5200);
+  }
+
+  function setCarouselSlide(nextIndex, { restart = true } = {}) {
+    if (!carouselSlides.length) return;
+    carouselIndex = (Number(nextIndex) + carouselSlides.length) % carouselSlides.length;
+    carouselSlides.forEach((slide, index) => {
+      const active = index === carouselIndex;
+      slide.classList.toggle("is-active", active);
+      slide.setAttribute("aria-hidden", String(!active));
+      const media = slide.querySelector("video");
+      if (media) {
+        if (active && authDialog.open) media.play().catch(() => {});
+        else media.pause();
+      }
+    });
+    carouselDots.forEach((dot, index) => {
+      const active = index === carouselIndex;
+      dot.classList.toggle("is-active", active);
+      dot.setAttribute("aria-selected", String(active));
+    });
+    if (restart) scheduleCarousel();
+  }
+
+  function startCarousel() {
+    if (!carousel) return;
+    setCarouselSlide(carouselIndex, { restart: false });
+    const activeVideo = carouselSlides[carouselIndex]?.querySelector("video");
+    activeVideo?.play().catch(() => {});
+    scheduleCarousel();
+  }
 
   function formDataValue(name) {
     return String(new FormData(authForm).get(name) || "").trim();
@@ -102,6 +168,8 @@ if (authDialog && authForm) {
       if (typeof authDialog.showModal === "function") authDialog.showModal();
       else authDialog.setAttribute("open", "");
     }
+    syncAuthDialogLayout();
+    startCarousel();
     window.requestAnimationFrame(() => authForm.elements.email?.focus());
   }
 
@@ -172,14 +240,27 @@ if (authDialog && authForm) {
     openAuthDialog(trigger.dataset.authOpen || "login", trigger.dataset.authNext || "");
   });
   tabs.forEach((tab) => tab.addEventListener("click", () => setMode(tab.dataset.authMode)));
+  carouselDots.forEach((dot) => dot.addEventListener("click", () => setCarouselSlide(Number(dot.dataset.authCarouselDot))));
+  carouselPrev?.addEventListener("click", () => setCarouselSlide(carouselIndex - 1));
+  carouselNext?.addEventListener("click", () => setCarouselSlide(carouselIndex + 1));
   document.querySelector("#closeAuthDialog")?.addEventListener("click", closeAuthDialog);
   sendEmailCodeButton?.addEventListener("click", sendEmailCode);
   authForm.addEventListener("submit", submitAuthForm);
   authDialog.addEventListener("click", (event) => {
     if (event.target === authDialog) closeAuthDialog();
   });
-  authDialog.addEventListener("close", stopEmailCodeCountdown);
+  authDialog.addEventListener("close", () => {
+    stopEmailCodeCountdown();
+    stopCarousel();
+  });
+  window.addEventListener("resize", syncAuthDialogLayout);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopCarousel();
+    else if (authDialog.open) startCarousel();
+  });
   setMode("login");
+  setCarouselSlide(0, { restart: false });
+  syncAuthDialogLayout();
 
   const initialMode = params.get("auth") || params.get("mode");
   if (initialMode === "login" || initialMode === "register") {

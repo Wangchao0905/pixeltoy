@@ -43,8 +43,8 @@ if (!imageGen.includes('Accept: "application/json"') || !imageGen.includes("stre
 if (!imageGen.includes("return image;") || !imageGen.includes('Accept: "text/event-stream"')) {
   throw new Error("reference image generation must pass public HTTPS URLs through the streaming Responses request");
 }
-if (!server.includes("const referenceRecords = await Promise.all") || !server.includes("localAssetFileToPublicUrl(localPath")) {
-  throw new Error("canvas reference images must be publicized before the upstream image request");
+if (!server.includes("const referenceRecords = await Promise.all") || !server.includes("localAssetFileToPublicUrl(providerLocalPath")) {
+  throw new Error("canvas reference images must be normalized and publicized before the upstream image request");
 }
 const referenceContext = {};
 vm.createContext(referenceContext);

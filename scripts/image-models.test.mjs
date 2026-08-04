@@ -34,6 +34,14 @@ assert.equal(image.normalizeCanvasImageModel("seedream-5-0-lite"), "seedream-5-0
 assert.equal(image.canvasImageModelConfig("seedream-5-0-pro").provider, "ark");
 assert.equal(image.canvasImageModelConfig("seedream-5-0-lite").provider, "ark");
 assert.equal(image.canvasImageModelConfig("gpt-image-2").provider, "gpt");
+assert.equal(image.canvasImageProviderSizeFor("16:9"), "1536x1024");
+assert.equal(image.canvasImageProviderSizeFor("9:16"), "1024x1536");
+assert.equal(image.canvasImageProviderSizeFor("1:1"), "1024x1024");
+assert.match(
+  image.classifyImageGenError("Error while downloading image, error: expected the aspect ratio to be one of 1:1, 3:2, 2:3"),
+  /参考图画幅不符合 GPT Image 2/,
+  "aspect-ratio download errors must become actionable Chinese feedback",
+);
 assert.equal(image.seedreamImageSizeFor("16:9", "1k"), "2560x1440");
 assert.equal(image.seedreamImageSizeFor("9:16", "1k"), "1440x2560");
 assert.equal(image.seedreamImageSizeFor("1:1", "1k"), "1920x1920");
@@ -49,8 +57,12 @@ assert.equal(image.canvasImagePromptWithReferences("纯文生图", 0), "纯文�
 const assetDirectory = loaded.__test.canvasImageRef.CANVAS_PUBLIC_ASSET_DIR;
 const referencePath = path.join(assetDirectory, `image-reference-test-${process.pid}.png`);
 fs.mkdirSync(assetDirectory, { recursive: true });
-fs.writeFileSync(referencePath, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+VK1z8QAAAABJRU5ErkJggg==", "base64"));
+fs.writeFileSync(referencePath, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+let normalizedReferencePath = "";
 try {
+  normalizedReferencePath = image.normalizeCanvasImageReferenceForProvider(referencePath, "1536x1024", `image-reference-test-${process.pid}`, 0);
+  assert.notEqual(normalizedReferencePath, referencePath, "GPT reference images must be normalized before upload");
+  assert.ok(fs.existsSync(normalizedReferencePath), "normalized GPT reference image must be written locally");
   const payloadWithReference = image.seedreamImagePayload({
     providerModel: "doubao-seedream-5-0-260128",
     prompt: "用户原始提示词",
@@ -62,6 +74,7 @@ try {
   assert.match(payloadWithReference.image, /^data:image\/png;base64,/, "Seedream must receive the uploaded reference pixels");
 } finally {
   fs.rmSync(referencePath, { force: true });
+  if (normalizedReferencePath && normalizedReferencePath !== referencePath) fs.rmSync(normalizedReferencePath, { force: true });
 }
 
 console.log("image model routing tests passed");

@@ -585,6 +585,91 @@ function writeAuthUsage(data) {
   writeJsonFile(AUTH_USAGE_PATH, { days: data.days && typeof data.days === "object" ? data.days : {} });
 }
 
+function positiveUsageNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function usageModelCounts(entry = {}) {
+  const models = entry?.models;
+  if (!models || typeof models !== "object" || Array.isArray(models)) return {};
+  return Object.fromEntries(
+    Object.entries(models)
+      .map(([model, count]) => [compactLine(model), positiveUsageNumber(count)])
+      .filter(([model, count]) => model && count > 0),
+  );
+}
+
+function usageModelLabels(models = {}) {
+  return Object.entries(models)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([model, count]) => `${model} (${count})`);
+}
+
+function emptyUsageTotals() {
+  return {
+    totalTasks: 0,
+    imageTasks: 0,
+    videoTasks: 0,
+    videoSeconds: 0,
+    plannedVideoSeconds: 0,
+    models: [],
+  };
+}
+
+function userUsageTotalsFromData(data = {}) {
+  const totals = {};
+  for (const dayUsage of Object.values(data?.days || {})) {
+    for (const [userId, entry] of Object.entries(dayUsage || {})) {
+      if (!totals[userId]) totals[userId] = { ...emptyUsageTotals(), _models: {} };
+      const target = totals[userId];
+      const imageTasks = positiveUsageNumber(entry?.imageTasks);
+      const videoTasks = positiveUsageNumber(entry?.videoTasks);
+      target.imageTasks += imageTasks;
+      target.videoTasks += videoTasks;
+      target.totalTasks += imageTasks + videoTasks;
+      target.videoSeconds += positiveUsageNumber(entry?.videoSeconds);
+      target.plannedVideoSeconds += positiveUsageNumber(entry?.plannedVideoSeconds);
+      for (const [model, count] of Object.entries(usageModelCounts(entry))) {
+        target._models[model] = positiveUsageNumber(target._models[model]) + count;
+      }
+    }
+  }
+  for (const total of Object.values(totals)) {
+    total.models = usageModelLabels(total._models);
+    delete total._models;
+  }
+  return totals;
+}
+
+function usageRowsFromData(data = {}, users = []) {
+  const userMap = new Map((Array.isArray(users) ? users : []).map((user) => [user.id, user]));
+  return Object.entries(data?.days || {})
+    .sort((left, right) => right[0].localeCompare(left[0]))
+    .slice(0, 30)
+    .flatMap(([day, dayUsage]) =>
+      Object.entries(dayUsage || {}).map(([userId, entry]) => {
+        const user = userMap.get(userId) || {};
+        const imageTasks = positiveUsageNumber(entry?.imageTasks);
+        const videoTasks = positiveUsageNumber(entry?.videoTasks);
+        return {
+          day,
+          userId,
+          username: user.username || userId,
+          displayName: user.displayName || user.username || userId,
+          totalTasks: imageTasks + videoTasks,
+          imageTasks,
+          videoTasks,
+          videoSeconds: positiveUsageNumber(entry?.videoSeconds),
+          plannedVideoSeconds: positiveUsageNumber(entry?.plannedVideoSeconds),
+          models: usageModelLabels(usageModelCounts(entry)),
+          updatedAt: entry?.updatedAt || "",
+          lastTask: entry?.lastTask || null,
+        };
+      }),
+    );
+}
+
 function userDailyVideoCount(userId, day = currentUsageDay()) {
   const usage = readAuthUsage();
   return Number(usage.days?.[day]?.[userId]?.videoTasks || 0);
@@ -596,7 +681,23 @@ function recordUserVideoTask(user, meta = {}) {
   const usage = readAuthUsage();
   usage.days[day] = usage.days[day] && typeof usage.days[day] === "object" ? usage.days[day] : {};
   const entry = usage.days[day][user.id] && typeof usage.days[day][user.id] === "object" ? usage.days[day][user.id] : {};
-  entry.videoTasks = Number(entry.videoTasks || 0) + 1;
+  const count = positiveUsageNumber(meta.count === undefined ? 1 : meta.count);
+  entry.videoTasks = positiveUsageNumber(entry.videoTasks) + count;
+  entry.plannedVideoSeconds = positiveUsageNumber(entry.plannedVideoSeconds) + positiveUsageNumber(meta.plannedSeconds);
+  const model = compactLine(meta.model || meta.provider || "");
+  if (model && count > 0) {
+    entry.models = usageModelCounts(entry);
+    entry.models[model] = positiveUsageNumber(entry.models[model]) + count;
+  }
+  const completedSeconds = positiveUsageNumber(meta.seconds);
+  const taskId = compactLine(meta.taskId || "");
+  if (completedSeconds > 0) {
+    entry.completedVideoTasks = entry.completedVideoTasks && typeof entry.completedVideoTasks === "object" ? entry.completedVideoTasks : {};
+    if (!taskId || !entry.completedVideoTasks[taskId]) {
+      entry.videoSeconds = positiveUsageNumber(entry.videoSeconds) + completedSeconds;
+      if (taskId) entry.completedVideoTasks[taskId] = completedSeconds;
+    }
+  }
   entry.updatedAt = new Date().toISOString();
   entry.lastTask = {
     kind: compactLine(meta.kind || "video").slice(0, 40),
@@ -605,6 +706,9 @@ function recordUserVideoTask(user, meta = {}) {
     nodeId: compactLine(meta.nodeId || "").slice(0, 120),
     taskId: compactLine(meta.taskId || "").slice(0, 260),
     provider: compactLine(meta.provider || "").slice(0, 80),
+    model: model.slice(0, 120),
+    plannedSeconds: positiveUsageNumber(meta.plannedSeconds),
+    seconds: completedSeconds,
   };
   const activeTaskId = compactLine(meta.taskId || "");
   if (activeTaskId && meta.completed !== true) {
@@ -618,6 +722,53 @@ function recordUserVideoTask(user, meta = {}) {
   }
   usage.days[day][user.id] = entry;
   writeAuthUsage(usage);
+}
+
+function recordUserImageTask(user, meta = {}) {
+  if (!user?.id) return;
+  const count = positiveUsageNumber(meta.count === undefined ? 1 : meta.count);
+  if (!count) return;
+  const day = currentUsageDay();
+  const usage = readAuthUsage();
+  usage.days[day] = usage.days[day] && typeof usage.days[day] === "object" ? usage.days[day] : {};
+  const entry = usage.days[day][user.id] && typeof usage.days[day][user.id] === "object" ? usage.days[day][user.id] : {};
+  entry.imageTasks = positiveUsageNumber(entry.imageTasks) + count;
+  const model = compactLine(meta.model || "");
+  if (model) {
+    entry.models = usageModelCounts(entry);
+    entry.models[model] = positiveUsageNumber(entry.models[model]) + count;
+  }
+  entry.updatedAt = new Date().toISOString();
+  entry.lastTask = {
+    kind: compactLine(meta.kind || "image").slice(0, 40),
+    projectId: compactLine(meta.projectId || "").slice(0, 260),
+    shotName: compactLine(meta.shotName || "").slice(0, 260),
+    nodeId: compactLine(meta.nodeId || "").slice(0, 120),
+    taskId: compactLine(meta.taskId || "").slice(0, 260),
+    provider: compactLine(meta.provider || "").slice(0, 80),
+    model: model.slice(0, 120),
+    count,
+  };
+  usage.days[day][user.id] = entry;
+  writeAuthUsage(usage);
+}
+
+function videoSecondsFromResult(result = {}, fallback = 0) {
+  const candidates = [
+    result.duration,
+    result.durationSeconds,
+    result.videoDuration,
+    result.raw?.duration,
+    result.raw?.durationSeconds,
+    result.raw?.videoDuration,
+  ];
+  for (const candidate of candidates) {
+    const parsed = Number(candidate);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    const match = String(candidate || "").match(/(\d+(?:\.\d+)?)/);
+    if (match && Number(match[1]) > 0) return Number(match[1]);
+  }
+  return positiveUsageNumber(fallback);
 }
 
 function activeVideoTasksForUser(userId, day = currentUsageDay()) {
@@ -14783,6 +14934,40 @@ function canvasImageProviderSizeFor(ratio) {
   return width > height ? "1536x1024" : "1024x1536";
 }
 
+// GPT Image 2 的参考图下载器比输出尺寸更严格：部分网关只接受
+// 1:1、3:2、2:3 三种参考画幅。用户上传的素材可能是 16:9、4:5、长图
+// 或带透明通道的 PNG，直接把原图 URL 交给网关会在“下载参考图”阶段失败。
+// 先按目标 providerSize 等比缩放并透明留边，既不拉伸主体，也不丢掉边缘内容。
+function normalizeCanvasImageReferenceForProvider(localPath, providerSize, taskId = "", index = 0) {
+  const source = compactLine(localPath);
+  const size = compactLine(providerSize);
+  if (!source || !fs.existsSync(source) || !/^\d+x\d+$/.test(size)) return source;
+  const safeTaskId = compactLine(taskId).replace(/[^a-z0-9_-]/gi, "").slice(0, 48) || "reference";
+  const target = path.join(CANVAS_PUBLIC_ASSET_DIR, `canvas-image-ref-${safeTaskId}-${Number(index) + 1}-provider.png`);
+  try {
+    const [width, height] = size.split("x").map(Number);
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) return source;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const filter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba`;
+    execFileSync("ffmpeg", [
+      "-y",
+      "-i", source,
+      "-vf", filter,
+      "-frames:v", "1",
+      "-f", "image2",
+      target,
+    ], { stdio: ["ignore", "ignore", "pipe"], timeout: 120_000 });
+    if (fs.existsSync(target) && fs.statSync(target).size >= 1000) return target;
+  } catch {
+    // 参考图预处理失败时保留原图，让上游返回真实错误，而不是把本地
+    // 环境缺少 ffmpeg 误报成“参考图无法读取”。
+    try {
+      if (fs.existsSync(target)) fs.unlinkSync(target);
+    } catch {}
+  }
+  return source;
+}
+
 function canvasImagePromptWithReferences(prompt, referenceCount = 0) {
   const userPrompt = compactLine(prompt);
   const count = Math.max(0, Number.parseInt(referenceCount, 10) || 0);
@@ -15217,6 +15402,11 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
   }
   if (status === 429) return "生图接口限流（HTTP 429），请稍后重试。";
   if (isCanvasImagePolicyFailure(`${upstreamMessage} ${text}`)) return "提示词被安全审核拦截，请调整后重试。";
+  if (/aspect[\s_-]*ratio|宽高比|画幅比例/i.test(`${upstreamMessage} ${text}`)) {
+    return provider === "gpt"
+      ? "参考图画幅不符合 GPT Image 2 上游要求，系统会在下次提交前自动适配为横向、纵向或方形；请重新生成。"
+      : "图片画幅比例不符合当前模型要求，请切换到 16:9、9:16 或 1:1 后重试。";
+  }
   if (status === 400 && upstreamMessage) return `生图请求参数错误（HTTP 400）：${upstreamMessage}`;
   if (status >= 500 && upstreamMessage) return `生图上游服务异常（HTTP ${status}）：${upstreamMessage}`;
   if (status && upstreamMessage) return `生图接口失败（HTTP ${status}）：${upstreamMessage}`;
@@ -15261,15 +15451,18 @@ async function createCanvasImageGeneration(body = {}) {
   const referenceRecords = await Promise.all(requestedReferences.map(async (source, index) => {
     const localPath = await resolveCanvasImageReferenceToLocalPath(source);
     if (!localPath) return { error: "文件无法读取" };
+    const providerLocalPath = modelConfig.provider === "gpt"
+      ? normalizeCanvasImageReferenceForProvider(localPath, providerSize, taskId, index)
+      : localPath;
     // The upstream Responses gateway accepts public URLs reliably. Keep a
     // local copy for task recovery, while uploading local-only references
     // through the existing public-asset storage path before submission.
-    if (/^https:\/\//i.test(source)) return { input: source, localPath };
+    if (/^https:\/\//i.test(source) && providerLocalPath === localPath) return { input: source, localPath };
     try {
-      const publicAsset = await localAssetFileToPublicUrl(localPath, `canvas-image-ref-${index + 1}${path.extname(localPath)}`);
+      const publicAsset = await localAssetFileToPublicUrl(providerLocalPath, `canvas-image-ref-${index + 1}${path.extname(providerLocalPath)}`);
       const publicUrl = compactLine(publicAsset?.url || "");
       if (!/^https:\/\//i.test(publicUrl)) return { error: "没有可供上游访问的公网 HTTPS 地址" };
-      return { input: publicUrl, localPath };
+      return { input: publicUrl, localPath: providerLocalPath };
     } catch (error) {
       return { error: compactLine(error?.message || "公网上传失败") };
     }
@@ -15322,6 +15515,15 @@ async function createCanvasImageGeneration(body = {}) {
     createdAt: Date.now(),
     child: null,
   });
+  recordUserImageTask(
+    { id: compactLine(body.ownerUserId || "") },
+    {
+      kind: "canvas-image",
+      taskId,
+      model: modelConfig.key,
+      provider: modelConfig.provider,
+    },
+  );
   if (modelConfig.provider === "ark") enqueueCanvasImageJob(taskId, () => runSeedreamCanvasImageJob(taskId));
   else if (modelConfig.provider === "grok") enqueueCanvasImageJob(taskId, () => runGrokCanvasImageJob(taskId));
   else enqueueCanvasImageJob(taskId, () => runCanvasImageJob(taskId, args, env));
@@ -16963,6 +17165,17 @@ async function pollProjectVideoGeneration(episodeRoot, shotName, taskId, provide
           updatedAt: new Date().toISOString(),
         },
       });
+      recordUserVideoTask(authUser, {
+        kind: "project-complete",
+        projectId: encodeId(episodeRoot),
+        shotName,
+        taskId: result.taskId || taskId,
+        provider: result.provider || provider,
+        model: projectVideoModelForShot(config, shot || {}),
+        count: 0,
+        seconds: videoSecondsFromResult(result, shot?.duration),
+        completed: true,
+      });
       markUserVideoTaskFinished(authUser, result.taskId || taskId);
       return;
     }
@@ -17270,6 +17483,9 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
       shotName,
       taskId: result.taskId || "",
       provider: result.provider || "",
+      model: projectVideoModelForShot(config, latestShot),
+      plannedSeconds: latestShot.duration,
+      seconds: result.status === "completed" || !!result.videoUrl ? videoSecondsFromResult(result, latestShot.duration) : 0,
       completed: result.status === "completed" || !!result.videoUrl,
     });
     const resultVideoUrl = videoUrlFrom(result.videoUrl || "");
@@ -23980,6 +24196,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
       args: [ASSET_GENERATOR_SCRIPT, ...args],
       meta: {
         runNamespace: currentRunNamespace(episodeRoot),
+        ownerUserId: compactLine(body.authUser?.id || ""),
         assetStylePreset: "",
         assetStyleLabel: "资产文档风格",
         assetStyleReferenceEnabled: !!useStyleReference,
@@ -23989,6 +24206,15 @@ async function startToolJob(episodeRoot, type, body = {}) {
         targetAssetNames,
       },
     });
+    if (!isDryRun) {
+      recordUserImageTask(body.authUser, {
+        kind: isEdit ? "asset-edit" : isRegenerate ? "asset-regenerate" : "asset",
+        projectId: encodeId(episodeRoot),
+        model: "gpt-image-2",
+        provider: "gpt",
+        count: targetAssetNames.length,
+      });
+    }
     persistJob(job);
     return job;
   }
@@ -24036,6 +24262,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
       args: [ASSET_GENERATOR_SCRIPT, ...args],
       meta: {
         runNamespace: currentRunNamespace(episodeRoot),
+        ownerUserId: compactLine(body.authUser?.id || ""),
         assetStylePreset: "production_board",
         assetStyleLabel: "Production Board",
         aspectRatio: "16:9",
@@ -24043,6 +24270,15 @@ async function startToolJob(episodeRoot, type, body = {}) {
         targetAssetNames: selectedStoryboardNames.length === 1 ? selectedStoryboardNames : [],
       },
     });
+    if (!isDryRun) {
+      recordUserImageTask(body.authUser, {
+        kind: isRegenerate ? "storyboard-regenerate" : "storyboard",
+        projectId: encodeId(episodeRoot),
+        model: "gpt-image-2",
+        provider: "gpt",
+        count: selectedStoryboardNames.length,
+      });
+    }
     persistJob(job);
     return job;
   }
@@ -24051,12 +24287,19 @@ async function startToolJob(episodeRoot, type, body = {}) {
 
 function userUsageSnapshot(user) {
   const today = currentUsageDay();
+  const totals = userUsageTotalsFromData(readAuthUsage())[user.id] || emptyUsageTotals();
   return {
     today,
     todayVideoTasks: userDailyVideoCount(user.id, today),
     runningVideoTasks: runningVideoCountForUser(user.id),
     dailyVideoLimit: dailyVideoLimitForUser(user),
     concurrentVideoLimit: concurrentVideoLimitForUser(user),
+    totalTasks: totals.totalTasks,
+    imageTasks: totals.imageTasks,
+    videoTasks: totals.videoTasks,
+    videoSeconds: totals.videoSeconds,
+    plannedVideoSeconds: totals.plannedVideoSeconds,
+    models: totals.models,
   };
 }
 
@@ -24102,25 +24345,11 @@ function apiStatusRows() {
 
 function usageRows() {
   const usage = readAuthUsage();
-  const users = new Map(readAuthUsers().users.map((user) => [user.id, user]));
-  return Object.entries(usage.days || {})
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .slice(0, 30)
-    .flatMap(([day, dayUsage]) =>
-      Object.entries(dayUsage || {}).map(([userId, entry]) => {
-        const user = users.get(userId) || {};
-        return {
-          day,
-          userId,
-          username: user.username || userId,
-          displayName: user.displayName || user.username || userId,
-          videoTasks: Number(entry?.videoTasks || 0),
-          activeVideoTasks: activeVideoTasksForUser(userId, day).length,
-          updatedAt: entry?.updatedAt || "",
-          lastTask: entry?.lastTask || null,
-        };
-      }),
-    );
+  const rows = usageRowsFromData(usage, readAuthUsers().users);
+  return rows.map((row) => ({
+    ...row,
+    activeVideoTasks: activeVideoTasksForUser(row.userId, row.day).length,
+  }));
 }
 
 // content 可以是纯文本，也可以是 [{type:"text"}, {type:"image_url"}] 多模态数组
@@ -24527,7 +24756,9 @@ function adminSummary() {
     usersDisabled: users.filter((user) => user.disabled).length,
     invitesTotal: invites.length,
     invitesUsed: invites.filter((invite) => invite.usedCount > 0).length,
+    todayImageTasks: usage.filter((entry) => entry.day === today).reduce((sum, entry) => sum + entry.imageTasks, 0),
     todayVideoTasks: usage.filter((entry) => entry.day === today).reduce((sum, entry) => sum + entry.videoTasks, 0),
+    todayVideoSeconds: usage.filter((entry) => entry.day === today).reduce((sum, entry) => sum + entry.videoSeconds, 0),
     runningVideoTasks: users.reduce((sum, user) => sum + Number(user.usage?.runningVideoTasks || 0), 0),
     defaultDailyVideoLimit: dailyVideoLimit(),
     defaultConcurrentVideoLimit: concurrentVideoLimit(),
@@ -25127,6 +25358,9 @@ async function handleApi(req, res, url) {
       nodeId: body.nodeId || "",
       taskId: result.taskId || "",
       provider: result.provider || "",
+      model: body.videoModel || body.modelName || body.model || result.model || result.provider || "",
+      plannedSeconds: body.duration,
+      seconds: videoSecondsFromResult(result, body.duration),
       completed: result.status === "completed" || !!result.videoUrl,
     });
     return send(res, 200, { ok: true, result });
@@ -25846,6 +26080,7 @@ async function handleApi(req, res, url) {
     if (body.generate !== false) {
       job = await startToolJob(episodeRoot, "asset-regenerate", {
         ...body,
+        authUser: currentUserFromRequest(req),
         assetName: result.asset.id,
         quality: body.quality || "1k",
       });
@@ -25935,7 +26170,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && action === "job") {
     const body = await readBody(req);
-    const job = await startToolJob(episodeRoot, body.type, body);
+    const job = await startToolJob(episodeRoot, body.type, { ...body, authUser: currentUserFromRequest(req) });
     return send(res, 200, { ok: true, job });
   }
 
@@ -26255,6 +26490,11 @@ module.exports = {
     canvasState: {
       canvasStatesForEpisodeRoot,
     },
+    usage: {
+      usageRowsFromData,
+      userUsageTotalsFromData,
+      videoSecondsFromResult,
+    },
     draft: {
       buildDraft,
       draftAssetManifestForEpisode,
@@ -26463,6 +26703,9 @@ module.exports = {
     canvasImage: {
       normalizeCanvasImageModel,
       canvasImageModelConfig,
+      canvasImageProviderSizeFor,
+      normalizeCanvasImageReferenceForProvider,
+      classifyImageGenError,
       grokImagePayload,
       seedreamImageSizeFor,
       seedreamImageResult,

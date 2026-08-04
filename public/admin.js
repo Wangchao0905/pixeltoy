@@ -34,12 +34,23 @@ function compactDate(value = "") {
   return String(value).replace("T", " ").replace(/\.\d+Z$/, "");
 }
 
+function secondsLabel(value) {
+  const seconds = Number(value || 0);
+  return Number.isFinite(seconds) && seconds > 0 ? `${seconds}s` : "-";
+}
+
+function modelsLabel(models = []) {
+  return Array.isArray(models) && models.length ? models.join("、") : "-";
+}
+
 function renderSummary(summary = {}) {
   $("#adminSummary").innerHTML = [
     ["用户", summary.usersTotal || 0],
     ["停用用户", summary.usersDisabled || 0],
     ["邀请码", `${summary.invitesUsed || 0}/${summary.invitesTotal || 0}`],
+    ["今日生图", summary.todayImageTasks || 0],
     ["今日视频", summary.todayVideoTasks || 0],
+    ["今日视频时长", secondsLabel(summary.todayVideoSeconds)],
     ["运行中", summary.runningVideoTasks || 0],
     ["默认额度", `${summary.defaultDailyVideoLimit || 0}/天 · ${summary.defaultConcurrentVideoLimit || 0} 并发`],
   ]
@@ -60,6 +71,11 @@ function renderUsers(users = []) {
           <td><span class="admin-pill ${user.role === "admin" ? "is-admin" : ""}">${user.role === "admin" ? "管理员" : "用户"}</span></td>
           <td><span class="admin-pill ${user.disabled ? "is-disabled" : "is-ok"}">${user.disabled ? "停用" : "可用"}</span></td>
           <td><span class="admin-pill ${user.canvasEnabled ? "is-ok" : "is-disabled"}">${user.canvasEnabled ? "已开启" : "已关闭"}</span></td>
+          <td>${Number(usage.totalTasks || 0)}</td>
+          <td>${Number(usage.imageTasks || 0)}</td>
+          <td>${Number(usage.videoTasks || 0)}</td>
+          <td><span>${secondsLabel(usage.videoSeconds)}</span><small>计划 ${secondsLabel(usage.plannedVideoSeconds)}</small></td>
+          <td><span>${escapeHtml(modelsLabel(usage.models))}</span></td>
           <td>${Number(usage.todayVideoTasks || 0)}/${Number(usage.dailyVideoLimit || 0)}</td>
           <td>${Number(usage.runningVideoTasks || 0)}/${Number(usage.concurrentVideoLimit || 0)}</td>
           <td><input class="admin-quota-input" data-limit="dailyVideoLimit" data-user="${escapeHtml(user.id)}" type="number" min="0" value="${Number(usage.dailyVideoLimit || 0)}" /></td>
@@ -123,7 +139,11 @@ function renderUsage(usage = []) {
               <strong>${escapeHtml(entry.displayName || entry.username)}</strong>
               <span>${escapeHtml(entry.username || entry.userId)}</span>
             </td>
+            <td>${Number(entry.totalTasks || 0)}</td>
+            <td>${Number(entry.imageTasks || 0)}</td>
             <td>${Number(entry.videoTasks || 0)}</td>
+            <td><span>${secondsLabel(entry.videoSeconds)}</span><small>计划 ${secondsLabel(entry.plannedVideoSeconds)}</small></td>
+            <td><span>${escapeHtml(modelsLabel(entry.models))}</span></td>
             <td>${Number(entry.activeVideoTasks || 0)}</td>
             <td>
               <span>${escapeHtml(lastTask)}</span>

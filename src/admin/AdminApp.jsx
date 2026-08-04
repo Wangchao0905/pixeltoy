@@ -18,12 +18,23 @@ function compactDate(value = "") {
   return String(value).replace("T", " ").replace(/\.\d+Z$/, "");
 }
 
+function secondsLabel(value) {
+  const seconds = Number(value || 0);
+  return Number.isFinite(seconds) && seconds > 0 ? `${seconds}s` : "-";
+}
+
+function modelsLabel(models = []) {
+  return Array.isArray(models) && models.length ? models.join("、") : "-";
+}
+
 function Summary({ summary }) {
   const rows = [
     ["用户", summary.usersTotal || 0],
     ["停用用户", summary.usersDisabled || 0],
     ["邀请码", `${summary.invitesUsed || 0}/${summary.invitesTotal || 0}`],
+    ["今日生图", summary.todayImageTasks || 0],
     ["今日视频", summary.todayVideoTasks || 0],
+    ["今日视频时长", secondsLabel(summary.todayVideoSeconds)],
     ["运行中", summary.runningVideoTasks || 0],
     ["默认额度", `${summary.defaultDailyVideoLimit || 0}/天 · ${summary.defaultConcurrentVideoLimit || 0} 并发`],
   ];
@@ -48,6 +59,11 @@ function UsersTable({ users, onAction, onLimitChange }) {
           <th>角色</th>
           <th>状态</th>
           <th>画布</th>
+          <th>总用量</th>
+          <th>生图</th>
+          <th>视频</th>
+          <th>视频时长</th>
+          <th>使用模型</th>
           <th>今日</th>
           <th>运行中</th>
           <th>每日额度</th>
@@ -75,6 +91,14 @@ function UsersTable({ users, onAction, onLimitChange }) {
               <td>
                 <span className={`admin-pill ${user.canvasEnabled ? "is-ok" : "is-disabled"}`}>{user.canvasEnabled ? "已开启" : "已关闭"}</span>
               </td>
+              <td>{Number(usage.totalTasks || 0)}</td>
+              <td>{Number(usage.imageTasks || 0)}</td>
+              <td>{Number(usage.videoTasks || 0)}</td>
+              <td>
+                <span>{secondsLabel(usage.videoSeconds)}</span>
+                <small>计划 {secondsLabel(usage.plannedVideoSeconds)}</small>
+              </td>
+              <td><span>{modelsLabel(usage.models)}</span></td>
               <td>
                 {Number(usage.todayVideoTasks || 0)}/{Number(usage.dailyVideoLimit || 0)}
               </td>
@@ -189,7 +213,11 @@ function UsageTable({ usage }) {
         <tr>
           <th>日期</th>
           <th>用户</th>
+          <th>总用量</th>
+          <th>生图</th>
           <th>视频任务</th>
+          <th>视频时长</th>
+          <th>使用模型</th>
           <th>运行中</th>
           <th>最后任务</th>
         </tr>
@@ -205,7 +233,14 @@ function UsageTable({ usage }) {
                   <strong>{entry.displayName || entry.username}</strong>
                   <span>{entry.username || entry.userId}</span>
                 </td>
+                <td>{Number(entry.totalTasks || 0)}</td>
+                <td>{Number(entry.imageTasks || 0)}</td>
                 <td>{Number(entry.videoTasks || 0)}</td>
+                <td>
+                  <span>{secondsLabel(entry.videoSeconds)}</span>
+                  <small>计划 {secondsLabel(entry.plannedVideoSeconds)}</small>
+                </td>
+                <td><span>{modelsLabel(entry.models)}</span></td>
                 <td>{Number(entry.activeVideoTasks || 0)}</td>
                 <td>
                   <span>{lastTask}</span>
@@ -216,7 +251,7 @@ function UsageTable({ usage }) {
           })
         ) : (
           <tr>
-            <td colSpan="5">暂无用量记录</td>
+            <td colSpan="9">暂无用量记录</td>
           </tr>
         )}
       </tbody>

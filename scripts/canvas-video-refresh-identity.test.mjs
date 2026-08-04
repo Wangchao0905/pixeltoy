@@ -28,6 +28,23 @@ const context = {
 };
 vm.createContext(context);
 vm.runInContext(extractFunction("function mergeCanvasStateForWrite("), context, { filename: "server.js" });
+vm.runInContext(extractFunction("function projectSnapshotCanvasVideoState("), context, { filename: "server.js" });
+
+const snapshotState = context.projectSnapshotCanvasVideoState(
+  { videoPreviewVersion: "generation-one" },
+  {},
+  {
+    status: "completed",
+    taskId: "task-two",
+    videoUrl: "https://cdn.example/same.mp4",
+    videoPreviewVersion: "generation-two",
+  },
+);
+assert.equal(
+  snapshotState.videoPreviewVersion,
+  "generation-two",
+  "a refreshed project snapshot must carry the current generation identity even when the media URL is unchanged",
+);
 
 function state(node, updatedAt) {
   return {
@@ -57,6 +74,7 @@ const oldCompleted = state({
   progress: 100,
   tailFrameReady: true,
   tailFrameUrl: "/tail-old.png",
+  videoPreviewVersion: "generation-one",
 }, "2026-07-24T08:05:00.000Z");
 
 const newSubmitting = state({
@@ -69,6 +87,7 @@ const newSubmitting = state({
   progress: null,
   tailFrameReady: false,
   tailFrameUrl: "",
+  videoPreviewVersion: "generation-two",
 }, "2026-07-24T09:00:01.000Z");
 
 const submittingMerged = context.mergeCanvasStateForWrite(oldCompleted, newSubmitting).nodes[0];
@@ -85,11 +104,13 @@ const newCompleted = state({
   progress: 100,
   tailFrameReady: false,
   tailFrameUrl: "",
+  videoPreviewVersion: "generation-two",
 }, "2026-07-24T09:05:00.000Z");
 
 const completedMerged = context.mergeCanvasStateForWrite(oldCompleted, newCompleted).nodes[0];
 assert.equal(completedMerged.taskId, "task-new", "a newer generation must persist its own task ID");
 assert.equal(completedMerged.videoUrl, "https://cdn.example/new.mp4", "refresh must restore the newly generated video");
+assert.equal(completedMerged.videoPreviewVersion, "generation-two", "refresh must preserve the current generation identity");
 
 const staleMerged = context.mergeCanvasStateForWrite(newCompleted, oldCompleted, { preserveMissingNodes: true }).nodes[0];
 assert.equal(staleMerged.taskId, "task-new", "a delayed save from the old page must not replace the newer task");

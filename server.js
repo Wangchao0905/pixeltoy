@@ -2311,6 +2311,7 @@ function mergeCanvasStateForWrite(previous, incoming, options = {}) {
         progress: generationSource.progress ?? null,
         videoUrl: generationSource.videoUrl || "",
         videoLocalFile: generationSource.videoLocalFile || "",
+        videoPreviewVersion: generationSource.videoPreviewVersion || node.videoPreviewVersion || existing.videoPreviewVersion || "",
         startFrameUrl: generationSource.startFrameUrl || "",
         tailFrameSourceNodeId: generationSource.tailFrameSourceNodeId || "",
         tailFrameSourceName: generationSource.tailFrameSourceName || "",
@@ -2339,6 +2340,7 @@ function mergeCanvasStateForWrite(previous, incoming, options = {}) {
       progress: completedSource.progress ?? node.progress ?? existing.progress ?? null,
       videoUrl: completedSource.videoUrl || node.videoUrl || existing.videoUrl || "",
       videoLocalFile: completedSource.videoLocalFile || node.videoLocalFile || existing.videoLocalFile || "",
+      videoPreviewVersion: completedSource.videoPreviewVersion || node.videoPreviewVersion || existing.videoPreviewVersion || "",
       startFrameUrl: node.startFrameUrl || existing.startFrameUrl || "",
       tailFrameSourceNodeId: node.tailFrameSourceNodeId || existing.tailFrameSourceNodeId || "",
       tailFrameSourceName: node.tailFrameSourceName || existing.tailFrameSourceName || "",
@@ -8910,6 +8912,7 @@ async function finalizeExistingProjectVideoShot(episodeRoot, shotName, snapshot 
     taskInfo: {
       taskId: snapshot.taskId || "",
       provider: snapshot.provider || "",
+      videoPreviewVersion: snapshot.videoPreviewVersion || "",
         status: 2,
         progressPercent: 100,
         failedReason: "",
@@ -8933,7 +8936,7 @@ async function refreshExistingProjectVideoTask(episodeRoot, shotName, snapshot =
   const provider = compactLine(snapshot.provider || "");
   if (!taskId || snapshot.statusCode !== 1) return { reused: false };
   const result = await getCanvasVideoGeneration(taskId, provider);
-  updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result, runNamespace);
+  updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result, runNamespace, snapshot.videoPreviewVersion || "");
   const resultVideoUrl = videoUrlFrom(result.videoUrl || "");
   if (result.status === "completed" && resultVideoUrl) {
     await finalizeExistingProjectVideoShot(episodeRoot, shotName, {
@@ -8941,6 +8944,7 @@ async function refreshExistingProjectVideoTask(episodeRoot, shotName, snapshot =
       provider: result.provider || provider,
       videoUrl: resultVideoUrl || snapshot.videoUrl || "",
       tailFrameUrl: result.tailFrameUrl || snapshot.tailFrameUrl || "",
+      videoPreviewVersion: snapshot.videoPreviewVersion || "",
       statusCode: 2,
       complete: false,
     }, runNamespace);
@@ -9058,6 +9062,8 @@ function snapshotStatusForShot(episodeRoot, shotName, options = {}) {
       message: taskInfo.message || "",
       taskId: taskInfo.taskId || "",
       provider,
+      videoPreviewVersion: compactLine(taskInfo.videoPreviewVersion || ""),
+      generationStartedAt: compactLine(taskInfo.generationStartedAt || taskInfo.updatedAt || updatedAt || ""),
       videoUrl: videoUrlFrom(rawVideoUrl),
       localFile: taskInfo.localFile || "",
       tailFrameReady: taskTailFrameReady,
@@ -9120,6 +9126,7 @@ function scheduleProjectVideoFinalization(episodeRoot, shotName, node = {}, runN
         taskInfo: {
           taskId: node.taskId || "",
           provider: node.taskProvider || "",
+          videoPreviewVersion: node.videoPreviewVersion || "",
           status: 2,
           progressPercent: 100,
           failedReason: "",
@@ -9143,6 +9150,7 @@ function scheduleProjectVideoFinalization(episodeRoot, shotName, node = {}, runN
         taskInfo: {
           taskId: node.taskId || "",
           provider: node.taskProvider || "",
+          videoPreviewVersion: node.videoPreviewVersion || "",
           status: 2,
           progressPercent: 100,
           failedReason: "",
@@ -9168,7 +9176,7 @@ function scheduleProjectVideoStatusRefresh(episodeRoot, shotName, snapshot = {},
   (async () => {
     try {
       const result = await getCanvasVideoGeneration(taskId, provider);
-      updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result, runNamespace);
+      updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result, runNamespace, snapshot.videoPreviewVersion || "");
       const resultVideoUrl = videoUrlFrom(result.videoUrl || "");
       if (result.status === "completed" && resultVideoUrl) {
         scheduleProjectVideoFinalization(
@@ -9179,6 +9187,7 @@ function scheduleProjectVideoStatusRefresh(episodeRoot, shotName, snapshot = {},
             taskProvider: result.provider || provider,
             videoUrl: resultVideoUrl,
             tailFrameUrl: result.tailFrameUrl || "",
+            videoPreviewVersion: snapshot.videoPreviewVersion || "",
           },
           runNamespace,
         );
@@ -9306,6 +9315,9 @@ function writeVideoTaskSnapshot(episodeRoot, shotName, patch = {}) {
     }
   }
   const previousTaskInfo = previous.data?.taskInfo || {};
+  const previousGeneration = compactLine(previousTaskInfo.videoPreviewVersion || "");
+  const incomingGeneration = compactLine(patch.taskInfo?.videoPreviewVersion || "");
+  if (previousGeneration && incomingGeneration && previousGeneration !== incomingGeneration) return previous;
   const config = readVideoConfig(episodeRoot)?.data || {};
   const shot = (Array.isArray(config.shots) ? config.shots : []).find((item) => item.name === cleanShotName);
   const inferredTailFrameRequired = !isProductionBoardMode(config, shot);
@@ -9313,6 +9325,14 @@ function writeVideoTaskSnapshot(episodeRoot, shotName, patch = {}) {
     ...previousTaskInfo,
     ...(patch.taskInfo || {}),
   };
+  // One stable identity per generation prevents project refreshes from
+  // restoring the previous preview when the media URL/path is reused.
+  if (!compactLine(nextTaskInfo.videoPreviewVersion || "")) {
+    nextTaskInfo.videoPreviewVersion = `video-generation-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+  }
+  if (!compactLine(nextTaskInfo.generationStartedAt || "")) {
+    nextTaskInfo.generationStartedAt = compactLine(previousTaskInfo.generationStartedAt || patch.taskInfo?.updatedAt || new Date().toISOString());
+  }
   if (patch.taskInfo?.tailFrameRequired === undefined) nextTaskInfo.tailFrameRequired = inferredTailFrameRequired;
   const nextUrls = Array.isArray(patch.urls)
     ? patch.urls
@@ -9370,6 +9390,8 @@ function syncCanvasVideoNodeFromSnapshot(episodeRoot, shotName, patch = {}) {
     taskId: taskInfo.taskId || (statusCode === 1 || statusCode === 0 ? "" : state.nodes[nodeIndex].taskId || ""),
     taskProvider: taskInfo.provider || patch.provider || (statusCode === 1 || statusCode === 0 ? "" : state.nodes[nodeIndex].taskProvider || ""),
     progress: hasProgressPatch ? Number(taskInfo.progressPercent) : statusCode === 1 ? null : statusCode === 0 ? 0 : state.nodes[nodeIndex].progress,
+    videoPreviewVersion: compactLine(taskInfo.videoPreviewVersion || state.nodes[nodeIndex].videoPreviewVersion || ""),
+    submittedAt: compactLine(taskInfo.generationStartedAt || state.nodes[nodeIndex].submittedAt || ""),
     videoUrl: videoUrlFrom(taskInfo.videoUrl || "") || (statusCode === 1 || statusCode === 0 || statusCode === 3 ? "" : videoUrlFrom(state.nodes[nodeIndex].videoUrl || "")),
     tailFrameReady: taskInfo.tailFrameReady === true ? true : statusCode === 1 || statusCode === 0 ? false : state.nodes[nodeIndex].tailFrameReady,
     tailFrameUrl: taskInfo.tailFrameUrl || (statusCode === 1 || statusCode === 0 ? "" : state.nodes[nodeIndex].tailFrameUrl || ""),
@@ -9382,6 +9404,9 @@ function syncCanvasVideoNodeFromSnapshot(episodeRoot, shotName, patch = {}) {
 
 function writeProjectVideoTaskSnapshot(episodeRoot, shotName, patch = {}) {
   const snapshot = writeVideoTaskSnapshot(episodeRoot, shotName, patch);
+  const incomingGeneration = compactLine(patch.taskInfo?.videoPreviewVersion || "");
+  const storedGeneration = compactLine(snapshot.data?.taskInfo?.videoPreviewVersion || "");
+  if (incomingGeneration && storedGeneration && incomingGeneration !== storedGeneration) return snapshot;
   syncCanvasVideoNodeFromSnapshot(episodeRoot, shotName, patch);
   return snapshot;
 }
@@ -9734,6 +9759,7 @@ function markProjectVideoShotWaiting(episodeRoot, shotName, message = "等待素
       tailFrameReady: false,
       tailFrameMessage: "",
       localFile: "",
+      videoPreviewVersion: compactLine(options.videoPreviewVersion || ""),
       updatedAt: new Date().toISOString(),
     },
   });
@@ -16600,9 +16626,10 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
       status: "completed",
       statusMessage: snapshot.message || "生成完成",
       videoUrl: localVideo?.url || snapshot.videoUrl || "",
+      videoPreviewVersion: snapshot.videoPreviewVersion || snapshot.taskId || snapshot.updatedAt || "",
       taskId: snapshot.taskId || "",
       taskProvider: snapshot.provider || "",
-      submittedAt: snapshot.updatedAt || "",
+      submittedAt: snapshot.generationStartedAt || snapshot.updatedAt || "",
       progress: 100,
       tailFrameReady: snapshot.tailFrameReady === true,
       tailFrameUrl: snapshot.tailFrameUrl || "",
@@ -16616,9 +16643,10 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
       status: "failed",
       statusMessage: snapshot.failedReason || snapshot.message || "视频生成失败",
       videoUrl: "",
+      videoPreviewVersion: snapshot.videoPreviewVersion || snapshot.taskId || snapshot.updatedAt || "",
       taskId: snapshot.taskId || "",
       taskProvider: snapshot.provider || "",
-      submittedAt: snapshot.updatedAt || "",
+      submittedAt: snapshot.generationStartedAt || snapshot.updatedAt || "",
       progress: Number.isFinite(Number(snapshot.progress)) ? Number(snapshot.progress) : 100,
       tailFrameReady: false,
       tailFrameUrl: "",
@@ -16632,9 +16660,10 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
       status: "running",
       statusMessage: snapshot.message || "生成中",
       videoUrl: "",
+      videoPreviewVersion: snapshot.videoPreviewVersion || snapshot.taskId || snapshot.updatedAt || "",
       taskId: snapshot.taskId || "",
       taskProvider: snapshot.provider || "",
-      submittedAt: snapshot.updatedAt || "",
+      submittedAt: snapshot.generationStartedAt || snapshot.updatedAt || "",
       progress: snapshot.progress === null || snapshot.progress === undefined ? null : snapshot.progress,
       tailFrameReady: false,
       tailFrameUrl: "",
@@ -16648,9 +16677,10 @@ function projectSnapshotCanvasFields(episodeRoot, shotName, runNamespace = "") {
       status: "queued",
       statusMessage: snapshot.message || "排队中",
       videoUrl: "",
+      videoPreviewVersion: snapshot.videoPreviewVersion || snapshot.taskId || snapshot.updatedAt || "",
       taskId: "",
       taskProvider: "",
-      submittedAt: snapshot.updatedAt || "",
+      submittedAt: snapshot.generationStartedAt || snapshot.updatedAt || "",
       progress: 0,
       tailFrameReady: false,
       tailFrameUrl: "",
@@ -16668,6 +16698,7 @@ function projectSnapshotCanvasVideoState(previousNode = {}, node = {}, snapshotF
       status: snapshotFields.status || node.status || "idle",
       statusMessage: snapshotFields.statusMessage || "",
       videoUrl: snapshotFields.videoUrl || "",
+      videoPreviewVersion: snapshotFields.videoPreviewVersion || node.videoPreviewVersion || previousNode.videoPreviewVersion || "",
       taskId: snapshotFields.taskId || "",
       taskProvider: snapshotFields.taskProvider || "",
       submittedAt: snapshotFields.submittedAt || "",
@@ -16683,6 +16714,7 @@ function projectSnapshotCanvasVideoState(previousNode = {}, node = {}, snapshotF
     status: previousNode.status || node.status || "idle",
     statusMessage: previousNode.statusMessage || node.statusMessage || "",
     videoUrl: previousNode.videoUrl || node.videoUrl || "",
+    videoPreviewVersion: previousNode.videoPreviewVersion || node.videoPreviewVersion || "",
     taskId: previousNode.taskId || node.taskId || "",
     taskProvider: previousNode.taskProvider || node.taskProvider || "",
     submittedAt: previousNode.submittedAt || node.submittedAt || "",
@@ -17287,7 +17319,7 @@ async function persistCanvasTailFrame(body = {}, options = {}) {
   };
 }
 
-function updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result = {}, runNamespace = "") {
+function updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result = {}, runNamespace = "", videoPreviewVersion = "") {
   const status = compactLine(result.status || "");
   const cleanVideoUrl = videoUrlFrom(result.videoUrl || "");
   const invalidVideoUrl = invalidVideoUrlReason(result.videoUrl || "");
@@ -17300,6 +17332,7 @@ function updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result = {}
     taskInfo: {
       taskId: result.taskId || "",
       provider: result.provider || "",
+      videoPreviewVersion: videoPreviewVersion || result.videoPreviewVersion || "",
       status: statusCode,
       statusRaw: result.statusRaw || status,
       progressPercent: progressPercent === null ? undefined : progressPercent,
@@ -17313,7 +17346,7 @@ function updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result = {}
   return writeProjectVideoTaskSnapshot(episodeRoot, shotName, patch);
 }
 
-async function pollProjectVideoGeneration(episodeRoot, shotName, taskId, provider, runNamespace, authUser = null) {
+async function pollProjectVideoGeneration(episodeRoot, shotName, taskId, provider, runNamespace, authUser = null, videoPreviewVersion = "") {
   const started = Date.now();
   const timeoutMs = 45 * 60 * 1000;
   const config = readVideoConfig(episodeRoot)?.data || {};
@@ -17322,7 +17355,7 @@ async function pollProjectVideoGeneration(episodeRoot, shotName, taskId, provide
   while (Date.now() - started < timeoutMs) {
     await new Promise((resolve) => setTimeout(resolve, 5000));
     const result = await getCanvasVideoGeneration(taskId, provider);
-    updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result, runNamespace);
+    updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result, runNamespace, videoPreviewVersion);
     const resultVideoUrl = videoUrlFrom(result.videoUrl || "");
     if (result.status === "completed" && resultVideoUrl) {
       const localFile = await downloadProjectVideoResult(episodeRoot, shotName, resultVideoUrl);
@@ -17334,6 +17367,7 @@ async function pollProjectVideoGeneration(episodeRoot, shotName, taskId, provide
         taskInfo: {
           taskId: result.taskId || taskId,
           provider: result.provider || provider,
+          videoPreviewVersion,
           status: 2,
           progressPercent: 100,
           failedReason: "",
@@ -17375,6 +17409,7 @@ async function pollProjectVideoGeneration(episodeRoot, shotName, taskId, provide
     taskInfo: {
       taskId,
       provider,
+      videoPreviewVersion,
       status: 3,
       progressPercent: 100,
       failedReason: "视频生成轮询超时",
@@ -17576,6 +17611,8 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
   }
   archiveShotVideoArtifactsForRegeneration(episodeRoot, shotName);
+  const videoPreviewVersion = `video-generation-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+  const generationStartedAt = new Date().toISOString();
   writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
     runNamespace,
     taskInfo: {
@@ -17585,6 +17622,8 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
       message: "正在提交 Seedance 任务",
       taskId: "",
       provider: "",
+      videoPreviewVersion,
+      generationStartedAt,
       videoUrl: "",
       tailFrameUrl: "",
       tailFrameLocalFile: "",
@@ -17605,17 +17644,17 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
   // HTTP 单段请求只排队返回;批量队列显式传 false,在已有后台 worker 中等待认证完成。
   if (pollInBackground && needsArkPersonPreparation) {
     const message = "正在完成方舟私域虚拟人像认证，完成后自动提交视频";
-    markProjectVideoShotWaiting(episodeRoot, shotName, message);
+    markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion });
     setImmediate(() => {
       generateProjectVideoShot(episodeRoot, { ...body, shotName, pollInBackground: false }).catch((error) => {
         const errorMessage = error.message || "视频生成失败";
         if (isAssetActivationWaitFailure(errorMessage)) {
-          markProjectVideoShotWaiting(episodeRoot, shotName, errorMessage);
+          markProjectVideoShotWaiting(episodeRoot, shotName, errorMessage, { videoPreviewVersion });
           return;
         }
         writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
           runNamespace,
-          taskInfo: { status: 3, progressPercent: 100, failedReason: errorMessage, message: errorMessage, updatedAt: new Date().toISOString() },
+          taskInfo: { status: 3, progressPercent: 100, failedReason: errorMessage, message: errorMessage, videoPreviewVersion, updatedAt: new Date().toISOString() },
         });
       });
     });
@@ -17631,7 +17670,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     syncProjectShotsToCanvasState(episodeRoot, config, [latestShot]);
     if (!readiness.ready) {
       const message = readiness.message || "超写实参考图素材库验证未完成，暂不提交视频生成";
-      markProjectVideoShotWaiting(episodeRoot, shotName, message);
+      markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion });
       return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
     }
     let payload = projectVideoPayloadForShot(episodeRoot, latestShot, config);
@@ -17642,7 +17681,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
       if (tailFrameAsset.config && tailFrameAsset.config !== readiness.config) writeVideoConfigRecord(configRecord, config);
       if (!tailFrameAsset.ready) {
         const message = tailFrameAsset.message || "上一段尾帧正在进入素材库，暂不提交视频生成";
-        markProjectVideoShotWaiting(episodeRoot, shotName, message);
+        markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion });
         return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
       }
       payload = { ...payload, startFrameUrl: tailFrameAsset.url };
@@ -17660,7 +17699,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
       });
       throw new Error(message);
     }
-    updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result, runNamespace);
+    updateProjectVideoSnapshotFromResult(episodeRoot, shotName, result, runNamespace, videoPreviewVersion);
     recordUserVideoTask(authUser, {
       kind: "project",
       projectId: encodeId(episodeRoot),
@@ -17684,6 +17723,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
         taskInfo: {
           taskId: result.taskId || "",
           provider: result.provider || "",
+          videoPreviewVersion,
           status: 2,
           progressPercent: 100,
           failedReason: "",
@@ -17700,7 +17740,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
         },
       });
     } else if (result.taskId && pollInBackground) {
-      pollProjectVideoGeneration(episodeRoot, shotName, result.taskId, result.provider || "", runNamespace, authUser).catch((error) => {
+      pollProjectVideoGeneration(episodeRoot, shotName, result.taskId, result.provider || "", runNamespace, authUser, videoPreviewVersion).catch((error) => {
         markUserVideoTaskFinished(authUser, result.taskId);
         writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
           runNamespace,
@@ -17708,6 +17748,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
           taskInfo: {
             taskId: result.taskId,
             provider: result.provider || "",
+            videoPreviewVersion,
             status: 3,
             progressPercent: 100,
             failedReason: error.message || "视频生成失败",
@@ -17722,6 +17763,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
       runNamespace,
       taskInfo: {
+        videoPreviewVersion,
         status: 3,
         progressPercent: 100,
         failedReason: error.message || "视频生成失败",

@@ -3798,6 +3798,9 @@ function applyVideoGenerationResult(nodeId, result = {}, options = {}) {
       status: "completed",
       statusMessage: result.message || "生成完成",
       videoUrl: result.videoUrl || node?.videoUrl || "",
+      // Even when the provider reuses the same URL, identify this generation
+      // so the preview element is rebuilt instead of reusing the old video.
+      videoPreviewVersion: result.videoPreviewVersion || node?.videoPreviewVersion || resolvedTaskId || `video-generation-${Date.now().toString(36)}`,
       taskId: resolvedTaskId,
       taskProvider: result.provider || node?.taskProvider || "",
       progress: 100,

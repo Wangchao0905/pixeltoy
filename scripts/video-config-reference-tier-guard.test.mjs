@@ -77,20 +77,18 @@ assert.ok(blockingTypes.has("Scene"), "场景必须属于拦截类型");
 assert.ok(!blockingTypes.has("Prop"), "道具不该拦截整个配置");
 assert.ok(!blockingTypes.has("Insert"), "插入图不该拦截整个配置");
 
-// 拦截：人物图缺失。报错必须点名镜头和缺失资产，否则用户不知道该去生成什么。
-assert.throws(
-  () => buildPlan([CHARACTER, SCENE], [{ name: SCENE, manifestType: "Scene" }]),
-  (error) =>
-    /引用校验失败/.test(error.message) && error.message.includes(CHARACTER) && /V001/.test(error.message),
-  "人物资产图缺失必须阻止视频配置生成，并点名镜头与缺失资产",
-);
+// 主体资产(人物/场景)缺图**不再阻塞**视频配置生成。
+// 2026-08-03 产品决定:配置是剧本层面的产物,和图画完没画完无关。缺图记进
+// unavailableRefs → referenceWarnings 提示,真正的闸门在 configReadiness
+// (提交出片时报「缺少资产图：<name>」)。缺图在那一步才真正致命。
+// BLOCKING_ASSET_TYPES 的分类仍然有效——它现在用于区分"该进警告"和"可静默剔除"。
+const missingCharacter = buildPlan([CHARACTER, SCENE], [{ name: SCENE, manifestType: "Scene" }]);
+assert.deepEqual(missingCharacter.shots[0].unavailableRefs, [CHARACTER], "人物图缺失必须记入 unavailableRefs 供 warning 使用");
+assert.deepEqual(missingCharacter.shots[0].refs, [SCENE], "人物图缺失时其余引用要保留");
 
-// 拦截：场景图缺失。
-assert.throws(
-  () => buildPlan([CHARACTER, SCENE], [{ name: CHARACTER, manifestType: "Character" }]),
-  (error) => /引用校验失败/.test(error.message) && error.message.includes(SCENE),
-  "场景资产图缺失必须阻止视频配置生成",
-);
+const missingScene = buildPlan([CHARACTER, SCENE], [{ name: CHARACTER, manifestType: "Character" }]);
+assert.deepEqual(missingScene.shots[0].unavailableRefs, [SCENE], "场景图缺失必须记入 unavailableRefs");
+assert.deepEqual(missingScene.shots[0].refs, [CHARACTER], "场景图缺失时其余引用要保留");
 
 // 放过：道具/插入图缺失，剔除引用但保留诊断信息。
 const propResult = buildPlan([CHARACTER, PROP], [{ name: CHARACTER, manifestType: "Character" }]);
@@ -109,10 +107,12 @@ assert.deepEqual(okResult.shots[0].refs, [CHARACTER, SCENE], "资产齐全时引
 assert.deepEqual(okResult.shots[0].unavailableRefs, [], "资产齐全时不应有缺失项");
 assert.equal(okResult.shots[0].sceneRef, SCENE, "场景引用要能被解析出来");
 
-// 上游 throw 必须留在 modelShotPlanForConfig 里，别被挪走或改成 warning。
+// 缺图不得再 throw:那道闸门已移到 configReadiness(提交出片时)。
+// 这里反向锁住,防止有人"修回去"又把配置生成堵死。
 const planFunction = extractFunction(server, "function modelShotPlanForConfig(");
-assert.match(planFunction, /missingBlockingRefs\.length/, "invalid 判断里必须包含主体资产缺失条件");
-assert.match(planFunction, /throw new Error\(`视频配置引用校验失败/, "主体资产缺失必须 throw，不能降级成 warning");
+assert.doesNotMatch(planFunction, /throw new Error\(`视频配置引用校验失败/, "缺主体资产图不得阻塞视频配置生成");
+assert.match(planFunction, /unavailableRefs: missingRefs/, "缺失引用必须回传,供 referenceWarnings 提示");
+assert.match(server, /missing\.push\(`缺少资产图：\$\{clean\}`\)/, "真正的闸门必须留在 configReadiness");
 
 // 分镜 plan 必须绑资产清单指纹，否则资产图重新生成后 plan 被当成"还新鲜"直接复用，
 // 引用里全是旧资产名——这就是「生成视频配置没用上最新资产图」的另一半根因。

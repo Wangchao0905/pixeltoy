@@ -26534,7 +26534,7 @@ async function handleApi(req, res, url) {
     const job = startDraftJob(episodeRoot, await readBody(req));
     return send(res, 202, { ok: true, job }, { "Cache-Control": "no-store" });
   }
-  const draftJobMatch = action.match(/^\/draft-jobs\/([^/]+)$/);
+  const draftJobMatch = action.match(/^draft-jobs\/([^/]+)$/);
   if (req.method === "GET" && draftJobMatch) {
     const jobId = decodeURIComponent(draftJobMatch[1]);
     return send(res, 200, { ok: true, job: getDraftJob(episodeRoot, jobId) }, { "Cache-Control": "no-store" });

@@ -133,8 +133,8 @@ assert.match(
 );
 assert.match(
   server,
-  /const modelPlan = await ensureModelShotPlanForConfig\(episodeRoot, \{[\s\S]*?script,[\s\S]*?dialogueLanguage: requestedDialogueLanguage/,
-  "legacy or stale plans must be rebuilt from the model before video configuration continues",
+  /const modelPlan = storyboardDraftForConfig\(episodeRoot, \{[\s\S]*?script,[\s\S]*?durationMode: requestedDurationMode/,
+  "video configuration must use the persisted storyboard draft and never rebuild it implicitly",
 );
 
 console.log("video config model plan language tests passed");

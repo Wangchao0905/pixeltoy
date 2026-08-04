@@ -4365,6 +4365,43 @@ async function ensureModelShotPlanForConfig(episodeRoot, { script, dialogueLangu
   throw new Error("资产清单在视频配置期间发生变化，请等待资产生成完成后重新提交视频配置。");
 }
 
+// 视频配置阶段只组装剧本页已经生成的导演计划，不在这里隐式再次调用模型。
+// 这样模型失败会停留在「生成分镜草稿」这一个明确入口，避免重复消耗和状态混乱。
+function storyboardDraftForConfig(episodeRoot, { script, durationMode = "tk" } = {}) {
+  const plan = readStoryboardModelPlan(episodeRoot);
+  if (!plan) {
+    throw new Error("请先在剧本阶段点击「生成分镜草稿」，完成镜头与视频提示词设计。");
+  }
+  const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const assetManifestFingerprint = assetManifestIdentityFingerprint(manifest);
+  if (modelShotPlanNeedsRefresh(plan, script, durationMode, assetManifestFingerprint)) {
+    throw new Error("分镜草稿与当前剧本、时长模式或资产清单不一致，请回到剧本阶段重新生成分镜草稿。");
+  }
+  return plan;
+}
+
+function storyboardDraftStatus(episodeRoot) {
+  const rawScript = readText(findProjectFile(episodeRoot, "script"));
+  const script = scriptForVideoBeats(cleanStoryScriptForDraft(rawScript));
+  const plan = readStoryboardModelPlan(episodeRoot);
+  if (!script.trim()) return { exists: !!plan, ready: false, reason: "剧本为空" };
+  const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const ready = !!plan && !modelShotPlanNeedsRefresh(
+    plan,
+    script,
+    projectDurationMode(episodeRoot),
+    assetManifestIdentityFingerprint(manifest),
+  );
+  return {
+    exists: !!plan,
+    ready,
+    model: compactLine(plan?.model || ""),
+    shotCount: Array.isArray(plan?.shots) ? plan.shots.length : 0,
+    reason: ready ? "" : plan ? "分镜草稿已过期" : "尚未生成分镜草稿",
+    updatedAt: compactLine(plan?.createdAt || ""),
+  };
+}
+
 function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPlan(episodeRoot), script, dialogueLanguage, assets, videoStylePreset, videoStyleDirective } = {}) {
   const plan = modelPlan;
   const currentScriptFingerprint = sha1Text(script);
@@ -11148,6 +11185,7 @@ function fullProjectState(episodeRoot) {
       activeAssetTargets,
     }),
     videoConfigStatus: configReadiness(episodeRoot, config?.data),
+    storyboardDraftStatus: storyboardDraftStatus(episodeRoot),
     assetJob: jobSummary(latestVisibleAssetJob(localJobs)),
     storyboardJob: jobSummary(latestJobForTypes(localJobs, ["storyboards", "storyboard-regenerate"])),
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
@@ -11226,6 +11264,7 @@ function projectStatusSnapshot(episodeRoot) {
     videoProgress: progress,
     durationMode,
     videoConfigStatus: configReadiness(episodeRoot, config?.data),
+    storyboardDraftStatus: storyboardDraftStatus(episodeRoot),
     assetJob: jobSummary(latestVisibleAssetJob(localJobs)),
     storyboardJob: jobSummary(latestJobForTypes(localJobs, ["storyboards", "storyboard-regenerate"])),
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
@@ -21612,7 +21651,32 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
 }`;
 }
 
-function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, beats = [], sourceBeats = [], durationPlan = null }) {
+function compactStoryboardScript(script, maxLength = 14000) {
+  const text = String(script || "");
+  if (text.length <= maxLength) return text;
+  const headLength = Math.floor(maxLength * 0.68);
+  const tailLength = Math.max(500, maxLength - headLength);
+  return `${text.slice(0, headLength)}\n\n[剧本中段已压缩；请依据前后节拍，不得新增剧情。]\n\n${text.slice(-tailLength)}`;
+}
+
+function compactStoryboardAsset(value, maxLength = 420) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length <= maxLength ? text : `${text.slice(0, Math.max(80, maxLength - 18))}…（已截断）`;
+}
+
+function storyboardPromptAssets(assets = [], compact = false) {
+  return assets.map((asset) => ({
+    name: asset.name,
+    type: asset.type,
+    label: asset.label,
+    evidence: compact ? compactStoryboardAsset(asset.evidence) : asset.evidence,
+    visual: compact ? compactStoryboardAsset(asset.visual || "") : asset.visual || "",
+  }));
+}
+
+function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, beats = [], sourceBeats = [], durationPlan = null, compact = false }) {
+  const screenplay = compact ? compactStoryboardScript(script) : String(script || "").slice(0, 30000);
+  const promptAssets = storyboardPromptAssets(assets, compact);
   const durationMode = normalizeDurationMode(durationPlan?.durationMode);
   if (durationMode === DURATION_MODE_FREE) {
     return JSON.stringify({
@@ -21635,14 +21699,8 @@ function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCoun
         endBeatIndex: "严格递增；最后一个等于 sourceBeats 数量",
         duration: "不要返回；服务端忽略",
       },
-      assets: assets.map((asset) => ({
-        name: asset.name,
-        type: asset.type,
-        label: asset.label,
-        evidence: asset.evidence,
-        visual: asset.visual || "",
-      })),
-      screenplay: script.slice(0, 30000),
+      assets: promptAssets,
+      screenplay,
     }, null, 2);
   }
   return JSON.stringify(
@@ -21658,14 +21716,8 @@ function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCoun
             rule: "这是后端按剧情复杂度和剧情权重计算的参考时长。可以在 70-90 秒内微调，但不要平均分配，不要全部 12 秒；优先把完整剧情段落设计成接近 15 秒，每段必须 4-15 秒。只允许使用剧本已有剧情，信息不足时不要为了凑时长增补事件。",
           }
         : undefined,
-      assets: assets.map((asset) => ({
-        name: asset.name,
-        type: asset.type,
-        label: asset.label,
-        evidence: asset.evidence,
-        visual: asset.visual || "",
-      })),
-      screenplay: script.slice(0, 30000),
+      assets: promptAssets,
+      screenplay,
     },
     null,
     2,
@@ -21850,30 +21902,37 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
     .filter((candidate) => candidate && candidate !== "rules");
   const attempted = [];
   for (const candidate of candidates) {
-    const requestBody = (withJsonMode) => ({
+    const requestBody = (withJsonMode, compact = false) => ({
       model: candidate,
       temperature: 0.35,
       ...(withJsonMode ? { response_format: { type: "json_object" } } : {}),
       messages: [
         { role: "system", content: storyboardSystemPrompt(durationPlan?.durationMode) },
-        { role: "user", content: storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, beats, sourceBeats, durationPlan }) },
+        { role: "user", content: storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCount, beats, sourceBeats, durationPlan, compact }) },
       ],
     });
-    const post = (withJsonMode) =>
+    const post = (withJsonMode, compact = false) =>
       fetch(openAiCompatUrl("/v1/chat/completions", "storyboard"), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(requestBody(withJsonMode)),
+        body: JSON.stringify(requestBody(withJsonMode, compact)),
       });
     let lastParsed = null;
     try {
-      let response = await post(true);
+      let response = await post(true, false);
       let raw = await response.text();
       if (!response.ok && response.status === 400 && /response_format|json_object/i.test(raw)) {
-        response = await post(false);
+        response = await post(false, false);
+        raw = await response.text();
+      }
+      // 大剧本或资产证据过长时，网关可能直接返回 500/502/503/504。
+      // 先保留同一个导演模型，仅压缩输入重试，避免切换模型掩盖请求体问题。
+      if (!response.ok && [500, 502, 503, 504].includes(response.status)) {
+        attempted.push(`${candidate}: HTTP ${response.status}（完整请求）`);
+        response = await post(false, true);
         raw = await response.text();
       }
       if (!response.ok) {
@@ -23765,13 +23824,10 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     episodeRoot,
     body.durationMode || projectDurationMode(episodeRoot),
   );
-  // 7 月 23 日前创建的项目没有持久化模型导演计划。这里按当前剧本补建，
-  // 仍由相同的大模型输出完整设计，不会从旧 Markdown 或手写提示词反推。
-  const modelPlan = await ensureModelShotPlanForConfig(episodeRoot, {
+  // 分镜与视频提示词必须先由剧本页的「生成分镜草稿」完成；这里仅做确定性组装。
+  const modelPlan = storyboardDraftForConfig(episodeRoot, {
     script,
-    dialogueLanguage: requestedDialogueLanguage,
     durationMode: requestedDurationMode,
-    assetAnalyzerModel: body.assetAnalyzerModel,
   });
   const slug = episodeSlug(episodeRoot);
   const configPath = findProjectFile(episodeRoot, "config");
@@ -24070,10 +24126,9 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
   const requestedSfxStyle = normalizeVideoSfxStyle(
     body.sfxStyle || previous.sfxStyle || previous.settings?.sfxStyle || "none",
   );
-  const modelPlan = await ensureModelShotPlanForConfig(episodeRoot, {
+  const modelPlan = storyboardDraftForConfig(episodeRoot, {
     script,
-    dialogueLanguage,
-    assetAnalyzerModel: body.assetAnalyzerModel,
+    durationMode: previous.durationMode || previous.settings?.durationMode || projectDurationMode(episodeRoot),
   });
   const resolvedDialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, dialogueLanguage);
   const configAssets = Array.isArray(previous.assets) && previous.assets.length ? previous.assets : manifestItemsToAssets(manifest);

@@ -69,7 +69,7 @@ const completeDesign = {
   assert.ok(server.includes("动作时间线："), "自然语言模板必须包含模型导演设计的动作时间线");
   assert.match(server, /function videoStyleDirectiveFromProductionAssets\(/, "视频风格必须能从资产文案提取，而不只读取 preset");
   assert.match(server, /function storyboardPanelTimelineForPrompt\(/, "Production Board 必须编译九宫格节拍，而非只提交笼统说明");
-  assert.match(server, /const modelPlan = await ensureModelShotPlanForConfig\(episodeRoot, \{/);
+  assert.match(server, /const modelPlan = storyboardDraftForConfig\(episodeRoot, \{/);
   assert.match(buildVideoConfig, /modelShotPlanForConfig\(\{/);
   assert.match(buildVideoConfig, /assets: productionAssets/);
   assert.match(buildVideoConfig, /seedancePromptForShotMode\(shot, index, dialogueLanguage, storyboardsActive\)/);

@@ -29,6 +29,9 @@ assert.match(canvasJs, /generation-progress-track/, "running video UI should ren
 assert.match(canvasJs, /generation-model-label/, "running video UI should show the selected model");
 assert.match(canvasCss, /\.generation-progress-track i::after[\s\S]*animation: generation-progress-sheen/, "progress track should animate a sheen");
 assert.match(canvasCss, /@keyframes generation-progress-indeterminate/, "indeterminate progress should remain animated");
+assert.match(canvasCss, /\.generation-progress-track\.is-indeterminate i\s*\{[\s\S]*animation: generation-progress-indeterminate[\s\S]*will-change: transform/, "indeterminate progress should visibly travel across the track");
+assert.match(canvasCss, /@keyframes generation-progress-indeterminate[\s\S]*translateX\(-120%\)[\s\S]*translateX\(280%\)/, "indeterminate progress animation should move from left to right");
+assert.doesNotMatch(canvasCss, /@media \(prefers-reduced-motion: reduce\)[\s\S]*generation-progress-track i[\s\S]*animation:\s*none/, "reduced-motion fallback must not freeze the generation status");
 assert.match(
   canvasCss,
   /\.video-node\[data-video-status="running"\] \.video-preview-slot[\s\S]*?background:[\s\S]*?!important;/,

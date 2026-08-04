@@ -7198,7 +7198,10 @@ body.canvas-page {
 }
 
 .generation-progress-track.is-indeterminate i {
-  animation: generation-progress-indeterminate 1.6s ease-in-out infinite;
+  width: 42% !important;
+  background: linear-gradient(90deg, rgba(233, 255, 255, 0.28), #e9ffff 42%, #ffffff 50%, #e9ffff 58%, rgba(233, 255, 255, 0.28));
+  animation: generation-progress-indeterminate 1.15s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  will-change: transform;
 }
 
 @keyframes generation-progress-sheen {
@@ -7208,11 +7211,16 @@ body.canvas-page {
 }
 
 @keyframes generation-progress-indeterminate {
-  0%, 100% {
-    opacity: 0.58;
+  0% {
+    opacity: 0.72;
+    transform: translateX(-120%);
   }
-  50% {
+  58% {
     opacity: 1;
+  }
+  100% {
+    opacity: 0.72;
+    transform: translateX(280%);
   }
 }
 
@@ -7228,11 +7236,7 @@ body.canvas-page {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .generation-progress-track i,
-  .generation-progress-track i::after {
-    animation: none;
-    transition: none;
-  }
+  .generation-progress-track i { transition: none; }
 }
 
 .generation-status-message {

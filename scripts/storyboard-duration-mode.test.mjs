@@ -11,10 +11,20 @@ const assets = [
   { name: "C001_GUDONG", type: "Character", manifestType: "Character", label: "咕咚", assetUrl: "asset://C001_GUDONG" },
 ];
 const assetLookup = new Map(assets.map((asset) => [asset.name, asset]));
+const videoDesign = {
+  shot_size: "中景",
+  camera_lens: "35mm 广角",
+  camera_movement: "缓慢推进",
+  camera_angle: "平视",
+  visual: "小屋入口与室内空间保持连续，人物动作清晰可见。",
+  timeline: "起始：人物推门进入。\n推进：人物停下观察室内。\n终点：人物锁定桌面线索。",
+  voice_over: "无",
+  sound: "门轴声与室内环境底噪。",
+};
 const sourceShots = [
-  { name: "E01_V001", duration: 8, title: "进入小屋", beat: "咕咚推门进入小屋。", refs: ["S001_CABIN", "C001_GUDONG"], dialogues: [], videoDesign: {} },
-  { name: "E01_V002", duration: 7, title: "观察室内", beat: "咕咚在门口观察室内。", refs: ["S001_CABIN", "C001_GUDONG"], dialogues: [], videoDesign: {} },
-  { name: "E01_V003", duration: 7, title: "发现线索", beat: "咕咚发现桌上的线索。", refs: ["S001_CABIN", "C001_GUDONG"], dialogues: [], videoDesign: {} },
+  { name: "E01_V001", duration: 8, title: "进入小屋", beat: "咕咚推门进入小屋。", refs: ["S001_CABIN", "C001_GUDONG"], dialogues: [], videoDesign },
+  { name: "E01_V002", duration: 7, title: "观察室内", beat: "咕咚在门口观察室内。", refs: ["S001_CABIN", "C001_GUDONG"], dialogues: [], videoDesign },
+  { name: "E01_V003", duration: 7, title: "发现线索", beat: "咕咚发现桌上的线索。", refs: ["S001_CABIN", "C001_GUDONG"], dialogues: [], videoDesign },
 ];
 const slots = [
   {

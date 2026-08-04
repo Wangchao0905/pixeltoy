@@ -6,7 +6,7 @@ import serverModule from "../server.js";
 const root = path.resolve(new URL("..", import.meta.url).pathname);
 const js = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 
-const startJob = js.match(/async function startJob\(type, options = \{\}\) \{[\s\S]*?\n\}\n\nasync function generateDraft/);
+const startJob = js.match(/async function startJob\(type, options = \{\}\) \{[\s\S]*?scheduleProjectRefresh\(\{ immediate: true \}\);\n\}/);
 assert.ok(startJob, "startJob must accept scoped job options");
 assert.match(startJob[0], /options\.storyboardRange/);
 assert.match(startJob[0], /options\.storyboardNames/);

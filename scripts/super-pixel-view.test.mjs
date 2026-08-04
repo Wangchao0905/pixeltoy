@@ -175,11 +175,9 @@ assert.match(app, /superPixelEntry\?\.classList\.add\("hidden"\)/, "未登录/�
 assert.match(app, /tool === "super-pixel"[\s\S]{0,160}role !== "admin"\) return/, "openExploreTool 须对非管理员二次拦截");
 assert.match(app, /data\.user\?\.role !== "admin" && state\.exploreView === "superpixel"\) showExploreCanvasHome\(\)/, "直接访问 Super Pixel 路由时仍须遵守管理员权限");
 
-// 缓存戳必须与被改文件同步（不硬编码具体取值，只校验存在且一致）
-const cssStamp = html.match(/styles\.css\?v=([A-Za-z0-9._-]+)/)?.[1];
-const jsStamp = html.match(/app\.js\?v=([A-Za-z0-9._-]+)/)?.[1];
-assert.ok(cssStamp && jsStamp, "缓存戳必须存在");
-assert.equal(cssStamp, jsStamp, "styles.css 与 app.js 缓存戳必须同步");
+// 制作台入口使用稳定 URL + ETag 重验证，不依赖手动版本戳。
+assert.match(html, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/);
+assert.match(html, /<script src="\/app\.js"><\/script>/);
 
 const superPixelRedesign = css.slice(css.indexOf("/* Super Pixel redesign:"));
 assert.match(superPixelRedesign, /--sp-chat-font:\s*"Google Sans", "Google Sans Text", "SF Pro Display"/, "Super Pixel 正文应使用与参考一致的圆润无衬线字体栈");

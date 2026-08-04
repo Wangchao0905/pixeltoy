@@ -40,10 +40,9 @@ assert.match(styles, /\.modern-lang-tabs button\[aria-checked="true"\][^}]*color
 // 父容器特异度要压过 .modern-source-head > div { display: grid },否则布局靠巧合。
 assert.match(styles, /\.modern-source-head > \.modern-source-head-aside \{[^}]*display: flex/);
 
-// 资源版本号必须随前端改动前进,否则浏览器拿缓存看不到新控件。
-const cssVer = index.match(/styles\.css\?v=([^"]+)/)?.[1];
-const appVer = index.match(/app\.js\?v=([^"]+)/)?.[1];
-assert.equal(cssVer, appVer, "styles.css 与 app.js 的版本号应一致");
-assert.notEqual(cssVer, "navigation-performance-20260728", "改了前端就要推版本号");
+// 制作台入口使用稳定 URL + ETag 重验证；改动后浏览器会按内容换取新资源，
+// 不再依赖开发者手动同步两个版本戳。
+assert.match(index, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/);
+assert.match(index, /<script src="\/app\.js"><\/script>/);
 
 console.log("dialogue-language-tabs: OK");

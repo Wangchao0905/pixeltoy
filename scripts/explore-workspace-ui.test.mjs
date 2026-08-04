@@ -16,7 +16,7 @@ assert.match(server, /if \(isStandaloneImageGenerationApiPath\(url\.pathname\)\)
 assert.match(html, /id="exploreHome"/);
 assert.match(html, /id="projectHome"[^>]*class="project-home hidden"/, "旧项目首页必须默认隐藏，避免首屏闪现蓝色旧页面");
 assert.match(html, /class="explore-brand-mark pixel-toys-wordmark"/);
-assert.match(html, /id="exploreLoginLink"[^>]*href="\/auth\.html\?next=\/"[^>]*>登录<\/a>/);
+assert.match(html, /id="exploreLoginLink"[^>]*data-auth-open="login"[^>]*>登录<\/button>/);
 assert.match(html, /id="exploreAccount"[^>]*aria-label="个人中心"/);
 assert.match(html, /id="personalCenterDialog"/);
 assert.match(html, /id="imageExploreView"/);
@@ -63,11 +63,8 @@ assert.match(app, /function createEmptyProject\(\)[\s\S]*?projectName:\s*"Untitl
 assert.match(app, /function openProjectModal\(\)\s*\{\s*return createEmptyProject\(\);/);
 assert.match(app, /exploreLoginLink\?\.classList\.toggle\("hidden", !!data\.user\)/);
 assert.match(app, /function setupExploreVideoPlayback/);
-const stylesStamp = html.match(/styles\.css\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
-const appStamp = html.match(/app\.js\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
-assert.ok(stylesStamp, "styles.css 必须带缓存戳");
-assert.ok(appStamp, "app.js 必须带缓存戳");
-assert.equal(appStamp, stylesStamp, "两个缓存戳必须同步 bump");
+assert.match(html, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/, "styles.css 必须走 ETag 重验证");
+assert.match(html, /<script src="\/app\.js"><\/script>/, "app.js 必须走 ETag 重验证");
 assert.match(styles, /\.video-showcase-six/);
 assert.match(styles, /\.video-showcase-grid-six/);
 assert.match(styles, /\.explore-canvas-library/);

@@ -47,9 +47,10 @@ assert.ok(footerStart < projectStart, "备案页脚必须在 exploreHome 闭合�
 assert.match(css, /\.site-beian\s*\{/, "必须有 .site-beian 样式");
 assert.match(css, /\.site-beian a\s*\{/, "必须有链接样式");
 
-// --- 5) 改了 styles.css 就必须 bump 各页缓存戳,否则浏览器读旧文件=改动没上线 ---
-// 只用正则校验戳存在,不硬编码取值(硬编码会让每次正常换戳都失败)。
-for (const page of ["index.html", "admin.html", "canvas.html", "pixeltale.html"]) {
+// --- 5) 制作台入口用 ETag 重验证；独立页面仍可使用版本戳 ---
+const indexSource = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
+assert.match(indexSource, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/, "index.html 的 styles.css 必须走 ETag 重验证");
+for (const page of ["admin.html", "canvas.html", "pixeltale.html"]) {
   const source = fs.readFileSync(path.join(root, "public", page), "utf8");
   assert.match(source, /styles\.css\?v=[A-Za-z0-9._-]+/, `${page} 的 styles.css 必须带缓存戳`);
 }

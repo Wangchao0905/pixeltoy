@@ -8,8 +8,7 @@ const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/styles.css"), "utf8");
 const js = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 
-// 第 05 步曾与第 04 步共用 data-modern-focus="video"，5 个步骤只有 4 个视图，
-// 「组装成片」点进去落在视频视图；资产图也必须拥有独立视图。
+// 主流程保留五个互斥视图；Film Studio 是由视觉圣经按钮打开的辅助面板，不占用流程步骤。
 const focuses = [...html.matchAll(/data-modern-focus="([a-z]+)"/g)].map((m) => m[1]);
 assert.equal(focuses.length, 5, "pipeline 应有 5 个步骤按钮");
 assert.equal(new Set(focuses).size, 5, `5 个步骤必须映射到 5 个不同视图，实为 ${focuses.join(",")}`);
@@ -17,10 +16,10 @@ assert.deepEqual(focuses, ["assets", "assetimg", "storyboard", "video", "cut"], 
 assert.ok(focuses.includes("cut"), "第 05 步必须指向 cut 视图");
 
 // focus 值需被两处消费者接受，否则会静默回落 assets。
-assert.match(js, /\["assets", "assetimg", "storyboard", "video", "cut"\]\.includes/, "renderModernStudio 白名单缺 assetimg 或 cut");
-assert.match(js, /\["assetimg", "storyboard", "video", "cut"\]\.includes\(focus\)/, "focusModernPane 缺 assetimg 分支");
+assert.match(js, /\["assets", "assetimg", "filmstudio", "storyboard", "video", "cut"\]\.includes/, "renderModernStudio 白名单缺 Film Studio 或 cut");
+assert.match(js, /\["assetimg", "filmstudio", "storyboard", "video", "cut"\]\.includes\(focus\)/, "focusModernPane 缺资产图、Film Studio 或故事板分支");
 assert.match(js, /nextFocus === "assetimg"[\s\S]{0,60}modernAssetImagePanel/, "focusModernPane 需把 assetimg 指向 #modernAssetImagePanel");
-assert.match(js, /\["assetimg", "storyboard", "video", "cut"\]\.includes\(focus\)/, "focusModernPane 缺 cut 分支");
+assert.match(js, /nextFocus === "filmstudio"[\s\S]{0,80}modernFilmStudioPanel/, "focusModernPane 需把 Film Studio 指向 #modernFilmStudioPanel");
 assert.match(js, /nextFocus === "cut"[\s\S]{0,40}modernCutPanel/, "focusModernPane 需把 cut 指向 #modernCutPanel");
 
 // 成片三件套此前只存在于永不渲染的 legacy <template> 与 display:none 的 bridge 中。

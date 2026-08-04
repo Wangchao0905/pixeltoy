@@ -18110,6 +18110,18 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
    父选择器要用 .modern-source-head > .modern-source-head-aside,否则被上面
    .modern-source-head > div { display: grid } 按特异度盖掉,布局只是碰巧成立。 */
 .modern-source-head > .modern-source-head-aside { display: flex; flex: none; gap: 10px; align-items: center; }
+.modern-draft-action { display: inline-flex; flex: none; align-items: center; justify-content: center; min-height: 32px; padding: 0 13px; border: 1px solid var(--modern-signal); border-radius: 4px; background: var(--modern-signal); color: #fff; box-shadow: 0 6px 16px -10px rgba(217,45,69,.9); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease, transform 160ms ease; }
+.modern-draft-action:hover:not(:disabled) { border-color: #ef5267; background: #e63b52; box-shadow: 0 8px 20px -10px rgba(217,45,69,1); }
+.modern-draft-action:focus-visible { outline: 2px solid rgba(242,122,91,.75); outline-offset: 2px; }
+.modern-draft-action:disabled { border-color: var(--modern-line); background: var(--mv-s2); color: var(--modern-quiet); box-shadow: none; cursor: not-allowed; opacity: .62; }
+.modern-draft-action.is-ready { animation: modernDraftAttention 1800ms ease-in-out infinite; }
+@keyframes modernDraftAttention {
+  0%, 100% { box-shadow: 0 6px 16px -10px rgba(217,45,69,.9), 0 0 0 0 rgba(217,45,69,0); transform: translateY(0); }
+  50% { box-shadow: 0 8px 20px -9px rgba(217,45,69,1), 0 0 0 5px rgba(217,45,69,.13); transform: translateY(-1px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modern-draft-action.is-ready { animation: none; }
+}
 .modern-lang-tabs { display: flex; gap: 5px; }
 .modern-lang-tabs button { min-height: 26px; padding: 0 9px; border: 1px solid var(--modern-line); border-radius: 3px; background: transparent; color: var(--modern-quiet); font-size: 11px; }
 .modern-lang-tabs button:hover:not(:disabled) { border-color: var(--mv-line-2); background: var(--mv-s3); color: var(--mv-tx); }
@@ -18211,6 +18223,7 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 }
 @media (max-width: 1180px) { .studio-modern-shell { grid-template-columns: 190px minmax(0,1fr); }.modern-topbar { gap: 12px; padding: 0 16px; }.modern-episode-action { min-width: 166px; padding: 0 11px; }.modern-kit-bar { grid-template-columns: minmax(200px,1fr) minmax(140px,1fr) auto; }.modern-kit-bar > div:nth-child(3) { display: none; } }
 @media (max-width: 980px) { .modern-source-panel { display: block; margin: 14px 14px 0; }.modern-source-grid { grid-template-columns: 1fr; }.modern-source-field + .modern-source-field { border-top: 1px solid var(--modern-line); border-left: 0; }.modern-asset-results { border-top: 1px solid var(--modern-line); border-left: 0; } }
+@media (max-width: 620px) { .modern-source-head { align-items: start; flex-direction: column; }.modern-source-head > .modern-source-head-aside { width: 100%; justify-content: space-between; flex-wrap: wrap; }.modern-draft-action { order: 0; }.modern-lang-tabs { order: 1; }.modern-source-order { order: 2; margin-left: auto; } }
 @media (max-width: 980px) { body.is-studio-modern { min-width: 0; }.studio-modern-shell { display: block; height: auto; min-height: 100vh; overflow: visible; }.modern-main { min-height: 0; overflow: visible; }.modern-series-nav { position: relative; height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--mv-line); }.modern-brand { display: flex; align-items: center; justify-content: space-between; }.modern-series-context, .modern-series-footer { display: none; }.modern-episode-list { display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; overflow-y: hidden; }.modern-episode-row { flex: 0 0 150px; }.modern-stage-grid { grid-template-columns: 1fr; }.modern-stage-pane { border-right: 0; border-bottom: 1px solid var(--mv-line); }.modern-stage-pane:last-child { border-bottom: 0; }.modern-kit-bar { margin: 14px 14px 0; }.modern-sequence { margin: 14px; }.modern-workbench { margin: 18px 14px 24px; }.modern-core { overflow: visible; } }
 @media (max-width: 980px) {
   .modern-series-nav-toggle { display: none; }

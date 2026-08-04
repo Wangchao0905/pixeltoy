@@ -38,7 +38,7 @@ const DEFAULT_IMAGE_RETRIES = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_RETRI
 // stale process environment turn one click into a second full upstream wait.
 const STORYBOARD_IMAGE_RETRIES = 0;
 // 必须与 server.js 的 STORYBOARD_MAX_PANELS / STORYBOARD_BOARD_COLUMNS 一致。
-// 两边不一致时:服务端提示词声明 12 格,runner 的兜底画布和叠字层按 9 格切,
+// 两边必须一致:服务端提示词、runner 的兜底画布和叠字层统一按 12 格切,
 // 板子会被切成错位网格。改一边就要改另一边。
 const STORYBOARD_BOARD_PANELS = 12;
 const STORYBOARD_BOARD_COLUMNS = 4;
@@ -2049,7 +2049,7 @@ async function runStoryboardReferenceBoardRoute(asset, outPath, size, referenceI
     referencePromptFor(asset, referenceImages),
     "",
     "The input image is a PRODUCTION ASSET REFERENCE BOARD, not the final storyboard.",
-    "Transform it into the requested 16:9 Production Board sheet with exactly 9 story panels in a 3-column grid. Use the input only to retain identity; do not reproduce its asset strip, thumbnails, labels, PT codes, arrows, or camera-frame overlays in the final board.",
+    "Transform it into the requested 16:9 Production Board sheet with exactly 12 story panels in a 4-column grid. Use the input only to retain identity; do not reproduce its asset strip, thumbnails, labels, PT codes, arrows, or camera-frame overlays in the final board.",
   ].join("\n");
   const timeout = timeoutSecondsFor(asset, "rescue");
   const editArgs = [

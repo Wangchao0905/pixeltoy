@@ -5157,6 +5157,30 @@ function renderModernDialogueLanguage() {
   });
 }
 
+function syncModernDraftAction(data = state.project) {
+  const draftButton = $("#modernGenerateDraft");
+  if (!draftButton) return;
+  const scriptSource = workflowEditorValue("script");
+  const drafting = isDraftGenerating();
+  const storyboardDraftReady = data?.storyboardDraftStatus?.ready === true;
+  const savedScript = typeof data?.contents?.script === "string" ? data.contents.script : null;
+  const draftMatchesCurrentScript = savedScript === null || scriptSource.trim() === savedScript.trim();
+  const draftReadyForCurrentScript = storyboardDraftReady && draftMatchesCurrentScript;
+  const hasScript = Boolean(scriptSource.trim());
+  const draftNeedsAttention = hasScript && !draftReadyForCurrentScript && !drafting;
+  draftButton.disabled = drafting || !hasScript;
+  draftButton.classList.toggle("is-ready", draftNeedsAttention);
+  draftButton.setAttribute("aria-busy", drafting ? "true" : "false");
+  draftButton.textContent = drafting ? "生成中..." : "生成分镜草稿";
+  draftButton.title = drafting
+    ? "分镜草稿生成中"
+    : !hasScript
+      ? "请先输入或上传剧本"
+      : draftReadyForCurrentScript
+        ? "当前剧本已有分镜草稿"
+        : "根据当前剧本生成分镜草稿";
+}
+
 function renderWorkspace() {
   const data = state.project;
   const hasProject = !!data?.project;
@@ -6159,13 +6183,7 @@ function renderModernStudio(data = state.project) {
   const videoConfigReady = Boolean(data.videoConfigStatus?.ready);
   const videoConfigAvailable = Boolean(data.videoConfigStatus?.exists);
   const videoRunning = videoProgressHasActiveWork(data.videoProgress || {});
-  const draftButton = $("#modernGenerateDraft");
-  if (draftButton) {
-    const drafting = isDraftGenerating();
-    draftButton.disabled = drafting || !scriptSource.trim();
-    draftButton.textContent = drafting ? "生成中..." : "生成分镜草稿";
-    draftButton.title = drafting ? "分镜草稿生成中" : scriptSource.trim() ? "根据当前剧本生成分镜草稿" : "请先输入或上传剧本";
-  }
+  syncModernDraftAction(data);
   renderModernAssetExtractAction();
   const configButton = $("#modernBuildConfig");
   if (configButton) {
@@ -10113,8 +10131,39 @@ async function startJob(type, options = {}) {
   });
   state.activeJobId = data.job.id;
   toast("任务已启动");
+
   scheduleProjectRefresh({ immediate: true });
 }
+const DRAFT_POLL_INTERVAL_MS = 2_000;
+const DRAFT_POLL_SLOW_INTERVAL_MS = 10_000;
+const DRAFT_POLL_TIMEOUT_MS = 15 * 60 * 1_000;
+
+async function waitForDraftJob(projectId, jobId) {
+  if (!jobId) throw new Error("服务未返回任务号，请重新生成");
+  const startedAt = Date.now();
+  const deadline = startedAt + DRAFT_POLL_TIMEOUT_MS;
+  let consecutiveFailures = 0;
+  while (Date.now() < deadline) {
+    const interval = Date.now() - startedAt < 30_000 ? DRAFT_POLL_INTERVAL_MS : DRAFT_POLL_SLOW_INTERVAL_MS;
+    await new Promise((resolve) => setTimeout(resolve, interval));
+    try {
+      const data = await api(`/api/project/${encodeURIComponent(projectId)}/draft-jobs/${encodeURIComponent(jobId)}`);
+      consecutiveFailures = 0;
+      if (data.job?.status === "completed") return data;
+      if (data.job?.status === "failed") {
+        const terminalError = new Error(data.job.error || "分镜草稿生成失败");
+        terminalError.terminal = true;
+        throw terminalError;
+      }
+    } catch (error) {
+      if (error?.terminal) throw error;
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= 5) throw error;
+    }
+  }
+  throw new Error("分镜草稿生成超过 15 分钟仍未完成，请稍后刷新页面查看结果");
+}
+
 
 async function generateDraft() {
   if (!state.selectedId) throw new Error("请先打开一个项目");
@@ -10128,10 +10177,11 @@ async function generateDraft() {
   toast("正在生成分镜草稿");
   try {
     await saveFileQuiet("script");
-    const data = await api(`/api/project/${state.selectedId}/draft`, {
+    const accepted = await api(`/api/project/${state.selectedId}/draft`, {
       method: "POST",
       body: JSON.stringify({ dialogueLanguage, durationMode: state.durationMode, assetAnalyzerModel: state.assetAnalyzerModel }),
     });
+    const data = await waitForDraftJob(state.selectedId, accepted.job?.jobId);
     setProjectState(data.state);
     toast("分镜和提示词草稿已生成");
   } finally {
@@ -10954,6 +11004,7 @@ function bind() {
       });
       $("#modernScriptSourceStatus")?.classList.remove("is-saved");
       if ($("#modernScriptSourceStatus")) $("#modernScriptSourceStatus").textContent = "有修改";
+      syncModernDraftAction(state.project);
     } catch (error) {
       toast(error.message);
       event.target.value = "";
@@ -10980,6 +11031,7 @@ function bind() {
   $("#modernScriptText")?.addEventListener("input", () => {
     $("#modernScriptSourceStatus")?.classList.remove("is-saved");
     if ($("#modernScriptSourceStatus")) $("#modernScriptSourceStatus").textContent = "有修改";
+    syncModernDraftAction(state.project);
   });
   $("#modernAssetDescriptionText")?.addEventListener("input", () => {
     $("#modernAssetSourceStatus")?.classList.remove("is-saved");

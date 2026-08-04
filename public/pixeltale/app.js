@@ -692,8 +692,8 @@ function nextStepMeta() {
       kind: "auto-revise",
       stage: flowStage,
       title: `${flowMeta.title}需要执行已采纳修订`,
-      copy: `已有 ${advisoryGate.accepted.length} 条建议被采纳。点击后由本阶段主创定向修订，并由三模型逐项复审。`,
-      label: "执行采纳修订并复审 →",
+      copy: `已有 ${advisoryGate.accepted.length} 条建议被采纳。一次点击会自动处理全部问题，最多执行两轮定向修订与三模型复审。`,
+      label: "一键修订并复审 →",
       flowStage,
     };
   }
@@ -734,8 +734,8 @@ function nextStepMeta() {
     kind: "auto-revise",
     stage: flowStage,
     title: `${flowMeta.title}需要修订`,
-    copy: "下方“必须修订”是唯一执行清单。点击后按这些项目定向改稿，再由模型逐项复审关闭。",
-    label: "执行定向修订并复审 →",
+    copy: "下方“必须修订”是唯一执行清单。一次点击会合并全部问题，最多自动完成两轮定向改稿与复审。",
+    label: "一键修订并复审 →",
     flowStage,
   };
 }
@@ -1792,7 +1792,7 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
           state.busy = false;
           showToast("前台等待窗口已结束，任务仍在后台运行；完成后会自动同步，请勿重复提交。");
           void monitorBackgroundRun({ jobId: accepted.job?.jobId, stage });
-          return;
+          return { detached: true };
         }
         payload = { result };
       } catch (error) {
@@ -1816,10 +1816,12 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
       : payload.result?.status === "needs_review"
       ? (revision ? "交叉修订已执行，但仍有问题未通过逐项关闭" : "已生成，但三模型审核存在共识问题或意见冲突")
       : (revision ? "交叉修订已逐项复审关闭，等待确认" : "已生成并完成三模型交叉审核，等待确认"));
+    return { result: payload.result };
   } catch (error) {
     if (error?.terminal) persistActiveRun(null);
     state.lastError = userFacingError(error);
     showToast(state.lastError);
+    return { failed: true };
   } finally {
     state.busy = false;
     renderStage();
@@ -1850,16 +1852,35 @@ async function runAutoRevision(stage = state.stage) {
     await runCurrentStage(stage);
     return;
   }
-  const plan = [
-    "请一次性修订当前阶段的全部复核问题。保留没有问题的内容，不要只修复其中一项。",
-    ...issues.map((issue, index) => {
+  const maxPasses = 2;
+  const buildPlan = (items, pass) => [
+    `这是第 ${pass} 轮自动修订。请一次性解决当前阶段的全部复核问题；保留没有问题的内容，不要只修复其中一项。`,
+    ...items.map((issue, index) => {
       const evidence = Array.isArray(issue.evidence) && issue.evidence.length ? `证据：${issue.evidence.join("；")}` : "";
       const fixes = Array.isArray(issue.suggestions) && issue.suggestions.length ? issue.suggestions.join("；") : "请根据问题证据提出具体修订";
       return `${index + 1}. ${issue.tag || "待修订项"}（${issue.severity || "medium"}）：${fixes}${evidence ? `；${evidence}` : ""}`;
     }),
   ].join("\n");
-  showToast(`已锁定 ${issues.length} 类必须修订项，正在执行定向修订与逐项复审`);
-  await runCurrentStage(stage, { revisionPlan: plan });
+
+  let currentIssues = issues;
+  for (let pass = 1; pass <= maxPasses; pass += 1) {
+    showToast(`正在执行第 ${pass} / ${maxPasses} 轮修订与复审 · ${currentIssues.length} 类问题`);
+    const outcome = await runCurrentStage(stage, { revisionPlan: buildPlan(currentIssues, pass) });
+    if (outcome?.detached || state.lastError) return;
+
+    const revisedArtifact = artifactForStage(stage);
+    const revisedReview = reviewForArtifact(revisedArtifact);
+    const remainingIssues = reviewIssueGroups(revisedReview?.content || {});
+    if (revisedArtifact?.status === "ready" || revisedReview?.content?.pass === true) {
+      showToast(pass === 1 ? "修订已完成并通过复审，等待确认进入下一步" : `已自动完成 ${pass} 轮修订并通过复审，等待确认进入下一步`);
+      return;
+    }
+    if (pass === maxPasses) {
+      showToast(`已完成 ${maxPasses} 轮修订，仍有 ${remainingIssues.length} 类问题待确认；请查看清单后再决定`);
+      return;
+    }
+    currentIssues = remainingIssues;
+  }
 }
 
 async function decideAdvisory(reviewId, advisoryId, status, reason = "", requiresReason = false) {

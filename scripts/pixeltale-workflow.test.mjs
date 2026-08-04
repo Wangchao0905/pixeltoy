@@ -43,7 +43,7 @@ assert.match(app, /document\.hidden/, "Story DNA animation must pause when the d
 assert.match(app, /IntersectionObserver/, "Story DNA animation must pause outside the viewport");
 assert.match(app, /审核未通过，需要处理必修项[\s\S]*唯一下一步位于右侧/, "brief review failures must explain how to continue");
 assert.match(app, /参考意见与模型状态[\s\S]*不阻断确认/, "single-model opinions must be visibly separated from mandatory revisions");
-assert.match(app, /kind: "auto-revise"[\s\S]*执行定向修订并复审/, "review flow must expose one canonical revision action");
+assert.match(app, /kind: "auto-revise"[\s\S]*一键修订并复审/, "review flow must expose one canonical revision action");
 assert.match(app, /REQUIRED WORKLIST[\s\S]*仅处理此处/, "mandatory revisions must be presented as one canonical worklist");
 assert.match(app, /return mergeReviewItems\(\[\.\.\.pendingClosures, \.\.\.mandatoryIssues, \.\.\.acceptedAdvisories\]\)/, "revision UI must merge unresolved contracts with newly discovered mandatory issues");
 assert.match(app, /review-reference-panel/, "optional review material must be collapsible");
@@ -83,8 +83,12 @@ assert.match(styles, /\.inspiration-pool \{[\s\S]*height: 360px;/, "inspiration 
 assert.match(app, /function renderReviewPanel\(reviewContent = \{\}, \{ passed/, "review output must expose a complete issue panel");
 assert.match(app, /可选优化建议[\s\S]*不阻断确认/, "low-risk consensus recommendations must be visibly non-blocking");
 assert.match(app, /审核超时\/失败/, "review cards must expose actual model failure state");
-assert.match(app, /执行定向修订并复审/, "review output must offer one canonical revision action");
+assert.match(app, /一键修订并复审/, "review output must offer one canonical revision action");
 assert.match(app, /revisionPlan/, "automatic revision must pass a scoped revision plan");
+assert.match(app, /const maxPasses = 2/, "automatic revision must cap the number of passes");
+assert.match(app, /currentIssues = remainingIssues/, "automatic revision must rebuild the plan from the latest review");
+assert.match(app, /return \{ detached: true \}/, "automatic revision must stop when the run continues in the background");
+assert.match(app, /outcome\?\.detached \|\| state\.lastError/, "automatic revision must not submit a second pass for a detached run");
 assert.match(app, /async function runAutoRevision[\s\S]*const payload = await request\(""\)/, "revision clicks must refresh the server session before selecting a source artifact");
 assert.match(app, /action\.kind === "auto-revise"[\s\S]*等待执行修订/, "the right rail must distinguish a pending revision from waiting for input");
 assert.match(app, /revision-progress/, "revision output must expose closure progress");

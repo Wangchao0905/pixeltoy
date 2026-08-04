@@ -24,15 +24,11 @@ assert.match(appCss, /#videoProgressList \.segment-state-queued[\s\S]*background
 assert.match(appCss, /#videoProgressList \.segment-state-running[\s\S]*border:/, "running state should have a distinct ring");
 assert.match(appCss, /\.segment-download-button\s*\{[\s\S]*border-radius:\s*50%/, "segment downloads should use the compact action style");
 
-assert.match(canvasJs, /画面正在拼装/, "running video UI should use the approved assembly copy");
-assert.match(canvasJs, /video-tetris-rain/, "running video UI should render the falling block layer");
-assert.match(canvasJs, /shape-i/, "falling block layer should include an I piece");
-assert.match(canvasJs, /shape-o/, "falling block layer should include an O piece");
-assert.match(canvasJs, /shape-t/, "falling block layer should include a T piece");
-assert.match(canvasJs, /shape-l/, "falling block layer should include an L piece");
-assert.match(canvasJs, /shape-s/, "falling block layer should include an S piece");
-assert.match(canvasCss, /@keyframes video-tetris-fall/, "CSS should animate blocks from top to bottom");
-assert.match(canvasCss, /\.video-tetris-piece/, "CSS should style tiny falling pixel pieces");
+assert.match(canvasJs, /<strong>生成中<\/strong>/, "running video UI should use the approved generating copy");
+assert.match(canvasJs, /generation-progress-track/, "running video UI should render a progress track");
+assert.match(canvasJs, /generation-model-label/, "running video UI should show the selected model");
+assert.match(canvasCss, /\.generation-progress-track i::after[\s\S]*animation: generation-progress-sheen/, "progress track should animate a sheen");
+assert.match(canvasCss, /@keyframes generation-progress-indeterminate/, "indeterminate progress should remain animated");
 assert.match(
   canvasCss,
   /\.video-node\[data-video-status="running"\] \.video-preview-slot[\s\S]*?background:[\s\S]*?!important;/,

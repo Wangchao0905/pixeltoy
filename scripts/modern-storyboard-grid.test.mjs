@@ -28,15 +28,15 @@ assert.match(styles, /\.storyboard-document-shot-frame\.storyboard-document-boar
 
 assert.match(server, /IMAGE_SIZE_BY_QUALITY_16_9\[String\(body\.quality/);
 assert.match(server, /aspectRatio:\s*"16:9"/);
-assert.match(server, /Fill every panel edge-to-edge/);
+assert.match(server, /Render every panel as a black-and-white hand-drawn storyboard sketch/);
 assert.doesNotMatch(server, /Every panel has a readable lower production note area/);
 assert.doesNotMatch(server, /storyboardPortraitSize\(/, "storyboard generation must not rotate a landscape board to portrait");
 assert.match(runner, /one 16:9 horizontal \(landscape\) sheet/);
-assert.match(runner, /Every panel is a landscape 16:9 outer cell/);
+assert.match(runner, /Every panel is a landscape cell with equal outer dimensions/);
 assert.match(runner, /Fill every panel with complete horizontal storyboard imagery/);
 assert.doesNotMatch(runner, /Reserve the lower 40 percent/);
 assert.doesNotMatch(runner, /reserved lower tab areas/);
-assert.match(server, /no extra header, footer, or blank area outside the nine panels/);
+assert.match(server, /The right 20% is a reserved blank strip/);
 assert.doesNotMatch(runner, /one 9:16 vertical \(portrait\) sheet/);
 assert.doesNotMatch(runner, /9:16 vertical \(portrait\) sheet/);
 assert.match(runner, /cell_h = max\(40, round\(cell_w \* 9 \/ 16\)\)/);

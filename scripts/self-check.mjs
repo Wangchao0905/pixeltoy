@@ -55,7 +55,7 @@ const storyboardJobRoute = sectionBetween(
   '  throw new Error(`unknown job type: ${type}`);',
 );
 const productionBoardPrompt = sectionBetween(server, "function storyboardPromptForSlot", "function storyboardPromptsMarkdown");
-const projectBoardVideoReferences = sectionBetween(server, "function projectShotAllVideoReferenceAssets", "function videoReferenceAssetPotentialUrls");
+const projectBoardVideoReferences = sectionBetween(server, "function projectShotVideoReferenceNames", "function videoReferenceAssetPotentialUrls");
 const productionBoardGuidance = sectionBetween(server, "function storyboardGuidancePromptText", "function assetLookupFromAssets");
 const productionBoardReadiness = sectionBetween(server, "function configReadiness", "function isGenericGroupName");
 const productionBoardSeedancePrompt = sectionBetween(server, "function storyboardSeedancePrompt", "function seedancePromptForShotMode");
@@ -138,8 +138,8 @@ for (const [name, pageHtml] of [
   assert(/<link\s+rel=["']icon["']\s+href=["']data:,["']\s*\/?>/i.test(pageHtml), `${name} page must use a blank browser tab icon`);
   assert(!/<link\s+[^>]*rel=["'](?:shortcut\s+)?icon["'][^>]*pixel-infinity-logo/i.test(pageHtml), `${name} page must not use the brand image as browser tab icon`);
 }
-assert(authHtml.includes('<a class="auth-logo" href="/" aria-label="Pixel Toys">'), "auth topbar must keep its Pixel Toys home link");
-assert(authHtml.includes("<span>PIXEL TOYS</span>"), "auth topbar must keep its Pixel Toys wordmark");
+assert(authHtml.includes('<meta http-equiv="refresh" content="0;url=/?auth=login" />'), "auth page must redirect to the shared login surface");
+assert(authHtml.includes('target.searchParams.set("auth", params.get("mode") === "register" ? "register" : "login")'), "auth redirect must preserve login/register mode");
 assert(!authHtml.includes("auth-logo-mark"), "auth topbar must not show the pill logo icon");
 assert(!authInfinity.includes("auth-logo-mark"), "auth animation must not query the removed pill logo icon");
 assert(!styles.includes("auth-logo-mark"), "styles must not retain rules for the removed pill logo icon");
@@ -244,20 +244,20 @@ assert(!server.includes("Math.min(12, Math.round(Number(raw.duration"), "storybo
 assert(server.includes('suffix: "PRODUCTION_BOARD"'), "storyboard assets must use Production Board suffix");
 assert(server.includes("const PRODUCTION_BOARD_MAX_SECONDS = 15;"), "Production Board must cap each board at a 15-second story unit");
 assert(server.includes("const VIDEO_MAX_SECONDS = 15;"), "video clips must remain capped at 15 seconds");
-assert(server.includes("const STORYBOARD_MIN_PANELS = 9;") && server.includes("const STORYBOARD_MAX_PANELS = 9;") && server.includes("const STORYBOARD_BOARD_COLUMNS = 3;"), "Production Board must use a fixed 3x3 nine-panel grid");
+assert(server.includes("const STORYBOARD_MIN_PANELS = 9;") && server.includes("const STORYBOARD_MAX_PANELS = 12;") && server.includes("const STORYBOARD_BOARD_COLUMNS = 4;"), "Production Board must use a 4x3 twelve-panel grid");
 assert(storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_16_9"), "Production Board job route must render the whole board as a 16:9 horizontal sheet");
 assert(storyboardJobRoute.includes('aspectRatio: "16:9"'), "Production Board generation metadata must describe the full board as 16:9");
 assert(!storyboardJobRoute.includes("IMAGE_SIZE_BY_QUALITY_9_16"), "Production Board job route must not make the whole board 9:16 portrait");
 assert(!storyboardJobRoute.includes('aspectRatio: "9:16"'), "Production Board generation must not mark the whole board as 9:16");
 assert(server.includes("Create ONE 16:9 horizontal"), "Production Board prompt must make the whole board a 16:9 horizontal sheet");
-assert(productionBoardPrompt.includes("exactly ${panelCount} equal-size storyboard panels"), "Production Board prompt must require nine equal-sized panels");
-assert(productionBoardPrompt.includes("integrated lower Production Tab"), "Production Board prompt must reserve a readable production tab in every panel");
+assert(productionBoardPrompt.includes("exactly ${panelCount} equal storyboard panels"), "Production Board prompt must require equal-sized panels");
+assert(productionBoardPrompt.includes("Footer holds a notes/timing field"), "Production Board prompt must reserve a readable footer area");
 assert(productionBoardPrompt.includes("deterministic post-process"), "Production Board prompt must keep all production copy readable by reserving it for deterministic typesetting");
-assert(productionBoardPrompt.includes("full plot/action and dialogue"), "Production Board prompt must visibly retain full plot and dialogue for every panel");
-assert(productionBoardPrompt.includes("actual referenced Character, Scene, Prop, and Insert assets"), "Production Board must render the actual bound assets, not generic sketch placeholders");
+assert(productionBoardPrompt.includes("Render the ACTUAL scripted story"), "Production Board prompt must visibly retain the scripted plot for every panel");
+assert(productionBoardPrompt.includes("attached production reference assets"), "Production Board must render the actual bound assets, not generic sketch placeholders");
 assert(projectBoardVideoReferences.includes("function projectShotVideoReferenceNames"), "Production Board references must use one shared board-plus-assets reference list");
 assert(projectBoardVideoReferences.includes("const refs = isProductionBoardMode(config, shot) ? [...storyboardRefs, ...officialRefs] : officialRefs"), "Production Board video submission must combine storyboard and official asset references");
-assert(productionBoardGuidance.includes("正式资产图片"), "Production Board video guidance must describe the official asset references");
+assert(productionBoardGuidance.includes("Character/Scene/Prop/Insert 正式资产"), "Production Board video guidance must describe the official asset references");
 assert(!productionBoardGuidance.includes("唯一提交图片参考"), "Production Board video guidance must not claim the board is the sole image reference");
 assert(productionBoardReadiness.includes('const promptMode = config.settings?.promptMode'), "Production Board readiness must define the active prompt mode locally");
 assert(productionBoardReadiness.includes("const storyboardMode = [\"production_board\", \"storyboard\"].includes"), "Production Board readiness must define the storyboard mode locally");
@@ -265,16 +265,16 @@ assert(productionBoardSeedancePrompt.includes("@图片${i + 1} 是 Production Bo
 assert(productionBoardSeedancePrompt.includes("const officialRefs"), "Production Board prompt must preserve official asset references");
 assert(productionBoardSubmissionGuard.includes("const boardlessShots = selectedShots.filter"), "Production Board submission must reject shots missing their board");
 assert(productionBoardPanelPlan.includes("production: storyboardProductionTabForPanel"), "Production Board panels must carry a structured production tab");
-assert(productionBoardPrompt.includes("Visual / Camera / Shot / Lens / Lighting / Emotion"), "Production Board prompt must retain the structured production direction");
+assert(productionBoardPrompt.includes("Each panel must communicate shot scale, camera angle"), "Production Board prompt must retain the structured production direction");
 assert(assetRunner.includes("function stampStoryboardProductionTabs"), "Production Board renderer must typeset a production tab after image generation");
 assert(assetRunner.includes('"PRODUCTION TAB"'), "Production Board renderer must visibly label each production tab");
 assert(assetRunner.includes("visible identity anchors"), "Production Board must render character turnarounds and product references as visible identity anchors");
 assert(!productionBoardPrompt.includes("ESTABLISHING SHOT:"), "Production Board must not reserve a separate large establishing-shot panel");
 assert(!productionBoardPrompt.includes("below the establishing shot"), "Production Board grid must start immediately below the header");
-assert(server.includes("15 秒 16:9 横版九宫格故事板"), "Production Board policy must describe the whole board as a 16:9 horizontal sheet");
+assert(server.includes("15 秒 16:9 横版 4×3 十二格故事板"), "Production Board policy must describe the whole board as a 16:9 horizontal sheet");
 assert(server.includes("Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips"), "Production Board prompt must keep technical reference markup out of the final board");
 assert(server.includes("function buildStoryboardPanelAssetBindings"), "Production Board must retain backend panel-to-asset binding");
-assert(assetRunner.includes("Preserve the production-tab and visible-reference layout"), "Production Board edits must preserve the readable production tab and reference layout");
+assert(assetRunner.includes("deterministic Production Tab") && assetRunner.includes("Integrate it naturally into each upper 16:9 narrative camera frame"), "Production Board edits must preserve the readable production tab and reference layout");
 assert(server.includes("storyboardDisablesTailFrameContinuity: false"), "Production Board must not globally disable tail-frame continuity");
 assert(styles.includes(".storyboard-card img {\n  display: block;\n  width: 100%;\n  aspect-ratio: 16 / 9;"), "Production Board preview cards must show the 16:9 horizontal board");
 assert(styles.includes(".storyboard-missing-preview {\n  aspect-ratio: 16 / 9;"), "Production Board missing previews must show the 16:9 horizontal board shape");
@@ -284,7 +284,7 @@ assert(html.includes('id="modernVideoPromptMode"'), "active video workbench must
 assert(app.includes("const promptMode = selectedVideoPromptMode()"), "frontend must submit the selected modern video mode");
 assert(app.includes("enableStoryboards: promptMode === \"production_board\""), "frontend must enable storyboards only in Production Board mode");
 assert(server.includes('const videoPromptMode = storyboardsActive ? "production_board" : "prompt";'), "server must split prompt mode from Production Board mode");
-assert(server.includes('if (promptMode === "production_board" && !storyboards.length) missing.push("缺少 Production Board")'), "Production Board mode must not silently fall back when boards are missing");
+assert(server.includes('if (storyboardMode && !storyboards.length) missing.push("缺少 Production Board")'), "Production Board mode must not silently fall back when boards are missing");
 assert(!server.includes("Use nine-grid storyboard images only"), "old nine-grid storyboard policy must not be reintroduced");
 assert(!server.includes("已启用九宫格故事版参考"), "old nine-grid continuity label must not be reintroduced");
 assert(!server.includes("请选择要生成的九宫格"), "old nine-grid UI error copy must not be reintroduced");
@@ -349,7 +349,7 @@ assert(server.includes("复用已缓存尾帧") && server.includes("const downlo
 assert(canvas.includes("function videoDownloadHref") && canvas.includes('return String(node?.videoUrl || "").trim();') && !canvas.includes('url.searchParams.set("download", "1")'), "canvas video downloads must use the original video URL");
 assert(!canvas.includes('`/api/canvas/video-download?url=${encodeURIComponent(raw)}&name=${encodeURIComponent(videoDownloadName(node))}`'), "canvas video downloads must not use the same-origin attachment proxy");
 assert(server.includes('if (url.pathname === "/api/canvas/video-download") return await proxyVideoDownload(req, res, url);'), "canvas remote video download proxy route must exist");
-assert(server.includes("videoLocalFile: compactLine(node.videoLocalFile") && server.includes("videoUrl: localVideoFile ? `/media?path=${encodeURIComponent(localVideoFile)}`"), "standalone canvas videos must persist a local mp4 URL for durable downloads");
+assert(server.includes("videoLocalFile: localVideoFile") && server.includes("stampedLocalMediaUrl(localVideoFile)"), "standalone canvas videos must persist a local mp4 URL for durable downloads");
 assert(canvas.includes("videoLocalFile: saved.videoLocalFile || node.videoLocalFile || \"\"") && canvas.includes("videoUrl: saved.videoUrl || node.videoUrl || videoUrl"), "canvas tail-frame persistence must replace expiring provider URLs with local media URLs");
 assert(server.includes("nodeId: compactLine(meta.nodeId || \"\").slice(0, 120)") && server.includes("nodeId: body.nodeId || \"\""), "active canvas video usage records must keep nodeId for refresh recovery");
 assert(server.includes('execFileSync("sh", ["-lc", \'command -v -- "$1"\''), "ffmpeg executable detection must use a robust shell command");
@@ -456,8 +456,8 @@ assert(styles.includes("body.is-studio .studio-console-head {\n  display: none !
 assert(html.includes('class="studio-sidebar"'), "studio must expose the new left production toolbar");
 assert(html.includes('class="studio-console"'), "studio must expose the central generation console");
 assert(html.includes('id="studioFlowStatus"'), "studio must expose the flow status strip");
-assert(html.includes('data-studio-tab="assets"') && html.includes('data-studio-tab="storyboards"') && html.includes('data-studio-tab="video"'), "studio content tabs are missing");
-assert(html.includes('data-studio-panel="assets"') && html.includes('data-studio-panel="storyboards"') && html.includes('data-studio-panel="video"'), "studio tab panels are missing");
+assert(html.includes('data-studio-tab="assets"') && html.includes('data-studio-tab="storyboards"') && html.includes('data-studio-tab="logs"'), "studio content tabs are missing");
+assert(html.includes('data-studio-panel="assets"') && html.includes('data-studio-panel="storyboards"') && html.includes('data-studio-panel="logs"'), "studio tab panels are missing");
 assert(html.includes('id="studioLogContent"'), "studio log panel is missing");
 assert(app.includes("function setStudioTab"), "frontend must bind the new studio content tabs");
 assert(app.includes("function renderStudioFlowStatus"), "frontend must render real project state in the flow strip");
@@ -612,25 +612,25 @@ assert(server.includes("for (let i = 0; i < 7; i += 1)"), "generated invite code
 assert(server.includes('/^[A-Z]{7}$/.test(code)'), "admin-created invite codes must be exactly 7 uppercase letters");
 
 // Storyboard plot distribution: every beat sentence lands in exactly one panel (no gap), and split boards/parts never duplicate the same plot verbatim.
-assert(server.includes("function storyboardPanelSourceText(segment = {}, localIndex = 0, localCount = 1)"), "storyboard panel text must be picked by the panel's local position within its segment, not the global 0-8 index");
+assert(server.includes("function storyboardPanelSourceText(segment = {}, localIndex = 0, localCount = 1)"), "storyboard panel text must be picked by the panel's local position within its segment, not the global panel index");
 assert(!server.includes("beat.length > 520"), "long merged beats must not degrade every panel to a single placeholder");
 assert(server.includes("Math.floor(((idx + 1) * total) / count)"), "panel text must distribute a segment's beat sentences into per-panel chunks");
 assert(server.includes("const sameSegmentPanels = panelSegments.reduce"), "panel plan must compute each panel's local index within its own segment run");
-assert(server.includes("const sliceByPart = (arr, i) =>"), "over-length storyboard segments must partition beat/dialogue across parts instead of copying them verbatim");
+assert(server.includes("function storyboardSegmentSlice(segment, offset, duration, partIndex = 1, partCount = 1)"), "over-length storyboard segments must partition beat/dialogue across parts instead of copying them verbatim");
 
-// Storyboard board format: a 16:9 horizontal sheet with nine equal panels in a 3x3 grid. Each panel pairs a cinematic frame with a deterministic production tab and visible identity anchors.
-assert(server.includes("16:9 横版九宫格故事板"), "server storyboard prompt must make the board landscape");
+// Storyboard board format: a 16:9 horizontal sheet with twelve equal panels in a 4x3 grid. Each panel pairs a cinematic frame with a deterministic production tab and visible identity anchors.
+assert(server.includes("15 秒 16:9 横版 4×3 十二格故事板"), "server storyboard prompt must make the board landscape");
 assert(assetRunner.includes("16:9 horizontal (landscape) sheet"), "storyboard generation contract must describe the whole board as a 16:9 horizontal sheet");
 assert(!assetRunner.includes("one 9:16 vertical (portrait) sheet"), "storyboard generation contract must not describe the whole board as a 9:16 vertical sheet");
-assert(assetRunner.includes("3-column grid") && assetRunner.includes("9 equal-size panels in a 3 columns x 3 rows grid"), "storyboard generation contract must specify an equal-size three-column, nine-panel grid");
+assert(assetRunner.includes("4-column grid") && assetRunner.includes("12 equal-size panels in a 4 columns x 3 rows grid"), "storyboard generation contract must specify an equal-size four-column, twelve-panel grid");
 assert(!assetRunner.includes("2-column grid"), "storyboard renderer must not retain the retired 2-column grid");
 assert(!server.includes("外层制作板为 16:9 排版"), "storyboard planner must not retain the legacy 16:9 board contract");
 assert(!server.includes("按面板编号执行镜头：P1 建立空间与轴线"), "storyboard guidance must not retain the legacy fixed P1-P9 sequence");
-assert(server.includes("可见身份参考"), "storyboard guidance must retain visible identity references for cast, product and set continuity");
-assert(assetRunner.includes("P1-P9: show chronological story beats"), "storyboard renderer must retain the nine-panel fallback for the 3x3 contract");
-assert(assetRunner.includes("visible reference thumbnails"), "storyboard renderer must add visible reference thumbnails to the final board");
+assert(assetRunner.includes("visible identity anchors"), "storyboard renderer must retain visible identity references for cast, product and set continuity");
+assert(assetRunner.includes("P1-P${STORYBOARD_BOARD_PANELS}: show chronological story beats"), "storyboard renderer must retain the twelve-panel fallback for the 4x3 contract");
+assert(assetRunner.includes("deterministic post-process pastes the real reference assets there"), "storyboard renderer must add visible reference references to the final board");
 assert(!assetRunner.includes("16:9 landscape Production Board"), "storyboard edits must preserve the vertical Production Board contract");
-assert(assetRunner.includes("production-board-imagegen-v19-landscape-tail-anchor"), "storyboard renderer revision must invalidate boards generated before deterministic tail anchoring");
+assert(assetRunner.includes("production-board-imagegen-v21-sheet-4x3-handlettered"), "storyboard renderer revision must invalidate boards generated before deterministic tail anchoring");
 assert(assetRunner.includes("function stampStoryboardProductionTabs"), "storyboard renderer must overlay production tabs after image generation");
 assert(assetRunner.includes("stampStoryboardProductionTabs(asset, out, assetReferenceImages);"), "storyboard renderer must typeset production tabs on every completed board");
 assert(assetRunner.includes("PRODUCTION TAB"), "storyboard renderer must render the production tab label on the final board");
@@ -668,7 +668,7 @@ assert(!html.includes('id="modernAssetStylePreset"') && !html.includes('id="mode
 assert(server.includes("function seedanceStyleLawForPreset"), "seedance prompt must derive a mandatory style law from the asset style preset");
 assert(server.includes("镜号 ${index + 1}（${duration} 秒）"), "seedance prompt must begin with the natural-language shot number and duration");
 assert(server.includes("人声 OS：${d.voice_over}") && server.includes("人物台词：${dialogue}") && server.includes("音效：${d.sound}"), "seedance prompt must retain voice-over, dialogue, and sound fields");
-assert(server.includes("style: seedanceStyleLawForPreset(stylePreset)"), "seedance natural-language prompt must inject the style law");
+assert(server.includes("style: seedanceStyleLawForShot(stylePreset, shot?.videoStyleDirective)"), "seedance natural-language prompt must inject the style law");
 assert(server.includes("const videoStylePreset = videoStylePresetFromProductionAssets(productionAssets, body);"), "video config must resolve the project video style from the reference assets");
 assert(server.includes("photoreal\n      ? design.lighting") || server.includes("photoreal"), "realistic lighting/skin cues must be gated to photoreal style only");
 assert(server.includes("function sanitizeSeedancePromptForPolicy"), "Seedance prompt submission must sanitize copyright/policy-risk wording before provider submit");

@@ -9,6 +9,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pixel-toys-production-tab-"))
 const board = path.join(dir, "SB001_E01_V001_PRODUCTION_BOARD.png");
 const character = path.join(dir, "C001_LIN_XIA.png");
 const scene = path.join(dir, "S001_ROOFTOP.png");
+const previousStampTabs = process.env.PIXEL_TOYS_STORYBOARD_STAMP_TABS;
+process.env.PIXEL_TOYS_STORYBOARD_STAMP_TABS = "1";
 
 try {
   execFileSync(
@@ -39,7 +41,7 @@ try {
       "python3",
       [
         "-c",
-        "from PIL import Image; import json, sys; im=Image.open(sys.argv[1]).convert('RGB'); print(json.dumps({'size': im.size, 'tab': im.getpixel((120, 512)), 'header': im.getpixel((120, 481)), 'thumb': im.getpixel((80, 556))}))",
+        "from PIL import Image; import json, sys; im=Image.open(sys.argv[1]).convert('RGB'); print(json.dumps({'size': im.size, 'tab': im.getpixel((120, 512)), 'header': im.getpixel((120, 490)), 'thumb': im.getpixel((65, 575))}))",
         board,
       ],
       { encoding: "utf8" },
@@ -50,6 +52,8 @@ try {
   assert.notDeepEqual(stats.header, [112, 96, 78], "production tab header must be visibly rendered");
   assert.deepEqual(stats.thumb, [190, 70, 55], "visible reference thumbnails must be rendered in every panel tab");
 } finally {
+  if (previousStampTabs === undefined) delete process.env.PIXEL_TOYS_STORYBOARD_STAMP_TABS;
+  else process.env.PIXEL_TOYS_STORYBOARD_STAMP_TABS = previousStampTabs;
   if (process.env.PIXEL_TOYS_KEEP_TEST_ARTIFACTS !== "1") {
     fs.rmSync(dir, { recursive: true, force: true });
   } else {

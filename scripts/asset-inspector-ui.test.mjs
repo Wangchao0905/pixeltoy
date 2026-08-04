@@ -7,10 +7,9 @@ const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/styles.css"), "utf8");
 
-// 只校验缓存戳存在(改 CSS/JS 必须换戳的约定),不锁死具体取值,
-// 否则每次正常换戳都会让这条断言失败。
-assert.match(html, /href="\/styles\.css\?v=[A-Za-z0-9._-]+"/, "styles.css must carry a cache-busting version stamp");
-assert.match(html, /src="\/app\.js\?v=[A-Za-z0-9._-]+"/, "app.js must carry a cache-busting version stamp");
+// 制作台入口使用稳定 URL + ETag 重验证，内容变化时自动取得新版资源。
+assert.match(html, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/, "styles.css must use ETag revalidation");
+assert.match(html, /<script src="\/app\.js"><\/script>/, "app.js must use ETag revalidation");
 assert.match(html, /id="assetInspector"/);
 assert.match(html, /id="assetInspectorPrompt"/);
 assert.match(html, /id="regenerateAssetFromInspector"/);

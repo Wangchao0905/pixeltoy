@@ -2626,6 +2626,19 @@ function pixelTaleHistorySummaries({ root = PIXELTALE_SESSION_ROOT, currentSessi
     .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
 }
 
+const draftJobs = new Map();
+const DRAFT_JOB_MEMORY_TTL_MS = 30 * 60 * 1_000;
+// Two concurrent buildDraft runs on the same episode both write the same files,
+// so the slower one silently overwrites the faster one's output.
+const activeDraftRoots = new Map();
+
+function pruneDraftJobs() {
+  const cutoff = Date.now() - DRAFT_JOB_MEMORY_TTL_MS;
+  for (const [jobId, job] of draftJobs) {
+    if (job.status !== "running" && Number(job.finishedAt || job.updatedAt || 0) < cutoff) draftJobs.delete(jobId);
+  }
+}
+
 const pixelTaleRunJobs = new Map();
 const activePixelTaleRuns = new Map();
 const PIXEL_TALE_JOB_MEMORY_TTL_MS = 30 * 60 * 1_000;
@@ -2767,6 +2780,35 @@ function getPixelTaleRunJob(params, jobId) {
   }
   if (job.status === "failed") return { jobId: job.jobId, status: "failed", error: job.error, errorCode: job.errorCode };
   return { jobId: job.jobId, status: "running", stage: job.stage, elapsedMs: Math.max(0, Date.now() - job.createdAt) };
+}
+
+function startDraftJob(episodeRoot, body) {
+  pruneDraftJobs();
+  const inFlight = activeDraftRoots.get(episodeRoot);
+  if (inFlight && draftJobs.get(inFlight)?.status === "running") {
+    return { jobId: inFlight, status: "running", reused: true };
+  }
+  const jobId = `draft_${crypto.randomUUID()}`;
+  const job = { jobId, status: "running", episodeRoot, createdAt: Date.now(), updatedAt: Date.now() };
+  draftJobs.set(jobId, job);
+  activeDraftRoots.set(episodeRoot, jobId);
+  const release = () => { if (activeDraftRoots.get(episodeRoot) === jobId) activeDraftRoots.delete(episodeRoot); };
+  buildDraft(episodeRoot, body).then((result) => {
+    Object.assign(job, { status: "completed", result, updatedAt: Date.now(), finishedAt: Date.now() });
+    release();
+  }).catch((error) => {
+    Object.assign(job, { status: "failed", error: String(error?.message || "分镜草稿生成失败"), updatedAt: Date.now(), finishedAt: Date.now() });
+    release();
+  });
+  return { jobId, status: "running" };
+}
+
+function getDraftJob(episodeRoot, jobId) {
+  const job = draftJobs.get(compactLine(jobId || ""));
+  if (!job) return { status: "failed", error: "服务更新中断了本次生成，请重新生成", errorCode: "RUN_INTERRUPTED" };
+  if (job.status === "completed") return { jobId: job.jobId, status: "completed", result: job.result };
+  if (job.status === "failed") return { jobId: job.jobId, status: "failed", error: job.error };
+  return { jobId: job.jobId, status: "running", elapsedMs: Math.max(0, Date.now() - job.createdAt) };
 }
 
 function imageApiKey() {
@@ -20634,7 +20676,7 @@ function storyboardGuidancePromptText(guidance, storyboardImageIndex = null) {
 ${imageLabel} 是本段的 Production Board 故事板参考。读取本段实际编号面板中的 16:9 构图、人物/道具站位、运动方向、镜头景别、动作节奏和剪辑出口。
 故事板负责构图、站位、动作和节奏；本段随后提交的 Character/Scene/Prop/Insert 正式资产负责人物身份、场景材质、道具外观和细节一致性。二者必须同时使用，不得把任一类引用当成另一类的替代品。
 ${assetLock ? `${assetLock}\n` : ""}${panelBindings ? `${panelBindings}\n` : ""}
-按本板固定的 9 个编号面板顺序执行镜头：首格建立空间，末格保留干净剪辑出口，中间七格推进站位、动作、转折和反应。
+按本板固定的 12 个编号面板顺序执行镜头：首格建立空间，末格保留干净剪辑出口，中间十格推进站位、动作、转折和反应。
 ${panelText || "- 使用故事版图中的编号面板控制构图、站位、动作节奏与切镜。"}
 Production Board 模式下，相邻片段的空间连贯由同一 Sequence 的横版面板、正式资产身份、板面中的场景与道具状态和剪辑出口共同控制。`;
 }
@@ -21826,6 +21868,7 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
         },
         body: JSON.stringify(requestBody(withJsonMode)),
       });
+    let lastParsed = null;
     try {
       let response = await post(true);
       let raw = await response.text();
@@ -21840,6 +21883,7 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
       const data = JSON.parse(raw);
       const content = data.choices?.[0]?.message?.content || "";
       const parsed = JSON.parse(stripJsonFence(content));
+      lastParsed = parsed;
       return normalizeStoryboardPlan(parsed, {
         model: candidate,
         assets,
@@ -21851,6 +21895,14 @@ async function callStoryboardModel({ script, assets, dialogueLanguage, modelName
         durationMode: durationPlan?.durationMode,
       });
     } catch (error) {
+      // The parsed payload is the only way to tell "model refused" from "schema
+      // drift" from "shots rejected by validation"; the message alone loses it.
+      if (lastParsed) {
+        const keys = Object.keys(lastParsed);
+        const s = lastParsed.shots;
+        const info = Array.isArray(s) ? `arr[${s.length}]` : (s === undefined ? "missing" : typeof s);
+        console.error(`[storyboard:diag] ${candidate} keys=[${keys}] shots=${info} preview=${JSON.stringify(lastParsed).slice(0, 400)}`);
+      }
       attempted.push(`${candidate}: ${error?.message || String(error)}`);
     }
   }
@@ -23450,6 +23502,7 @@ function storyboardPromptForSlot(slot) {
     // 扩散模型没有"精确复制"能力,让它画参考位只会得到对资产图的彩色再创作
     // ——生产实测:白色毛绒生物、黄色小鸡,都不是真实角色图。所以这里要求留白。
     "Leave the right 20% of the sheet completely blank white — no border, no boxes, no headings, no thumbnails, no text in that strip. A deterministic post-process owns that area and will paste the real reference assets there. Everything you draw must fit inside the left 80% (panels) plus the header and footer bands.",
+    "Do NOT draw literal blue/red diagram arrows, camera rectangles, asset-reference strips, or other technical reference markup in the final board.",
     "Footer holds a notes/timing field on the left and director, animator, and date fields on the right.",
     "Render every panel as a black-and-white hand-drawn storyboard sketch: graphite/pencil linework, loose hatching, clear silhouettes, expressive blocking, rough but intentional speed lines, white paper, no color. This is a planning document, not a finished cinematic still and not an asset image.",
     "Maintain strong alignment, consistent margins, equal panel sizes, clear hierarchy. No extra panels, no merged cells, no floating cards, no decorative background elements.",
@@ -26423,9 +26476,15 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && action === "draft") {
     ensureWorkflowNamespace(episodeRoot, "draft request");
-    const result = await buildDraft(episodeRoot, await readBody(req));
-    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+    const job = startDraftJob(episodeRoot, await readBody(req));
+    return send(res, 202, { ok: true, job }, { "Cache-Control": "no-store" });
   }
+  const draftJobMatch = action.match(/^\/draft-jobs\/([^/]+)$/);
+  if (req.method === "GET" && draftJobMatch) {
+    const jobId = decodeURIComponent(draftJobMatch[1]);
+    return send(res, 200, { ok: true, job: getDraftJob(episodeRoot, jobId) }, { "Cache-Control": "no-store" });
+  }
+
 
   if (req.method === "POST" && action === "config") {
     ensureWorkflowNamespace(episodeRoot, "config request");

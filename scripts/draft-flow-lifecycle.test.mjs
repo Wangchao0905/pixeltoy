@@ -42,8 +42,8 @@ assert.match(app, /function isReadyForNextStoryGuidance\(/, "the studio flow mus
 assert.match(app, /step\.value = "未启动"/, "the reset flow must visibly return steps to the unstarted state");
 assert.match(
   app,
-  /await refreshVideoConfig\(\{ silent: false \}\);[\s\S]*?setWorkflowFocus\("script"\);/,
-  "after configuration succeeds, the workspace must guide the next story from the script step",
+  /await refreshVideoConfig\(\{ silent: false \}\);[\s\S]*?setWorkflowFocus\("shots"\);/,
+  "after configuration succeeds, the workspace must guide the next story from the shot step",
 );
 
 console.log("draft flow lifecycle tests passed");

@@ -13162,6 +13162,58 @@ function gravitexAssetContentFromUrl(url, role = "reference_image") {
   return { type, image_url: { url: raw }, role };
 }
 
+// 火山方舟视频接口对参考图宽高比的硬限制。超出返回 400 InvalidParameter,
+// 报文是英文、不点名哪张图,用户只能反复重试(生产实测同一张 2048×340 的截屏连撞 3 次)。
+// 所以提交前预检并给中文提示。
+// 只拦不改:不做自动补白/裁剪——那次是误连了外部截屏,正解是断开它;
+// 系统悄悄补白反而掩盖误连,还把主体压到画面中间约 40%。
+const ARK_IMAGE_MIN_ASPECT_RATIO = 0.4;
+const ARK_IMAGE_MAX_ASPECT_RATIO = 2.5;
+
+// 把提交用的资产映射成 {name, localPath}。三种 URL 形态都要试:/media?path=、
+// 本地文件 URL、/public-assets/。任一命中即可量尺寸;都不命中就留空,预检会跳过。
+function arkAspectRatioEntriesFromAssets(assets = []) {
+  return (Array.isArray(assets) ? assets : []).map((asset) => {
+    const raw = compactLine(
+      asset?.publicUrl || asset?.public_url || asset?.url || asset?.previewUrl || asset?.localUrl || asset?.localAssetUrl || "",
+    );
+    const localPath = localMediaPathFromUrl(raw) || localFilePathFromUrl(raw) || localPublicAssetPathFromUrl(raw) || "";
+    return { name: compactLine(asset?.name || asset?.id || ""), localPath };
+  });
+}
+
+function assertArkImageAspectRatio(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const offenders = [];
+  const checked = [];
+  entries.forEach((entry, index) => {
+    const localPath = compactLine(entry?.localPath || "");
+    // 量不到尺寸不能阻断本来合法的提交:纯远端 URL 没有本地副本、文件已被清理、
+    // ffprobe 不可用时一律跳过。ffprobeVideoDimensions 内部已 try/catch 且带 20s timeout。
+    if (!localPath) return;
+    const dimensions = ffprobeVideoDimensions(localPath);
+    if (!dimensions) return;
+    const { width, height } = dimensions;
+    const ratio = width / height;
+    const name = compactLine(entry?.name || "") || `第 ${index + 1} 张参考图`;
+    if (ratio < ARK_IMAGE_MIN_ASPECT_RATIO || ratio > ARK_IMAGE_MAX_ASPECT_RATIO) {
+      offenders.push({ seq: index + 1, name, width, height, ratio });
+      return;
+    }
+    checked.push({ name, width, height, ratio });
+  });
+  if (offenders.length) {
+    const detail = offenders
+      .map((item) => `第 ${item.seq} 张「${item.name}」${item.width}×${item.height}，宽高比 ${item.ratio.toFixed(2)}`)
+      .join("；");
+    throw new Error(
+      `参考图宽高比超出火山方舟视频接口的允许范围（${ARK_IMAGE_MIN_ASPECT_RATIO.toFixed(2)}~${ARK_IMAGE_MAX_ASPECT_RATIO.toFixed(2)}）：${detail}。`
+      + `请断开这些参考图，或先裁剪成接近 16:9 / 9:16 再连线；其余参考图无需改动。`,
+    );
+  }
+  return checked;
+}
+
 function assertSeedanceReferenceBudget({ startFrameUrl = "", firstFrameUrl = "", lastFrameUrl = "", assets = [], livenessAssetUrl = "", maxImages = SEEDANCE_MAX_IMAGE_REFERENCES } = {}) {
   const required =
     (compactLine(startFrameUrl) ? 1 : 0) +
@@ -13494,6 +13546,9 @@ async function buildSeedanceGenerationPayload(body = {}) {
     lastFrameUrl: lastFrameReferenceUrl || lastFrameUrl,
     assets,
   });
+  // 宽高比预检放在数量预检之后、真正提交之前:让用户在本地就看到是哪张图超标,
+  // 而不是等火山返回一句英文 InvalidParameter。
+  assertArkImageAspectRatio(arkAspectRatioEntriesFromAssets(assets));
   const frameCount = Number(!!startFrameReferenceUrl) + Number(!!firstFrameReferenceUrl) + Number(!!lastFrameReferenceUrl);
   const imageReferences = await resolveSeedanceImageReferences(
     assets,

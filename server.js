@@ -366,9 +366,9 @@ function isAdminUser(user = {}) {
   return computedUserRole(user) === "admin";
 }
 
-// 画布权限：管理员始终可用；普通用户需被管理员显式开启 canvasEnabled。
+// 画布权限：所有未停用的已登录用户默认可用；管理员仍可显式关闭普通用户的 canvasEnabled。
 function userCanUseCanvas(user = {}) {
-  return isAdminUser(user) || user?.canvasEnabled === true;
+  return isAdminUser(user) || user?.canvasEnabled !== false;
 }
 
 function teamMembershipForUser(userId = "") {
@@ -971,6 +971,7 @@ async function handleAuthApi(req, res, url) {
       inviteCode,
       emailVerifiedAt: new Date().toISOString(),
       disabled: false,
+      canvasEnabled: true,
       passwordHash: passwordHash(password),
       createdAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),

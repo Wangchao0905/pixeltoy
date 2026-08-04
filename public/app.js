@@ -9500,6 +9500,7 @@ async function generateVideoSegment(shotName = "", { forceRegenerate = false } =
     method: "POST",
     body: JSON.stringify({
       shotName: cleanShotName,
+      generationScope: "single",
       forceRegenerate,
       dialectStyle: selectedVideoDialectStyle(),
       sfxStyle: selectedVideoSfxStyle(),

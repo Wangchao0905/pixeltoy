@@ -9216,6 +9216,7 @@ function snapshotStatusForShot(episodeRoot, shotName, options = {}) {
       message: taskInfo.message || "",
       taskId: taskInfo.taskId || "",
       provider,
+      generationScope: compactLine(taskInfo.generationScope || ""),
       videoPreviewVersion: compactLine(taskInfo.videoPreviewVersion || ""),
       generationStartedAt: compactLine(taskInfo.generationStartedAt || taskInfo.updatedAt || updatedAt || ""),
       videoUrl: videoUrlFrom(rawVideoUrl),
@@ -9902,6 +9903,7 @@ function markProjectVideoShotWaiting(episodeRoot, shotName, message = "等待素
     taskInfo: {
       status: 0,
       statusRaw: compactLine(options.statusRaw || "waiting_asset_active"),
+      generationScope: options.generationScope === "batch" ? "batch" : options.generationScope === "single" ? "single" : undefined,
       progressPercent: 0,
       failedReason: "",
       message,
@@ -17590,6 +17592,7 @@ function markProjectVideoShotQueued(episodeRoot, shotName, message = "等待前�
     taskInfo: {
       status: 0,
       statusRaw: "queued_local",
+      generationScope: "batch",
       progressPercent: 0,
       failedReason: "",
       message,
@@ -17699,6 +17702,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
   const shotName = compactLine(body.shotName || body.name || "");
   if (!shotName) throw new Error("缺少要生成的视频片段");
   const authUser = body.authUser || null;
+  const generationScope = body.generationScope === "batch" ? "batch" : "single";
   const configRecord = readVideoConfig(episodeRoot);
   let config = applyRequestedRealPersonVerification(configRecord, body) || configRecord?.data || {};
   const fallback = canvasVideoFallbackForShot(episodeRoot, shotName);
@@ -17763,7 +17767,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     assertProjectTailFrameReadyForShot(episodeRoot, shot, config);
   } catch (error) {
     const message = error.message || "等待上一段尾帧";
-    markProjectVideoShotWaiting(episodeRoot, shotName, message, { statusRaw: "waiting_tail_frame" });
+    markProjectVideoShotWaiting(episodeRoot, shotName, message, { statusRaw: "waiting_tail_frame", generationScope });
     return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
   }
   archiveShotVideoArtifactsForRegeneration(episodeRoot, shotName);
@@ -17773,6 +17777,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     runNamespace,
     taskInfo: {
       status: 1,
+      generationScope,
       progressPercent: 1,
       failedReason: "",
       message: "正在提交 Seedance 任务",
@@ -17800,12 +17805,12 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
   // HTTP 单段请求只排队返回;批量队列显式传 false,在已有后台 worker 中等待认证完成。
   if (pollInBackground && needsArkPersonPreparation) {
     const message = "正在完成方舟私域虚拟人像认证，完成后自动提交视频";
-    markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion });
+    markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion, generationScope });
     setImmediate(() => {
       generateProjectVideoShot(episodeRoot, { ...body, shotName, pollInBackground: false }).catch((error) => {
         const errorMessage = error.message || "视频生成失败";
         if (isAssetActivationWaitFailure(errorMessage)) {
-          markProjectVideoShotWaiting(episodeRoot, shotName, errorMessage, { videoPreviewVersion });
+          markProjectVideoShotWaiting(episodeRoot, shotName, errorMessage, { videoPreviewVersion, generationScope });
           return;
         }
         writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
@@ -17826,7 +17831,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     syncProjectShotsToCanvasState(episodeRoot, config, [latestShot]);
     if (!readiness.ready) {
       const message = readiness.message || "超写实参考图素材库验证未完成，暂不提交视频生成";
-      markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion });
+      markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion, generationScope });
       return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
     }
     let payload = projectVideoPayloadForShot(episodeRoot, latestShot, config);
@@ -17837,7 +17842,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
       if (tailFrameAsset.config && tailFrameAsset.config !== readiness.config) writeVideoConfigRecord(configRecord, config);
       if (!tailFrameAsset.ready) {
         const message = tailFrameAsset.message || "上一段尾帧正在进入素材库，暂不提交视频生成";
-        markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion });
+        markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion, generationScope });
         return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
       }
       payload = { ...payload, startFrameUrl: tailFrameAsset.url };
@@ -18010,11 +18015,11 @@ async function runProjectVideoGenerationQueue(queue, episodeRoot, selected, body
             },
           };
         } else {
-          result = await generateProjectVideoShot(episodeRoot, { ...body, shotName, pollInBackground: false });
+          result = await generateProjectVideoShot(episodeRoot, { ...body, shotName, generationScope: "batch", pollInBackground: false });
         }
         if (result?.waitingForAssets || projectVideoShotIsWaitingForAssets(episodeRoot, shotName, queue.runNamespace)) {
           await waitForProjectVideoShotAssetGate(episodeRoot, shotName, { timeoutMs: Number(body.assetWaitTimeoutMs || 12 * 60 * 1000) });
-          result = await generateProjectVideoShot(episodeRoot, { ...body, shotName, pollInBackground: false });
+          result = await generateProjectVideoShot(episodeRoot, { ...body, shotName, generationScope: "batch", pollInBackground: false });
         }
         await waitForProjectVideoShotComplete(episodeRoot, shotName, { timeoutMs: Number(body.timeoutMs || 45 * 60 * 1000) });
         markUserVideoTaskFinished(body.authUser || null, result?.result?.taskId || "");
@@ -18027,7 +18032,7 @@ async function runProjectVideoGenerationQueue(queue, episodeRoot, selected, body
       } catch (error) {
         const message = error.message || "视频生成失败";
         if (isAssetActivationWaitFailure(message)) {
-          markProjectVideoShotWaiting(episodeRoot, shotName, message);
+          markProjectVideoShotWaiting(episodeRoot, shotName, message, { generationScope: "batch" });
         } else {
           writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
             runNamespace: queue.runNamespace,
@@ -18115,7 +18120,7 @@ function recoverProjectVideoQueueIfNeeded(episodeRoot, config = {}) {
   const runNamespace = currentRunNamespace(episodeRoot, config);
   const firstPendingIndex = shots.findIndex((shot) => {
     const snapshot = snapshotStatusForShot(episodeRoot, shot.name, { runNamespace });
-    if (!snapshot) return false;
+    if (!snapshot || snapshot.generationScope !== "batch") return false;
     if (snapshot.statusCode === 1 && snapshot.taskId) return true;
     if (projectVideoShotNeedsFinalization(snapshot)) return true;
     if (snapshot.statusCode !== 0) return false;
@@ -18140,7 +18145,7 @@ function recoverProjectVideoQueueIfNeeded(episodeRoot, config = {}) {
     updatedAt: new Date().toISOString(),
   };
   projectVideoQueues.set(queueKey, queue);
-  runProjectVideoGenerationQueue(queue, episodeRoot, unfinished, { recovered: true }).catch((error) => {
+  runProjectVideoGenerationQueue(queue, episodeRoot, unfinished, { recovered: true, generationScope: "batch" }).catch((error) => {
     queue.running = false;
     queue.status = "failed";
     queue.error = error.message || "恢复批量视频生成失败";

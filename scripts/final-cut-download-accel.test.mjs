@@ -4,6 +4,7 @@ import path from "node:path";
 
 const root = path.resolve(new URL("..", import.meta.url).pathname);
 const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const app = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const nginx = fs.readFileSync(path.join(root, "deploy", "nginx", "pixel-toy.conf"), "utf8");
 
 assert.match(nginx, /location \/_pixel-toy-final-cut\/ \{\s*internal;\s*alias \/home\/ubuntu\/apps\/pixel-toy\/projects\//, "Nginx must expose only an internal alias for project final cuts");
@@ -41,5 +42,7 @@ assert.match(streamSource, /options\.accelRedirect/, "serveMedia must accept an 
 assert.match(streamSource, /"X-Accel-Redirect": accelRedirect/, "accelerated downloads must hand the file to Nginx");
 assert.match(streamSource, /fs\.createReadStream\(file\)/, "non-Nginx requests must retain local streaming fallback");
 assert.match(streamSource, /fs\.createReadStream\(file, \{ start, end \}\)/, "fallback must preserve ranged downloads");
+assert.match(app, /function finalCutDownloadUrl\(output\s*=\s*\{\}\)/, "the final-cut download link needs a URL fallback");
+assert.match(app, /finalCutDownloadUrl\(fc\.output\s*\|\|\s*\{\}\)/, "the final-cut download control must use the fallback URL");
 
 console.log("final cut accelerated download tests passed");

@@ -9569,6 +9569,19 @@ async function generateAllVideoSegments() {
   toast(data.result?.message || `批量生成队列已启动：${data.result?.completed || 0}/${data.result?.total || 0}`);
 }
 
+function finalCutDownloadUrl(output = {}) {
+  const raw = output.downloadUrl || output.url || (output.path ? `/media?path=${encodeURIComponent(output.path)}` : "");
+  if (!raw) return "";
+  try {
+    const url = new URL(raw, window.location.origin);
+    url.searchParams.set("download", "1");
+    url.searchParams.set("final_cut", "1");
+    return url.href;
+  } catch {
+    return raw;
+  }
+}
+
 function renderFinalCut(finalCut = null) {
   const fc = finalCut || state.project?.finalCut || {};
   const statusEl = $("#finalCutStatus");
@@ -9585,7 +9598,7 @@ function renderFinalCut(finalCut = null) {
     btn.textContent = running ? "组装中…" : needsRebuild ? "重新组装" : "组装成片";
   }
   if (downloadEl) {
-    const downloadUrl = fc.output?.downloadUrl || fc.output?.url || "";
+    const downloadUrl = finalCutDownloadUrl(fc.output || {});
     downloadEl.href = downloadUrl || "#";
     downloadEl.classList.toggle("is-disabled", !downloadUrl);
     downloadEl.setAttribute("aria-disabled", downloadUrl ? "false" : "true");
@@ -9610,10 +9623,11 @@ function renderFinalCut(finalCut = null) {
   const sig = JSON.stringify([fc.output?.url || "", fc.output?.updatedAt || ""]);
   if (previewEl.dataset.fcSig !== sig) {
     previewEl.dataset.fcSig = sig;
+    const previewDownloadUrl = finalCutDownloadUrl(fc.output || {});
     previewEl.innerHTML = fc.output
       ? `<div class="final-cut-video">
            <video src="${escapeHtml(fc.output.url)}" controls playsinline preload="metadata"></video>
-           <a class="video-download-button" href="${escapeHtml(fc.output.downloadUrl || fc.output.url)}" download title="下载成片" aria-label="下载成片">
+           <a class="video-download-button" href="${escapeHtml(previewDownloadUrl)}" download title="下载成片" aria-label="下载成片">
              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
            </a>
          </div>`

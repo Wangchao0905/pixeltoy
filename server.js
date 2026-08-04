@@ -11118,6 +11118,7 @@ function finalCutStatus(episodeRoot) {
 // 封面设计独立于成片输出:一次生成四个方向,每个方向保留自己的 image-2 任务和结果。
 const COVER_DESIGN_DIR = "12_cover_design";
 const COVER_DESIGN_STATE_FILE = "cover_design.json";
+const COVER_DESIGN_SUBMISSION_TIMEOUT_MS = 2 * 60 * 1000;
 const COVER_DESIGN_STYLES = [
   { id: "cinematic", label: "电影叙事", cue: "宽阔环境层次、主角关系和电影海报式留白" },
   { id: "high-conversion", label: "强冲突短剧", cue: "人物对峙、强烈明暗和一眼可读的戏剧冲突" },
@@ -11194,14 +11195,41 @@ function coverDesignReferenceAssets(episodeRoot) {
     .slice(0, 4);
 }
 
+function normalizeCoverDesignTaskStatus(status = "", fallback = "queued") {
+  const normalized = compactLine(status).toLowerCase();
+  if (["complete", "completed", "success", "succeeded", "done"].includes(normalized)) return "complete";
+  if (["failed", "failure", "error"].includes(normalized)) return "failed";
+  if (["starting", "queued", "running"].includes(normalized)) return normalized;
+  return fallback;
+}
+
 function refreshCoverDesignState(episodeRoot) {
   const state = readCoverDesignState(episodeRoot);
   if (!state.items.length) return state;
   let changed = false;
+  const startedAt = Date.parse(state.createdAt || state.updatedAt || "");
+  const submissionExpired = Number.isFinite(startedAt) && Date.now() - startedAt >= COVER_DESIGN_SUBMISSION_TIMEOUT_MS;
   const items = state.items.map((item) => {
-    if (!item.taskId || ["complete", "failed"].includes(item.status)) return item;
+    const itemStatus = normalizeCoverDesignTaskStatus(item.status, "queued");
+    if (!item.taskId) {
+      if (!submissionExpired || !["starting", "queued", "running"].includes(itemStatus)) return item;
+      const next = {
+        ...item,
+        status: "failed",
+        message: "提交超时，请重新生成",
+        error: "封面任务未成功提交，可能是服务重启或提交超时。",
+      };
+      if (JSON.stringify(next) !== JSON.stringify(item)) changed = true;
+      return next;
+    }
+    if (["complete", "failed"].includes(itemStatus)) {
+      if (item.status === itemStatus) return item;
+      const next = { ...item, status: itemStatus };
+      changed = true;
+      return next;
+    }
     const task = getCanvasImageGeneration(item.taskId);
-    const nextStatus = task.status === "complete" ? "complete" : task.status === "failed" ? "failed" : task.status || item.status;
+    const nextStatus = normalizeCoverDesignTaskStatus(task.status, itemStatus);
     const next = {
       ...item,
       status: nextStatus,
@@ -27424,6 +27452,7 @@ module.exports = {
     coverDesign: {
       styles: COVER_DESIGN_STYLES,
       promptForStyle: promptForCoverStyle,
+      normalizeTaskStatus: normalizeCoverDesignTaskStatus,
       refresh: refreshCoverDesignState,
     },
     videoRetry: {

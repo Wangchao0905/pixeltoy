@@ -15,6 +15,12 @@ assert.match(
   /const previewSig = JSON\.stringify\(\{[\s\S]*?videoUrl: node\.videoUrl \|\| "",[\s\S]*?taskId: node\.taskId \|\| "",/,
   "canvas video previews must refresh when a new task reuses the same media URL",
 );
+const renderStart = canvas.indexOf("function renderVideoPreview(node)");
+const renderEnd = canvas.indexOf("\nfunction nodePrompt(node)", renderStart);
+assert.ok(renderStart >= 0 && renderEnd > renderStart, "canvas video preview renderer should be present");
+const render = canvas.slice(renderStart, renderEnd);
+assert.ok(render.indexOf('if (node.status === "running")') < render.indexOf("if (node.videoUrl)"),
+  "running video nodes must render generation state before a stale media URL");
 assert.match(
   html,
   /canvas\.js\?v=[A-Za-z0-9._-]+/,

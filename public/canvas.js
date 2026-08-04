@@ -2093,6 +2093,24 @@ function videoPreviewSrc(node) {
 
 function renderVideoPreview(node) {
   if (node.kind !== "video") return "生成结果预览";
+  // A refresh can briefly rehydrate the previous media URL while a new task
+  // is already running. The running state must win over any stale URL.
+  if (node.status === "running") {
+    const progress = videoProgressValue(node);
+    const hasProgress = hasRealVideoProgress(node);
+    const progressWidth = hasProgress ? progress : 24;
+    const modelLabel = videoModelLabel(node);
+    return `
+      <div class="video-node-status generation-status" aria-label="${hasProgress ? `生成中 ${progress}%` : "生成中"}">
+        <div class="generation-status-row">
+          <strong>生成中</strong>
+          <em>${hasProgress ? `${progress}%` : ""}</em>
+        </div>
+        <div class="generation-progress-track${hasProgress ? "" : " is-indeterminate"}" aria-hidden="true"><i style="width: ${progressWidth}%"></i></div>
+        <span class="generation-model-label">${escapeHtml(modelLabel)}</span>
+      </div>
+    `;
+  }
   if (node.videoUrl) {
     const downloadHref = videoDownloadHref(node);
     const previewSrc = videoPreviewSrc(node);
@@ -2112,22 +2130,6 @@ function renderVideoPreview(node) {
         ${captureTailFrame}
       </div>
       ${tailFrameStatus}
-    `;
-  }
-  if (node.status === "running") {
-    const progress = videoProgressValue(node);
-    const hasProgress = hasRealVideoProgress(node);
-    const progressWidth = hasProgress ? progress : 24;
-    const modelLabel = videoModelLabel(node);
-    return `
-      <div class="video-node-status generation-status" aria-label="${hasProgress ? `生成中 ${progress}%` : "生成中"}">
-        <div class="generation-status-row">
-          <strong>生成中</strong>
-          <em>${hasProgress ? `${progress}%` : ""}</em>
-        </div>
-        <div class="generation-progress-track${hasProgress ? "" : " is-indeterminate"}" aria-hidden="true"><i style="width: ${progressWidth}%"></i></div>
-        <span class="generation-model-label">${escapeHtml(modelLabel)}</span>
-      </div>
     `;
   }
   if (node.status === "failed") {

@@ -45,7 +45,7 @@ assert.match(app, /审核未通过，需要处理必修项[\s\S]*唯一下一步
 assert.match(app, /参考意见与模型状态[\s\S]*不阻断确认/, "single-model opinions must be visibly separated from mandatory revisions");
 assert.match(app, /kind: "auto-revise"[\s\S]*执行定向修订并复审/, "review flow must expose one canonical revision action");
 assert.match(app, /REQUIRED WORKLIST[\s\S]*仅处理此处/, "mandatory revisions must be presented as one canonical worklist");
-assert.match(app, /pendingClosures\.length \? pendingClosures : mandatoryIssues/, "an open revision contract must be the only source for mandatory work items");
+assert.match(app, /return mergeReviewItems\(\[\.\.\.pendingClosures, \.\.\.mandatoryIssues, \.\.\.acceptedAdvisories\]\)/, "revision UI must merge unresolved contracts with newly discovered mandatory issues");
 assert.match(app, /review-reference-panel/, "optional review material must be collapsible");
 assert.doesNotMatch(app, /review-auto-fix/, "review panel must not expose a duplicate revision button");
 assert.match(html, /id="agentTaskAction"/, "the right rail must contain the canonical next-step action slot");
@@ -100,6 +100,8 @@ assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.dna-laun
 assert.match(agent, /只返回最多 3 个会阻断下一阶段的问题/, "review prompts must stay concise and stage-scoped");
 assert.match(agent, /revisionClosureProtocol/, "review prompts must require closure evidence for every revision item");
 assert.match(agent, /BRIEF_SPEC_MATCH/, "brief review must use stable stage-specific criterion ids");
+assert.match(agent, /function revisionIssueKeys\(stage, item = \{\}\)/, "revision items must have stable cross-round identities");
+assert.match(agent, /previousItems = asArray\(review\.revision\?\.contract\?\.items\)/, "revision contracts must inspect the prior contract before merging new findings");
 assert.match(agent, /不得要求人物表、分集表、场景表或对白等尚未到达阶段的产物/, "a reviewer must not demand deliverables from later stages");
 
 const wrappedReview = validateReview({ review: {
@@ -226,6 +228,26 @@ const inheritedContract = buildRevisionContract({
 }, { stage: "brief", sourceArtifactId: "artifact_v2", id: "revision_test_2" });
 assert.equal(inheritedContract.items.length, 1, "an unresolved prior revision item must be carried into the next revision contract");
 assert.deepEqual(inheritedContract.items[0].requiredEdit, ["补足首个冲击", "补足首个冲击并明确代价"], "inherited contract must retain both the original edit and the latest remaining fix");
+const stableContract = buildRevisionContract({
+  commonIssues: [{ criterionId: "BRIEF_OPENING_PROMISE", tag: "开场冲击", dimension: "structure", severity: "high", modelCount: 2, suggestions: ["补足开场冲击"] }],
+}, { stage: "brief", sourceArtifactId: "artifact_stable_v1", id: "revision_stable_1" });
+const stableNextContract = buildRevisionContract({
+  commonIssues: [{ criterionId: "BRIEF_OPENING_PROMISE", tag: "开场冲击", dimension: "structure", severity: "high", modelCount: 2, suggestions: ["明确冲击后的代价"] }],
+  revision: {
+    contract: { items: stableContract.items },
+    closure: { items: stableContract.items.map((item) => ({ id: item.id, status: "partial", remainingFix: ["明确冲击后的代价"] })) },
+  },
+}, { stage: "brief", sourceArtifactId: "artifact_stable_v2", id: "revision_stable_2" });
+assert.equal(stableNextContract.items.length, 1, "the same issue must not grow into two contract items after revision");
+assert.equal(stableNextContract.items[0].id, stableContract.items[0].id, "the same issue must retain its contract ID across revision rounds");
+const resolvedThenNewContract = buildRevisionContract({
+  commonIssues: [{ criterionId: "BRIEF_VIEWER_QUESTION", tag: "追更问题", dimension: "plot", severity: "high", modelCount: 2, suggestions: ["补足追更问题"] }],
+  revision: {
+    contract: { items: stableContract.items },
+    closure: { items: stableContract.items.map((item) => ({ id: item.id, status: "resolved", remainingFix: [] })) },
+  },
+}, { stage: "brief", sourceArtifactId: "artifact_stable_v3", id: "revision_stable_3" });
+assert.deepEqual(resolvedThenNewContract.items.map((item) => item.tag), ["追更问题"], "resolved prior issues must not return when a genuinely new issue appears");
 const advisoryContract = buildRevisionContract({
   commonIssues: [],
   reviewIssues: [{ tag: "单模型建议", modelCount: 1, suggestions: ["只供参考"] }],

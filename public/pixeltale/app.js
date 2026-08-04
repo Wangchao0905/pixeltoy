@@ -1362,7 +1362,7 @@ function isMandatoryReviewIssue(item = {}) {
 }
 
 function reviewItemKey(item = {}) {
-  return String(item.tag || item.criterionId || item.id || "").toLowerCase().replace(/[\s：:，,。.!?！？；;]/g, "") || "review-item";
+  return String(item.criterionId || item.criterion_id || item.id || item.tag || "").toLowerCase().replace(/[\s：:，,。.!?！？；;]/g, "") || "review-item";
 }
 
 function mergeReviewItems(items = []) {
@@ -1417,8 +1417,7 @@ function reviewIssueGroups(reviewContent = {}) {
   const mandatoryIssues = Array.isArray(reviewContent.mandatoryIssues) && reviewContent.mandatoryIssues.length
     ? reviewContent.mandatoryIssues
     : (Array.isArray(reviewContent.commonIssues) ? reviewContent.commonIssues.filter(isMandatoryReviewIssue) : (Array.isArray(reviewContent.reviewIssues) ? reviewContent.reviewIssues.filter(isMandatoryReviewIssue) : []));
-  const baseItems = pendingClosures.length ? pendingClosures : mandatoryIssues;
-  return mergeReviewItems([...baseItems, ...acceptedAdvisories]);
+  return mergeReviewItems([...pendingClosures, ...mandatoryIssues, ...acceptedAdvisories]);
 }
 
 function reviewRecommendationGroups(reviewContent = {}) {

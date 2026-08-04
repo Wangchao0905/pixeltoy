@@ -915,6 +915,21 @@ function sharedReviewIssues(feedbacks) {
   return groupedReviewIssues(feedbacks).filter((group) => group.modelCount >= 2);
 }
 
+function revisionIssueKeys(stage, item = {}) {
+  const dimension = text(item.dimension, 40) || "logic";
+  const criterionId = text(item.criterionId || item.criterion_id, 160);
+  const tag = text(item.tag, 160);
+  return [...new Set([
+    criterionId ? `${stage}:criterion:${issueKey(criterionId)}` : "",
+    tag ? `${stage}:tag:${issueKey(`${dimension}:${tag}`)}` : "",
+  ].filter(Boolean))];
+}
+
+function revisionIssueId(stage, item = {}) {
+  const seed = text(item.criterionId || item.criterion_id, 160) || `${text(item.dimension, 40) || "logic"}-${text(item.tag, 160) || "issue"}`;
+  return `${stage}-R-${issueKey(seed)}`.slice(0, 180);
+}
+
 function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
   const freshCommonIssues = asArray(review.commonIssues)
     .filter((item) => Number(item.modelCount) >= REVIEW_QUORUM && item.severity === "high");
@@ -938,40 +953,52 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
     freshIssues.push(...asArray(review.reviewIssues)
       .filter((item) => Number(item.modelCount) >= REVIEW_QUORUM && item.severity === "high"));
   }
-  const inheritedIssues = asArray(review.revision?.contract?.items)
-    .filter((item) => {
-      const closure = asArray(review.revision?.closure?.items).find((entry) => entry.id === item.id);
-      return !closure || closure.status !== "resolved";
-    })
-    .map((item) => {
-      const closure = asArray(review.revision?.closure?.items).find((entry) => entry.id === item.id);
-      return {
-        criterionId: item.criterionId,
-        tag: item.tag,
-        dimension: item.dimension,
-        severity: item.severity,
-        modelCount: item.modelCount,
-        models: item.models,
-        suggestions: uniqueText([...(asArray(item.requiredEdit)), ...(asArray(closure?.remainingFix))], 4),
-        evidence: uniqueText([...(asArray(item.evidence)), ...(asArray(closure?.remainingFix))], 4),
-      };
+  const previousItems = asArray(review.revision?.contract?.items);
+  const previousClosures = new Map(asArray(review.revision?.closure?.items).map((item) => [item.id, item]));
+  const previousByKey = new Map();
+  previousItems.forEach((item) => revisionIssueKeys(stage, item).forEach((key) => {
+    if (!previousByKey.has(key)) previousByKey.set(key, item);
+  }));
+  const findPrevious = (issue) => revisionIssueKeys(stage, issue).map((key) => previousByKey.get(key)).find(Boolean);
+  const currentKeys = new Set();
+  const issues = [];
+  freshIssues.forEach((issue) => {
+    const previous = findPrevious(issue);
+    const closure = previous ? previousClosures.get(previous.id) : null;
+    revisionIssueKeys(stage, issue).forEach((key) => currentKeys.add(key));
+    issues.push({
+      id: previous?.id || revisionIssueId(stage, issue),
+      criterionId: issue.criterionId || issue.criterion_id || previous?.criterionId,
+      tag: issue.tag || previous?.tag,
+      dimension: issue.dimension || previous?.dimension,
+      severity: issue.severity || previous?.severity,
+      modelCount: Number(issue.modelCount) || Number(previous?.modelCount) || 0,
+      models: [...new Set([...(asArray(previous?.models)), ...(asArray(issue.models))].filter(Boolean))],
+      requiredEdit: uniqueText([...(asArray(previous?.requiredEdit)), ...(asArray(issue.suggestions)), ...(asArray(closure?.remainingFix))], 4),
+      evidence: uniqueText([...(asArray(previous?.evidence)), ...(asArray(issue.evidence)), ...(asArray(closure?.remainingFix))], 4),
     });
-  const issues = [...freshIssues, ...inheritedIssues].filter((issue, index, all) => {
-    const key = issueKey(issue.criterionId) || issueKey(issue.tag) || `issue-${index}`;
-    return all.findIndex((candidate) => (issueKey(candidate.criterionId) || issueKey(candidate.tag)) === key) === index;
+  });
+  previousItems.forEach((item) => {
+    const closure = previousClosures.get(item.id);
+    if (closure?.status === "resolved" || revisionIssueKeys(stage, item).some((key) => currentKeys.has(key))) return;
+    issues.push({
+      ...item,
+      requiredEdit: uniqueText([...(asArray(item.requiredEdit)), ...(asArray(closure?.remainingFix))], 4),
+      evidence: uniqueText([...(asArray(item.evidence)), ...(asArray(closure?.remainingFix))], 4),
+    });
   });
   return {
     id: text(contractId, 200),
     stage,
     sourceArtifactId: text(sourceArtifactId, 200),
-    items: issues.slice(0, 24).map((issue, index) => ({
-      id: `${stage}-R${String(index + 1).padStart(2, "0")}`,
+    items: issues.slice(0, 24).map((issue) => ({
+      id: text(issue.id, 180) || revisionIssueId(stage, issue),
       tag: text(issue.tag || "审核修订项", 160),
       dimension: REVIEW_DIMENSIONS.includes(issue.dimension) ? issue.dimension : "logic",
       severity: ["high", "medium", "low"].includes(issue.severity) ? issue.severity : "medium",
       modelCount: Math.max(0, Number(issue.modelCount) || 0),
       evidence: uniqueText(asArray(issue.evidence), 4),
-      requiredEdit: uniqueText(asArray(issue.suggestions), 4),
+      requiredEdit: uniqueText(asArray(issue.requiredEdit || issue.suggestions), 4),
       acceptance: `修订版本必须消除“${text(issue.tag || "审核修订项", 160)}”的证据，并与用户规格和已确认上下文保持一致。`,
     })),
   };

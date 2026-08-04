@@ -2773,18 +2773,24 @@ const CANVAS_AGENT_MODEL_OPTIONS = Object.freeze([
   { id: "claude-opus-5", label: "Opus 5", kind: "asset" },
   { id: "gpt-5.6-sol", label: "GPT 5.6 Sol", kind: "storyboard" },
   { id: "grok-4.5", label: "Grok 4.5", kind: "grok" },
+  // 模型 ID 与 SUPER_PIXEL_DEEPSEEK_MODELS 保持一致,两处都指 apikey.fun 网关上的同一个模型。
+  { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", kind: "deepseek" },
 ]);
 const CANVAS_AGENT_MODEL_IDS = new Set(CANVAS_AGENT_MODEL_OPTIONS.map((item) => item.id));
 
 function canvasAgentModelConfig(model) {
   const option = CANVAS_AGENT_MODEL_OPTIONS.find((item) => item.id === model);
   if (!option) return null;
-  const apiKey = option.kind === "asset"
-    ? assetAnalyzerApiKey()
-    : option.kind === "storyboard"
-      ? compactLine(process.env.STORYBOARD_API_KEY || "")
-      : process.env.XAI_API_KEY;
-  return { ...option, apiKey };
+  // 每个 kind 取自己的 key。原先是三元链末尾兜底到 XAI_API_KEY,新增 kind 时
+  // 若忘了加分支就会静默拿错 key(拿到 Grok 的 key 去打 DeepSeek 端点),
+  // 所以改成显式查表,缺失就是空字符串,由调用方的 503 兜住。
+  const apiKeyByKind = {
+    asset: assetAnalyzerApiKey(),
+    storyboard: compactLine(process.env.STORYBOARD_API_KEY || ""),
+    grok: compactLine(process.env.XAI_API_KEY || ""),
+    deepseek: compactLine(process.env.DEEPSEEK_API_KEY || ""),
+  };
+  return { ...option, apiKey: apiKeyByKind[option.kind] || "" };
 }
 
 function canvasAgentClip(value, maxLength = 1200) {

@@ -16,8 +16,8 @@ process.env.XAI_API_KEY = "test-canvas-agent-grok-key";
 const select = html.match(/<select id="canvasAgentModel"[\s\S]*?<\/select>/)?.[0] || "";
 assert.deepEqual(
   [...select.matchAll(/<option value="([^"]+)">/g)].map((match) => match[1]),
-  ["claude-opus-5", "gpt-5.6-sol", "grok-4.5"],
-  "Canvas Agent 只能展示三个指定模型",
+  ["claude-opus-5", "gpt-5.6-sol", "grok-4.5", "deepseek-v4-pro"],
+  "Canvas Agent 只能展示这四个指定模型:新增模型必须同时更新此清单,防止误加",
 );
 assert.match(html, /id="canvasAgentInput"[^>]*placeholder=/);
 assert.doesNotMatch(html, /canvasAgentInput[^>]*disabled/);
@@ -28,10 +28,17 @@ assert.match(server, /url\.pathname === "\/api\/canvas\/agent\/chat"/);
 const require = createRequire(import.meta.url);
 const { __test } = require("../server.js");
 const agent = __test.canvasAgent;
-assert.deepEqual(agent.modelOptions.map((item) => item.id), ["claude-opus-5", "gpt-5.6-sol", "grok-4.5"]);
+assert.deepEqual(agent.modelOptions.map((item) => item.id), ["claude-opus-5", "gpt-5.6-sol", "grok-4.5", "deepseek-v4-pro"]);
 assert.equal(agent.modelConfig("claude-opus-5")?.kind, "asset");
 assert.equal(agent.modelConfig("gpt-5.6-sol")?.kind, "storyboard");
 assert.equal(agent.modelConfig("grok-4.5")?.kind, "grok");
+assert.equal(agent.modelConfig("deepseek-v4-pro")?.kind, "deepseek");
+// 每个 kind 必须取到自己的 key。原先取 key 是三元链、末尾兜底到 XAI_API_KEY,
+// 新增 kind 忘了加分支就会静默拿 Grok 的 key 去打 DeepSeek 端点,报成鉴权错很难查。
+process.env.DEEPSEEK_API_KEY = "test-canvas-agent-deepseek-key";
+assert.equal(agent.modelConfig("deepseek-v4-pro")?.apiKey, "test-canvas-agent-deepseek-key", "deepseek 必须用 DEEPSEEK_API_KEY");
+assert.equal(agent.modelConfig("grok-4.5")?.apiKey, process.env.XAI_API_KEY, "grok 必须用 XAI_API_KEY");
+assert.notEqual(agent.modelConfig("deepseek-v4-pro")?.apiKey, process.env.XAI_API_KEY, "deepseek 不得拿到 Grok 的 key");
 assert.equal(agent.modelConfig("claude-sonnet-5"), null, "Canvas Agent 不得接受其他模型");
 assert.deepEqual(
   agent.tools.map((tool) => tool.function.name),

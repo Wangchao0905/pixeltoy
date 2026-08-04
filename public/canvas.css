@@ -7167,6 +7167,10 @@ body.canvas-page {
   font-variant-numeric: tabular-nums;
 }
 
+.generation-status-row em:empty {
+  display: none;
+}
+
 .generation-progress-track {
   height: 4px;
   overflow: hidden;
@@ -7175,11 +7179,60 @@ body.canvas-page {
 }
 
 .generation-progress-track i {
+  position: relative;
+  overflow: hidden;
   display: block;
   height: 100%;
   border-radius: 1px;
   background: #e9ffff;
-  transition: none;
+  transition: width 320ms ease-out;
+}
+
+.generation-progress-track i::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(105deg, transparent 8%, rgba(255, 255, 255, 0.82) 48%, transparent 88%);
+  transform: translateX(-120%);
+  animation: generation-progress-sheen 1.35s ease-in-out infinite;
+}
+
+.generation-progress-track.is-indeterminate i {
+  animation: generation-progress-indeterminate 1.6s ease-in-out infinite;
+}
+
+@keyframes generation-progress-sheen {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes generation-progress-indeterminate {
+  0%, 100% {
+    opacity: 0.58;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.generation-model-label {
+  display: block;
+  overflow: hidden;
+  color: #a8dadd;
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generation-progress-track i,
+  .generation-progress-track i::after {
+    animation: none;
+    transition: none;
+  }
 }
 
 .generation-status-message {

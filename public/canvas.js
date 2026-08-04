@@ -1985,6 +1985,12 @@ function hasRealVideoProgress(node) {
   return normalizeVideoProgress(node?.progress) !== null;
 }
 
+function videoModelLabel(node) {
+  const settings = { ...VIDEO_NODE_DEFAULTS, ...(node?.settings || {}) };
+  const model = String(settings.model || VIDEO_NODE_DEFAULTS.model).trim();
+  return VIDEO_MODEL_LABELS[model] || model || VIDEO_MODEL_LABELS[VIDEO_NODE_DEFAULTS.model];
+}
+
 function videoPollDelay(base = 5000) {
   return base + Math.floor(Math.random() * 900);
 }
@@ -2112,14 +2118,15 @@ function renderVideoPreview(node) {
     const progress = videoProgressValue(node);
     const hasProgress = hasRealVideoProgress(node);
     const progressWidth = hasProgress ? progress : 24;
+    const modelLabel = videoModelLabel(node);
     return `
-      <div class="video-node-status generation-status" aria-label="${hasProgress ? `视频生成 ${progress}%` : "视频生成处理中"}">
+      <div class="video-node-status generation-status" aria-label="${hasProgress ? `生成中 ${progress}%` : "生成中"}">
         <div class="generation-status-row">
-          <strong>视频生成</strong>
-          <em>${hasProgress ? `${progress}%` : "处理中"}</em>
+          <strong>生成中</strong>
+          <em>${hasProgress ? `${progress}%` : ""}</em>
         </div>
-        <div class="generation-progress-track" aria-hidden="true"><i style="width: ${progressWidth}%"></i></div>
-        <span class="generation-status-message">${escapeHtml(node.statusMessage || "任务已提交，等待接口进度")}</span>
+        <div class="generation-progress-track${hasProgress ? "" : " is-indeterminate"}" aria-hidden="true"><i style="width: ${progressWidth}%"></i></div>
+        <span class="generation-model-label">${escapeHtml(modelLabel)}</span>
       </div>
     `;
   }
@@ -3191,12 +3198,14 @@ function syncRunningVideoPreview(preview, node) {
   const progress = videoProgressValue(node);
   const hasProgress = hasRealVideoProgress(node);
   const progressLabel = status.querySelector(".generation-status-row em");
-  if (progressLabel) progressLabel.textContent = hasProgress ? `${progress}%` : "处理中";
+  if (progressLabel) progressLabel.textContent = hasProgress ? `${progress}%` : "";
   const progressFill = status.querySelector(".generation-progress-track i");
   if (progressFill) progressFill.style.width = `${hasProgress ? progress : 24}%`;
-  const message = status.querySelector(".generation-status-message");
-  if (message) message.textContent = node.statusMessage || "任务已提交，等待接口进度";
-  status.setAttribute("aria-label", hasProgress ? `视频生成 ${progress}%` : "视频生成处理中");
+  const progressTrack = status.querySelector(".generation-progress-track");
+  if (progressTrack) progressTrack.classList.toggle("is-indeterminate", !hasProgress);
+  const modelLabel = status.querySelector(".generation-model-label");
+  if (modelLabel) modelLabel.textContent = videoModelLabel(node);
+  status.setAttribute("aria-label", hasProgress ? `生成中 ${progress}%` : "生成中");
   return true;
 }
 
@@ -3334,6 +3343,7 @@ function refreshVideoNodeElement(nodeId) {
     // which makes the preview flicker in and out.
     const previewSig = JSON.stringify({
       kind: node.kind,
+      generationStatusVersion: 2,
       videoUrl: node.videoUrl || "",
       // Some project providers keep the same media URL across generations.
       // The task identity must still force the player to adopt the new result.

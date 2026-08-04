@@ -1157,10 +1157,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .dna-tag.is-recommended { border-color: rgba(120, 154, 0, 0.46); color: var(--pt-green-ink); background: rgba(249, 255, 228, 0.84); }
 .dna-tag.is-recommended small { color: var(--pt-green-ink); opacity: 0.72; }
 .dna-tag.is-filtered-out { display: none; }
-.dna-core { position: absolute; left: 50%; top: 50%; z-index: 3; display: grid; place-items: center; width: 82px; height: 82px; border: 1px solid rgba(40, 120, 232, 0.48); border-radius: 50%; color: var(--pt-blue); background: rgba(255, 255, 255, 0.86); box-shadow: 0 0 0 7px rgba(40, 120, 232, 0.045), 0 10px 24px rgba(25, 36, 45, 0.10); pointer-events: none; transform: translate(-50%, -50%); }
+.dna-core { position: absolute; left: 50%; top: 50%; z-index: 3; display: grid; place-items: center; width: 82px; height: 82px; border: 1px solid rgba(40, 120, 232, 0.48); border-radius: 50%; background: rgba(255, 255, 255, 0.74); box-shadow: 0 0 0 7px rgba(40, 120, 232, 0.045), 0 10px 24px rgba(25, 36, 45, 0.10); pointer-events: none; transform: translate(-50%, -50%); }
+.dna-core::after { width: 14px; height: 14px; border: 1px solid rgba(40, 120, 232, 0.24); border-radius: 50%; background: radial-gradient(circle at 36% 32%, rgba(255, 255, 255, 0.94), rgba(40, 120, 232, 0.18) 58%, rgba(40, 120, 232, 0.04)); box-shadow: 0 0 18px rgba(40, 120, 232, 0.18); content: ""; }
 .dna-core-ring { position: absolute; inset: -10px; border: 1px solid rgba(184, 239, 34, 0.38); border-radius: 50%; animation: dna-core-orbit 8s ease-in-out infinite; }
-.dna-core strong { font: 700 13px var(--meta-font); letter-spacing: 0.12em; }
-.dna-core small { margin-top: -4px; color: var(--pt-faint); font: 7px var(--meta-font); letter-spacing: 0.15em; }
 .dna-thinking-state { position: absolute; left: 14px; bottom: 12px; z-index: 4; color: var(--pt-muted); font: 8px var(--meta-font); letter-spacing: 0.12em; pointer-events: none; }
 .dna-window-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; color: var(--pt-faint); font: 8px var(--meta-font); letter-spacing: 0.08em; }
 @keyframes dna-launcher-drift { 0%, 100% { transform: translateY(0) rotate(-2deg); } 43% { transform: translateY(-2px) rotate(3deg); } 71% { transform: translateY(1px) rotate(-1deg); } }
@@ -1180,6 +1179,5 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .dna-tag span { font-size: 8px; }
   .dna-tag small { font-size: 6px; }
   .dna-core { width: 62px; height: 62px; }
-  .dna-core strong { font-size: 10px; }
   .dna-window-foot { align-items: flex-start; flex-direction: column; gap: 4px; }
 }

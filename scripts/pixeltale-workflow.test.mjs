@@ -36,6 +36,7 @@ assert.match(app, /id=\"dnaWindow\" class=\"dna-window\" hidden/, "Story DNA fie
 assert.match(app, /data-dna-canvas/, "Story DNA must render its particle field on canvas");
 assert.match(app, /data-dna-filter/, "Story DNA must expose category filters");
 assert.match(app, /data-dna-tag/, "Story DNA tags must remain selectable");
+assert.doesNotMatch(app, /class="dna-core"[^>]*>[\s\S]*<strong>DNA<\/strong>/, "Story DNA thought core must not show a central DNA label");
 assert.match(app, /const DNA_FRAME_INTERVAL_MS = 1000 \/ 24/, "Story DNA animation must cap its draw rate");
 assert.match(app, /const DNA_MAX_DPR = 1\.25/, "Story DNA canvas must cap its backing resolution");
 assert.match(app, /document\.hidden/, "Story DNA animation must pause when the document is hidden");

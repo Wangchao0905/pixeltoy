@@ -2616,9 +2616,13 @@ function readPixelTaleRunJob(storyRoot, jobId) {
 
 function pixelTaleRunResult(params, job) {
   if (job.result) return job.result;
-  if (!job.runId) return null;
   const state = pixelTaleAgent.status(params);
-  const run = state.runs.find((item) => item.runId === job.runId);
+  const run = job.runId
+    ? state.runs.find((item) => item.runId === job.runId)
+    : state.runs
+      .filter((item) => item.stage === job.stage && (!job.createdAt || Date.parse(item.startedAt || 0) >= Number(job.createdAt) - 2_000))
+      .sort((left, right) => Date.parse(left.completedAt || left.startedAt || 0) - Date.parse(right.completedAt || right.startedAt || 0))
+      .at(-1);
   if (!run) return null;
   return { ...run, artifacts: state.artifacts.filter((item) => run.artifactIds.includes(item.id)), state };
 }
@@ -2676,6 +2680,13 @@ function getPixelTaleRunJob(params, jobId) {
   const job = readPixelTaleRunJob(params.pixelTaleRoot, jobId);
   if (!job) return { status: "failed", error: "运行任务不存在或已过期，请重新生成", errorCode: "JOB_NOT_FOUND" };
   if (job.status === "running" && !pixelTaleRunJobs.has(job.jobId)) {
+    const persistedResult = pixelTaleRunResult(params, job);
+    if (persistedResult) {
+      Object.assign(job, { status: "completed", runId: persistedResult.runId, resultStatus: persistedResult.status, recoveredAt: Date.now(), updatedAt: Date.now(), finishedAt: Date.now() });
+      pixelTaleRunJobs.set(job.jobId, job);
+      persistPixelTaleRunJob(params.pixelTaleRoot, job);
+      return { jobId: job.jobId, status: "completed", result: persistedResult, recovered: true };
+    }
     const persistedRequest = job.request;
     if (persistedRequest?.pixelTaleRoot === params.pixelTaleRoot && persistedRequest.stage === job.stage) {
       Object.assign(job, { recoveredAt: Date.now(), recoveryCount: Number(job.recoveryCount || 0) + 1, updatedAt: Date.now() });

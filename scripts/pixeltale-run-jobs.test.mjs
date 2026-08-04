@@ -69,8 +69,8 @@ try {
   assert.equal(job.status, "completed", `background run must complete: ${JSON.stringify(job)}`);
   assert.equal(job.result.status, "completed", "two-review quorum must release the generated brief");
   assert.equal(job.result.state.runs.length, 1, "duplicate starts must not create duplicate Agent runs");
-  assert.deepEqual(requestedTokenBudgets.slice(0, 3).sort((a, b) => a - b), [1_800, 1_800, 3_600], "the brief author race must use compact budgets plus DeepSeek reasoning headroom");
-  assert.deepEqual(requestedTokenBudgets.slice(3).sort((a, b) => a - b), [1_200, 1_200, 2_400], "brief reviewers must use compact budgets plus DeepSeek reasoning headroom");
+  assert.deepEqual(requestedTokenBudgets.slice().sort((a, b) => a - b), [1_200, 1_200, 1_800], "a quorum release must use one compact author request and two compact reviewer requests");
+  assert.equal(requestedTokenBudgets.length, 3, "two agreeing reviewers must cancel the third reviewer request");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");
   const persistedJob = JSON.parse(fs.readFileSync(path.join(root, "run-jobs", `${first.jobId}.json`), "utf8"));
   assert.deepEqual(persistedJob.request, {
@@ -107,6 +107,30 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   assert.equal(recoveryResult.status, "completed", `recovered background run must complete: ${JSON.stringify(recoveryResult)}`);
+
+  const seeded = pixelTaleRuns.start(recoveryParams);
+  let seededResult;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    seededResult = pixelTaleRuns.get(recoveryParams, seeded.jobId);
+    if (seededResult.status !== "running") break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(seededResult.status, "completed", "the recovery reuse fixture must have a completed Agent run");
+  const requestsBeforeReuse = requestedTokenBudgets.length;
+  const completedButMarkedRunningId = "ptrun_abcdef0123456789abcdef0123456789";
+  fs.writeFileSync(path.join(recoveryRoot, "run-jobs", `${completedButMarkedRunningId}.json`), JSON.stringify({
+    jobId: completedButMarkedRunningId,
+    status: "running",
+    stage: "brief",
+    runId: seededResult.result.runId,
+    createdAt: Date.parse(seededResult.result.startedAt),
+    updatedAt: Date.now(),
+    request: { ...recoveryParams, project: recoveryParams.project },
+  }));
+  const reusedCompleted = pixelTaleRuns.get(recoveryParams, completedButMarkedRunningId);
+  assert.equal(reusedCompleted.status, "completed", "a completed Agent result must be reused after an index-only restart");
+  assert.equal(reusedCompleted.recovered, true, "reused completed results must disclose restart recovery");
+  assert.equal(requestedTokenBudgets.length, requestsBeforeReuse, "reusing a completed Agent result must not call any model again");
 } finally {
   superPixel.setFetch();
   fs.rmSync(root, { recursive: true, force: true });

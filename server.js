@@ -133,6 +133,7 @@ const CANVAS_VIDEO_MIN_HEIGHT = 420;
 const CANVAS_VIDEO_MAX_HEIGHT = 1400;
 const AUTH_USERS_PATH = path.join(APP_ROOT, ".pixel-toys-users.json");
 const AUTH_SESSIONS_PATH = path.join(APP_ROOT, ".pixel-toys-sessions.json");
+const AUTH_REMOTE_SESSIONS_PATH = path.join(APP_ROOT, ".pixel-toys-remote-sessions.json");
 const AUTH_USAGE_PATH = path.join(APP_ROOT, ".pixel-toys-usage.json");
 const TEAM_STORE_PATH = path.join(APP_ROOT, ".pixel-toys-teams.json");
 const ASSET_LIBRARY_PATH = path.join(APP_ROOT, ".pixel-toys-asset-library.json");
@@ -358,6 +359,7 @@ function adminUsernames() {
 
 function computedUserRole(user = {}) {
   if (!user?.id) return "user";
+  if (user.remoteAuth === true && user.remoteRole === "admin") return "admin";
   if (adminUsernames().includes(normalizeUsername(user.username))) return "admin";
   return "user";
 }
@@ -473,6 +475,115 @@ function readAuthSessions() {
 
 function writeAuthSessions(data) {
   writeJsonFile(AUTH_SESSIONS_PATH, { sessions: Array.isArray(data.sessions) ? data.sessions : [] });
+}
+
+function remoteAuthBaseUrl() {
+  const raw = compactLine(readLocalEnvValue("PIXEL_TOYS_AUTH_REMOTE_URL") || process.env.PIXEL_TOYS_AUTH_REMOTE_URL || "");
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    if (!/^https?:$/.test(parsed.protocol)) return "";
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function remoteAuthEnabled() {
+  const enabled = compactLine(readLocalEnvValue("PIXEL_TOYS_AUTH_REMOTE_ENABLED") || process.env.PIXEL_TOYS_AUTH_REMOTE_ENABLED || "");
+  return enabled === "1" && process.env.NODE_ENV !== "production" && !!remoteAuthBaseUrl();
+}
+
+function readRemoteAuthSessions() {
+  const data = readJsonFile(AUTH_REMOTE_SESSIONS_PATH, { sessions: {} });
+  return { sessions: data.sessions && typeof data.sessions === "object" ? data.sessions : {} };
+}
+
+function writeRemoteAuthSessions(data) {
+  writeJsonFile(AUTH_REMOTE_SESSIONS_PATH, { sessions: data.sessions && typeof data.sessions === "object" ? data.sessions : {} });
+}
+
+function localSessionIdFromRequest(req) {
+  return parseCookies(req.headers.cookie || "")[AUTH_COOKIE_NAME] || "";
+}
+
+function remoteCookieForRequest(req) {
+  const sessionId = localSessionIdFromRequest(req);
+  if (!sessionId) return "";
+  return compactLine(readRemoteAuthSessions().sessions[sessionId]?.cookie || "");
+}
+
+function bindRemoteAuthSession(localSessionId, remoteCookie) {
+  if (!localSessionId || !remoteCookie) return;
+  const data = readRemoteAuthSessions();
+  data.sessions[localSessionId] = { cookie: remoteCookie, updatedAt: new Date().toISOString() };
+  writeRemoteAuthSessions(data);
+}
+
+function clearRemoteAuthSession(localSessionId) {
+  if (!localSessionId) return;
+  const data = readRemoteAuthSessions();
+  if (!data.sessions[localSessionId]) return;
+  delete data.sessions[localSessionId];
+  writeRemoteAuthSessions(data);
+}
+
+function remoteSetCookie(response) {
+  const values = typeof response.headers.getSetCookie === "function" ? response.headers.getSetCookie() : [];
+  const header = values[0] || response.headers.get("set-cookie") || "";
+  return compactLine(header).split(";", 1)[0];
+}
+
+async function remoteAuthRequest(pathname, body = {}, cookie = "") {
+  const baseUrl = remoteAuthBaseUrl();
+  if (!baseUrl) throw new Error("本机远程认证未配置有效的服务地址");
+  let response;
+  try {
+    response = await fetch(`${baseUrl}${pathname}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body: JSON.stringify(body || {}),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (error) {
+    const wrapped = new Error(`线上认证服务暂时不可用：${error.message}`);
+    wrapped.statusCode = 502;
+    throw wrapped;
+  }
+  const data = await response.json().catch(() => ({ ok: false, message: `线上认证服务返回 HTTP ${response.status}` }));
+  return { response, data, cookie: remoteSetCookie(response) };
+}
+
+function upsertRemoteAuthUser(remoteUser = {}) {
+  const remoteId = compactLine(remoteUser.id || "");
+  const username = compactLine(remoteUser.username || remoteUser.email || "");
+  if (!remoteId || !username) throw new Error("线上认证服务未返回完整用户资料");
+  const store = readAuthUsers();
+  const existing = store.users.find((item) => item.id === remoteId || item.username === username || (remoteUser.email && item.email === remoteUser.email));
+  const user = {
+    ...(existing || {}),
+    id: remoteId,
+    username,
+    email: compactLine(remoteUser.email || ""),
+    displayName: compactLine(remoteUser.displayName || username),
+    avatarUrl: compactLine(remoteUser.avatarUrl || ""),
+    disabled: remoteUser.disabled === true,
+    canvasEnabled: remoteUser.canvasEnabled !== false,
+    remoteAuth: true,
+    remoteRole: compactLine(remoteUser.role || "user"),
+    // Remote mode never copies or creates a password hash locally.
+    passwordHash: "",
+    createdAt: remoteUser.createdAt || existing?.createdAt || new Date().toISOString(),
+    lastLoginAt: remoteUser.lastLoginAt || new Date().toISOString(),
+  };
+  const index = existing ? store.users.indexOf(existing) : -1;
+  if (index >= 0) store.users[index] = user;
+  else store.users.push(user);
+  writeAuthUsers(store);
+  return user;
 }
 
 function isLocalRequest(req) {
@@ -844,6 +955,77 @@ function isAuthApiPath(pathname = "") {
   );
 }
 
+function remoteAuthFailure(result = {}) {
+  const status = Number(result.response?.status);
+  const message = compactLine(result.data?.message || result.data?.error || "线上认证请求失败");
+  return { status: Number.isFinite(status) && status >= 400 ? status : 502, message };
+}
+
+async function handleRemoteAuthApi(req, res, url) {
+  if (!remoteAuthEnabled()) return false;
+  const pathname = url.pathname;
+  const proxyable = new Set([
+    "/api/auth/email-code",
+    "/api/auth/register",
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/password",
+    "/api/auth/profile",
+  ]);
+  if (req.method !== "POST" || !proxyable.has(pathname)) return false;
+
+  const localUser = currentUserFromRequest(req);
+  const remoteCookie = remoteCookieForRequest(req);
+  if (pathname === "/api/auth/logout") {
+    if (remoteCookie) {
+      try {
+        await remoteAuthRequest(pathname, {}, remoteCookie);
+      } catch {
+        // The local session is still revoked even if the remote logout is unavailable.
+      }
+    }
+    const localSessionId = localSessionIdFromRequest(req);
+    if (localSessionId) {
+      const store = readAuthSessions();
+      store.sessions = store.sessions.filter((session) => session.id !== localSessionId);
+      writeAuthSessions(store);
+      clearRemoteAuthSession(localSessionId);
+    }
+    return send(res, 200, { ok: true }, { "Set-Cookie": authCookie("", { maxAgeMs: 0 }) }) || true;
+  }
+
+  if ((pathname === "/api/auth/password" || pathname === "/api/auth/profile") && !localUser?.remoteAuth) return false;
+  if ((pathname === "/api/auth/password" || pathname === "/api/auth/profile") && !remoteCookie) {
+    return fail(res, 401, "远程登录会话已失效，请重新登录") || true;
+  }
+
+  const body = await readBody(req);
+  let result;
+  try {
+    result = await remoteAuthRequest(pathname, body, remoteCookie);
+  } catch (error) {
+    return fail(res, error.statusCode || 502, error.message) || true;
+  }
+  if (!result.response.ok || result.data?.ok === false) {
+    const failure = remoteAuthFailure(result);
+    return fail(res, failure.status, failure.message) || true;
+  }
+
+  if (pathname === "/api/auth/email-code") return send(res, 200, result.data) || true;
+  if (pathname === "/api/auth/password") return send(res, 200, { ok: true }) || true;
+  if (pathname === "/api/auth/profile") {
+    const updated = result.data?.user ? upsertRemoteAuthUser(result.data.user) : localUser;
+    return send(res, 200, { ok: true, user: publicUser(updated) }) || true;
+  }
+
+  const remoteUser = result.data?.user;
+  if (!remoteUser) return fail(res, 502, "线上认证服务未返回用户资料") || true;
+  const user = upsertRemoteAuthUser(remoteUser);
+  const session = createAuthSession(user.id);
+  bindRemoteAuthSession(session.id, result.cookie);
+  return send(res, 200, { ...result.data, user: publicUser(user) }, { "Set-Cookie": authCookie(session.id) }) || true;
+}
+
 function isAdminApiPath(pathname = "") {
   return pathname === "/api/admin/summary" || pathname.startsWith("/api/admin/");
 }
@@ -929,6 +1111,7 @@ function requireAuth(req, res, url) {
 }
 
 async function handleAuthApi(req, res, url) {
+  if (await handleRemoteAuthApi(req, res, url)) return;
   if (req.method === "GET" && url.pathname === "/api/auth/me") {
     const user = currentUserFromRequest(req);
     return send(res, 200, { ok: true, user: user ? publicUser(user) : null });

@@ -36,6 +36,10 @@ assert.match(app, /id=\"dnaWindow\" class=\"dna-window\" hidden/, "Story DNA fie
 assert.match(app, /data-dna-canvas/, "Story DNA must render its particle field on canvas");
 assert.match(app, /data-dna-filter/, "Story DNA must expose category filters");
 assert.match(app, /data-dna-tag/, "Story DNA tags must remain selectable");
+assert.match(app, /const DNA_FRAME_INTERVAL_MS = 1000 \/ 24/, "Story DNA animation must cap its draw rate");
+assert.match(app, /const DNA_MAX_DPR = 1\.25/, "Story DNA canvas must cap its backing resolution");
+assert.match(app, /document\.hidden/, "Story DNA animation must pause when the document is hidden");
+assert.match(app, /IntersectionObserver/, "Story DNA animation must pause outside the viewport");
 assert.match(app, /审核未通过，需要处理必修项[\s\S]*唯一下一步位于右侧/, "brief review failures must explain how to continue");
 assert.match(app, /参考意见与模型状态[\s\S]*不阻断确认/, "single-model opinions must be visibly separated from mandatory revisions");
 assert.match(app, /kind: "auto-revise"[\s\S]*执行定向修订并复审/, "review flow must expose one canonical revision action");
@@ -87,8 +91,9 @@ assert.match(agent, /mergeRevisionContent\(stage, primary\.content, revisionBase
 assert.match(styles, /\.review-issue-list \{[\s\S]*max-height: 420px;/, "review issues must stay readable in a bounded panel");
 assert.match(styles, /\.dna-field \{[\s\S]*height: 420px;/, "Story DNA must reserve a stable spherical field");
 assert.match(styles, /\.dna-field canvas \{/, "Story DNA must layer a particle canvas");
+assert.match(styles, /\.dna-field \{[\s\S]*contain: layout paint;/, "Story DNA field must contain its paint work");
 assert.match(styles, /\.dna-core \{[\s\S]*border-radius: 50%[\s\S]*pointer-events: none;/, "Story DNA must have a spherical thought core");
-assert.match(styles, /\.dna-tag \{[\s\S]*will-change: transform, opacity;/, "Story DNA tags must support slow depth motion");
+assert.doesNotMatch(styles, /\.dna-tag \{[\s\S]*will-change:\s*transform/, "Story DNA tags must not force 56 persistent compositor layers");
 assert.match(styles, /@keyframes dna-launcher-drift/, "Story DNA launcher must have visible motion");
 assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.dna-launcher-orb/, "Story DNA must respect reduced-motion preferences");
 assert.match(agent, /只返回最多 3 个会阻断下一阶段的问题/, "review prompts must stay concise and stage-scoped");

@@ -774,77 +774,109 @@ function updateMarketCountryList() {
 }
 
 let dnaMotionStop = null;
+const DNA_FRAME_INTERVAL_MS = 1000 / 24;
+const DNA_MAX_DPR = 1.25;
 
 function stopDnaMotion() {
   if (typeof dnaMotionStop === "function") dnaMotionStop();
   dnaMotionStop = null;
 }
 
-function dnaPoint(index, total, time) {
+function createDnaParticles(total) {
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-  const latitude = 1 - 2 * ((index + 0.5) / Math.max(1, total));
-  const radial = Math.sqrt(Math.max(0, 1 - latitude * latitude));
-  const wobble = Math.sin(time * 0.11 + index * 1.71) * 0.035;
-  const longitude = index * goldenAngle + time * 0.042 + wobble;
-  const x = Math.cos(longitude) * radial;
-  const z = Math.sin(longitude) * radial;
-  const tilt = 0.16 + Math.sin(time * 0.08) * 0.035;
-  return {
-    x,
-    y: latitude * Math.cos(tilt) - z * Math.sin(tilt),
-    z: latitude * Math.sin(tilt) + z * Math.cos(tilt),
-  };
+  return Array.from({ length: total }, (_, index) => {
+    const latitude = 1 - 2 * ((index + 0.5) / Math.max(1, total));
+    const radial = Math.sqrt(Math.max(0, 1 - latitude * latitude));
+    const longitude = index * goldenAngle;
+    return {
+      baseX: Math.cos(longitude) * radial,
+      baseY: latitude,
+      baseZ: Math.sin(longitude) * radial,
+      phase: index * 1.71,
+      size: 0.55 + ((index * 17) % 9) / 10,
+    };
+  });
 }
 
 function startDnaMotion(field) {
   stopDnaMotion();
   const canvas = field?.querySelector("[data-dna-canvas]");
-  const context = canvas?.getContext("2d");
+  const context = canvas?.getContext("2d", { alpha: true, desynchronized: true });
   if (!canvas || !context) return;
   const tags = [...field.querySelectorAll("[data-dna-tag]")];
-  const particles = Array.from({ length: 126 }, (_, index) => ({ index, size: 0.55 + ((index * 17) % 9) / 10 }));
+  const isReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const isCompact = window.matchMedia?.("(max-width: 700px)").matches;
+  const particles = createDnaParticles(isCompact ? 64 : 96);
+  const tagParticles = createDnaParticles(tags.length);
+  const projected = particles.map(() => ({ x: 0, y: 0, z: 0, depth: 0 }));
   let width = 0;
   let height = 0;
+  let radius = 0;
+  let centerX = 0;
+  let centerY = 0;
+  let aura = null;
   let frame = 0;
   let stopped = false;
+  let intersecting = true;
+  let lastTimestamp = -Infinity;
   const resize = () => {
     const rect = field.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    width = Math.max(1, rect.width);
-    height = Math.max(1, rect.height);
+    const nextWidth = Math.max(1, Math.round(rect.width));
+    const nextHeight = Math.max(1, Math.round(rect.height));
+    if (nextWidth === width && nextHeight === height) return;
+    width = nextWidth;
+    height = nextHeight;
+    centerX = width / 2;
+    centerY = height / 2;
+    radius = Math.min(width, height) * 0.36;
+    const dpr = Math.min(DNA_MAX_DPR, window.devicePixelRatio || 1);
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
-  };
-  const project = (point, radius, centerX, centerY) => {
-    const depth = 0.78 + (point.z + 1) * 0.14;
-    return {
-      x: centerX + point.x * radius * depth,
-      y: centerY + point.y * radius * depth,
-      z: point.z,
-      depth,
-    };
-  };
-  const draw = (timestamp = 0) => {
-    if (stopped) return;
-    const time = timestamp / 1000;
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const radius = Math.min(width, height) * 0.36;
-    context.clearRect(0, 0, width, height);
-    const aura = context.createRadialGradient(centerX, centerY, radius * 0.05, centerX, centerY, radius * 1.22);
+    aura = context.createRadialGradient(centerX, centerY, radius * 0.05, centerX, centerY, radius * 1.22);
     aura.addColorStop(0, "rgba(40, 120, 232, 0.10)");
     aura.addColorStop(0.56, "rgba(40, 120, 232, 0.035)");
     aura.addColorStop(1, "rgba(40, 120, 232, 0)");
+  };
+  const shouldAnimate = () => !stopped && !isReducedMotion && !document.hidden && intersecting;
+  const draw = (timestamp = 0) => {
+    frame = 0;
+    if (stopped || (!isReducedMotion && !shouldAnimate())) return;
+    if (!isReducedMotion && timestamp - lastTimestamp < DNA_FRAME_INTERVAL_MS) {
+      frame = window.requestAnimationFrame(draw);
+      return;
+    }
+    lastTimestamp = timestamp;
+    const time = timestamp / 1000;
+    const rotation = time * 0.042;
+    const wobbleTime = time * 0.11;
+    const tilt = 0.16 + Math.sin(time * 0.08) * 0.035;
+    const cosTilt = Math.cos(tilt);
+    const sinTilt = Math.sin(tilt);
+    context.clearRect(0, 0, width, height);
     context.fillStyle = aura;
     context.beginPath();
     context.arc(centerX, centerY, radius * 1.22, 0, Math.PI * 2);
     context.fill();
 
-    const projected = particles.map((particle) => project(dnaPoint(particle.index, particles.length, time), radius, centerX, centerY));
-    projected.sort((left, right) => left.z - right.z);
+    for (let index = 0; index < particles.length; index += 1) {
+      const particle = particles[index];
+      const wobble = Math.sin(wobbleTime + particle.phase) * 0.035;
+      const angle = rotation + wobble;
+      const cosAngle = Math.cos(angle);
+      const sinAngle = Math.sin(angle);
+      const x = particle.baseX * cosAngle - particle.baseZ * sinAngle;
+      const z = particle.baseX * sinAngle + particle.baseZ * cosAngle;
+      const y = particle.baseY * cosTilt - z * sinTilt;
+      const tiltedZ = particle.baseY * sinTilt + z * cosTilt;
+      const depth = 0.78 + (tiltedZ + 1) * 0.14;
+      const point = projected[index];
+      point.x = centerX + x * radius * depth;
+      point.y = centerY + y * radius * depth;
+      point.z = tiltedZ;
+      point.depth = depth;
+    }
+
     context.lineWidth = 0.55;
     for (let index = 0; index < projected.length; index += 1) {
       const point = projected[index];
@@ -859,14 +891,15 @@ function startDnaMotion(field) {
         context.stroke();
       }
     }
-    projected.forEach((point, index) => {
+    for (let index = 0; index < projected.length; index += 1) {
+      const point = projected[index];
       const alpha = 0.12 + Math.max(0, point.z + 1) * 0.29;
       context.fillStyle = index % 11 === 0 ? `rgba(220, 89, 107, ${alpha})` : `rgba(40, 120, 232, ${alpha})`;
       context.beginPath();
       context.arc(point.x, point.y, 0.7 + point.depth * 1.1, 0, Math.PI * 2);
       context.fill();
-    });
-    for (let index = 0; index < 34; index += 1) {
+    }
+    for (let index = 0; index < 24; index += 1) {
       const drift = time * (0.012 + (index % 5) * 0.002) + index * 1.93;
       const x = centerX + Math.sin(drift * 1.7 + index) * radius * (0.82 + (index % 3) * 0.12);
       const y = centerY + Math.cos(drift * 1.13 + index * 0.7) * radius * (0.62 + (index % 4) * 0.08);
@@ -876,28 +909,47 @@ function startDnaMotion(field) {
       context.arc(x, y, 0.45 + (index % 3) * 0.24, 0, Math.PI * 2);
       context.fill();
     }
-    tags.forEach((tag, index) => {
-      const point = project(dnaPoint(index, tags.length, time + 0.45), radius * 1.08, centerX, centerY);
-      const depth = (point.z + 1) / 2;
-      tag.style.setProperty("--dna-tx", `${point.x - centerX}px`);
-      tag.style.setProperty("--dna-ty", `${point.y - centerY}px`);
+    for (let index = 0; index < tags.length; index += 1) {
+      const particle = tagParticles[index];
+      const wobble = Math.sin(wobbleTime + particle.phase + 0.45) * 0.035;
+      const angle = rotation + wobble;
+      const cosAngle = Math.cos(angle);
+      const sinAngle = Math.sin(angle);
+      const x = particle.baseX * cosAngle - particle.baseZ * sinAngle;
+      const z = particle.baseX * sinAngle + particle.baseZ * cosAngle;
+      const y = particle.baseY * cosTilt - z * sinTilt;
+      const tiltedZ = particle.baseY * sinTilt + z * cosTilt;
+      const depth = (tiltedZ + 1) / 2;
+      const tag = tags[index];
+      const tagDepth = 0.78 + (tiltedZ + 1) * 0.14;
+      tag.style.setProperty("--dna-tx", `${x * radius * 1.08 * tagDepth}px`);
+      tag.style.setProperty("--dna-ty", `${y * radius * 1.08 * tagDepth}px`);
       tag.style.setProperty("--dna-scale", `${0.74 + depth * 0.34}`);
       tag.style.opacity = `${0.24 + depth * 0.72}`;
       tag.style.zIndex = String(Math.round(10 + depth * 30));
-    });
-    if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) frame = window.requestAnimationFrame(draw);
+    }
+    if (!isReducedMotion) frame = window.requestAnimationFrame(draw);
+  };
+  const schedule = () => {
+    if (shouldAnimate() && !frame) frame = window.requestAnimationFrame(draw);
   };
   resize();
-  const observer = typeof ResizeObserver === "function" ? new ResizeObserver(resize) : null;
-  observer?.observe(field);
+  const resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => { resize(); schedule(); }) : null;
+  const visibilityObserver = typeof IntersectionObserver === "function" ? new IntersectionObserver(([entry]) => {
+    intersecting = entry?.isIntersecting !== false;
+    schedule();
+  }, { threshold: 0.01 }) : null;
+  resizeObserver?.observe(field);
+  visibilityObserver?.observe(field);
+  document.addEventListener("visibilitychange", schedule, { passive: true });
   draw(0);
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-    tags.forEach((tag) => { tag.style.opacity = "0.76"; });
-  }
+  if (isReducedMotion) tags.forEach((tag) => { tag.style.opacity = "0.76"; });
   dnaMotionStop = () => {
     stopped = true;
     window.cancelAnimationFrame(frame);
-    observer?.disconnect();
+    resizeObserver?.disconnect();
+    visibilityObserver?.disconnect();
+    document.removeEventListener("visibilitychange", schedule);
   };
 }
 

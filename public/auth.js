@@ -33,6 +33,12 @@ function setMode(nextMode) {
   emailCodeField.classList.toggle("hidden", mode !== "register");
   form.elements.inviteCode.required = mode === "register";
   form.elements.emailCode.required = mode === "register";
+  const identityField = form.elements.email;
+  if (identityField) {
+    identityField.type = mode === "register" ? "email" : "text";
+    identityField.inputMode = mode === "register" ? "email" : "text";
+    identityField.placeholder = mode === "register" ? "name@example.com" : "Email or username";
+  }
   submit.textContent = mode === "register" ? "Create studio access" : "Enter studio";
   form.elements.password.autocomplete = mode === "register" ? "new-password" : "current-password";
   setMessage("");

@@ -143,6 +143,12 @@ if (authDialog && authForm) {
     emailCodeField?.classList.toggle("hidden", mode !== "register");
     if (authForm.elements.inviteCode) authForm.elements.inviteCode.required = mode === "register";
     if (authForm.elements.emailCode) authForm.elements.emailCode.required = mode === "register";
+    const identityField = authForm.elements.email;
+    if (identityField) {
+      identityField.type = mode === "register" ? "email" : "text";
+      identityField.inputMode = mode === "register" ? "email" : "text";
+      identityField.placeholder = mode === "register" ? "name@example.com" : "邮箱或用户名";
+    }
     if (authForm.elements.password) authForm.elements.password.autocomplete = mode === "register" ? "new-password" : "current-password";
     if (authSubmit) authSubmit.textContent = mode === "register" ? "创建制作空间" : "进入制作空间";
     setMessage("");

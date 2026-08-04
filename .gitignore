@@ -11,6 +11,7 @@ public/dist/
 # ===== 用户数据 / 会话 / 用量(含密码哈希,绝不入库) =====
 .pixel-toys-users.json
 .pixel-toys-sessions.json
+.pixel-toys-remote-sessions.json
 .pixel-toys-usage.json
 .pixel-toys-teams.json
 .pixel-toys-asset-library.json

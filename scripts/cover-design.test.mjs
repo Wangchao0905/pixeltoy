@@ -7,6 +7,7 @@ const root = path.resolve(new URL("..", import.meta.url).pathname);
 const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const app = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
+const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const { __test } = createRequire(import.meta.url)(path.join(root, "server.js"));
 
 assert.match(html, /id="modernCoverDesign"/, "the cut workspace needs a cover design module");
@@ -16,6 +17,10 @@ assert.match(html, /id="modernCoverDesignFocus"/, "cover design needs an in-modu
 assert.match(app, /function renderCoverDesign\(/, "the cover module needs a state renderer");
 assert.match(app, /function generateCoverDesigns\(/, "the cover module needs a generation action");
 assert.match(app, /data-cover-design-id=/, "cover tiles need selectable ids");
+assert.match(styles, /\.cover-design-panel\s*\{[^}]*width:\s*min\(100%,\s*432px/, "cover design must stay within the reference window width");
+assert.match(styles, /\.cover-design-grid\s*\{[^}]*grid-template-rows:\s*repeat\(2,\s*minmax\(0,1fr\)/, "cover design must render a bounded four-up grid");
+assert.match(styles, /\.cover-design-focus\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,1fr\)/, "enlarged cover preview must stay inside the same window");
+assert.match(styles, /\.cover-design-focus figure img\s*\{[^}]*height:\s*100%/, "enlarged cover preview must fill the bounded preview area");
 assert.match(serverSource, /action === "cover-designs"/, "the project needs a cover design route");
 assert.match(serverSource, /imageModel:\s*"gpt-image-2"/, "covers must use image-2");
 assert.match(serverSource, /COVER_DESIGN_STYLES/, "cover styles must be explicit and distinct");

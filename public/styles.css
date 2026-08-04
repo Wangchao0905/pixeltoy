@@ -18664,9 +18664,13 @@ body.is-studio-modern .modern-brand-logo.pixel-toys-wordmark::before {
 .dl small { display: block; color: var(--mv-qt); font-family: var(--mono); font-size: 9.5px; }
 .dl .btn { grid-column: 1 / -1; min-height: 30px; width: 100%; padding: 0 10px; border: 1px solid var(--mv-line-2); border-radius: var(--mv-r-s); background: transparent; color: var(--mv-mut); text-align: center; text-decoration: none; }
 .dl .btn.is-disabled { cursor: not-allowed; opacity: .5; pointer-events: none; }
-.final-cut-preview-proxy { display: none !important; }
 .cut-top[data-cover-design-shell] { display: flex; justify-content: center; align-items: flex-start; min-height: 0; padding: 0 0 16px; }
-.cut-top[data-cover-design-shell] > .cut-info { display: none; }
+.final-cut-preview-slot { display: grid; place-items: center; min-height: 0; padding: 0 16px 16px; }
+.final-cut-preview-slot .final-cut-preview { display: grid; place-items: center; width: 100%; min-height: 0; }
+.final-cut-preview-slot .final-cut-video { position: relative; width: min(100%, 320px); margin: 0 auto; }
+.final-cut-preview-slot .final-cut-video video { display: block; width: 100%; max-height: min(62vh, 720px); aspect-ratio: 9 / 16; border: 1px solid var(--mv-line); border-radius: var(--mv-r-s); background: #000; object-fit: contain; }
+.final-cut-preview-slot .final-cut-placeholder { display: grid; place-items: center; align-content: center; gap: 9px; width: min(100%, 320px); min-height: 190px; padding: 24px 16px; border: 1px dashed var(--mv-line-2); border-radius: var(--mv-r-s); color: var(--mv-qt); font-size: 10px; text-align: center; }
+.final-cut-preview-slot .final-cut-placeholder svg { width: 30px; height: 30px; fill: none; stroke: var(--mv-line-2); stroke-width: 1.5; }
 
 /* Cover design is a single 9:16 decision window. The four-up view and the
    enlarged view share this same bounded surface; neither can stretch the cut page. */

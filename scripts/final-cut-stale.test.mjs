@@ -41,6 +41,7 @@ assert.equal(
   "a regenerated clip must invalidate a final cut with a previous manifest signature",
 );
 assert.match(serverSource(), /finalCutOutputIsCurrent/, "server status must use the freshness helper");
+assert.match(serverSource(), /current:\s*outputCurrent/, "stale final cuts must keep a preview URL with an explicit current flag");
 assert.match(app, /fc\.stale \|\| fc\.status === "stale"/, "the UI must show a stale state after a source clip changes");
 assert.match(app, /modernVideoQueueGenerate[\s\S]*?generateModernVideoQueueShot/, "bottom take action must use the selected-shot handler");
 assert.match(app, /generateModernVideoQueueShot[\s\S]*?generateVideoSegment\(shotName/, "selected-shot handler must submit one shot");

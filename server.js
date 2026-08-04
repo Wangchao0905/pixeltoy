@@ -11084,13 +11084,14 @@ function finalCutStatus(episodeRoot) {
   });
   const stale = exists && !outputCurrent;
   let output = null;
-  if (outputCurrent) {
+  if (exists) {
     const stat = outputStat;
     output = {
       url: `/media?path=${encodeURIComponent(out)}&v=${Math.round(stat.mtimeMs)}`,
       downloadUrl: `/media?path=${encodeURIComponent(out)}&v=${Math.round(stat.mtimeMs)}&download=1&final_cut=1`,
       updatedAt: stat.mtime.toISOString(),
       size: stat.size,
+      current: outputCurrent,
     };
   }
   const status = job?.running

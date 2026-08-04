@@ -29,12 +29,13 @@ for (const id of ["finalCutStatus", "finalCutPreview", "assembleFinalCutBtn"]) {
 }
 assert.match(html, /id="modernCutPanel"/, "缺少可见的成片面板");
 const cutPanel = html.match(/id="modernCutPanel"[\s\S]*?<\/section>/)?.[0] || "";
+assert.match(cutPanel, /class="modern-cut-preview final-cut-preview-slot"/, "成片面板必须保留可见预览区域");
 for (const id of ["finalCutStatus", "finalCutPreview", "assembleFinalCutBtn"]) {
   assert.ok(cutPanel.includes(`id="${id}"`), `成片面板应包含 ${id}（renderFinalCut 依赖这些 ID）`);
 }
 
 const modernStudioRenderer = js.slice(js.indexOf("function renderModernStudio("), js.indexOf("function renderModernAssetGenerationControls("));
-assert.match(js, /function finalCutOutputReady\(finalCut\)[\s\S]*?return !!finalCut\?\.output\?\.url;/, "CUT must use the real final output instead of object presence");
+assert.match(js, /function finalCutOutputReady\(finalCut\)[\s\S]*?return !!finalCut\?\.output\?\.url && finalCut\?\.output\?\.current !== false;/, "CUT must use the current assembled output instead of object presence");
 assert.match(modernStudioRenderer, /const finalCutReady = finalCutOutputReady\(data\.finalCut\);/, "modern pipeline must use the final output readiness helper");
 assert.match(modernStudioRenderer, /Boolean\(total && completed === total\),\s*finalCutReady,/, "completed pipeline must include the actual assembled output");
 assert.match(modernStudioRenderer, /\$\("#modernCutStep"\)\.textContent = finalCutReady \? "成片已组装"/, "assembled output must turn the cut step green with the ready label");
@@ -61,6 +62,7 @@ assert.match(css, /\[data-modern-view="cut"\] \.modern-workbench \{ display: non
 assert.match(css, /\.modern-cut-foot button \{ min-height: 28px/, "成片按钮需用 min-height 覆盖全站 36px 基线");
 // min-height 撑出的富余空间会摊到行间，把图标与文字拉开 77px。
 assert.match(css, /\.final-cut-placeholder \{[^}]*align-content: center/, "占位图需 align-content: center");
+assert.doesNotMatch(css, /\.final-cut-preview-proxy\s*\{[^}]*display:\s*none\s*!important/, "成片预览不能再由隐藏代理容器承载");
 
 // --mono 曾被引用 12+ 次却从未定义，静默回落 Inter。
 assert.match(css, /--mono:\s*ui-monospace/, "--mono 必须有定义");

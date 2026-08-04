@@ -4497,7 +4497,7 @@ function flowStepClass(done, active, blocked = false, running = false, focused =
 }
 
 function finalCutOutputReady(finalCut) {
-  return !!finalCut?.output?.url;
+  return !!finalCut?.output?.url && finalCut?.output?.current !== false;
 }
 
 function activeStudioRun(data = state.project, steps = []) {

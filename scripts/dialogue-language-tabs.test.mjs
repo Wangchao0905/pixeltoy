@@ -37,8 +37,10 @@ assert.match(app, /if \(dialogueInput\) dialogueInput\.checked = true;\s*\n\s*re
 assert.match(styles, /\.modern-lang-tabs button\[aria-checked="true"\][^}]*background: var\(--mv-s3\)/);
 assert.match(styles, /\.modern-lang-tabs button\[aria-checked="true"\][^}]*border-color: var\(--mv-line-2\)/);
 assert.match(styles, /\.modern-lang-tabs button\[aria-checked="true"\][^}]*color: var\(--mv-tx\)/);
-// 父容器特异度要压过 .modern-source-head > div { display: grid },否则布局靠巧合。
-assert.match(styles, /\.modern-source-head > \.modern-source-head-aside \{[^}]*display: flex/);
+// 父容器特异度要压过 .modern-source-head > div { display: grid }，并由网格稳定承载
+// 草稿、对白语言、序号和资产操作，避免按钮随标题宽度漂移。
+assert.match(styles, /\.modern-source-head > \.modern-source-head-aside \{[^}]*display: grid/);
+assert.match(styles, /\.modern-asset-primary-actions \{[^}]*grid-column: 2 \/ -1/);
 
 // 制作台入口使用稳定 URL + ETag 重验证；改动后浏览器会按内容换取新资源，
 // 不再依赖开发者手动同步两个版本戳。

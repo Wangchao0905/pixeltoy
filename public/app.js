@@ -204,6 +204,7 @@ const state = {
   activeStudioTab: "assets",
   modernStudio: {
     shotIndex: 0,
+    coverDesign: { selectedId: "" },
     copyTab: "story",
     queueFilter: "all",
     focus: "video",
@@ -1402,6 +1403,7 @@ function showProjectHome() {
   stopSuperPixelGenerationPolls();
   state.modernStudio.detailsOpen = false;
   state.modernStudio.assetManageMode = false;
+  state.modernStudio.coverDesign = { selectedId: "" };
   $("#exploreHome")?.classList.toggle("hidden", !state.exploreEnabled);
   $("#projectHome").classList.toggle("hidden", state.exploreEnabled);
   $("#studioModernShell")?.classList.add("hidden");
@@ -1841,6 +1843,7 @@ function projectShellStateFromSummary(summary = {}) {
     videoProgress: { total: 0, completed: 0, items: [] },
     videoConfigStatus: {},
     finalCut: null,
+    coverDesign: { status: "idle", items: [], model: "gpt-image-2", ratio: "9:16" },
     jobs: [],
     summary: null,
   };
@@ -1864,6 +1867,7 @@ function mergeProjectStatus(status = {}) {
     storyboardJob: status.storyboardJob || state.project.storyboardJob,
     videoJob: status.videoJob || state.project.videoJob,
     finalCut: status.finalCut || state.project.finalCut,
+    coverDesign: status.coverDesign || state.project.coverDesign,
     jobs: Array.isArray(status.jobs) ? status.jobs : state.project.jobs,
     assetManifest: status.assetManifest !== undefined ? status.assetManifest : state.project.assetManifest,
     assets: status.assets !== undefined ? status.assets : state.project.assets,
@@ -1962,6 +1966,7 @@ function resetProjectScopedUiState() {
   state.referenceKitEditingId = "";
   state.referenceKitDraft = null;
   state.modernStudio.assetManageMode = false;
+  state.modernStudio.coverDesign = { selectedId: "" };
   state.selectedAssetId = "";
   state.assetPromptDrafts.clear();
   state.assetInspectorOpen = false;
@@ -6323,6 +6328,7 @@ function renderModernStudio(data = state.project) {
   renderModernEpisodes(project, pct, total, completed);
   renderModernAssetResults(data);
   renderModernVideoQueue(shots, selectedIndex, data);
+  renderCoverDesign(data);
   renderModernFinalCutTrack(shots);
   renderModernSelectedShot(data, selected, selectedIndex);
   const filmStudio = filmStudioData(data);
@@ -6814,7 +6820,7 @@ function renderModernVideoQueueInspector(data = state.project) {
   if (configButton) {
     const blocked = ["running", "queued"].includes(status);
     configButton.disabled = blocked;
-    configButton.title = blocked ? "视频生成中，暂不可重新生成配置" : "只更新当前片段的视频配置，不影响其他片段";
+    configButton.title = blocked ? "视频生成中，暂不可重新生成当前片段配置" : "只更新当前片段的视频配置，不影响其他片段";
   }
 }
 
@@ -9621,6 +9627,97 @@ function renderFinalCut(finalCut = null) {
   }
 }
 
+function coverDesignStatusLabel(status = "") {
+  return ({ complete: "已完成", running: "生成中", starting: "提交中", queued: "排队中", failed: "生成失败" }[String(status || "").toLowerCase()] || "待生成");
+}
+
+function coverDesignState(data = state.project) {
+  const cover = data?.coverDesign;
+  return cover && typeof cover === "object" ? cover : { status: "idle", items: [], model: "gpt-image-2", ratio: "9:16" };
+}
+
+function renderCoverDesign(data = state.project) {
+  const panel = $("#modernCoverDesign");
+  if (!panel) return;
+  const cover = coverDesignState(data);
+  const items = Array.isArray(cover.items) ? cover.items.slice(0, 4) : [];
+  const running = ["starting", "running"].includes(String(cover.status || "").toLowerCase());
+  const complete = items.filter((item) => item.status === "complete" && item.url).length;
+  const failed = items.filter((item) => item.status === "failed").length;
+  const meta = $("#modernCoverDesignMeta");
+  if (meta) {
+    const title = cover.title || displayProjectTitle(data?.project || {});
+    meta.textContent = title ? `${title} · 人物 / 场景 / 道具 · ${cover.model || "gpt-image-2"}` : "使用人物、场景、道具与剧名生成四个封面方向";
+  }
+  const button = $("#modernCoverGenerate");
+  if (button) {
+    button.disabled = running;
+    button.setAttribute("aria-busy", running ? "true" : "false");
+    button.textContent = running ? `生成中 ${complete}/4` : cover.status === "complete" ? "重新生成四张" : "生成四张封面";
+    button.title = running ? "四个封面方向正在生成" : "使用项目资产和剧名生成四个不同封面方向";
+  }
+  const statusNode = $("#modernCoverDesignStatus");
+  if (statusNode) {
+    statusNode.className = `cover-design-status is-${cover.status || "idle"}`;
+    statusNode.innerHTML = running
+      ? `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>正在生成封面</strong><small>${complete}/4 完成 · ${escapeHtml(cover.model || "gpt-image-2")} · ${escapeHtml(cover.ratio || "9:16")}</small>`
+      : failed
+        ? `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>${complete}/4 可用</strong><small>${failed} 张失败，可点击重新生成</small>`
+        : complete === 4
+          ? `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>四个方向已就绪</strong><small>点击任意封面放大预览</small>`
+          : `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>选择一个视觉方向</strong><small>一次生成电影叙事、强冲突、情绪关系和悬疑反转四种方案</small>`;
+  }
+  const grid = $("#modernCoverDesignGrid");
+  const focus = $("#modernCoverDesignFocus");
+  const selectedId = state.modernStudio.coverDesign?.selectedId || "";
+  const selected = items.find((item) => item.id === selectedId && item.status === "complete" && item.url);
+  if (selected) {
+    grid?.classList.add("hidden");
+    if (focus) {
+      focus.classList.remove("hidden");
+      focus.innerHTML = `
+        <button class="cover-design-back" type="button" data-cover-design-back aria-label="返回四宫格">← 返回四宫格</button>
+        <figure><img src="${escapeAttr(selected.url)}" alt="${escapeAttr(selected.styleLabel || "封面设计")}" /><figcaption><strong>${escapeHtml(selected.styleLabel || "封面方向")}</strong><small>${escapeHtml(cover.title || "")}</small></figcaption></figure>`;
+    }
+    return;
+  }
+  state.modernStudio.coverDesign.selectedId = "";
+  focus?.classList.add("hidden");
+  if (!grid) return;
+  grid.classList.remove("hidden");
+  grid.innerHTML = items.length
+    ? items.map((item, index) => {
+        const status = String(item.status || "queued").toLowerCase();
+        const media = item.url && status === "complete"
+          ? `<img src="${escapeAttr(item.url)}" alt="${escapeAttr(item.styleLabel || `封面 ${index + 1}`)}" loading="lazy" />`
+          : `<span class="cover-design-skeleton"><i></i><b>${escapeHtml(coverDesignStatusLabel(status))}</b></span>`;
+        return `<button class="cover-design-tile is-${escapeAttr(status)}" type="button" role="listitem" data-cover-design-id="${escapeAttr(item.id || `cover-${index + 1}`)}" aria-label="${escapeAttr(item.styleLabel || `封面 ${index + 1}`)}" ${status !== "complete" || !item.url ? "disabled" : ""}>
+          <span class="cover-design-tile-media">${media}</span>
+          <span class="cover-design-tile-copy"><b>${escapeHtml(item.styleLabel || `方向 ${index + 1}`)}</b><small>${escapeHtml(status === "failed" ? item.error || "生成失败" : coverDesignStatusLabel(status))}</small></span>
+        </button>`;
+      }).join("")
+    : `<div class="cover-design-empty"><span>4</span><strong>四个封面方向会显示在这里</strong><small>使用当前项目的资产图和剧名，一次生成四张可比较的 TK 短剧封面。</small></div>`;
+}
+
+async function generateCoverDesigns() {
+  if (!state.selectedId) return toast("请先打开一个项目");
+  state.modernStudio.coverDesign.selectedId = "";
+  renderCoverDesign(state.project);
+  const button = $("#modernCoverGenerate");
+  if (button) button.disabled = true;
+  try {
+    const data = await api(`/api/project/${encodeURIComponent(state.selectedId)}/cover-designs`, { method: "POST", body: JSON.stringify({}) });
+    if (data.state) setProjectState(data.state);
+    renderWorkspace();
+    renderCoverDesign(state.project);
+    scheduleProjectRefresh();
+    toast("已提交四个封面方向，正在生成");
+  } catch (error) {
+    renderCoverDesign(state.project);
+    toast(error.message);
+  }
+}
+
 async function assembleFinalCut() {
   if (!state.selectedId) throw new Error("请先打开一个项目");
   const data = await api(`/api/project/${state.selectedId}/assemble-final-cut`, { method: "POST", body: JSON.stringify({}) });
@@ -9734,8 +9831,8 @@ function renderVideoProgress(progress) {
         : "";
     const stateIndicator = `<span class="segment-status-indicator" role="img" aria-label="${escapeAttr(stateLabel)}"></span>`;
     const configAction = item.status === "running" || item.status === "queued"
-      ? `<button class="ghost small" type="button" data-segment-config="${escapeAttr(item.name)}" disabled title="视频生成中，暂不可重新生成配置">生成视频配置</button>`
-      : `<button class="ghost small" type="button" data-segment-config="${escapeAttr(item.name)}">生成视频配置</button>`;
+      ? `<button class="ghost small" type="button" data-segment-config="${escapeAttr(item.name)}" disabled title="视频生成中，暂不可重新生成当前片段配置">重新生成当前片段的视频配置</button>`
+      : `<button class="ghost small" type="button" data-segment-config="${escapeAttr(item.name)}" title="只更新当前片段的视频配置，不影响其他片段">重新生成当前片段的视频配置</button>`;
     const action = item.status === "running" || item.status === "queued"
       ? `<button class="segment-state-button" type="button" disabled aria-label="${escapeAttr(stateLabel)}"><span aria-hidden="true"></span></button>`
       : segmentIsComplete
@@ -9969,7 +10066,8 @@ async function uploadBoundAsset(event) {
   $("#assetUploadFile").value = "";
   $("#assetUploadName").textContent = "PNG / JPG / WEBP";
   renderWorkspace();
-  toast(data.result?.message || (mode === "local" ? "本地资产已添加" : "资产图已绑定"));
+  const replacementNotice = data.result?.videoConfigReplacement?.updated ? "，已清理视频链路中的旧资产绑定" : "";
+  toast(`${data.result?.message || (mode === "local" ? "本地资产已添加" : "资产图已绑定")}${replacementNotice}`);
 }
 
 async function uploadAssetStyleReferenceFile(file, input = null) {
@@ -10942,6 +11040,20 @@ function bind() {
   $("#assembleFinalCutBtn")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
     withStudioButtonFeedback(button, () => assembleFinalCut()).catch((error) => toast(error.message));
+  });
+  $("#modernCoverGenerate")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, generateCoverDesigns).catch((error) => toast(error.message));
+  });
+  $("#modernCoverDesignGrid")?.addEventListener("click", (event) => {
+    const tile = event.target.closest("[data-cover-design-id]");
+    if (!tile || tile.disabled) return;
+    state.modernStudio.coverDesign.selectedId = tile.dataset.coverDesignId || "";
+    renderCoverDesign(state.project);
+  });
+  $("#modernCoverDesignFocus")?.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-cover-design-back]")) return;
+    state.modernStudio.coverDesign.selectedId = "";
+    renderCoverDesign(state.project);
   });
   $("#zoomOut").addEventListener("click", () => setWorkspaceScale(state.workspaceScale - 0.08));
   $("#zoomIn").addEventListener("click", () => setWorkspaceScale(state.workspaceScale + 0.08));

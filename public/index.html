@@ -1266,7 +1266,7 @@
                     <textarea id="modernVideoQueuePrompt" maxlength="8000" rows="11" placeholder="当前镜头的视频提示词"></textarea>
                     <div class="modern-video-queue-inspector-meta"><span id="modernVideoQueuePromptStatus">已保存</span><span id="modernVideoQueuePromptCount">0 / 8000</span></div>
                     <p id="modernVideoQueueInspectorFailure"></p>
-                    <div class="modern-video-queue-inspector-actions"><button id="modernVideoQueueRestorePrompt" type="button">还原</button><button id="modernVideoQueueSavePrompt" type="button">保存修改</button><button id="modernVideoQueueConfig" type="button">生成视频配置</button><button id="modernVideoQueueGenerate" type="button" title="只生成当前选中的视频片段">生成当前片段</button></div>
+                    <div class="modern-video-queue-inspector-actions"><button id="modernVideoQueueRestorePrompt" type="button">还原</button><button id="modernVideoQueueSavePrompt" type="button">保存修改</button><button id="modernVideoQueueConfig" type="button">重新生成当前片段的视频配置</button><button id="modernVideoQueueGenerate" type="button" title="只生成当前选中的视频片段">生成当前片段</button></div>
                   </div>
                 </div>
               </aside>
@@ -1301,18 +1301,31 @@
             </header>
             <div id="finalCutStatus" class="modern-cut-status inline-status"></div>
             <div class="cut">
-              <div class="cut-top">
-                <div id="finalCutPreview" class="modern-cut-preview cut-prev"></div>
-                <div class="cut-info">
-                  <div class="specs">
-                    <dl class="spec"><dt>OUTPUT</dt><dd>1080×1920</dd></dl>
-                    <dl class="spec"><dt>FRAMERATE</dt><dd>24 <u>fps</u></dd></dl>
-                    <dl class="spec"><dt>SEGMENTS</dt><dd id="modernFinalCutSegments">0 / 0 <u>就绪</u></dd></dl>
-                    <dl class="spec"><dt>DURATION</dt><dd id="modernFinalCutDuration">00:00</dd></dl>
+              <div class="cut-top" data-cover-design-shell>
+                <div id="modernCoverDesign" class="cover-design-panel" aria-label="封面设计">
+                <header class="cover-design-head">
+                  <div>
+                    <span class="modern-eyebrow">COVER DESIGN</span>
+                    <strong>短剧封面</strong>
+                    <small id="modernCoverDesignMeta">使用人物、场景、道具与剧名生成四个封面方向</small>
                   </div>
-                  <div class="note"><b>ASSEMBLY RULES</b><ul><li>按镜号顺序硬切拼接，不插入转场</li><li>统一缩放至 1080×1920，不足部分补黑边</li><li>保留各片段原声，不做混音或响度归一</li><li>全部片段完成后才能组装，缺片时服务端返回缺失镜号</li></ul></div>
+                  <button id="modernCoverGenerate" class="cover-design-generate" type="button">生成四张封面</button>
+                </header>
+                <div id="modernCoverDesignStatus" class="cover-design-status" aria-live="polite"></div>
+                <div id="modernCoverDesignGrid" class="cover-design-grid" role="list" aria-label="封面方向"></div>
+                <div id="modernCoverDesignFocus" class="cover-design-focus hidden"></div>
+                <footer class="cover-design-foot">
+                  <div class="cover-design-output-meta">
+                    <span>FINAL CUT</span>
+                    <b id="modernFinalCutFilename">rough_cut.mp4</b>
+                    <small id="modernFinalCutDownloadStatus">尚未生成</small>
+                    <small><i id="modernFinalCutSegments">0 / 0 就绪</i><i id="modernFinalCutDuration">00:00</i></small>
+                  </div>
+                  <a id="modernFinalCutDownload" class="btn is-disabled" href="#" aria-disabled="true">下载成片</a>
+                </footer>
+                <div class="cut-info" aria-hidden="true"></div>
                 </div>
-                <div class="dl"><u></u><div><b id="modernFinalCutFilename">rough_cut.mp4</b><small id="modernFinalCutDownloadStatus">尚未生成</small></div><a id="modernFinalCutDownload" class="btn is-disabled" href="#" aria-disabled="true">下载成片</a></div>
+                <div class="cut-info" aria-hidden="true"><div id="finalCutPreview" class="final-cut-preview-proxy"></div></div>
               </div>
               <div class="track">
                 <div class="track-h"><span class="modern-eyebrow">ASSEMBLY ORDER</span><span>按镜号顺序硬切</span></div>

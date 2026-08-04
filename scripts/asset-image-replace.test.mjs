@@ -41,6 +41,9 @@ assert.notEqual(boundUploadStart, -1, "server should define uploadBoundAsset");
 assert.notEqual(boundUploadEnd, -1, "uploadBoundAsset should be bounded");
 const boundUpload = server.slice(boundUploadStart, boundUploadEnd);
 assert.match(boundUpload, /\$\{assetId\}\$\{ext\}/, "bound assets should be saved using the asset id and extension");
+assert.match(boundUpload, /invalidateReplacedAssetInVideoConfig\(episodeRoot, asset\)/, "replacing an asset must invalidate stale video references");
+assert.match(server, /function invalidateReplacedAssetInVideoConfig\(/, "the replacement cleanup must be implemented server-side");
+assert.match(server, /oldBindingRemoved:\s*true/, "replacement cleanup must report removal of the old binding");
 
 assert.doesNotMatch(html, /modernManualAssetUploadPanel/, "the modern manual asset upload panel should be removed");
 assert.doesNotMatch(app, /uploadModernManualAsset/, "the modern manual asset upload flow should be removed");

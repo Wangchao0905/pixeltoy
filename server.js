@@ -5301,6 +5301,7 @@ function mediaItem(file, episodeRoot = "") {
     path: file,
     url: `/media?path=${encodeURIComponent(file)}&v=${encodeURIComponent(version)}`,
     size: stat.size,
+    sourceFingerprint: version,
     updatedAt: stat.mtime.toISOString(),
     rel: episodeRoot ? path.relative(episodeRoot, file) : file,
   };
@@ -8176,6 +8177,9 @@ function assetRecordFromMedia(asset, manifest = null, index = 0) {
     textToImagePrompt: item?.textToImagePrompt || "",
     assetStylePreset: compactLine(asset.assetStylePreset || ""),
     assetStyleLabel: compactLine(asset.assetStyleLabel || ""),
+    sourceFingerprint: compactLine(asset.sourceFingerprint || ""),
+    sourceUpdatedAt: compactLine(asset.updatedAt || ""),
+    sourceSize: Number(asset.size || 0) || 0,
     file: asset.reused ? asset.path : asset.rel,
     type: "image",
     manifestType: identity.type,
@@ -8183,6 +8187,95 @@ function assetRecordFromMedia(asset, manifest = null, index = 0) {
     x: 80 + (index % 4) * 360,
     y: 120 + Math.floor(index / 4) * 260,
   };
+}
+
+function clearStaleAssetLibraryBinding(asset = {}) {
+  const { arkPersonAsset, ...record } = asset;
+  return {
+    ...record,
+    assetUrl: "",
+    publicUrl: "",
+    virtualId: "",
+    groupId: "",
+    validationStatus: "",
+    validationError: "",
+    validationMessage: "",
+  };
+}
+
+// 单片段配置重建时，当前磁盘资产是权威来源；旧配置只用于补齐尚未重新扫描到的资产。
+// 同名资产保留旧配置中的位置，但由最新记录替换，避免旧图继续被片段引用。
+function mergeVideoConfigAssetRecords(previousAssets = [], freshAssets = []) {
+  const freshByName = new Map();
+  for (const asset of Array.isArray(freshAssets) ? freshAssets : []) {
+    const name = compactLine(asset?.name || asset?.assetName || asset?.id || "");
+    if (name) freshByName.set(name, asset);
+  }
+  const merged = [];
+  const emitted = new Set();
+  for (const asset of Array.isArray(previousAssets) ? previousAssets : []) {
+    const name = compactLine(asset?.name || asset?.assetName || asset?.id || "");
+    if (!name) {
+      merged.push(asset);
+      continue;
+    }
+    if (emitted.has(name)) continue;
+    merged.push(freshByName.get(name) || asset);
+    emitted.add(name);
+  }
+  for (const asset of Array.isArray(freshAssets) ? freshAssets : []) {
+    const name = compactLine(asset?.name || asset?.assetName || asset?.id || "");
+    if (!name || emitted.has(name)) continue;
+    merged.push(asset);
+    emitted.add(name);
+  }
+  return merged;
+}
+
+function videoAssetSourceChanged(configured = {}, scanned = null) {
+  if (!scanned || typeof scanned !== "object") return false;
+  const configuredFingerprint = compactLine(configured.sourceFingerprint || "");
+  const scannedFingerprint = compactLine(scanned.sourceFingerprint || "");
+  const configuredUpdatedAt = compactLine(configured.sourceUpdatedAt || "");
+  const scannedUpdatedAt = compactLine(scanned.updatedAt || "");
+  const configuredSize = Number(configured.sourceSize || 0) || 0;
+  const scannedSize = Number(scanned.size || 0) || 0;
+  const configuredFile = compactLine(configured.file || "");
+  const scannedFile = compactLine(scanned.rel || scanned.file || "");
+  const sourceUnknown = !configuredFingerprint && !configuredUpdatedAt && !configuredSize;
+  return !!(
+    (configuredFingerprint && scannedFingerprint && configuredFingerprint !== scannedFingerprint) ||
+    (configuredUpdatedAt && scannedUpdatedAt && configuredUpdatedAt !== scannedUpdatedAt) ||
+    (configuredSize > 0 && scannedSize > 0 && configuredSize !== scannedSize) ||
+    (configuredFile && scannedFile && configuredFile !== scannedFile) ||
+    (sourceUnknown && !!(configured.assetUrl || configured.publicUrl || configured.arkPersonAsset))
+  );
+}
+
+// 同名资产被覆盖时通常仍使用同一个文件名和路径。提交链路不能因此继续沿用
+// 旧配置里的 asset://、公网 URL 或真人库绑定；当前磁盘文件才是唯一有效图源。
+function reconcileVideoReferenceAsset(configured = {}, scanned = null) {
+  if (!scanned || typeof scanned !== "object") return configured;
+  const sourceChanged = videoAssetSourceChanged(configured, scanned);
+  const configuredFingerprint = compactLine(configured.sourceFingerprint || "");
+  const scannedFingerprint = compactLine(scanned.sourceFingerprint || "");
+  const configuredUpdatedAt = compactLine(configured.sourceUpdatedAt || "");
+  const scannedUpdatedAt = compactLine(scanned.updatedAt || "");
+  const configuredSize = Number(configured.sourceSize || 0) || 0;
+  const scannedSize = Number(scanned.size || 0) || 0;
+  const configuredFile = compactLine(configured.file || "");
+  const scannedFile = compactLine(scanned.rel || scanned.file || "");
+  const current = {
+    ...configured,
+    file: scannedFile || configuredFile,
+    url: compactLine(scanned.url || scanned.previewUrl || configured.url || configured.previewUrl || ""),
+    previewUrl: compactLine(scanned.url || scanned.previewUrl || configured.previewUrl || configured.url || ""),
+    localUrl: compactLine(scanned.url || scanned.previewUrl || configured.localUrl || ""),
+    sourceFingerprint: scannedFingerprint || configuredFingerprint,
+    sourceUpdatedAt: scannedUpdatedAt || configuredUpdatedAt,
+    sourceSize: scannedSize || configuredSize,
+  };
+  return sourceChanged ? clearStaleAssetLibraryBinding(current) : current;
 }
 
 function assetLibraryBindingFromAsset(asset = {}) {
@@ -8196,6 +8289,9 @@ function assetLibraryBindingFromAsset(asset = {}) {
     publicUrl: compactLine(asset.publicUrl || asset.public_url || ""),
     virtualId: compactLine(asset.virtualId || asset.virtual_id || ""),
     groupId: compactLine(asset.groupId || asset.group_id || ""),
+    sourceFingerprint: compactLine(asset.sourceFingerprint || ""),
+    sourceUpdatedAt: compactLine(asset.sourceUpdatedAt || ""),
+    sourceSize: Number(asset.sourceSize || 0) || 0,
     validationStatus: "active",
     validationError: "",
     validationMessage: compactLine(asset.validationMessage || asset.message || "素材已 active"),
@@ -8229,12 +8325,23 @@ function applyAssetLibraryBindingsToRecords(records = [], bindings = new Map()) 
   return records.map((record) => {
     const binding = bindings.get(compactLine(record.name || record.assetName || record.id || ""));
     if (!binding) return record;
+    // 没有同一份源文件指纹的历史 binding 不能重新挂到当前磁盘文件，
+    // 否则替换图片后 full/single config rebuild 又会把旧 asset:// 带回来。
+    if (
+      compactLine(record.sourceFingerprint || "") &&
+      (!compactLine(binding.sourceFingerprint || "") || compactLine(binding.sourceFingerprint) !== compactLine(record.sourceFingerprint))
+    ) {
+      return record;
+    }
     return {
       ...record,
       publicUrl: record.publicUrl || binding.publicUrl || "",
       assetUrl: binding.assetUrl,
       virtualId: binding.virtualId || record.virtualId || "",
       groupId: binding.groupId || record.groupId || "",
+      sourceFingerprint: record.sourceFingerprint || binding.sourceFingerprint || "",
+      sourceUpdatedAt: record.sourceUpdatedAt || binding.sourceUpdatedAt || "",
+      sourceSize: record.sourceSize || binding.sourceSize || 0,
       validationStatus: "active",
       validationError: "",
       validationMessage: binding.validationMessage || "素材已 active",
@@ -8450,6 +8557,7 @@ function uploadBoundAsset(episodeRoot, body = {}) {
   asset.type = identity.scanType;
   asset.usage = identity.usage;
   asset.assetIdentity = identity;
+  const videoConfigReplacement = invalidateReplacedAssetInVideoConfig(episodeRoot, asset);
   return {
     asset,
     manifestItem: item,
@@ -8457,8 +8565,54 @@ function uploadBoundAsset(episodeRoot, body = {}) {
     savedAs: path.basename(target),
     ignoredFilename: originalFilename,
     removedFiles: removedFiles.map((file) => path.relative(episodeRoot, file)),
+    videoConfigReplacement,
     message: `${existingAsset ? "已替换" : "已绑定"}上传资产：${assetId}（保存为 ${path.basename(target)}）`,
   };
+}
+
+function invalidateReplacedAssetInVideoConfig(episodeRoot, asset = {}) {
+  const assetName = compactLine(asset.assetName || asset.name || "");
+  if (!assetName) return { updated: false, reason: "缺少资产名称" };
+  const configRecord = ensureVideoConfigIsolation(episodeRoot);
+  if (!configRecord?.file || !configRecord?.data || !Array.isArray(configRecord.data.assets)) {
+    return { updated: false, reason: "视频配置尚未生成" };
+  }
+  const config = configRecord.data;
+  let updated = false;
+  const assets = config.assets.map((configured) => {
+    const name = compactLine(configured?.name || configured?.assetName || configured?.id || "");
+    if (name !== assetName) return configured;
+    updated = true;
+    return clearStaleAssetLibraryBinding({
+      ...configured,
+      file: asset.rel || configured.file || "",
+      url: asset.url || asset.previewUrl || "",
+      previewUrl: asset.url || asset.previewUrl || "",
+      localUrl: asset.url || asset.previewUrl || "",
+      sourceFingerprint: asset.sourceFingerprint || "",
+      sourceUpdatedAt: asset.updatedAt || "",
+      sourceSize: Number(asset.size || 0) || 0,
+    });
+  });
+  if (!updated) return { updated: false, reason: "视频配置中没有同名资产" };
+  const nextConfig = {
+    ...config,
+    assets,
+    updatedAt: new Date().toISOString(),
+    lastAssetReplacement: {
+      assetName,
+      sourceFingerprint: asset.sourceFingerprint || "",
+      updatedAt: asset.updatedAt || new Date().toISOString(),
+    },
+  };
+  writeVideoConfigRecord(configRecord, nextConfig);
+  // 画布是同一条视频生成链路的另一份快照；同步失败不能回滚上传，但不能让旧绑定继续留在画布。
+  try {
+    syncProjectShotsToCanvasState(episodeRoot, nextConfig, Array.isArray(nextConfig.shots) ? nextConfig.shots : []);
+  } catch {
+    // 配置已落盘，下一次打开项目时会由配置重新同步画布。
+  }
+  return { updated: true, assetName, oldBindingRemoved: true };
 }
 
 function uploadStoryboardAsset(episodeRoot, body = {}) {
@@ -10960,6 +11114,167 @@ function finalCutStatus(episodeRoot) {
     output,
   };
 }
+
+// 封面设计独立于成片输出:一次生成四个方向,每个方向保留自己的 image-2 任务和结果。
+const COVER_DESIGN_DIR = "12_cover_design";
+const COVER_DESIGN_STATE_FILE = "cover_design.json";
+const COVER_DESIGN_STYLES = [
+  { id: "cinematic", label: "电影叙事", cue: "宽阔环境层次、主角关系和电影海报式留白" },
+  { id: "high-conversion", label: "强冲突短剧", cue: "人物对峙、强烈明暗和一眼可读的戏剧冲突" },
+  { id: "romance", label: "情绪关系", cue: "人物情绪、亲密距离和高识别度的浪漫色彩" },
+  { id: "suspense", label: "悬疑反转", cue: "前景遮挡、线索物件、压迫空间和反转感" },
+];
+
+function coverDesignStatePath(episodeRoot) {
+  return path.join(episodeRoot, COVER_DESIGN_DIR, COVER_DESIGN_STATE_FILE);
+}
+
+function readCoverDesignState(episodeRoot) {
+  const state = readJsonFile(coverDesignStatePath(episodeRoot), null);
+  if (!state || typeof state !== "object") return { status: "idle", items: [] };
+  return {
+    status: compactLine(state.status || "idle") || "idle",
+    runId: compactLine(state.runId || ""),
+    title: compactLine(state.title || ""),
+    model: compactLine(state.model || "gpt-image-2") || "gpt-image-2",
+    ratio: compactLine(state.ratio || "9:16") || "9:16",
+    createdAt: compactLine(state.createdAt || ""),
+    updatedAt: compactLine(state.updatedAt || ""),
+    message: compactLine(state.message || ""),
+    items: Array.isArray(state.items)
+      ? state.items.map((item, index) => ({
+          id: compactLine(item?.id || `cover-${index + 1}`),
+          styleId: compactLine(item?.styleId || COVER_DESIGN_STYLES[index]?.id || ""),
+          styleLabel: compactLine(item?.styleLabel || COVER_DESIGN_STYLES[index]?.label || ""),
+          taskId: compactLine(item?.taskId || ""),
+          status: compactLine(item?.status || "queued") || "queued",
+          url: compactLine(item?.url || ""),
+          message: compactLine(item?.message || ""),
+          error: compactLine(item?.error || ""),
+        }))
+      : [],
+  };
+}
+
+function writeCoverDesignState(episodeRoot, state) {
+  const file = coverDesignStatePath(episodeRoot);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const next = { ...state, updatedAt: new Date().toISOString() };
+  writeJsonFile(file, next);
+  return next;
+}
+
+function promptForCoverStyle(style = COVER_DESIGN_STYLES[0], { title = "", referenceNames = [] } = {}) {
+  const selected = COVER_DESIGN_STYLES.find((item) => item.id === style?.id) || style || COVER_DESIGN_STYLES[0];
+  const refs = [...new Set((Array.isArray(referenceNames) ? referenceNames : []).map(compactLine).filter(Boolean))];
+  const referenceLine = refs.length ? refs.join("、") : "当前项目已确认的人物、场景、道具参考图";
+  return [
+    "制作一张 9:16 竖版 TK 短剧封面设计，作为可发布的中文海报，不是分镜截图。",
+    `剧名：${compactLine(title) || "未命名短剧"}`,
+    `封面方向：${selected.label || "电影叙事"}；${selected.cue || "电影感海报构图"}。`,
+    `严格使用并保持以下资产图中的人物、场景和道具身份：${referenceLine}。不要创造与资产无关的人物，不要替换角色外观。`,
+    "海报设计要求：单一主视觉、明确前中后景层级、人物和场景有叙事关系，剧名使用清晰有设计感的中文字体并保持高对比和移动端可读性；标题不可乱码、不可被裁切。",
+    "遵循 TK 短剧封面阅读顺序：先看人物冲突，再读剧名，再感知类型；保留安全边距，避免过多小字、UI、边框、水印和品牌标识。",
+  ].join(" ");
+}
+
+function coverDesignReferenceAssets(episodeRoot) {
+  const manifest = readAssetManifest(episodeRoot)?.data || null;
+  const config = ensureVideoConfigIsolation(episodeRoot)?.data || null;
+  const plannedAssetNames = parseAssetsFromPromptNames(readText(findProjectFile(episodeRoot, "assetPrompts")));
+  const assets = projectProductionAssetsForState(episodeRoot, manifest, {
+    plannedAssetNames,
+    configData: config,
+    minModifiedAt: currentRunStartMs(episodeRoot, config),
+  });
+  const rank = { Character: 0, Scene: 1, Prop: 2, Insert: 3 };
+  return assets
+    .filter((asset) => asset?.path && fs.existsSync(asset.path))
+    .sort((a, b) => (rank[a.manifestType] ?? 9) - (rank[b.manifestType] ?? 9))
+    .slice(0, 4);
+}
+
+function refreshCoverDesignState(episodeRoot) {
+  const state = readCoverDesignState(episodeRoot);
+  if (!state.items.length) return state;
+  let changed = false;
+  const items = state.items.map((item) => {
+    if (!item.taskId || ["complete", "failed"].includes(item.status)) return item;
+    const task = getCanvasImageGeneration(item.taskId);
+    const nextStatus = task.status === "complete" ? "complete" : task.status === "failed" ? "failed" : task.status || item.status;
+    const next = {
+      ...item,
+      status: nextStatus,
+      url: task.url || item.url || "",
+      message: task.message || item.message || "",
+      error: nextStatus === "failed" ? task.message || item.error || "封面生成失败" : "",
+    };
+    if (JSON.stringify(next) !== JSON.stringify(item)) changed = true;
+    return next;
+  });
+  const status = items.every((item) => item.status === "complete")
+    ? "complete"
+    : items.some((item) => item.status === "failed") && items.every((item) => ["complete", "failed"].includes(item.status))
+      ? "failed"
+      : items.some((item) => ["starting", "queued", "running"].includes(item.status))
+        ? "running"
+        : state.status;
+  if (status !== state.status) changed = true;
+  return changed ? writeCoverDesignState(episodeRoot, { ...state, status, items }) : state;
+}
+
+async function generateProjectCoverDesigns(episodeRoot, { ownerUserId = "" } = {}) {
+  const current = refreshCoverDesignState(episodeRoot);
+  if (["starting", "running"].includes(current.status)) throw new Error("封面正在生成，请等待当前四张封面完成");
+  const summary = projectSummary(episodeRoot);
+  const manifestTitle = compactLine(readAssetManifest(episodeRoot)?.data?.title || "");
+  const title = manifestTitle || summary.title || summary.scriptTitle || summary.episodeLabel || "未命名短剧";
+  const refs = coverDesignReferenceAssets(episodeRoot);
+  const referenceImages = refs.map((asset) => `/media?path=${encodeURIComponent(asset.path)}`).filter(Boolean);
+  const referenceNames = refs.map((asset) => asset.assetName || asset.name).filter(Boolean);
+  const runId = crypto.randomUUID();
+  let state = writeCoverDesignState(episodeRoot, {
+    runId,
+    status: "running",
+    title,
+    model: "gpt-image-2",
+    ratio: "9:16",
+    createdAt: new Date().toISOString(),
+    message: "正在生成 4 个封面方向",
+    items: COVER_DESIGN_STYLES.map((style) => ({
+      id: `${runId}-${style.id}`,
+      styleId: style.id,
+      styleLabel: style.label,
+      taskId: "",
+      status: "starting",
+      url: "",
+      message: "提交中",
+      error: "",
+    })),
+  });
+  await Promise.all(COVER_DESIGN_STYLES.map(async (style, index) => {
+    try {
+      const result = await createCanvasImageGeneration({
+        prompt: promptForCoverStyle(style, { title, referenceNames }),
+        ratio: "9:16",
+        resolution: "1k",
+        imageModel: "gpt-image-2",
+        referenceImages,
+        ownerUserId,
+      });
+      state = readCoverDesignState(episodeRoot);
+      state.items[index] = { ...state.items[index], taskId: result.taskId, status: "running", message: "生成中" };
+      writeCoverDesignState(episodeRoot, state);
+    } catch (error) {
+      state = readCoverDesignState(episodeRoot);
+      state.items[index] = { ...state.items[index], status: "failed", message: "生成失败", error: compactLine(error?.message || "封面生成失败") };
+      state.status = state.items.every((item) => ["complete", "failed"].includes(item.status)) ? "failed" : "running";
+      writeCoverDesignState(episodeRoot, state);
+    }
+  }));
+  return refreshCoverDesignState(episodeRoot);
+}
+
 async function runFinalCutAssembly(episodeRoot, job) {
   const tmpDir = path.join(episodeRoot, FINAL_CUT_DIR, ".tmp");
   try {
@@ -11193,6 +11508,7 @@ function fullProjectState(episodeRoot) {
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     tailFrames: scanTailFrames(episodeRoot),
     finalCut: finalCutStatus(episodeRoot),
+    coverDesign: refreshCoverDesignState(episodeRoot),
     filmStudio: publicFilmStudioState(episodeRoot),
     summary: readSummary(episodeRoot, { runNamespace }),
     jobs: localJobs.map(jobSummary),
@@ -11271,6 +11587,7 @@ function projectStatusSnapshot(episodeRoot) {
     storyboardJob: jobSummary(latestJobForTypes(localJobs, ["storyboards", "storyboard-regenerate"])),
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     finalCut: finalCutStatus(episodeRoot),
+    coverDesign: refreshCoverDesignState(episodeRoot),
     filmStudio: publicFilmStudioState(episodeRoot),
     jobs: localJobs.map(jobSummary),
     assetManifest: normalizedAssetManifest,
@@ -15944,6 +16261,9 @@ function projectAssetForVideoPayload(episodeRoot, asset = {}) {
     assetStylePreset: compactLine(asset.assetStylePreset || ""),
     assetStyleLabel: compactLine(asset.assetStyleLabel || ""),
     generationMode: compactLine(asset.generationMode || asset.generation_mode || ""),
+    sourceFingerprint: compactLine(asset.sourceFingerprint || ""),
+    sourceUpdatedAt: compactLine(asset.sourceUpdatedAt || ""),
+    sourceSize: Number(asset.sourceSize || 0) || 0,
     aiGenerated: asset.aiGenerated === true,
     verificationType: compactLine(asset.verificationType || asset.verification_type || ""),
     // 方舟私域虚拟人像绑定状态必须透传:asset:// 只存在 arkPersonAsset.assetUrl,
@@ -16137,7 +16457,11 @@ function projectShotUsableVideoReferenceAssets(episodeRoot = "", config = {}, sh
     projectShotAllVideoReferenceAssets(config, shot).map((asset) => [compactLine(asset?.name || asset?.assetName || asset?.id || ""), asset]),
   );
   return projectShotVideoReferenceNames(config, shot)
-    .map((name) => configured.get(name) || (episodeRoot ? resolveScannedAssetByName(episodeRoot, name) : null))
+    .map((name) => {
+      const configuredAsset = configured.get(name);
+      const scannedAsset = episodeRoot ? resolveScannedAssetByName(episodeRoot, name) : null;
+      return reconcileVideoReferenceAsset(configuredAsset || {}, scannedAsset || null) || scannedAsset || configuredAsset;
+    })
     .filter(Boolean)
     .map((asset) => (episodeRoot ? projectAssetForVideoPayload(episodeRoot, asset) : asset))
     .filter(videoReferenceAssetHasPotentialSource);
@@ -16197,10 +16521,10 @@ function referenceAssetSource(episodeRoot, assetByName, name) {
   const cfg = assetByName.get(name) || null;
   const scanned = resolveScannedAssetByName(episodeRoot, name);
   if (!cfg && !scanned) return null;
-  const base = cfg || scanned || {};
-  const assetUrl = compactLine((cfg && cfg.assetUrl) || "");
-  const publicUrl = compactLine((cfg && cfg.publicUrl) || "");
-  const source = assetUrl || publicUrl || compactLine((cfg && cfg.url) || (scanned && scanned.url) || (base && base.previewUrl) || "");
+  const base = reconcileVideoReferenceAsset(cfg || {}, scanned || null) || scanned || cfg || {};
+  const assetUrl = compactLine(base.assetUrl || "");
+  const publicUrl = compactLine(base.publicUrl || "");
+  const source = assetUrl || publicUrl || compactLine(base.url || base.previewUrl || (scanned && scanned.url) || "");
   return { ...base, name, assetUrl, publicUrl, url: source };
 }
 
@@ -17018,7 +17342,7 @@ function assertVideoConfigAssetsReady(config = {}, shot = null, episodeRoot = ""
   }
   skippedReferenceAssets.push(...missingRefs);
   if (shot) {
-    projectShotUsableVideoReferenceAssets(config.episodeRoot || "", config, shot);
+    projectShotUsableVideoReferenceAssets(root, config, shot);
   }
   return { skippedReferenceAssets: [...new Set(skippedReferenceAssets)] };
 }
@@ -24136,9 +24460,40 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     durationMode: previous.durationMode || previous.settings?.durationMode || projectDurationMode(episodeRoot),
   });
   const resolvedDialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, dialogueLanguage);
-  const configAssets = Array.isArray(previous.assets) && previous.assets.length ? previous.assets : manifestItemsToAssets(manifest);
-  const videoStylePreset = compactLine(previousShots[shotIndex]?.videoStylePreset || "") || videoStylePresetFromProductionAssets(configAssets, body);
-  const videoStyleDirective = compactLine(previousShots[shotIndex]?.videoStyleDirective || "") || videoStyleDirectiveFromProductionAssets(configAssets, body);
+  const manifestNames = new Set((manifest.items || []).map((item) => compactLine(item?.id || "")).filter(Boolean));
+  const freshProductionAssets = projectProductionAssetsForState(episodeRoot, manifest)
+    .filter((asset) => asset.manifestType !== "Storyboard")
+    .filter((asset) => !manifestNames.size || manifestNames.has(compactLine(asset.assetName || "")))
+    .filter((asset) => !asset.invalid && !asset.conflicts?.length);
+  const historicalAssetBindings = collectHistoricalAssetLibraryBindings(episodeRoot, previous);
+  const previousAssetsByName = new Map(
+    (Array.isArray(previous.assets) ? previous.assets : [])
+      .map((asset) => [compactLine(asset?.name || asset?.assetName || asset?.id || ""), asset])
+      .filter(([name]) => !!name),
+  );
+  const previousConfigUpdatedAt = Date.parse(previous.updatedAt || previous.videoConfigUpdatedAt || "") || 0;
+  const freshAssetRecords = freshProductionAssets
+    .map((asset, index) => assetRecordFromMedia(asset, manifest, index))
+    .filter(Boolean)
+    .map((record) => {
+      const previousRecord = previousAssetsByName.get(compactLine(record.name || ""));
+      if (!previousRecord) return applyAssetLibraryBindingsToRecords([record], historicalAssetBindings)[0] || record;
+      const freshUpdatedAt = Date.parse(record.sourceUpdatedAt || "") || 0;
+      const previousUpdatedAt = Date.parse(previousRecord.sourceUpdatedAt || "") || previousConfigUpdatedAt;
+      const fileChanged = compactLine(previousRecord.file || "") && compactLine(record.file || "") && previousRecord.file !== record.file;
+      const sourceChanged = videoAssetSourceChanged(previousRecord, record);
+      if (fileChanged || sourceChanged || (freshUpdatedAt > 0 && freshUpdatedAt > previousUpdatedAt)) {
+        return clearStaleAssetLibraryBinding(record);
+      }
+      return applyAssetLibraryBindingsToRecords([record], historicalAssetBindings)[0] || record;
+    });
+  const configAssets = mergeVideoConfigAssetRecords(
+    Array.isArray(previous.assets) && previous.assets.length ? previous.assets : manifestItemsToAssets(manifest),
+    freshAssetRecords,
+  );
+  const productionConfigAssets = configAssets.filter((asset) => asset.manifestType !== "Storyboard");
+  const videoStylePreset = compactLine(previousShots[shotIndex]?.videoStylePreset || "") || videoStylePresetFromProductionAssets(productionConfigAssets, body);
+  const videoStyleDirective = compactLine(previousShots[shotIndex]?.videoStyleDirective || "") || videoStyleDirectiveFromProductionAssets(productionConfigAssets, body);
   const promptMode = compactLine(previous.settings?.promptMode || previous.promptMode || "").toLowerCase();
   const storyboardsActive =
     promptMode === "production_board" ||
@@ -24150,7 +24505,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     modelPlan,
     script,
     dialogueLanguage: resolvedDialogueLanguage,
-    assets: configAssets,
+    assets: productionConfigAssets,
     videoStylePreset,
     videoStyleDirective,
   });
@@ -24216,6 +24571,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
       dialectStyle: requestedDialectStyle,
       sfxStyle: requestedSfxStyle,
     },
+    assets: configAssets,
     shots: previousShots.map((shot, index) => (index === shotIndex ? nextShot : shot)),
     updatedAt: new Date().toISOString(),
     lastSingleShotConfig: {
@@ -26179,6 +26535,16 @@ async function handleApi(req, res, url) {
     return send(res, 200, projectStatusSnapshotForUser(episodeRoot, user));
   }
 
+  if (req.method === "GET" && action === "cover-designs") {
+    return send(res, 200, { ok: true, coverDesign: refreshCoverDesignState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "cover-designs") {
+    const user = currentUserFromRequest(req);
+    const coverDesign = await generateProjectCoverDesigns(episodeRoot, { ownerUserId: user?.id || "" });
+    return send(res, 202, { ok: true, coverDesign, state: fullProjectStateForUser(episodeRoot, user) });
+  }
+
   if (req.method === "GET" && action === "film-studio") {
     return send(res, 200, { ok: true, filmStudio: publicFilmStudioState(episodeRoot) });
   }
@@ -27055,6 +27421,11 @@ module.exports = {
       finalCutNativeTarget,
       finalCutStatus,
     },
+    coverDesign: {
+      styles: COVER_DESIGN_STYLES,
+      promptForStyle: promptForCoverStyle,
+      refresh: refreshCoverDesignState,
+    },
     videoRetry: {
       updateVideoModelForShotInConfig,
       projectVideoModelForShot,
@@ -27097,11 +27468,17 @@ module.exports = {
       projectShotVideoReferenceNames,
       projectShotAllVideoReferenceAssets,
       projectShotUsableVideoReferenceAssets,
+      reconcileAssetSource: reconcileVideoReferenceAsset,
     },
     videoVerification: {
       applyRequestedRealPersonVerification,
       arkPersonReferenceNames,
       realPersonVerificationEnabled,
+    },
+    videoConfig: {
+      mergeAssetRecords: mergeVideoConfigAssetRecords,
+      clearStaleAssetLibraryBinding,
+      applyHistoricalBindings: applyAssetLibraryBindingsToRecords,
     },
     projectVideo: {
       generateProjectVideoShot,

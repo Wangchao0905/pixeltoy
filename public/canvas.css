@@ -347,14 +347,14 @@ body.canvas-page {
   overflow: visible;
   pointer-events: auto;
   transform-origin: 0 0;
-  will-change: transform;
 }
 
 .canvas-links path {
   fill: none;
   stroke: rgba(45, 140, 255, 0.95);
   stroke-linecap: square;
-  stroke-width: 1;
+  stroke-width: 0.5;
+  stroke-opacity: 0.52;
   filter: none;
   shape-rendering: crispEdges;
 }
@@ -2383,18 +2383,16 @@ body.canvas-page {
 .canvas-context-menu {
   position: absolute;
   z-index: 20;
-  width: 246px;
-  border: 0;
+  width: 248px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 14px;
-  padding: 7px;
-  background:
-    linear-gradient(180deg, rgba(34, 38, 42, 0.92), rgba(18, 21, 24, 0.94)),
-    rgba(20, 22, 25, 0.94);
+  padding: 6px;
+  background: rgba(10, 12, 14, 0.96);
   box-shadow:
-    0 18px 54px rgba(0, 0, 0, 0.42),
-    0 1px 0 rgba(255, 255, 255, 0.05) inset;
-  backdrop-filter: blur(18px) saturate(1.15);
-  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    0 18px 48px rgba(0, 0, 0, 0.52),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   transform-origin: 18px 18px;
   animation: contextMenuIn 120ms ease-out;
 }
@@ -2426,11 +2424,11 @@ body.canvas-page {
 
 .canvas-context-menu button {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 11px;
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
+  padding: 0 12px;
   margin: 0;
   border: 0;
   border-radius: 10px;
@@ -2445,23 +2443,27 @@ body.canvas-page {
 }
 
 .canvas-context-menu button + button {
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .canvas-context-menu button:hover {
-  background: rgba(255, 255, 255, 0.07);
-  transform: translateX(1px);
+  background: rgba(255, 255, 255, 0.065);
 }
 
 .canvas-context-menu button:active {
-  transform: translateX(1px) scale(0.99);
+  transform: scale(0.985);
+}
+
+.canvas-context-menu button:focus-visible {
+  outline: 1px solid rgba(229, 239, 244, 0.72);
+  outline-offset: -2px;
 }
 
 .canvas-context-menu button strong {
   min-width: 0;
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 680;
+  font-size: 13px;
+  font-weight: 450;
   letter-spacing: 0;
   line-height: 1.1;
   text-overflow: ellipsis;
@@ -2556,34 +2558,6 @@ body.canvas-page {
   font-family: var(--canvas-number-font);
   font-size: 11px;
   font-weight: 800;
-}
-
-.context-icon {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 9px;
-  color: #fff;
-  font-size: 8px;
-  font-weight: 850;
-  letter-spacing: 0;
-}
-
-.context-icon.image {
-  background: linear-gradient(135deg, #49cff5, #2b89ff);
-}
-
-.context-icon.video {
-  background: linear-gradient(135deg, #8386ff, #5053de);
-}
-
-.context-icon.upload {
-  background: linear-gradient(135deg, #2f9bff, #0b67d8);
-}
-
-.context-icon.library {
-  background: linear-gradient(135deg, #20c997, #087f5b);
 }
 
 @keyframes contextMenuIn {
@@ -6990,4 +6964,245 @@ body.canvas-page .canvas-topbar {
   .canvas-agent-send {
     transition: none;
   }
+}
+
+/* Product canvas polish: neutral modules, hairline white links, static generation state. */
+body.canvas-page {
+  background: #111214;
+}
+
+.generation-canvas-shell {
+  padding-top: 56px;
+  background: #111214;
+}
+
+.canvas-topbar {
+  min-height: 56px;
+  padding: 0 18px;
+  background: #171819;
+  border-bottom: 1px solid #292b2d;
+}
+
+.canvas-brand strong {
+  font-family: var(--canvas-ui-font);
+  font-size: 13px;
+  font-weight: 650;
+  text-shadow: none;
+}
+
+.canvas-button {
+  min-height: 31px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #aeb5ba;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.canvas-button:hover,
+.canvas-button:focus-visible {
+  border-color: #34383b;
+  background: #25282b;
+  color: #fff;
+}
+
+.canvas-back-button,
+.canvas-button.danger {
+  color: #aeb5ba;
+  background: transparent;
+  border-color: transparent;
+}
+
+.blank-canvas {
+  background: #000;
+}
+
+.blank-canvas::before {
+  background-image:
+    linear-gradient(#070707 1px, transparent 1px),
+    linear-gradient(90deg, #070707 1px, transparent 1px);
+  background-position: 0 0;
+  background-size: 24px 24px;
+  opacity: 1;
+}
+
+.blank-canvas::after {
+  background: none;
+}
+
+.canvas-links path {
+  stroke: rgba(255, 255, 255, 0.78);
+  stroke-width: 0.5;
+  stroke-opacity: 0.52;
+  stroke-linecap: round;
+  filter: none;
+  shape-rendering: geometricPrecision;
+}
+
+.canvas-links path.draft-link,
+.canvas-links path.pending-link {
+  stroke: rgba(255, 255, 255, 0.42);
+  stroke-opacity: 0.34;
+  stroke-dasharray: none;
+}
+
+.connection-link:hover .active-link,
+.connection-link:focus-within .active-link {
+  stroke-opacity: 1;
+}
+
+.canvas-links path.active-link,
+.canvas-links path.image-link {
+  stroke: #fff;
+}
+
+.canvas-links path.video-link {
+  stroke: #fff;
+}
+
+.canvas-links path.active-link,
+.canvas-links path.image-link,
+.canvas-links path.video-link,
+.canvas-links path.draft-link,
+.canvas-links path.pending-link {
+  vector-effect: non-scaling-stroke;
+}
+
+.snap-guide {
+  stroke: rgba(255, 255, 255, 0.42);
+  stroke-width: 0.75;
+  stroke-dasharray: 4 6;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.connection-cut circle {
+  fill: #202529;
+  stroke: rgba(255, 255, 255, 0.76);
+  stroke-width: 1;
+  filter: none;
+}
+
+.connection-cut text {
+  fill: rgba(255, 255, 255, 0.88);
+}
+
+.canvas-node {
+  border-color: #455057;
+  border-radius: 8px;
+  background: #202529;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.canvas-node.is-selected {
+  border-color: #c4f4f6;
+  box-shadow:
+    0 0 0 1px rgba(196, 244, 246, 0.2),
+    0 18px 36px rgba(0, 0, 0, 0.3);
+}
+
+.canvas-node.video-node {
+  border-radius: 8px;
+  background: #20272d;
+}
+
+.canvas-node.asset-node {
+  border: 1px solid #455057;
+  border-radius: 8px;
+  background: #202529;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+}
+
+.canvas-node.asset-node.is-selected {
+  border-color: #c4f4f6;
+  box-shadow: 0 0 0 1px rgba(196, 244, 246, 0.2), 0 18px 36px rgba(0, 0, 0, 0.3);
+}
+
+.node-port {
+  width: 12px;
+  height: 12px;
+  border: 1px solid #d8e1e3;
+  background: #192125;
+  box-shadow: 0 0 0 2px rgba(14, 18, 23, 0.9);
+}
+
+.node-port::after {
+  inset: 3px;
+  background: #c8f8fb;
+  box-shadow: none;
+}
+
+.generation-status {
+  box-sizing: border-box;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(192, 241, 244, 0.52);
+  border-radius: 5px;
+  background: rgba(14, 21, 24, 0.92);
+  color: #ecffff;
+}
+
+.generation-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.generation-status-row strong {
+  color: #ecffff;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.generation-status-row em {
+  color: #c8f9fb;
+  font-size: 11px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.generation-progress-track {
+  height: 4px;
+  overflow: hidden;
+  background: #3d484b;
+  border-radius: 1px;
+}
+
+.generation-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: #e9ffff;
+  transition: none;
+}
+
+.generation-status-message {
+  overflow: hidden;
+  color: #8ea3a6;
+  font-size: 9px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-node-status {
+  background: #12181c;
+  box-shadow: none;
+}
+
+.image-preview-state.running {
+  display: grid;
+  align-content: center;
+  min-height: 100%;
+}
+
+.video-tetris-rain,
+.node-spinner {
+  display: none !important;
 }

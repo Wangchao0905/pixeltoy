@@ -6,7 +6,7 @@
     <title>canvas</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/styles.css?v=canvas-shell-visual-20260727" />
-    <link rel="stylesheet" href="/canvas.css?v=canvas-agent-conversation-redesign-20260729" />
+    <link rel="stylesheet" href="/canvas.css?v=canvas-hairline-links-focus-20260804" />
   </head>
   <body class="canvas-page hide-liveness-library-ui">
     <div id="canvasApp" class="generation-canvas-shell">
@@ -106,7 +106,7 @@
           <small>导入项目资产后会直接创建素材节点，可继续原来的参考图到视频流程。</small>
         </div>
 
-        <svg id="canvasLinks" class="canvas-links" aria-hidden="true"></svg>
+        <svg id="canvasLinks" class="canvas-links" aria-hidden="true"><g id="canvasLinksContent"></g></svg>
         <div id="canvasNodes" class="canvas-nodes"></div>
         <div id="selectionMarquee" class="selection-marquee hidden" aria-hidden="true"></div>
         <div id="canvasZoomReadout" class="canvas-zoom-readout" aria-live="polite">100%</div>
@@ -194,26 +194,21 @@
 
         <div id="contextMenu" class="canvas-context-menu hidden" role="menu">
           <button type="button" data-create-node="image" role="menuitem">
-            <span class="context-icon image">IMG</span>
             <strong>Image Generator</strong>
           </button>
           <button type="button" data-create-node="video" role="menuitem">
-            <span class="context-icon video">VID</span>
             <strong>Video Generator</strong>
           </button>
           <button type="button" data-menu-action="import-assets" role="menuitem">
-            <span class="context-icon upload">REF</span>
             <strong>导入项目资产</strong>
           </button>
           <button type="button" data-menu-action="open-asset-library" role="menuitem">
-            <span class="context-icon library">LIB</span>
             <strong>打开素材库</strong>
           </button>
         </div>
 
         <div id="nodeContextMenu" class="canvas-context-menu hidden" role="menu" aria-label="视频模块操作">
           <button type="button" data-node-action="duplicate-video" role="menuitem">
-            <span class="context-icon video">COPY</span>
             <strong>复制视频模块（含连线和提示词）</strong>
           </button>
         </div>
@@ -483,6 +478,6 @@
     </template>
 
     <div id="canvasToast" class="toast hidden"></div>
-    <script src="/canvas.js?v=canvas-progressive-hydration-20260730"></script>
+    <script src="/canvas.js?v=canvas-solid-links-svg-transform-20260804"></script>
   </body>
 </html>

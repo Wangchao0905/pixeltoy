@@ -22,7 +22,7 @@ assert.match(css, /body\.is-studio \.asset-preview-panel \.asset-upload-form\s*\
 assert.match(css, /body\.is-studio \.asset-preview-panel \.asset-upload-fields\s*\{\s*display:\s*contents;/, "manual asset fields should participate in the two-row parent grid");
 assert.match(css, /body\.is-studio \.asset-parse-panel #confirmAssetManifestBtn\s*\{[\s\S]*?width:\s*max-content !important;[\s\S]*?justify-self:\s*center !important;/, "asset classification confirmation should remain a compact button");
 assert.match(app, /if \(mode === "image" \|\| mode === "assets"\) \{\s*return \{ label: "Run: 生成资产", selector: "\[data-job='assets'\]", focus: "assets" \};/);
-assert.match(app, /function finalCutOutputReady\(finalCut\)[\s\S]*?return !!finalCut\?\.output\?\.url;/, "CUT must use the real final output instead of object presence");
+assert.match(app, /function finalCutOutputReady\(finalCut\)[\s\S]*?return !!finalCut\?\.output\?\.url && finalCut\?\.output\?\.current !== false;/, "CUT must use the current real final output instead of stale object presence");
 assert.match(app, /const cutReady = finalCutOutputReady\(data\.finalCut\);[\s\S]*?value: cutReady \? "ready" : cutRunning \? "assembling" : cutFailed \? "failed" : "locked"/);
 assert.match(app, /function flowStepClass\(done, active, blocked = false[\s\S]*?if \(active\) classes\.push\("active"\);/);
 assert.match(css, /body\.is-studio \.studio-flow-step\.active:not\(\.ok\):not\(\.warn\)::after\s*\{[\s\S]*?background:\s*var\(--studio-accent\);/);

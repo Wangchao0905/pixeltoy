@@ -28,7 +28,11 @@ for (const id of ["finalCutStatus", "finalCutPreview", "assembleFinalCutBtn"]) {
   assert.doesNotMatch(html, inBridge, `${id} 不应留在隐藏 bridge 中`);
 }
 assert.match(html, /id="modernCutPanel"/, "缺少可见的成片面板");
-const cutPanel = html.match(/id="modernCutPanel"[\s\S]*?<\/section>/)?.[0] || "";
+const cutStart = html.indexOf('id="modernCutPanel"');
+const cutEnd = html.indexOf('id="workflowDataBridge"', cutStart);
+const cutPanel = cutStart >= 0 && cutEnd > cutStart ? html.slice(cutStart, cutEnd) : "";
+assert.match(cutPanel, /class="cut-layout"/, "成片面板必须使用双栏工作台布局");
+assert.match(cutPanel, /class="cut-preview-card"/, "成片面板必须突出主预览卡");
 assert.match(cutPanel, /class="modern-cut-preview final-cut-preview-slot"/, "成片面板必须保留可见预览区域");
 for (const id of ["finalCutStatus", "finalCutPreview", "assembleFinalCutBtn"]) {
   assert.ok(cutPanel.includes(`id="${id}"`), `成片面板应包含 ${id}（renderFinalCut 依赖这些 ID）`);

@@ -1294,6 +1294,13 @@
             </div>
           </section>
 
+          <!--
+            THESIS: 成片页首先让导演确认最终画面，其次比较封面，最后检查镜头顺序；拒绝把封面小卡当成成片预览。
+            OWN-WORLD: 深色剪辑室工作台、蓝灰层级、冷白信息和单一荧光状态色，内容本身承担视觉重量。
+            STORY: 用户先看 MASTER OUTPUT 的画面与状态，再选封面，最后在 ASSEMBLY ORDER 检查片段并组装。
+            FIRST VIEWPORT: 左侧为 9:16 成片预览，右侧为四宫格封面，顶部状态明确，底部轨道横向扫描。
+            FORM: Operate 模式的双栏工作台；主预览占据视觉锚点，封面是辅助决策面，生成和下载动作只出现在对应模块。
+          -->
           <section id="modernCutPanel" class="modern-cut-panel" aria-label="组装成片">
             <header class="modern-cut-head">
               <div><span class="modern-eyebrow">FINAL CUT</span><strong>组装成片</strong><small>把已完成片段按顺序硬切拼成完整成片（1080×1920 / 24fps，保留音频）。</small></div>
@@ -1301,33 +1308,43 @@
             </header>
             <div id="finalCutStatus" class="modern-cut-status inline-status"></div>
             <div class="cut">
-              <div class="cut-top" data-cover-design-shell>
-                <div id="modernCoverDesign" class="cover-design-panel" aria-label="封面设计">
-                <header class="cover-design-head">
-                  <div>
-                    <span class="modern-eyebrow">COVER DESIGN</span>
-                    <strong>短剧封面</strong>
-                    <small id="modernCoverDesignMeta">使用人物、场景、道具与剧名生成四个封面方向</small>
+              <div class="cut-layout">
+                <section class="cut-preview-card" aria-label="成片预览">
+                  <header class="cut-preview-head">
+                    <div>
+                      <span class="modern-eyebrow">MASTER OUTPUT</span>
+                      <strong>成片预览</strong>
+                    </div>
+                    <span class="cut-preview-format">9:16 · MP4</span>
+                  </header>
+                  <div class="modern-cut-preview final-cut-preview-slot">
+                    <div id="finalCutPreview" class="final-cut-preview" aria-live="polite"></div>
                   </div>
-                  <button id="modernCoverGenerate" class="cover-design-generate" type="button">生成四张封面</button>
-                </header>
-                <div id="modernCoverDesignStatus" class="cover-design-status" aria-live="polite"></div>
-                <div id="modernCoverDesignGrid" class="cover-design-grid" role="list" aria-label="封面方向"></div>
-                <div id="modernCoverDesignFocus" class="cover-design-focus hidden"></div>
-                <footer class="cover-design-foot">
-                  <div class="cover-design-output-meta">
-                    <span>FINAL CUT</span>
-                    <b id="modernFinalCutFilename">rough_cut.mp4</b>
-                    <small id="modernFinalCutDownloadStatus">尚未生成</small>
-                    <small><i id="modernFinalCutSegments">0 / 0 就绪</i><i id="modernFinalCutDuration">00:00</i></small>
+                  <footer class="cut-preview-foot">
+                    <div class="cut-output-meta">
+                      <span id="modernFinalCutFilename">rough_cut.mp4</span>
+                      <small id="modernFinalCutDownloadStatus">尚未生成</small>
+                      <small><i id="modernFinalCutSegments">0 / 0 就绪</i><i id="modernFinalCutDuration">00:00</i></small>
+                    </div>
+                    <a id="modernFinalCutDownload" class="btn is-disabled" href="#" aria-disabled="true">下载成片</a>
+                  </footer>
+                </section>
+                <section class="cut-cover-column" data-cover-design-shell aria-label="封面设计">
+                  <div id="modernCoverDesign" class="cover-design-panel">
+                    <header class="cover-design-head">
+                      <div>
+                        <span class="modern-eyebrow">COVER DESIGN</span>
+                        <strong>短剧封面</strong>
+                        <small id="modernCoverDesignMeta">使用人物、场景、道具与剧名生成四个封面方向</small>
+                      </div>
+                      <button id="modernCoverGenerate" class="cover-design-generate" type="button">生成四张封面</button>
+                    </header>
+                    <div id="modernCoverDesignStatus" class="cover-design-status" aria-live="polite"></div>
+                    <div id="modernCoverDesignGrid" class="cover-design-grid" role="list" aria-label="封面方向"></div>
+                    <div id="modernCoverDesignFocus" class="cover-design-focus hidden"></div>
+                    <footer class="cover-design-foot"><span>点击封面可放大预览</span></footer>
                   </div>
-                  <a id="modernFinalCutDownload" class="btn is-disabled" href="#" aria-disabled="true">下载成片</a>
-                </footer>
-                <div class="cut-info" aria-hidden="true"></div>
-                </div>
-              </div>
-              <div class="modern-cut-preview final-cut-preview-slot">
-                <div id="finalCutPreview" class="final-cut-preview" aria-live="polite"></div>
+                </section>
               </div>
               <div class="track">
                 <div class="track-h"><span class="modern-eyebrow">ASSEMBLY ORDER</span><span>按镜号顺序硬切</span></div>

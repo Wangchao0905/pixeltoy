@@ -280,13 +280,15 @@ assert.match(html, /id="modernVideoQueueProgress"[^>]*class="modern-video-queue-
 assert.match(css, /\.modern-video-queue-meter\s*\{[^}]*flex:\s*1\s+1\s+auto/, "queue overview meter must remain in the toolbar flow");
 assert.match(css, /\.modern-main:not\(\[data-modern-view="video"\]\)\s+\.modern-video-queue\s*\{[^}]*display:\s*none/, "video queue must stay scoped to the video step");
 
-// 改动 6：成片卡采用三列上排 + 全宽六段轨，并保留可见的业务三件套。
-const modernCutPanel = html.match(/id="modernCutPanel"[\s\S]*?<\/section>/)?.[0] || "";
-for (const className of ["cut-top", "cut-info", "track", "segs"]) {
+// 改动 6：成片工作区以主预览 + 封面双栏为视觉锚点，并保留全宽六段轨。
+const cutStart = html.indexOf('id="modernCutPanel"');
+const cutEnd = html.indexOf('id="workflowDataBridge"', cutStart);
+const modernCutPanel = cutStart >= 0 && cutEnd > cutStart ? html.slice(cutStart, cutEnd) : "";
+for (const className of ["cut-layout", "cut-preview-card", "cut-cover-column", "track", "segs"]) {
   assert.ok(modernCutPanel.includes(`class="${className}"`), `modern cut panel missing ${className}`);
 }
-assert.match(css, /\.cut-top\s*\{[^}]*grid-template-columns:\s*216px\s+minmax\(0,1fr\)\s+auto[^}]*align-items:\s*stretch/, "cut top must use the 216px preview column and stretch the other columns");
-assert.match(css, /\.cut-info\s*\{[^}]*grid-template-rows:\s*auto\s+1fr[^}]*height:\s*100%/, "cut info must fill the preview height with auto plus 1fr rows");
+assert.match(css, /\.cut-layout\s*\{[^}]*grid-template-columns:\s*minmax\(280px,\s*\.86fr\)\s+minmax\(420px,\s*1\.14fr\)/, "cut layout must use a balanced preview and cover split");
+assert.match(css, /\.cut-preview-card\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,1fr\)\s+auto/, "cut preview must reserve stable header, media, and metadata rows");
 assert.match(css, /\.segs\s*\{[^}]*grid-template-columns:\s*repeat\(6,\s*minmax\(0,1fr\)\)/, "cut track must show six equal segment slots");
 
 // 队列状态点必须始终可见，并且完成/失败状态使用明确的语义色。

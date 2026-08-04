@@ -17,6 +17,28 @@ function createSessionId() {
 }
 
 const sessionId = createSessionId();
+const ACTIVE_RUN_KEY = `pixeltale.story-forge-active-run:${sessionId}`;
+
+function loadActiveRun() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(ACTIVE_RUN_KEY) || "null");
+    return value?.jobId && value?.stage ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistActiveRun(run) {
+  state.activeRun = run;
+  try {
+    if (run) sessionStorage.setItem(ACTIVE_RUN_KEY, JSON.stringify(run));
+    else sessionStorage.removeItem(ACTIVE_RUN_KEY);
+  } catch {
+    // The in-memory state is enough for the current page when storage is unavailable.
+  }
+}
+
+let backgroundRunMonitor = "";
 
 function pendingMode() {
   try {
@@ -37,6 +59,7 @@ const state = {
   toastTimer: null,
   lastError: "",
   documentError: "",
+  activeRun: loadActiveRun(),
   dnaFilter: "all",
   agent: null,
   routes: { orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
@@ -93,7 +116,7 @@ const stageMeta = {
   arc: { kicker: "05 / ARC", title: "分集与章节", task: "把主线拆成可拍的推进", copy: "短剧优先检查钩子与反转，长剧优先检查因果与人物弧线。" },
   scenes: { kicker: "06 / SCENES", title: "场景与镜头", task: "把剧情变成可执行的镜头意图", copy: "确认人物、场景、道具和镜头目的，为视觉资产输出建立依据。" },
   dialogue: { kicker: "07 / DIALOGUE", title: "对白本土化", task: "把对白说得像人物会说的话", copy: "中文保留剧情意图，英文对白根据人物、场景和受众口语化改写。" },
-  handoff: { kicker: "08 / EXPORT", title: "导出正式文件", task: "生成可交付的剧本资产", copy: "确认后的结构化产物会生成正式剧本 DOCX 和视觉资产 DOCX。" },
+  handoff: { kicker: "08 / EXPORT", title: "导出正式文件", task: "生成可交付的剧本资产", copy: "正式剧本 DOCX 读取已确认的分集剧情、场景镜头和英文对白，并与视觉资产文档分别导出。" },
 };
 const marketCatalog = [
   ["north_america", "united_states", "美国"], ["north_america", "canada", "加拿大"],
@@ -320,6 +343,18 @@ async function fetchScriptDocument() {
   };
 }
 
+async function fetchVisualAssetDocument() {
+  const response = await fetch(agentApiPath("/visual-assets/download"), { headers: agentRequestHeaders() });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || `视觉资产下载失败：${response.status}`);
+  }
+  return {
+    blob: await response.blob(),
+    fileName: fileNameFromContentDisposition(response.headers.get("Content-Disposition"), state.agent?.visualAssetDocument?.fileName || "PixelTale_视觉资产.docx"),
+  };
+}
+
 function triggerBlobDownload(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -333,6 +368,11 @@ function triggerBlobDownload(blob, fileName) {
 
 async function downloadScriptDocument() {
   const { blob, fileName } = await fetchScriptDocument();
+  triggerBlobDownload(blob, fileName);
+}
+
+async function downloadVisualAssetDocument() {
+  const { blob, fileName } = await fetchVisualAssetDocument();
   triggerBlobDownload(blob, fileName);
 }
 
@@ -384,7 +424,7 @@ function updateAgentState(agent) {
   state.agent = agent || null;
   if (!agent) return;
   state.mode = agent.mode === "long_form_drama" ? "long" : "tk";
-  state.stage = agent.stage || "brief";
+  state.stage = agent.stage === "script" ? "handoff" : agent.stage || "brief";
   state.routes = { ...state.routes, ...(agent.routes || {}) };
   state.input = { ...state.input, ...(agent.input || {}) };
   state.approved = new Set(agent.approvedArtifactIds || []);
@@ -419,6 +459,30 @@ function artifactForStage(stage) {
     .filter((item) => stage !== "title" || (Array.isArray(item.content?.candidates) && item.content.candidates.length === 4 && item.content.candidates.every((candidate) => candidate?.title_en)))
     .sort((a, b) => Number(a.version || 0) - Number(b.version || 0))
     .at(-1) || null;
+}
+
+function latestRunForStage(stage) {
+  return (state.agent?.runs || [])
+    .filter((run) => run.stage === stage)
+    .sort((left, right) => Date.parse(left.completedAt || left.startedAt || 0) - Date.parse(right.completedAt || right.startedAt || 0))
+    .at(-1) || null;
+}
+
+function stageRunSummary(stage) {
+  const run = latestRunForStage(stage);
+  if (!run) return "";
+  if (run.status === "failed") return "上一轮运行失败 · 可以重试";
+  if (run.status === "running") return "正在运行 · 请稍候";
+  const artifact = artifactForStage(stage);
+  const issueCount = reviewIssueGroups(reviewForArtifact(artifact)?.content || {}).length;
+  if (run.revision) {
+    return run.status === "needs_review"
+      ? "本轮修订已执行 · 仍有 " + issueCount + " 类问题待关闭"
+      : "本轮修订已完成 · 等待确认";
+  }
+  return run.status === "needs_review"
+    ? "本轮生成已完成 · " + issueCount + " 类问题待修订"
+    : "本轮生成已完成 · 等待确认";
 }
 
 function reviewForArtifact(artifact) {
@@ -461,10 +525,13 @@ function consensusMetrics() {
   const reviewCompletion = Number(content.reviewCompletion || 0);
   const agreement = Number(content.agreement || 0);
   const quality = Number(content.quality || 0);
+  const serverIndex = Number(content.consensusIndex);
+  const derivedIndex = Math.round(agreement * 0.45 + quality * 0.35 + reviewCompletion * 0.2);
   const index = review
-    ? Math.max(0, Math.min(100, Math.round(agreement * 0.45 + quality * 0.25 + reviewCompletion * 0.15 + interactionCompletion * 0.15)))
+    ? Math.max(0, Math.min(100, Math.round(Number.isFinite(serverIndex) ? serverIndex : derivedIndex)))
     : 0;
-  return { index, agreement, quality, reviewCompletion, interactionCompletion, content };
+  const quorum = content.quorum || {};
+  return { index, agreement, quality, reviewCompletion, interactionCompletion, completedReviews: Number(quorum.completed || 0), requiredReviews: Number(quorum.required || 3), quorumMet: quorum.met === true, content };
 }
 
 function renderConsensusMeter() {
@@ -477,10 +544,12 @@ function renderConsensusMeter() {
   const reviewCompletion = document.querySelector("#consensusReviewCompletion");
   const interactionCompletion = document.querySelector("#consensusInteractionCompletion");
   if (!score || !value || !fill || !label || !agreement || !reviewCompletion || !interactionCompletion) return;
-  const tone = metrics.index >= 90 ? "高度一致" : metrics.index >= 75 ? "可继续审查" : metrics.index > 0 ? "存在分歧" : "等待三模型反馈";
+  const tone = metrics.index >= 90 ? "高度一致" : metrics.index >= 75 ? "可继续审查" : metrics.index > 0 ? "存在分歧" : "等待交叉审核";
   score.textContent = `${metrics.index}%`;
   value.textContent = `指数 · ${tone}`;
-  label.textContent = metrics.index > 0 ? "三模型意见聚合" : "完成当前阶段后启动交叉审查";
+  label.textContent = metrics.index > 0
+    ? `交叉审核 ${metrics.completedReviews} / ${metrics.requiredReviews} · ${metrics.quorumMet ? "已达放行门槛" : "等待足够意见"}`
+    : "完成当前阶段后启动交叉审核";
   fill.style.setProperty("--consensus-width", `${metrics.index}%`);
   fill.parentElement?.classList.toggle("is-live", metrics.index > 0);
   agreement.textContent = `${metrics.agreement}%`;
@@ -507,9 +576,17 @@ function stageAccessible(stage) {
 function nextStepMeta() {
   const flowStage = workflowStage();
   const flowMeta = stageMeta[flowStage];
+  if (state.activeRun?.stage === flowStage) {
+    return {
+      kind: "busy",
+      title: `${flowMeta.title}正在后台运行`,
+      copy: "任务仍在 SuperPixel 后台执行。页面不会重复提交，完成后会自动同步结果。",
+      flowStage,
+    };
+  }
   if (state.busy) {
     if (flowStage === "title") return { kind: "busy", title: "正在生成 4 个英文剧名", copy: "由总编排中指定的单个模型生成，完成后直接进入人工选择，不执行交叉审核。", flowStage };
-    return { kind: "busy", title: "正在生成并进行三模型交叉审核", copy: "三份独立意见完成聚合后，会显示一致性指数和修改建议。", flowStage };
+    return { kind: "busy", title: "正在生成并进行交叉审核", copy: "先完成至少两份独立审核；只有出现评分冲突或有效结果不足时，才启动第三份审核。", flowStage };
   }
   if (state.stage !== flowStage) {
     return {
@@ -642,8 +719,11 @@ function renderShellState() {
   $("#agentTaskAction").innerHTML = renderAgentTaskAction(action);
   bindAgentTaskAction();
   $("#flowStepCounter").textContent = productionProgressLabel(flowStage);
+  const runSummary = stageRunSummary(flowStage);
   $("#agentStatus").textContent = state.busy
     ? "PixelTale 正在生成并复核..."
+    : action.kind === "busy"
+      ? "后台运行中 · 自动同步"
     : state.lastError
       ? "本次运行失败"
       : action.kind === "approve"
@@ -652,7 +732,13 @@ function renderShellState() {
           ? "等待导出"
           : action.kind === "return"
             ? "正在查看已确认版本"
-            : "等待输入";
+            : action.kind === "auto-revise"
+              ? runSummary || "等待执行修订"
+              : action.kind === "review-advisories"
+                ? "等待人工裁决"
+                : action.kind === "run"
+                  ? runSummary || "等待生成"
+                  : runSummary || "等待输入";
   $("#approvedCount").textContent = `${String(approvedStageCount()).padStart(2, "0")} / ${String(productionStageTotal).padStart(2, "0")}`;
   $("#progressBar").style.width = `${Math.round((approvedStageCount() / productionStageTotal) * 100)}%`;
   renderConsensusMeter();
@@ -1252,6 +1338,15 @@ const fieldLabelMap = {
   subtext_zh: "潜台词",
   delivery_en: "表演提示",
   localization_checks: "本土化检查",
+  script_summary_zh: "剧本主线",
+  episodes: "完整剧本分集",
+  opening_impact_zh: "开头暴击",
+  plot_summary_zh: "本集剧情",
+  time_zh: "时间",
+  conflict_zh: "场面冲突",
+  choice_zh: "人物选择",
+  result_zh: "选择结果",
+  turn_zh: "因果转折",
   consistency_notes: "一致性说明",
 };
 
@@ -1534,7 +1629,7 @@ function renderHandoff() {
   const scriptDocument = latest?.scriptDocument || state.agent?.scriptDocument;
   const visualAssetDocument = state.agent?.visualAssetDocument;
   const visualAssetAction = visualAssetDocument?.status === "ready"
-    ? `<a class="stage-primary visual-asset-download" href="${agentApiPath("/visual-assets/download")}" download>下载视觉资产 DOCX ↗</a>`
+    ? `<button type="button" class="stage-primary visual-asset-download" data-download-visual-assets ${state.documentBusy ? "disabled" : ""}>下载视觉资产 DOCX <span aria-hidden="true">↓</span></button>`
     : visualAssetDocument?.status === "failed"
       ? `<span class="visual-asset-error">视觉资产文档生成失败：${escapeHtml(visualAssetDocument.error || "请重新导出")}</span>`
       : "";
@@ -1551,7 +1646,7 @@ function renderHandoff() {
   const documentActions = scriptReady
     ? `<div class="document-delivery-actions"><button type="button" class="stage-primary" data-download-script ${state.documentBusy ? "disabled" : ""}>下载剧本 DOCX <span aria-hidden="true">↓</span></button><button type="button" class="stage-secondary" data-save-script ${state.documentBusy ? "disabled" : ""}>选择文件夹并保存</button></div>`
     : "";
-  return `<div class="stage-kicker"><span class="eyebrow">${currentMeta().kicker}</span><span class="artifact-meta">${ready ? "READY" : "LOCKED"}</span></div><h2>${currentMeta().title}</h2><p class="stage-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集结构、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "中文剧情 + English Dialogue" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待人物与世界"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>`;
+  return `<div class="stage-kicker"><span class="eyebrow">${currentMeta().kicker}</span><span class="artifact-meta">${ready ? "READY" : "LOCKED"}</span></div><h2>${currentMeta().title}</h2><p class="stage-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集剧情、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "逐集中文剧情 + English Dialogue" : "等待全剧确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>`;
 }
 
 function renderStage() {
@@ -1563,11 +1658,12 @@ function renderStage() {
 }
 
 const RUN_POLL_INTERVAL_MS = 2_000;
-const RUN_POLL_TIMEOUT_MS = 8 * 60 * 1_000;
+const RUN_POLL_TIMEOUT_MS = 4 * 60 * 1_000;
+const RUN_BACKGROUND_TIMEOUT_MS = 45 * 60 * 1_000;
 
-async function waitForRunJob(jobId) {
+async function waitForRunJob(jobId, { timeoutMs = RUN_POLL_TIMEOUT_MS } = {}) {
   if (!jobId) throw new Error("服务未返回运行任务号，请重新生成当前阶段");
-  const deadline = Date.now() + RUN_POLL_TIMEOUT_MS;
+  const deadline = Number.isFinite(timeoutMs) ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
   let consecutiveFailures = 0;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, RUN_POLL_INTERVAL_MS));
@@ -1588,7 +1684,38 @@ async function waitForRunJob(jobId) {
       if (consecutiveFailures >= 5) throw error;
     }
   }
-  throw new Error("当前阶段运行超过 8 分钟仍未完成，输入已保留，请稍后重新进入页面查看结果");
+  return { status: "detached", jobId };
+}
+
+async function monitorBackgroundRun(run) {
+  if (!run?.jobId || backgroundRunMonitor === run.jobId) return;
+  backgroundRunMonitor = run.jobId;
+  try {
+    const result = await waitForRunJob(run.jobId, { timeoutMs: RUN_BACKGROUND_TIMEOUT_MS });
+    if (result?.status === "detached") {
+      if (state.activeRun?.jobId === run.jobId) {
+        persistActiveRun(null);
+        state.lastError = "后台任务超过 45 分钟仍未返回，输入和已完成产物已保留，请检查模型状态后重试当前阶段。";
+        showToast(state.lastError);
+        renderStage();
+      }
+      return;
+    }
+    if (state.activeRun?.jobId !== run.jobId) return;
+    persistActiveRun(null);
+    updateAgentState(result?.state);
+    state.stage = run.stage;
+    state.lastError = "";
+    showToast(result?.status === "needs_review" ? "后台运行完成，已同步审核结果" : "后台运行完成，已同步当前阶段");
+    renderStage();
+  } catch (error) {
+    if (state.activeRun?.jobId !== run.jobId) return;
+    state.lastError = userFacingError(error);
+    showToast(state.lastError);
+    renderStage();
+  } finally {
+    if (backgroundRunMonitor === run.jobId) backgroundRunMonitor = "";
+  }
 }
 
 async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) {
@@ -1602,8 +1729,16 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
     let recoveryAttempted = false;
     while (!payload) {
       const accepted = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan }) });
+      persistActiveRun({ jobId: accepted.job?.jobId, stage });
       try {
-        payload = { result: await waitForRunJob(accepted.job?.jobId) };
+        const result = await waitForRunJob(accepted.job?.jobId);
+        if (result?.status === "detached") {
+          state.busy = false;
+          showToast("前台等待窗口已结束，任务仍在后台运行；完成后会自动同步，请勿重复提交。");
+          void monitorBackgroundRun({ jobId: accepted.job?.jobId, stage });
+          return;
+        }
+        payload = { result };
       } catch (error) {
         if (!recoveryAttempted && error?.recoverable) {
           recoveryAttempted = true;
@@ -1613,6 +1748,7 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
         throw error;
       }
     }
+    persistActiveRun(null);
     updateAgentState(payload.result?.state);
     // The run response may contain the last approved stage; keep the stage the user just ran visible.
     state.stage = stage;
@@ -1625,6 +1761,7 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
       ? (revision ? "交叉修订已执行，但仍有问题未通过逐项关闭" : "已生成，但三模型审核存在共识问题或意见冲突")
       : (revision ? "交叉修订已逐项复审关闭，等待确认" : "已生成并完成三模型交叉审核，等待确认"));
   } catch (error) {
+    if (error?.terminal) persistActiveRun(null);
     state.lastError = userFacingError(error);
     showToast(state.lastError);
   } finally {
@@ -1634,12 +1771,27 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
 }
 
 async function runAutoRevision(stage = state.stage) {
+  state.busy = true;
+  state.lastError = "";
+  renderStage();
+  try {
+    const payload = await request("");
+    updateAgentState(payload.agent);
+  } catch (error) {
+    state.busy = false;
+    state.lastError = userFacingError(error);
+    showToast(state.lastError);
+    renderStage();
+    return;
+  }
+  state.stage = stage;
   const artifact = artifactForStage(stage);
   const review = reviewForArtifact(artifact);
   const content = review?.content || {};
   const issues = reviewIssueGroups(content);
   if (!artifact || !issues.length) {
-    showToast("当前没有可执行的完整修订清单");
+    showToast("服务端最新状态没有可执行清单，正在重新生成并审核当前阶段");
+    await runCurrentStage(stage);
     return;
   }
   const plan = [
@@ -1808,6 +1960,7 @@ function bindStageActions() {
   }));
   $("[data-regenerate-title]")?.addEventListener("click", () => runCurrentStage("title"));
   $("[data-download-script]")?.addEventListener("click", () => void runDocumentAction(downloadScriptDocument));
+  $("[data-download-visual-assets]")?.addEventListener("click", () => void runDocumentAction(downloadVisualAssetDocument));
   $("[data-save-script]")?.addEventListener("click", () => void runDocumentAction(saveScriptDocument));
   $("#episodeScaleRange")?.addEventListener("input", syncBriefRanges);
   $("#durationRange")?.addEventListener("input", syncBriefRanges);
@@ -1891,7 +2044,9 @@ $$('[data-open-stage]').forEach((button) => button.addEventListener("click", () 
 }));
 
 renderStage();
-syncAgentState({ silent: true });
+syncAgentState({ silent: true }).finally(() => {
+  if (state.activeRun) void monitorBackgroundRun(state.activeRun);
+});
 try {
   const notice = sessionStorage.getItem(PENDING_NOTICE_KEY);
   if (notice) {

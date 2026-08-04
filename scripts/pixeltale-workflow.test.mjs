@@ -9,7 +9,7 @@ const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.h
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevisionContract, mergeRevisionContent, reviewAdvisoryGate, validateContent, validateReview } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStagePrimary, collectCrossReviewQuorum, aggregateCrossReview, buildRevisionContract, mergeRevisionContent, reviewAdvisoryGate, validateContent, validateReview } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
 assert.match(agent, /modelRouter\.reviewModels\(route\)/, "cross-review must be selected by the SuperPixel router");
@@ -57,6 +57,10 @@ assert.match(app, /\$\("#flowStepCounter"\)\.textContent = productionProgressLab
 assert.match(app, /当前阶段 \$\{productionProgressLabel\(workflowStage\(\)\)\}/, "central progress must use the shared counter");
 assert.match(html, /<span>当前阶段<\/span><span id="flowStepCounter">01 \/ 07<\/span>/, "right rail must label its seven-stage progress consistently");
 assert.match(html, /id="approvedCount">0 \/ 7/, "left rail must keep the seven-stage confirmation denominator");
+assert.doesNotMatch(html, /data-stage="script"/, "the screenplay body must not be a separate production stage");
+assert.doesNotMatch(nestedHtml, /data-stage="script"/, "the nested PixelTale page must not expose a screenplay body stage");
+assert.match(app, /stageOrder = \["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"\]/, "the screenplay body must be assembled at export after dialogue");
+assert.doesNotMatch(app, /script: \{ kicker: "08 \/ SCRIPT"/, "the screenplay body must not have a separate stage definition");
 assert.doesNotMatch(html, /class="agent-context"/, "the right rail must not show a passive context module");
 assert.doesNotMatch(html, /id="contextChips"|id="editContext"/, "passive context chips and their dead edit action must be removed");
 assert.doesNotMatch(nestedHtml, /class="agent-context"|id="contextChips"|id="editContext"/, "the nested PixelTale page must not retain the passive context module");
@@ -81,6 +85,8 @@ assert.match(app, /可选优化建议[\s\S]*不阻断确认/, "low-risk consensu
 assert.match(app, /审核超时\/失败/, "review cards must expose actual model failure state");
 assert.match(app, /执行定向修订并复审/, "review output must offer one canonical revision action");
 assert.match(app, /revisionPlan/, "automatic revision must pass a scoped revision plan");
+assert.match(app, /async function runAutoRevision[\s\S]*const payload = await request\(""\)/, "revision clicks must refresh the server session before selecting a source artifact");
+assert.match(app, /action\.kind === "auto-revise"[\s\S]*等待执行修订/, "the right rail must distinguish a pending revision from waiting for input");
 assert.match(app, /revision-progress/, "revision output must expose closure progress");
 assert.match(app, /data-advisory-decision/, "advisory feedback must expose creator decision actions");
 assert.match(app, /const reviewConflictGuidance =/, "score conflicts must have deterministic review guidance");
@@ -100,6 +106,10 @@ assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.dna-laun
 assert.match(agent, /只返回最多 3 个会阻断下一阶段的问题/, "review prompts must stay concise and stage-scoped");
 assert.match(agent, /revisionClosureProtocol/, "review prompts must require closure evidence for every revision item");
 assert.match(agent, /BRIEF_SPEC_MATCH/, "brief review must use stable stage-specific criterion ids");
+assert.match(agent, /const creativeControls = payload\.creativeControls \|\| normalizeCreativeControls\(state\.input\);[\s\S]*dialogue_mode: creativeControls\.dialogueMode/, "formal screenplay export must receive scoped creative controls");
+assert.match(app, /async function fetchVisualAssetDocument\(\)[\s\S]*agentApiPath\("\/visual-assets\/download"\)[\s\S]*agentRequestHeaders/, "visual asset downloads must carry the PixelTale session header");
+assert.match(app, /data-download-visual-assets[\s\S]*runDocumentAction\(downloadVisualAssetDocument\)/, "visual asset downloads must use the authenticated Blob download flow");
+assert.doesNotMatch(app, /href="\$\{agentApiPath\("\/visual-assets\/download"\)\}"/, "visual asset downloads must not use an unauthenticated anchor");
 assert.match(agent, /function revisionIssueKeys\(stage, item = \{\}\)/, "revision items must have stable cross-round identities");
 assert.match(agent, /previousItems = asArray\(review\.revision\?\.contract\?\.items\)/, "revision contracts must inspect the prior contract before merging new findings");
 assert.match(agent, /不得要求人物表、分集表、场景表或对白等尚未到达阶段的产物/, "a reviewer must not demand deliverables from later stages");
@@ -272,10 +282,25 @@ const partialCharacters = mergeRevisionContent("characters", { characters: [{ id
 assert.deepEqual(partialCharacters.relationships, sourceCharacters.relationships, "partial character revisions must preserve relationships");
 assert.deepEqual(partialCharacters.world_rules, sourceCharacters.world_rules, "partial character revisions must preserve world rules");
 assert.doesNotThrow(() => validateContent("characters", partialCharacters), "merged character revisions must satisfy the stage schema");
-const sourceArc = { unit: "episode_or_chapter", units: [{ number: 1, title_zh: "开场" }], arc_summary_zh: "原始分集总纲" };
+const sourceArc = {
+  unit: "episode_or_chapter",
+  units: [{
+    number: 1,
+    title_zh: "开场",
+    promise_zh: "主角必须在追捕逼近前拿到关键证据",
+    plot_zh: "主角在封锁前抢到关键记录，选择相信证人并改变逃亡路线。",
+    impact_zh: "警报突然响起，主角被列为嫌疑人。",
+    causal_turn_zh: "记录时间证明案件在案发前已被篡改。",
+    reversal_zh: "证据指向主角自己的身份记录。",
+    hook_zh: "监控出现另一个与主角一模一样的人。",
+    cliffhanger_question_zh: "监控中的另一个人是谁？",
+    payoff_zh: "主角从逃亡转为追查。",
+  }],
+  arc_summary_zh: "原始分集总纲",
+};
 const partialArc = mergeRevisionContent("arc", { units: [{ number: 1, title_zh: "修订后的开场" }] }, sourceArc);
 assert.equal(partialArc.arc_summary_zh, sourceArc.arc_summary_zh, "partial arc revisions must preserve arc_summary_zh");
-assert.doesNotThrow(() => validateContent("arc", partialArc), "merged arc revisions must satisfy the stage schema");
+assert.doesNotThrow(() => validateContent("arc", partialArc, { episodeCount: 1 }), "merged arc revisions must satisfy the stage schema");
 const emptyCharacters = mergeRevisionContent("characters", { characters: sourceCharacters.characters, relationships: [], world_rules: [] }, sourceCharacters);
 assert.deepEqual(emptyCharacters.relationships, sourceCharacters.relationships, "empty relationship revisions must preserve the source relationship contract");
 assert.deepEqual(emptyCharacters.world_rules, sourceCharacters.world_rules, "empty world-rule revisions must preserve the source world contract");
@@ -366,6 +391,42 @@ const noQuorum = aggregateCrossReview([
 ]);
 assert.equal(noQuorum.pass, false, "one reviewer can never release a stage");
 
+const reviewRoutesForScheduling = [{ model: "review-a" }, { model: "review-b" }, { model: "review-c" }];
+const reviewPayload = (model, score) => ({
+  route: { model },
+  result: {
+    provider: "test",
+    model,
+    content: {
+      pass: true,
+      score,
+      findings: [],
+      required_changes: [],
+      issues: [],
+      dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score, feedback: "通过" }])),
+      checks: { cross_validation: true, consistency: true, adversarial: true },
+    },
+  },
+});
+const alignedReviewStarts = [];
+await collectCrossReviewQuorum({
+  reviewRoutes: reviewRoutesForScheduling,
+  execute: async (route) => {
+    alignedReviewStarts.push(route.model);
+    return reviewPayload(route.model, 92);
+  },
+});
+assert.deepEqual(alignedReviewStarts, ["review-a", "review-b"], "aligned quorum must not start the third reviewer");
+const conflictedReviewStarts = [];
+await collectCrossReviewQuorum({
+  reviewRoutes: reviewRoutesForScheduling,
+  execute: async (route) => {
+    conflictedReviewStarts.push(route.model);
+    return reviewPayload(route.model, route.model === "review-a" ? 96 : route.model === "review-b" ? 40 : 82);
+  },
+});
+assert.deepEqual(conflictedReviewStarts, ["review-a", "review-b", "review-c"], "a score conflict must open the third reviewer slot");
+
 const partial = resolvedReview("review-c");
 partial.result.content.revisionClosures[0].status = "partial";
 partial.result.content.revisionClosures[0].remainingFix = "补出主角的明确选择";
@@ -450,6 +511,27 @@ const testRouter = {
       ? reviewOutput(input.revisionClosureProtocol)
       : input.currentStage === "title"
         ? titleOutput(generatedTitleSets++)
+        : input.currentStage === "scenes"
+          ? {
+            scenes: [{
+              id: "S001",
+              unit_number: 1,
+              purpose_zh: "修订后的场景目的",
+              time_zh: "夜",
+              location_zh: "公寓",
+              characters: ["C001"],
+              action_zh: "主角作出选择并触发即时威胁。",
+              conflict_zh: "追捕者逼近，证据会暴露主角身份。",
+              choice_zh: "主角带走原件并放弃安全路线。",
+              result_zh: "逃生路线被锁定，但主角拿到了关键证据。",
+              turn_zh: "主角从逃亡转为追查篡改者。",
+              visual_intent_zh: "紧迫",
+              recurring: false,
+              visual_profile: { aliases: "公寓", indoor_outdoor: "室内", lighting: "冷光", palette: "蓝灰", materials: "水泥", layout: "单间", atmosphere: "压迫", prompt_zh: "冷光公寓" },
+              props: [{ id: "PR01", name_zh: "警徽", description_zh: "旧警徽", recurring: true, materials: "金属", appearance: "磨损", size: "掌心", texture: "划痕", prompt_zh: "磨损警徽" }],
+              shot_plan: [{ shot_id: "SH001", type: "hook", duration_seconds: 4, description_zh: "警报突然响起", dialogue_refs: [] }],
+            }],
+          }
         : { title_zh: "暗门", logline_zh: "主角必须在代价逼近前打开一扇暗门。", core_conflict_zh: "真相与生存冲突。", viewer_question_zh: "她会付出什么代价？" };
     return { provider: testModels.find((item) => item.id === model)?.provider || "superpixel", model, content: output, attempts: 0, trace: [{ model }] };
   },
@@ -507,6 +589,39 @@ assert.equal(revisionRun.status, "completed", `revision must run as a distinct, 
 assert.equal(revisionRun.revision.allResolved, true, "the run record must prove all revision contract items were closed");
 const finalReview = revisionRun.state.artifacts.find((artifact) => artifact.id === revisionRun.artifacts[1].id);
 assert.equal(finalReview.content.revision.closure.allResolved, true, "the persisted review must retain item-by-item closure evidence");
+
+const sceneRevisionState = {
+  projectId: "scene-revision-e2e",
+  stage: "scenes",
+  mode: "tk_short_drama",
+  input: { idea: "主角为救家人闯入禁区", coreConflict: "真相与生存冲突", episodeCount: 1 },
+  artifacts: ["brief", "title", "proposal", "characters", "arc"].map((stage) => ({
+    id: `scene-approved-${stage}`,
+    type: `pixeltale_${stage}`,
+    stage,
+    version: 1,
+    status: "ready",
+    content: { title_zh: "场景修订测试上下文" },
+  })),
+  approvedArtifactIds: ["scene-approved-brief", "scene-approved-title", "scene-approved-proposal", "scene-approved-characters", "scene-approved-arc"],
+};
+stateStore.set("scene-revision-e2e", sceneRevisionState);
+const sceneParams = {
+  pixelTaleRoot: "scene-revision-e2e",
+  projectId: "scene-revision-e2e",
+  project: { id: "scene-revision-e2e", title: "Scene Revision E2E", episode: "DRAFT" },
+  stage: "scenes",
+  mode: "tk_short_drama",
+  input: sceneRevisionState.input,
+};
+const initialSceneRun = await runAgent.run(sceneParams);
+assert.equal(initialSceneRun.status, "needs_review", "scenes must retain a failed source version before revision");
+assert.equal(initialSceneRun.artifacts[0].version, 1, "the first scene run must persist version 1");
+const revisedSceneRun = await runAgent.run({ ...sceneParams, revisionPlan: "按全部场景与镜头审核问题修订" });
+assert.equal(revisedSceneRun.status, "completed", `scene revision must complete: ${JSON.stringify(revisedSceneRun.errors)}`);
+assert.equal(revisedSceneRun.artifacts[0].version, 2, "scene revision must create a new artifact version");
+assert.equal(revisedSceneRun.revision.allResolved, true, "scene revision must close every review contract item");
+assert.equal(revisedSceneRun.state.artifacts.find((artifact) => artifact.id === revisedSceneRun.artifacts[1].id).content.revision.closure.allResolved, true, "scene review must persist item-by-item closure evidence");
 
 runAgent.approve({ ...runParams, artifactId: revisionRun.artifacts[0].id });
 const staleState = stateStore.get("revision-e2e");
@@ -588,9 +703,10 @@ await assert.rejects(
   (error) => error.code === "STAGE_GENERATION_UNAVAILABLE" && error.fallbackFailures.length === 3,
   "the primary stage must fail only after every distinct race candidate fails",
 );
-assert.equal(timedCalls.length, 3, "the author race must start one request for each distinct model family");
-assert.equal(new Set(timedCalls.map((item) => item.model)).size, 3, "the author race must never duplicate a model");
-assert.ok(timedCalls.every((item) => item.timeoutMs === 14_000), "each concurrent author must receive the bounded timeout");
+assert.equal(timedCalls.length, 3, "the author fallback must try each distinct model family before failing");
+assert.equal(new Set(timedCalls.map((item) => item.model)).size, 3, "the author fallback must never duplicate a model");
+assert.ok(timedCalls.every((item) => item.timeoutMs === 14_000), "each author fallback must receive the bounded timeout");
+assert.deepEqual(timedCalls.map((item) => item.model), ["gpt-5.6-terra", "claude-opus-5", "deepseek-v4-pro"], "author fallback must follow the configured order");
 assert.match(agent, /characters: \{ total: 240_000, model: 210_000 \}/, "characters and world generation needs a longer bounded model window");
 assert.match(agent, /arc: \{ total: 300_000, model: 270_000 \}/, "long-form arc generation needs a bounded long-stage window");
 assert.match(agent, /const REVIEW_MODEL_TIMEOUT_MS = 120_000/, "review calls must have enough time for structured feedback");
@@ -598,13 +714,18 @@ assert.ok(
   Number(agent.match(/characters: \{ total: ([\d_]+), model: ([\d_]+) \}/)[1].replace(/_/g, "")) <= 300_000,
   "the longest primary budget must stay bounded for background job recovery",
 );
-assert.match(agent, /modelRouter\.stageModels\(route\)\.slice\(0, 3\)/, "primary fallback must never walk the full writing roster sequentially");
-assert.match(agent, /Promise\.any\(attempts\)/, "distinct author candidates must race instead of waiting serially");
+assert.match(agent, /modelRouter\.stageModels\(route\)\.slice\(0, 3\)/, "primary fallback must stay within the configured writing roster");
+assert.match(agent, /for \(const \[index, provider\] of providers\.entries\(\)\)/, "primary candidates must be attempted in configured order");
+assert.doesNotMatch(agent, /Promise\.any\(attempts\)/, "primary fallback must not start a full concurrent model sweep");
+assert.match(agent, /collectCrossReviewQuorum/, "review execution must have an explicit quorum collector");
 assert.doesNotMatch(agent, /\.\.\.providers, \.\.\.providers|flatMap\(\(provider\) => \[provider, provider\]\)/, "a stage must never repeat the same three-model sweep");
 assert.match(agent, /brief: 1_800/, "brief generation must not request the universal 12k output budget");
 assert.match(agent, /REVIEW_QUORUM = 2/, "two independent completed reviews must form quorum");
 assert.match(app, /async function waitForRunJob/, "long PixelTale runs must be polled instead of held inside one proxy request");
 assert.match(app, /accepted\.job\?\.jobId/, "the stage runner must poll the exact accepted job");
+assert.match(app, /const RUN_BACKGROUND_TIMEOUT_MS = 45 \* 60 \* 1_000/, "long runs must continue in the background after the foreground window");
+assert.match(app, /return \{ status: "detached", jobId \}/, "foreground polling must detach instead of converting a running job into a failure");
+assert.match(app, /function monitorBackgroundRun\(/, "detached PixelTale jobs must keep a background monitor");
 const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 assert.match(serverSource, /function startPixelTaleRun\(/, "the server must execute PixelTale stages as background jobs");
 assert.match(serverSource, /activePixelTaleRuns/, "the server must deduplicate concurrent runs for the same stage");

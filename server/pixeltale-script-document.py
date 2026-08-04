@@ -25,7 +25,7 @@ ET.register_namespace("dc", DC_NS)
 ET.register_namespace("dcterms", DCT_NS)
 ET.register_namespace("xsi", XSI_NS)
 
-FONT = "Hiragino Sans GB"
+FONT = "PingFang SC"
 LATIN_FONT = "Arial"
 INK = "17202A"
 MUTED = "66737D"
@@ -64,9 +64,23 @@ def first(*values, fallback="未设定"):
     return fallback
 
 
+def expected_episode_count(payload):
+    input_data = payload.get("input") or {}
+    direct = input_data.get("episodeCount")
+    try:
+        direct_number = int(direct)
+        if direct_number > 0:
+            return direct_number
+    except (TypeError, ValueError):
+        pass
+    match = re.search(r"\d+", clean(payload.get("episode_scale"), ""))
+    return int(match.group(0)) if match else 0
+
+
 def rpr(size=21, color=INK, bold=False, italic=False, font=FONT):
     props = node(W + "rPr")
-    props.append(node(W + "rFonts", {W + "ascii": LATIN_FONT, W + "hAnsi": LATIN_FONT, W + "eastAsia": font}))
+    props.append(node(W + "rFonts", {W + "hint": "eastAsia", W + "ascii": LATIN_FONT, W + "hAnsi": LATIN_FONT, W + "eastAsia": font}))
+    props.append(node(W + "lang", {W + "val": "en-US", W + "eastAsia": "zh-CN"}))
     props.append(node(W + "sz", {W + "val": str(size * 2)}))
     props.append(node(W + "szCs", {W + "val": str(size * 2)}))
     if color:
@@ -205,9 +219,7 @@ def document_xml(payload):
     body.append(labeled_paragraph("单集时长", duration, style="Meta"))
     body.append(labeled_paragraph("对白策略", dialogue_mode, style="Meta"))
     body.append(paragraph("本文件由 PixelTale 编剧 Agent 根据已确认的故事结构生成。中文用于剧情、设定、动作与场景说明；英文用于人物对白，并遵循人物声线与本土化设定。", style="Meta", before=240, after=0))
-    body.append(paragraph(page_break=True))
-
-    body.append(paragraph("故事概览", style="Heading1"))
+    body.append(paragraph("故事概览", style="Heading1", page_break=True))
     body.append(labeled_paragraph("核心命题", proposal.get("premise_zh") or brief.get("core_conflict_zh")))
     body.append(labeled_paragraph("一句话梗概", proposal.get("logline_zh") or brief.get("logline_zh")))
     body.append(labeled_paragraph("观众追问", proposal.get("viewer_question_zh") or brief.get("viewer_question_zh")))
@@ -218,6 +230,7 @@ def document_xml(payload):
     body.append(labeled_paragraph("首个反转", proposal.get("reversal_zh")))
 
     character_items = characters.get("characters") or []
+    characters_by_id = {clean(item.get("id"), ""): item for item in character_items}
     if character_items:
         body.append(paragraph("人物设定", style="Heading1"))
         for item in character_items:
@@ -233,43 +246,47 @@ def document_xml(payload):
             if voice:
                 body.append(labeled_paragraph("英文声线", "；".join(clean(value) for value in voice)))
 
-    units = arc.get("units") or []
-    if units:
-        body.append(paragraph("分集与章节结构", style="Heading1"))
-        for unit in units:
-            number = clean(unit.get("number"), "")
-            prefix = "第" + number + ("章" if mode == "普通长剧" else "集") if number else "章节"
-            body.append(paragraph(f"{prefix}  {first(unit.get('title_zh'), fallback='未命名')}", style="Heading2"))
-            body.append(labeled_paragraph("本集承诺", unit.get("promise_zh")))
-            body.append(labeled_paragraph("开头暴击", unit.get("impact_zh")))
-            body.append(labeled_paragraph("因果转折", unit.get("causal_turn_zh")))
-            body.append(labeled_paragraph("反转", unit.get("reversal_zh")))
-            body.append(labeled_paragraph("集尾强钩子", unit.get("hook_zh")))
-            body.append(labeled_paragraph("未回答问题", unit.get("cliffhanger_question_zh")))
-            body.append(labeled_paragraph("推进与回收", unit.get("payoff_zh")))
-
     scene_items = scenes.get("scenes") or []
     dialogue_items = dialogue.get("lines") or []
-    characters_by_id = {clean(item.get("id"), ""): item for item in character_items}
+    units = arc.get("units") or []
+    expected_count = expected_episode_count(payload)
+    covered_units = {int(scene.get("unit_number")) for scene in scene_items if str(scene.get("unit_number", "")).isdigit()}
+    scene_ids = {clean(scene.get("id"), "") for scene in scene_items if clean(scene.get("id"), "")}
+    dialogue_scene_ids = {clean(line.get("scene_id"), "") for line in dialogue_items if clean(line.get("scene_id"), "")}
+    if not expected_count or len(units) != expected_count or len(scene_items) < expected_count or any(number not in covered_units for number in range(1, expected_count + 1)) or any(scene_id not in dialogue_scene_ids for scene_id in scene_ids):
+        raise ValueError(f"正式剧本缺少逐集正文：期望 {expected_count or '计划'} 集，分集 {len(units)}，场景 {len(scene_items)}，对白 {len(dialogue_items)}")
     dialogue_by_scene = {}
     for line in dialogue_items:
         dialogue_by_scene.setdefault(clean(line.get("scene_id"), ""), []).append(line)
+    scenes_by_unit = {}
+    for scene in scene_items:
+        scenes_by_unit.setdefault(int(scene.get("unit_number")), []).append(scene)
 
-    if scene_items:
-        body.append(paragraph("正式分场剧本", style="Heading1", page_break=True))
-        for scene in scene_items:
+    body.append(paragraph("完整剧本正文", style="Heading1", page_break=True))
+    episode_label = "章" if mode == "普通长剧" else "集"
+    for unit in units:
+        number = clean(unit.get("number"), "")
+        body.append(paragraph(f"第{number}{episode_label}  {first(unit.get('title_zh'), fallback='未命名')}", style="Heading2"))
+        body.append(labeled_paragraph("本集承诺", unit.get("promise_zh"), style="Action"))
+        body.append(labeled_paragraph("开头暴击", unit.get("impact_zh"), style="Action"))
+        body.append(paragraph(clean(unit.get("plot_zh"), "未设定剧情"), style="Action"))
+        for scene in scenes_by_unit.get(int(number), []):
             scene_id = first(scene.get("id"), fallback="场景")
-            unit_number = clean(scene.get("unit_number"), "")
-            location = first(scene.get("location_zh"), fallback="未设定场景")
+            time_label = first(scene.get("time_zh"), fallback="时间未设定")
+            location = first(scene.get("location_zh"), fallback="地点未设定")
             indoor = clean(scene.get("indoor_outdoor"), "")
-            heading_bits = [f"第{unit_number}集" if unit_number else "场景", scene_id]
+            heading_bits = [f"第{number}{episode_label}  {scene_id}", time_label]
             if indoor:
                 heading_bits.append(indoor)
             heading_bits.append(location)
             body.append(paragraph("  ".join(heading_bits), style="SceneHeading", shading=LIGHT_BLUE))
             body.append(labeled_paragraph("场景目的", scene.get("purpose_zh"), style="Action"))
             body.append(labeled_paragraph("出场人物", scene.get("characters"), style="Action"))
-            body.append(labeled_paragraph("动作推进", scene.get("action_zh"), style="Action"))
+            body.append(paragraph(clean(scene.get("action_zh"), "未设定动作"), style="Action"))
+            body.append(labeled_paragraph("冲突", scene.get("conflict_zh"), style="Action"))
+            body.append(labeled_paragraph("人物选择", scene.get("choice_zh"), style="Action"))
+            body.append(labeled_paragraph("选择结果", scene.get("result_zh"), style="Action"))
+            body.append(labeled_paragraph("因果转折", scene.get("turn_zh"), style="Action"))
             body.append(labeled_paragraph("视觉意图", scene.get("visual_intent_zh"), style="Action"))
             for line in dialogue_by_scene.get(scene_id, []):
                 speaker = clean(line.get("speaker"), "人物")
@@ -285,6 +302,10 @@ def document_xml(payload):
                 subtext = clean(line.get("intent_zh") or line.get("subtext_zh"), "")
                 if subtext:
                     body.append(paragraph(f"剧情意图：{subtext}", style="DialogueNote"))
+        body.append(labeled_paragraph("反转", unit.get("reversal_zh"), style="Action"))
+        body.append(labeled_paragraph("集尾强钩子", unit.get("hook_zh"), style="Action"))
+        body.append(labeled_paragraph("未回答问题", unit.get("cliffhanger_question_zh"), style="Action"))
+        body.append(labeled_paragraph("推进与回收", unit.get("payoff_zh"), style="Action"))
 
     checks = dialogue.get("localization_checks") or []
     if checks:

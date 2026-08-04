@@ -73,6 +73,7 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     ARC_CAUSAL_PROGRESS: "每个单元都推进主因果链",
     ARC_REVERSAL_HOOK: "反转与集尾钩子有证据且不重复",
     ARC_PAYOFF_LEDGER: "伏笔、承诺和回收位置可追踪",
+    ARC_EPISODE_PLOT_COMPLETENESS: "每个单元都有完整剧情推进，不是审核摘要",
   },
   scenes: {
     SCENE_REFERENCE_INTEGRITY: "人物、地点和事件引用有效",
@@ -361,8 +362,8 @@ function stageOutputContract(stage, mode) {
     title: `{"candidates":[{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"}],"selection_note_zh":"选择建议"}`,
     proposal: `{"title_zh":"故事名","premise_zh":"核心命题","logline_zh":"一句话梗概","viewer_question_zh":"核心悬念","protagonist_goal_zh":"主角目标","antagonistic_force_zh":"对抗力量","season_or_series_engine_zh":"持续推进引擎","first_impact_zh":"开头暴击","episode_hook_zh":"集尾钩子","reversal_zh":"首个反转"}`,
     characters: `{"characters":[{"id":"C001","name_zh":"按目标市场生成的角色显示名，不得翻译为中文名","name_en":"English or romanized display name","role":"protagonist","desire_zh":"欲望","fear_zh":"恐惧","secret_zh":"秘密","arc_zh":"人物弧线","voice_rules_en":["英文声线规则"],"visual_profile":{"gender":"性别","age_phase":"年龄相","body":"体型","hair_color":"发型发色","facial_features":"面部特征","eye_color":"瞳色","costume_accessories":"服装配饰","palette":"识别色","posture":"气质姿态","prompt_zh":"中文文生图提示词"}}],"relationships":[{"from":"C001","to":"C002","dynamic_zh":"关系变化"}],"world_rules":["不可违反的世界规则"]}`,
-    arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
-    scenes: `{"scenes":[{"id":"S001","unit_number":1,"purpose_zh":"场景目的","location_zh":"地点","characters":["C001"],"action_zh":"动作推进","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"aliases":"别名","indoor_outdoor":"室内外","lighting":"光线","palette":"色调","materials":"建筑材质","layout":"空间布局","atmosphere":"氛围气味","prompt_zh":"中文文生图提示词"},"props":[{"id":"PR01","name_zh":"道具名","description_zh":"道具描述","recurring":true,"materials":"材质","appearance":"颜色形态","size":"尺寸","texture":"特殊质感","prompt_zh":"中文文生图提示词"}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
+    arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","plot_zh":"本集完整剧情推进，包含人物行动、冲突、选择、结果与下一集动力，不是审核摘要","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
+    scenes: `{"scenes":[{"id":"S001","unit_number":1,"purpose_zh":"场景目的","time_zh":"时间","location_zh":"地点","characters":["C001"],"action_zh":"连续动作推进","conflict_zh":"场面冲突","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"aliases":"别名","indoor_outdoor":"室内外","lighting":"光线","palette":"色调","materials":"建筑材质","layout":"空间布局","atmosphere":"氛围气味","prompt_zh":"中文文生图提示词"},"props":[{"id":"PR01","name_zh":"道具名","description_zh":"道具描述","recurring":true,"materials":"材质","appearance":"颜色形态","size":"尺寸","texture":"特殊质感","prompt_zh":"中文文生图提示词"}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
     dialogue: `{"lines":[{"id":"D001","scene_id":"S001","speaker":"C001","intent_zh":"中文剧情意图","dialogue_en":"Natural localized English dialogue.","subtext_zh":"潜台词","delivery_en":"delivery note in English"}],"localization_checks":["口语化","人物声线一致","未泄露悬念"]}`,
   };
   return `${contracts[stage]}${common}`;
@@ -387,6 +388,14 @@ function stageSystemPrompt(stage, mode, input = {}) {
   const selectedTitleRule = stage !== "title" && text(input.storyTitle, 200)
     ? [`用户已确认剧名为“${text(input.storyTitle, 200)}”，后续产物必须沿用，不得擅自改名。`]
     : [];
+  const arcRules = stage === "arc" ? [
+    "分集与章节必须写出每集完整剧情正文，不是只列反转、钩子、未回答问题和推进与回收四个摘要字段。",
+    "units 数量必须严格等于用户计划集数；每集 plot_zh 必须写清人物正在做什么、冲突如何升级、人物做了什么选择、选择造成什么结果，以及如何把下一集推出来。",
+  ] : [];
+  const sceneRules = stage === "scenes" ? [
+    "场景与镜头必须覆盖每一个分集/章节编号，至少每集一个完整场次；不得只输出少量代表场景。",
+    "每个场次必须把对应的剧情正文转换为可拍的动作、冲突、人物选择、选择结果和因果转折，不能只写视觉氛围或镜头关键词。",
+  ] : [];
   return [
     "你是 PixelTale 编剧 Agent 的阶段执行器。你只负责当前阶段，不能跳过结构化资产直接写散文。",
     "输出严格 JSON，不要 Markdown，不要代码围栏，不要解释，不要增加契约之外的顶层字段。",
@@ -399,6 +408,8 @@ function stageSystemPrompt(stage, mode, input = {}) {
     ...tkRules,
     ...titleRules,
     ...selectedTitleRule,
+    ...arcRules,
+    ...sceneRules,
     `输出契约：${stageOutputContract(stage, mode)}`,
   ].join("\n");
 }
@@ -412,7 +423,9 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project, exclu
     content: artifact.content,
   }));
   return JSON.stringify({
-    task: stage === "title" ? "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的英文正式片名候选。" : "基于创作规格和已确认结构，生成当前阶段唯一可审核的结构化产物。",
+    task: stage === "title"
+      ? "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的英文正式片名候选。"
+      : "基于创作规格和已确认结构，生成当前阶段唯一可审核的结构化产物。",
     project: { id: text(project?.id, 300), title: text(project?.title, 300), episode: text(project?.episode, 100) },
     mode,
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
@@ -603,6 +616,14 @@ function requiredContentFields(stage) {
   }[stage] || [];
 }
 
+function plannedUnitCount(input = {}) {
+  const direct = Number(input.episodeCount);
+  if (Number.isInteger(direct) && direct > 0) return direct;
+  const match = text(input.episodeScale, 100).match(/\d+/);
+  const parsed = Number(match?.[0]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
 function mergeRevisionList(sourceItems, candidateItems, key, mergeItem = (source, candidate) => ({ ...source, ...candidate })) {
   if (!Array.isArray(sourceItems)) return Array.isArray(candidateItems) ? candidateItems : [];
   if (!Array.isArray(candidateItems) || !candidateItems.length) return sourceItems;
@@ -642,6 +663,9 @@ function mergeRevisionContent(stage, content, sourceContent) {
   // A revision model may return only changed fields. Preserve the source artifact
   // for omitted top-level fields so a targeted fix cannot erase the stage contract.
   const merged = { ...source, ...candidate };
+  if (stage === "arc") {
+    merged.units = mergeRevisionList(source.units, candidate.units, "number");
+  }
   if (stage === "scenes") {
     merged.scenes = mergeRevisionList(source.scenes, candidate.scenes, "id", mergeSceneRevision);
   }
@@ -709,6 +733,45 @@ function validateContent(stage, content, input = {}) {
     const invalid = value.lines.some((line) => !text(line?.speaker, 120) || !text(line?.dialogue_en, 1000) || !text(line?.intent_zh, 1000));
     if (invalid) {
       const error = new Error("对白产物必须同时包含 speaker、intent_zh 和 dialogue_en");
+      error.code = "SCHEMA_INVALID";
+      throw error;
+    }
+  }
+  if (stage === "arc") {
+    const units = asArray(value.units);
+    const expectedCount = plannedUnitCount(input);
+    const invalidUnit = units.find((unit, index) => {
+      const item = asObject(unit);
+      return Number(item.number) !== index + 1
+        || !text(item.title_zh, 300)
+        || !text(item.plot_zh, 8000)
+        || !text(item.impact_zh, 2000)
+        || !text(item.hook_zh, 2000)
+        || !text(item.cliffhanger_question_zh, 2000);
+    });
+    if (!expectedCount || units.length !== expectedCount || invalidUnit) {
+      const error = new Error(`分集与章节必须逐集写出 ${expectedCount || "计划"} 集完整剧情，不能只返回结构摘要`);
+      error.code = "SCHEMA_INVALID";
+      throw error;
+    }
+  }
+  if (stage === "scenes") {
+    const scenes = asArray(value.scenes);
+    const expectedCount = plannedUnitCount(input);
+    const coveredUnits = new Set(scenes.map((scene) => Number(asObject(scene).unit_number)).filter((number) => Number.isInteger(number)));
+    const invalidScene = scenes.find((scene) => {
+      const item = asObject(scene);
+      return !text(item.id, 120)
+        || !text(item.time_zh, 120)
+        || !text(item.location_zh, 300)
+        || !text(item.action_zh, 5000)
+        || !text(item.conflict_zh, 2000)
+        || !text(item.choice_zh, 2000)
+        || !text(item.result_zh, 2000)
+        || !text(item.turn_zh, 2000);
+    });
+    if (!expectedCount || scenes.length < expectedCount || [...Array(expectedCount)].some((_, index) => !coveredUnits.has(index + 1)) || invalidScene) {
+      const error = new Error(`场景与镜头必须覆盖全部 ${expectedCount || "计划"} 集，不能只生成少量代表场景`);
       error.code = "SCHEMA_INVALID";
       throw error;
     }
@@ -1201,13 +1264,12 @@ async function callStagePrimary({
   if (!providers.length) {
     throw new ProviderError("SuperPixel 没有可用的主创模型", { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });
   }
-  const raceController = new AbortController();
-  const attempts = providers.map(async (provider) => {
+  for (const [index, provider] of providers.entries()) {
     const remainingMs = deadlineMs - nowMs();
     if (remainingMs < MIN_STAGE_PRIMARY_ATTEMPT_MS) {
       const error = new ProviderError("主创阶段的响应预算已用尽，未启动该模型请求", { code: "STAGE_TIMEOUT_BUDGET_EXHAUSTED", retryable: true });
       failures.push({ provider, code: error.code, message: error.message });
-      throw error;
+      break;
     }
     const timeoutMs = Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelBudgetMs, remainingMs));
     try {
@@ -1219,35 +1281,56 @@ async function callStagePrimary({
         timeoutMs,
         maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal,
         purpose: `pixeltale:${stage}:author`,
-        signal: raceController.signal,
       });
-      return { provider, result };
+      return {
+        ...result,
+        fallback: provider !== route.primary,
+        fallbackFailures: failures.slice(),
+        attemptedModels: providers.slice(0, index + 1),
+        primaryBudget: { totalTimeoutMs: totalBudgetMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) },
+      };
     } catch (error) {
-      if (error?.code !== "REQUEST_CANCELLED") {
-        failures.push({ provider, code: error?.code || "PROVIDER_ERROR", message: error?.message || "主创模型请求失败" });
-      }
-      throw error;
+      failures.push({ provider, code: error?.code || "PROVIDER_ERROR", message: error?.message || "主创模型请求失败" });
+      if (!canFallbackFrom(error)) break;
     }
-  });
-  try {
-    const winner = await Promise.any(attempts);
-    const failureSnapshot = failures.slice();
-    raceController.abort();
-    return {
-      ...winner.result,
-      fallback: winner.provider !== route.primary,
-      fallbackFailures: failureSnapshot,
-      racedModels: providers,
-      primaryBudget: { totalTimeoutMs: totalBudgetMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) },
-    };
-  } catch {
-    raceController.abort();
   }
   const detail = failures.map((item) => item.message).join("；");
   const error = new ProviderError(`SuperPixel 主创模型未能在 ${Math.round(totalBudgetMs / 1000)} 秒响应窗口内完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });
   error.fallbackFailures = failures;
   error.primaryBudget = { totalTimeoutMs: totalBudgetMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) };
   throw error;
+}
+
+async function collectCrossReviewQuorum({ reviewRoutes = [], revisionContract = null, execute }) {
+  const results = new Array(reviewRoutes.length);
+  const runReview = (index) => {
+    const reviewRoute = reviewRoutes[index];
+    const controller = new AbortController();
+    const promise = Promise.resolve()
+      .then(() => execute(reviewRoute, controller.signal))
+      .catch((error) => ({
+        route: reviewRoute,
+        model: reviewRoute?.model || reviewRoute,
+        error: error?.message || "审核模型请求失败",
+      }))
+      .then((result) => ({ index, result }));
+    return { controller, promise };
+  };
+  const settle = async (indexes) => {
+    const settled = await Promise.all(indexes.map((index) => runReview(index).promise));
+    settled.forEach(({ index, result }) => { results[index] = result; });
+  };
+
+  const firstIndexes = reviewRoutes.slice(0, REVIEW_QUORUM).map((_route, index) => index);
+  await settle(firstIndexes);
+  const completed = results.filter((item) => item?.result);
+  if (completed.length >= REVIEW_QUORUM && !aggregateCrossReview(completed, revisionContract).conflicts.length) {
+    return results.filter(Boolean);
+  }
+
+  // Only a genuine disagreement or an incomplete quorum opens the third review slot.
+  await settle(reviewRoutes.slice(REVIEW_QUORUM).map((_route, index) => index + REVIEW_QUORUM));
+  return results.filter(Boolean);
 }
 
 function emptyState({ projectId, mode = "tk", now = () => new Date() }) {
@@ -1414,11 +1497,20 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
     "## 人物",
     ...asArray(characters.characters).map((item) => `- ${text(item.name_zh || item.name_en, 100)}：${text(item.arc_zh || item.desire_zh, 500)}`),
     "",
-    "## 分场",
-    ...asArray(scenes.scenes).map((scene) => `### ${text(scene.id, 40)} / ${text(scene.location_zh, 100)}\n${text(scene.action_zh || scene.purpose_zh, 1000)}`),
-    "",
-    "## English Dialogue",
-    ...asArray(dialogue.lines).map((line) => `${text(line.speaker, 100)}: ${text(line.dialogue_en, 1000)}`),
+    "## 完整剧本正文",
+    ...asArray(approved.arc.content.units).flatMap((unit) => [
+      `### 第${text(unit.number, 20)}集｜${text(unit.title_zh, 200)}`,
+      `开头暴击：${text(unit.impact_zh, 2000)}`,
+      text(unit.plot_zh, 8000),
+      ...asArray(scenes.scenes).filter((scene) => Number(scene.unit_number) === Number(unit.number)).flatMap((scene) => [
+        `#### ${text(scene.id, 60)}｜${text(scene.location_zh, 200)}`,
+        text(scene.action_zh || scene.purpose_zh, 5000),
+        ...asArray(dialogue.lines).filter((line) => text(line.scene_id, 80) === text(scene.id, 80)).map((line) => `${text(line.speaker, 100)}: ${text(line.dialogue_en, 1600)}`),
+      ]),
+      `集尾钩子：${text(unit.hook_zh, 2000)}`,
+      `未回答问题：${text(unit.cliffhanger_question_zh, 2000)}`,
+      "",
+    ]),
     "",
   ].join("\n");
   return {
@@ -1607,7 +1699,7 @@ function createPixelTaleAgent(options = {}) {
         };
       }
       reviewRoutes = modelRouter.reviewModels(route);
-      reviews = await Promise.all(reviewRoutes.map(async (reviewRoute) => {
+      reviews = await collectCrossReviewQuorum({ reviewRoutes, revisionContract, execute: async (reviewRoute, signal) => {
         const reviewModel = reviewRoute.model || reviewRoute;
         const role = reviewerIdentity(reviewModel);
         const reviewCandidates = uniqueText([reviewModel, ...asArray(reviewRoute.fallbackModels)], 2);
@@ -1622,6 +1714,7 @@ function createPixelTaleAgent(options = {}) {
               timeoutMs: REVIEW_MODEL_TIMEOUT_MS,
               maxTokens: REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000,
               purpose: `pixeltale:${stage}:review`,
+              signal,
             });
             const content = validateReview(result.content, { requireDimensions: true, revisionContract });
             retryCount += result.attempts || 0;
@@ -1633,7 +1726,7 @@ function createPixelTaleAgent(options = {}) {
           }
         }
         return { route: reviewModel, model: reviewCandidates.at(-1) || reviewModel, selectedModel: reviewModel, role, error: lastError?.message || "审核模型请求失败" };
-      }));
+      } });
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
       consensus = aggregateCrossReview(reviews, revisionContract);
       if (consensus.revision) consensus.revision.owner = "本阶段主创";
@@ -1823,6 +1916,8 @@ function createPixelTaleAgent(options = {}) {
     payload.visualAssets = visualAssets;
     payload.visualAssetReview = visualAssetReview;
     const storyRoot = params.pixelTaleRoot || params.episodeRoot;
+    const sourceArtifacts = Object.fromEntries(STAGES.map((stage) => [stage, approvedForStage(state, stage)?.content || {}]));
+    payload.sourceArtifacts = sourceArtifacts;
     const packageFile = writeHandoffFile(storyRoot, payload);
     let visualAssetDocument = { status: "unavailable", fileName: "", error: "" };
     if (typeof writeVisualAssetDocument === "function") {
@@ -1849,7 +1944,7 @@ function createPixelTaleAgent(options = {}) {
     let scriptDocument = { status: "unavailable", fileName: "", error: "" };
     if (typeof writeScriptDocument === "function") {
       try {
-        const sourceArtifacts = Object.fromEntries(STAGES.map((stage) => [stage, approvedForStage(state, stage)?.content || {}]));
+        const creativeControls = payload.creativeControls || normalizeCreativeControls(state.input);
         const documentFile = writeScriptDocument(storyRoot, {
           ...payload,
           title: payload.storyTitle || params.project?.title || payload.project?.title || "PixelTale",
@@ -1903,6 +1998,7 @@ module.exports = {
   createPixelTaleAgent,
   callProvider,
   callStagePrimary,
+  collectCrossReviewQuorum,
   normalizeMode,
   normalizeRoutes,
   validateContent,

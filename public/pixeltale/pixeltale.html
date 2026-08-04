@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/pixel-toy-symbol.png" />
     <title>PixelTale / Story Forge</title>
-    <link rel="stylesheet" href="/pixeltale/styles.css?v=pixeltale-runtime-20260804-r4" />
+    <link rel="stylesheet" href="/pixeltale/styles.css?v=pixeltale-runtime-20260804-r5" />
   </head>
   <body>
     <div class="app-shell">
@@ -31,6 +31,7 @@
             <button type="button" data-mode="long" class="mode-button">普通长剧</button>
           </div>
           <span id="saveStatus" class="save-status"><i></i>已保存</span>
+          <button id="openHistory" class="tool-button history-button" type="button" title="打开创作历史"><span aria-hidden="true">↺</span> 创作历史</button>
           <button id="openModelRouting" class="tool-button" type="button">创作分工</button>
         </div>
       </header>
@@ -126,6 +127,16 @@
         <div class="routing-footer"><span id="routingSaved">默认分工</span><button value="save" id="saveRouting" class="stage-primary">保存分工</button></div>
       </form>
     </dialog>
-    <script src="/pixeltale/app.js?v=pixeltale-runtime-20260804-r4"></script>
+    <dialog id="historyDialog" class="history-dialog" aria-labelledby="historyTitle">
+      <form method="dialog" class="history-card">
+        <div class="history-head">
+          <div><span class="eyebrow">STORY ARCHIVE</span><h2 id="historyTitle">创作历史</h2><p>已保存的独立剧本会话。继续创作会回到原来的阶段和产物。</p></div>
+          <button value="cancel" class="dialog-close" aria-label="关闭创作历史">×</button>
+        </div>
+        <div class="history-toolbar"><span id="historySummary">正在读取已保存会话</span><button id="refreshHistory" type="button" class="text-button">刷新</button></div>
+        <div id="historyList" class="history-list" aria-live="polite"></div>
+      </form>
+    </dialog>
+    <script src="/pixeltale/app.js?v=pixeltale-runtime-20260804-r5"></script>
   </body>
 </html>

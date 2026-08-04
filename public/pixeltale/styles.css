@@ -1181,3 +1181,67 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .dna-core { width: 62px; height: 62px; }
   .dna-window-foot { align-items: flex-start; flex-direction: column; gap: 4px; }
 }
+
+/* Creative history: persistent sessions are first-class work, not disposable drafts. */
+.history-button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.history-button span { color: var(--pt-blue); font-size: 16px; line-height: 1; }
+.history-dialog {
+  width: min(720px, calc(100vw - 36px));
+  max-height: min(780px, calc(100dvh - 36px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--pt-line-strong);
+  border-radius: 20px;
+  color: var(--pt-ink);
+  background: transparent;
+  box-shadow: 0 30px 90px rgba(25, 36, 45, 0.22);
+}
+.history-dialog::backdrop { background: rgba(23, 25, 28, 0.22); backdrop-filter: blur(5px); }
+.history-card { display: grid; gap: 0; max-height: min(780px, calc(100dvh - 36px)); padding: 26px; overflow: hidden; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+.history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 20px; border-bottom: 1px solid var(--pt-line); }
+.history-head h2 { margin: 8px 0 6px; color: var(--pt-ink); font-size: 28px; font-weight: 600; letter-spacing: -0.035em; }
+.history-head p { max-width: 520px; margin: 0; color: var(--pt-muted); font-size: 12px; line-height: 1.6; }
+.history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; color: var(--pt-muted); font: 9px var(--meta-font); }
+.history-toolbar .text-button { color: var(--pt-blue); }
+.history-list { display: grid; gap: 9px; min-height: 140px; max-height: 540px; overflow-y: auto; padding: 2px 3px 4px; }
+.history-item { position: relative; display: grid; gap: 12px; padding: 15px 16px 13px; border: 1px solid var(--pt-line); border-radius: 14px; background: rgba(255, 255, 255, 0.68); box-shadow: var(--pt-shadow-soft); transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease; }
+.history-item:hover { border-color: rgba(40, 120, 232, 0.38); box-shadow: var(--pt-shadow); transform: translateY(-1px); }
+.history-item.is-current { border-color: rgba(40, 120, 232, 0.42); box-shadow: var(--pt-shadow), inset 3px 0 0 var(--pt-blue); }
+.history-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.history-item-title { min-width: 0; }
+.history-status, .history-current { display: inline-flex; align-items: center; min-height: 20px; margin-right: 6px; padding: 0 7px; border: 1px solid var(--pt-line); border-radius: 999px; color: var(--pt-muted); background: rgba(255, 255, 255, 0.66); font: 700 8px var(--meta-font); }
+.history-status.is-active { border-color: rgba(120, 154, 0, 0.32); color: var(--pt-green-ink); background: rgba(184, 239, 34, 0.16); }
+.history-status.is-exported { border-color: rgba(40, 120, 232, 0.28); color: var(--pt-blue); background: rgba(232, 242, 255, 0.82); }
+.history-current { border-color: rgba(40, 120, 232, 0.28); color: var(--pt-blue); background: rgba(232, 242, 255, 0.72); }
+.history-item h3 { max-width: 100%; margin: 9px 0 4px; overflow: hidden; color: var(--pt-ink); font-size: 17px; font-weight: 600; letter-spacing: -0.02em; text-overflow: ellipsis; white-space: nowrap; }
+.history-item p { max-width: 560px; margin: 0; overflow: hidden; color: var(--pt-muted); font-size: 11px; line-height: 1.55; text-overflow: ellipsis; white-space: nowrap; }
+.history-item time { flex: 0 0 auto; color: var(--pt-faint); font: 9px var(--meta-font); white-space: nowrap; }
+.history-item-meta { display: flex; flex-wrap: wrap; gap: 6px; color: var(--pt-faint); font: 8px var(--meta-font); }
+.history-item-meta span { padding-right: 7px; border-right: 1px solid var(--pt-line); }
+.history-item-meta span:last-child { border-right: 0; }
+.history-open { justify-self: end; min-height: 31px; border: 1px solid rgba(40, 120, 232, 0.24); border-radius: 9px; padding: 0 10px; color: var(--pt-blue); background: rgba(255, 255, 255, 0.78); font-size: 10px; font-weight: 600; }
+.history-open:hover, .history-open:focus-visible { border-color: var(--pt-blue); background: #fff; box-shadow: 0 4px 12px rgba(40, 120, 232, 0.10); }
+.history-open span { margin-left: 6px; font-size: 14px; }
+.history-empty, .history-loading, .history-error { display: grid; place-items: center; gap: 8px; min-height: 190px; padding: 24px; border: 1px dashed var(--pt-line-strong); border-radius: 14px; color: var(--pt-muted); text-align: center; background: rgba(255, 255, 255, 0.42); }
+.history-empty-mark { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid rgba(40, 120, 232, 0.28); border-radius: 50%; color: var(--pt-blue); font-size: 22px; }
+.history-empty strong, .history-error strong { color: var(--pt-ink-soft); font-size: 13px; }
+.history-empty p, .history-error p { max-width: 360px; margin: 0; font-size: 11px; line-height: 1.6; }
+.history-loading { grid-auto-flow: column; align-content: center; justify-content: center; min-height: 190px; }
+.history-loading i { width: 9px; height: 9px; border: 2px solid rgba(40, 120, 232, 0.22); border-top-color: var(--pt-blue); border-radius: 50%; animation: history-spin 800ms linear infinite; }
+.history-retry { min-height: 32px; margin-top: 4px; border: 1px solid rgba(40, 120, 232, 0.28); border-radius: 9px; padding: 0 11px; color: var(--pt-blue); background: rgba(255, 255, 255, 0.76); font-size: 10px; font-weight: 600; }
+@keyframes history-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .history-item { transition: none; }
+  .history-loading i { animation: none; }
+}
+@media (max-width: 700px) {
+  .history-button { width: 34px; justify-content: center; padding: 0; font-size: 0; }
+  .history-button span { font-size: 17px; }
+  .history-dialog { width: calc(100vw - 22px); max-height: calc(100dvh - 22px); border-radius: 16px; }
+  .history-card { max-height: calc(100dvh - 22px); padding: 18px; }
+  .history-head h2 { font-size: 24px; }
+  .history-item-head { display: grid; gap: 7px; }
+  .history-item time { order: -1; }
+  .history-item p { white-space: normal; }
+  .history-open { width: 100%; }
+}

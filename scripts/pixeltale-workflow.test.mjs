@@ -22,7 +22,7 @@ const pixelTaleStylesStamp = html.match(/pixeltale\/styles\.css\?v=([0-9a-zA-Z._
 const pixelTaleAppStamp = html.match(/pixeltale\/app\.js\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
 assert.ok(pixelTaleStylesStamp && pixelTaleAppStamp, "PixelTale static assets must carry cache stamps");
 assert.equal(pixelTaleAppStamp, pixelTaleStylesStamp, "PixelTale styles and app cache stamps must stay synchronized");
-assert.match(app, /function startNewDraft\(\)[\s\S]*localStorage\.setItem\(SESSION_STORAGE_KEY[\s\S]*window\.location\.reload\(\)/, "new story must rotate the session before reloading");
+assert.match(app, /function startNewDraft\(\)[\s\S]*localStorage\.setItem\(SESSION_STORAGE_KEY[\s\S]*window\.location\.assign/, "new story must rotate the session before navigating");
 assert.match(app, /function userFacingError\(error\)/, "provider errors must be normalized for users");
 assert.match(app, /agentTaskCopy"\)\.textContent = state\.lastError \|\| action\.copy/, "run errors must remain visible in the right-rail next action");
 assert.match(app, /agentTaskCopy"\)\.setAttribute\("role", state\.lastError \? "alert"/, "run errors must be announced from the right-rail next action");

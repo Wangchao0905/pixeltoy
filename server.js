@@ -2562,6 +2562,70 @@ const pixelTaleAgent = createPixelTaleAgent({
   },
 });
 
+const PIXELTALE_HISTORY_STAGE_LABELS = Object.freeze({
+  brief: "故事架构",
+  title: "选择剧名",
+  proposal: "故事提案",
+  characters: "人物与世界",
+  arc: "分集 / 章节",
+  scenes: "场景与镜头",
+  dialogue: "对白本土化",
+  handoff: "导出正式文件",
+});
+const PIXELTALE_HISTORY_STAGES = Object.freeze(Object.keys(PIXELTALE_HISTORY_STAGE_LABELS).filter((stage) => stage !== "handoff"));
+
+function pixelTaleHistorySummaryFromState(sessionId, state = {}, currentSessionId = "", fallbackUpdatedAt = "") {
+  const input = state.input && typeof state.input === "object" ? state.input : {};
+  const artifacts = Array.isArray(state.artifacts) ? state.artifacts : [];
+  const approved = new Set(Array.isArray(state.approvedArtifactIds) ? state.approvedArtifactIds : []);
+  const titleArtifact = artifacts
+    .filter((artifact) => artifact?.stage === "title" && artifact?.type === "pixeltale_title")
+    .sort((left, right) => Number(left.version || 0) - Number(right.version || 0))
+    .at(-1);
+  const titleCandidates = Array.isArray(titleArtifact?.content?.candidates) ? titleArtifact.content.candidates : [];
+  const fallbackTitle = titleCandidates.find((candidate) => candidate?.title_en)?.title_en || titleCandidates.find((candidate) => candidate?.title_zh)?.title_zh || "";
+  const idea = compactLine(input.idea || input.coreConflict || "");
+  const title = compactLine(input.storyTitle || fallbackTitle || "未命名剧集");
+  const approvedCount = PIXELTALE_HISTORY_STAGES.filter((stage) => artifacts.some((artifact) => artifact?.stage === stage && approved.has(artifact.id))).length;
+  const currentStage = state.stage === "script" ? "handoff" : PIXELTALE_HISTORY_STAGE_LABELS[state.stage] ? state.stage : "brief";
+  const hasExport = Array.isArray(state.handoffs) && state.handoffs.length > 0;
+  const status = hasExport ? "已导出" : approvedCount > 0 ? "制作中" : artifacts.length > 0 ? "已生成" : idea ? "已保存" : "空白草稿";
+  return {
+    sessionId,
+    title,
+    titleSource: input.storyTitle ? "已选剧名" : fallbackTitle ? "候选剧名" : "待命名",
+    ideaExcerpt: idea.slice(0, 140),
+    mode: state.mode === "long_form_drama" ? "普通长剧" : "TK 短剧",
+    stage: currentStage,
+    stageLabel: PIXELTALE_HISTORY_STAGE_LABELS[currentStage],
+    status,
+    approvedCount,
+    totalStages: PIXELTALE_HISTORY_STAGES.length,
+    progressLabel: `${approvedCount} / ${PIXELTALE_HISTORY_STAGES.length}`,
+    artifactCount: artifacts.length,
+    createdAt: state.createdAt || fallbackUpdatedAt || "",
+    updatedAt: state.updatedAt || fallbackUpdatedAt || "",
+    isCurrent: sessionId === currentSessionId,
+  };
+}
+
+function pixelTaleHistorySummaries({ root = PIXELTALE_SESSION_ROOT, currentSessionId = "" } = {}) {
+  return listDir(root)
+    .filter((entry) => entry.isDirectory() && /^[A-Za-z0-9_-]{16,128}$/.test(entry.name))
+    .map((entry) => {
+      const sessionRoot = path.join(root, entry.name);
+      const stateFile = pixelTaleStatePath(sessionRoot);
+      if (!fs.existsSync(stateFile)) return null;
+      const state = readJsonFile(stateFile, null);
+      if (!state || typeof state !== "object") return null;
+      let fallbackUpdatedAt = "";
+      try { fallbackUpdatedAt = fs.statSync(stateFile).mtime.toISOString(); } catch { /* use state timestamps */ }
+      return pixelTaleHistorySummaryFromState(entry.name, state, currentSessionId, fallbackUpdatedAt);
+    })
+    .filter(Boolean)
+    .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+}
+
 const pixelTaleRunJobs = new Map();
 const activePixelTaleRuns = new Map();
 const PIXEL_TALE_JOB_MEMORY_TTL_MS = 30 * 60 * 1_000;
@@ -25862,6 +25926,10 @@ async function handleApi(req, res, url) {
     const action = standalonePixelTaleMatch[1] || "";
     const params = standalonePixelTaleParams(req, url);
 
+    if (req.method === "GET" && action === "history") {
+      return send(res, 200, { ok: true, history: pixelTaleHistorySummaries({ currentSessionId: standalonePixelTaleSessionId(req, url) }) }, { "Cache-Control": "no-store" });
+    }
+
     if (req.method === "GET" && action === "") {
       return send(res, 200, { ok: true, agent: pixelTaleAgent.status(params) }, { "Cache-Control": "no-store" });
     }
@@ -26711,6 +26779,10 @@ module.exports = {
     pixelTaleRuns: {
       start: startPixelTaleRun,
       get: getPixelTaleRunJob,
+    },
+    pixelTaleHistory: {
+      fromState: pixelTaleHistorySummaryFromState,
+      list: pixelTaleHistorySummaries,
     },
     canvasAgent: {
       handle: handleCanvasAgentChat,

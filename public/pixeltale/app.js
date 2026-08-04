@@ -4,7 +4,10 @@ const PENDING_NOTICE_KEY = "pixeltale.story-forge-pending-notice";
 
 function createSessionId() {
   const querySession = typeof location !== "undefined" ? new URLSearchParams(location.search).get("session") : "";
-  if (/^[A-Za-z0-9_-]{16,128}$/.test(querySession || "")) return querySession;
+  if (/^[A-Za-z0-9_-]{16,128}$/.test(querySession || "")) {
+    try { localStorage.setItem(SESSION_STORAGE_KEY, querySession); } catch { /* memory-only session */ }
+    return querySession;
+  }
   const existing = (() => {
     try { return localStorage.getItem(SESSION_STORAGE_KEY) || ""; } catch { return ""; }
   })();
@@ -320,6 +323,59 @@ async function request(suffix, options = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) throw new Error(payload.message || `请求失败：${response.status}`);
   return payload;
+}
+
+function historyDate(value) {
+  const timestamp = Date.parse(value || "");
+  if (!Number.isFinite(timestamp)) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(timestamp));
+}
+
+function renderCreativeHistory(entries = []) {
+  const list = $("#historyList");
+  const summary = $("#historySummary");
+  if (!list || !summary) return;
+  summary.textContent = `${entries.length} 个已保存会话`;
+  if (!entries.length) {
+    list.innerHTML = `<div class="history-empty"><span class="history-empty-mark">+</span><strong>还没有创作历史</strong><p>完成故事架构或保存创作想法后，会话会自动出现在这里。</p></div>`;
+    return;
+  }
+  list.innerHTML = entries.map((entry) => {
+    const current = entry.isCurrent;
+    const idea = entry.ideaExcerpt || "尚未写入创作想法";
+    const statusClass = entry.status === "已导出" ? "is-exported" : entry.status === "制作中" ? "is-active" : "";
+    return `<article class="history-item${current ? " is-current" : ""}"><div class="history-item-head"><div class="history-item-title"><span class="history-status ${statusClass}">${escapeHtml(entry.status || "已保存")}</span>${current ? `<span class="history-current">当前会话</span>` : ""}<h3>${escapeHtml(entry.title || "未命名剧集")}</h3><p>${escapeHtml(idea)}</p></div><time datetime="${escapeHtml(entry.updatedAt || "")}">${escapeHtml(historyDate(entry.updatedAt))}</time></div><div class="history-item-meta"><span>${escapeHtml(entry.mode || "TK 短剧")}</span><span>${escapeHtml(entry.stageLabel || "故事架构")}</span><span>已确认 ${escapeHtml(entry.progressLabel || "0 / 7")}</span><span>${escapeHtml(`${entry.artifactCount || 0} 个产物`)}</span></div><button type="button" class="history-open" data-history-open="${escapeHtml(entry.sessionId)}">${current ? "继续当前创作" : "继续创作"}<span aria-hidden="true">↗</span></button></article>`;
+  }).join("");
+}
+
+async function loadCreativeHistory() {
+  const list = $("#historyList");
+  const summary = $("#historySummary");
+  if (!list || !summary) return;
+  list.innerHTML = `<div class="history-loading"><i></i><span>正在读取已保存会话</span></div>`;
+  summary.textContent = "正在读取";
+  try {
+    const payload = await request("/history");
+    renderCreativeHistory(Array.isArray(payload.history) ? payload.history : []);
+  } catch (error) {
+    summary.textContent = "读取失败";
+    list.innerHTML = `<div class="history-error"><strong>创作历史暂时无法读取</strong><p>${escapeHtml(error.message || "请稍后重试")}</p><button type="button" class="history-retry" data-history-retry>重新读取</button></div>`;
+  }
+}
+
+function openHistoryDialog() {
+  const dialog = $("#historyDialog");
+  if (!dialog) return;
+  if (!dialog.open) dialog.showModal();
+  void loadCreativeHistory();
+}
+
+function resumeHistorySession(nextSessionId) {
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(nextSessionId || ""))) return;
+  const target = new URL(window.location.href);
+  target.searchParams.set("session", nextSessionId);
+  target.hash = "brief";
+  window.location.assign(target.toString());
 }
 
 function fileNameFromContentDisposition(value, fallback = "PixelTale_正式剧本.docx") {
@@ -2020,6 +2076,17 @@ $$('[data-stage]').forEach((button) => button.addEventListener("click", () => {
 $("#openModelRouting").addEventListener("click", openRoutingDialog);
 $("#openModelRoutingSide").addEventListener("click", openRoutingDialog);
 $("#saveRouting").addEventListener("click", saveRouting);
+$("#openHistory")?.addEventListener("click", openHistoryDialog);
+$("#refreshHistory")?.addEventListener("click", () => void loadCreativeHistory());
+$("#historyList")?.addEventListener("click", (event) => {
+  const retry = event.target.closest("[data-history-retry]");
+  if (retry) {
+    void loadCreativeHistory();
+    return;
+  }
+  const open = event.target.closest("[data-history-open]");
+  if (open) resumeHistorySession(open.dataset.historyOpen);
+});
 $("#agentMenu").addEventListener("click", () => showToast("Agent 状态独立保存于 Story Forge 会话"));
 function startNewDraft() {
   try {
@@ -2032,7 +2099,10 @@ function startNewDraft() {
   } catch {
     // A fresh in-memory session will still be created after reload.
   }
-  window.location.reload();
+  const target = new URL(window.location.href);
+  target.searchParams.set("session", freshSession);
+  target.hash = "brief";
+  window.location.assign(target.toString());
 }
 
 $("#newDraft").addEventListener("click", startNewDraft);

@@ -609,7 +609,7 @@ body.canvas-page {
 }
 
 .asset-node-caption {
-  display: block;
+  display: none !important;
   position: absolute;
   top: calc(100% + 7px);
   left: 0;

@@ -44,7 +44,7 @@ assert.ok(fs.existsSync(path.join(root, "public/pixel-toys-logo-agent.gif")), "t
 assert.doesNotMatch(css, /canvas-agent-propeller|canvasAgentPropellerSpin|canvas-agent-robot/);
 assert.match(css, /\.canvas-agent-composer\s*\{[\s\S]*?flex-direction:\s*column;/);
 assert.match(css, /\.canvas-agent-panel\s*\{[\s\S]*?grid-template-rows:\s*auto auto auto minmax\(0, 1fr\) auto;/);
-assert.match(css, /\.canvas-agent-message\.assistant\s*\{[\s\S]*?border-left:\s*2px/);
+assert.doesNotMatch(css, /\.canvas-agent-message\.assistant\s*\{[\s\S]*?border-left:\s*2px/, "assistant messages should not use a heavy accent rail");
 assert.match(css, /\.canvas-agent-attachment\[data-uploading="true"\]::after/);
 
 assert.match(js, /function setCanvasAgentOpen\(open\)/);

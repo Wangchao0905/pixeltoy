@@ -6850,7 +6850,6 @@ body.canvas-page .canvas-topbar {
   max-width: 96%;
   padding: 5px 0 5px 13px;
   border: 0;
-  border-left: 2px solid rgba(101, 196, 255, 0.62);
   border-radius: 0;
   background: transparent;
 }
@@ -6963,6 +6962,212 @@ body.canvas-page .canvas-topbar {
 @media (prefers-reduced-motion: reduce) {
   .canvas-agent-send {
     transition: none;
+  }
+}
+
+/* Canvas Agent: distilled command surface. Keep the controls visible while
+   removing the nested glass-card treatment that competed with the canvas. */
+.canvas-agent-panel {
+  top: 72px;
+  right: 20px;
+  bottom: 20px;
+  width: min(400px, calc(100vw - 40px));
+  border: 1px solid rgba(169, 215, 247, 0.16);
+  border-radius: 18px;
+  background: #0d141d;
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.46);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.canvas-agent-panel-header {
+  padding: 15px 16px 11px;
+}
+
+.canvas-agent-panel-kicker {
+  display: none;
+}
+
+.canvas-agent-panel-identity strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.canvas-agent-panel-identity div > span:last-child {
+  margin-top: 3px;
+  color: rgba(196, 219, 241, 0.42);
+  font-size: 10px;
+}
+
+.canvas-agent-model-picker select {
+  width: 116px;
+  min-height: 32px;
+  border-radius: 10px;
+  background: #151e29;
+  font-size: 10px;
+}
+
+.canvas-agent-close {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: 9px;
+  background: transparent;
+}
+
+.canvas-agent-composer {
+  gap: 8px;
+  margin: 0 13px;
+  padding: 12px 12px 10px;
+  border: 1px solid rgba(169, 215, 247, 0.18);
+  border-radius: 14px;
+  background: #101923;
+  box-shadow: none;
+}
+
+.canvas-agent-composer:focus-within {
+  border-color: rgba(101, 196, 255, 0.56);
+  box-shadow: 0 0 0 2px rgba(101, 196, 255, 0.08);
+}
+
+.canvas-agent-compose-heading {
+  gap: 6px;
+}
+
+.canvas-agent-compose-kicker {
+  color: rgba(133, 201, 239, 0.72) !important;
+  font-size: 9px !important;
+  letter-spacing: 0.08em !important;
+}
+
+.canvas-agent-compose-caption {
+  color: rgba(196, 219, 241, 0.34);
+  font-size: 9px;
+}
+
+.canvas-agent-composer textarea {
+  min-height: 62px;
+  max-height: 130px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.canvas-agent-compose-hint {
+  display: none;
+}
+
+.canvas-agent-image-pick {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.canvas-agent-image-pick span {
+  display: none;
+}
+
+.canvas-agent-image-pick:hover,
+.canvas-agent-image-pick:focus-visible {
+  border: 0;
+  background: rgba(101, 196, 255, 0.12);
+}
+
+.canvas-agent-send {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border-radius: 9px;
+}
+
+.canvas-agent-context {
+  margin: 12px 16px 0;
+  padding: 0 0 10px;
+  font-size: 10px;
+}
+
+.canvas-agent-thread {
+  padding: 15px 16px 14px;
+}
+
+.canvas-agent-message-list {
+  gap: 15px;
+}
+
+.canvas-agent-message {
+  max-width: 88%;
+  padding: 9px 11px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.58;
+}
+
+.canvas-agent-message.assistant {
+  max-width: 94%;
+  padding: 3px 0 3px 11px;
+}
+
+.canvas-agent-empty {
+  padding: 30px 0 20px;
+}
+
+.canvas-agent-empty > strong {
+  font-size: 15px;
+}
+
+.canvas-agent-empty > p {
+  max-width: 280px;
+  margin: 8px 0 16px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.canvas-agent-suggestions {
+  gap: 6px;
+}
+
+.canvas-agent-suggestions button {
+  min-height: 30px;
+  padding: 0 9px;
+  border-radius: 9px;
+  background: transparent;
+  font-size: 10px;
+}
+
+.canvas-agent-panel-footer {
+  min-height: 32px;
+  padding: 0 16px 9px;
+}
+
+@media (max-width: 640px) {
+  .canvas-agent-panel {
+    top: 56px;
+    right: 9px;
+    bottom: 9px;
+    left: 9px;
+    width: auto;
+    border-radius: 16px;
+  }
+
+  .canvas-agent-panel-header {
+    padding: 14px 14px 10px;
+  }
+
+  .canvas-agent-composer {
+    margin: 0 10px;
+  }
+
+  .canvas-agent-context {
+    margin-right: 14px;
+    margin-left: 14px;
+  }
+
+  .canvas-agent-thread {
+    padding-right: 14px;
+    padding-left: 14px;
   }
 }
 

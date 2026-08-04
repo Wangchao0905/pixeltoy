@@ -8,6 +8,11 @@ const app = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
+const sourceHeadAside = html.match(/<div class="modern-source-head-aside">[\s\S]*?<\/header>/)?.[0] || "";
+const assetSourceField = html.match(/<section class="modern-source-field" aria-labelledby="modernAssetSourceTitle">[\s\S]*?<\/section>/)?.[0] || "";
+assert.match(sourceHeadAside, /id="modernExtractAssets"[\s\S]*?id="modernConfirmAssetManifest"/, "资产动作必须位于对白选择下方的顶部动作区");
+assert.doesNotMatch(assetSourceField, /id="modernExtractAssets"|id="modernConfirmAssetManifest"/, "资产动作不得继续挤在资产文档上传操作行");
+
 assert.match(html, /id="modernKitButton"/, "资产解析界面必须保留管理与修改入口");
 assert.match(app, /modernKitButton[\s\S]*assetManageMode\s*=\s*!state\.modernStudio\.assetManageMode/, "管理入口必须切换资产管理态");
 assert.match(app, /assetManageMode/, "资产管理态必须存放在现代制作台状态中");
@@ -58,5 +63,7 @@ assert.match(app, /modernAssetDescriptionText[\s\S]*?renderModernAssetExtractAct
 assert.match(styles, /\.modern-asset-primary-actions button\.is-ready-to-parse/);
 assert.match(styles, /@keyframes modernAssetActionAttention\s*\{/);
 assert.match(styles, /prefers-reduced-motion:\s*reduce/);
+assert.match(styles, /\.modern-source-head-aside\s*\{[^}]*display:\s*grid/);
+assert.match(styles, /\.modern-asset-primary-actions\s*\{[^}]*grid-row:\s*2/);
 
 console.log("modern asset manage delete tests passed");

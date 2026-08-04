@@ -471,7 +471,7 @@ function revisionUserPrompt({ stage, mode, input, previousArtifacts, project, ba
     content: artifact.content,
   }));
   return JSON.stringify({
-    task: "基于已审核版本执行定向修订。只解决修订合同中的问题，保留没有问题的有效内容，不得重置故事方向、改变已确认上下文或用空泛改写回避问题。",
+    task: "基于已审核版本执行定向修订。只解决修订合同中的问题，保留没有问题的有效内容，不得重置故事方向、改变已确认上下文或用空泛改写回避问题。必须返回当前阶段的完整结构化产物，不能只返回修改片段；未修改的顶层字段必须原样保留。",
     project: { id: text(project?.id, 300), title: text(project?.title, 300), episode: text(project?.episode, 100) },
     mode,
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
@@ -591,9 +591,8 @@ function validateVisualAssets(value) {
   };
 }
 
-function validateContent(stage, content, input = {}) {
-  const value = asObject(content);
-  const required = {
+function requiredContentFields(stage) {
+  return {
     brief: ["title_zh", "logline_zh", "core_conflict_zh", "viewer_question_zh"],
     title: ["candidates"],
     proposal: ["title_zh", "premise_zh", "viewer_question_zh", "first_impact_zh", "episode_hook_zh"],
@@ -602,6 +601,61 @@ function validateContent(stage, content, input = {}) {
     scenes: ["scenes"],
     dialogue: ["lines", "localization_checks"],
   }[stage] || [];
+}
+
+function mergeRevisionList(sourceItems, candidateItems, key, mergeItem = (source, candidate) => ({ ...source, ...candidate })) {
+  if (!Array.isArray(sourceItems)) return Array.isArray(candidateItems) ? candidateItems : [];
+  if (!Array.isArray(candidateItems) || !candidateItems.length) return sourceItems;
+  const candidates = new Map(candidateItems
+    .map((item) => [text(item?.[key], 160), asObject(item)])
+    .filter(([id]) => id));
+  const merged = sourceItems.map((source) => {
+    const candidate = candidates.get(text(source?.[key], 160));
+    return candidate ? mergeItem(asObject(source), candidate) : source;
+  });
+  const sourceIds = new Set(sourceItems.map((item) => text(item?.[key], 160)).filter(Boolean));
+  candidateItems.forEach((candidate) => {
+    const id = text(candidate?.[key], 160);
+    if (id && !sourceIds.has(id)) merged.push(candidate);
+  });
+  return merged;
+}
+
+function mergeSceneRevision(source, candidate) {
+  const merged = {
+    ...source,
+    ...candidate,
+    visual_profile: {
+      ...asObject(source.visual_profile),
+      ...asObject(candidate.visual_profile),
+    },
+  };
+  merged.props = mergeRevisionList(source.props, candidate.props, "id");
+  merged.shot_plan = mergeRevisionList(source.shot_plan, candidate.shot_plan, "shot_id");
+  return merged;
+}
+
+function mergeRevisionContent(stage, content, sourceContent) {
+  const candidate = asObject(content);
+  const source = asObject(sourceContent);
+  if (!Object.keys(source).length) return candidate;
+  // A revision model may return only changed fields. Preserve the source artifact
+  // for omitted top-level fields so a targeted fix cannot erase the stage contract.
+  const merged = { ...source, ...candidate };
+  if (stage === "scenes") {
+    merged.scenes = mergeRevisionList(source.scenes, candidate.scenes, "id", mergeSceneRevision);
+  }
+  requiredContentFields(stage).forEach((key) => {
+    const value = candidate[key];
+    const missing = value === undefined || value === null || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && value.length === 0);
+    if (missing && source[key] !== undefined) merged[key] = source[key];
+  });
+  return merged;
+}
+
+function validateContent(stage, content, input = {}) {
+  const value = asObject(content);
+  const required = requiredContentFields(stage);
   const missing = required.filter((key) => value[key] === undefined || value[key] === null || (typeof value[key] === "string" && !value[key].trim()) || (Array.isArray(value[key]) && value[key].length === 0));
   if (missing.length) {
     const error = new Error(`${stage} 产物缺少必填字段：${missing.join(", ")}`);
@@ -761,6 +815,62 @@ function issueKey(tag) {
   return text(tag, 120).toLowerCase().replace(/[\s：:，,。.!?！？；;]/g, "");
 }
 
+function advisoryItemId(kind, item = {}, index = 0) {
+  const source = item.id || item.criterionId || item.criterion_id || item.tag || item.dimension || item.model || index;
+  return `advisory_${kind}_${issueKey(source) || index}`;
+}
+
+function reviewAdvisoryItems(review = {}) {
+  const makeUniqueIds = (items, kind) => {
+    const seen = new Map();
+    return items.map((item, index) => {
+      const baseId = text(item?.id, 160) || advisoryItemId(kind, item, index);
+      const occurrence = seen.get(baseId) || 0;
+      seen.set(baseId, occurrence + 1);
+      return { ...item, id: occurrence ? `${baseId}_${occurrence + 1}` : baseId };
+    });
+  };
+  const independentIssues = makeUniqueIds(asArray(review.independentIssues).map((item, index) => ({
+    ...asObject(item),
+    kind: "issue",
+    severity: ["high", "medium", "low"].includes(item?.severity) ? item.severity : "medium",
+    suggestions: asArray(item?.suggestions).filter(Boolean),
+    evidence: asArray(item?.evidence).filter(Boolean),
+  })), "issue");
+  const conflicts = makeUniqueIds(asArray(review.conflicts).map((item, index) => ({
+    ...asObject(item),
+    kind: "conflict",
+    severity: "medium",
+    suggestions: item?.suggestion ? [text(item.suggestion, 1200)] : [],
+    evidence: asArray(item?.scores).length ? [`模型评分：${item.scores.join(" / ")}`] : [],
+  })), "conflict");
+  const failedReviews = makeUniqueIds(asArray(review.advisories?.failedReviews).map((item, index) => ({
+    ...asObject(item),
+    kind: "failed",
+    severity: "low",
+    suggestions: [],
+    evidence: [text(item?.message, 1200) || "审核模型未返回审核意见"],
+  })), "failed");
+  return [...independentIssues, ...conflicts, ...failedReviews];
+}
+
+function advisoryDecisionMap(review = {}) {
+  return new Map(asArray(review.advisoryDecisions)
+    .filter((item) => item?.id && ["accepted", "ignored", "needs_human_review"].includes(item.status))
+    .map((item) => [item.id, item]));
+}
+
+function reviewAdvisoryGate(review = {}) {
+  const items = reviewAdvisoryItems(review);
+  const decisions = advisoryDecisionMap(review);
+  const accepted = items.filter((item) => decisions.get(item.id)?.status === "accepted");
+  const blockingPending = items.filter((item) => {
+    const decision = decisions.get(item.id);
+    return decision?.status === "needs_human_review";
+  });
+  return { items, decisions, accepted, blockingPending };
+}
+
 const issueSeverityRank = { high: 0, medium: 1, low: 2 };
 
 function groupedReviewIssues(feedbacks) {
@@ -788,6 +898,7 @@ function groupedReviewIssues(feedbacks) {
     });
   });
   return [...groups.values()].map((group) => ({
+      id: `issue_${issueKey(group.criterionId) || issueKey(group.tag)}`,
       criterionId: group.criterionId,
       tag: group.tag,
       dimension: group.dimension,
@@ -805,10 +916,28 @@ function sharedReviewIssues(feedbacks) {
 }
 
 function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
-  const freshCommonIssues = asArray(review.commonIssues).filter((item) => Number(item.modelCount) >= REVIEW_QUORUM);
-  const freshIssues = freshCommonIssues.length
-    ? freshCommonIssues
-    : asArray(review.reviewIssues).filter((item) => Number(item.modelCount) >= REVIEW_QUORUM);
+  const freshCommonIssues = asArray(review.commonIssues)
+    .filter((item) => Number(item.modelCount) >= REVIEW_QUORUM && item.severity === "high");
+  const acceptedAdvisories = reviewAdvisoryItems(review)
+    .filter((item) => item.kind !== "failed" && advisoryDecisionMap(review).get(item.id)?.status === "accepted")
+    .map((item) => {
+      const decision = advisoryDecisionMap(review).get(item.id);
+      return {
+        criterionId: `ADVISORY_${issueKey(item.id).toUpperCase()}`,
+        tag: item.tag || `${item.dimension || "logic"} 建议已采纳`,
+        dimension: item.dimension || "logic",
+        severity: item.severity || "medium",
+        modelCount: Number(item.modelCount) || 1,
+        models: asArray(item.models),
+        suggestions: uniqueText([...(asArray(item.suggestions)), text(decision?.reason, 1200)], 5),
+        evidence: uniqueText(asArray(item.evidence), 5),
+      };
+    });
+  const freshIssues = [...freshCommonIssues, ...acceptedAdvisories];
+  if (!freshIssues.length) {
+    freshIssues.push(...asArray(review.reviewIssues)
+      .filter((item) => Number(item.modelCount) >= REVIEW_QUORUM && item.severity === "high"));
+  }
   const inheritedIssues = asArray(review.revision?.contract?.items)
     .filter((item) => {
       const closure = asArray(review.revision?.closure?.items).find((entry) => entry.id === item.id);
@@ -914,30 +1043,49 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
   const reviewCompletion = Math.round((completed.length / 3) * 100);
   const index = Math.round(agreement * 0.45 + quality * 0.35 + reviewCompletion * 0.2);
   const structuredIssues = groupedReviewIssues(completed);
-  const reviewerChanges = uniqueText(completed.flatMap((item) => item.required_changes || []), 60);
   const structuredIssueText = structuredIssues.flatMap((issue) => [...issue.suggestions, ...issue.evidence]);
-  const supplementalIssues = reviewerChanges
-    .filter((change) => !structuredIssueText.some((known) => known === change || known.includes(change) || change.includes(known)))
-    .map((change) => ({ tag: "审核修订项", dimension: "logic", severity: "medium", modelCount: 1, models: [], suggestions: [change], evidence: [] }));
+  const supplementalIssues = completed
+    .flatMap((feedback) => asArray(feedback.required_changes).map((change) => ({ feedback, change: text(change, 1200) })))
+    .filter(({ change }) => change && !structuredIssueText.some((known) => known === change || known.includes(change) || change.includes(known)))
+    .map(({ feedback, change }) => ({
+      id: `issue_supplemental_${issueKey(feedback.model)}_${issueKey(change)}`,
+      tag: "审核模型补充意见",
+      dimension: "logic",
+      severity: "medium",
+      modelCount: 1,
+      models: [feedback.model],
+      suggestions: [change],
+      evidence: [`${feedback.model}：该意见未绑定到结构化问题，暂不进入强制修订`],
+    }))
+    .filter((issue, index, all) => all.findIndex((candidate) => candidate.id === issue.id) === index);
   const reviewIssues = [...structuredIssues, ...supplementalIssues];
   const commonIssues = reviewIssues.filter((issue) => issue.modelCount >= 2);
+  const mandatoryIssues = commonIssues.filter((issue) => issue.severity === "high");
+  const recommendedIssues = commonIssues.filter((issue) => issue.severity !== "high");
   const independentIssues = reviewIssues.filter((issue) => issue.modelCount === 1);
   const conflicts = REVIEW_DIMENSIONS
     .filter((key) => completed.length >= 2 && dimensions[key].agreement < 75)
-    .map((key) => ({ dimension: key, agreement: dimensions[key].agreement, suggestion: `已完成模型对${key}维度评分差异较大，建议人工核对证据与取舍` }));
+    .map((key) => ({
+      id: `advisory_conflict_${key}`,
+      dimension: key,
+      agreement: dimensions[key].agreement,
+      scores: dimensions[key].scores,
+      models: completed.map((item) => item.model),
+      suggestion: `已完成模型对${key}维度评分差异较大，建议人工核对证据与取舍`,
+    }));
   const revisionClosure = aggregateRevisionClosure(completed, revisionContract);
   const quorumMet = completed.length >= REVIEW_QUORUM;
   const passingReviews = completed.filter((item) => item.pass).length;
-  const pass = quorumMet && commonIssues.length === 0 && revisionClosure.allResolved;
+  const pass = quorumMet && mandatoryIssues.length === 0 && revisionClosure.allResolved;
   const checks = {
     cross_validation: quorumMet,
-    consistency: commonIssues.length === 0,
+    consistency: mandatoryIssues.length === 0,
     adversarial: completed.filter((item) => item.checks?.adversarial === true).length >= REVIEW_QUORUM,
-    issues_converged: commonIssues.length === 0,
+    issues_converged: mandatoryIssues.length === 0,
     dimensions_agree: conflicts.length === 0,
     revision_contract_closed: revisionClosure.allResolved,
   };
-  const issueChanges = commonIssues.map((issue) => {
+  const issueChanges = mandatoryIssues.map((issue) => {
     const source = `至少 ${issue.modelCount} 个模型共同指出`;
     const suggestions = issue.suggestions.length ? issue.suggestions.join("；") : "针对该问题补充具体修订并重新提交三模型审核";
     return `${source}【${issue.severity} / ${issue.tag}】：${suggestions}`;
@@ -959,6 +1107,10 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     issueCount: reviewIssues.length,
     commonIssues,
     commonIssueCount: commonIssues.length,
+    mandatoryIssues,
+    mandatoryIssueCount: mandatoryIssues.length,
+    recommendedIssues,
+    recommendedIssueCount: recommendedIssues.length,
     independentIssues,
     independentIssueCount: independentIssues.length,
     conflicts,
@@ -1403,7 +1555,11 @@ function createPixelTaleAgent(options = {}) {
         })
         : await callStagePrimary({ route, stage, system, user, modelRouter });
       retryCount += primary.attempts || 0;
-      const content = validateContent(stage, primary.content, { ...runInput, mode, excludedTitles });
+      const content = validateContent(
+        stage,
+        revisionPlan ? mergeRevisionContent(stage, primary.content, revisionBase?.content) : primary.content,
+        { ...runInput, mode, excludedTitles },
+      );
       const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
       primaryArtifact = buildArtifact({ stage, mode, input: runInput, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
       if (stage === "title") {
@@ -1459,7 +1615,7 @@ function createPixelTaleAgent(options = {}) {
       primaryArtifact.reviewId = reviewArtifact.id;
       state.artifacts.push(primaryArtifact, reviewArtifact);
       const runStatus = consensus.pass ? "completed" : "needs_review";
-      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviews.map((item) => item.result ? `${item.result.provider}:${item.result.model}` : `${providerForRoute(item.model)}:${item.model}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true, failures: primary.fallbackFailures, budget: primary.primaryBudget } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionContract ? { sourceArtifactId: revisionBase.id, contractId: revisionContract.id, itemCount: revisionContract.items.length, allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviews.map((item) => item.result ? `${item.result.provider}:${item.result.model}` : `${providerForRoute(item.model)}:${item.model}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true, failures: primary.fallbackFailures, budget: primary.primaryBudget } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionPlan ? { sourceArtifactId: revisionBase?.id || "", contractId: revisionContract?.id || "", itemCount: revisionContract?.items.length || 0, plan: text(revisionPlan, 14000), allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       persistState(params, state);
       return { ...publicRun(record), artifacts: [primaryArtifact, reviewArtifact].map(publicArtifact), state: publicState(state, modelRouter) };
@@ -1467,12 +1623,75 @@ function createPixelTaleAgent(options = {}) {
       errors.push({ code: error.code || "RUN_FAILED", message: error.message });
       if (primaryArtifact && !state.artifacts.some((artifact) => artifact.id === primaryArtifact.id)) state.artifacts.push(primaryArtifact);
       const fallbackReviewModels = stage === "title" ? [] : (reviewRoutes.length ? reviewRoutes : [route.reviewer]);
-      const record = { runId, stage, mode, route: stage === "title" ? { primary: route.primary } : route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary), reviewModels: fallbackReviewModels.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: error?.fallbackFailures?.length ? { attempted: error.fallbackFailures.length, recovered: false, failures: error.fallbackFailures, budget: error.primaryBudget || null } : null, artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route: stage === "title" ? { primary: route.primary } : route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary), reviewModels: fallbackReviewModels.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: error?.fallbackFailures?.length ? { attempted: error.fallbackFailures.length, recovered: false, failures: error.fallbackFailures, budget: error.primaryBudget || null } : null, revision: revisionPlan ? { sourceArtifactId: revisionBase?.id || "", contractId: revisionContract?.id || "", itemCount: revisionContract?.items.length || 0, plan: text(revisionPlan, 14000), allResolved: false } : null, artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       state.updatedAt = nowIso(now);
       persistState(params, state);
       return { ...publicRun(record), artifacts: primaryArtifact ? [primaryArtifact].map(publicArtifact) : [], state: publicState(state, modelRouter) };
     }
+  }
+
+  function decideAdvisory(params = {}) {
+    const state = stateFor(params);
+    const reviewId = text(params.reviewId, 200);
+    const advisoryId = text(params.advisoryId, 200);
+    const status = text(params.status, 40).toLowerCase();
+    const reason = text(params.reason, 1600);
+    const review = state.artifacts.find((item) => item.id === reviewId && item.type === "pixeltale_stage_review");
+    if (!review) {
+      const error = new Error("审核产物不存在，无法处理建议");
+      error.code = "REVIEW_NOT_FOUND";
+      error.statusCode = 404;
+      throw error;
+    }
+    if (!["accepted", "ignored", "needs_human_review"].includes(status)) {
+      const error = new Error("建议处理状态无效");
+      error.code = "ADVISORY_DECISION_INVALID";
+      error.statusCode = 400;
+      throw error;
+    }
+    const item = reviewAdvisoryItems(review.content).find((entry) => entry.id === advisoryId);
+    if (!item) {
+      const error = new Error("审核建议不存在或已过期");
+      error.code = "ADVISORY_NOT_FOUND";
+      error.statusCode = 404;
+      throw error;
+    }
+    if ((status === "ignored" || (status === "accepted" && item.kind === "conflict")) && reason.length < 2) {
+      const error = new Error(status === "ignored" ? "忽略建议必须填写理由" : "将模型分歧转为修订必须写明处理方向");
+      error.code = "ADVISORY_REASON_REQUIRED";
+      error.statusCode = 400;
+      throw error;
+    }
+    const decision = {
+      id: item.id,
+      status,
+      reason,
+      item: {
+        id: item.id,
+        kind: item.kind,
+        tag: text(item.tag, 160),
+        dimension: text(item.dimension, 40) || "logic",
+        severity: text(item.severity, 20) || "medium",
+        modelCount: Number(item.modelCount) || 1,
+        models: asArray(item.models).map((model) => text(model, 160)).filter(Boolean),
+        suggestions: asArray(item.suggestions).map((suggestion) => text(suggestion, 1200)).filter(Boolean),
+        evidence: asArray(item.evidence).map((evidence) => text(evidence, 1200)).filter(Boolean),
+      },
+      decidedAt: nowIso(now),
+    };
+    const decisions = asArray(review.content?.advisoryDecisions).filter((entry) => entry?.id !== item.id);
+    review.content = { ...asObject(review.content), advisoryDecisions: [...decisions, decision] };
+    review.updatedAt = nowIso(now);
+    const sourceArtifact = state.artifacts.find((artifact) => artifact.reviewId === review.id);
+    if (sourceArtifact) {
+      const gate = reviewAdvisoryGate(review.content);
+      sourceArtifact.status = gate.accepted.length || gate.blockingPending.length || !review.content.pass ? "needs_review" : "ready";
+      sourceArtifact.updatedAt = nowIso(now);
+    }
+    state.updatedAt = nowIso(now);
+    persistState(params, state);
+    return { review: publicArtifact(review), state: publicState(state, modelRouter) };
   }
 
   function approve(params = {}) {
@@ -1489,6 +1708,20 @@ function createPixelTaleAgent(options = {}) {
     if (artifact.stage !== requiredStage) {
       const error = new Error(`请先确认“${STAGE_LABELS[requiredStage] || requiredStage}”阶段的产物`);
       error.code = "STAGE_OUT_OF_ORDER";
+      error.statusCode = 409;
+      throw error;
+    }
+    const review = artifact.reviewId ? state.artifacts.find((item) => item.id === artifact.reviewId) : null;
+    const advisoryGate = reviewAdvisoryGate(review?.content || {});
+    if (advisoryGate.blockingPending.length) {
+      const error = new Error("请先处理高影响审核建议或结构、逻辑分歧");
+      error.code = "ADVISORY_DECISION_REQUIRED";
+      error.statusCode = 409;
+      throw error;
+    }
+    if (advisoryGate.accepted.length) {
+      const error = new Error("已有审核建议被采纳，请先执行定向修订并完成复审");
+      error.code = "ADVISORY_REVISION_REQUIRED";
       error.statusCode = 409;
       throw error;
     }
@@ -1636,7 +1869,7 @@ function createPixelTaleAgent(options = {}) {
     return publicState(state, modelRouter);
   }
 
-  return { status, run, approve, handoff, saveSettings, providerStatus: () => modelRouter.status(), constants: { STAGES, DEFAULT_ROUTES, DEFAULT_DIALOGUE_POLICY } };
+  return { status, run, approve, decideAdvisory, handoff, saveSettings, providerStatus: () => modelRouter.status(), constants: { STAGES, DEFAULT_ROUTES, DEFAULT_DIALOGUE_POLICY } };
 }
 
 module.exports = {
@@ -1647,6 +1880,9 @@ module.exports = {
   normalizeRoutes,
   validateContent,
   validateReview,
+  mergeRevisionContent,
+  reviewAdvisoryItems,
+  reviewAdvisoryGate,
   stageRoute,
   buildRevisionContract,
   aggregateRevisionClosure,

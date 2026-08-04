@@ -730,8 +730,10 @@ function isStandaloneImageGenerationApiPath(pathname = "") {
 function requireAuth(req, res, url) {
   if (process.env.PIXEL_TOYS_AUTH_DISABLED === "1") return true;
   if (isAuthorizedMcpRequest(req)) return true;
-  if (isAuthApiPath(url.pathname) || isPublicStaticPath(url.pathname) || isPixelTalePath(url.pathname) || isPixelTaleApiPath(url.pathname)) return true;
-  if (url.pathname === "/admin.html" || isAdminApiPath(url.pathname)) {
+  if (isAuthApiPath(url.pathname) || isPublicStaticPath(url.pathname)) return true;
+  // PixelTale is admin-only. It previously sat in the allow-list above, which
+  // let anyone holding the URL use it without even logging in.
+  if (url.pathname === "/admin.html" || isAdminApiPath(url.pathname) || isPixelTalePath(url.pathname) || isPixelTaleApiPath(url.pathname)) {
     const user = currentUserFromRequest(req);
     if (!user) {
       if (url.pathname.startsWith("/api/")) fail(res, 401, "请先登录");
@@ -2250,6 +2252,19 @@ function persistPixelTaleRunJob(storyRoot, job) {
   fs.renameSync(temporary, file);
 }
 
+function persistablePixelTaleRunParams(params = {}) {
+  return {
+    pixelTaleRoot: params.pixelTaleRoot,
+    projectId: params.projectId,
+    project: params.project,
+    stage: params.stage,
+    mode: params.mode,
+    input: params.input,
+    routes: params.routes,
+    revisionPlan: params.revisionPlan,
+  };
+}
+
 function readPixelTaleRunJob(storyRoot, jobId) {
   const memoryJob = pixelTaleRunJobs.get(jobId);
   if (memoryJob) return memoryJob;
@@ -2271,21 +2286,8 @@ function pixelTaleRunResult(params, job) {
   return { ...run, artifacts: state.artifacts.filter((item) => run.artifactIds.includes(item.id)), state };
 }
 
-function startPixelTaleRun(params) {
-  prunePixelTaleRunJobs();
-  const stage = compactLine(params.stage || "brief");
-  const activeKey = `${params.pixelTaleRoot}:${stage}`;
-  const activeJobId = activePixelTaleRuns.get(activeKey);
-  const activeJob = activeJobId ? pixelTaleRunJobs.get(activeJobId) : null;
-  if (activeJob?.status === "running") return { jobId: activeJob.jobId, status: "running", stage, reused: true };
-
-  const job = {
-    jobId: `ptrun_${crypto.randomUUID()}`,
-    status: "running",
-    stage,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
+function launchPixelTaleRun(params, job) {
+  const activeKey = `${params.pixelTaleRoot}:${job.stage}`;
   pixelTaleRunJobs.set(job.jobId, job);
   activePixelTaleRuns.set(activeKey, job.jobId);
   persistPixelTaleRunJob(params.pixelTaleRoot, job);
@@ -2311,6 +2313,25 @@ function startPixelTaleRun(params) {
   }).finally(() => {
     if (activePixelTaleRuns.get(activeKey) === job.jobId) activePixelTaleRuns.delete(activeKey);
   });
+}
+
+function startPixelTaleRun(params) {
+  prunePixelTaleRunJobs();
+  const stage = compactLine(params.stage || "brief");
+  const activeKey = `${params.pixelTaleRoot}:${stage}`;
+  const activeJobId = activePixelTaleRuns.get(activeKey);
+  const activeJob = activeJobId ? pixelTaleRunJobs.get(activeJobId) : null;
+  if (activeJob?.status === "running") return { jobId: activeJob.jobId, status: "running", stage, reused: true };
+
+  const job = {
+    jobId: `ptrun_${crypto.randomUUID()}`,
+    status: "running",
+    stage,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    request: persistablePixelTaleRunParams(params),
+  };
+  launchPixelTaleRun(params, job);
   return { jobId: job.jobId, status: "running", stage, reused: false };
 }
 
@@ -2318,6 +2339,12 @@ function getPixelTaleRunJob(params, jobId) {
   const job = readPixelTaleRunJob(params.pixelTaleRoot, jobId);
   if (!job) return { status: "failed", error: "运行任务不存在或已过期，请重新生成", errorCode: "JOB_NOT_FOUND" };
   if (job.status === "running" && !pixelTaleRunJobs.has(job.jobId)) {
+    const persistedRequest = job.request;
+    if (persistedRequest?.pixelTaleRoot === params.pixelTaleRoot && persistedRequest.stage === job.stage) {
+      Object.assign(job, { recoveredAt: Date.now(), recoveryCount: Number(job.recoveryCount || 0) + 1, updatedAt: Date.now() });
+      launchPixelTaleRun(persistedRequest, job);
+      return { jobId: job.jobId, status: "running", stage: job.stage, recovered: true, elapsedMs: 0 };
+    }
     return { jobId: job.jobId, status: "failed", error: "服务更新中断了本次生成，输入和既有产物均已保留，请重新生成当前阶段", errorCode: "RUN_INTERRUPTED" };
   }
   if (job.status === "completed") {
@@ -2581,9 +2608,9 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
   if (!config || !provider) throw superPixelTextError(`SuperPixel 未注册文本模型：${normalizedModel}`, { code: "MODEL_UNSUPPORTED", trace });
   if (!config.apiKey) throw superPixelTextError(`SuperPixel 模型未配置：${normalizedModel}`, { code: "MODEL_NOT_CONFIGURED", trace });
 
-  // PixelTale runs as a persisted background job and polls this call from the
-  // UI, so long-form structure stages can use their measured stage budget.
-  // Other SuperPixel text callers retain the configured two-minute default.
+  // PixelTale supplies a shorter request budget so its sequential fallback can
+  // complete before the reverse proxy closes the browser connection. Other
+  // SuperPixel text callers retain the configured two-minute default.
   const configuredTimeoutMs = Number(requestedTimeoutMs ?? process.env.SUPER_PIXEL_TEXT_TIMEOUT_MS ?? 120_000);
   const timeoutMs = Math.max(3_000, Number.isFinite(configuredTimeoutMs) ? configuredTimeoutMs : 120_000);
   const parsedMaxTokens = Number(requestedMaxTokens);
@@ -25295,6 +25322,11 @@ async function handleApi(req, res, url) {
 
   const standalonePixelTaleMatch = url.pathname.match(/^\/api\/pixeltale(?:\/(.*))?$/);
   if (standalonePixelTaleMatch) {
+    // Defense in depth: PixelTale is admin-only. requireAuth() already gates
+    // this path, but the check is repeated here so a future change to the
+    // shared gate can't silently reopen this surface to every user.
+    const gateUser = currentUserFromRequest(req);
+    if (!gateUser || !isAdminUser(gateUser)) return fail(res, gateUser ? 403 : 401, gateUser ? "需要管理员权限" : "请先登录");
     const action = standalonePixelTaleMatch[1] || "";
     const params = standalonePixelTaleParams(req, url);
 
@@ -25367,6 +25399,21 @@ async function handleApi(req, res, url) {
       const artifactId = decodeURIComponent(approveMatch[1]);
       const body = await readBody(req);
       const result = pixelTaleAgent.approve({ ...params, artifactId, selectedTitle: body.selectedTitle });
+      return send(res, 200, { ok: true, result });
+    }
+
+    const advisoryDecisionMatch = action.match(/^reviews\/([^/]+)\/advisories\/([^/]+)$/);
+    if (req.method === "POST" && advisoryDecisionMatch) {
+      const reviewId = decodeURIComponent(advisoryDecisionMatch[1]);
+      const advisoryId = decodeURIComponent(advisoryDecisionMatch[2]);
+      const body = await readBody(req);
+      const result = pixelTaleAgent.decideAdvisory({
+        ...params,
+        reviewId,
+        advisoryId,
+        status: body.status,
+        reason: body.reason,
+      });
       return send(res, 200, { ok: true, result });
     }
 

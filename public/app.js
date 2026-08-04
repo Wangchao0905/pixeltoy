@@ -489,6 +489,8 @@ async function syncAuthUser() {
   const canvasCard = $(".canvas-entry-card");
   // Super Pixel 仍在开发中，入口仅对管理员开放
   const superPixelEntry = $('[data-explore-tool="super-pixel"]');
+  // PixelTale 编剧 Agent 入口仅对管理员开放
+  const pixelTaleEntry = $('[data-pixeltale-entry]');
   if (!label) return;
   try {
     const data = await api("/api/auth/me");
@@ -513,6 +515,7 @@ async function syncAuthUser() {
     exploreRegisterLink?.classList.toggle("hidden", !!data.user);
     exploreAdminLink?.classList.toggle("hidden", data.user?.role !== "admin");
     superPixelEntry?.classList.toggle("hidden", data.user?.role !== "admin");
+    pixelTaleEntry?.classList.toggle("hidden", data.user?.role !== "admin");
     exploreTeamButton?.classList.toggle("hidden", !data.user);
     exploreRefresh?.classList.toggle("hidden", !data.user);
     exploreAccount?.classList.toggle("hidden", !data.user);

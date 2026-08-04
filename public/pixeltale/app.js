@@ -3,6 +3,8 @@ const PENDING_MODE_KEY = "pixeltale.story-forge-pending-mode";
 const PENDING_NOTICE_KEY = "pixeltale.story-forge-pending-notice";
 
 function createSessionId() {
+  const querySession = typeof location !== "undefined" ? new URLSearchParams(location.search).get("session") : "";
+  if (/^[A-Za-z0-9_-]{16,128}$/.test(querySession || "")) return querySession;
   const existing = (() => {
     try { return localStorage.getItem(SESSION_STORAGE_KEY) || ""; } catch { return ""; }
   })();
@@ -35,6 +37,7 @@ const state = {
   toastTimer: null,
   lastError: "",
   documentError: "",
+  dnaFilter: "all",
   agent: null,
   routes: { orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
   input: {
@@ -72,6 +75,16 @@ const modelMeta = {
 };
 
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];
+const productionStageTotal = stageOrder.length - 1;
+
+function productionStepNumber(stage = workflowStage()) {
+  return Math.min(productionStageTotal, Math.max(1, stageIndex(stage) + 1));
+}
+
+function productionProgressLabel(stage = workflowStage()) {
+  return `${String(productionStepNumber(stage)).padStart(2, "0")} / ${String(productionStageTotal).padStart(2, "0")}`;
+}
+
 const stageMeta = {
   brief: { kicker: "01 / BRIEF", title: "故事架构", task: "建立故事架构", copy: "确认平台、受众和单集节奏，先建立可执行的故事架构。" },
   title: { kicker: "02 / TITLE", title: "选择剧名", task: "确定故事的第一张名片", copy: "根据剧本 DNA、目标市场和发行属性生成 4 个英文正式片名，中文释义仅供创作者参考。" },
@@ -93,7 +106,7 @@ const marketCatalog = [
 const marketRegionLabels = {
   north_america: "北美", europe: "欧洲", latin_america: "拉丁美洲", east_asia: "东亚", southeast_asia: "东南亚", mena: "中东及北非",
 };
-const inspirationPool = [
+const legacyInspirationPool = [
   { keyword: "身份悬疑", kind: "题材", source: "Netflix", x: 10, y: 18, r: -8, duration: 51, delay: -12 },
   { keyword: "末日生存", kind: "题材", source: "Netflix", x: 34, y: 9, r: 4, duration: 64, delay: -30 },
   { keyword: "家族权斗", kind: "题材", source: "HBO", x: 64, y: 15, r: 8, duration: 58, delay: -7 },
@@ -159,6 +172,42 @@ const inspirationPool = [
   { keyword: "卧底律师", kind: "主角身份", source: "角色原型", x: 67, y: 86, r: 3, duration: 75, delay: -18 },
   { keyword: "叛逃公主", kind: "主角身份", source: "角色原型", x: 95, y: 72, r: -4, duration: 92, delay: -53 },
 ];
+
+const inspirationPool = [
+  { keyword: "身份谜案", kind: "题材", source: "Netflix" }, { keyword: "密室权斗", kind: "题材", source: "HBO" },
+  { keyword: "末日倒计时", kind: "题材", source: "Netflix" }, { keyword: "禁忌关系", kind: "题材", source: "HBO" },
+  { keyword: "家族暗战", kind: "题材", source: "Sony Pictures TV" }, { keyword: "科技失控", kind: "题材", source: "Netflix" },
+  { keyword: "罪案追踪", kind: "题材", source: "Sony Pictures TV" }, { keyword: "神秘小镇", kind: "题材", source: "Netflix" },
+  { keyword: "法律惊案", kind: "题材", source: "Sony Pictures TV" }, { keyword: "职场博弈", kind: "题材", source: "HBO" },
+  { keyword: "超自然信号", kind: "题材", source: "Netflix" }, { keyword: "继承争夺", kind: "题材", source: "HBO" },
+  { keyword: "反杀翻盘", kind: "爽点", source: "Netflix" }, { keyword: "身份揭露", kind: "爽点", source: "HBO" },
+  { keyword: "越级反击", kind: "爽点", source: "Sony Pictures TV" }, { keyword: "权力反噬", kind: "爽点", source: "HBO" },
+  { keyword: "复仇清算", kind: "爽点", source: "Sony Pictures TV" }, { keyword: "旧爱重逢", kind: "爽点", source: "Netflix" },
+  { keyword: "禁忌拉扯", kind: "爽点", source: "HBO" }, { keyword: "代价升级", kind: "爽点", source: "Netflix" },
+  { keyword: "关系倒戈", kind: "爽点", source: "HBO" }, { keyword: "真相反转", kind: "爽点", source: "Netflix" },
+  { keyword: "致命交易", kind: "爽点", source: "Sony Pictures TV" }, { keyword: "绝地破局", kind: "爽点", source: "Netflix" },
+  { keyword: "一眼设定", kind: "爆火基因", source: "Netflix" }, { keyword: "反差主角", kind: "爆火基因", source: "HBO" },
+  { keyword: "视觉符号", kind: "爆火基因", source: "Netflix" }, { keyword: "名场面", kind: "爆火基因", source: "Sony Pictures TV" },
+  { keyword: "CP张力", kind: "爆火基因", source: "Netflix" }, { keyword: "金句传播", kind: "爆火基因", source: "HBO" },
+  { keyword: "反派魅力", kind: "爆火基因", source: "Netflix" }, { keyword: "社交梗点", kind: "爆火基因", source: "Sony Pictures TV" },
+  { keyword: "情绪共振", kind: "爆火基因", source: "HBO" }, { keyword: "世界观钩子", kind: "爆火基因", source: "Netflix" },
+  { keyword: "开场暴击", kind: "叙事逻辑", source: "TK DNA" }, { keyword: "集尾悬问", kind: "叙事逻辑", source: "TK DNA" },
+  { keyword: "线索递进", kind: "叙事逻辑", source: "Netflix" }, { keyword: "信息错位", kind: "叙事逻辑", source: "HBO" },
+  { keyword: "误导再翻", kind: "叙事逻辑", source: "Netflix" }, { keyword: "双线并进", kind: "叙事逻辑", source: "Sony Pictures TV" },
+  { keyword: "倒计时", kind: "叙事逻辑", source: "Netflix" }, { keyword: "伏笔回收", kind: "叙事逻辑", source: "HBO" },
+  { keyword: "视角反转", kind: "叙事逻辑", source: "Netflix" }, { keyword: "关系重组", kind: "叙事逻辑", source: "Sony Pictures TV" },
+  { keyword: "失忆警探", kind: "主角身份", source: "角色原型" }, { keyword: "隐姓天才", kind: "主角身份", source: "角色原型" },
+  { keyword: "叛逃公主", kind: "主角身份", source: "角色原型" }, { keyword: "破产继承人", kind: "主角身份", source: "角色原型" },
+  { keyword: "卧底律师", kind: "主角身份", source: "角色原型" }, { keyword: "单亲母亲", kind: "主角身份", source: "角色原型" },
+  { keyword: "复仇新娘", kind: "主角身份", source: "角色原型" }, { keyword: "伪装医生", kind: "主角身份", source: "角色原型" },
+  { keyword: "失势继承人", kind: "主角身份", source: "角色原型" }, { keyword: "被追凶者", kind: "主角身份", source: "角色原型" },
+  { keyword: "冷面调查员", kind: "主角身份", source: "角色原型" }, { keyword: "反派继承人", kind: "主角身份", source: "角色原型" },
+];
+
+const dnaAudienceRecommendations = {
+  male: new Set(["密室权斗", "末日倒计时", "科技失控", "罪案追踪", "法律惊案", "职场博弈", "反杀翻盘", "越级反击", "权力反噬", "致命交易", "一眼设定", "视觉符号", "反派魅力", "世界观钩子", "线索递进", "信息错位", "双线并进", "倒计时", "失忆警探", "隐姓天才", "卧底律师"]),
+  female: new Set(["身份谜案", "禁忌关系", "家族暗战", "神秘小镇", "继承争夺", "身份揭露", "复仇清算", "旧爱重逢", "禁忌拉扯", "关系倒戈", "CP张力", "金句传播", "情绪共振", "集尾悬问", "误导再翻", "视角反转", "关系重组", "叛逃公主", "单亲母亲", "复仇新娘", "破产继承人"]),
+};
 
 const audienceDnaRecommendations = {
   male: new Set([
@@ -383,7 +432,7 @@ function approvedStageCount() {
 }
 
 function handoffReady() {
-  return approvedStageCount() === stageOrder.length - 1;
+  return approvedStageCount() === productionStageTotal;
 }
 
 function workflowStage() {
@@ -408,7 +457,7 @@ function latestConsensusReview() {
 function consensusMetrics() {
   const review = latestConsensusReview();
   const content = review?.content || {};
-  const interactionCompletion = Math.round((approvedStageCount() / (stageOrder.length - 1)) * 100);
+  const interactionCompletion = Math.round((approvedStageCount() / productionStageTotal) * 100);
   const reviewCompletion = Number(content.reviewCompletion || 0);
   const agreement = Number(content.agreement || 0);
   const quality = Number(content.quality || 0);
@@ -493,6 +542,28 @@ function nextStepMeta() {
       flowStage,
     };
   }
+  const reviewContent = reviewForArtifact(artifact)?.content || {};
+  const advisoryGate = reviewAdvisoryGate(reviewContent);
+  if (advisoryGate.blockingPending.length) {
+    return {
+      kind: "review-advisories",
+      stage: flowStage,
+      title: `${flowMeta.title}有待裁决意见`,
+      copy: `请先处理 ${advisoryGate.blockingPending.length} 条高影响意见，再确认本阶段。已采纳的普通建议会在裁决完成后再执行。`,
+      label: "处理待裁决意见 →",
+      flowStage,
+    };
+  }
+  if (advisoryGate.accepted.length) {
+    return {
+      kind: "auto-revise",
+      stage: flowStage,
+      title: `${flowMeta.title}需要执行已采纳修订`,
+      copy: `已有 ${advisoryGate.accepted.length} 条建议被采纳。点击后由本阶段主创定向修订，并由三模型逐项复审。`,
+      label: "执行采纳修订并复审 →",
+      flowStage,
+    };
+  }
   if (artifact.status === "ready") {
     const nextStage = stageOrder[stageIndex(flowStage) + 1] || "handoff";
     const nextLabel = stageMeta[nextStage]?.title || "导出";
@@ -516,13 +587,12 @@ function nextStepMeta() {
       flowStage,
     };
   }
-  const reviewContent = reviewForArtifact(artifact)?.content || {};
   if (!reviewIssueGroups(reviewContent).length) {
     return {
       kind: "run",
       stage: flowStage,
       title: `${flowMeta.title}审核未完成`,
-      copy: "本轮没有形成二模型共识修订合同，不能安全执行定向修订。重新生成当前阶段并重新审核。",
+      copy: "本轮没有形成可执行的强制修订清单。重新生成当前阶段并重新审核，评分分歧和参考建议不会自动改稿。",
       label: `重新生成${flowMeta.title}并审核 →`,
       flowStage,
     };
@@ -531,8 +601,8 @@ function nextStepMeta() {
     kind: "auto-revise",
     stage: flowStage,
     title: `${flowMeta.title}需要修订`,
-    copy: "三模型已经汇总全部问题。点击唯一的下一步按钮，本阶段主创会按问题合同定向修订，三模型随后逐项复审关闭。",
-    label: "执行交叉修订并复审 →",
+    copy: "下方“必须修订”是唯一执行清单。点击后按这些项目定向改稿，再由模型逐项复审关闭。",
+    label: "执行定向修订并复审 →",
     flowStage,
   };
 }
@@ -546,6 +616,9 @@ function renderAgentTaskAction(action) {
   }
   if (action.kind === "auto-revise") {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+  }
+  if (action.kind === "review-advisories") {
+    return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="review-advisories" data-review-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
   if (action.kind === "approve") {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="approve" data-approve-artifact="${escapeHtml(action.artifactId)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
@@ -568,7 +641,7 @@ function renderShellState() {
   $("#agentTaskCopy").setAttribute("role", state.lastError ? "alert" : "status");
   $("#agentTaskAction").innerHTML = renderAgentTaskAction(action);
   bindAgentTaskAction();
-  $("#flowStepCounter").textContent = `${String(stageIndex(flowStage) + 1).padStart(2, "0")} / ${stageOrder.length}`;
+  $("#flowStepCounter").textContent = productionProgressLabel(flowStage);
   $("#agentStatus").textContent = state.busy
     ? "PixelTale 正在生成并复核..."
     : state.lastError
@@ -580,8 +653,8 @@ function renderShellState() {
           : action.kind === "return"
             ? "正在查看已确认版本"
             : "等待输入";
-  $("#approvedCount").textContent = `${approvedStageCount()} / ${stageOrder.length - 1}`;
-  $("#progressBar").style.width = `${Math.round((approvedStageCount() / (stageOrder.length - 1)) * 100)}%`;
+  $("#approvedCount").textContent = `${String(approvedStageCount()).padStart(2, "0")} / ${String(productionStageTotal).padStart(2, "0")}`;
+  $("#progressBar").style.width = `${Math.round((approvedStageCount() / productionStageTotal) * 100)}%`;
   renderConsensusMeter();
   $$(".mode-button").forEach((button) => button.classList.toggle("is-active", button.dataset.mode === state.mode));
   $$(".stage-link").forEach((button) => {
@@ -602,9 +675,6 @@ function renderShellState() {
     else button.removeAttribute("aria-current");
     button.querySelector("i")?.setAttribute("aria-label", artifact && state.approved.has(artifact.id) ? "已确认" : "未确认");
   });
-  const liveMarketCountry = $("#marketCountry")?.value || state.input.marketCountry;
-  const context = ["独立编剧 Agent", state.mode === "tk" ? "TK 短剧" : "普通长剧", `市场 · ${marketCountryLabel(liveMarketCountry)}`, "English Dialogue", state.mode === "tk" ? "9:16" : "16:9"];
-  $("#contextChips").innerHTML = context.map((item) => `<span>${escapeHtml(item)}</span>`).join("");
   renderModelTeam();
   const ready = handoffReady();
   $$('[data-open-stage="handoff"]').forEach((button) => { button.disabled = !ready; });
@@ -629,12 +699,24 @@ function renderModelTeam() {
     return candidates.find((item) => item.configured) || candidates[0];
   }).filter(Boolean);
   const status = state.agent?.providerStatus || {};
+  const currentArtifact = artifactForStage(state.stage);
+  const currentReview = reviewForArtifact(currentArtifact);
+  const reviewFeedbacks = Array.isArray(currentReview?.content?.feedbacks) ? currentReview.content.feedbacks : [];
   $("#modelTeamCards").innerHTML = reviewTeam.map((entry) => {
     const id = entry.id;
     const meta = modelInfo(id);
     const configured = entry.configured && status[entry.provider]?.configured;
     const lane = entry.provider === "chatgpt" ? "结构与因果审查" : entry.provider === "claude" ? "人物与连续性审查" : "钩子与本土化审查";
-    const stateLabel = configured ? "待复审" : "审核未接入";
+    const feedback = reviewFeedbacks.find((item) => item.model === id || item.provider === entry.provider);
+    const stateLabel = !configured
+      ? "审核未接入"
+      : feedback?.status === "completed"
+        ? feedback.pass ? "已完成" : "已完成 · 需修订"
+        : feedback?.status === "failed"
+          ? "审核超时/失败"
+          : currentReview
+            ? "待复审"
+            : "待审核";
     return `<button class="model-card ${entry.provider === "chatgpt" ? "is-primary" : entry.provider === "claude" ? "is-reviewer" : ""}" type="button" data-model-detail="${id}" title="${lane}：${meta.name}"><i></i><span><strong>${meta.name}</strong><small>${lane} · ${meta.role}</small></span><em>${stateLabel}</em></button>`;
   }).join("");
   $$('[data-model-detail]').forEach((button) => button.addEventListener("click", () => {
@@ -691,12 +773,173 @@ function updateMarketCountryList() {
   state.input.marketCountry = nextCountry;
 }
 
+let dnaMotionStop = null;
+
+function stopDnaMotion() {
+  if (typeof dnaMotionStop === "function") dnaMotionStop();
+  dnaMotionStop = null;
+}
+
+function dnaPoint(index, total, time) {
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const latitude = 1 - 2 * ((index + 0.5) / Math.max(1, total));
+  const radial = Math.sqrt(Math.max(0, 1 - latitude * latitude));
+  const wobble = Math.sin(time * 0.11 + index * 1.71) * 0.035;
+  const longitude = index * goldenAngle + time * 0.042 + wobble;
+  const x = Math.cos(longitude) * radial;
+  const z = Math.sin(longitude) * radial;
+  const tilt = 0.16 + Math.sin(time * 0.08) * 0.035;
+  return {
+    x,
+    y: latitude * Math.cos(tilt) - z * Math.sin(tilt),
+    z: latitude * Math.sin(tilt) + z * Math.cos(tilt),
+  };
+}
+
+function startDnaMotion(field) {
+  stopDnaMotion();
+  const canvas = field?.querySelector("[data-dna-canvas]");
+  const context = canvas?.getContext("2d");
+  if (!canvas || !context) return;
+  const tags = [...field.querySelectorAll("[data-dna-tag]")];
+  const particles = Array.from({ length: 126 }, (_, index) => ({ index, size: 0.55 + ((index * 17) % 9) / 10 }));
+  let width = 0;
+  let height = 0;
+  let frame = 0;
+  let stopped = false;
+  const resize = () => {
+    const rect = field.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    width = Math.max(1, rect.width);
+    height = Math.max(1, rect.height);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  const project = (point, radius, centerX, centerY) => {
+    const depth = 0.78 + (point.z + 1) * 0.14;
+    return {
+      x: centerX + point.x * radius * depth,
+      y: centerY + point.y * radius * depth,
+      z: point.z,
+      depth,
+    };
+  };
+  const draw = (timestamp = 0) => {
+    if (stopped) return;
+    const time = timestamp / 1000;
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const radius = Math.min(width, height) * 0.36;
+    context.clearRect(0, 0, width, height);
+    const aura = context.createRadialGradient(centerX, centerY, radius * 0.05, centerX, centerY, radius * 1.22);
+    aura.addColorStop(0, "rgba(40, 120, 232, 0.10)");
+    aura.addColorStop(0.56, "rgba(40, 120, 232, 0.035)");
+    aura.addColorStop(1, "rgba(40, 120, 232, 0)");
+    context.fillStyle = aura;
+    context.beginPath();
+    context.arc(centerX, centerY, radius * 1.22, 0, Math.PI * 2);
+    context.fill();
+
+    const projected = particles.map((particle) => project(dnaPoint(particle.index, particles.length, time), radius, centerX, centerY));
+    projected.sort((left, right) => left.z - right.z);
+    context.lineWidth = 0.55;
+    for (let index = 0; index < projected.length; index += 1) {
+      const point = projected[index];
+      for (let next = index + 1; next < Math.min(projected.length, index + 5); next += 1) {
+        const other = projected[next];
+        const distance = Math.hypot(point.x - other.x, point.y - other.y);
+        if (distance > radius * 0.28 || point.z < -0.2 || other.z < -0.2) continue;
+        context.strokeStyle = `rgba(40, 120, 232, ${Math.max(0.015, 0.12 - distance / radius * 0.07)})`;
+        context.beginPath();
+        context.moveTo(point.x, point.y);
+        context.lineTo(other.x, other.y);
+        context.stroke();
+      }
+    }
+    projected.forEach((point, index) => {
+      const alpha = 0.12 + Math.max(0, point.z + 1) * 0.29;
+      context.fillStyle = index % 11 === 0 ? `rgba(220, 89, 107, ${alpha})` : `rgba(40, 120, 232, ${alpha})`;
+      context.beginPath();
+      context.arc(point.x, point.y, 0.7 + point.depth * 1.1, 0, Math.PI * 2);
+      context.fill();
+    });
+    for (let index = 0; index < 34; index += 1) {
+      const drift = time * (0.012 + (index % 5) * 0.002) + index * 1.93;
+      const x = centerX + Math.sin(drift * 1.7 + index) * radius * (0.82 + (index % 3) * 0.12);
+      const y = centerY + Math.cos(drift * 1.13 + index * 0.7) * radius * (0.62 + (index % 4) * 0.08);
+      const alpha = 0.08 + (index % 4) * 0.025;
+      context.fillStyle = `rgba(120, 154, 0, ${alpha})`;
+      context.beginPath();
+      context.arc(x, y, 0.45 + (index % 3) * 0.24, 0, Math.PI * 2);
+      context.fill();
+    }
+    tags.forEach((tag, index) => {
+      const point = project(dnaPoint(index, tags.length, time + 0.45), radius * 1.08, centerX, centerY);
+      const depth = (point.z + 1) / 2;
+      tag.style.setProperty("--dna-tx", `${point.x - centerX}px`);
+      tag.style.setProperty("--dna-ty", `${point.y - centerY}px`);
+      tag.style.setProperty("--dna-scale", `${0.74 + depth * 0.34}`);
+      tag.style.opacity = `${0.24 + depth * 0.72}`;
+      tag.style.zIndex = String(Math.round(10 + depth * 30));
+    });
+    if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) frame = window.requestAnimationFrame(draw);
+  };
+  resize();
+  const observer = typeof ResizeObserver === "function" ? new ResizeObserver(resize) : null;
+  observer?.observe(field);
+  draw(0);
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    tags.forEach((tag) => { tag.style.opacity = "0.76"; });
+  }
+  dnaMotionStop = () => {
+    stopped = true;
+    window.cancelAnimationFrame(frame);
+    observer?.disconnect();
+  };
+}
+
+function setDnaFilter(filter = "all") {
+  state.dnaFilter = filter;
+  $$('[data-dna-filter]').forEach((button) => {
+    const active = button.dataset.dnaFilter === filter;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  $$('[data-dna-tag]').forEach((tag) => {
+    tag.classList.toggle("is-filtered-out", filter !== "all" && tag.dataset.dnaKind !== filter);
+  });
+}
+
+function toggleDnaWindow(open) {
+  const windowNode = $("#dnaWindow");
+  if (!windowNode) return;
+  const nextOpen = typeof open === "boolean" ? open : windowNode.hidden;
+  $$('[data-dna-toggle]').forEach((button) => button.setAttribute("aria-expanded", String(nextOpen)));
+  if (nextOpen) {
+    windowNode.hidden = false;
+    requestAnimationFrame(() => windowNode.classList.add("is-open"));
+    startDnaMotion($("[data-dna-field]"));
+    return;
+  }
+  windowNode.classList.remove("is-open");
+  stopDnaMotion();
+  window.setTimeout(() => {
+    if (!windowNode.classList.contains("is-open")) windowNode.hidden = true;
+  }, 280);
+}
+
 function renderInspirationPool() {
   const audienceGender = audienceGenderLabels[state.input.audienceGender] ? state.input.audienceGender : "all";
-  const recommended = audienceDnaRecommendations[audienceGender] || new Set();
-  const nodes = inspirationPool.map((item) => `<button class="inspiration-node${recommended.has(item.keyword) ? " is-recommended" : ""}" type="button" data-inspiration="${escapeHtml(item.keyword)}" style="--node-x:${item.x}%;--node-y:${item.y}%;--node-r:${item.r}deg" title="添加“${escapeHtml(item.keyword)}”到创作想法"><span>${escapeHtml(item.keyword)}</span><small>${escapeHtml(item.kind)} · ${escapeHtml(item.source)}</small></button>`).join("");
-  const recommendation = audienceGender === "all" ? "选择受众方向后推荐标签会高亮" : `${audienceGenderLabels[audienceGender]} · ${recommended.size} 个 DNA 推荐`;
-  return `<section class="inspiration-pool" aria-labelledby="inspirationPoolTitle"><div class="inspiration-pool-head"><div><span class="card-label"><i></i>STORY DNA</span><h3 id="inspirationPoolTitle">灵感池</h3><p>近五年热剧的题材、爽点、爆火基因、叙事逻辑与主角身份，点击即可加入创作想法。</p></div><div class="inspiration-meta"><span class="inspiration-period">2021—2026</span><span class="inspiration-recommendation${audienceGender === "all" ? "" : " is-active"}"><i></i>${recommendation}</span></div></div><div class="inspiration-orbit" role="list">${nodes}<span class="inspiration-core" aria-hidden="true"><i></i><strong>STORY<br />DNA</strong><small>可点击采样</small></span></div><div class="inspiration-footer"><span>Netflix · HBO · Sony Pictures TV · DNA 提炼</span><span>不复制具体作品</span></div></section>`;
+  const recommended = dnaAudienceRecommendations[audienceGender] || new Set();
+  const categories = ["all", ...[...new Set(inspirationPool.map((item) => item.kind))]];
+  const filterLabels = { all: "全部", "题材": "题材", "爽点": "爽点", "爆火基因": "爆点", "叙事逻辑": "叙事", "主角身份": "主角" };
+  const filters = categories.map((category) => `<button type="button" class="dna-filter${state.dnaFilter === category ? " is-active" : ""}" data-dna-filter="${escapeHtml(category)}" role="tab" aria-selected="${state.dnaFilter === category}">${escapeHtml(filterLabels[category] || category)}</button>`).join("");
+  const tags = inspirationPool.map((item, index) => `<button class="dna-tag${recommended.has(item.keyword) ? " is-recommended" : ""}${state.dnaFilter !== "all" && state.dnaFilter !== item.kind ? " is-filtered-out" : ""}" type="button" data-inspiration="${escapeHtml(item.keyword)}" data-dna-tag data-dna-kind="${escapeHtml(item.kind)}" title="添加“${escapeHtml(item.keyword)}”到创作想法"><span>${escapeHtml(item.keyword)}</span><small>${escapeHtml(item.kind)}</small></button>`).join("");
+  const recommendation = audienceGender === "all" ? "受众推荐待命" : `${audienceGenderLabels[audienceGender]} · ${recommended.size} 个高亮标签`;
+  return `<section class="dna-module" aria-labelledby="dnaLauncherTitle"><button type="button" class="dna-launcher" data-dna-toggle aria-expanded="false" aria-controls="dnaWindow"><span class="dna-launcher-orb" aria-hidden="true"><i></i><b></b><em></em></span><span class="dna-launcher-copy"><span class="card-label"><i></i>STORY DNA</span><strong id="dnaLauncherTitle">打开灵感 DNA</strong><small>${inspirationPool.length} 个标签 · ${escapeHtml(recommendation)}</small></span><span class="dna-launcher-arrow" aria-hidden="true">↗</span></button><div id="dnaWindow" class="dna-window" hidden><div class="dna-window-head"><div><span class="card-label"><i></i>NEURAL FIELD</span><h3>思维模式</h3><p>题材、爽点、爆点、叙事与主角身份的连接场。</p></div><button type="button" class="dna-close" data-dna-toggle aria-expanded="false" aria-controls="dnaWindow" title="收起灵感 DNA">×</button></div><div class="dna-filter-strip" role="tablist" aria-label="DNA 标签分类">${filters}</div><div class="dna-field" data-dna-field><canvas data-dna-canvas aria-hidden="true"></canvas><div class="dna-tag-layer" role="list">${tags}</div><div class="dna-core" aria-hidden="true"><span class="dna-core-ring"></span><strong>DNA</strong><small>CONNECT</small></div><div class="dna-thinking-state" data-dna-thinking>拆解 · 连接 · 重构</div></div><div class="dna-window-foot"><span>NETFLIX · HBO · SONY PICTURES TV</span><span>SELECT TAG TO ADD</span></div></div></section>`;
 }
 
 function addInspirationToIdea(keyword) {
@@ -974,13 +1217,142 @@ function renderValue(value, depth = 0) {
   return `<dl class="structured-data">${Object.entries(value).map(([key, item]) => `<div><dt>${escapeHtml(fieldLabel(key))}</dt><dd>${renderValue(item, depth + 1)}</dd></div>`).join("")}</dl>`;
 }
 
+function advisoryItemId(kind, item = {}, index = 0) {
+  const source = item.id || item.criterionId || item.criterion_id || item.tag || item.dimension || item.model || index;
+  return `advisory_${kind}_${String(source).toLowerCase().replace(/[\s：:，,。.!?！？；;]/g, "") || index}`;
+}
+
+const reviewConflictGuidance = {
+  structure: {
+    title: "先核对故事骨架是否兑现本阶段承诺",
+    recommendation: "优先保留主线承诺更明确、信息推进更有层次、且不会提前消耗后续悬念的版本。",
+    checks: ["核对开场是否建立了本阶段承诺", "核对每个转折是否改变主角的选择空间", "核对新增内容是否属于当前阶段，而不是提前写后续资产"],
+    decision: "证据同等时，选择新增设定更少、因果链更清楚、后续更容易执行的版本。",
+  },
+  plot: {
+    title: "先核对人物行动与剧情推进",
+    recommendation: "优先保留由主角主动选择推动、并且同时产生代价或新问题的剧情版本，不以情绪描述替代事件推进。",
+    checks: ["核对主角目标是否具体可执行", "核对阻力是否迫使主角做出选择", "核对选择是否带来可验证的结果、代价或新悬念"],
+    decision: "不要按评分高低直接取舍；选择能让下一步继续推进、且不依赖额外解释的因果链。",
+  },
+  design: {
+    title: "先核对发行属性与受众适配",
+    recommendation: "优先保留符合目标市场、受众方向和当前剧作模式的设计；TK 短剧要优先保证开头冲击与追更钩子。",
+    checks: ["核对内容是否符合已选市场的人名、地名和社会语境", "核对节奏是否符合 TK 短剧或普通长剧模式", "核对设计是否服务冲突与人物，而不是只增加风格包装"],
+    decision: "若两版质量接近，选择更符合发行属性、能被后续场景和对白阶段直接落地的版本。",
+  },
+  logic: {
+    title: "先核对事实、因果和已确认规则",
+    recommendation: "优先保留证据闭合、前后不矛盾、并且不新增未经确认设定的版本。",
+    checks: ["列出触发事件、人物行动和结果之间的因果链", "核对是否违反已确认的人物、世界或市场规则", "标出仍缺证据的前提，不要用解释性台词掩盖缺口"],
+    decision: "出现硬冲突时，以已确认上下文和用户规格为最高优先级，再处理模型之间的评分差异。",
+  },
+};
+
+function conflictGuidanceFor(dimension = "logic", scores = []) {
+  const base = reviewConflictGuidance[dimension] || reviewConflictGuidance.logic;
+  const numericScores = Array.isArray(scores) ? scores.map(Number).filter(Number.isFinite) : [];
+  const spread = numericScores.length > 1 ? Math.max(...numericScores) - Math.min(...numericScores) : 0;
+  return {
+    ...base,
+    scoreHint: spread ? `当前模型评分相差 ${spread} 分，先核对证据，不要直接按平均分拍板。` : "当前评分证据不足，先核对审核依据再决定。",
+  };
+}
+
+function reviewAdvisoryItems(reviewContent = {}) {
+  const makeUniqueIds = (items, kind) => {
+    const seen = new Map();
+    return items.map((item, index) => {
+      const baseId = item.id || advisoryItemId(kind, item, index);
+      const occurrence = seen.get(baseId) || 0;
+      seen.set(baseId, occurrence + 1);
+      return { ...item, id: occurrence ? `${baseId}_${occurrence + 1}` : baseId };
+    });
+  };
+  const independentIssues = makeUniqueIds((Array.isArray(reviewContent.independentIssues) ? reviewContent.independentIssues : []).map((item, index) => ({
+    ...item,
+    kind: "issue",
+    severity: ["high", "medium", "low"].includes(item.severity) ? item.severity : "medium",
+    suggestions: Array.isArray(item.suggestions) ? item.suggestions.filter(Boolean) : [],
+    evidence: Array.isArray(item.evidence) ? item.evidence.filter(Boolean) : [],
+  })), "issue");
+  const conflicts = makeUniqueIds((Array.isArray(reviewContent.conflicts) ? reviewContent.conflicts : []).map((item, index) => ({
+    ...item,
+    kind: "conflict",
+    severity: "medium",
+    suggestions: item.suggestion ? [item.suggestion] : [],
+    evidence: Array.isArray(item.scores) && item.scores.length ? [`模型评分：${item.scores.join(" / ")}`] : [],
+    guidance: item.guidance || conflictGuidanceFor(item.dimension, item.scores),
+  })), "conflict");
+  const failedReviews = makeUniqueIds((Array.isArray(reviewContent.advisories?.failedReviews) ? reviewContent.advisories.failedReviews : []).map((item, index) => ({
+    ...item,
+    kind: "failed",
+    severity: "low",
+    suggestions: [],
+    evidence: [item.message || "审核模型未返回审核意见"],
+  })), "failed");
+  return [...independentIssues, ...conflicts, ...failedReviews];
+}
+
+function reviewAdvisoryGate(reviewContent = {}) {
+  const items = reviewAdvisoryItems(reviewContent);
+  const decisions = new Map((Array.isArray(reviewContent.advisoryDecisions) ? reviewContent.advisoryDecisions : []).filter((item) => item?.id).map((item) => [item.id, item]));
+  const accepted = items.filter((item) => decisions.get(item.id)?.status === "accepted");
+  const blockingPending = items.filter((item) => {
+    const decision = decisions.get(item.id);
+    return decision?.status === "needs_human_review";
+  });
+  return { items, decisions, accepted, blockingPending };
+}
+
+function isMandatoryReviewIssue(item = {}) {
+  return Number(item.modelCount) >= 2 && item.severity === "high";
+}
+
+function reviewItemKey(item = {}) {
+  return String(item.tag || item.criterionId || item.id || "").toLowerCase().replace(/[\s：:，,。.!?！？；;]/g, "") || "review-item";
+}
+
+function mergeReviewItems(items = []) {
+  const groups = new Map();
+  const severityRank = { high: 0, medium: 1, low: 2 };
+  items.forEach((item) => {
+    const key = reviewItemKey(item);
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, {
+        ...item,
+        suggestions: [...new Set(Array.isArray(item.suggestions) ? item.suggestions.filter(Boolean) : [])].slice(0, 6),
+        evidence: [...new Set(Array.isArray(item.evidence) ? item.evidence.filter(Boolean) : [])].slice(0, 6),
+        models: [...new Set(Array.isArray(item.models) ? item.models.filter(Boolean) : [])],
+      });
+      return;
+    }
+    current.severity = (severityRank[item.severity] ?? 1) < (severityRank[current.severity] ?? 1) ? item.severity : current.severity;
+    current.modelCount = Math.max(Number(current.modelCount) || 0, Number(item.modelCount) || 0);
+    current.models = [...new Set([...current.models, ...(Array.isArray(item.models) ? item.models : [])].filter(Boolean))];
+    current.suggestions = [...new Set([...current.suggestions, ...(Array.isArray(item.suggestions) ? item.suggestions : [])].filter(Boolean))].slice(0, 6);
+    current.evidence = [...new Set([...current.evidence, ...(Array.isArray(item.evidence) ? item.evidence : [])].filter(Boolean))].slice(0, 6);
+    current.acceptedByHuman = current.acceptedByHuman || item.acceptedByHuman;
+  });
+  return [...groups.values()];
+}
+
 function reviewIssueGroups(reviewContent = {}) {
-  const freshIssues = Array.isArray(reviewContent.commonIssues) && reviewContent.commonIssues.length
-    ? reviewContent.commonIssues.filter((item) => Number(item.modelCount) >= 2)
-    : (Array.isArray(reviewContent.reviewIssues) ? reviewContent.reviewIssues.filter((item) => Number(item.modelCount) >= 2) : []);
+  const advisoryGate = reviewAdvisoryGate(reviewContent);
+  const acceptedAdvisories = advisoryGate.accepted
+    .filter((item) => item.kind !== "failed")
+    .map((item) => ({
+      ...item,
+      criterionId: item.criterionId || `ADVISORY_${item.id}`,
+      tag: item.tag || `${item.dimension || "logic"} 建议已采纳`,
+      modelCount: Number(item.modelCount) || 1,
+      acceptedByHuman: true,
+      suggestions: [...(Array.isArray(item.suggestions) ? item.suggestions : []), advisoryGate.decisions.get(item.id)?.reason].filter(Boolean),
+    }));
   const pendingClosures = Array.isArray(reviewContent.revision?.closure?.items)
     ? reviewContent.revision.closure.items.filter((item) => item.status !== "resolved").map((item) => ({
-      id: item.id,
+      ...item,
       tag: item.tag || "未关闭修订项",
       dimension: item.dimension || "logic",
       severity: item.severity || "medium",
@@ -990,40 +1362,77 @@ function reviewIssueGroups(reviewContent = {}) {
       evidence: Array.isArray(item.evidence) ? item.evidence : [],
     }))
     : [];
-  const candidates = [...freshIssues, ...pendingClosures];
-  return candidates.filter((item, index, all) => {
-    const key = String(item.criterionId || item.tag || item.id || index).toLowerCase();
-    return all.findIndex((candidate) => String(candidate.criterionId || candidate.tag || candidate.id || "").toLowerCase() === key) === index;
-  });
+  const mandatoryIssues = Array.isArray(reviewContent.mandatoryIssues) && reviewContent.mandatoryIssues.length
+    ? reviewContent.mandatoryIssues
+    : (Array.isArray(reviewContent.commonIssues) ? reviewContent.commonIssues.filter(isMandatoryReviewIssue) : (Array.isArray(reviewContent.reviewIssues) ? reviewContent.reviewIssues.filter(isMandatoryReviewIssue) : []));
+  const baseItems = pendingClosures.length ? pendingClosures : mandatoryIssues;
+  return mergeReviewItems([...baseItems, ...acceptedAdvisories]);
 }
 
-function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage } = {}) {
+function reviewRecommendationGroups(reviewContent = {}) {
+  const commonIssues = Array.isArray(reviewContent.recommendedIssues) && reviewContent.recommendedIssues.length
+    ? reviewContent.recommendedIssues
+    : (Array.isArray(reviewContent.commonIssues) ? reviewContent.commonIssues.filter((item) => Number(item.modelCount) >= 2 && !isMandatoryReviewIssue(item)) : []);
+  return mergeReviewItems(commonIssues);
+}
+
+function renderAdvisoryCards(items = [], advisoryGate = {}, reviewId = "") {
+  const decisions = advisoryGate.decisions || new Map();
+  return items.map((item) => {
+    const decision = decisions.get(item.id);
+    const status = decision?.status || "pending";
+    const source = item.kind === "conflict"
+      ? `${Array.isArray(item.models) && item.models.length ? item.models.map((model, index) => `${model}${item.scores?.[index] !== undefined ? ` ${item.scores[index]}分` : ""}`).join(" / ") : "模型"} · 一致度 ${item.agreement ?? "-"}%`
+      : item.kind === "failed"
+        ? `${item.model || item.provider || "审核模型"} · 调用失败`
+        : `${Array.isArray(item.models) && item.models.length ? item.models.join(" / ") : "单模型意见"}`;
+    const statusLabel = status === "accepted" ? "已采纳 · 等待修订" : status === "ignored" ? "已忽略 · 已记录理由" : status === "needs_human_review" ? "待人工裁决" : item.kind === "failed" ? "审核未完成" : "待处理";
+    const guidance = item.kind === "conflict" ? item.guidance || conflictGuidanceFor(item.dimension, item.scores) : null;
+    const guidancePanel = guidance
+      ? `<div class="review-advisory-guidance"><div class="review-advisory-guidance-title"><strong>审核建议</strong><span>${escapeHtml(guidance.title)}</span></div><p>${escapeHtml(guidance.recommendation)}</p><strong>核对指引</strong><ol>${guidance.checks.map((check) => `<li>${escapeHtml(check)}</li>`).join("")}</ol><p class="review-advisory-decision"><strong>决策规则</strong>${escapeHtml(guidance.decision)} ${escapeHtml(guidance.scoreHint)}</p></div>`
+      : item.kind !== "failed" && item.suggestions?.length
+        ? `<div class="review-advisory-guidance"><strong>审核建议</strong><ul>${item.suggestions.map((suggestion) => `<li>${escapeHtml(suggestion)}</li>`).join("")}</ul></div>`
+        : "";
+    const actions = ["pending", "needs_human_review"].includes(status) && item.kind !== "failed"
+      ? `<div class="review-advisory-actions"><input type="text" data-advisory-reason placeholder="${item.kind === "conflict" ? "补充裁决依据或修改边界（必填）" : "保留当前版本时填写理由"}" aria-label="${escapeHtml(item.tag || item.dimension || "审核建议")}处理说明"${item.kind === "conflict" ? " required" : ""}><button type="button" class="stage-secondary" data-advisory-decision="accepted" data-advisory-requires-reason="${item.kind === "conflict" ? "true" : "false"}" data-review-id="${escapeHtml(reviewId)}" data-advisory-id="${escapeHtml(item.id)}">${item.kind === "conflict" ? "按此方向修订" : "采纳并修订"}</button><button type="button" class="text-button" data-advisory-decision="ignored" data-review-id="${escapeHtml(reviewId)}" data-advisory-requires-reason="false" data-advisory-id="${escapeHtml(item.id)}">保留当前版本</button></div>`
+      : "";
+    return `<article class="review-advisory-item is-${escapeHtml(status)}" data-advisory-item="${escapeHtml(item.id)}"><div class="review-advisory-top"><div><span class="review-advisory-kind">${escapeHtml(item.kind === "conflict" ? "评分分歧" : item.kind === "failed" ? "运行状态" : "单模型建议")}</span><strong>${escapeHtml(item.tag || item.dimension || item.model || "审核建议")}</strong></div><em>${escapeHtml(statusLabel)}</em></div><p class="review-advisory-source">${escapeHtml(source)}</p>${guidancePanel}${item.evidence?.length ? `<details><summary>查看证据</summary><ul>${item.evidence.map((evidence) => `<li>${escapeHtml(evidence)}</li>`).join("")}</ul></details>` : ""}${decision?.reason ? `<p class="review-advisory-decision-note">处理说明：${escapeHtml(decision.reason)}</p>` : ""}${actions}</article>`;
+  }).join("");
+}
+
+function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage, reviewId = "" } = {}) {
   const revision = reviewContent.revision || null;
   const closure = revision?.closure;
-  const closurePanel = closure?.required ? `<section class="revision-closure ${closure.allResolved ? "is-resolved" : "is-open"}"><div class="revision-closure-head"><div><span class="card-label"><i></i>REVISION CLOSURE</span><strong>${closure.allResolved ? "本轮修订已逐项关闭" : "本轮修订仍有未关闭项"}</strong><p>责任方：${escapeHtml(revision?.owner || "本阶段主创")}。每项至少由两个模型确认关闭，不以重新生成替代验收。</p></div><span>${escapeHtml(`${closure.items.filter((item) => item.status === "resolved").length} / ${closure.items.length}`)}</span></div><div class="revision-closure-list">${closure.items.map((item) => `<article class="revision-closure-item is-${escapeHtml(item.status || "unresolved")}"><div><b>${escapeHtml(item.id)}</b><strong>${escapeHtml(item.tag)}</strong></div><em>${escapeHtml(item.status === "resolved" ? "已关闭" : item.status === "partial" ? "部分完成" : "未关闭")}</em>${item.remainingFix?.length ? `<p>${escapeHtml(item.remainingFix.join("；"))}</p>` : `<p>${escapeHtml(item.acceptance || "已满足修订验收条件")}</p>`}</article>`).join("")}</div></section>` : "";
-  const independentIssues = Array.isArray(reviewContent.independentIssues) ? reviewContent.independentIssues : [];
-  const conflicts = Array.isArray(reviewContent.conflicts) ? reviewContent.conflicts : [];
-  const failedReviews = Array.isArray(reviewContent.advisories?.failedReviews) ? reviewContent.advisories.failedReviews : [];
-  const advisoryItems = [
-    ...independentIssues.map((item) => `${item.tag || "单模型意见"}：${item.suggestions?.join("；") || item.evidence?.join("；") || "建议人工复核"}`),
-    ...conflicts.map((item) => `意见分歧 / ${item.dimension}：${item.suggestion}`),
-    ...failedReviews.map((item) => `${item.model || "审核模型"} 未完成：${item.message || "未返回审核意见"}`),
-  ].filter(Boolean);
-  const advisoryPanel = advisoryItems.length ? `<section class="review-advisories"><strong>参考建议，不阻断确认</strong><ul>${advisoryItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>` : "";
-  if (passed) return `<div class="review-summary is-passed"><strong>共识审核通过，可以确认并进入下一步</strong><p>至少两个模型完成独立审核，且没有两个模型共同确认的阻断问题。</p>${closurePanel}${advisoryPanel}</div>`;
+  const closureItems = Array.isArray(closure?.items) ? closure.items : [];
+  const closureResolvedCount = closureItems.filter((item) => item.status === "resolved").length;
+  const closurePanel = closure?.required ? `<section class="revision-progress ${closure.allResolved ? "is-resolved" : "is-open"}"><div class="revision-progress-head"><div><span class="card-label"><i></i>REVISION CHECK</span><strong>${closure.allResolved ? "修订合同已全部关闭" : "修订合同仍有未关闭项"}</strong><p>责任方：${escapeHtml(revision?.owner || "本阶段主创")}。下方只显示仍需处理的工作项，避免重复展示同一问题。</p></div><span>${escapeHtml(`${closureResolvedCount} / ${closureItems.length}`)}</span></div></section>` : "";
+  const advisoryGate = reviewAdvisoryGate(reviewContent);
+  const advisoryItems = advisoryGate.items;
+  const pendingAdvisoryIds = new Set(advisoryGate.blockingPending.map((item) => item.id));
+  const acceptedAdvisoryIds = new Set(advisoryGate.accepted.map((item) => item.id));
+  const blockingAdvisories = advisoryItems.filter((item) => pendingAdvisoryIds.has(item.id));
+  const referenceAdvisories = advisoryItems.filter((item) => !pendingAdvisoryIds.has(item.id) && !acceptedAdvisoryIds.has(item.id));
+  const advisoryPanel = [
+    advisoryGate.accepted.length ? `<p class="review-decision-note">已采纳 ${advisoryGate.accepted.length} 条参考意见，已并入下方“必须修订”清单。</p>` : "",
+    blockingAdvisories.length ? `<section class="review-advisories review-advisories-blocking"><div class="review-advisories-head"><div><strong>需要人工裁决 · ${blockingAdvisories.length} 项</strong><p>这些意见由创作者决定是否转为修订；处理完成前不能确认本阶段。</p></div></div><div class="review-advisory-list">${renderAdvisoryCards(blockingAdvisories, advisoryGate, reviewId)}</div></section>` : "",
+    referenceAdvisories.length ? `<details class="review-reference-panel"><summary><span>参考意见与模型状态</span><em>${referenceAdvisories.length} 项，不阻断确认</em></summary><div class="review-advisory-list">${renderAdvisoryCards(referenceAdvisories, advisoryGate, reviewId)}</div></details>` : "",
+  ].join("");
+  const recommendations = reviewRecommendationGroups(reviewContent);
+  const recommendationPanel = recommendations.length ? `<details class="review-reference-panel review-recommendations"><summary><span>可选优化建议</span><em>${escapeHtml(`${recommendations.length} 项，不阻断确认`)}</em></summary><div class="review-issue-list">${recommendations.map((issue, index) => `<article class="review-issue review-issue-${escapeHtml(issue.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(issue.tag || "共识建议")}</strong><span class="review-issue-severity">${escapeHtml(issue.severity || "medium")} · ${escapeHtml(`${issue.modelCount || 2} 个模型共同指出`)}</span></div>${issue.suggestions?.length ? `<ul>${issue.suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</article>`).join("")}</div></details>` : "";
+  if (passed) return `<div class="review-summary is-passed"><strong>审核通过，可以确认并进入下一步</strong><p>至少两个模型完成独立审核，且没有未关闭的高风险共识问题。评分分歧、低风险建议和单模型超时不会阻断确认。</p>${closurePanel}${recommendationPanel}${advisoryPanel}</div>`;
   const issues = reviewIssueGroups(reviewContent);
   const issueList = issues.length
-    ? `<div class="review-issue-list">${issues.map((issue, index) => {
-      const source = Number(issue.modelCount) >= 2 ? `${issue.modelCount} 个模型共同指出` : issue.models?.length ? `${issue.models.length} 个模型指出` : "审核清单";
+    ? `<section class="review-worklist"><div class="review-worklist-head"><div><span class="card-label"><i></i>REQUIRED WORKLIST</span><strong>必须修订 · ${issues.length} 类问题</strong><p>这是一份去重后的唯一执行清单。点击右侧按钮后，系统会按这些项目定向改稿并逐项复审。</p></div><span>仅处理此处</span></div><div class="review-issue-list">${issues.map((issue, index) => {
+      const source = issue.acceptedByHuman ? "创作者已采纳" : Number(issue.modelCount) >= 2 ? `${issue.modelCount} 个模型共同指出` : issue.models?.length ? `${issue.models.length} 个模型指出` : "审核清单";
       const suggestions = (Array.isArray(issue.suggestions) ? issue.suggestions : []).filter(Boolean);
       const evidence = (Array.isArray(issue.evidence) ? issue.evidence : []).filter(Boolean);
       return `<article class="review-issue review-issue-${escapeHtml(issue.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(issue.tag || "待修订项")}</strong><span class="review-issue-severity">${escapeHtml(issue.severity || "medium")} · ${escapeHtml(source)}</span></div>${suggestions.length ? `<ul>${suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}${evidence.length ? `<details><summary>查看问题证据</summary><ul>${evidence.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></details>` : ""}</article>`;
-    }).join("")}</div>`
+    }).join("")}</div></section>`
     : `<p class="review-empty">当前没有形成二模型共识修订项，请重新生成当前阶段并重新审核。</p>`;
-  const countLabel = issues.length ? `${issues.length} 项二模型共识修订项` : "等待重新审核";
-  const summaryTitle = issues.length ? "共识复核未通过，需要定向修订" : "审核未完成，需要重新提交";
-  const summaryCopy = issues.length ? "只有至少两个模型共同确认的问题会进入强制修订清单。" : "当前没有可安全执行的二模型共识修订合同，单模型建议和失败记录不会触发强制改稿。";
-  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>${summaryTitle}</strong><p>${summaryCopy}</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${closurePanel}${issueList}${advisoryPanel}<p class="review-panel-note">统一操作入口位于下方“下一步”。${issues.length ? "修订版本会绑定强制清单，复审必须逐项给出关闭结论。" : "请重新提交当前阶段，系统会保留现有输入并重新执行审核。"}</p></div>`;
+  const countLabel = issues.length ? `${issues.length} 类必须修订` : "等待重新审核";
+  const summaryTitle = issues.length ? "审核未通过，需要处理必修项" : "审核未完成，需要重新提交";
+  const summaryCopy = issues.length ? "系统已把重复问题合并为一份工作清单；低风险建议和评分分歧不会混入必修项。" : "当前没有可安全执行的修订合同，请重新提交当前阶段。";
+  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>${summaryTitle}</strong><p>${summaryCopy}</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${closurePanel}${issueList}${recommendationPanel}${advisoryPanel}<p class="review-panel-note">唯一下一步位于右侧。${issues.length ? "定向修订完成后，系统会按同一清单逐项复审。" : "请重新生成当前阶段并重新审核。"}</p></div>`;
 }
 
 function renderTitleStage() {
@@ -1059,9 +1468,12 @@ function renderArtifactStage() {
   const review = reviewForArtifact(artifact);
   const reviewContent = review?.content || {};
   const approved = state.approved.has(artifact.id);
-  const reviewLabel = approved ? "本阶段已确认" : reviewContent.pass ? "互审一致性通过 · 等待确认" : "交叉审核已汇总完整修订清单";
-  const reviewPanel = review ? renderReviewPanel(reviewContent, { passed: approved || reviewContent.pass, stage: state.stage }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
-  const inlineStatus = approved ? "已确认版本" : reviewContent.pass ? "互审一致性通过 · 请在右侧确认" : "待修订 · 请在右侧执行交叉修订";
+  const advisoryGate = reviewAdvisoryGate(reviewContent);
+  const blockingItems = reviewIssueGroups(reviewContent);
+  const reviewPassed = approved || (reviewContent.pass && !advisoryGate.accepted.length && !advisoryGate.blockingPending.length);
+  const reviewLabel = approved ? "本阶段已确认" : reviewPassed ? "审核通过 · 等待确认" : advisoryGate.blockingPending.length ? "待人工裁决 · 处理右侧意见" : advisoryGate.accepted.length ? "已有采纳意见 · 已并入必修清单" : blockingItems.length ? `待处理 ${blockingItems.length} 类必修项` : "审核未完成 · 需要重新提交";
+  const reviewPanel = review ? renderReviewPanel(reviewContent, { passed: reviewPassed, stage: state.stage, reviewId: review.id }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
+  const inlineStatus = approved ? "已确认版本" : reviewPassed ? "审核通过 · 请在右侧确认" : advisoryGate.blockingPending.length ? "待人工裁决 · 请处理右侧意见" : blockingItems.length ? "待定向修订 · 请使用右侧唯一按钮" : "需要重新提交当前阶段";
   return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${reviewPanel}</section>`;
 }
 
@@ -1093,7 +1505,8 @@ function renderHandoff() {
 
 function renderStage() {
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;
-  $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="生产流程"><div><span class="eyebrow">PRODUCTION FLOW</span><strong>步骤 ${String(stageIndex(workflowStage()) + 1).padStart(2, "0")} / ${stageOrder.length}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>完成后</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderer()}`;
+  stopDnaMotion();
+  $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="生产流程"><div><span class="eyebrow">PRODUCTION FLOW</span><strong>当前阶段 ${productionProgressLabel(workflowStage())}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>完成后</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderer()}`;
   bindStageActions();
   renderShellState();
 }
@@ -1114,6 +1527,8 @@ async function waitForRunJob(jobId) {
       if (job?.status === "failed") {
         const terminalError = new Error(job.error || "本次运行失败");
         terminalError.terminal = true;
+        terminalError.code = job.errorCode || "RUN_FAILED";
+        terminalError.recoverable = terminalError.code === "RUN_INTERRUPTED";
         throw terminalError;
       }
     } catch (error) {
@@ -1132,8 +1547,21 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
   state.busy = true;
   renderStage();
   try {
-    const accepted = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan }) });
-    const payload = { result: await waitForRunJob(accepted.job?.jobId) };
+    let payload;
+    let recoveryAttempted = false;
+    while (!payload) {
+      const accepted = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan }) });
+      try {
+        payload = { result: await waitForRunJob(accepted.job?.jobId) };
+      } catch (error) {
+        if (!recoveryAttempted && error?.recoverable) {
+          recoveryAttempted = true;
+          showToast("检测到服务重启，正在使用已保存输入恢复当前阶段…");
+          continue;
+        }
+        throw error;
+      }
+    }
     updateAgentState(payload.result?.state);
     // The run response may contain the last approved stage; keep the stage the user just ran visible.
     state.stage = stage;
@@ -1171,8 +1599,32 @@ async function runAutoRevision(stage = state.stage) {
       return `${index + 1}. ${issue.tag || "待修订项"}（${issue.severity || "medium"}）：${fixes}${evidence ? `；${evidence}` : ""}`;
     }),
   ].join("\n");
-  showToast(`已锁定 ${issues.length} 项问题，正在执行定向修订与逐项复审`);
+  showToast(`已锁定 ${issues.length} 类必须修订项，正在执行定向修订与逐项复审`);
   await runCurrentStage(stage, { revisionPlan: plan });
+}
+
+async function decideAdvisory(reviewId, advisoryId, status, reason = "", requiresReason = false) {
+  if ((status === "ignored" || (status === "accepted" && requiresReason)) && !reason.trim()) {
+    showToast(status === "accepted" ? "按此方向修订前，请填写裁决依据或修改边界" : "保留当前版本必须填写理由");
+    return;
+  }
+  state.busy = true;
+  state.lastError = "";
+  renderStage();
+  try {
+    const payload = await request(`/reviews/${encodeURIComponent(reviewId)}/advisories/${encodeURIComponent(advisoryId)}`, {
+      method: "POST",
+      body: JSON.stringify({ status, reason }),
+    });
+    updateAgentState(payload.result?.state);
+    showToast(status === "accepted" ? "建议已采纳，下一步将执行定向修订" : "已保留当前版本，并记录处理理由");
+  } catch (error) {
+    state.lastError = userFacingError(error);
+    showToast(state.lastError);
+  } finally {
+    state.busy = false;
+    renderStage();
+  }
 }
 
 async function approveArtifact(artifactId) {
@@ -1276,6 +1728,11 @@ function bindAgentTaskAction() {
       void runAutoRevision(button.dataset.autoRevise || state.stage);
       return;
     }
+    if (action === "review-advisories") {
+      document.querySelector(".review-advisories")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      document.querySelector(".review-advisory-item button")?.focus();
+      return;
+    }
     if (action === "approve") {
       void approveArtifact(button.dataset.approveArtifact);
       return;
@@ -1316,7 +1773,14 @@ function bindStageActions() {
   $("#openingImpactRange")?.addEventListener("input", syncCreativeControls);
   $("#openingImpactRange")?.addEventListener("change", () => { syncCreativeControls(); void persistCreativeSettings(); });
   $$('[data-creative-control]').forEach((control) => control.addEventListener("change", () => { syncCreativeControls(); void persistCreativeSettings(); }));
+  $$('[data-dna-toggle]').forEach((button) => button.addEventListener("click", () => toggleDnaWindow()));
+  $$('[data-dna-filter]').forEach((button) => button.addEventListener("click", () => setDnaFilter(button.dataset.dnaFilter || "all")));
   $$('[data-inspiration]').forEach((button) => button.addEventListener("click", () => addInspirationToIdea(button.dataset.inspiration || "")));
+  $$('[data-advisory-decision]').forEach((button) => button.addEventListener("click", () => {
+    const card = button.closest("[data-advisory-item]");
+    const reason = card?.querySelector("[data-advisory-reason]")?.value || "";
+    void decideAdvisory(button.dataset.reviewId, button.dataset.advisoryId, button.dataset.advisoryDecision, reason, button.dataset.advisoryRequiresReason === "true");
+  }));
   if (state.stage === "brief") syncBriefRanges();
   if (state.stage === "brief") syncCreativeControls();
 }
@@ -1352,7 +1816,6 @@ $$('[data-stage]').forEach((button) => button.addEventListener("click", () => {
 $("#openModelRouting").addEventListener("click", openRoutingDialog);
 $("#openModelRoutingSide").addEventListener("click", openRoutingDialog);
 $("#saveRouting").addEventListener("click", saveRouting);
-$("#editContext").addEventListener("click", () => { state.stage = "brief"; renderStage(); $("#idea")?.focus(); });
 $("#agentMenu").addEventListener("click", () => showToast("Agent 状态独立保存于 Story Forge 会话"));
 function startNewDraft() {
   try {

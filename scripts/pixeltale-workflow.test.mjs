@@ -5,10 +5,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "public/pixeltale.html"), "utf8");
+const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevisionContract, validateContent, validateReview } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStagePrimary, aggregateCrossReview, buildRevisionContract, mergeRevisionContent, reviewAdvisoryGate, validateContent, validateReview } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
 assert.match(agent, /modelRouter\.reviewModels\(route\)/, "cross-review must be selected by the SuperPixel router");
@@ -26,13 +27,35 @@ assert.match(app, /function userFacingError\(error\)/, "provider errors must be 
 assert.match(app, /agentTaskCopy"\)\.textContent = state\.lastError \|\| action\.copy/, "run errors must remain visible in the right-rail next action");
 assert.match(app, /agentTaskCopy"\)\.setAttribute\("role", state\.lastError \? "alert"/, "run errors must be announced from the right-rail next action");
 assert.match(app, /function renderBriefArtifact\(\)/, "brief output must show its generated artifact and review state");
-assert.match(app, /共识复核未通过，需要定向修订[\s\S]*统一操作入口位于下方/, "brief review failures must explain how to continue");
-assert.match(app, /参考建议，不阻断确认/, "single-model opinions must be visibly separated from mandatory revisions");
-assert.match(app, /kind: "auto-revise"[\s\S]*执行交叉修订并复审/, "review flow must expose one canonical revision action");
+assert.match(app, /const inspirationPool = \[/, "brief stage must expose the current Story DNA taxonomy");
+assert.match(app, /const dnaAudienceRecommendations = \{/, "Story DNA must retain audience-based recommendations");
+assert.match(app, /function startDnaMotion\(field\)/, "Story DNA must have a canvas motion controller");
+assert.match(app, /function toggleDnaWindow\(open\)/, "Story DNA must have an explicit expand/collapse interaction");
+assert.match(app, /data-dna-toggle/, "Story DNA must expose a visible launch control");
+assert.match(app, /id=\"dnaWindow\" class=\"dna-window\" hidden/, "Story DNA field must start collapsed");
+assert.match(app, /data-dna-canvas/, "Story DNA must render its particle field on canvas");
+assert.match(app, /data-dna-filter/, "Story DNA must expose category filters");
+assert.match(app, /data-dna-tag/, "Story DNA tags must remain selectable");
+assert.match(app, /审核未通过，需要处理必修项[\s\S]*唯一下一步位于右侧/, "brief review failures must explain how to continue");
+assert.match(app, /参考意见与模型状态[\s\S]*不阻断确认/, "single-model opinions must be visibly separated from mandatory revisions");
+assert.match(app, /kind: "auto-revise"[\s\S]*执行定向修订并复审/, "review flow must expose one canonical revision action");
+assert.match(app, /REQUIRED WORKLIST[\s\S]*仅处理此处/, "mandatory revisions must be presented as one canonical worklist");
+assert.match(app, /pendingClosures\.length \? pendingClosures : mandatoryIssues/, "an open revision contract must be the only source for mandatory work items");
+assert.match(app, /review-reference-panel/, "optional review material must be collapsible");
 assert.doesNotMatch(app, /review-auto-fix/, "review panel must not expose a duplicate revision button");
 assert.match(html, /id="agentTaskAction"/, "the right rail must contain the canonical next-step action slot");
 assert.match(app, /function renderAgentTaskAction\(action\)/, "the right rail must render the current workflow action");
 assert.match(app, /function bindAgentTaskAction\(\)/, "the right rail action must have a dedicated event binding");
+assert.match(app, /const productionStageTotal = stageOrder\.length - 1/, "progress must use the seven confirmable production stages");
+assert.match(app, /function productionProgressLabel\(stage = workflowStage\(\)\)/, "all progress surfaces must share one stage counter");
+assert.match(app, /\$\("#flowStepCounter"\)\.textContent = productionProgressLabel\(flowStage\)/, "right-rail progress must use the shared counter");
+assert.match(app, /当前阶段 \$\{productionProgressLabel\(workflowStage\(\)\)\}/, "central progress must use the shared counter");
+assert.match(html, /<span>当前阶段<\/span><span id="flowStepCounter">01 \/ 07<\/span>/, "right rail must label its seven-stage progress consistently");
+assert.match(html, /id="approvedCount">0 \/ 7/, "left rail must keep the seven-stage confirmation denominator");
+assert.doesNotMatch(html, /class="agent-context"/, "the right rail must not show a passive context module");
+assert.doesNotMatch(html, /id="contextChips"|id="editContext"/, "passive context chips and their dead edit action must be removed");
+assert.doesNotMatch(nestedHtml, /class="agent-context"|id="contextChips"|id="editContext"/, "the nested PixelTale page must not retain the passive context module");
+assert.doesNotMatch(app, /contextChips|editContext/, "the app must not render or bind the removed passive context module");
 assert.doesNotMatch(app, /renderNextStep/, "the central workspace must not render a duplicate next-step card");
 assert.doesNotMatch(app, /review-button-action/, "artifact cards must not expose a second confirmation entry");
 assert.match(app, /const fieldLabelMap = \{[\s\S]*title_zh: "剧名"/, "structured fields must have Chinese display labels");
@@ -49,10 +72,25 @@ assert.match(styles, /\.app-shell \{ height: 100vh; height: 100dvh;[\s\S]*overfl
 assert.match(styles, /\.stage-content \{ width: min\(1180px,/, "wide screens must use the central workspace");
 assert.match(styles, /\.inspiration-pool \{[\s\S]*height: 360px;/, "inspiration pool must not push the workflow down");
 assert.match(app, /function renderReviewPanel\(reviewContent = \{\}, \{ passed/, "review output must expose a complete issue panel");
-assert.match(app, /执行交叉修订并复审/, "review output must offer one-click full-list revision");
+assert.match(app, /可选优化建议[\s\S]*不阻断确认/, "low-risk consensus recommendations must be visibly non-blocking");
+assert.match(app, /审核超时\/失败/, "review cards must expose actual model failure state");
+assert.match(app, /执行定向修订并复审/, "review output must offer one canonical revision action");
 assert.match(app, /revisionPlan/, "automatic revision must pass a scoped revision plan");
-assert.match(app, /revision-closure/, "revision output must expose item-by-item closure evidence");
+assert.match(app, /revision-progress/, "revision output must expose closure progress");
+assert.match(app, /data-advisory-decision/, "advisory feedback must expose creator decision actions");
+assert.match(app, /const reviewConflictGuidance =/, "score conflicts must have deterministic review guidance");
+assert.match(app, /审核建议[\s\S]*核对指引[\s\S]*决策规则/, "advisory cards must explain what to check and how to decide");
+assert.match(app, /guidance\.title/, "advisory cards must display the dimension-specific guidance title");
+assert.match(app, /data-advisory-requires-reason/, "conflict decisions must expose their required rationale state");
+assert.match(styles, /\.review-advisory-guidance \{/, "advisory guidance must have a distinct readable panel");
+assert.match(agent, /mergeRevisionContent\(stage, primary\.content, revisionBase\?\.content\)/, "revision output must preserve omitted stage fields from the source artifact");
 assert.match(styles, /\.review-issue-list \{[\s\S]*max-height: 420px;/, "review issues must stay readable in a bounded panel");
+assert.match(styles, /\.dna-field \{[\s\S]*height: 420px;/, "Story DNA must reserve a stable spherical field");
+assert.match(styles, /\.dna-field canvas \{/, "Story DNA must layer a particle canvas");
+assert.match(styles, /\.dna-core \{[\s\S]*border-radius: 50%[\s\S]*pointer-events: none;/, "Story DNA must have a spherical thought core");
+assert.match(styles, /\.dna-tag \{[\s\S]*will-change: transform, opacity;/, "Story DNA tags must support slow depth motion");
+assert.match(styles, /@keyframes dna-launcher-drift/, "Story DNA launcher must have visible motion");
+assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.dna-launcher-orb/, "Story DNA must respect reduced-motion preferences");
 assert.match(agent, /只返回最多 3 个会阻断下一阶段的问题/, "review prompts must stay concise and stage-scoped");
 assert.match(agent, /revisionClosureProtocol/, "review prompts must require closure evidence for every revision item");
 assert.match(agent, /BRIEF_SPEC_MATCH/, "brief review must use stable stage-specific criterion ids");
@@ -124,8 +162,10 @@ assert.equal(aggregated.commonIssueCount, 1, "shared issue count must remain ava
 assert.ok(aggregated.independentIssueCount >= 1, "independent issue count must remain available");
 assert.equal(aggregated.reviewIssues[0].suggestions.length, 2, "all suggestions for a shared issue must be retained");
 assert.equal(aggregated.pass, false, "any unresolved issue must keep the artifact behind the review gate");
+assert.ok(aggregated.independentIssues.some((item) => item.tag === "审核模型补充意见" && item.models.includes("review-a")), "unstructured reviewer changes must retain their source model");
 assert.ok(!aggregated.required_changes.some((item) => item.includes("节奏偏弱")), "a single-model opinion must remain advisory until independently confirmed");
 assert.ok(aggregated.required_changes.some((item) => item.includes("人物动机不足")), "two-model agreement must become a mandatory change");
+assert.equal(aggregated.mandatoryIssueCount, 1, "only high-severity two-model issues must block confirmation");
 
 const advisoryOnly = aggregateCrossReview([
   {
@@ -186,11 +226,84 @@ const advisoryContract = buildRevisionContract({
   required_changes: ["单模型建议只供参考"],
 }, { stage: "brief", sourceArtifactId: "artifact_v3", id: "revision_test_3" });
 assert.equal(advisoryContract.items.length, 0, "single-model advice must never create a mandatory revision contract");
+const acceptedAdvisoryContract = buildRevisionContract({
+  commonIssues: [],
+  reviewIssues: [],
+  independentIssues: [{ id: "advisory_issue_character_motivation", tag: "人物动机不足", dimension: "plot", severity: "high", modelCount: 1, models: ["review-a"], suggestions: ["补足触发事件与代价"], evidence: ["主角没有明确选择原因"] }],
+  advisoryDecisions: [{ id: "advisory_issue_character_motivation", status: "accepted", reason: "采纳，必须补出选择代价" }],
+}, { stage: "characters", sourceArtifactId: "artifact_v5", id: "revision_test_5" });
+assert.equal(acceptedAdvisoryContract.items.length, 1, "a creator-accepted advisory must become a revision contract item");
+assert.equal(acceptedAdvisoryContract.items[0].modelCount, 1, "accepted advisory must retain its original model count");
+
+const sourceCharacters = {
+  characters: [{ id: "C001", name_zh: "Alex", desire_zh: "查明真相" }],
+  relationships: [{ from: "C001", to: "C002", dynamic_zh: "互相利用" }],
+  world_rules: ["所有记忆证据必须有可追溯来源"],
+};
+const partialCharacters = mergeRevisionContent("characters", { characters: [{ id: "C001", name_zh: "Alex", desire_zh: "复仇" }] }, sourceCharacters);
+assert.deepEqual(partialCharacters.relationships, sourceCharacters.relationships, "partial character revisions must preserve relationships");
+assert.deepEqual(partialCharacters.world_rules, sourceCharacters.world_rules, "partial character revisions must preserve world rules");
+assert.doesNotThrow(() => validateContent("characters", partialCharacters), "merged character revisions must satisfy the stage schema");
+const sourceArc = { unit: "episode_or_chapter", units: [{ number: 1, title_zh: "开场" }], arc_summary_zh: "原始分集总纲" };
+const partialArc = mergeRevisionContent("arc", { units: [{ number: 1, title_zh: "修订后的开场" }] }, sourceArc);
+assert.equal(partialArc.arc_summary_zh, sourceArc.arc_summary_zh, "partial arc revisions must preserve arc_summary_zh");
+assert.doesNotThrow(() => validateContent("arc", partialArc), "merged arc revisions must satisfy the stage schema");
+const emptyCharacters = mergeRevisionContent("characters", { characters: sourceCharacters.characters, relationships: [], world_rules: [] }, sourceCharacters);
+assert.deepEqual(emptyCharacters.relationships, sourceCharacters.relationships, "empty relationship revisions must preserve the source relationship contract");
+assert.deepEqual(emptyCharacters.world_rules, sourceCharacters.world_rules, "empty world-rule revisions must preserve the source world contract");
+const sourceScenes = {
+  scenes: [
+    { id: "S001", location_zh: "公寓", action_zh: "原始动作", props: [{ id: "PR01", name_zh: "警徽", appearance: "旧外观" }], shot_plan: [{ shot_id: "SH001", description_zh: "原始镜头" }, { shot_id: "SH002", description_zh: "第二镜头" }] },
+    { id: "S002", location_zh: "医院", action_zh: "第二场原始动作", props: [{ id: "PR02", name_zh: "分诊单" }], shot_plan: [{ shot_id: "SH003", description_zh: "第三镜头" }] },
+  ],
+};
+const partialScenes = mergeRevisionContent("scenes", {
+  scenes: [{ id: "S001", action_zh: "修订后的动作", props: [{ id: "PR01", appearance: "修订后的外观" }], shot_plan: [{ shot_id: "SH001", description_zh: "修订后的镜头" }] }],
+}, sourceScenes);
+assert.equal(partialScenes.scenes.length, 2, "scene revisions must preserve omitted source scenes");
+assert.equal(partialScenes.scenes[0].action_zh, "修订后的动作", "scene revisions must apply the changed scene field");
+assert.equal(partialScenes.scenes[0].props[0].appearance, "修订后的外观", "scene revisions must apply the changed prop field");
+assert.equal(partialScenes.scenes[0].props[0].name_zh, "警徽", "scene revisions must preserve omitted prop fields");
+assert.equal(partialScenes.scenes[0].shot_plan.length, 2, "scene revisions must preserve omitted shots");
+assert.equal(partialScenes.scenes[1].shot_plan[0].description_zh, "第三镜头", "scene revisions must preserve omitted scene content");
+
+const advisoryGate = reviewAdvisoryGate({
+  independentIssues: [{ id: "advisory_issue_high", tag: "高影响逻辑问题", dimension: "logic", severity: "high" }],
+  conflicts: [{ id: "advisory_conflict_structure", dimension: "structure", agreement: 50 }],
+});
+assert.equal(advisoryGate.blockingPending.length, 0, "model score disagreements and independent advice must not block confirmation");
+const explicitHumanGate = reviewAdvisoryGate({
+  conflicts: [{ id: "advisory_conflict_logic", dimension: "logic", agreement: 40 }],
+  advisoryDecisions: [{ id: "advisory_conflict_logic", status: "needs_human_review" }],
+});
+assert.equal(explicitHumanGate.blockingPending.length, 1, "only an explicit human-review exception may block confirmation");
+const duplicateLegacyAdvisories = reviewAdvisoryGate({
+  independentIssues: [
+    { tag: "审核修订项", severity: "medium" },
+    { tag: "审核修订项", severity: "medium" },
+  ],
+  advisoryDecisions: [{ id: "advisory_issue_审核修订项", status: "accepted" }],
+});
+assert.deepEqual(duplicateLegacyAdvisories.items.map((item) => item.id), ["advisory_issue_审核修订项", "advisory_issue_审核修订项_2"], "legacy advisory IDs must remain stable while duplicate generated IDs become unique");
+assert.equal(duplicateLegacyAdvisories.accepted.length, 1, "a legacy decision must apply only to the first duplicate advisory");
+const recommendationOnly = aggregateCrossReview([
+  { result: { provider: "chatgpt", model: "review-a", content: { pass: false, score: 82, findings: [], required_changes: [], issues: [{ tag: "节奏优化", dimension: "structure", severity: "medium", feedback: "可进一步压缩", fix: "压缩中段重复信息" }], dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 82, feedback: "可优化" }])), checks: { adversarial: true } } } },
+  { result: { provider: "deepseek", model: "review-b", content: { pass: false, score: 80, findings: [], required_changes: [], issues: [{ tag: "节奏优化", dimension: "structure", severity: "medium", feedback: "中段略松", fix: "压缩重复信息" }], dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 80, feedback: "可优化" }])), checks: { adversarial: true } } } },
+  { route: "claude-sonnet-5", model: "claude-sonnet-5", error: "upstream timeout" },
+]);
+assert.equal(recommendationOnly.pass, true, "medium-severity consensus recommendations must not block confirmation");
+assert.equal(recommendationOnly.mandatoryIssueCount, 0, "recommendation-only review must have no mandatory blockers");
+assert.equal(recommendationOnly.recommendedIssueCount, 1, "recommendation-only review must retain the recommendation count");
 const staleConsensusContract = buildRevisionContract({
-  commonIssues: [{ tag: "旧单模型问题", modelCount: 1, suggestions: ["不得执行"] }],
-  reviewIssues: [{ tag: "真实共识问题", modelCount: 2, suggestions: ["按两个模型的共同证据修订"] }],
+  commonIssues: [{ tag: "旧单模型问题", modelCount: 1, severity: "high", suggestions: ["不得执行"] }],
+  reviewIssues: [{ tag: "真实共识问题", modelCount: 2, severity: "high", suggestions: ["按两个模型的共同证据修订"] }],
 }, { stage: "brief", sourceArtifactId: "artifact_v4", id: "revision_test_4" });
 assert.deepEqual(staleConsensusContract.items.map((item) => item.tag), ["真实共识问题"], "legacy commonIssues must still obey the two-model quorum");
+const mediumConsensusContract = buildRevisionContract({
+  commonIssues: [{ tag: "节奏优化", modelCount: 2, severity: "medium", suggestions: ["压缩重复信息"] }],
+  reviewIssues: [{ tag: "节奏优化", modelCount: 2, severity: "medium", suggestions: ["压缩重复信息"] }],
+}, { stage: "brief", sourceArtifactId: "artifact_v6", id: "revision_test_6" });
+assert.equal(mediumConsensusContract.items.length, 0, "medium consensus recommendations must not enter the mandatory revision contract");
 const resolvedReview = (model) => ({
   result: {
     provider: "chatgpt",
@@ -319,6 +432,45 @@ const runAgent = createPixelTaleAgent({
   writePixelTaleState: (stateRoot, state) => stateStore.set(stateRoot, state),
   randomUUID: () => `${String(++uuidSequence).padStart(12, "0")}-1234-1234-1234-123456789abc`,
 });
+stateStore.set("advisory-e2e", {
+  projectId: "advisory-e2e",
+  stage: "brief",
+  artifacts: [
+    { id: "artifact_advisory", type: "pixeltale_brief", stage: "brief", version: 1, status: "ready", reviewId: "review_advisory", content: { title_zh: "测试", logline_zh: "测试", core_conflict_zh: "测试", viewer_question_zh: "测试" } },
+    { id: "review_advisory", type: "pixeltale_stage_review", stage: "brief", version: 1, status: "passed", content: { pass: true, independentIssues: [{ id: "advisory_issue_high", tag: "高影响逻辑问题", dimension: "logic", severity: "high", modelCount: 1, models: ["review-a"], suggestions: ["补足因果"], evidence: ["行动缺少触发"] }], conflicts: [], advisoryDecisions: [] } },
+  ],
+  approvedArtifactIds: [],
+});
+const advisoryDecisionResult = runAgent.decideAdvisory({ pixelTaleRoot: "advisory-e2e", projectId: "advisory-e2e", reviewId: "review_advisory", advisoryId: "advisory_issue_high", status: "accepted" });
+assert.equal(advisoryDecisionResult.review.content.advisoryDecisions[0].status, "accepted", "creator advisory decisions must persist on the review artifact");
+assert.equal(advisoryDecisionResult.state.artifacts.find((artifact) => artifact.id === "artifact_advisory").status, "needs_review", "accepting an advisory must reopen its source artifact for revision");
+assert.throws(
+  () => runAgent.approve({ pixelTaleRoot: "advisory-e2e", projectId: "advisory-e2e", artifactId: "artifact_advisory" }),
+  (error) => error.code === "ADVISORY_REVISION_REQUIRED",
+  "an accepted advisory must prevent direct artifact approval",
+);
+stateStore.set("advisory-priority-e2e", {
+  projectId: "advisory-priority-e2e",
+  stage: "brief",
+  artifacts: [
+    { id: "artifact_priority", type: "pixeltale_brief", stage: "brief", version: 1, status: "ready", reviewId: "review_priority", content: { title_zh: "测试", logline_zh: "测试", core_conflict_zh: "测试", viewer_question_zh: "测试" } },
+    { id: "review_priority", type: "pixeltale_stage_review", stage: "brief", version: 1, status: "passed", content: {
+      pass: true,
+      independentIssues: [{ id: "advisory_priority_accepted", tag: "已采纳修订", severity: "medium" }],
+      conflicts: [{ id: "advisory_priority_pending", dimension: "logic", agreement: 40 }],
+      advisoryDecisions: [
+        { id: "advisory_priority_accepted", status: "accepted" },
+        { id: "advisory_priority_pending", status: "needs_human_review" },
+      ],
+    } },
+  ],
+  approvedArtifactIds: [],
+});
+assert.throws(
+  () => runAgent.approve({ pixelTaleRoot: "advisory-priority-e2e", projectId: "advisory-priority-e2e", artifactId: "artifact_priority" }),
+  (error) => error.code === "ADVISORY_DECISION_REQUIRED",
+  "an explicit human-review decision must take priority over an accepted advisory",
+);
 const runParams = { pixelTaleRoot: "revision-e2e", projectId: "revision-e2e", project: { id: "revision-e2e", title: "Revision E2E", episode: "DRAFT" }, stage: "brief", input: { idea: "主角为救家人闯入禁区" } };
 const initialRun = await runAgent.run(runParams);
 assert.equal(initialRun.status, "needs_review", "initial review must retain a failed source version");

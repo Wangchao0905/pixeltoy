@@ -13,6 +13,7 @@ const require = createRequire(import.meta.url);
 const server = require("../server.js");
 const { superPixel, pixelTaleRuns } = server.__test;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-run-job-"));
+const recoveryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-run-recovery-"));
 
 const dimensions = Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 95, feedback: "通过" }]));
 const requestedTokenBudgets = [];
@@ -71,9 +72,45 @@ try {
   assert.deepEqual(requestedTokenBudgets.slice(0, 3).sort((a, b) => a - b), [1_800, 1_800, 3_600], "the brief author race must use compact budgets plus DeepSeek reasoning headroom");
   assert.deepEqual(requestedTokenBudgets.slice(3).sort((a, b) => a - b), [1_200, 1_200, 2_400], "brief reviewers must use compact budgets plus DeepSeek reasoning headroom");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");
+  const persistedJob = JSON.parse(fs.readFileSync(path.join(root, "run-jobs", `${first.jobId}.json`), "utf8"));
+  assert.deepEqual(persistedJob.request, {
+    pixelTaleRoot: root,
+    projectId: params.projectId,
+    project: params.project,
+    stage: params.stage,
+    mode: params.mode,
+    input: params.input,
+  }, "persisted run jobs must retain only the safe request needed for restart recovery");
+  assert.equal(Object.hasOwn(persistedJob.request, "apiKey"), false, "persisted run jobs must never include provider credentials");
+
+  const recoveryJobId = "ptrun_0123456789abcdef0123456789";
+  const recoveryParams = { ...params, pixelTaleRoot: recoveryRoot, projectId: "standalone:recovery-run" };
+  fs.mkdirSync(path.join(recoveryRoot, "run-jobs"), { recursive: true });
+  fs.writeFileSync(path.join(recoveryRoot, "run-jobs", `${recoveryJobId}.json`), JSON.stringify({
+    jobId: recoveryJobId,
+    status: "running",
+    stage: "brief",
+    createdAt: Date.now() - 1000,
+    updatedAt: Date.now() - 1000,
+    request: {
+      ...recoveryParams,
+      project: recoveryParams.project,
+    },
+  }));
+  const recovered = pixelTaleRuns.get(recoveryParams, recoveryJobId);
+  assert.equal(recovered.status, "running", "a persisted running job must resume after a process restart");
+  assert.equal(recovered.recovered, true, "restart recovery must be visible to the polling client");
+  let recoveryResult;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    recoveryResult = pixelTaleRuns.get(recoveryParams, recoveryJobId);
+    if (recoveryResult.status !== "running") break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(recoveryResult.status, "completed", `recovered background run must complete: ${JSON.stringify(recoveryResult)}`);
 } finally {
   superPixel.setFetch();
   fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(recoveryRoot, { recursive: true, force: true });
 }
 
 console.log("pixeltale run jobs ok");

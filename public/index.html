@@ -230,6 +230,16 @@
             <div id="superPixelStage" class="super-pixel-stage">
               <div class="super-pixel-logo" aria-hidden="true">S</div>
               <h1 id="superPixelTitle" class="super-pixel-title">今天要拍什么？</h1>
+              <div class="super-pixel-stage-actions">
+                <button id="superPixelHistoryToggle" class="super-pixel-history-toggle" type="button" aria-label="历史对话" aria-expanded="false" aria-controls="superPixelHistoryPanel">历史</button>
+              </div>
+              <section id="superPixelHistoryPanel" class="super-pixel-history-panel hidden" aria-label="历史对话">
+                <header>
+                  <strong>历史对话</strong>
+                  <button id="superPixelHistoryNew" type="button">新会话</button>
+                </header>
+                <div id="superPixelHistoryList" class="super-pixel-history-list"></div>
+              </section>
               <div id="superPixelMessages" class="super-pixel-messages" aria-live="polite"></div>
               <div id="superPixelDock" class="super-pixel-dock">
               <form id="superPixelComposer" class="super-pixel-composer">
@@ -273,12 +283,21 @@
                   <button id="superPixelSend" class="super-pixel-send" type="submit" aria-label="发送">
                     <span aria-hidden="true">↑</span>
                   </button>
+                  <button id="superPixelStop" class="super-pixel-stop hidden" type="button" aria-label="停止">停止</button>
                 </div>
               </form>
               </div>
             </div>
           </div>
         </section>
+        <footer class="site-beian" aria-label="备案信息">
+          <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer noopener">鲁ICP备2026038084号</a>
+          <a
+            href="https://beian.mps.gov.cn/#/query/webSearch?code=37010402441634"
+            target="_blank"
+            rel="noreferrer noopener"
+          >鲁公网安备37010402441634号</a>
+        </footer>
       </section>
 
       <section id="projectHome" class="project-home hidden">

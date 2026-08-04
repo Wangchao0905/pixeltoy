@@ -20219,3 +20219,28 @@ body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-brand-logo::
 body.is-studio-modern .studio-modern-shell.is-nav-collapsed .modern-series-nav-toggle {
   right: 14px;
 }
+
+/* 备案信息页脚:合规要求首页可见。ICP 链工信部,公网安备链公安部备案查询
+   (mps 那条必须带 code 参数,否则查不到)。两条都必须是可点击的真实外链。 */
+.site-beian {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 12px 22px;
+  border-top: 1px solid rgba(117, 151, 192, 0.14);
+  background: #070b11;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.site-beian a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.site-beian a:hover {
+  color: #cfe0f5;
+  text-decoration: underline;
+}

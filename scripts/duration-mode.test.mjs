@@ -42,6 +42,42 @@ const gudongScript = ends.map((end, index) => {
 const twentyBeats = Array.from({ length: 20 }, (_, index) => `咕咚完成第 ${index + 1} 个连续动作节拍。`);
 
 assert.equal(duration.normalizeDurationMode(), TK, "duration mode must default to TK");
+const declared45SecondScript = `# 自由模式时长测试\n\n总时长：约 45 秒\n\n[场景1]\n咕咚在小屋内完成连续动作并停下。`;
+assert.equal(
+  duration.scriptDeclaredDurationSeconds(declared45SecondScript),
+  45,
+  "an explicit script duration declaration must be recognized before text estimation",
+);
+assert.equal(
+  duration.scriptDeclaredDurationSeconds("旁白：这条语音消息时长 7 秒。"),
+  0,
+  "a dialogue line mentioning an audio duration must not become the episode target",
+);
+assert.equal(
+  duration.scriptDeclaredDurationSeconds("单集时长：1 分 15 秒"),
+  75,
+  "minute-and-second duration declarations must be supported",
+);
+const declared45CharacterSetupScript = `角色设定：咕咚，主角，住在小屋。\n总时长：45 秒\n\n[场景1]\n咕咚在小屋内完成连续动作并停下。`;
+assert.equal(
+  duration.freeTargetDuration({ script: duration.modelPlanningScript(declared45CharacterSetupScript), beats: twentyBeats }),
+  45,
+  "duration metadata must survive character-setup trimming before video planning",
+);
+assert.equal(
+  duration.freeTargetDuration({ script: declared45SecondScript, beats: twentyBeats }),
+  45,
+  "free mode must use the explicit 45-second script duration",
+);
+const declared45Plan = duration.planEpisodeDuration({
+  shotCount: twentyBeats.length,
+  beats: twentyBeats,
+  durationMode: FREE,
+  script: declared45SecondScript,
+});
+assert.equal(declared45Plan.target, 45, "a 45-second script must keep a 45-second free-mode target");
+assert.equal(declared45Plan.shotCount, 3, "a 45-second script must produce three 15-second-cap clips");
+assert.deepEqual(declared45Plan.durations, [15, 15, 15], "a 45-second script must not expand to eight 15-second clips");
 assert.equal(duration.scriptTimecodeTotalSeconds(gudongScript), 49, "48.5 seconds must round to a 49 second target");
 assert.equal(typeof duration.modelPlanningScript, "function", "video-config plan rebuild must expose its script preparation path");
 const configPlanningScript = duration.modelPlanningScript(gudongScript);

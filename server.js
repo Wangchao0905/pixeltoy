@@ -2803,10 +2803,15 @@ function startDraftJob(episodeRoot, body) {
   return { jobId, status: "running" };
 }
 
-function getDraftJob(episodeRoot, jobId) {
+function getDraftJob(episodeRoot, jobId, user = null) {
   const job = draftJobs.get(compactLine(jobId || ""));
   if (!job) return { status: "failed", error: "服务更新中断了本次生成，请重新生成", errorCode: "RUN_INTERRUPTED" };
-  if (job.status === "completed") return { jobId: job.jobId, status: "completed", result: job.result };
+  // The completed result must carry the refreshed project state: the client uses it
+  // to release the draft busy guard and re-render the downstream workflow immediately.
+  if (job.status === "completed") {
+    const state = user ? fullProjectStateForUser(episodeRoot, user) : fullProjectState(episodeRoot);
+    return { jobId: job.jobId, status: "completed", result: job.result, state };
+  }
   if (job.status === "failed") return { jobId: job.jobId, status: "failed", error: job.error };
   return { jobId: job.jobId, status: "running", elapsedMs: Math.max(0, Date.now() - job.createdAt) };
 }
@@ -19887,7 +19892,15 @@ function scriptForVideoBeats(script) {
     /（[^）]*(?:主角|女主|男主|反派|公主|王妃|贵族|人鱼|角色)[^）]*）/.test(before) ||
     /(?:Character|角色|人物|设定|外貌|银白色|长发|眼眸|服装|身姿|神情|女主|男主|反派)/i.test(before);
   if (!looksLikeCharacterSetup) return clean;
-  return lines.slice(firstSceneIndex).join("\n").replace(/\n{3,}/g, "\n\n").trim() || clean;
+  const durationMetadata = lines
+    .slice(0, firstSceneIndex)
+    .filter((line) => scriptDeclaredDurationSeconds(line) > 0)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return [...durationMetadata, lines.slice(firstSceneIndex).join("\n")]
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim() || clean;
 }
 
 function stripManualAssetPromptBlocks(script) {
@@ -20373,6 +20386,41 @@ function scriptTimecodeTotalSeconds(script) {
   return Math.round(total);
 }
 
+function scriptDeclaredDurationSeconds(script) {
+  const lines = String(script || "").split(/\r?\n/).slice(0, 60);
+  const labelPattern = /^(?:[-*•#>\s]*)(?:(?:本集|本片|项目|剧本|脚本|视频|成片|单集)\s*)?(?:总时长|剧本时长|脚本时长|视频时长|成片时长|项目时长|片长|时长|duration|runtime|run\s*time)\s*[:：=]?\s*(.*)$/i;
+  const parseValue = (value) => {
+    const source = String(value || "")
+      .replace(/^(?:约|大约|大致|approximately|approx\.?)[\s:：]*/i, "")
+      .trim();
+    const clock = source.match(/^(\d{1,3})\s*[:：]\s*(\d{1,2}(?:\.\d+)?)\b/);
+    if (clock) {
+      const minutes = Number(clock[1]);
+      const seconds = Number(clock[2]);
+      if (Number.isFinite(minutes) && Number.isFinite(seconds) && seconds < 60) return minutes * 60 + seconds;
+    }
+    const minutes = source.match(/^(\d+(?:\.\d+)?)\s*分(?:钟)?(?:\s*(\d+(?:\.\d+)?)\s*秒?)?/i);
+    if (minutes) {
+      const minuteValue = Number(minutes[1]);
+      const secondValue = Number(minutes[2] || 0);
+      if (Number.isFinite(minuteValue) && Number.isFinite(secondValue)) return minuteValue * 60 + secondValue;
+    }
+    const seconds = source.match(/^(\d+(?:\.\d+)?)\s*(?:秒|s(?:ec(?:ond)?s?)?)/i);
+    if (seconds) {
+      const valueInSeconds = Number(seconds[1]);
+      if (Number.isFinite(valueInSeconds)) return valueInSeconds;
+    }
+    return 0;
+  };
+  for (const line of lines) {
+    const match = compactLine(line).match(labelPattern);
+    if (!match) continue;
+    const value = parseValue(match[1]);
+    if (value > 0) return Math.round(value);
+  }
+  return 0;
+}
+
 function estimatedFreeDurationForBeats(beats = []) {
   const clean = beats.map(compactLine).filter(Boolean);
   if (!clean.length) return VIDEO_DEFAULT_EPISODE_SECONDS;
@@ -20384,9 +20432,11 @@ function estimatedFreeDurationForBeats(beats = []) {
 
 function freeTargetDuration({ script = "", beats = [], requestedTarget = 0 } = {}) {
   const requested = Number(requestedTarget);
+  const declaredTarget = scriptDeclaredDurationSeconds(script);
+  const timecodeTarget = scriptTimecodeTotalSeconds(script);
   const sourceTarget = Number.isFinite(requested) && requested > 0
     ? requested
-    : scriptTimecodeTotalSeconds(script) || estimatedFreeDurationForBeats(beats);
+    : declaredTarget || timecodeTarget || estimatedFreeDurationForBeats(beats);
   return Math.max(VIDEO_MIN_SECONDS, Math.min(8 * VIDEO_MAX_SECONDS, Math.round(sourceTarget)));
 }
 
@@ -26937,7 +26987,7 @@ async function handleApi(req, res, url) {
   const draftJobMatch = action.match(/^draft-jobs\/([^/]+)$/);
   if (req.method === "GET" && draftJobMatch) {
     const jobId = decodeURIComponent(draftJobMatch[1]);
-    return send(res, 200, { ok: true, job: getDraftJob(episodeRoot, jobId) }, { "Cache-Control": "no-store" });
+    return send(res, 200, { ok: true, job: getDraftJob(episodeRoot, jobId, currentUserFromRequest(req)) }, { "Cache-Control": "no-store" });
   }
 
 
@@ -27331,12 +27381,14 @@ module.exports = {
       modelPlanningScript,
       modelShotPlanNeedsRefresh,
       writeStoryboardModelPlan,
+      scriptDeclaredDurationSeconds,
       scriptTimecodeTotalSeconds,
       scriptBeatCandidates,
       consolidateContinuousBeats,
       freeDurationSourceBeats,
       lockFreeDurationsFromCuts,
       preferredShotCount,
+      freeTargetDuration,
       targetDurationForBeats,
       planEpisodeDuration,
       shouldRebalanceShotDurations,

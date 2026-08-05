@@ -10295,7 +10295,8 @@ async function generateDraft() {
       body: JSON.stringify({ dialogueLanguage, durationMode: state.durationMode, assetAnalyzerModel: state.assetAnalyzerModel }),
     });
     const data = await waitForDraftJob(state.selectedId, accepted.job?.jobId);
-    setProjectState(data.state);
+    const projectState = data.state || data.job?.state || await api(`/api/project/${state.selectedId}`);
+    setProjectState(projectState);
     toast("分镜和提示词草稿已生成");
   } finally {
     state.uiBusy.draftGenerating = false;

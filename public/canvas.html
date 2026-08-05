@@ -110,7 +110,12 @@
         <svg id="canvasLinks" class="canvas-links" aria-hidden="true"><g id="canvasLinksContent"></g></svg>
         <div id="canvasNodes" class="canvas-nodes"></div>
         <div id="selectionMarquee" class="selection-marquee hidden" aria-hidden="true"></div>
-        <div id="canvasZoomReadout" class="canvas-zoom-readout" aria-live="polite">100%</div>
+        <div class="canvas-zoom-controls" aria-label="画布缩放">
+          <button type="button" data-canvas-zoom="out" aria-label="缩小画布" title="缩小画布">−</button>
+          <div id="canvasZoomReadout" class="canvas-zoom-readout" role="status" aria-live="polite">100%</div>
+          <button type="button" data-canvas-zoom="in" aria-label="放大画布" title="放大画布">+</button>
+          <button type="button" data-canvas-zoom="reset" aria-label="重置画布缩放" title="重置为 100%">1:1</button>
+        </div>
 
         <aside id="livenessLibraryPanel" class="liveness-library-panel hidden" aria-label="人物素材库">
           <header>

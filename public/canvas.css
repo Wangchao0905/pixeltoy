@@ -7468,3 +7468,184 @@ body.canvas-page {
 .node-spinner {
   display: none !important;
 }
+
+/* Final canvas interaction layer: zoom controls stay quiet, reachable, and
+   visually separate from the node graph without becoming another toolbar. */
+.canvas-zoom-controls {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(11, 13, 16, 0.9);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+.canvas-zoom-controls button,
+.canvas-zoom-readout {
+  box-sizing: border-box;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(239, 244, 247, 0.74);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.canvas-zoom-controls button {
+  width: 28px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.canvas-zoom-controls button:last-child {
+  width: 38px;
+  color: rgba(239, 244, 247, 0.56);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.canvas-zoom-controls button:hover:not(:disabled),
+.canvas-zoom-controls button:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.canvas-zoom-controls button:focus-visible {
+  outline: 2px solid rgba(167, 217, 255, 0.86);
+  outline-offset: 1px;
+}
+
+.canvas-zoom-controls button:disabled {
+  cursor: default;
+  opacity: 0.32;
+}
+
+.canvas-zoom-readout {
+  display: grid;
+  min-width: 50px;
+  place-items: center;
+  pointer-events: none;
+  color: rgba(239, 244, 247, 0.86);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One media language: the outer node is transparent, while the preview and
+   prompt are the only surfaces users need to parse. */
+.canvas-node.image-node,
+.canvas-node.video-node,
+.canvas-node.image-node:hover,
+.canvas-node.video-node:hover,
+.canvas-node.image-node.is-selected,
+.canvas-node.video-node.is-selected {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.image-node .image-preview-slot,
+.video-node .video-preview-slot {
+  border: 0 !important;
+  border-radius: 14px !important;
+  background: #15191e !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 30px rgba(0, 0, 0, 0.24) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.image-node:hover .image-preview-slot,
+.video-node:hover .video-preview-slot,
+.image-node .image-preview-slot:focus-within,
+.video-node .video-preview-slot:focus-within {
+  box-shadow:
+    inset 0 1px 0 rgba(168, 219, 255, 0.12),
+    0 16px 34px rgba(0, 0, 0, 0.3) !important;
+}
+
+.image-node .image-composer,
+.video-node .video-composer {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 14px !important;
+  background: #15191e !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.image-node .node-prompt,
+.video-node .video-prompt {
+  color: rgba(244, 247, 249, 0.94);
+}
+
+.image-node .image-preview-state,
+.video-node .video-node-status {
+  color: rgba(230, 237, 241, 0.86);
+}
+
+/* Image and video jobs share the same status geometry and active motion. */
+.generation-status {
+  min-width: min(270px, 84%);
+  gap: 9px;
+  padding: 12px 14px;
+  border: 1px solid rgba(166, 219, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(12, 16, 20, 0.9);
+  color: #effaff;
+}
+
+.generation-status-row strong {
+  color: #effaff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.generation-status-row em {
+  color: rgba(193, 229, 247, 0.78);
+  font-size: 11px;
+}
+
+.generation-progress-track {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(165, 215, 240, 0.16);
+}
+
+.generation-progress-track i {
+  border-radius: inherit;
+  background: #bfeaff;
+  box-shadow: 0 0 14px rgba(126, 204, 255, 0.5);
+}
+
+.generation-model-label,
+.generation-status-message {
+  color: rgba(193, 229, 247, 0.66);
+  font-size: 10px;
+}
+
+@media (max-width: 720px) {
+  .canvas-zoom-controls {
+    top: 10px;
+    right: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-zoom-controls button,
+  .image-node .image-preview-slot,
+  .video-node .video-preview-slot {
+    transition: none;
+  }
+}

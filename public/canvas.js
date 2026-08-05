@@ -238,7 +238,8 @@ const IMAGE_NODE_DEFAULTS = {
 // 视频编辑器外壳以桌面端 16:9 布局为基准固定尺寸；所选比例只影响槽内画面。
 const VIDEO_EDITOR_DEFAULT_WIDTH = 620;
 const VIDEO_EDITOR_DEFAULT_HEIGHT = 650;
-const CANVAS_MIN_SCALE = 0.02;
+const CANVAS_MIN_SCALE = 0.25;
+const CANVAS_MAX_SCALE = 2.5;
 const CANVAS_SNAP_DISTANCE = 16;
 const CANVAS_ZOOM_SPEED = 0.0048;
 const ASSET_NODE_DEFAULT_WIDTH = 400;
@@ -965,7 +966,8 @@ function screenPoint(clientX, clientY) {
 
 function clampCanvasScale(value) {
   const numeric = Number(value);
-  return Math.max(CANVAS_MIN_SCALE, Number.isFinite(numeric) ? numeric : 1);
+  const safe = Number.isFinite(numeric) ? numeric : 1;
+  return Math.min(CANVAS_MAX_SCALE, Math.max(CANVAS_MIN_SCALE, safe));
 }
 
 function applyCanvasViewport() {
@@ -981,6 +983,10 @@ function applyCanvasViewport() {
   }
   const readout = qs("#canvasZoomReadout");
   if (readout) readout.textContent = `${Math.round(scale * 100)}%`;
+  const zoomOut = qs("[data-canvas-zoom='out']");
+  const zoomIn = qs("[data-canvas-zoom='in']");
+  if (zoomOut) zoomOut.disabled = scale <= CANVAS_MIN_SCALE;
+  if (zoomIn) zoomIn.disabled = scale >= CANVAS_MAX_SCALE;
 }
 
 function markCanvasViewportMoving() {
@@ -1002,6 +1008,30 @@ function zoomCanvasAt(clientX, clientY, nextScale) {
   viewport.x = pointer.x - worldX * scale;
   viewport.y = pointer.y - worldY * scale;
   viewport.scale = scale;
+  markCanvasViewportMoving();
+  applyCanvasViewport();
+  scheduleCanvasSave();
+}
+
+function canvasViewportCenter() {
+  const rect = qs("#blankCanvas")?.getBoundingClientRect();
+  return {
+    x: (rect?.left || 0) + (rect?.width || 0) / 2,
+    y: (rect?.top || 0) + (rect?.height || 0) / 2,
+  };
+}
+
+function zoomCanvasBy(factor) {
+  const center = canvasViewportCenter();
+  zoomCanvasAt(center.x, center.y, canvasState.viewport.scale * factor);
+}
+
+function resetCanvasViewport() {
+  const viewport = canvasState.viewport;
+  if (viewport.x === 0 && viewport.y === 0 && viewport.scale === 1) return;
+  viewport.x = 0;
+  viewport.y = 0;
+  viewport.scale = 1;
   markCanvasViewportMoving();
   applyCanvasViewport();
   scheduleCanvasSave();
@@ -3576,10 +3606,12 @@ function imagePreviewSig(node) {
 function renderImagePreview(node) {
   const status = String(node.status || "idle");
   if (status === "running") {
-    return `<div class="image-preview-state running generation-status" aria-label="图片生成处理中">
-      <div class="generation-status-row"><strong>图片生成</strong><em>处理中</em></div>
-      <div class="generation-progress-track" aria-hidden="true"><i style="width: 24%"></i></div>
-      <span class="generation-status-message">${escapeHtml(node.statusMessage || "任务已提交，等待接口进度")}</span>
+    const settings = { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) };
+    return `<div class="image-preview-state running generation-status" aria-label="生成中">
+      <div class="generation-status-row"><strong>生成中</strong><em></em></div>
+      <div class="generation-progress-track is-indeterminate" aria-hidden="true"><i style="width: 24%"></i></div>
+      <span class="generation-model-label">${escapeHtml(settings.model || IMAGE_NODE_DEFAULTS.model)}</span>
+      <span class="generation-status-message">${escapeHtml(node.statusMessage || "任务已提交")}</span>
     </div>`;
   }
   if (node.imageUrl) {
@@ -6333,6 +6365,20 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+document.addEventListener("keydown", (event) => {
+  if (event.target.closest?.("input, textarea, select, [contenteditable='true'], button")) return;
+  if (event.key === "+" || event.key === "=") {
+    event.preventDefault();
+    zoomCanvasBy(1.1);
+  } else if (event.key === "-" || event.key === "_") {
+    event.preventDefault();
+    zoomCanvasBy(1 / 1.1);
+  } else if (event.key === "0") {
+    event.preventDefault();
+    resetCanvasViewport();
+  }
+});
+
 qs("#blankCanvas").addEventListener("contextmenu", showContextMenu);
 qs("#blankCanvas").addEventListener("wheel", handleCanvasWheel, { passive: false });
 qs("#blankCanvas").addEventListener("gesturestart", handleCanvasGestureStart, { passive: false });
@@ -6346,6 +6392,16 @@ qs("#blankCanvas").addEventListener("drop", handleCanvasDrop);
 qs("#blankCanvas").addEventListener("pointermove", updateAssetConnectorHotspots);
 qs("#blankCanvas").addEventListener("pointerleave", clearAssetConnectorHotspots);
 qs("#canvasLinks").addEventListener("pointerdown", handleConnectionCutPointerDown);
+qsa("[data-canvas-zoom]").forEach((button) => {
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const action = button.dataset.canvasZoom;
+    if (action === "out") zoomCanvasBy(1 / 1.1);
+    else if (action === "in") zoomCanvasBy(1.1);
+    else if (action === "reset") resetCanvasViewport();
+  });
+});
 document.addEventListener("pointermove", updateNodeDrag);
 document.addEventListener("pointermove", updateSelectionMarquee);
 document.addEventListener("pointermove", updateNodeResize);

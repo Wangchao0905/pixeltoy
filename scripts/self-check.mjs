@@ -529,9 +529,9 @@ const gestureStartHandler = sectionBetween(canvas, "function handleCanvasGesture
 const gestureChangeHandler = sectionBetween(canvas, "function handleCanvasGestureChange(event) {", "function handleCanvasGestureEnd(event) {");
 assert(!gestureStartHandler.includes("gestureWheelBlockUntil"), "canvas gesturestart must not block wheel zoom before a real gesture scale is applied");
 assert(gestureChangeHandler.includes("gestureWheelBlockUntil"), "canvas gesturechange must block duplicate wheel zoom only after handling a real gesture scale");
-assert(!canvas.includes("CANVAS_MAX_SCALE"), "canvas zoom must not keep a user-facing maximum scale limit");
-assert(canvas.includes("const CANVAS_MIN_SCALE = 0.02;"), "canvas zoom minimum must only prevent a broken zero-scale viewport");
-assert(canvas.includes("return Math.max(CANVAS_MIN_SCALE, Number.isFinite(numeric) ? numeric : 1);"), "canvas zoom clamp must not cap zoom-in or ordinary zoom-out");
+assert(canvas.includes("const CANVAS_MIN_SCALE = 0.25;") && canvas.includes("const CANVAS_MAX_SCALE = 2.5;"), "canvas zoom must keep a bounded, recoverable scale range");
+assert(canvas.includes("return Math.min(CANVAS_MAX_SCALE, Math.max(CANVAS_MIN_SCALE, safe));"), "canvas zoom clamp must enforce both scale boundaries");
+assert(canvas.includes("function resetCanvasViewport(") && canvasHtml.includes("data-canvas-zoom=\"reset\""), "canvas zoom must expose an explicit reset path");
 assert(canvas.includes("const CANVAS_ZOOM_SPEED = 0.0048;"), "canvas zoom response must be fast enough for touchpad pinch and wheel gestures");
 assert(canvas.includes("ASSET_NODE_DEFAULT_WIDTH") && canvas.includes("ASSET_NODE_DEFAULT_HEIGHT"), "canvas asset nodes must have explicit image dimensions");
 assert(canvas.includes("clampAssetNodeDimension(node?.width, ASSET_NODE_MIN_WIDTH, ASSET_NODE_MAX_WIDTH, ASSET_NODE_DEFAULT_WIDTH)"), "canvas asset nodes must restore a clamped saved width");

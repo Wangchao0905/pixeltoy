@@ -79,11 +79,20 @@ const REVIEW_OUTPUT_TOKEN_BUDGETS = Object.freeze({
 });
 
 // DeepSeek 官方端点严格按 max_tokens 截断（OpenAI 兼容网关不截断 maxTokens）。中文审核输出
-// token 密度高：1800 的 proposal 审核预算对 deepseek-v4-pro 曾被截断（TRUNCATED_OUTPUT，
-// 2026-08-07 提案卡死事故）。这里仅对 deepseek provider 放大输出预算，其余模型保持紧凑审核设计。
+// token 密度高，且 deepseek 的 max_tokens 预算包含 reasoning_tokens（推理 token，实测单次审核
+// 推理可达 1800+）；1800 的 proposal 审核预算曾被截断（TRUNCATED_OUTPUT，2026-08-07 提案卡死
+// 事故，×3=5400 在含 revisionContract 的真实长 prompt 下仍可能不够）。这里仅对 deepseek provider
+// 放大到接近官方上限，其余模型保持紧凑审核设计。
 function reviewTokenBudget(stage, provider) {
   const base = REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000;
-  return String(provider).startsWith("deepseek") ? base * 3 : base;
+  return String(provider).startsWith("deepseek") ? Math.min(8_000, Math.max(base * 4, 4_800)) : base;
+}
+
+// 生成阶段（council author / synthesis）预算：deepseek 的 max_tokens 含 reasoning_tokens，
+// proposal 生成预算 2800 曾被 seat_c 推理(实测 2834)耗尽而 TRUNCATED（2026-08-07 提案卡死根因）。
+function stageTokenBudget(stage, provider) {
+  const base = STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal;
+  return String(provider).startsWith("deepseek") ? Math.min(8_000, Math.max(base * 4, 4_800)) : base;
 }
 const UNIT_AUTO_REPAIR_MAX_PASSES = 2;
 const AUTO_REPAIR_TOKEN_BUDGET = 30_000;
@@ -2078,7 +2087,7 @@ async function callStageCouncil({
         user: councilPromptWithRole(user, author.roleDescription),
         modelRouter,
         timeoutMs: Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelBudgetMs, remainingMs)),
-        maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal,
+        maxTokens: stageTokenBudget(stage, model),
         purpose: `pixeltale:${stage}:author`,
         temperature: { seat_a: 0.3, seat_b: 0.7, seat_c: 1.0 }[author.seat?.id] ?? 0.25,
       });
@@ -2161,7 +2170,7 @@ async function callStageCouncil({
         user: stageSynthesisPrompt({ stage, mode, user, contributions }),
         modelRouter,
         timeoutMs: synthesisTimeoutMs,
-        maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal,
+        maxTokens: stageTokenBudget(stage, candidate),
         purpose: `pixeltale:${stage}:synthesis`,
         temperature: 0.35,
       });

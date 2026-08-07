@@ -231,11 +231,32 @@ const inspirationPool = [
   { keyword: "复仇新娘", kind: "主角身份", source: "角色原型" }, { keyword: "伪装医生", kind: "主角身份", source: "角色原型" },
   { keyword: "失势继承人", kind: "主角身份", source: "角色原型" }, { keyword: "被追凶者", kind: "主角身份", source: "角色原型" },
   { keyword: "冷面调查员", kind: "主角身份", source: "角色原型" }, { keyword: "反派继承人", kind: "主角身份", source: "角色原型" },
+  { keyword: "先婚后爱", kind: "情绪关系", source: "国内短剧" }, { keyword: "破镜重圆", kind: "情绪关系", source: "国内短剧" },
+  { keyword: "契约关系", kind: "情绪关系", source: "海外短剧" }, { keyword: "隐秘暧昧", kind: "情绪关系", source: "海外短剧" },
+  { keyword: "宿命纠缠", kind: "情绪关系", source: "影视母题" }, { keyword: "亲情救赎", kind: "情绪关系", source: "国内短剧" },
+  { keyword: "师徒羁绊", kind: "情绪关系", source: "影视母题" }, { keyword: "友情背叛", kind: "情绪关系", source: "海外短剧" },
+  { keyword: "身份错位", kind: "冲突机制", source: "国内短剧" }, { keyword: "先抑后扬", kind: "冲突机制", source: "短剧结构" },
+  { keyword: "危机倒逼", kind: "冲突机制", source: "短剧结构" }, { keyword: "公开审判", kind: "冲突机制", source: "海外短剧" },
+  { keyword: "资源争夺", kind: "冲突机制", source: "影视母题" }, { keyword: "时间循环", kind: "冲突机制", source: "类型钩子" },
+  { keyword: "困局突围", kind: "冲突机制", source: "短剧结构" }, { keyword: "证据博弈", kind: "冲突机制", source: "罪案类型" },
+  { keyword: "豪门名利场", kind: "世界设定", source: "国内短剧" }, { keyword: "乡村逆袭", kind: "世界设定", source: "国内短剧" },
+  { keyword: "娱乐圈生存", kind: "世界设定", source: "国内短剧" }, { keyword: "职场高压", kind: "世界设定", source: "海外短剧" },
+  { keyword: "古风权谋", kind: "世界设定", source: "国内短剧" }, { keyword: "赛博都市", kind: "世界设定", source: "海外短剧" },
+  { keyword: "末世封锁", kind: "世界设定", source: "类型设定" }, { keyword: "校园规则", kind: "世界设定", source: "海外短剧" },
+  { keyword: "霓虹夜色", kind: "视觉风格", source: "视觉参考" }, { keyword: "冷白悬疑", kind: "视觉风格", source: "视觉参考" },
+  { keyword: "高饱和甜感", kind: "视觉风格", source: "视觉参考" }, { keyword: "复古胶片", kind: "视觉风格", source: "影视美学" },
+  { keyword: "东方极简", kind: "视觉风格", source: "影视美学" }, { keyword: "都市奢华", kind: "视觉风格", source: "视觉参考" },
+  { keyword: "暗黑童话", kind: "视觉风格", source: "影视美学" }, { keyword: "纪实手持", kind: "视觉风格", source: "影视语法" },
+  { keyword: "先秦乱世", kind: "时代", source: "历史语境" }, { keyword: "大唐盛世", kind: "时代", source: "历史语境" },
+  { keyword: "民国旧上海", kind: "时代", source: "历史语境" }, { keyword: "抗战年代", kind: "时代", source: "历史语境" },
+  { keyword: "改革开放", kind: "时代", source: "现实语境" }, { keyword: "千禧年代", kind: "时代", source: "怀旧语境" },
+  { keyword: "当代都市", kind: "时代", source: "现实语境" }, { keyword: "近未来社会", kind: "时代", source: "类型设定" },
+  { keyword: "末日之后", kind: "时代", source: "类型设定" }, { keyword: "赛博未来", kind: "时代", source: "类型设定" },
 ];
 
 const dnaAudienceRecommendations = {
-  male: new Set(["密室权斗", "末日倒计时", "科技失控", "罪案追踪", "法律惊案", "职场博弈", "反杀翻盘", "越级反击", "权力反噬", "致命交易", "一眼设定", "视觉符号", "反派魅力", "世界观钩子", "线索递进", "信息错位", "双线并进", "倒计时", "失忆警探", "隐姓天才", "卧底律师"]),
-  female: new Set(["身份谜案", "禁忌关系", "家族暗战", "神秘小镇", "继承争夺", "身份揭露", "复仇清算", "旧爱重逢", "禁忌拉扯", "关系倒戈", "CP张力", "金句传播", "情绪共振", "集尾悬问", "误导再翻", "视角反转", "关系重组", "叛逃公主", "单亲母亲", "复仇新娘", "破产继承人"]),
+  male: new Set(["密室权斗", "末日倒计时", "科技失控", "罪案追踪", "法律惊案", "职场博弈", "反杀翻盘", "越级反击", "权力反噬", "致命交易", "一眼设定", "视觉符号", "反派魅力", "世界观钩子", "线索递进", "信息错位", "双线并进", "倒计时", "失忆警探", "隐姓天才", "卧底律师", "公开审判", "资源争夺", "证据博弈", "赛博都市", "末世封锁", "冷白悬疑", "霓虹夜色", "纪实手持", "先秦乱世", "抗战年代", "近未来社会", "末日之后", "赛博未来"]),
+  female: new Set(["身份谜案", "禁忌关系", "家族暗战", "神秘小镇", "继承争夺", "身份揭露", "复仇清算", "旧爱重逢", "禁忌拉扯", "关系倒戈", "CP张力", "金句传播", "情绪共振", "集尾悬问", "误导再翻", "视角反转", "关系重组", "叛逃公主", "单亲母亲", "复仇新娘", "破产继承人", "先婚后爱", "破镜重圆", "契约关系", "隐秘暧昧", "亲情救赎", "豪门名利场", "娱乐圈生存", "高饱和甜感", "都市奢华", "大唐盛世", "民国旧上海", "千禧年代", "当代都市", "近未来社会"]),
 };
 
 const audienceDnaRecommendations = {
@@ -1065,7 +1086,7 @@ function renderInspirationPool() {
   const audienceGender = audienceGenderLabels[state.input.audienceGender] ? state.input.audienceGender : "all";
   const recommended = dnaAudienceRecommendations[audienceGender] || new Set();
   const categories = ["all", ...[...new Set(inspirationPool.map((item) => item.kind))]];
-  const filterLabels = { all: "全部", "题材": "题材", "爽点": "爽点", "爆火基因": "爆点", "叙事逻辑": "叙事", "主角身份": "主角" };
+  const filterLabels = { all: "全部", "题材": "题材", "爽点": "爽点", "爆火基因": "爆点", "叙事逻辑": "叙事", "主角身份": "主角", "情绪关系": "关系", "冲突机制": "冲突", "世界设定": "世界", "视觉风格": "视觉", "时代": "时代" };
   const filters = categories.map((category) => `<button type="button" class="dna-filter${state.dnaFilter === category ? " is-active" : ""}" data-dna-filter="${escapeHtml(category)}" role="tab" aria-selected="${state.dnaFilter === category}">${escapeHtml(filterLabels[category] || category)}</button>`).join("");
   const tags = inspirationPool.map((item, index) => `<button class="dna-tag${recommended.has(item.keyword) ? " is-recommended" : ""}${state.dnaFilter !== "all" && state.dnaFilter !== item.kind ? " is-filtered-out" : ""}" type="button" data-inspiration="${escapeHtml(item.keyword)}" data-dna-tag data-dna-kind="${escapeHtml(item.kind)}" title="添加“${escapeHtml(item.keyword)}”到创作想法"><span>${escapeHtml(item.keyword)}</span><small>${escapeHtml(item.kind)}</small></button>`).join("");
   const recommendation = audienceGender === "all" ? "受众推荐待命" : `${audienceGenderLabels[audienceGender]} · ${recommended.size} 个高亮标签`;

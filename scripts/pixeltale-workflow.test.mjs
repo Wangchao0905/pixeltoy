@@ -145,6 +145,13 @@ assert.match(app, /agentTaskCopy"\)\.setAttribute\("role", state\.lastError \? "
 assert.match(app, /function renderBriefArtifact\(\)/, "brief output must show its generated artifact and review state");
 assert.match(app, /const inspirationPool = \[/, "brief stage must expose the current Story DNA taxonomy");
 assert.match(app, /const dnaAudienceRecommendations = \{/, "Story DNA must retain audience-based recommendations");
+assert.match(app, /kind: "情绪关系"/, "Story DNA must include relationship-emotion taxonomy");
+assert.match(app, /kind: "冲突机制"/, "Story DNA must include conflict-mechanism taxonomy");
+assert.match(app, /kind: "世界设定"/, "Story DNA must include world-setting taxonomy");
+assert.match(app, /kind: "视觉风格"/, "Story DNA must include visual-style taxonomy");
+assert.match(app, /kind: "时代"/, "Story DNA must include era taxonomy");
+assert.match(app, /"视觉风格": "视觉"/, "Story DNA must expose a compact visual-style filter label");
+assert.match(app, /"时代": "时代"/, "Story DNA must expose an era filter label");
 assert.match(app, /function toggleDnaWindow\(open\)/, "Story DNA must have an explicit expand/collapse interaction");
 assert.match(app, /data-dna-toggle/, "Story DNA must expose a visible launch control");
 assert.match(app, /id=\"dnaWindow\" class=\"dna-window\" hidden/, "Story DNA field must start collapsed");

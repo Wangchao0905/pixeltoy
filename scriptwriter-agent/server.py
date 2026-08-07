@@ -5,16 +5,21 @@ import os
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from engine import PixelWriterEngine, ProjectState
-from llm import make_gpt_client, make_deepseek_client
+from llm import make_gpt_client, make_deepseek_client, load_env
 from docx_export import export_docx
+
+# 基于本文件位置解析路径，避免依赖进程 cwd（pm2 的 exec cwd 可能不在项目目录）。
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECTS_DIR = os.path.join(BASE_DIR, "projects")
+ENV_PATH = os.path.join(BASE_DIR, ".env")
 
 def _safe_project_path(pid, suffix):
     """把 project_id 解析为 projects/ 目录内的安全路径；越界/非法则返回 None。"""
     pid = urllib.parse.unquote(pid or "")
     if not pid or "/" in pid or "\\" in pid or pid in (".", ".."):
         return None
-    base = os.path.realpath("projects")
-    target = os.path.realpath(os.path.join("projects", pid + suffix))
+    base = os.path.realpath(PROJECTS_DIR)
+    target = os.path.realpath(os.path.join(PROJECTS_DIR, pid + suffix))
     if os.path.commonpath([base, target]) != base:
         return None
     return target
@@ -162,7 +167,7 @@ def main():
 
     def engine_factory():
         from llm import load_env
-        env = load_env()
+        env = load_env(ENV_PATH)
         return PixelWriterEngine(make_gpt_client(env), make_deepseek_client(env))
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(engine_factory))

@@ -1033,186 +1033,6 @@ function updateMarketCountryList() {
   state.input.marketCountry = nextCountry;
 }
 
-let dnaMotionStop = null;
-const DNA_FRAME_INTERVAL_MS = 1000 / 24;
-const DNA_MAX_DPR = 1.25;
-
-function stopDnaMotion() {
-  if (typeof dnaMotionStop === "function") dnaMotionStop();
-  dnaMotionStop = null;
-}
-
-function createDnaParticles(total) {
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-  return Array.from({ length: total }, (_, index) => {
-    const latitude = 1 - 2 * ((index + 0.5) / Math.max(1, total));
-    const radial = Math.sqrt(Math.max(0, 1 - latitude * latitude));
-    const longitude = index * goldenAngle;
-    return {
-      baseX: Math.cos(longitude) * radial,
-      baseY: latitude,
-      baseZ: Math.sin(longitude) * radial,
-      phase: index * 1.71,
-      size: 0.55 + ((index * 17) % 9) / 10,
-    };
-  });
-}
-
-function startDnaMotion(field) {
-  stopDnaMotion();
-  const canvas = field?.querySelector("[data-dna-canvas]");
-  const context = canvas?.getContext("2d", { alpha: true, desynchronized: true });
-  if (!canvas || !context) return;
-  const tags = [...field.querySelectorAll("[data-dna-tag]")];
-  const isReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const isCompact = window.matchMedia?.("(max-width: 700px)").matches;
-  const particles = createDnaParticles(isCompact ? 64 : 96);
-  const tagParticles = createDnaParticles(tags.length);
-  const projected = particles.map(() => ({ x: 0, y: 0, z: 0, depth: 0 }));
-  let width = 0;
-  let height = 0;
-  let radius = 0;
-  let centerX = 0;
-  let centerY = 0;
-  let aura = null;
-  let frame = 0;
-  let stopped = false;
-  let intersecting = true;
-  let lastTimestamp = -Infinity;
-  const resize = () => {
-    const rect = field.getBoundingClientRect();
-    const nextWidth = Math.max(1, Math.round(rect.width));
-    const nextHeight = Math.max(1, Math.round(rect.height));
-    if (nextWidth === width && nextHeight === height) return;
-    width = nextWidth;
-    height = nextHeight;
-    centerX = width / 2;
-    centerY = height / 2;
-    radius = Math.min(width, height) * 0.36;
-    const dpr = Math.min(DNA_MAX_DPR, window.devicePixelRatio || 1);
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-    context.setTransform(dpr, 0, 0, dpr, 0, 0);
-    aura = context.createRadialGradient(centerX, centerY, radius * 0.05, centerX, centerY, radius * 1.22);
-    aura.addColorStop(0, "rgba(40, 120, 232, 0.10)");
-    aura.addColorStop(0.56, "rgba(40, 120, 232, 0.035)");
-    aura.addColorStop(1, "rgba(40, 120, 232, 0)");
-  };
-  const shouldAnimate = () => !stopped && !isReducedMotion && !document.hidden && intersecting;
-  const draw = (timestamp = 0) => {
-    frame = 0;
-    if (stopped || (!isReducedMotion && !shouldAnimate())) return;
-    if (!isReducedMotion && timestamp - lastTimestamp < DNA_FRAME_INTERVAL_MS) {
-      frame = window.requestAnimationFrame(draw);
-      return;
-    }
-    lastTimestamp = timestamp;
-    const time = timestamp / 1000;
-    const rotation = time * 0.042;
-    const wobbleTime = time * 0.11;
-    const tilt = 0.16 + Math.sin(time * 0.08) * 0.035;
-    const cosTilt = Math.cos(tilt);
-    const sinTilt = Math.sin(tilt);
-    context.clearRect(0, 0, width, height);
-    context.fillStyle = aura;
-    context.beginPath();
-    context.arc(centerX, centerY, radius * 1.22, 0, Math.PI * 2);
-    context.fill();
-
-    for (let index = 0; index < particles.length; index += 1) {
-      const particle = particles[index];
-      const wobble = Math.sin(wobbleTime + particle.phase) * 0.035;
-      const angle = rotation + wobble;
-      const cosAngle = Math.cos(angle);
-      const sinAngle = Math.sin(angle);
-      const x = particle.baseX * cosAngle - particle.baseZ * sinAngle;
-      const z = particle.baseX * sinAngle + particle.baseZ * cosAngle;
-      const y = particle.baseY * cosTilt - z * sinTilt;
-      const tiltedZ = particle.baseY * sinTilt + z * cosTilt;
-      const depth = 0.78 + (tiltedZ + 1) * 0.14;
-      const point = projected[index];
-      point.x = centerX + x * radius * depth;
-      point.y = centerY + y * radius * depth;
-      point.z = tiltedZ;
-      point.depth = depth;
-    }
-
-    context.lineWidth = 0.55;
-    for (let index = 0; index < projected.length; index += 1) {
-      const point = projected[index];
-      for (let next = index + 1; next < Math.min(projected.length, index + 5); next += 1) {
-        const other = projected[next];
-        const distance = Math.hypot(point.x - other.x, point.y - other.y);
-        if (distance > radius * 0.28 || point.z < -0.2 || other.z < -0.2) continue;
-        context.strokeStyle = `rgba(40, 120, 232, ${Math.max(0.015, 0.12 - distance / radius * 0.07)})`;
-        context.beginPath();
-        context.moveTo(point.x, point.y);
-        context.lineTo(other.x, other.y);
-        context.stroke();
-      }
-    }
-    for (let index = 0; index < projected.length; index += 1) {
-      const point = projected[index];
-      const alpha = 0.12 + Math.max(0, point.z + 1) * 0.29;
-      context.fillStyle = index % 11 === 0 ? `rgba(220, 89, 107, ${alpha})` : `rgba(40, 120, 232, ${alpha})`;
-      context.beginPath();
-      context.arc(point.x, point.y, 0.7 + point.depth * 1.1, 0, Math.PI * 2);
-      context.fill();
-    }
-    for (let index = 0; index < 24; index += 1) {
-      const drift = time * (0.012 + (index % 5) * 0.002) + index * 1.93;
-      const x = centerX + Math.sin(drift * 1.7 + index) * radius * (0.82 + (index % 3) * 0.12);
-      const y = centerY + Math.cos(drift * 1.13 + index * 0.7) * radius * (0.62 + (index % 4) * 0.08);
-      const alpha = 0.08 + (index % 4) * 0.025;
-      context.fillStyle = `rgba(120, 154, 0, ${alpha})`;
-      context.beginPath();
-      context.arc(x, y, 0.45 + (index % 3) * 0.24, 0, Math.PI * 2);
-      context.fill();
-    }
-    for (let index = 0; index < tags.length; index += 1) {
-      const particle = tagParticles[index];
-      const wobble = Math.sin(wobbleTime + particle.phase + 0.45) * 0.035;
-      const angle = rotation + wobble;
-      const cosAngle = Math.cos(angle);
-      const sinAngle = Math.sin(angle);
-      const x = particle.baseX * cosAngle - particle.baseZ * sinAngle;
-      const z = particle.baseX * sinAngle + particle.baseZ * cosAngle;
-      const y = particle.baseY * cosTilt - z * sinTilt;
-      const tiltedZ = particle.baseY * sinTilt + z * cosTilt;
-      const depth = (tiltedZ + 1) / 2;
-      const tag = tags[index];
-      const tagDepth = 0.78 + (tiltedZ + 1) * 0.14;
-      tag.style.setProperty("--dna-tx", `${x * radius * 1.08 * tagDepth}px`);
-      tag.style.setProperty("--dna-ty", `${y * radius * 1.08 * tagDepth}px`);
-      tag.style.setProperty("--dna-scale", `${0.74 + depth * 0.34}`);
-      tag.style.opacity = `${0.24 + depth * 0.72}`;
-      tag.style.zIndex = String(Math.round(10 + depth * 30));
-    }
-    if (!isReducedMotion) frame = window.requestAnimationFrame(draw);
-  };
-  const schedule = () => {
-    if (shouldAnimate() && !frame) frame = window.requestAnimationFrame(draw);
-  };
-  resize();
-  const resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => { resize(); schedule(); }) : null;
-  const visibilityObserver = typeof IntersectionObserver === "function" ? new IntersectionObserver(([entry]) => {
-    intersecting = entry?.isIntersecting !== false;
-    schedule();
-  }, { threshold: 0.01 }) : null;
-  resizeObserver?.observe(field);
-  visibilityObserver?.observe(field);
-  document.addEventListener("visibilitychange", schedule, { passive: true });
-  draw(0);
-  if (isReducedMotion) tags.forEach((tag) => { tag.style.opacity = "0.76"; });
-  dnaMotionStop = () => {
-    stopped = true;
-    window.cancelAnimationFrame(frame);
-    resizeObserver?.disconnect();
-    visibilityObserver?.disconnect();
-    document.removeEventListener("visibilitychange", schedule);
-  };
-}
-
 function setDnaFilter(filter = "all") {
   state.dnaFilter = filter;
   $$('[data-dna-filter]').forEach((button) => {
@@ -1233,11 +1053,9 @@ function toggleDnaWindow(open) {
   if (nextOpen) {
     windowNode.hidden = false;
     requestAnimationFrame(() => windowNode.classList.add("is-open"));
-    startDnaMotion($("[data-dna-field]"));
     return;
   }
   windowNode.classList.remove("is-open");
-  stopDnaMotion();
   window.setTimeout(() => {
     if (!windowNode.classList.contains("is-open")) windowNode.hidden = true;
   }, 280);
@@ -1251,7 +1069,7 @@ function renderInspirationPool() {
   const filters = categories.map((category) => `<button type="button" class="dna-filter${state.dnaFilter === category ? " is-active" : ""}" data-dna-filter="${escapeHtml(category)}" role="tab" aria-selected="${state.dnaFilter === category}">${escapeHtml(filterLabels[category] || category)}</button>`).join("");
   const tags = inspirationPool.map((item, index) => `<button class="dna-tag${recommended.has(item.keyword) ? " is-recommended" : ""}${state.dnaFilter !== "all" && state.dnaFilter !== item.kind ? " is-filtered-out" : ""}" type="button" data-inspiration="${escapeHtml(item.keyword)}" data-dna-tag data-dna-kind="${escapeHtml(item.kind)}" title="添加“${escapeHtml(item.keyword)}”到创作想法"><span>${escapeHtml(item.keyword)}</span><small>${escapeHtml(item.kind)}</small></button>`).join("");
   const recommendation = audienceGender === "all" ? "受众推荐待命" : `${audienceGenderLabels[audienceGender]} · ${recommended.size} 个高亮标签`;
-  return `<section class="dna-module" aria-labelledby="dnaLauncherTitle"><button type="button" class="dna-launcher" data-dna-toggle aria-expanded="false" aria-controls="dnaWindow"><span class="dna-launcher-orb" aria-hidden="true"><i></i><b></b><em></em></span><span class="dna-launcher-copy"><span class="card-label"><i></i>STORY DNA</span><strong id="dnaLauncherTitle">打开灵感 DNA</strong><small>${inspirationPool.length} 个标签 · ${escapeHtml(recommendation)}</small></span><span class="dna-launcher-arrow" aria-hidden="true">↗</span></button><div id="dnaWindow" class="dna-window" hidden><div class="dna-window-head"><div><span class="card-label"><i></i>NEURAL FIELD</span><h3>思维模式</h3><p>题材、爽点、爆点、叙事与主角身份的连接场。</p></div><button type="button" class="dna-close" data-dna-toggle aria-expanded="false" aria-controls="dnaWindow" title="收起灵感 DNA">×</button></div><div class="dna-filter-strip" role="tablist" aria-label="DNA 标签分类">${filters}</div><div class="dna-field" data-dna-field><canvas data-dna-canvas aria-hidden="true"></canvas><div class="dna-tag-layer" role="list">${tags}</div><div class="dna-core" aria-hidden="true"><span class="dna-core-ring"></span></div><div class="dna-thinking-state" data-dna-thinking>拆解 · 连接 · 重构</div></div><div class="dna-window-foot"><span>NETFLIX · HBO · SONY PICTURES TV</span><span>SELECT TAG TO ADD</span></div></div></section>`;
+  return `<section class="dna-module" aria-labelledby="dnaLauncherTitle"><button type="button" class="dna-launcher" data-dna-toggle aria-expanded="false" aria-controls="dnaWindow"><span class="dna-launcher-orb" aria-hidden="true"><i></i><b></b><em></em></span><span class="dna-launcher-copy"><span class="card-label"><i></i>STORY DNA</span><strong id="dnaLauncherTitle">打开灵感 DNA</strong><small>${inspirationPool.length} 个标签 · ${escapeHtml(recommendation)}</small></span><span class="dna-launcher-arrow" aria-hidden="true">↗</span></button><div id="dnaWindow" class="dna-window" hidden><div class="dna-window-head"><div><span class="card-label"><i></i>NEURAL FIELD</span><h3>思维模式</h3><p>题材、爽点、爆点、叙事与主角身份的连接场。</p></div><button type="button" class="dna-close" data-dna-toggle aria-expanded="false" aria-controls="dnaWindow" title="收起灵感 DNA">×</button></div><div class="dna-filter-strip" role="tablist" aria-label="DNA 标签分类">${filters}</div><div class="dna-field" data-dna-field><div class="dna-tag-layer" role="list">${tags}</div></div><div class="dna-window-foot"><span>NETFLIX · HBO · SONY PICTURES TV</span><span>SELECT TAG TO ADD</span></div></div></section>`;
 }
 
 function addInspirationToIdea(keyword) {
@@ -1833,7 +1651,6 @@ function renderHandoff() {
 
 function renderStage() {
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;
-  stopDnaMotion();
   $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="生产流程"><div><span class="eyebrow">PRODUCTION FLOW</span><strong>当前阶段 ${productionProgressLabel(workflowStage())}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>完成后</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderer()}`;
   bindStageActions();
   renderShellState();

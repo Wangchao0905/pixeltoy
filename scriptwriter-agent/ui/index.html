@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><title>Pixel Writer</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;background:#fafafa}
+.stage{display:inline-block;padding:.3rem .8rem;margin-right:.5rem;border-radius:1rem;background:#eee}
+.stage.done{background:#c8e6c9}.stage.active{background:#fff3c4}
+.scene{border:1px solid #ddd;border-radius:.5rem;padding:1rem;margin:1rem 0;background:#fff}
+.speaker{font-weight:600}
+.issue{color:#b71c1c;font-size:.9rem}
+#progress{display:none;margin:1rem 0;padding:.8rem;background:#e3f2fd;border-radius:.5rem}
+</style>
+</head>
+<body>
+<h1>Pixel Writer · 中文短剧编剧</h1>
+<textarea id="idea" rows="3" style="width:100%" placeholder="用一句话写下创意：主角是谁、要做什么、遇到什么阻碍…"></textarea>
+<div style="margin:.6rem 0">
+  集数（可选）：<input id="episodes" type="number" min="1" max="24" value="3" style="width:4rem">
+  每集时长（可选，分钟）：<input id="duration" type="number" min="1" max="20" style="width:4rem">
+  <button id="start" style="margin-left:1rem;padding:.5rem 1.2rem">开始创作</button>
+</div>
+<div id="progress">生成中… 正在写第 <span id="cur">0</span> 集</div>
+<div id="stages"></div>
+<div id="output"></div>
+<div id="export" style="display:none"><button id="btn-export">导出 docx</button></div>
+<script>
+let projectId = null;
+const $ = (id) => document.getElementById(id);
+// 转义 HTML 特殊字符，防止模型输出（不可信，可被 prompt injection 操纵）注入 innerHTML 造成存储型 DOM XSS
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"'`]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[c]));
+}
+async function post(path, body) {
+  const r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  return r.json();
+}
+$("start").onclick = async () => {
+  $("progress").style.display = "block";
+  const body = {idea: $("idea").value, episode_count: parseInt($("episodes").value || "3", 10)};
+  const res = await post("/api/start", body);
+  if (res.ok) { projectId = res.state.project_id; render(res.state); }
+  $("progress").style.display = "none";
+};
+function render(state) {
+  const order = ["brief","worldbuilding","outline","episode","export"];
+  $("stages").innerHTML = order.map((s) =>
+    `<span class="stage ${order.indexOf(s) < order.indexOf(state.stage) ? "done" : (s === state.stage ? "active" : "")}">${s}</span>`).join("");
+  const out = [];
+  const outline = state.artifacts.outline || {episodes: []};
+  out.push("<h2>分集大纲</h2>");
+  outline.episodes.forEach((ep) => out.push(`<p><b>第${escapeHtml(ep.index)}集</b> 钩子：${escapeHtml(ep.hook)}｜悬念：${escapeHtml(ep.cliffhanger)}</p>`));
+  out.push("<h2>剧本</h2>");
+  Object.entries(state.artifacts.episodes || {}).forEach(([idx, ep]) => {
+    out.push(`<h3>第${escapeHtml(idx)}集</h3>`);
+    if (!ep) {
+      // 生成失败被标记 needs-human 的集（episodes[idx] = null）：占位提示，不崩 render
+      out.push(`<p class="issue">本集生成失败，需人工决策</p>`);
+      return;
+    }
+    (ep.scenes || []).forEach((sc) => {
+      out.push(`<div class="scene"><b>【${escapeHtml(sc.location)}】</b>`);
+      (sc.beats || []).forEach((b) => out.push(b.line ? `<p class="speaker">${escapeHtml(b.speaker)}：</p><p>${escapeHtml(b.line)}</p>` : `<p>${escapeHtml(b.action)}</p>`));
+      out.push("</div>");
+    });
+  });
+  out.push("<h2>审核记录</h2>");
+  Object.entries(state.evaluation || {}).forEach(([k, v]) => out.push(`<p class="issue">${escapeHtml(k)}: ${escapeHtml(JSON.stringify(v))}</p>`));
+  $("output").innerHTML = out.join("");
+  $("export").style.display = "block";
+}
+$("btn-export").onclick = async () => {
+  const res = await post("/api/export", {project_id: projectId});
+  if (res.ok) location.href = res.file;
+};
+</script>
+</body></html>

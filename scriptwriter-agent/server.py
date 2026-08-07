@@ -27,7 +27,7 @@ def _safe_project_path(pid, suffix):
 def make_handler(engine_factory):
     class Handler(BaseHTTPRequestHandler):
         engine = None
-        STATIC_FILES = {"index.html": os.path.join("ui", "index.html")}
+        STATIC_FILES = {"index.html": os.path.join(BASE_DIR, "ui", "index.html")}
 
         def _json(self, code, obj):
             body = json.dumps(obj, ensure_ascii=False).encode("utf-8")

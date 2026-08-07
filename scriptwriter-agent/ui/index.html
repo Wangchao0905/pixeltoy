@@ -38,7 +38,7 @@ async function post(path, body) {
 $("start").onclick = async () => {
   $("progress").style.display = "block";
   const body = {idea: $("idea").value, episode_count: parseInt($("episodes").value || "3", 10)};
-  const res = await post("/api/start", body);
+  const res = await post("api/start", body);
   if (res.ok) { projectId = res.state.project_id; render(res.state); }
   $("progress").style.display = "none";
 };
@@ -70,8 +70,8 @@ function render(state) {
   $("export").style.display = "block";
 }
 $("btn-export").onclick = async () => {
-  const res = await post("/api/export", {project_id: projectId});
-  if (res.ok) location.href = res.file;
+  const res = await post("api/export", {project_id: projectId});
+  if (res.ok) location.href = "projects/" + projectId + ".docx";
 };
 </script>
 </body></html>

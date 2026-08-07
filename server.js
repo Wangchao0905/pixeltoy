@@ -27544,6 +27544,48 @@ function serveMedia(req, res, file, options = {}) {
   fs.createReadStream(file, { start, end }).pipe(res);
 }
 
+// ---- Pixel Writer 同源代理 ------------------------------------------------
+// 生产把 /pixel-writer/* 代理到本机 8877 的 Pixel Writer 服务（scriptwriter-agent），
+// 使 pixeltoy.cn 的 iframe 工作台走同源，远程访客不会去连自己的 127.0.0.1。
+const PIXEL_WRITER_TARGET = { host: "127.0.0.1", port: 8877 };
+
+function pixelWriterProxyTarget(pathname) {
+  // /pixel-writer/  ->  /
+  // /pixel-writer/api/start  ->  /api/start
+  const rest = pathname.replace(/^\/pixel-writer/, "") || "/";
+  return rest.startsWith("/") ? rest : "/" + rest;
+}
+
+function proxyPixelWriter(req, res, url) {
+  return new Promise((resolve) => {
+    const targetPath = pixelWriterProxyTarget(url.pathname) + (url.search || "");
+    const upstream = http.request(
+      {
+        host: PIXEL_WRITER_TARGET.host,
+        port: PIXEL_WRITER_TARGET.port,
+        method: req.method,
+        path: targetPath,
+        headers: { ...req.headers, host: `${PIXEL_WRITER_TARGET.host}:${PIXEL_WRITER_TARGET.port}` },
+      },
+      (upRes) => {
+        res.writeHead(upRes.statusCode || 502, upRes.headers);
+        upRes.pipe(res);
+        upRes.on("end", () => resolve(true));
+      }
+    );
+    upstream.on("error", (err) => {
+      try {
+        if (!res.headersSent) return fail(res, 502, "pixel-writer upstream unavailable");
+      } catch {
+        /* ignore */
+      }
+      res.end();
+      resolve(true);
+    });
+    req.pipe(upstream);
+  });
+}
+
 const handleRequest = async (req, res) => {
   // Defensive headers applied to every response. Set via setHeader so they
   // merge with (and are preserved through) later res.writeHead calls.
@@ -27563,6 +27605,9 @@ const handleRequest = async (req, res) => {
     if (isAuthApiPath(url.pathname)) return await handleAuthApi(req, res, url);
     if (url.pathname === "/api/super-pixel/chat") return await handleSuperPixelChat(req, res, url);
     if (!requireAuth(req, res, url)) return;
+    if (url.pathname.startsWith("/pixel-writer/") || url.pathname === "/pixel-writer") {
+      return await proxyPixelWriter(req, res, url);
+    }
     if (url.pathname === "/api/canvas/agent/chat") return await handleCanvasAgentChat(req, res, url);
     if (isAdminApiPath(url.pathname)) return await handleAdminApi(req, res, url);
     if (url.pathname === "/media") {
@@ -27654,6 +27699,7 @@ module.exports = {
   prepareBatchVideoReferences,
   readVideoConfig,
   __test: {
+    pixelWriterProxyTarget,
     superPixel: {
       handle: handleSuperPixelChat,
       setFetch(fetchImpl) {

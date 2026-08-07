@@ -26,6 +26,8 @@ work/
 .pixel-toys-hidden-scene-references/
 .pixel-toys-canvas-tail-frames/
 .pixel-toys-thumbs/
+.pixel-tale-sessions/
+09_tail_frames/
 
 # ===== 日志 / 临时 / PID =====
 *.log
@@ -38,6 +40,7 @@ work/
 *.bak.*
 *.backup
 *.backup-*
+*.orig
 
 # ===== 工具二进制 / 第三方缓存 =====
 tools/bin/

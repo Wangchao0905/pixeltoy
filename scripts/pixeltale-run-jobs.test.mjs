@@ -153,6 +153,25 @@ try {
   const untouchedJob = JSON.parse(fs.readFileSync(path.join(staleJobsDir, "ptrun_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.json"), "utf8"));
   assert.equal(untouchedJob.status, "completed", "non-running jobs must be left untouched");
   fs.rmSync(path.dirname(staleRoot), { recursive: true, force: true });
+  // ── 配置自检：端点与 key 配对启发式告警 ──
+  const pairingEnv = { ...process.env };
+  try {
+    process.env.DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1";
+    process.env.DEEPSEEK_API_KEY = "not-a-key";
+    assert.equal(pixelTaleRuns.validateModelEndpointPairing().length, 1, "official endpoint with a non-sk- key must warn");
+    process.env.DEEPSEEK_API_BASE_URL = "https://beefapi.com";
+    process.env.DEEPSEEK_API_KEY = "sk-official-key";
+    assert.equal(pixelTaleRuns.validateModelEndpointPairing().length, 1, "gateway endpoint with an official sk- key must warn (the deepseek 401 pattern)");
+    process.env.DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1";
+    process.env.DEEPSEEK_API_KEY = "sk-valid";
+    process.env.PIXELTALE_GEMINI_API_KEY = "AIza-test";
+    assert.equal(pixelTaleRuns.validateModelEndpointPairing().length, 0, "correct pairing must not warn");
+  } finally {
+    for (const key of ["DEEPSEEK_API_BASE_URL", "DEEPSEEK_API_KEY", "PIXELTALE_GEMINI_API_KEY"]) {
+      if (pairingEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = pairingEnv[key];
+    }
+  }
 } finally {
   pixelTaleApi.setFetch();
   fs.rmSync(root, { recursive: true, force: true });

@@ -9,11 +9,12 @@ This file is the recovery card for continuing Pixel Toys from a new chat.
 
 - **用户实际使用的是远程生产**:`http://101.42.111.251/`(nginx → PM2 `pixel-toy`,监听 4317)。改代码前先确认在哪运行,别只改本地。
 - 本地 `~/Documents/Codex/2026-06-16/codex-skill` 是**开发副本**;`npm start` / launchd `com.pixeltoys.local` 只用于本地调试。
-- **部署流程**(只推代码,绝不碰数据):
+- **部署流程**(只推代码,绝不碰数据):统一走 `docs/DEPLOYMENT.md` 的 git 正规流程:
   1. 本地 `node --check` + `npm test`(含 `scripts/self-check.mjs`,有一堆不变量断言,改设计要同步翻断言)。
-  2. 备份:`ssh ubuntu@101.42.111.251 "mkdir -p ~/apps/pixel-toy/.deploy_bak/<TS>/... && cp ..."`。
-  3. `scp` **仅改动的代码文件**到 `~/apps/pixel-toy/`(server.js / public/*.js / public/*.css / scripts/*)。**绝不** `--delete`,绝不覆盖 `projects/`、`.env.local`、`outputs/`、`data/`。
-  4. 远程 `node --check` + `node scripts/self-check.mjs` → `pm2 reload pixel-toy --update-env` → `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1/`(302 = 正常)。
+  2. 提交并推送:`git push origin HEAD:main`(生产从 `Wangchao0905/pixeltoy` 的 `main` 拉取)。
+  3. 执行:`ssh ubuntu@101.42.111.251 'cd /home/ubuntu/apps/pixel-toy && ./deploy.sh'`。
+  4. `deploy.sh` 检查未提交改动 → fetch `origin/main` → 备份 `server.js` 到 `.deploy_bak/` → `npm ci` → `node --check` → PM2 restart → 本地 4317 + HTTPS 首页健康检查;任一失败自动回滚到 `PREV`。
+  **不使用 `scp`/`rsync` 覆盖生产**;脚本不提交/清理 `.env.local`、用户账号、项目、会话等运行数据。
 - ssh 免密到 `ubuntu@101.42.111.251`。
 
 ## 关键护栏(保留)

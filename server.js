@@ -2703,6 +2703,26 @@ function markStalePixelTaleRunsInterrupted(sessionsRoot = PIXELTALE_SESSION_ROOT
   return marked;
 }
 
+// 配置自检：检测 deepseek 401 事故那类"端点与 key 不匹配"的组合。
+// 只做启发式告警，不阻断启动；导出供测试与运维脚本复用。
+function validateModelEndpointPairing() {
+  const warnings = [];
+  const deepseekBase = String(process.env.DEEPSEEK_API_BASE_URL || "").toLowerCase();
+  const deepseekKey = String(process.env.DEEPSEEK_API_KEY || "");
+  if (deepseekKey) {
+    if (deepseekBase.includes("api.deepseek.com") && !deepseekKey.startsWith("sk-")) {
+      warnings.push("DEEPSEEK_API_BASE_URL 指向官方端点但 DEEPSEEK_API_KEY 不是 sk- 开头，官方会拒绝认证（HTTP 401）。");
+    } else if (deepseekBase && !deepseekBase.includes("api.deepseek.com") && deepseekKey.startsWith("sk-")) {
+      warnings.push("DEEPSEEK_API_BASE_URL 指向网关（非官方端点）而 DEEPSEEK_API_KEY 是官方 sk- 格式；若该 key 是模型官方签发的，网关不会接受（deepseek 401 事故即此模式）。");
+    }
+  }
+  const geminiKey = String(process.env.PIXELTALE_GEMINI_API_KEY || "");
+  if (geminiKey && !geminiKey.startsWith("sk-") && !geminiKey.startsWith("AIza")) {
+    warnings.push("PIXELTALE_GEMINI_API_KEY 前缀可疑（既非网关 sk- 也非官方 AIza），可能不被端点接受。");
+  }
+  return warnings;
+}
+
 function pixelTaleRunJobFile(storyRoot, jobId) {
   if (!/^ptrun_[A-Za-z0-9-]{20,80}$/.test(String(jobId || ""))) return "";
   return path.join(storyRoot, "run-jobs", `${jobId}.json`);
@@ -27366,6 +27386,20 @@ function serveStatic(req, res, url) {
   const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
   const file = path.join(APP_ROOT, "public", pathname);
   if (!isInside(path.join(APP_ROOT, "public"), file)) return fail(res, 404, "not found");
+  // 备份/临时文件禁止公网访问：手工 scp 盲改留下的 app.js.bak-*、*.orig 等残留
+  // 不应被 nginx/node 直接吐给用户（历史多次产生此类残留）。
+  const baseName = path.basename(file).toLowerCase();
+  if (
+    baseName.endsWith(".bak") ||
+    baseName.endsWith(".orig") ||
+    baseName.endsWith(".tmp") ||
+    baseName.endsWith(".swp") ||
+    baseName.endsWith(".old") ||
+    /\.(bak|orig|tmp|swp|old)\..+$/.test(baseName) ||
+    file.split(path.sep).includes(".deploy_bak")
+  ) {
+    return fail(res, 403, "forbidden");
+  }
   // 合并 existsSync+statSync 两次系统调用为一次 try/statSync:少一半 syscall,
   // 且消除"存在性检查通过后文件被删"的竞态。
   let stat = null;
@@ -27601,6 +27635,13 @@ if (require.main === module) {
   // 重启后把上一进程遗留的 running 任务标记为中断，避免前端永远空转等待。
   markStalePixelTaleRunsInterrupted();
 
+  // 启动配置自检：检测 deepseek 401 事故那类"端点与 key 不匹配"的配置，
+  // 尽早告警而不是让模型调用静默 401。只做启发式告警，不阻断启动。
+  const configWarnings = validateModelEndpointPairing();
+  if (configWarnings.length) {
+    console.warn("[pixel-tale] 配置告警（仅提醒，不阻断）：\n" + configWarnings.map((item) => `  - ${item}`).join("\n"));
+  }
+
   server.listen(PORT, () => {
     console.log(`Pixel Toys running at http://localhost:${PORT}`);
     console.log(`Workspace: ${APP_ROOT}`);
@@ -27645,6 +27686,7 @@ module.exports = {
     },
     pixelTaleRuns: {
       markStaleInterrupted: markStalePixelTaleRunsInterrupted,
+      validateModelEndpointPairing,
       start: startPixelTaleRun,
       get: getPixelTaleRunJob,
     },

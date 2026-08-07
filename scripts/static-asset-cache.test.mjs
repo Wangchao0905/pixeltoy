@@ -119,6 +119,11 @@ try {
   } finally {
     fs.readFileSync = realRead;
   }
+  // 4. 备份/临时文件不得公网可访问：scp 盲改残留的 *.bak-*、*.orig 等不能经静态服务泄漏。
+  const staticPrefix = sliceBetween(server, "function serveStatic(", "\nfunction contentDispositionName");
+  assert.match(staticPrefix, /baseName\.endsWith\("\.bak"\)/, "static serving must reject *.bak files");
+  assert.match(staticPrefix, /baseName\.endsWith\("\.orig"\)/, "static serving must reject *.orig files");
+  assert.match(staticPrefix, /403, "forbidden"/, "backup files must return 403, not 200");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

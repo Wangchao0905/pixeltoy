@@ -23,6 +23,9 @@ const pixelTaleAppStamp = html.match(/pixeltale\/app\.js\?v=([0-9a-zA-Z._-]+)/)?
 assert.ok(pixelTaleStylesStamp && pixelTaleAppStamp, "PixelTale static assets must carry cache stamps");
 assert.equal(pixelTaleAppStamp, pixelTaleStylesStamp, "PixelTale styles and app cache stamps must stay synchronized");
 assert.match(app, /function startNewDraft\(\)[\s\S]*localStorage\.setItem\(SESSION_STORAGE_KEY[\s\S]*window\.location\.assign/, "new story must rotate the session before navigating");
+assert.match(app, /function startNewDraft\(\)\s*\{\s*let freshSession[\s\S]*?try \{/, "freshSession must be declared at function scope, visible to the navigation code after the try block");
+assert.doesNotMatch(app, /function startNewDraft\(\)[\s\S]*?try \{[\s\S]*?const freshSession/, "freshSession must not be block-scoped inside the try block (would throw ReferenceError on click)");
+assert.match(app, /catch \{[\s\S]*?freshSession = freshSession \|\| `session_/, "storage failure must still produce a session id before navigating");
 assert.match(app, /function userFacingError\(error\)/, "provider errors must be normalized for users");
 assert.match(app, /agentTaskCopy"\)\.textContent = state\.lastError \|\| action\.copy/, "run errors must remain visible in the right-rail next action");
 assert.match(app, /agentTaskCopy"\)\.setAttribute\("role", state\.lastError \? "alert"/, "run errors must be announced from the right-rail next action");

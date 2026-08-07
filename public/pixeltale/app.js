@@ -2110,15 +2110,17 @@ $("#historyList")?.addEventListener("click", (event) => {
 });
 $("#agentMenu").addEventListener("click", () => showToast("Agent 状态独立保存于 Story Forge 会话"));
 function startNewDraft() {
+  let freshSession;
   try {
     sessionStorage.setItem(PENDING_MODE_KEY, state.mode);
     sessionStorage.setItem(PENDING_NOTICE_KEY, "已创建新的剧集会话，请从故事架构开始。");
-    const freshSession = typeof crypto?.randomUUID === "function"
+    freshSession = typeof crypto?.randomUUID === "function"
       ? crypto.randomUUID()
       : `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     localStorage.setItem(SESSION_STORAGE_KEY, freshSession);
   } catch {
     // A fresh in-memory session will still be created after reload.
+    freshSession = freshSession || `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   }
   const target = new URL(window.location.href);
   target.searchParams.set("session", freshSession);

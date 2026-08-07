@@ -125,34 +125,97 @@ class PixelWriterEngine:
         self._save(state)
         return state
 
+    def _continuity_ledger(self, state, idx):
+        """确定性跨集状态簿：写第 idx 集时，汇总前 1..idx-1 集的实际内容与待兑现悬念。
+
+        用于：
+        1) 前情提要（上集结尾对白 + 上集悬念）
+        2) 跨集状态（角色/地点最后出现集——角色状态延续与伏笔回收的依据）
+        3) 待兑现悬念（分集大纲中本集及以后的 cliffhanger，引导伏笔推进）
+        """
+        episodes = state.artifacts.get("episodes", {}) or {}
+        chars = {}
+        locations = {}
+        for i in range(1, idx):
+            ep = episodes.get(str(i))
+            if not isinstance(ep, dict):
+                continue
+            for scene in ep.get("scenes", []) or []:
+                loc = scene.get("location")
+                if loc:
+                    locations[loc] = max(locations.get(loc, 0), i)
+                for beat in scene.get("beats", []) or []:
+                    sp = beat.get("speaker")
+                    if sp:
+                        chars[sp] = max(chars.get(sp, 0), i)
+        outline_eps = state.artifacts.get("outline", {}).get("episodes", []) or []
+        open_hooks = [
+            f"第{e.get('index')}集悬念（待兑现）：{e.get('cliffhanger', '')}"
+            for e in outline_eps
+            if e.get("index") and int(e["index"]) >= idx and e.get("cliffhanger")
+        ]
+        prev = episodes.get(str(idx - 1))
+        prev_end = []
+        if isinstance(prev, dict):
+            scenes = prev.get("scenes", []) or []
+            for beat in (scenes[-1].get("beats", []) if scenes else [])[:4]:
+                if beat.get("line"):
+                    prev_end.append(f"{beat.get('speaker', '')}：{beat['line']}")
+        return {
+            "characters": chars,
+            "locations": locations,
+            "open_hooks": open_hooks,
+            "previous_episode_end": prev_end,
+            "previous_cliffhanger": next(
+                (e.get("cliffhanger", "") for e in outline_eps if e.get("index") == idx - 1), ""
+            ),
+        }
+
     def review_episode(self, state, episode):
-        """DeepSeek 审核单集，返回审核契约 dict（Humanizer-zh 门槛：human_tone<70 必须 pass=false）。"""
+        """DeepSeek 审核单集，返回审核契约 dict。
+
+        多维度：human_tone（Humanizer-zh 去 AI 腔）、plot、dialogue、continuity
+        （与前集衔接 / 角色状态延续 / 悬念推进）。human_tone<70 或 continuity<70 必须 pass=false。
+        """
         humanizer = self.facts["humanizer-zh.md"]
         wb = json.dumps(state.artifacts.get("worldbuilding", {}), ensure_ascii=False)
-        prompt = f"""你是短剧审核编辑。对照【设定事实】【Humanizer-zh 中文 AI 腔清单】审核本集。
+        idx = state.current_episode if state.current_episode else 1
+        cont = self._continuity_ledger(state, idx)
+        prev_part = "\n".join(cont["previous_episode_end"]) if cont["previous_episode_end"] else "（首集，无前集）"
+        prev_hook = cont["previous_cliffhanger"]
+        ledger_part = (
+            f"角色最后出现集：{json.dumps(cont['characters'], ensure_ascii=False)}；"
+            f"地点：{json.dumps(cont['locations'], ensure_ascii=False)}"
+        )
+        hooks_part = "\n".join(cont["open_hooks"]) if cont["open_hooks"] else "（无待兑现悬念）"
+        prompt = f"""你是短剧审核编辑。对照【设定事实】【前情提要】【跨集状态】【Humanizer-zh 中文 AI 腔清单】审核本集。
 设定：{wb[:800]}
+前情提要（上集结尾，本集开头必须承接）：{prev_part[:400]}
+上集悬念：{prev_hook[:200] if prev_hook else "（无）"}
+跨集状态：{ledger_part[:400]}
+待兑现悬念：{hooks_part[:400]}
 本集：{json.dumps(episode, ensure_ascii=False)[:2000]}
 AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 
-输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"human_tone":0-100,"plot":0-100,"dialogue":0-100}},"issues":[{{"severity":"high|medium","mode":1-21,"quote":"原文","fix":"改写建议"}}]}}
-规则：AI 腔分数<70 必须 pass=false；情节断裂/对白与设定冲突必须 high issue。"""
+输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"human_tone":0-100,"plot":0-100,"dialogue":0-100,"continuity":0-100}},"issues":[{{"severity":"high|medium","mode":1-21,"quote":"原文","fix":"改写建议"}}]}}
+规则：AI 腔分数<70 必须 pass=false；continuity<70（本集开头未衔接上集结尾/角色状态矛盾/悬念未推进）必须 pass=false；情节断裂/对白与设定冲突必须 high issue。"""
         content = self.reviewer.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=2000)
         verdict = self._parse_json_block(content)
         if not isinstance(verdict, dict):
             return None
         # 强制门：pass 必须严格为布尔 True 才视为通过（字符串 "false" 不再 truthy）
         verdict["pass"] = verdict.get("pass") is True
-        # 代码级 Humanizer-zh 门槛：human_tone < 70 强制不通过，不依赖 prompt 软约束；
-        # 分数为字符串（如 "40"）时也强制比较，缺失/非法按不达标处理（保守方向）
+        # 代码级多维度门槛：human_tone<70 与 continuity<70 强制不通过，不依赖 prompt 软约束。
+        # human_tone 缺失/非法按不达标（保守否决）；continuity 缺失按宽松处理（兼容旧审核输出/旧数据）。
         dims = verdict.get("dimensions")
         if isinstance(dims, dict):
-            human_tone = dims.get("human_tone")
-            try:
-                low_tone = float(human_tone) < 70
-            except (TypeError, ValueError):
-                low_tone = True
-            if low_tone:
-                verdict["pass"] = False
+            for dim, strict in (("human_tone", True), ("continuity", False)):
+                try:
+                    low = float(dims.get(dim)) < 70
+                except (TypeError, ValueError):
+                    low = strict
+                if low:
+                    verdict["pass"] = False
         return verdict
 
     def revise_episode(self, state, episode, issues):
@@ -237,13 +300,32 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
     def _prompt_episode(self, state, outline):
         wb = json.dumps(state.artifacts.get("worldbuilding", {}), ensure_ascii=False)
         contract = self.facts["文风契约.md"]
+        idx = outline["index"]
+        cont = self._continuity_ledger(state, idx)
+        prev_part = (
+            f"\n前情提要（第 {idx - 1} 集结尾，本集开头必须承接）：\n"
+            + "\n".join(cont["previous_episode_end"])
+            + (f"\n上集悬念：{cont['previous_cliffhanger']}" if cont["previous_cliffhanger"] else "")
+            if idx > 1
+            else "\n（首集：开场即立人物与冲突）"
+        )
+        ledger_part = f"\n跨集状态：角色最后出现集 {json.dumps(cont['characters'], ensure_ascii=False)}；地点 {json.dumps(cont['locations'], ensure_ascii=False)}"
+        hooks_part = (
+            "\n待兑现悬念（本集及以后必须兑现或推进）：\n" + "\n".join(cont["open_hooks"])
+            if cont["open_hooks"]
+            else ""
+        )
         duration_note = f"本集目标时长约 {state.idea['episode_duration_seconds']} 秒；场景数、动作节拍和对白量必须匹配该时长。" if state.idea.get("episode_duration_seconds") else ""
-        return f"""写第 {outline['index']} 集剧本，输出 JSON：
+        return f"""写第 {idx} 集剧本，输出 JSON：
 {{"scenes":[{{"location":"","beats":[{{"speaker":"","line":"","action":""}}]}}]}}
 事件：{json.dumps(outline, ensure_ascii=False)}
 设定：{wb}
+{prev_part}
+{ledger_part}
+{hooks_part}
 {duration_note}
-对白契约：{contract[:500] if contract else '口语化、短句、有潜台词'}"""
+对白契约：{contract[:500] if contract else '口语化、短句、有潜台词'}
+要求：本集开头衔接上集结尾；角色状态/地点延续跨集状态；按待兑现悬念推进伏笔，不提前草草了结。"""
 
     @staticmethod
     def _parse_json_block(text):

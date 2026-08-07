@@ -18,7 +18,7 @@ const STAGES = ["brief", "title", "proposal", "characters", "arc", "scenes", "di
 const STAGE_LABELS = Object.freeze({ brief: "故事架构", title: "剧名选择", proposal: "故事提案", characters: "人物与世界", arc: "分集与章节", scenes: "场景与镜头", dialogue: "对白本土化" });
 const DEFAULT_ROUTES = {
   orchestration: "gpt-5.6-terra",
-  continuity: "claude-opus-5",
+  continuity: "gemini-3.1-pro",
   hooks: "claude-haiku-4-5",
   dialogueReview: "claude-sonnet-5",
   consistency: "gpt-5.6-luna",

@@ -58,6 +58,12 @@ assert.equal(
   75,
   "minute-and-second duration declarations must be supported",
 );
+const markdownTimedScript = `# 奶茶店\n\n**00:00-00:04　店门推开**\n\n傍晚，玻璃门被推开。\n\n**00:04-00:10　柜台前的停顿**\n\n她站在点单台前。\n\n**00:10-00:16　那句问题**\n\n她终于抬眼。\n\n**00:16-00:20　店里静下来**\n\n全店安静。\n\n**00:20-00:30　店员的回答**\n\n店员认真回应。\n\n**00:30-00:36　一杯被替换的选择**\n\n热牛奶注入茶汤。\n\n**00:36-00:41　传染**\n\n后面的人也要一杯。\n\n**00:41-00:45　收尾**\n\n她在窗边喝下奶茶。`;
+assert.equal(
+  duration.scriptTimecodeTotalSeconds(markdownTimedScript),
+  45,
+  "Markdown-wrapped screenplay timecodes must determine the free-mode target",
+);
 const declared45CharacterSetupScript = `角色设定：咕咚，主角，住在小屋。\n总时长：45 秒\n\n[场景1]\n咕咚在小屋内完成连续动作并停下。`;
 assert.equal(
   duration.freeTargetDuration({ script: duration.modelPlanningScript(declared45CharacterSetupScript), beats: twentyBeats }),
@@ -96,6 +102,26 @@ assert.equal(
   49,
   "video-config plan rebuild must derive 49 seconds from the prepared script",
 );
+const staleConfigRoot = fs.mkdtempSync(path.join(process.cwd(), ".duration-mode-readiness-test-"));
+try {
+  const { episodeRoot } = series.createEpisodeWorkspace(staleConfigRoot, "e01", "自由模式过期配置");
+  fs.writeFileSync(series.findProjectFile(episodeRoot, "script"), markdownTimedScript, "utf8");
+  duration.persistProjectDurationMode(episodeRoot, FREE);
+  const configPath = series.findProjectFile(episodeRoot, "config");
+  fs.writeFileSync(
+    configPath,
+    `${JSON.stringify({ durationMode: FREE, settings: { durationMode: FREE }, shots: Array.from({ length: 8 }, (_, index) => ({ name: `V${index + 1}`, duration: 15 })) }, null, 2)}\n`,
+    "utf8",
+  );
+  const readiness = duration.configReadiness(episodeRoot);
+  assert.deepEqual(readiness.durationPlan?.["target"], 45, "readiness must expose the screenplay target duration");
+  assert.deepEqual(readiness.durationPlan?.["shotCount"], 3, "readiness must expose the corrected free-mode shot count");
+  assert.deepEqual(readiness.durationMismatch?.actual, { shotCount: 8, target: 120 }, "readiness must identify the stale 120-second config");
+  assert.deepEqual(readiness.durationMismatch?.expected, { shotCount: 3, target: 45 }, "readiness must identify the corrected 45-second target");
+  assert.equal(readiness.ready, false, "a stale free-mode config must not remain ready for video submission");
+} finally {
+  fs.rmSync(staleConfigRoot, { recursive: true, force: true });
+}
 const gudongFingerprint = crypto.createHash("sha1").update(gudongScript).digest("hex");
 assert.equal(
   duration.modelShotPlanNeedsRefresh({

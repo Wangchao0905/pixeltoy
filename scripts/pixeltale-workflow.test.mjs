@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const pixeltaleApi = fs.readFileSync(path.join(root, "server/pixeltale-api.js"), "utf8");
+const pixeltaleAgentSource = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 process.env.PIXELTALE_GPT_API_KEY ||= "sk-test-pixeltale-gpt-000000000000";
 process.env.PIXELTALE_GEMINI_API_KEY ||= "sk-test-pixeltale-gemini-000000000000";
 const { callPixelTaleApiModel, reviewModels, models, MODEL_DEFINITIONS, GROK_FALLBACK_MODEL, GEMINI_FALLBACK_MODEL } = createRequire(import.meta.url)("../server/pixeltale-api.js");
@@ -115,6 +117,13 @@ assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*model-team
 assert.match(app, /seat_b[\s\S]*seat_c/, "review UI must retain distinct B and C Claude seats");
 
 assert.match(html, /id="newDraft"[^>]*>[^<]*<span[^>]*>\+<\/span>\s*新建剧集/, "new story action must be explicit");
+assert.match(html, /<optgroup label="Gemini"><option value="gemini-3\.1-pro">Gemini 3\.1 Pro<\/option><\/optgroup>/, "every creative-routing select must offer Gemini 3.1 Pro as the Claude replacement");
+assert.match(app, /continuity: "gemini-3\.1-pro"/, "the default continuity route must be Gemini 3.1 Pro, not Claude");
+assert.match(app, /"gemini-3\.1-pro": \{ name: "Gemini 3\.1 Pro", provider: "gemini"/, "the model meta table must describe Gemini 3.1 Pro");
+assert.match(app, /groups = \{ chatgpt: \[\], claude: \[\], gemini: \[\] \}/, "routing sync must accept Gemini providers");
+assert.match(app, /labels = \{ chatgpt: "GPT", claude: "Claude", gemini: "Gemini" \}/, "routing sync must label Gemini as a first-class provider");
+assert.doesNotMatch(pixeltaleApi, /id: GEMINI_FALLBACK_MODEL,[\s\S]*?fallbackOnly: true/, "Gemini must be a primary (selectable) model, not fallback-only");
+assert.match(pixeltaleAgentSource, /const DEFAULT_ROUTES = \{[\s\S]*?continuity: "gemini-3\.1-pro"/, "the server default continuity route must be Gemini 3.1 Pro");
 const pixelTaleStylesStamp = html.match(/pixeltale\/styles\.css\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
 const pixelTaleAppStamp = html.match(/pixeltale\/app\.js\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
 assert.ok(pixelTaleStylesStamp && pixelTaleAppStamp, "PixelTale static assets must carry cache stamps");
@@ -931,7 +940,7 @@ assert.deepEqual(routedCalls[0].input.excludedTitles.sort(), titleSets[0].slice(
 assert.equal(new Set(regeneratedTitleRun.artifacts[0].content.candidates.map((candidate) => candidate.title_en).filter((title) => titleSets[0].includes(title))).size, 0, "controlled regeneration must increase the available title choices");
 
 runAgent.approve({ ...titleParams, artifactId: regeneratedTitleRun.artifacts[0].id, selectedTitle: titleSets[1][0] });
-const rerunAfterTitleApproval = await runAgent.run(titleParams);
+const rerunAfterTitleApproval = await runAgent.run({ ...titleParams, override: true });
 assert.equal(rerunAfterTitleApproval.artifacts[0].version, 3, "a rerun after approval must create a new title version");
 assert.doesNotThrow(() => runAgent.approve({ ...titleParams, artifactId: rerunAfterTitleApproval.artifacts[0].id, selectedTitle: titleSets[2][0] }), "the latest rerun must remain the stage that requires confirmation");
 

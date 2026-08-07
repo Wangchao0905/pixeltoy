@@ -71,7 +71,6 @@ const MODEL_DEFINITIONS = Object.freeze([
   {
     id: GEMINI_FALLBACK_MODEL,
     provider: "gemini",
-    fallbackOnly: true,
     keyNames: ["PIXELTALE_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"],
     baseNames: ["PIXELTALE_GEMINI_BASE_URL", "GEMINI_BASE_URL", "GOOGLE_GEMINI_BASE_URL", "OPENAI_BASE_URL"],
   },

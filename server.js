@@ -10864,6 +10864,8 @@ function episodeRootForFile(filePath) {
 const FINAL_CUT_DIR = "11_final_cut";
 const FINAL_CUT_FALLBACK_TARGET = { w: 1080, h: 1920, fps: 24 };
 const FINAL_CUT_ASSEMBLY_VERSION = "native-source-v1";
+const FINAL_CUT_HEARTBEAT_INTERVAL_MS = 5000;
+const FINAL_CUT_STALE_AFTER_MS = 2 * 60 * 1000;
 const finalCutJobs = new Map();
 function finalCutJobKey(episodeRoot) {
   return path.resolve(episodeRoot);
@@ -10911,30 +10913,76 @@ function finalCutNativeTarget(dimensions = []) {
 function finalCutTargetForClips(clips = []) {
   return finalCutNativeTarget(clips.map((clip) => ffprobeVideoDimensions(clip.file)).filter(Boolean));
 }
-function runFfmpegAssembly(args, timeoutMs = 20 * 60 * 1000) {
+function runFfmpegAssembly(args, timeoutMs = 20 * 60 * 1000, hooks = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
     let err = "";
+    let settled = false;
+    const heartbeat = typeof hooks.onHeartbeat === "function" ? setInterval(() => hooks.onHeartbeat(), FINAL_CUT_HEARTBEAT_INTERVAL_MS) : null;
+    const finish = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (heartbeat) clearInterval(heartbeat);
+      try {
+        hooks.onClose?.(child);
+      } catch {}
+      handler(value);
+    };
     const timer = setTimeout(() => {
       try {
         child.kill("SIGKILL");
       } catch {}
-      reject(new Error("ffmpeg 超时"));
+      finish(reject, new Error("ffmpeg 超时"));
     }, timeoutMs);
+    try {
+      hooks.onStart?.(child);
+    } catch {}
     child.stderr.on("data", (d) => {
       err += d.toString();
       if (err.length > 8000) err = err.slice(-8000);
     });
     child.on("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
+      finish(reject, e);
     });
     child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve();
-      else reject(new Error(compactLine(err).slice(-400) || `ffmpeg exit ${code}`));
+      if (code === 0) finish(resolve);
+      else finish(reject, new Error(compactLine(err).slice(-400) || `ffmpeg exit ${code}`));
     });
   });
+}
+function touchFinalCutJob(job, patch = {}) {
+  if (!job || typeof job !== "object") return job;
+  Object.assign(job, patch);
+  job.updatedAt = new Date().toISOString();
+  return job;
+}
+function finalCutJobIsStale(job, now = Date.now()) {
+  if (!job?.running) return false;
+  const updatedAt = Date.parse(job.updatedAt || job.startedAt || "");
+  if (!Number.isFinite(updatedAt) || now - updatedAt < FINAL_CUT_STALE_AFTER_MS) return false;
+  const pid = Number(job.ffmpegPid || 0);
+  if (pid > 0) {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {}
+  }
+  return true;
+}
+function recoverStaleFinalCutJob(episodeRoot) {
+  const key = finalCutJobKey(episodeRoot);
+  const job = finalCutJobs.get(key);
+  if (!finalCutJobIsStale(job)) return false;
+  touchFinalCutJob(job, {
+    running: false,
+    status: "failed",
+    error: "组装任务已失去响应，已解除卡住状态，请重新组装成片",
+    message: "组装任务已失去响应，请重新组装",
+    ffmpegPid: 0,
+    finishedAt: new Date().toISOString(),
+  });
+  return true;
 }
 function collectFinalCutClips(episodeRoot, config) {
   const shots = Array.isArray(config?.shots) ? config.shots : [];
@@ -10983,6 +11031,7 @@ function finalCutOutputIsCurrent({ outputMtime = 0, outputSignature = "", output
   return clips.every((clip) => Number(clip?.mtimeMs || 0) <= Number(outputMtime));
 }
 function finalCutStatus(episodeRoot) {
+  recoverStaleFinalCutJob(episodeRoot);
   const job = finalCutJobs.get(finalCutJobKey(episodeRoot)) || null;
   const out = finalCutOutputFile(episodeRoot);
   const exists = fs.existsSync(out) && fs.statSync(out).isFile();
@@ -11024,6 +11073,9 @@ function finalCutStatus(episodeRoot) {
     progress: job?.progress || (outputCurrent && !job?.running ? 100 : 0),
     message: job?.message || (stale ? (missing.length ? "视频片段已更新，等待全部片段完成后重新组装" : "视频片段已更新，请重新组装成片") : ""),
     error: job?.error || "",
+    phase: job?.phase || "",
+    startedAt: job?.startedAt || "",
+    updatedAt: job?.updatedAt || "",
     total: job?.total || total || 0,
     done: job?.done || (outputCurrent ? total : clips.length),
     stale,
@@ -11033,6 +11085,7 @@ function finalCutStatus(episodeRoot) {
 async function runFinalCutAssembly(episodeRoot, job) {
   const tmpDir = path.join(episodeRoot, FINAL_CUT_DIR, ".tmp");
   try {
+    touchFinalCutJob(job, { phase: "collecting", message: "准备组装…", error: "", ffmpegPid: 0 });
     const config = readVideoConfig(episodeRoot)?.data || {};
     const { clips, missing } = collectFinalCutClips(episodeRoot, config);
     if (!clips.length) throw new Error("没有可组装的已完成片段");
@@ -11048,17 +11101,23 @@ async function runFinalCutAssembly(episodeRoot, job) {
       job.done = i;
       job.progress = Math.round((i / (clips.length + 1)) * 100);
       job.message = `归一化 ${i + 1}/${clips.length}：${clip.name}`;
+      touchFinalCutJob(job, { phase: "normalizing" });
       if (!ffprobeReadable(clip.file)) throw new Error(`片段无法读取：${clip.name}`);
       const target = path.join(tmpDir, `norm_${String(i).padStart(3, "0")}.mp4`);
       const hasAudio = ffprobeClipHasAudio(clip.file);
       const args = hasAudio
         ? ["-y", "-i", clip.file, "-vf", normFilter, "-r", String(finalTarget.fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", target]
         : ["-y", "-i", clip.file, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-vf", normFilter, "-r", String(finalTarget.fps), "-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", target];
-      await runFfmpegAssembly(args);
+      await runFfmpegAssembly(args, undefined, {
+        onStart: (child) => touchFinalCutJob(job, { ffmpegPid: child.pid, phase: "ffmpeg" }),
+        onHeartbeat: () => touchFinalCutJob(job),
+        onClose: () => touchFinalCutJob(job, { ffmpegPid: 0 }),
+      });
       normFiles.push(target);
     }
     job.message = "拼接成片…";
     job.progress = Math.round((clips.length / (clips.length + 1)) * 100);
+    touchFinalCutJob(job, { phase: "concatenating", ffmpegPid: 0 });
     const listFile = path.join(tmpDir, "concat_list.txt");
     fs.writeFileSync(listFile, `${normFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n")}\n`);
     const out = finalCutOutputFile(episodeRoot);
@@ -11077,7 +11136,11 @@ async function runFinalCutAssembly(episodeRoot, job) {
         } catch {}
       }
     }
-    await runFfmpegAssembly(["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", "-movflags", "+faststart", out]);
+    await runFfmpegAssembly(["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", "-movflags", "+faststart", out], undefined, {
+      onStart: (child) => touchFinalCutJob(job, { ffmpegPid: child.pid, phase: "ffmpeg" }),
+      onHeartbeat: () => touchFinalCutJob(job),
+      onClose: () => touchFinalCutJob(job, { ffmpegPid: 0 }),
+    });
     if (!fs.existsSync(out) || fs.statSync(out).size < 1024) throw new Error("成片输出为空，拼接失败");
     const manifest = finalCutManifestFile(episodeRoot);
     const manifestTemp = path.join(tmpDir, "rough_cut.meta.json");
@@ -11090,33 +11153,35 @@ async function runFinalCutAssembly(episodeRoot, job) {
       assembledAt: new Date().toISOString(),
     }, null, 2)}\n`, "utf8");
     fs.renameSync(manifestTemp, manifest);
-    job.done = clips.length;
-    job.progress = 100;
-    job.status = "ready";
-    job.message = `成片已生成（${clips.length} 段）`;
+    touchFinalCutJob(job, {
+      done: clips.length,
+      progress: 100,
+      status: "ready",
+      phase: "complete",
+      message: `成片已生成（${clips.length} 段）`,
+      ffmpegPid: 0,
+    });
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {}
-    job.running = false;
-    job.finishedAt = new Date().toISOString();
+    touchFinalCutJob(job, { running: false, ffmpegPid: 0, finishedAt: new Date().toISOString() });
   }
 }
 function startFinalCutAssembly(episodeRoot) {
   const key = finalCutJobKey(episodeRoot);
+  recoverStaleFinalCutJob(episodeRoot);
   const existing = finalCutJobs.get(key);
   if (existing?.running) return { running: true, message: "成片组装进行中，请稍候" };
   const config = readVideoConfig(episodeRoot)?.data || {};
   const { clips, missing } = collectFinalCutClips(episodeRoot, config);
   if (!clips.length) throw new Error("没有可组装的已完成片段，请先生成视频片段");
   if (missing.length) throw new Error(`以下片段尚未完成，无法组装：${missing.join("、")}`);
-  const job = { running: true, status: "running", progress: 0, done: 0, total: clips.length, message: "准备组装…", error: "", startedAt: new Date().toISOString() };
+  const job = { running: true, status: "running", progress: 0, done: 0, total: clips.length, message: "准备组装…", error: "", phase: "starting", ffmpegPid: 0, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   finalCutJobs.set(key, job);
   runFinalCutAssembly(episodeRoot, job).catch((error) => {
-    job.running = false;
-    job.status = "failed";
-    job.error = compactLine(error?.message || "成片组装失败");
-    job.message = job.error;
+    const message = compactLine(error?.message || "成片组装失败");
+    touchFinalCutJob(job, { running: false, status: "failed", error: message, message, ffmpegPid: 0, finishedAt: new Date().toISOString() });
   });
   return { running: true, total: clips.length, message: "已开始组装成片" };
 }
@@ -11326,6 +11391,7 @@ function projectStatusSnapshot(episodeRoot) {
   });
   const referenceKitState = projectReferenceKitState(workflow, config?.data || {});
   const durationMode = projectDurationMode(episodeRoot);
+  const dialogueLanguage = projectDialogueLanguage(episodeRoot, "en");
   return {
     ok: true,
     runtime: runtimeStatus(),
@@ -11335,6 +11401,7 @@ function projectStatusSnapshot(episodeRoot) {
     ...referenceKitState,
     videoProgress: progress,
     durationMode,
+    dialogueLanguage,
     videoConfigStatus: configReadiness(episodeRoot, config?.data),
     storyboardDraftStatus: storyboardDraftStatus(episodeRoot),
     assetJob: jobSummary(latestVisibleAssetJob(localJobs)),
@@ -27196,6 +27263,8 @@ module.exports = {
       normalizeDurationMode,
       projectDurationMode,
       persistProjectDurationMode,
+      freeDurationPlanForEpisode,
+      configReadiness,
       modelPlanningScript,
       modelShotPlanNeedsRefresh,
       writeStoryboardModelPlan,
@@ -27266,6 +27335,8 @@ module.exports = {
       dialogueBlocksAreAllEnglish,
       convertScriptDialogueLanguage,
       extractDialogueBlocks,
+      projectDialogueLanguage,
+      persistProjectDialogueLanguage,
     },
     assetParser: {
       assetManifestFromAssets,
@@ -27321,6 +27392,7 @@ module.exports = {
       finalCutClipSignature,
       finalCutOutputIsCurrent,
       finalCutNativeTarget,
+      finalCutJobIsStale,
       finalCutStatus,
     },
     videoRetry: {
@@ -27356,6 +27428,8 @@ module.exports = {
       buildScriptSpeakerMap,
       parseSectionDialogueTexts,
       dialoguesForShotWithSpeakers,
+      projectDialogueLanguage,
+      persistProjectDialogueLanguage,
     },
     canvasVideo: {
       canvasVideoProviderForBody,

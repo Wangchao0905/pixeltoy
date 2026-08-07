@@ -84,7 +84,7 @@ assert.doesNotMatch(js, /modernBuildConfig[\s\S]{0,700}#buildConfigBtn/, "modern
 assert.doesNotMatch(js, /hasStoryboardDraft|请先生成分镜草稿/, "storyboard must not be a prerequisite for video config");
 assert.match(js, /configButton\.disabled = configGenerating \|\| !scriptSource\.trim\(\)/, "video config must only require script input in the modern shell");
 assert.match(js, /const videoConfigAvailable = Boolean\(data\.videoConfigStatus\?\.exists\)/, "video generation must detect an existing config separately from readiness");
-assert.match(js, /videoGenerateButton\.disabled = [^;]*!videoConfigAvailable/, "video generation must be clickable once a config exists");
+assert.match(js, /videoGenerateButton\.disabled = [^;]*!videoConfigReady/, "video generation must stay blocked until the config is ready");
 assert.match(js, /body\.ratio = "16:9"/, "storyboard generation must request the landscape 16:9 format");
 assert.doesNotMatch(html, /class="modern-sequence"/, "the empty shot sequence section must be removed from the modern shell");
 assert.doesNotMatch(html, /id="modernShotRail"/, "the modern shell must not render the low-frequency shot sequence rail");
@@ -112,7 +112,7 @@ assert.match(modernCommandbarHtml, /class="modern-video-param-caption"/, "video 
 assert.doesNotMatch(modernCommandbarHtml, /class="modern-command-status"|modern-shot-lineage/, "the redundant workflow lineage block must be removed from the command bar");
 assert.doesNotMatch(js, /modernStillLineage|modernMotionLineage/, "the removed workflow lineage block must not remain wired in runtime");
 assert.doesNotMatch(css, /modern-command-status/, "the removed workflow lineage block must not retain modern-specific styles");
-assert.match(html, /<script src="\/app\.js"><\/script>/, "modern studio UI changes must use ETag revalidation");
+assert.match(html, /<script src="\/app\.js(?:\?[^\"]+)?"><\/script>/, "modern studio UI changes must use ETag revalidation");
 assert.match(modernCommandbarHtml, /id="modernSelectedShotTitle"[^>]*class="[^"]*modern-shot-title-compat/, "shot title must remain only as a hidden runtime compatibility node");
 assert.match(css, /body\.is-studio-modern \.modern-shot-title-compat,[\s\S]*display:\s*none/, "shot title must not occupy the command bar visually");
 assert.match(css, /body\.is-studio-modern \.modern-shot-commandbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/, "command bar must use a compact three-part layout");

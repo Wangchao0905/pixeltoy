@@ -1382,7 +1382,7 @@ function renderCreativeControls() {
     <div class="metric-card control-card accent">${opening}</div>
     <div class="metric-card control-card lime"><label class="control-label" for="hookCadence">${long ? "章节推进" : "每集钩子"}</label><select id="hookCadence" data-creative-control>${selectOptions(options.hookCadence, hookCadence)}</select></div>
     <div class="metric-card control-card"><label class="control-label" for="dialogueMode">对白策略</label><select id="dialogueMode" data-creative-control>${selectOptions([["zh_story_zh_localized_dialogue", "中文口语化本土化"], ["localized_english", "英文口语化本土化"], ["localized_english_sharp", "英文强口语 / 强冲突"], ["localized_english_subtle", "英文克制 / 低解释"]], dialogueMode)}</select></div>
-    <div class="metric-card control-card"><label class="control-label" for="handoffScope">输出范围</label><select id="handoffScope" data-creative-control>${selectOptions([["confirmed_versioned", "已确认 · 版本化"], ["confirmed_with_reviews", "已确认 + 复核记录"], ["script_and_assets", "剧本 + 视觉资产"]], handoffScope)}</select></div>
+    <div class="metric-card control-card"><label class="control-label" for="handoffScope">输出范围</label><select id="handoffScope" data-creative-control>${selectOptions([["confirmed_versioned", "剧本"], ["script_and_assets", "剧本 + 视觉资产"]], handoffScope)}</select></div>
   </section>`;
 }
 

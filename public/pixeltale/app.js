@@ -128,7 +128,7 @@ const marketCatalog = [
   ["north_america", "united_states", "美国"], ["north_america", "canada", "加拿大"],
   ["europe", "united_kingdom", "英国"], ["europe", "germany", "德国"], ["europe", "france", "法国"],
   ["latin_america", "mexico", "墨西哥"], ["latin_america", "brazil", "巴西"],
-  ["east_asia", "japan", "日本"], ["east_asia", "south_korea", "韩国"],
+  ["east_asia", "japan", "日本"], ["east_asia", "south_korea", "韩国"], ["east_asia", "CN", "中国大陆"],
   ["southeast_asia", "indonesia", "印度尼西亚"], ["southeast_asia", "philippines", "菲律宾"], ["southeast_asia", "thailand", "泰国"],
   ["mena", "saudi_arabia", "沙特阿拉伯"], ["mena", "united_arab_emirates", "阿联酋"],
 ];
@@ -1381,7 +1381,7 @@ function renderCreativeControls() {
   return `<section class="metric-stack creative-controls" aria-label="可调整创作参数">
     <div class="metric-card control-card accent">${opening}</div>
     <div class="metric-card control-card lime"><label class="control-label" for="hookCadence">${long ? "章节推进" : "每集钩子"}</label><select id="hookCadence" data-creative-control>${selectOptions(options.hookCadence, hookCadence)}</select></div>
-    <div class="metric-card control-card"><label class="control-label" for="dialogueMode">对白策略</label><select id="dialogueMode" data-creative-control>${selectOptions([["localized_english", "英文口语化本土化"], ["localized_english_sharp", "英文强口语 / 强冲突"], ["localized_english_subtle", "英文克制 / 低解释"]], dialogueMode)}</select></div>
+    <div class="metric-card control-card"><label class="control-label" for="dialogueMode">对白策略</label><select id="dialogueMode" data-creative-control>${selectOptions([["zh_story_zh_localized_dialogue", "中文口语化本土化"], ["localized_english", "英文口语化本土化"], ["localized_english_sharp", "英文强口语 / 强冲突"], ["localized_english_subtle", "英文克制 / 低解释"]], dialogueMode)}</select></div>
     <div class="metric-card control-card"><label class="control-label" for="handoffScope">输出范围</label><select id="handoffScope" data-creative-control>${selectOptions([["confirmed_versioned", "已确认 · 版本化"], ["confirmed_with_reviews", "已确认 + 复核记录"], ["script_and_assets", "剧本 + 视觉资产"]], handoffScope)}</select></div>
   </section>`;
 }
@@ -1411,7 +1411,7 @@ function renderBrief() {
     <div class="content-grid">
       <section class="form-panel">
         <h3>故事架构</h3>
-        <div class="form-row"><div class="field"><label for="platform">发布平台</label><select id="platform"><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>Web drama</option></select></div><div class="field"><label for="audienceGender">目标受众</label><select id="audienceGender" aria-label="目标受众"><option value="all" ${audienceGender === "all" ? "selected" : ""}>全部</option><option value="male" ${audienceGender === "male" ? "selected" : ""}>男性</option><option value="female" ${audienceGender === "female" ? "selected" : ""}>女性</option></select></div></div>
+        <div class="form-row"><div class="field"><label for="platform">发布平台</label><select id="platform"><option>抖音 / 国内短视频</option><option>TikTok / TikTok Series</option><option>YouTube Shorts</option><option>Web drama</option></select></div><div class="field"><label for="audienceGender">目标受众</label><select id="audienceGender" aria-label="目标受众"><option value="all" ${audienceGender === "all" ? "selected" : ""}>全部</option><option value="male" ${audienceGender === "male" ? "selected" : ""}>男性</option><option value="female" ${audienceGender === "female" ? "selected" : ""}>女性</option></select></div></div>
         <div class="market-panel"><div class="market-panel-head"><span class="card-label"><i></i>MARKET LOCALIZATION</span><strong>投放市场决定人名、地名与社会语境</strong></div><div class="form-row"><div class="field"><label for="marketRegion">受众地区</label><select id="marketRegion">${selectOptions(Object.entries(marketRegionLabels), marketRegion)}</select></div><div class="field"><label for="marketCountry">投放国家 / 地区</label><select id="marketCountry">${marketCountryOptions(marketRegion, marketCountry)}</select></div></div><div class="field"><label for="localizationNote">本土化补充 <span class="optional">可选</span></label><input id="localizationNote" value="${escapeHtml(state.input.localizationNote || "")}" placeholder="例如：芝加哥蓝领社区、伦敦金融区或曼谷大学校园" /></div></div>
         <div class="form-row"><div class="field slider-field"><div class="slider-label"><label for="episodeScaleRange">${long ? "章节数量" : "计划集数"}</label><output id="episodeScaleValue" for="episodeScaleRange">${episodeCount} ${config.episode.unit}</output></div><input id="episodeScaleRange" type="range" min="${config.episode.min}" max="${config.episode.max}" step="${config.episode.step}" value="${episodeCount}" /><div class="slider-scale"><span id="episodeScaleMin">${config.episode.min} ${config.episode.unit}</span><span id="episodeScaleMax">${config.episode.max} ${config.episode.unit}</span></div></div><div class="field slider-field"><div class="slider-label"><label for="durationRange">${long ? "单章时长" : "单集时长"}</label><output id="durationValue" for="durationRange">${durationValue} ${config.duration.unit}</output></div><input id="durationRange" type="range" min="${config.duration.min}" max="${config.duration.max}" step="${config.duration.step}" value="${durationValue}" /><div class="slider-scale"><span id="durationMin">${config.duration.min} ${config.duration.unit}</span><span id="durationMax">${config.duration.max} ${config.duration.unit}</span></div></div></div>
         <div class="field"><label for="idea">创作想法 <span aria-hidden="true">*</span></label><textarea id="idea" placeholder="用中文写下主角、欲望和核心冲突">${escapeHtml(idea)}</textarea><p class="small-note">中文描述剧情；英文对白会在对白阶段完成口语化本土化，不做逐句直译。</p></div>
@@ -2244,14 +2244,29 @@ $$('[data-mode]').forEach((button) => button.addEventListener("click", async () 
   const previousMode = state.mode;
   state.mode = button.dataset.mode;
   state.input.episodeCount = state.mode === "long" ? 8 : 24;
-  state.input.durationValue = state.mode === "long" ? 10 : 60;
-  state.input.durationUnit = state.mode === "long" ? "min" : "sec";
-  state.input.episodeScale = state.mode === "long" ? "8 chapters" : "24 episodes";
-  state.input.duration = state.mode === "long" ? "10 min" : "60 sec";
   state.input.openingImpactSeconds = 3;
   state.input.openingPromise = "mainline_promise";
   state.input.hookCadence = "every_episode";
+  // 模式切换必须联动本土化参数：发布平台 / 投放市场 / 对白策略 / 单集时长。
+  // 国内短剧 → 抖音、中国大陆、中文口语化；TK 短剧 → TikTok、北美/美国、英文口语化；
+  // 普通长剧 → Web drama、中国大陆、中文口语化、10 分钟级。
+  const MODE_LOCALIZATION = {
+    cn: { platform: "抖音 / 国内短视频", region: "east_asia", country: "CN", dialogueMode: "zh_story_zh_localized_dialogue", durationValue: 120, durationUnit: "sec" },
+    tk: { platform: "TikTok / TikTok Series", region: "north_america", country: "united_states", dialogueMode: "localized_english", durationValue: 60, durationUnit: "sec" },
+    long: { platform: "Web drama", region: "east_asia", country: "CN", dialogueMode: "zh_story_zh_localized_dialogue", durationValue: 10, durationUnit: "min" },
+  };
+  const loc = MODE_LOCALIZATION[state.mode] || MODE_LOCALIZATION.tk;
+  state.input.platform = loc.platform;
+  state.input.marketRegion = loc.region;
+  state.input.marketCountry = loc.country;
+  state.input.dialogueMode = loc.dialogueMode;
+  state.input.durationValue = loc.durationValue;
+  state.input.durationUnit = loc.durationUnit;
+  state.input.duration = `${loc.durationValue} ${loc.durationUnit}`;
+  state.input.episodeScale = state.mode === "long" ? "8 chapters" : "24 episodes";
+  state.input.localizationNote = "";
   renderStage();
+  if (typeof updateMarketCountryList === "function") updateMarketCountryList();
   try {
     const payload = await request("/settings", { method: "POST", body: JSON.stringify({ mode: modeValue(), routes: state.routes, input: state.input }) });
     updateAgentState(payload.agent);

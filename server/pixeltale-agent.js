@@ -187,7 +187,7 @@ const RESERVED_TITLE_REFERENCES = new Set([
 const CREATIVE_CONTROL_VALUES = {
   openingPromise: ["mainline_promise", "character_crisis", "world_mystery"],
   hookCadence: ["every_episode", "double_hook", "key_unit"],
-  dialogueMode: ["localized_english", "localized_english_sharp", "localized_english_subtle"],
+  dialogueMode: ["zh_story_zh_localized_dialogue", "localized_english", "localized_english_sharp", "localized_english_subtle"],
   handoffScope: ["confirmed_versioned", "confirmed_with_reviews", "script_and_assets"],
 };
 

@@ -1744,6 +1744,9 @@ async function monitorBackgroundRun(run) {
     state.runPhase = "";
     renderModelTeam();
     if (state.activeRun?.jobId !== run.jobId) return;
+    // 终端失败（含服务重启中断 RUN_INTERRUPTED）：必须清除残留 activeRun，
+    // 否则 nextStepMeta 会一直命中 busy 分支，界面永远停在"处理中"且没有重新生成按钮。
+    if (error?.terminal) persistActiveRun(null);
     state.lastError = userFacingError(error);
     showToast(state.lastError);
     renderStage();

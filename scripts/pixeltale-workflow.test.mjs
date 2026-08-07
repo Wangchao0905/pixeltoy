@@ -104,6 +104,7 @@ assert.deepEqual(normalizeRoutes(reseated, models()), reseated, "route normaliza
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
 assert.match(agent, /modelRouter\.reviewModels\(route\)/, "cross-review must be selected by the independent PixelTale router");
 assert.doesNotMatch(agent, /PIXELTALE_(CHATGPT|CLAUDE|GROK|DEEPSEEK)_API_KEY/, "PixelTale must not own provider credentials");
+assert.match(app, /if \(error\?\.terminal\) persistActiveRun\(null\);/, "a terminal run failure (RUN_INTERRUPTED after server restart) must clear the stale activeRun so the stage shows a rerun button instead of stuck 'processing'");
 assert.match(app, /syncRoutingModelOptions\(agent\.modelOptions \|\| \[\]\)/, "model choices must be synchronized from SuperPixel's returned registry");
 assert.doesNotMatch(app, /\["chatgpt", "claude", "deepseek"\]/, "review UI must not deduplicate seats by provider");
 assert.match(app, /const reviewTeam = seatDefaults\.map\(\(seat, index\) =>/, "review UI must always render from the three-seat roster");

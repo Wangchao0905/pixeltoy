@@ -2,7 +2,13 @@ const { jsonrepair } = require("jsonrepair");
 
 const DEFAULT_BASE_URL = "https://api.apikey.fun/v1";
 const GROK_FALLBACK_MODEL = "grok-4.5";
-const GEMINI_FALLBACK_MODEL = (process.env.PIXELTALE_GEMINI_MODEL || "gemini-2.5-pro").trim().toLowerCase();
+const GEMINI_FALLBACK_MODEL = "gemini-2.5-pro";
+// The Gemini model id must be read lazily: server.js loads .env.local only after
+// this module is required, so a module-top read would freeze the fallback
+// default even when PIXELTALE_GEMINI_MODEL is configured.
+function geminiModelId() {
+  return (process.env.PIXELTALE_GEMINI_MODEL || GEMINI_FALLBACK_MODEL).trim().toLowerCase();
+}
 const FALLBACK_BY_SEAT = Object.freeze({
   seat_a: GEMINI_FALLBACK_MODEL,
   seat_b: GROK_FALLBACK_MODEL,
@@ -76,7 +82,14 @@ const MODEL_DEFINITIONS = Object.freeze([
   },
 ]);
 
-const PRIMARY_MODEL_IDS = Object.freeze(MODEL_DEFINITIONS.filter((item) => !item.fallbackOnly && !item.legacy).map((item) => item.id));
+function getModelDefinitions() {
+  return MODEL_DEFINITIONS.map((item) => item.provider === "gemini" ? { ...item, id: geminiModelId() } : item);
+}
+
+function primaryModelIds() {
+  return getModelDefinitions().filter((item) => !item.fallbackOnly && !item.legacy).map((item) => item.id);
+}
+
 // Retired models stay loadable so historical review records keep showing a real
 // model name, but they must never win a seat or reach the model picker again.
 const LEGACY_MODEL_IDS = Object.freeze(MODEL_DEFINITIONS.filter((item) => item.legacy).map((item) => item.id));
@@ -101,7 +114,7 @@ function firstEnv(names) {
 
 function definitionFor(model) {
   const id = clean(model, 120).toLowerCase();
-  return MODEL_DEFINITIONS.find((item) => item.id === id) || null;
+  return getModelDefinitions().find((item) => item.id === id) || null;
 }
 
 function modelProvider(model) {
@@ -120,18 +133,19 @@ function modelConfig(model) {
 }
 
 function models() {
-  return PRIMARY_MODEL_IDS.map((id) => {
+  return primaryModelIds().map((id) => {
     const config = modelConfig(id);
     return { id, provider: config.provider, configured: !!config.apiKey, fallbackOnly: false };
   });
 }
 
 function status() {
-  const all = MODEL_DEFINITIONS.map((item) => {
+  const resolved = getModelDefinitions();
+  const all = resolved.map((item) => {
     const config = modelConfig(item.id);
     return { id: item.id, provider: item.provider, configured: !!config.apiKey, fallbackOnly: !!item.fallbackOnly };
   });
-  const providers = [...new Set(MODEL_DEFINITIONS.map((item) => item.provider))];
+  const providers = [...new Set(resolved.map((item) => item.provider))];
   return Object.fromEntries(providers.map((provider) => {
     const providerModels = all.filter((item) => item.provider === provider);
     return [provider, {
@@ -153,13 +167,14 @@ function stageModels(route = {}) {
 
 function fallbackModelsForSeat(seatId, model) {
   const current = clean(model, 120).toLowerCase();
-  const preferred = FALLBACK_BY_SEAT[clean(seatId, 40)] || GROK_FALLBACK_MODEL;
+  const seat = clean(seatId, 40);
+  const preferred = seat === "seat_a" ? geminiModelId() : (FALLBACK_BY_SEAT[seat] || GROK_FALLBACK_MODEL);
   return [...new Set([preferred, GROK_FALLBACK_MODEL])]
     .filter((candidate) => candidate && candidate !== current && !!modelConfig(candidate)?.apiKey);
 }
 
 function fallbackModelFor(model, seatId) {
-  return PRIMARY_MODEL_IDS.includes(clean(model, 120).toLowerCase())
+  return primaryModelIds().includes(clean(model, 120).toLowerCase())
     ? fallbackModelsForSeat(seatId, model)[0] || ""
     : "";
 }

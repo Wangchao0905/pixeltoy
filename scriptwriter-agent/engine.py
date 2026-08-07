@@ -81,7 +81,8 @@ class PixelWriterEngine:
 
     def run_outline(self, state, episode_count):
         prompt = self._prompt_outline(state, episode_count)
-        content = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=4000)
+        # 30+ 集的大纲一次输出会超出固定 4000；按集数放大输出预算（每集约 200 tokens，封顶 12000）。
+        content = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=max(4_000, min(12_000, episode_count * 200)))
         outline = self._parse_json_block(content)
         if not isinstance(outline, dict):
             raise ValueError("模型输出不是合法 JSON，已重试仍失败")
@@ -216,27 +217,32 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
     # --- 提示词构造（确定性模板，模型只负责内容）---
     def _prompt_worldbuilding(self, state):
         i = state.idea
+        duration_note = f"每集目标时长约 {i['episode_duration_seconds']} 秒。" if i.get("episode_duration_seconds") else ""
         return f"""你是中文短剧编剧。基于创意生成世界设定，输出 JSON：
 {{"characters":[{{"name":"","persona":"","motivation":""}}],
  "world":{{"rules":[],"tone":""}},
  "ending_invariants":[]}}
 创意：{i['raw']}
-约束：人物动机必须可解释；结局不变量必须明确。"""
+约束：人物动机必须可解释；结局不变量必须明确。{duration_note}"""
 
     def _prompt_outline(self, state, episode_count):
         wb = json.dumps(state.artifacts.get("worldbuilding", {}), ensure_ascii=False)
+        duration_note = f"每集目标时长约 {state.idea['episode_duration_seconds']} 秒，事件量必须匹配该时长。" if state.idea.get("episode_duration_seconds") else ""
         return f"""基于设定生成 {episode_count} 集分集大纲，输出 JSON：
 {{"episodes":[{{"index":1,"hook":"","cliffhanger":"","events":[]}}]}}
 要求：每集以钩子开头、以悬念收尾，事件链因果衔接。
+{duration_note}
 设定：{wb}"""
 
     def _prompt_episode(self, state, outline):
         wb = json.dumps(state.artifacts.get("worldbuilding", {}), ensure_ascii=False)
         contract = self.facts["文风契约.md"]
+        duration_note = f"本集目标时长约 {state.idea['episode_duration_seconds']} 秒；场景数、动作节拍和对白量必须匹配该时长。" if state.idea.get("episode_duration_seconds") else ""
         return f"""写第 {outline['index']} 集剧本，输出 JSON：
 {{"scenes":[{{"location":"","beats":[{{"speaker":"","line":"","action":""}}]}}]}}
 事件：{json.dumps(outline, ensure_ascii=False)}
 设定：{wb}
+{duration_note}
 对白契约：{contract[:500] if contract else '口语化、短句、有潜台词'}"""
 
     @staticmethod

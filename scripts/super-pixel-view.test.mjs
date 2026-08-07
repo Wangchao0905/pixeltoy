@@ -176,8 +176,8 @@ assert.match(app, /tool === "super-pixel"[\s\S]{0,160}role !== "admin"\) return/
 assert.match(app, /data\.user\?\.role !== "admin" && state\.exploreView === "superpixel"\) showExploreCanvasHome\(\)/, "直接访问 Super Pixel 路由时仍须遵守管理员权限");
 
 // 制作台入口使用稳定 URL + ETag 重验证，不依赖手动版本戳。
-assert.match(html, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/);
-assert.match(html, /<script src="\/app\.js"><\/script>/);
+assert.match(html, /<link rel="stylesheet" href="\/styles\.css\?v=[0-9a-zA-Z._-]+"\s*\/>/);
+assert.match(html, /<script src="\/app\.js\?v=[0-9a-zA-Z._-]+"><\/script>/);
 
 const superPixelRedesign = css.slice(css.indexOf("/* Super Pixel redesign:"));
 assert.match(superPixelRedesign, /--sp-chat-font:\s*"Google Sans", "Google Sans Text", "SF Pro Display"/, "Super Pixel 正文应使用与参考一致的圆润无衬线字体栈");

@@ -14,8 +14,8 @@ assert.doesNotMatch(html, /<option value="agent" disabled>/);
 const superPixelModelSelect = html.match(/<select id="superPixelModel"[\s\S]*?<\/select>/)?.[0] || "";
 assert.doesNotMatch(superPixelModelSelect, /value="claude-sonnet-5"/);
 // 制作台入口使用稳定 URL + ETag 重验证，避免 DOM/脚本手动版本戳不同步。
-assert.match(html, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/);
-assert.match(html, /<script src="\/app\.js"><\/script>/);
+assert.match(html, /<link rel="stylesheet" href="\/styles\.css\?v=[0-9a-zA-Z._-]+"\s*\/>/);
+assert.match(html, /<script src="\/app\.js\?v=[0-9a-zA-Z._-]+"><\/script>/);
 assert.match(app, /async function submitSuperPixelChat\(prompt\)/);
 assert.match(app, /fetch\("\/api\/super-pixel\/chat"/);
 assert.match(app, /Accept: "text\/event-stream"/);

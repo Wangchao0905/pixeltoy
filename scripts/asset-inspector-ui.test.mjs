@@ -8,8 +8,8 @@ const app = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/styles.css"), "utf8");
 
 // 制作台入口使用稳定 URL + ETag 重验证，内容变化时自动取得新版资源。
-assert.match(html, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/, "styles.css must use ETag revalidation");
-assert.match(html, /<script src="\/app\.js"><\/script>/, "app.js must use ETag revalidation");
+assert.match(html, /<link rel="stylesheet" href="\/styles\.css\?v=[0-9a-zA-Z._-]+"\s*\/>/, "styles.css must carry a version stamp");
+assert.match(html, /<script src="\/app\.js\?v=[0-9a-zA-Z._-]+"><\/script>/, "app.js must carry a version stamp");
 assert.match(html, /id="assetInspector"/);
 assert.match(html, /id="assetInspectorPrompt"/);
 assert.match(html, /id="regenerateAssetFromInspector"/);

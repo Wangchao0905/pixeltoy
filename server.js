@@ -2824,10 +2824,15 @@ function startDraftJob(episodeRoot, body) {
   return { jobId, status: "running" };
 }
 
-function getDraftJob(episodeRoot, jobId) {
+function getDraftJob(episodeRoot, jobId, user = null) {
   const job = draftJobs.get(compactLine(jobId || ""));
   if (!job) return { status: "failed", error: "服务更新中断了本次生成，请重新生成", errorCode: "RUN_INTERRUPTED" };
-  if (job.status === "completed") return { jobId: job.jobId, status: "completed", result: job.result };
+  // The completed result must carry the refreshed project state: the client uses it
+  // to release the draft busy guard and re-render the downstream workflow immediately.
+  if (job.status === "completed") {
+    const state = user ? fullProjectStateForUser(episodeRoot, user) : fullProjectState(episodeRoot);
+    return { jobId: job.jobId, status: "completed", result: job.result, state };
+  }
   if (job.status === "failed") return { jobId: job.jobId, status: "failed", error: job.error };
   return { jobId: job.jobId, status: "running", elapsedMs: Math.max(0, Date.now() - job.createdAt) };
 }
@@ -8278,12 +8283,23 @@ function applyAssetLibraryBindingsToRecords(records = [], bindings = new Map()) 
   return records.map((record) => {
     const binding = bindings.get(compactLine(record.name || record.assetName || record.id || ""));
     if (!binding) return record;
+    // 没有同一份源文件指纹的历史 binding 不能重新挂到当前磁盘文件，
+    // 否则替换图片后 full/single config rebuild 又会把旧 asset:// 带回来。
+    if (
+      compactLine(record.sourceFingerprint || "") &&
+      (!compactLine(binding.sourceFingerprint || "") || compactLine(binding.sourceFingerprint) !== compactLine(record.sourceFingerprint))
+    ) {
+      return record;
+    }
     return {
       ...record,
       publicUrl: record.publicUrl || binding.publicUrl || "",
       assetUrl: binding.assetUrl,
       virtualId: binding.virtualId || record.virtualId || "",
       groupId: binding.groupId || record.groupId || "",
+      sourceFingerprint: record.sourceFingerprint || binding.sourceFingerprint || "",
+      sourceUpdatedAt: record.sourceUpdatedAt || binding.sourceUpdatedAt || "",
+      sourceSize: record.sourceSize || binding.sourceSize || 0,
       validationStatus: "active",
       validationError: "",
       validationMessage: binding.validationMessage || "素材已 active",
@@ -8499,6 +8515,7 @@ function uploadBoundAsset(episodeRoot, body = {}) {
   asset.type = identity.scanType;
   asset.usage = identity.usage;
   asset.assetIdentity = identity;
+  const videoConfigReplacement = invalidateReplacedAssetInVideoConfig(episodeRoot, asset);
   return {
     asset,
     manifestItem: item,
@@ -8506,6 +8523,7 @@ function uploadBoundAsset(episodeRoot, body = {}) {
     savedAs: path.basename(target),
     ignoredFilename: originalFilename,
     removedFiles: removedFiles.map((file) => path.relative(episodeRoot, file)),
+    videoConfigReplacement,
     message: `${existingAsset ? "已替换" : "已绑定"}上传资产：${assetId}（保存为 ${path.basename(target)}）`,
   };
 }
@@ -17863,6 +17881,7 @@ function markProjectVideoShotQueued(episodeRoot, shotName, message = "等待前�
     taskInfo: {
       status: 0,
       statusRaw: "queued_local",
+      generationScope: "batch",
       progressPercent: 0,
       failedReason: "",
       message,
@@ -17972,6 +17991,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
   const shotName = compactLine(body.shotName || body.name || "");
   if (!shotName) throw new Error("缺少要生成的视频片段");
   const authUser = body.authUser || null;
+  const generationScope = body.generationScope === "batch" ? "batch" : "single";
   const configRecord = readVideoConfig(episodeRoot);
   let config = applyRequestedRealPersonVerification(configRecord, body) || configRecord?.data || {};
   const fallback = canvasVideoFallbackForShot(episodeRoot, shotName);
@@ -18388,7 +18408,7 @@ function recoverProjectVideoQueueIfNeeded(episodeRoot, config = {}) {
   const runNamespace = currentRunNamespace(episodeRoot, config);
   const firstPendingIndex = shots.findIndex((shot) => {
     const snapshot = snapshotStatusForShot(episodeRoot, shot.name, { runNamespace });
-    if (!snapshot) return false;
+    if (!snapshot || snapshot.generationScope !== "batch") return false;
     if (snapshot.statusCode === 1 && snapshot.taskId) return true;
     if (projectVideoShotNeedsFinalization(snapshot)) return true;
     if (snapshot.statusCode !== 0) return false;
@@ -18413,7 +18433,7 @@ function recoverProjectVideoQueueIfNeeded(episodeRoot, config = {}) {
     updatedAt: new Date().toISOString(),
   };
   projectVideoQueues.set(queueKey, queue);
-  runProjectVideoGenerationQueue(queue, episodeRoot, unfinished, { recovered: true }).catch((error) => {
+  runProjectVideoGenerationQueue(queue, episodeRoot, unfinished, { recovered: true, generationScope: "batch" }).catch((error) => {
     queue.running = false;
     queue.status = "failed";
     queue.error = error.message || "恢复批量视频生成失败";
@@ -23081,6 +23101,323 @@ function applyRequestedRealPersonVerification(configRecord, body = {}) {
   return next;
 }
 
+function mergeVideoConfigAssetRecords(previousAssets = [], freshAssets = []) {
+  const freshByName = new Map();
+  for (const asset of Array.isArray(freshAssets) ? freshAssets : []) {
+    const name = compactLine(asset?.name || asset?.assetName || asset?.id || "");
+    if (name) freshByName.set(name, asset);
+  }
+  const merged = [];
+  const emitted = new Set();
+  for (const asset of Array.isArray(previousAssets) ? previousAssets : []) {
+    const name = compactLine(asset?.name || asset?.assetName || asset?.id || "");
+    if (!name) {
+      merged.push(asset);
+      continue;
+    }
+    if (emitted.has(name)) continue;
+    merged.push(freshByName.get(name) || asset);
+    emitted.add(name);
+  }
+  for (const asset of Array.isArray(freshAssets) ? freshAssets : []) {
+    const name = compactLine(asset?.name || asset?.assetName || asset?.id || "");
+    if (!name || emitted.has(name)) continue;
+    merged.push(asset);
+    emitted.add(name);
+  }
+  return merged;
+}
+
+function clearStaleAssetLibraryBinding(asset = {}) {
+  const { arkPersonAsset, ...record } = asset;
+  return {
+    ...record,
+    assetUrl: "",
+    publicUrl: "",
+    virtualId: "",
+    groupId: "",
+    validationStatus: "",
+    validationError: "",
+    validationMessage: "",
+  };
+}
+
+function invalidateReplacedAssetInVideoConfig(episodeRoot, asset = {}) {
+  const assetName = compactLine(asset.assetName || asset.name || "");
+  if (!assetName) return { updated: false, reason: "缺少资产名称" };
+  const configRecord = ensureVideoConfigIsolation(episodeRoot);
+  if (!configRecord?.file || !configRecord?.data || !Array.isArray(configRecord.data.assets)) {
+    return { updated: false, reason: "视频配置尚未生成" };
+  }
+  const config = configRecord.data;
+  let updated = false;
+  const assets = config.assets.map((configured) => {
+    const name = compactLine(configured?.name || configured?.assetName || configured?.id || "");
+    if (name !== assetName) return configured;
+    updated = true;
+    return clearStaleAssetLibraryBinding({
+      ...configured,
+      file: asset.rel || configured.file || "",
+      url: asset.url || asset.previewUrl || "",
+      previewUrl: asset.url || asset.previewUrl || "",
+      localUrl: asset.url || asset.previewUrl || "",
+      sourceFingerprint: asset.sourceFingerprint || "",
+      sourceUpdatedAt: asset.updatedAt || "",
+      sourceSize: Number(asset.size || 0) || 0,
+    });
+  });
+  if (!updated) return { updated: false, reason: "视频配置中没有同名资产" };
+  const nextConfig = {
+    ...config,
+    assets,
+    updatedAt: new Date().toISOString(),
+    lastAssetReplacement: {
+      assetName,
+      sourceFingerprint: asset.sourceFingerprint || "",
+      updatedAt: asset.updatedAt || new Date().toISOString(),
+    },
+  };
+  writeVideoConfigRecord(configRecord, nextConfig);
+  // 画布是同一条视频生成链路的另一份快照；同步失败不能回滚上传，但不能让旧绑定继续留在画布。
+  try {
+    syncProjectShotsToCanvasState(episodeRoot, nextConfig, Array.isArray(nextConfig.shots) ? nextConfig.shots : []);
+  } catch {
+    // 配置已落盘，下一次打开项目时会由配置重新同步画布。
+  }
+  return { updated: true, assetName, oldBindingRemoved: true };
+}
+
+function videoAssetSourceChanged(configured = {}, scanned = null) {
+  if (!scanned || typeof scanned !== "object") return false;
+  const configuredFingerprint = compactLine(configured.sourceFingerprint || "");
+  const scannedFingerprint = compactLine(scanned.sourceFingerprint || "");
+  const configuredUpdatedAt = compactLine(configured.sourceUpdatedAt || "");
+  const scannedUpdatedAt = compactLine(scanned.updatedAt || "");
+  const configuredSize = Number(configured.sourceSize || 0) || 0;
+  const scannedSize = Number(scanned.size || 0) || 0;
+  const configuredFile = compactLine(configured.file || "");
+  const scannedFile = compactLine(scanned.rel || scanned.file || "");
+  const sourceUnknown = !configuredFingerprint && !configuredUpdatedAt && !configuredSize;
+  return !!(
+    (configuredFingerprint && scannedFingerprint && configuredFingerprint !== scannedFingerprint) ||
+    (configuredUpdatedAt && scannedUpdatedAt && configuredUpdatedAt !== scannedUpdatedAt) ||
+    (configuredSize > 0 && scannedSize > 0 && configuredSize !== scannedSize) ||
+    (configuredFile && scannedFile && configuredFile !== scannedFile) ||
+    (sourceUnknown && !!(configured.assetUrl || configured.publicUrl || configured.arkPersonAsset))
+  );
+}
+
+function reconcileVideoReferenceAsset(configured = {}, scanned = null) {
+  if (!scanned || typeof scanned !== "object") return configured;
+  const sourceChanged = videoAssetSourceChanged(configured, scanned);
+  const configuredFingerprint = compactLine(configured.sourceFingerprint || "");
+  const scannedFingerprint = compactLine(scanned.sourceFingerprint || "");
+  const configuredUpdatedAt = compactLine(configured.sourceUpdatedAt || "");
+  const scannedUpdatedAt = compactLine(scanned.updatedAt || "");
+  const configuredSize = Number(configured.sourceSize || 0) || 0;
+  const scannedSize = Number(scanned.size || 0) || 0;
+  const configuredFile = compactLine(configured.file || "");
+  const scannedFile = compactLine(scanned.rel || scanned.file || "");
+  const current = {
+    ...configured,
+    file: scannedFile || configuredFile,
+    url: compactLine(scanned.url || scanned.previewUrl || configured.url || configured.previewUrl || ""),
+    previewUrl: compactLine(scanned.url || scanned.previewUrl || configured.previewUrl || configured.url || ""),
+    localUrl: compactLine(scanned.url || scanned.previewUrl || configured.localUrl || ""),
+    sourceFingerprint: scannedFingerprint || configuredFingerprint,
+    sourceUpdatedAt: scannedUpdatedAt || configuredUpdatedAt,
+    sourceSize: scannedSize || configuredSize,
+  };
+  return sourceChanged ? clearStaleAssetLibraryBinding(current) : current;
+}
+
+const COVER_DESIGN_DIR = "12_cover_design";
+const COVER_DESIGN_STATE_FILE = "cover_design.json";
+const COVER_DESIGN_SUBMISSION_TIMEOUT_MS = 2 * 60 * 1000;
+const COVER_DESIGN_STYLES = [
+  { id: "cinematic", label: "电影叙事", cue: "宽阔环境层次、主角关系和电影海报式留白" },
+  { id: "high-conversion", label: "强冲突短剧", cue: "人物对峙、强烈明暗和一眼可读的戏剧冲突" },
+  { id: "romance", label: "情绪关系", cue: "人物情绪、亲密距离和高识别度的浪漫色彩" },
+  { id: "suspense", label: "悬疑反转", cue: "前景遮挡、线索物件、压迫空间和反转感" },
+];
+
+function coverDesignStatePath(episodeRoot) {
+  return path.join(episodeRoot, COVER_DESIGN_DIR, COVER_DESIGN_STATE_FILE);
+}
+
+function readCoverDesignState(episodeRoot) {
+  const state = readJsonFile(coverDesignStatePath(episodeRoot), null);
+  if (!state || typeof state !== "object") return { status: "idle", items: [] };
+  return {
+    status: compactLine(state.status || "idle") || "idle",
+    runId: compactLine(state.runId || ""),
+    title: compactLine(state.title || ""),
+    model: compactLine(state.model || "gpt-image-2") || "gpt-image-2",
+    ratio: compactLine(state.ratio || "9:16") || "9:16",
+    createdAt: compactLine(state.createdAt || ""),
+    updatedAt: compactLine(state.updatedAt || ""),
+    message: compactLine(state.message || ""),
+    items: Array.isArray(state.items)
+      ? state.items.map((item, index) => ({
+          id: compactLine(item?.id || `cover-${index + 1}`),
+          styleId: compactLine(item?.styleId || COVER_DESIGN_STYLES[index]?.id || ""),
+          styleLabel: compactLine(item?.styleLabel || COVER_DESIGN_STYLES[index]?.label || ""),
+          taskId: compactLine(item?.taskId || ""),
+          status: compactLine(item?.status || "queued") || "queued",
+          url: compactLine(item?.url || ""),
+          message: compactLine(item?.message || ""),
+          error: compactLine(item?.error || ""),
+        }))
+      : [],
+  };
+}
+
+function writeCoverDesignState(episodeRoot, state) {
+  const file = coverDesignStatePath(episodeRoot);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const next = { ...state, updatedAt: new Date().toISOString() };
+  writeJsonFile(file, next);
+  return next;
+}
+
+function promptForCoverStyle(style = COVER_DESIGN_STYLES[0], { title = "", referenceNames = [] } = {}) {
+  const selected = COVER_DESIGN_STYLES.find((item) => item.id === style?.id) || style || COVER_DESIGN_STYLES[0];
+  const refs = [...new Set((Array.isArray(referenceNames) ? referenceNames : []).map(compactLine).filter(Boolean))];
+  const referenceLine = refs.length ? refs.join("、") : "当前项目已确认的人物、场景、道具参考图";
+  return [
+    "制作一张 9:16 竖版 TK 短剧封面设计，作为可发布的中文海报，不是分镜截图。",
+    `剧名：${compactLine(title) || "未命名短剧"}`,
+    `封面方向：${selected.label || "电影叙事"}；${selected.cue || "电影感海报构图"}。`,
+    `严格使用并保持以下资产图中的人物、场景和道具身份：${referenceLine}。不要创造与资产无关的人物，不要替换角色外观。`,
+    "海报设计要求：单一主视觉、明确前中后景层级、人物和场景有叙事关系，剧名使用清晰有设计感的中文字体并保持高对比和移动端可读性；标题不可乱码、不可被裁切。",
+    "遵循 TK 短剧封面阅读顺序：先看人物冲突，再读剧名，再感知类型；保留安全边距，避免过多小字、UI、边框、水印和品牌标识。",
+  ].join(" ");
+}
+
+function coverDesignReferenceAssets(episodeRoot) {
+  const manifest = readAssetManifest(episodeRoot)?.data || null;
+  const config = ensureVideoConfigIsolation(episodeRoot)?.data || null;
+  const plannedAssetNames = parseAssetsFromPromptNames(readText(findProjectFile(episodeRoot, "assetPrompts")));
+  const assets = projectProductionAssetsForState(episodeRoot, manifest, {
+    plannedAssetNames,
+    configData: config,
+    minModifiedAt: currentRunStartMs(episodeRoot, config),
+  });
+  const rank = { Character: 0, Scene: 1, Prop: 2, Insert: 3 };
+  return assets
+    .filter((asset) => asset?.path && fs.existsSync(asset.path))
+    .sort((a, b) => (rank[a.manifestType] ?? 9) - (rank[b.manifestType] ?? 9))
+    .slice(0, 4);
+}
+
+function normalizeCoverDesignTaskStatus(status = "", fallback = "queued") {
+  const normalized = compactLine(status).toLowerCase();
+  if (["complete", "completed", "success", "succeeded", "done"].includes(normalized)) return "complete";
+  if (["failed", "failure", "error"].includes(normalized)) return "failed";
+  if (["starting", "queued", "running"].includes(normalized)) return normalized;
+  return fallback;
+}
+
+function refreshCoverDesignState(episodeRoot) {
+  const state = readCoverDesignState(episodeRoot);
+  if (!state.items.length) return state;
+  let changed = false;
+  const startedAt = Date.parse(state.createdAt || state.updatedAt || "");
+  const submissionExpired = Number.isFinite(startedAt) && Date.now() - startedAt >= COVER_DESIGN_SUBMISSION_TIMEOUT_MS;
+  const items = state.items.map((item) => {
+    const itemStatus = normalizeCoverDesignTaskStatus(item.status, "queued");
+    if (!item.taskId) {
+      if (!submissionExpired || !["starting", "queued", "running"].includes(itemStatus)) return item;
+      const next = {
+        ...item,
+        status: "failed",
+        message: "提交超时，请重新生成",
+        error: "封面任务未成功提交，可能是服务重启或提交超时。",
+      };
+      if (JSON.stringify(next) !== JSON.stringify(item)) changed = true;
+      return next;
+    }
+    if (["complete", "failed"].includes(itemStatus)) {
+      if (item.status === itemStatus) return item;
+      const next = { ...item, status: itemStatus };
+      changed = true;
+      return next;
+    }
+    const task = getCanvasImageGeneration(item.taskId);
+    const nextStatus = normalizeCoverDesignTaskStatus(task.status, itemStatus);
+    const next = {
+      ...item,
+      status: nextStatus,
+      url: task.url || item.url || "",
+      message: task.message || item.message || "",
+      error: nextStatus === "failed" ? task.message || item.error || "封面生成失败" : "",
+    };
+    if (JSON.stringify(next) !== JSON.stringify(item)) changed = true;
+    return next;
+  });
+  const status = items.every((item) => item.status === "complete")
+    ? "complete"
+    : items.some((item) => item.status === "failed") && items.every((item) => ["complete", "failed"].includes(item.status))
+      ? "failed"
+      : items.some((item) => ["starting", "queued", "running"].includes(item.status))
+        ? "running"
+        : state.status;
+  if (status !== state.status) changed = true;
+  return changed ? writeCoverDesignState(episodeRoot, { ...state, status, items }) : state;
+}
+
+async function generateProjectCoverDesigns(episodeRoot, { ownerUserId = "" } = {}) {
+  const current = refreshCoverDesignState(episodeRoot);
+  if (["starting", "running"].includes(current.status)) throw new Error("封面正在生成，请等待当前四张封面完成");
+  const summary = projectSummary(episodeRoot);
+  const manifestTitle = compactLine(readAssetManifest(episodeRoot)?.data?.title || "");
+  const title = manifestTitle || summary.title || summary.scriptTitle || summary.episodeLabel || "未命名短剧";
+  const refs = coverDesignReferenceAssets(episodeRoot);
+  const referenceImages = refs.map((asset) => `/media?path=${encodeURIComponent(asset.path)}`).filter(Boolean);
+  const referenceNames = refs.map((asset) => asset.assetName || asset.name).filter(Boolean);
+  const runId = crypto.randomUUID();
+  let state = writeCoverDesignState(episodeRoot, {
+    runId,
+    status: "running",
+    title,
+    model: "gpt-image-2",
+    ratio: "9:16",
+    createdAt: new Date().toISOString(),
+    message: "正在生成 4 个封面方向",
+    items: COVER_DESIGN_STYLES.map((style) => ({
+      id: `${runId}-${style.id}`,
+      styleId: style.id,
+      styleLabel: style.label,
+      taskId: "",
+      status: "starting",
+      url: "",
+      message: "提交中",
+      error: "",
+    })),
+  });
+  await Promise.all(COVER_DESIGN_STYLES.map(async (style, index) => {
+    try {
+      const result = await createCanvasImageGeneration({
+        prompt: promptForCoverStyle(style, { title, referenceNames }),
+        ratio: "9:16",
+        resolution: "1k",
+        imageModel: "gpt-image-2",
+        referenceImages,
+        ownerUserId,
+      });
+      state = readCoverDesignState(episodeRoot);
+      state.items[index] = { ...state.items[index], taskId: result.taskId, status: "running", message: "生成中" };
+      writeCoverDesignState(episodeRoot, state);
+    } catch (error) {
+      state = readCoverDesignState(episodeRoot);
+      state.items[index] = { ...state.items[index], status: "failed", message: "生成失败", error: compactLine(error?.message || "封面生成失败") };
+      state.status = state.items.every((item) => ["complete", "failed"].includes(item.status)) ? "failed" : "running";
+      writeCoverDesignState(episodeRoot, state);
+    }
+  }));
+  return refreshCoverDesignState(episodeRoot);
+}
+
 function manifestItemsToAssets(manifest) {
   return (manifest?.items || []).map((item) => ({
     type: item.type,
@@ -24456,9 +24793,40 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     durationMode: previous.durationMode || previous.settings?.durationMode || projectDurationMode(episodeRoot),
   });
   const resolvedDialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, dialogueLanguage);
-  const configAssets = Array.isArray(previous.assets) && previous.assets.length ? previous.assets : manifestItemsToAssets(manifest);
-  const videoStylePreset = compactLine(previousShots[shotIndex]?.videoStylePreset || "") || videoStylePresetFromProductionAssets(configAssets, body);
-  const videoStyleDirective = compactLine(previousShots[shotIndex]?.videoStyleDirective || "") || videoStyleDirectiveFromProductionAssets(configAssets, body);
+  const manifestNames = new Set((manifest.items || []).map((item) => compactLine(item?.id || "")).filter(Boolean));
+  const freshProductionAssets = projectProductionAssetsForState(episodeRoot, manifest)
+    .filter((asset) => asset.manifestType !== "Storyboard")
+    .filter((asset) => !manifestNames.size || manifestNames.has(compactLine(asset.assetName || "")))
+    .filter((asset) => !asset.invalid && !asset.conflicts?.length);
+  const historicalAssetBindings = collectHistoricalAssetLibraryBindings(episodeRoot, previous);
+  const previousAssetsByName = new Map(
+    (Array.isArray(previous.assets) ? previous.assets : [])
+      .map((asset) => [compactLine(asset?.name || asset?.assetName || asset?.id || ""), asset])
+      .filter(([name]) => !!name),
+  );
+  const previousConfigUpdatedAt = Date.parse(previous.updatedAt || previous.videoConfigUpdatedAt || "") || 0;
+  const freshAssetRecords = freshProductionAssets
+    .map((asset, index) => assetRecordFromMedia(asset, manifest, index))
+    .filter(Boolean)
+    .map((record) => {
+      const previousRecord = previousAssetsByName.get(compactLine(record.name || ""));
+      if (!previousRecord) return applyAssetLibraryBindingsToRecords([record], historicalAssetBindings)[0] || record;
+      const freshUpdatedAt = Date.parse(record.sourceUpdatedAt || "") || 0;
+      const previousUpdatedAt = Date.parse(previousRecord.sourceUpdatedAt || "") || previousConfigUpdatedAt;
+      const fileChanged = compactLine(previousRecord.file || "") && compactLine(record.file || "") && previousRecord.file !== record.file;
+      const sourceChanged = videoAssetSourceChanged(previousRecord, record);
+      if (fileChanged || sourceChanged || (freshUpdatedAt > 0 && freshUpdatedAt > previousUpdatedAt)) {
+        return clearStaleAssetLibraryBinding(record);
+      }
+      return applyAssetLibraryBindingsToRecords([record], historicalAssetBindings)[0] || record;
+    });
+  const configAssets = mergeVideoConfigAssetRecords(
+    Array.isArray(previous.assets) && previous.assets.length ? previous.assets : manifestItemsToAssets(manifest),
+    freshAssetRecords,
+  );
+  const productionConfigAssets = configAssets.filter((asset) => asset.manifestType !== "Storyboard");
+  const videoStylePreset = compactLine(previousShots[shotIndex]?.videoStylePreset || "") || videoStylePresetFromProductionAssets(productionConfigAssets, body);
+  const videoStyleDirective = compactLine(previousShots[shotIndex]?.videoStyleDirective || "") || videoStyleDirectiveFromProductionAssets(productionConfigAssets, body);
   const promptMode = compactLine(previous.settings?.promptMode || previous.promptMode || "").toLowerCase();
   const storyboardsActive =
     promptMode === "production_board" ||
@@ -26883,6 +27251,16 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
   }
 
+  if (req.method === "GET" && action === "cover-designs") {
+    return send(res, 200, { ok: true, coverDesign: refreshCoverDesignState(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "cover-designs") {
+    const user = currentUserFromRequest(req);
+    const coverDesign = await generateProjectCoverDesigns(episodeRoot, { ownerUserId: user?.id || "" });
+    return send(res, 202, { ok: true, coverDesign, state: fullProjectStateForUser(episodeRoot, user) });
+  }
+
   if (req.method === "POST" && action === "video-canvas") {
     const body = await readBody(req);
     const result = clearVideoArtifactsForNewCanvas(episodeRoot, body);
@@ -27395,6 +27773,12 @@ module.exports = {
       finalCutJobIsStale,
       finalCutStatus,
     },
+    coverDesign: {
+      styles: COVER_DESIGN_STYLES,
+      promptForStyle: promptForCoverStyle,
+      normalizeTaskStatus: normalizeCoverDesignTaskStatus,
+      refresh: refreshCoverDesignState,
+    },
     videoRetry: {
       updateVideoModelForShotInConfig,
       projectVideoModelForShot,
@@ -27442,11 +27826,17 @@ module.exports = {
       projectShotVideoReferenceNames,
       projectShotAllVideoReferenceAssets,
       projectShotUsableVideoReferenceAssets,
+      reconcileAssetSource: reconcileVideoReferenceAsset,
     },
     videoVerification: {
       applyRequestedRealPersonVerification,
       arkPersonReferenceNames,
       realPersonVerificationEnabled,
+    },
+    videoConfig: {
+      mergeAssetRecords: mergeVideoConfigAssetRecords,
+      clearStaleAssetLibraryBinding,
+      applyHistoricalBindings: applyAssetLibraryBindingsToRecords,
     },
     projectVideo: {
       generateProjectVideoShot,

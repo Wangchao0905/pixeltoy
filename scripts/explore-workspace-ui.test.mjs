@@ -63,8 +63,8 @@ assert.match(app, /function createEmptyProject\(\)[\s\S]*?projectName:\s*"Untitl
 assert.match(app, /function openProjectModal\(\)\s*\{\s*return createEmptyProject\(\);/);
 assert.match(app, /exploreLoginLink\?\.classList\.toggle\("hidden", !!data\.user\)/);
 assert.match(app, /function setupExploreVideoPlayback/);
-assert.match(html, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/, "styles.css 必须走 ETag 重验证");
-assert.match(html, /<script src="\/app\.js"><\/script>/, "app.js 必须走 ETag 重验证");
+assert.match(html, /<link rel="stylesheet" href="\/styles\.css\?v=[0-9a-zA-Z._-]+"\s*\/>/, "styles.css 必须携带版本戳");
+assert.match(html, /<script src="\/app\.js\?v=[0-9a-zA-Z._-]+"><\/script>/, "app.js 必须携带版本戳");
 assert.match(styles, /\.video-showcase-six/);
 assert.match(styles, /\.video-showcase-grid-six/);
 assert.match(styles, /\.explore-canvas-library/);

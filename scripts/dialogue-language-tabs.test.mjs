@@ -42,9 +42,9 @@ assert.match(styles, /\.modern-lang-tabs button\[aria-checked="true"\][^}]*color
 assert.match(styles, /\.modern-source-head > \.modern-source-head-aside \{[^}]*display: grid/);
 assert.match(styles, /\.modern-asset-primary-actions \{[^}]*grid-column: 2 \/ -1/);
 
-// 制作台入口使用稳定 URL + ETag 重验证；改动后浏览器会按内容换取新资源，
-// 不再依赖开发者手动同步两个版本戳。
-assert.match(index, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/);
-assert.match(index, /<script src="\/app\.js"><\/script>/);
+// 制作台入口使用版本戳 + immutable；styles.css 与 app.js 的戳必须同步，
+// 同步性由 free-mode-cache-bust 测试守门，避免旧脚本配新版 DOM。
+assert.match(index, /<link rel="stylesheet" href="\/styles\.css\?v=[0-9a-zA-Z._-]+"\s*\/>/);
+assert.match(index, /<script src="\/app\.js\?v=[0-9a-zA-Z._-]+"><\/script>/);
 
 console.log("dialogue-language-tabs: OK");

@@ -49,7 +49,7 @@ assert.match(css, /\.site-beian a\s*\{/, "必须有链接样式");
 
 // --- 5) 制作台入口用 ETag 重验证；独立页面仍可使用版本戳 ---
 const indexSource = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
-assert.match(indexSource, /<link rel="stylesheet" href="\/styles\.css"\s*\/>/, "index.html 的 styles.css 必须走 ETag 重验证");
+assert.match(indexSource, /<link rel="stylesheet" href="\/styles\.css\?v=[0-9a-zA-Z._-]+"\s*\/>/, "index.html 的 styles.css 必须携带版本戳");
 for (const page of ["admin.html", "canvas.html", "pixeltale.html"]) {
   const source = fs.readFileSync(path.join(root, "public", page), "utf8");
   assert.match(source, /styles\.css\?v=[A-Za-z0-9._-]+/, `${page} 的 styles.css 必须带缓存戳`);

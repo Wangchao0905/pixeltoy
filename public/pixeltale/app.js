@@ -613,9 +613,10 @@ function renderUnitStageProgress(stage) {
   const lockedCount = progress.locked.length;
   const pendingCount = progress.pending.length;
   const generatedPct = progress.total ? Math.min(100, Math.round(generatedCount / progress.total * 100)) : 0;
+  const lockedPct = progress.total ? Math.min(100, Math.round(lockedCount / progress.total * 100)) : 0;
   const status = generatedCount ? `已生成 ${generatedCount} 集 · 已锁定 ${lockedCount} 集` : `已锁定 ${lockedCount} 集`;
   const pending = pendingCount ? `未锁定 ${pendingCount} 集` : "没有待处理集";
-  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="生成进度（含待审核）"><i style="width:${generatedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>一次运行会自动生成、审核并恢复全部未锁定集；最多自动修订两轮，仍失败才需要人工介入。已锁定集不会再次提交。指定集数仅用于定向修订。</small></section>`;
+  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="绿=已锁定 · 黄=已生成待审核 · 灰=未生成"><i class="is-generated" style="width:${generatedPct}%"></i><i class="is-locked" style="width:${lockedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>一次运行会自动生成、审核并恢复全部未锁定集；最多自动修订两轮，仍失败才需要人工介入。已锁定集不会再次提交。指定集数仅用于定向修订。</small></section>`;
 }
 
 function reviewForArtifact(artifact) {

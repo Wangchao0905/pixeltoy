@@ -1274,8 +1274,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .unit-stage-progress-head, .unit-stage-progress-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .unit-stage-progress-head strong { display: block; margin-top: 4px; color: var(--pt-ink); font-size: 15px; letter-spacing: 0; }
 .unit-stage-progress-head > span, .unit-stage-progress-foot > span, .unit-stage-progress small { color: var(--pt-muted); font-size: 10px; }
-.unit-stage-progress-track { height: 5px; margin: 14px 0 10px; overflow: hidden; border-radius: 99px; background: rgba(40, 120, 232, 0.09); }
-.unit-stage-progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2878e8, #64a4f3); transition: width 360ms ease; }
+.unit-stage-progress-track { position: relative; height: 5px; margin: 14px 0 10px; overflow: hidden; border-radius: 99px; background: rgba(40, 120, 232, 0.09); }
+.unit-stage-progress-track i { position: absolute; top: 0; left: 0; display: block; height: 100%; border-radius: inherit; transition: width 360ms ease; }
+.unit-stage-progress-track i.is-generated { background: #ffca28; }
+.unit-stage-progress-track i.is-locked { background: #2e7d32; z-index: 1; }
 .unit-stage-progress-foot { align-items: center; }
 .unit-stage-progress-foot label { display: inline-flex; align-items: center; gap: 8px; color: var(--pt-muted); font-size: 10px; white-space: nowrap; }
 .unit-stage-progress-foot input { width: 130px; height: 28px; border: 1px solid rgba(40, 120, 232, 0.2); border-radius: 7px; padding: 0 8px; color: var(--pt-ink); background: rgba(255, 255, 255, 0.88); font: 11px var(--body-font); outline: none; }

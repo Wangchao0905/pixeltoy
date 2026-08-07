@@ -994,8 +994,15 @@ function revisionIssueId(stage, item = {}) {
 }
 
 function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
+  // When the quorum is not met (review seats failed/unconfigured) a consensus
+  // contract would always be empty and the stage would dead-lock: approve is
+  // refused, directed revision throws REVISION_CONTRACT_EMPTY, and the user has
+  // no escape hatch. Degrade to single-seat high issues so a lone surviving
+  // reviewer can still drive revision instead of blocking the stage forever.
+  const quorumMet = review.quorum?.met !== false;
+  const minModelCount = quorumMet ? REVIEW_QUORUM : 1;
   const freshCommonIssues = asArray(review.commonIssues)
-    .filter((item) => Number(item.modelCount) >= REVIEW_QUORUM && item.severity === "high");
+    .filter((item) => Number(item.modelCount) >= minModelCount && item.severity === "high");
   const acceptedAdvisories = reviewAdvisoryItems(review)
     .filter((item) => item.kind !== "failed" && advisoryDecisionMap(review).get(item.id)?.status === "accepted")
     .map((item) => {
@@ -1014,7 +1021,7 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
   const freshIssues = [...freshCommonIssues, ...acceptedAdvisories];
   if (!freshIssues.length) {
     freshIssues.push(...asArray(review.reviewIssues)
-      .filter((item) => Number(item.modelCount) >= REVIEW_QUORUM && item.severity === "high"));
+      .filter((item) => Number(item.modelCount) >= minModelCount && item.severity === "high"));
   }
   const previousItems = asArray(review.revision?.contract?.items);
   const previousClosures = new Map(asArray(review.revision?.closure?.items).map((item) => [item.id, item]));
@@ -1166,9 +1173,15 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
   const revisionClosure = aggregateRevisionClosure(completed, revisionContract);
   const quorumMet = completed.length >= REVIEW_QUORUM;
   const passingReviews = completed.filter((item) => item.pass).length;
-  const pass = quorumMet && mandatoryIssues.length === 0 && revisionClosure.allResolved;
+  // A lone reviewer's hard "no" must not be swallowed: when a completed model
+  // returns pass=false while flagging a high-severity issue, the artifact must
+  // not sail through just because that issue did not reach consensus (two
+  // models may flag different high issues). A pass=false that only carries
+  // medium recommendations stays non-blocking, matching the review contract.
+  const highIssueVeto = completed.some((item) => item.pass === false && asArray(item.issues).some((issue) => issue.severity === "high"));
+  const pass = quorumMet && !highIssueVeto && mandatoryIssues.length === 0 && revisionClosure.allResolved;
   const checks = {
-    cross_validation: quorumMet,
+    cross_validation: quorumMet && !highIssueVeto,
     consistency: mandatoryIssues.length === 0,
     adversarial: completed.filter((item) => item.checks?.adversarial === true).length >= REVIEW_QUORUM,
     issues_converged: mandatoryIssues.length === 0,
@@ -1324,7 +1337,8 @@ async function collectCrossReviewQuorum({ reviewRoutes = [], revisionContract = 
   const firstIndexes = reviewRoutes.slice(0, REVIEW_QUORUM).map((_route, index) => index);
   await settle(firstIndexes);
   const completed = results.filter((item) => item?.result);
-  if (completed.length >= REVIEW_QUORUM && !aggregateCrossReview(completed, revisionContract).conflicts.length) {
+  const allCompletedPass = completed.length > 0 && completed.every((item) => item.result?.content?.pass === true);
+  if (completed.length >= REVIEW_QUORUM && allCompletedPass && !aggregateCrossReview(completed, revisionContract).conflicts.length) {
     return results.filter(Boolean);
   }
 
@@ -1633,6 +1647,13 @@ function createPixelTaleAgent(options = {}) {
         error.statusCode = 409;
         throw error;
       }
+      const approvedVersion = approvedForStage(state, stage);
+      if (approvedVersion && !revisionPlan && params.override !== true) {
+        const error = new Error(`“${STAGE_LABELS[stage] || stage}”已有已确认版本 v${approvedVersion.version || 0}，重新生成会使下游已确认内容失效；如确认继续请重试（override）`);
+        error.code = "STAGE_RERUN_REQUIRES_OVERRIDE";
+        error.statusCode = 409;
+        throw error;
+      }
       if (!text(params.input?.idea || params.input?.coreConflict || (stage !== "brief" ? "context" : ""), 6000)) {
         const error = new Error("创作规格需要一个可识别的核心冲突");
         error.code = "INPUT_INVALID";
@@ -1865,6 +1886,19 @@ function createPixelTaleAgent(options = {}) {
     artifact.status = "approved";
     artifact.updatedAt = nowIso(now);
     if (!state.approvedArtifactIds.includes(artifact.id)) state.approvedArtifactIds.push(artifact.id);
+    // Approving a rerun supersedes every downstream approval: downstream
+    // artifacts were built against the previous upstream context and would
+    // otherwise silently produce an inconsistent handoff.
+    const stageIndex = STAGES.indexOf(artifact.stage);
+    state.approvedArtifactIds = state.approvedArtifactIds.filter((id) => {
+      const item = state.artifacts.find((candidate) => candidate.id === id);
+      return !item || STAGES.indexOf(item.stage) <= stageIndex;
+    });
+    state.artifacts.forEach((item) => {
+      if (item.stage !== artifact.stage && STAGES.indexOf(item.stage) > stageIndex && item.status === "approved") {
+        item.status = "needs_review";
+      }
+    });
     state.stage = nextStage(artifact.stage);
     state.updatedAt = nowIso(now);
     persistState(params, state);

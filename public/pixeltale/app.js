@@ -58,6 +58,7 @@ const state = {
   stage: "brief",
   approved: new Set(),
   busy: false,
+  revising: false,
   documentBusy: false,
   toastTimer: null,
   lastError: "",
@@ -799,6 +800,7 @@ function renderShellState() {
   $("#progressBar").style.width = `${Math.round((approvedStageCount() / productionStageTotal) * 100)}%`;
   renderConsensusMeter();
   $$(".mode-button").forEach((button) => button.classList.toggle("is-active", button.dataset.mode === state.mode));
+  $$(".mode-button").forEach((button) => { button.disabled = state.busy || state.revising; });
   $$(".stage-link").forEach((button) => {
     const name = button.dataset.stage;
     const artifact = artifactForStage(name);
@@ -1818,30 +1820,53 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
       : (revision ? "交叉修订已逐项复审关闭，等待确认" : "已生成并完成三模型交叉审核，等待确认"));
     return { result: payload.result };
   } catch (error) {
-    if (error?.terminal) persistActiveRun(null);
+    if (error?.terminal) {
+      persistActiveRun(null);
+    } else if (state.activeRun?.jobId) {
+      // Non-terminal failure (network blip / poll timeout): the server job may
+      // still be alive. Keep it as the active run and switch to background
+      // monitoring so a manual retry cannot start a competing job whose later
+      // writer would clobber the original result.
+      const run = state.activeRun;
+      if (!state.revising) {
+        state.busy = false;
+        renderStage();
+      }
+      void monitorBackgroundRun(run);
+      state.lastError = userFacingError(error);
+      showToast(`${state.lastError} 任务仍在后台运行，完成后会自动同步，请勿重复提交。`);
+      return { failed: true, detached: true };
+    }
     state.lastError = userFacingError(error);
     showToast(state.lastError);
     return { failed: true };
   } finally {
-    state.busy = false;
-    renderStage();
+    // A multi-pass auto revision keeps busy across its own runCurrentStage
+    // calls; only the outermost flow may release the buttons.
+    if (!state.revising) {
+      state.busy = false;
+      renderStage();
+    }
   }
 }
 
 async function runAutoRevision(stage = state.stage) {
+  // Multi-pass revision must stay busy across every inner runCurrentStage
+  // (whose finally releases buttons). The revising flag defers that release
+  // to here so the user cannot click into a competing run between passes.
+  state.revising = true;
   state.busy = true;
   state.lastError = "";
   renderStage();
   try {
-    const payload = await request("");
-    updateAgentState(payload.agent);
-  } catch (error) {
-    state.busy = false;
-    state.lastError = userFacingError(error);
-    showToast(state.lastError);
-    renderStage();
-    return;
-  }
+    try {
+      const payload = await request("");
+      updateAgentState(payload.agent);
+    } catch (error) {
+      state.lastError = userFacingError(error);
+      showToast(state.lastError);
+      return;
+    }
   state.stage = stage;
   const artifact = artifactForStage(stage);
   const review = reviewForArtifact(artifact);
@@ -1880,6 +1905,11 @@ async function runAutoRevision(stage = state.stage) {
       return;
     }
     currentIssues = remainingIssues;
+  }
+  } finally {
+    state.revising = false;
+    state.busy = false;
+    renderStage();
   }
 }
 
@@ -2041,6 +2071,7 @@ function bindStageActions() {
   $("[data-save-script]")?.addEventListener("click", () => void runDocumentAction(saveScriptDocument));
   $("#episodeScaleRange")?.addEventListener("input", syncBriefRanges);
   $("#durationRange")?.addEventListener("input", syncBriefRanges);
+  $("#idea")?.addEventListener("input", () => { state.input.idea = $("#idea")?.value || ""; });
   $("#marketRegion")?.addEventListener("change", () => { updateMarketCountryList(); syncMarketControls(); renderShellState(); void persistCreativeSettings(); });
   $("#marketCountry")?.addEventListener("change", () => { syncMarketControls(); renderShellState(); void persistCreativeSettings(); });
   $("#localizationNote")?.addEventListener("change", () => { syncMarketControls(); renderShellState(); void persistCreativeSettings(); });
@@ -2067,6 +2098,9 @@ function bindStageActions() {
 }
 
 $$('[data-mode]').forEach((button) => button.addEventListener("click", async () => {
+  if (state.busy || state.revising) return;
+  if (state.stage === "brief") collectBriefInput();
+  const previousMode = state.mode;
   state.mode = button.dataset.mode;
   state.input.episodeCount = state.mode === "long" ? 8 : 24;
   state.input.durationValue = state.mode === "long" ? 10 : 60;
@@ -2075,13 +2109,17 @@ $$('[data-mode]').forEach((button) => button.addEventListener("click", async () 
   state.input.duration = state.mode === "long" ? "10 min" : "60 sec";
   state.input.openingImpactSeconds = 3;
   state.input.openingPromise = "mainline_promise";
-  state.input.hookCadence = state.mode === "long" ? "every_episode" : "every_episode";
+  state.input.hookCadence = "every_episode";
   renderStage();
   try {
     const payload = await request("/settings", { method: "POST", body: JSON.stringify({ mode: modeValue(), routes: state.routes, input: state.input }) });
     updateAgentState(payload.agent);
     renderStage();
-  } catch (error) { showToast(userFacingError(error)); }
+  } catch (error) {
+    state.mode = previousMode;
+    renderStage();
+    showToast(userFacingError(error));
+  }
 }));
 
 $$('[data-stage]').forEach((button) => button.addEventListener("click", () => {

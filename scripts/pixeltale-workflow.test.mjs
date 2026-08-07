@@ -26,6 +26,11 @@ assert.match(app, /function startNewDraft\(\)[\s\S]*localStorage\.setItem\(SESSI
 assert.match(app, /function startNewDraft\(\)\s*\{\s*let freshSession[\s\S]*?try \{/, "freshSession must be declared at function scope, visible to the navigation code after the try block");
 assert.doesNotMatch(app, /function startNewDraft\(\)[\s\S]*?try \{[\s\S]*?const freshSession/, "freshSession must not be block-scoped inside the try block (would throw ReferenceError on click)");
 assert.match(app, /catch \{[\s\S]*?freshSession = freshSession \|\| `session_/, "storage failure must still produce a session id before navigating");
+assert.match(app, /\$\("#idea"\)\?\.addEventListener\("input"[\s\S]*?state\.input\.idea/, "the story idea textarea must sync into state on input so a rerender cannot drop user text");
+assert.match(app, /state\.revising\s*=\s*true[\s\S]*?finally \{[\s\S]*?state\.revising\s*=\s*false/, "auto revision must keep the UI busy across every pass and release exactly once in its finally");
+assert.match(app, /state\.busy \|\| state\.revising\) return;/, "mode switching must be blocked while a run or revision is in flight");
+assert.match(app, /const previousMode = state\.mode;[\s\S]*?state\.mode = previousMode;/, "a failed mode switch must roll the local mode back instead of diverging from the server");
+assert.match(app, /void monitorBackgroundRun\(run\);[\s\S]*?请勿重复提交/, "a non-terminal poll failure must degrade to background monitoring and warn against duplicate submission");
 assert.match(app, /function userFacingError\(error\)/, "provider errors must be normalized for users");
 assert.match(app, /agentTaskCopy"\)\.textContent = state\.lastError \|\| action\.copy/, "run errors must remain visible in the right-rail next action");
 assert.match(app, /agentTaskCopy"\)\.setAttribute\("role", state\.lastError \? "alert"/, "run errors must be announced from the right-rail next action");
@@ -662,7 +667,10 @@ assert.deepEqual(routedCalls[0].input.excludedTitles.sort(), titleSets[0].slice(
 assert.equal(new Set(regeneratedTitleRun.artifacts[0].content.candidates.map((candidate) => candidate.title_en).filter((title) => titleSets[0].includes(title))).size, 0, "controlled regeneration must increase the available title choices");
 
 runAgent.approve({ ...titleParams, artifactId: regeneratedTitleRun.artifacts[0].id, selectedTitle: titleSets[1][0] });
-const rerunAfterTitleApproval = await runAgent.run(titleParams);
+const rerunVetoed = await runAgent.run(titleParams);
+assert.equal(rerunVetoed.status, "failed", "a rerun of an already-approved stage must be rejected without an override");
+assert.ok(rerunVetoed.errors?.some((item) => item.code === "STAGE_RERUN_REQUIRES_OVERRIDE"), "the veto must surface the STAGE_RERUN_REQUIRES_OVERRIDE code");
+const rerunAfterTitleApproval = await runAgent.run({ ...titleParams, override: true });
 assert.equal(rerunAfterTitleApproval.artifacts[0].version, 3, "a rerun after approval must create a new title version");
 assert.doesNotThrow(() => runAgent.approve({ ...titleParams, artifactId: rerunAfterTitleApproval.artifacts[0].id, selectedTitle: titleSets[2][0] }), "the latest rerun must remain the stage that requires confirmation");
 
@@ -739,5 +747,57 @@ assert.match(serverSource, /activePixelTaleRuns/, "the server must deduplicate c
 assert.match(serverSource, /max_tokens: maxTokens/, "the SuperPixel router must honor the stage output budget");
 assert.match(serverSource, /fallbackModels/, "a review role must have a same-provider model fallback without changing its identity");
 assert.match(fs.readFileSync(path.join(root, "server.js"), "utf8"), /uniqueModelIds\(\[route\.primary, route\.reviewer, route\.consistency\]\)/, "SuperPixel stage candidates must remain the configured three-role chain");
+
+// ── A1: a lone reviewer's high-severity "no" must veto confirmation ──
+const highVeto = aggregateCrossReview([
+  { result: { provider: "chatgpt", model: "review-a", content: { pass: false, score: 60, findings: ["结构硬伤"], required_changes: [], issues: [{ tag: "主线断裂", dimension: "structure", severity: "high", feedback: "主线断裂", fix: "重构主线" }], dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 60, feedback: "硬伤" }])), checks: { adversarial: true } } } },
+  { result: { provider: "deepseek", model: "review-b", content: { pass: false, score: 62, findings: ["人物动机不足"], required_changes: [], issues: [{ tag: "动机不足", dimension: "plot", severity: "high", feedback: "动机不足", fix: "补足动机" }], dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 62, feedback: "硬伤" }])), checks: { adversarial: true } } } },
+]);
+assert.equal(highVeto.mandatoryIssueCount, 0, "two high issues on different criteria must not aggregate into a consensus mandatory issue");
+assert.equal(highVeto.pass, false, "two pass=false reviews flagging different high issues must still block confirmation (veto must not be swallowed)");
+assert.equal(highVeto.checks.cross_validation, false, "cross_validation must reflect the high-issue veto");
+
+// ── A2: degraded single-seat revision contract when quorum is unmet ──
+const degradedContract = buildRevisionContract({
+  quorum: { required: 2, completed: 1, passing: 0, met: false },
+  commonIssues: [{ tag: "主线断裂", modelCount: 1, severity: "high", suggestions: ["重构主线"] }],
+  reviewIssues: [{ tag: "主线断裂", modelCount: 1, severity: "high", suggestions: ["重构主线"] }],
+}, { stage: "brief", sourceArtifactId: "artifact_v9", id: "revision_degraded" });
+assert.equal(degradedContract.items.length, 1, "a single-seat high issue must still form a revision contract when quorum is unmet (escape hatch, no dead end)");
+const consensusOnlyContract = buildRevisionContract({
+  quorum: { required: 2, completed: 2, passing: 2, met: true },
+  commonIssues: [{ tag: "单模型问题", modelCount: 1, severity: "high", suggestions: ["不得执行"] }],
+  reviewIssues: [{ tag: "单模型问题", modelCount: 1, severity: "high", suggestions: ["不得执行"] }],
+}, { stage: "brief", sourceArtifactId: "artifact_v10", id: "revision_consensus" });
+assert.equal(consensusOnlyContract.items.length, 0, "a single-seat high issue must not form a contract when the quorum is met");
+
+// ── A3: approving a rerun invalidates downstream approvals ──
+stateStore.set("rerun-downstream-e2e", {
+  projectId: "rerun-downstream-e2e",
+  stage: "title",
+  mode: "tk_short_drama",
+  input: { idea: "主角为救家人闯入禁区", coreConflict: "真相与生存冲突", episodeCount: 1, platform: "TikTok / TikTok Series", marketCountry: "united_states", audienceGender: "all" },
+  artifacts: [
+    { id: "down-brief-v1", type: "pixeltale_brief", stage: "brief", version: 1, status: "approved", content: { title_zh: "测试", logline_zh: "测试", core_conflict_zh: "测试", viewer_question_zh: "测试" } },
+    { id: "down-title-v1", type: "pixeltale_title", stage: "title", version: 1, status: "approved", content: titleOutput(0) },
+    { id: "down-proposal-v1", type: "pixeltale_proposal", stage: "proposal", version: 1, status: "approved", content: { title_zh: "旧标题上下文", logline_zh: "基于旧剧名", core_conflict_zh: "冲突", viewer_question_zh: "问题" } },
+  ],
+  approvedArtifactIds: ["down-brief-v1", "down-title-v1", "down-proposal-v1"],
+});
+const downParams = {
+  pixelTaleRoot: "rerun-downstream-e2e",
+  projectId: "rerun-downstream-e2e",
+  project: { id: "rerun-downstream-e2e", title: "Rerun Downstream E2E", episode: "DRAFT" },
+  stage: "title",
+  mode: "tk_short_drama",
+  input: { idea: "主角为救家人闯入禁区", coreConflict: "真相与生存冲突", episodeCount: 1, platform: "TikTok / TikTok Series", marketCountry: "united_states", audienceGender: "all" },
+};
+const downstreamRerun = await runAgent.run({ ...downParams, override: true });
+assert.equal(downstreamRerun.status, "completed", "an explicit override must allow rerunning an approved stage");
+const rerunCandidates = downstreamRerun.artifacts[0].content.candidates;
+runAgent.approve({ ...downParams, artifactId: downstreamRerun.artifacts[0].id, selectedTitle: rerunCandidates[0].title_en });
+const downstreamState = stateStore.get("rerun-downstream-e2e");
+assert.ok(!downstreamState.approvedArtifactIds.includes("down-proposal-v1"), "approving a rerun must remove downstream approvals from the approved set");
+assert.equal(downstreamState.artifacts.find((artifact) => artifact.id === "down-proposal-v1").status, "needs_review", "downstream artifacts must be reopened for regeneration");
 
 console.log("pixeltale workflow contract ok");

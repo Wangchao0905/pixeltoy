@@ -168,7 +168,7 @@ def main():
     def engine_factory():
         from llm import load_env
         env = load_env(ENV_PATH)
-        return PixelWriterEngine(make_gpt_client(env), make_deepseek_client(env))
+        return PixelWriterEngine(make_gpt_client(env), make_deepseek_client(env), state_dir=PROJECTS_DIR)
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(engine_factory))
     print(f"Pixel Writer API on :{args.port}")

@@ -416,9 +416,10 @@ function titleStylePrompt(mode, input = {}) {
       "剧名必须输出恰好 4 个候选，不能少于或多于 4 个。",
       "正式发行剧名字段 title_en 保持英文键名，但字段值必须使用自然中文，适配中国大陆市场与\"" + platform + "\"的传播语感。",
       "先读取 userInput 中的剧本 DNA、受众、平台和发行属性，再读取 approvedContext 中已确认的 brief；每个候选必须结合国内短剧爆款题材。",
-      "四个候选必须分别使用不同命名基因：身份反差型、逆袭钩子型、情感冲突型、悬念设问型；naming_gene_zh 必须明确写出所用基因。",
-      "国内短剧剧名优先 6-15 个中文字，要有明确的身份、关系或冲突钩子，让人一眼就想点开。",
-      "剧名要直接露出核心钩子和爆点，避免含蓄或文艺化表达。",
+      "四个候选必须分别使用不同命名基因：核心意象型、人物或关系型、地点或机构型、命运悬念型；naming_gene_zh 必须明确写出所用基因。",
+      "国内短剧剧名优先 3-10 个中文字，要有独立的识别锚点，朗读自然、海报上易识别、搜索时有区分度。",
+      "剧名必须是可独立成立的片名短语，不要写成主谓宾完整剧情句，不要把人物行动、因果过程、反转答案或结局直接写进标题。",
+      "禁止“听懂……后我……”“……却要我……”“……为何等我……”这类剧情摘要句式；用一个身份、关系、地点、物件、秘密或异常意象承载钩子即可。",
       "题材可优先考虑霸总、赘婿、逆袭、重生、闪婚、马甲、宠妻、追妻等国内短剧常见方向。",
       "保持商业化表达，避免过度夸张或低俗，确保剧名适合平台发布。",
       "每个候选的 explanation_zh 用一句话解释剧名的钩子设计；reason_zh 说明它如何承接本剧 DNA、目标受众和发行场景。",
@@ -1158,7 +1159,14 @@ function validateContent(stage, content, input = {}) {
       const excludedTitles = new Set(asArray(input.excludedTitles).map((name) => text(name, 200).toLowerCase()).filter(Boolean));
       const invalidCnTitle = cnNames.some((name) => {
         const hanCount = (name.match(/[\u3400-\u9fff]/gu) || []).length;
-        return !hanCount || hanCount < 6 || hanCount > 15 || /[A-Za-z]/u.test(name) || excludedTitles.has(name.toLowerCase());
+        const actionCount = (name.match(/听懂|逆转|拯救|唤醒|怀疑|追查|揭开|成为|觉醒|复仇|重生|闪婚|离婚|结婚|爱上|逃离|回到|压城|救/g) || []).length;
+        const isNarrativeSentence = /[我你他她它]/u.test(name) || /之后|以后|却|为了|为何/u.test(name) || actionCount >= 2;
+        return !hanCount
+          || hanCount < 3
+          || hanCount > 10
+          || !/^[\u3400-\u9fff]+$/u.test(name)
+          || isNarrativeSentence
+          || excludedTitles.has(name.toLowerCase());
       });
       const invalidCn = candidates.length !== 4
         || cnNames.length !== 4
@@ -1168,7 +1176,7 @@ function validateContent(stage, content, input = {}) {
         || invalidCnTitle
         || candidates.some((candidate) => !/[\u3400-\u9fff]/u.test(text(candidate.explanation_zh, 500)) || !text(candidate.style_zh, 200) || !text(candidate.tone_zh, 300) || !text(candidate.naming_gene_zh, 300) || !text(candidate.reason_zh, 1000));
       if (invalidCn) {
-        const error = new Error("国内短剧剧名产物必须包含 4 个不重复、6-15 个中文字且说明完整的候选");
+        const error = new Error("国内短剧剧名产物必须包含 4 个不重复、3-10 个中文字、非剧情摘要句且说明完整的候选");
         error.code = "SCHEMA_INVALID";
         throw error;
       }
@@ -2403,6 +2411,11 @@ function updateUnitStageProgress(state, stage, totalUnits, { batchId = "", units
   const batches = batch
     ? [...progress.batches.filter((entry) => entry.id !== batch.id), batch]
     : progress.batches;
+  // 已生成集 = 所有非 running 批次覆盖的集（含 needs_review/approved/已锁定），
+  // 用于 UI 体现"已生成但尚未锁定"的集（否则 0/30 会让用户误以为什么都没做）。
+  const generatedUnits = [...new Set(
+    batches.filter((entry) => entry.status !== "running").flatMap((entry) => entry.units || []),
+  )].sort((a, b) => a - b);
   state.stageProgress[stage] = {
     ...progress,
     totalUnits,
@@ -3274,6 +3287,14 @@ function createPixelTaleAgent(options = {}) {
       if (!selectedTitle || !candidates.some((candidate) => text(candidate?.title_en, 200) === selectedTitle)) {
         const error = new Error("请从 4 个候选中选择一个剧名");
         error.code = "TITLE_SELECTION_REQUIRED";
+        error.statusCode = 409;
+        throw error;
+      }
+      try {
+        validateContent("title", artifact.content, { mode: state.mode });
+      } catch (validationError) {
+        const error = new Error("当前剧名候选采用旧版命名规则，不符合正式剧名标准；请重新生成 4 个候选后再确认");
+        error.code = "TITLE_REGENERATION_REQUIRED";
         error.statusCode = 409;
         throw error;
       }

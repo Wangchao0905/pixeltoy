@@ -25,7 +25,7 @@ const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.h
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const ruleFindings = (result, code) => result.violations.filter((item) => item.code === code);
 assert.ok(ruleFindings(runStageRules({ stage: "brief", artifact: {}, approvedContext: {} }), "SCHEMA_INCOMPLETE").length, "rules must detect missing stage schema fields");
@@ -196,6 +196,10 @@ assert.match(app, /单模型生成完成 · 等待人工选择[\s\S]*不进入�
 assert.match(agent, /正式发行片名必须使用自然英文/, "title generation must follow the release language instead of returning Chinese names");
 assert.match(agent, /人物身份或关系、地点或机构、异常物件或意象、带双重含义的极简短语/, "title generation must enforce four distinct naming genes");
 assert.match(agent, /Billionaire、CEO、Mafia、Reborn、Revenge/, "title generation must reject generic web-fiction naming templates");
+const cnTitlePrompt = titleStylePrompt("cn_short_drama", { platform: "抖音短剧" });
+assert.match(cnTitlePrompt, /3-10 个中文字/, "Chinese short-drama titles must stay concise enough to read as titles");
+assert.match(cnTitlePrompt, /不要写成主谓宾完整剧情句/, "Chinese short-drama title prompts must reject plot-sentence titles");
+assert.match(cnTitlePrompt, /核心意象型、人物或关系型、地点或机构型、命运悬念型/, "Chinese short-drama titles must use distinct title-oriented naming genes");
 assert.match(app, /fieldLabel\(key\)/, "nested structured fields must use the display label map");
 assert.match(styles, /\.app-shell \{ height: 100vh; height: 100dvh;[\s\S]*overflow: hidden; \}/, "desktop shell must stay within the viewport");
 assert.match(styles, /\.stage-content \{ width: min\(1180px,/, "wide screens must use the central workspace");
@@ -744,6 +748,34 @@ assert.throws(
   (error) => error.code === "SCHEMA_INVALID",
   "generic web-fiction title templates must be rejected before persistence",
 );
+const cnTitleOutput = {
+  ...titleOutput(),
+  candidates: ["龙鸣城", "城下龙鸣", "群龙未醒", "末日回声"].map((title, index) => ({
+    ...titleOutput().candidates[index],
+    title_en: title,
+    naming_gene_zh: ["核心意象型", "地点或机构型", "命运悬念型", "人物或关系型"][index],
+  })),
+};
+assert.doesNotThrow(
+  () => validateContent("title", cnTitleOutput, { mode: "cn_short_drama" }),
+  "concise Chinese title phrases must remain valid",
+);
+assert.throws(
+  () => validateContent("title", { ...cnTitleOutput, candidates: cnTitleOutput.candidates.map((candidate, index) => index === 0 ? { ...candidate, title_en: "听懂龙鸣后我逆转末日" } : candidate) }, { mode: "cn_short_drama" }),
+  (error) => error.code === "SCHEMA_INVALID",
+  "Chinese plot-sentence titles must be rejected before persistence",
+);
+stateStore.set("cn-title-legacy", {
+  projectId: "cn-title-legacy",
+  stage: "title",
+  mode: "cn_short_drama",
+  input: {},
+  artifacts: [
+    { id: "cn-title-brief", type: "pixeltale_brief", stage: "brief", version: 1, status: "approved", content: { title_zh: "测试", logline_zh: "测试", core_conflict_zh: "测试", viewer_question_zh: "测试" } },
+    { id: "cn-title-legacy-artifact", type: "pixeltale_title", stage: "title", version: 1, status: "ready", content: { ...cnTitleOutput, candidates: cnTitleOutput.candidates.map((candidate, index) => index === 0 ? { ...candidate, title_en: "听懂龙鸣后我逆转末日" } : candidate) } },
+  ],
+  approvedArtifactIds: ["cn-title-brief"],
+});
 const routedCalls = [];
 let reviewModelSelections = 0;
 let generatedTitleSets = 0;
@@ -794,6 +826,11 @@ const runAgent = createPixelTaleAgent({
   randomUUID: () => `${String(++uuidSequence).padStart(12, "0")}-1234-1234-1234-123456789abc`,
   onPhase: (_params, phase) => phaseEvents.push(phase),
 });
+assert.throws(
+  () => runAgent.approve({ pixelTaleRoot: "cn-title-legacy", projectId: "cn-title-legacy", artifactId: "cn-title-legacy-artifact", selectedTitle: "听懂龙鸣后我逆转末日" }),
+  (error) => error.code === "TITLE_REGENERATION_REQUIRED",
+  "legacy plot-sentence title candidates must require regeneration before approval",
+);
 stateStore.set("advisory-e2e", {
   projectId: "advisory-e2e",
   stage: "brief",

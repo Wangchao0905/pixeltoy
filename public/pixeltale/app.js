@@ -579,9 +579,10 @@ function unitStageProgress(stage) {
   const progress = state.agent?.stageProgress?.[stage] || {};
   const total = Number(progress.totalUnits || state.input.episodeCount || 0);
   const locked = Array.isArray(progress.lockedUnits) ? progress.lockedUnits : [];
+  const generated = Array.isArray(progress.generatedUnits) ? progress.generatedUnits : locked;
   const pending = Array.isArray(progress.pendingUnits) ? progress.pendingUnits : [...Array(total)].map((_, index) => index + 1).filter((number) => !locked.includes(number));
   const current = Array.isArray(progress.currentBatch) ? progress.currentBatch : [];
-  return { total, locked, pending, current, complete: !!total && locked.length >= total };
+  return { total, locked, generated, pending, current, complete: !!total && locked.length >= total };
 }
 
 function unitStageScopeInput(stage) {
@@ -608,8 +609,13 @@ function renderUnitStageProgress(stage) {
   const progress = unitStageProgress(stage);
   if (!progress) return "";
   const current = progress.current.length ? `当前批次：第 ${progress.current.join("、")} 集` : progress.complete ? "全部集已锁定" : "等待开始下一批";
-  const pending = progress.pending.length ? `待处理 ${progress.pending.length} 集` : "没有待处理集";
-  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>已锁定 ${progress.locked.length} / ${progress.total || "-"} 集</strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track"><i style="width:${progress.total ? Math.min(100, Math.round(progress.locked.length / progress.total * 100)) : 0}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>一次运行会自动生成、审核并恢复全部未锁定集；最多自动修订两轮，仍失败才需要人工介入。已锁定集不会再次提交。指定集数仅用于定向修订。</small></section>`;
+  const generatedCount = progress.generated.length;
+  const lockedCount = progress.locked.length;
+  const pendingCount = progress.pending.length;
+  const generatedPct = progress.total ? Math.min(100, Math.round(generatedCount / progress.total * 100)) : 0;
+  const status = generatedCount ? `已生成 ${generatedCount} 集 · 已锁定 ${lockedCount} 集` : `已锁定 ${lockedCount} 集`;
+  const pending = pendingCount ? `未锁定 ${pendingCount} 集` : "没有待处理集";
+  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="生成进度（含待审核）"><i style="width:${generatedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>一次运行会自动生成、审核并恢复全部未锁定集；最多自动修订两轮，仍失败才需要人工介入。已锁定集不会再次提交。指定集数仅用于定向修订。</small></section>`;
 }
 
 function reviewForArtifact(artifact) {
@@ -1588,8 +1594,14 @@ function renderReviewPanel(reviewContent = {}, { passed = false } = {}) {
 function renderTitleStage() {
   const meta = currentMeta();
   const artifact = artifactForStage("title");
+  const isCnShortDrama = state.mode === "cn";
+  const releaseLanguage = isCnShortDrama ? "中文" : "英文";
+  const releaseLabel = isCnShortDrama ? "CHINESE RELEASE TITLE · 4 OPTIONS" : "ENGLISH RELEASE TITLE · 4 OPTIONS";
+  const selectionHeading = isCnShortDrama ? "选一个最适合这部剧的正式剧名" : "选一个最适合这部剧的英文片名";
+  const selectionCopy = isCnShortDrama ? "正式发行使用中文剧名。命名信息用于创作者快速比较。" : "正式发行只使用英文片名。中文释义和命名信息用于创作者快速比较。";
+  const selectionNote = isCnShortDrama ? "每个候选均为独立片名短语，不使用剧情摘要句。重新生成会建立新版本，并避开已有候选。" : "中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。";
   if (!artifact) {
-    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 4 个英文候选剧名</h3><p>系统会读取剧本 DNA、发行平台和目标市场，用一个指定模型生成 4 个命名基因不同的英文片名，并附中文释义。下一步操作位于右侧。</p></section>`;
+    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 4 个${releaseLanguage}候选剧名</h3><p>系统会读取剧本 DNA、发行平台和目标市场，用一个指定模型生成 4 个命名基因不同的${releaseLanguage}片名。下一步操作位于右侧。</p></section>`;
   }
   const candidates = Array.isArray(artifact.content?.candidates) ? artifact.content.candidates : [];
   const selectedTitle = state.input.storyTitle || "";
@@ -1600,13 +1612,13 @@ function renderTitleStage() {
     const style = candidate?.style_zh || "风格未标注";
     const tone = candidate?.tone_zh || "语气未标注";
     const reason = candidate?.reason_zh || "暂无命名依据";
-    return `<button class="title-option${selected ? " is-selected" : ""}" type="button" role="radio" aria-checked="${selected}" aria-label="选择英文片名 ${escapeHtml(title)}" data-title-choice="${escapeHtml(title)}"><span class="title-option-top"><span class="title-option-number">0${index + 1}</span><span class="title-option-gene">${escapeHtml(namingGene)}</span></span><span class="title-option-body"><strong lang="en">${escapeHtml(title)}</strong><span class="title-option-translation">中文释义 · ${escapeHtml(candidate?.explanation_zh || "仅供创作者参考")}</span><span class="title-option-meta"><em>${escapeHtml(style)}</em><em>${escapeHtml(tone)}</em></span><span class="title-option-reason">${escapeHtml(reason)}</span></span><i aria-hidden="true"></i></button>`;
+    return `<button class="title-option${selected ? " is-selected" : ""}" type="button" role="radio" aria-checked="${selected}" aria-label="选择${releaseLanguage}片名 ${escapeHtml(title)}" data-title-choice="${escapeHtml(title)}"><span class="title-option-top"><span class="title-option-number">0${index + 1}</span><span class="title-option-gene">${escapeHtml(namingGene)}</span></span><span class="title-option-body"><strong${isCnShortDrama ? "" : " lang=\"en\""}>${escapeHtml(title)}</strong><span class="title-option-translation">${isCnShortDrama ? "命名释义" : "中文释义"} · ${escapeHtml(candidate?.explanation_zh || "仅供创作者参考")}</span><span class="title-option-meta"><em>${escapeHtml(style)}</em><em>${escapeHtml(tone)}</em></span><span class="title-option-reason">${escapeHtml(reason)}</span></span><i aria-hidden="true"></i></button>`;
   }).join("");
   const approved = state.approved.has(artifact.id);
   const statusLabel = approved ? "本阶段已确认" : "单模型生成完成 · 等待人工选择";
   const regenerate = approved ? "" : `<button class="stage-secondary title-regenerate" type="button" data-regenerate-title${state.busy ? " disabled" : ""}>重新生成 4 个</button>`;
   const inlineStatus = approved ? "已确认版本" : selectedTitle ? "已选择 · 请在右侧确认后进入故事提案" : "等待选择剧名 · 确认入口在右侧";
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">ENGLISH RELEASE TITLE · 4 OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的英文片名</h3><p>正式发行只使用英文片名。中文释义和命名信息用于创作者快速比较。</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核 · ${escapeHtml(inlineStatus)}</small></div></section>`;
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">${releaseLabel}</span><h3 id="titlePickerHeading">${selectionHeading}</h3><p>${selectionCopy}</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">${selectionNote}</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核 · ${escapeHtml(inlineStatus)}</small></div></section>`;
 }
 
 function renderCreationTrace(artifact, reviewContent = {}) {

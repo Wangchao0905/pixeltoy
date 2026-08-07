@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/pixel-toy-symbol.png" />
     <title>PixelTale / Story Forge</title>
-    <link rel="stylesheet" href="/pixeltale/styles.css?v=pixeltale-runtime-20260807-r1" />
+    <link rel="stylesheet" href="/pixeltale/styles.css?v=pixeltale-runtime-20260807-r3" />
   </head>
   <body>
     <div class="app-shell">
@@ -29,6 +29,7 @@
           <div class="segmented" role="group" aria-label="剧作模式">
             <button type="button" data-mode="tk" class="mode-button is-active">TK 短剧</button>
             <button type="button" data-mode="long" class="mode-button">普通长剧</button>
+            <button type="button" data-mode="cn" class="mode-button">国内短剧</button>
           </div>
           <span id="saveStatus" class="save-status"><i></i>已保存</span>
           <button id="openHistory" class="tool-button history-button" type="button" title="打开创作历史"><span aria-hidden="true">↺</span> 创作历史</button>
@@ -89,7 +90,7 @@
             <div class="section-row"><span>ADVERSARIAL MATCH</span><strong id="consensusScore">0%</strong></div>
             <div class="consensus-readout"><strong id="consensusValue">指数 · 等待三模型反馈</strong><span id="consensusLabel">完成当前阶段后启动交叉审查</span></div>
             <div class="consensus-track"><span id="consensusFill"></span></div>
-            <div class="consensus-breakdown"><span>意见一致 <b id="consensusAgreement">0%</b></span><span>剧本审核 <b id="consensusReviewCompletion">0%</b></span><span>交互审查 <b id="consensusInteractionCompletion">0%</b></span></div>
+            <div class="consensus-breakdown"><span>审核完成度 <b id="consensusReviewCompletion">0%</b></span><span>质量分 <b id="consensusQuality">—</b></span><span>意见一致 <b id="consensusAgreement">0%</b></span></div>
           </section>
 
           <section class="agent-run">
@@ -118,11 +119,11 @@
         <div class="routing-head"><div><span class="eyebrow">CREATIVE ROUTING</span><h2 id="routingTitle">创作分工</h2></div><button value="cancel" class="dialog-close" aria-label="关闭">×</button></div>
         <p class="routing-copy">每个职责都可以独立指定具体模型。保存后作用于下一次运行。</p>
         <div class="routing-list">
-          <label><span>总编排与结构复核</span><select data-route="orchestration"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup><optgroup label="DeepSeek"><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></optgroup></select></label>
-          <label><span>人物、世界与长剧连续性</span><select data-route="continuity"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup><optgroup label="DeepSeek"><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></optgroup></select></label>
-          <label><span>TK 钩子、反转与口语化</span><select data-route="hooks"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup><optgroup label="DeepSeek"><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></optgroup></select></label>
-          <label><span>英文对白最终复核</span><select data-route="dialogueReview"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup><optgroup label="DeepSeek"><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></optgroup></select></label>
-          <label><span>三模型一致性审查</span><select data-route="consistency"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup><optgroup label="DeepSeek"><option value="deepseek-v4-pro">DeepSeek V4 Pro</option></optgroup></select></label>
+          <label><span>总编排与结构复核</span><select data-route="orchestration"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup></select></label>
+          <label><span>人物、世界与长剧连续性</span><select data-route="continuity"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup></select></label>
+          <label><span>TK 钩子、反转与口语化</span><select data-route="hooks"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup></select></label>
+          <label><span>英文对白最终复核</span><select data-route="dialogueReview"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup></select></label>
+          <label><span>三模型一致性审查</span><select data-route="consistency"><optgroup label="GPT"><option value="gpt-5.6-terra">GPT 5.6 Terra</option><option value="gpt-5.6-sol">GPT 5.6 Sol</option><option value="gpt-5.6-luna">GPT 5.6 Luna</option></optgroup><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-sonnet-5">Claude Sonnet 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup></select></label>
         </div>
         <div class="routing-footer"><span id="routingSaved">默认分工</span><button value="save" id="saveRouting" class="stage-primary">保存分工</button></div>
       </form>
@@ -137,6 +138,7 @@
         <div id="historyList" class="history-list" aria-live="polite"></div>
       </form>
     </dialog>
-    <script src="/pixeltale/app.js?v=pixeltale-runtime-20260807-r1"></script>
+    <script src="/pixeltale/app.js?v=pixeltale-runtime-20260807-r3"></script>
+      <script src="/scriptwriter-mode.js?v=sw-20260807-r4"></script>
   </body>
 </html>

@@ -1,34 +1,69 @@
 const crypto = require("node:crypto");
 const path = require("node:path");
+const { REVIEW_SEATS, LEGACY_MODEL_IDS, RETIRED_SEAT_MODELS } = require("./pixeltale-api.js");
+// Two reasons a stored route must be rewritten on read:
+//  - the model was retired outright (LEGACY_MODEL_IDS)
+//  - the model lost its seat to a replacement (RETIRED_SEAT_MODELS)
+// Without the second case, editing REVIEW_SEATS only affects brand-new sessions:
+// existing projects keep running the old roster because their saved seat_* values
+// override the new defaults.
+const LEGACY_ROUTE_MODELS = new Set([...LEGACY_MODEL_IDS, ...RETIRED_SEAT_MODELS]);
+// Retired outright: unusable in any slot. Kept separate from the seat-only set so
+// the vestigial route keys are not rewritten just because a model lost its seat.
+const RETIRED_MODEL_IDS = new Set(LEGACY_MODEL_IDS);
 const { fallbackVisualAssets } = require("./pixeltale-visual-assets.js");
+const { runStageRules } = require("./pixeltale-review-rules.js");
 
 const STAGES = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"];
 const STAGE_LABELS = Object.freeze({ brief: "故事架构", title: "剧名选择", proposal: "故事提案", characters: "人物与世界", arc: "分集与章节", scenes: "场景与镜头", dialogue: "对白本土化" });
 const DEFAULT_ROUTES = {
   orchestration: "gpt-5.6-terra",
   continuity: "claude-opus-5",
-  hooks: "deepseek-v4-pro",
+  hooks: "claude-haiku-4-5",
   dialogueReview: "claude-sonnet-5",
   consistency: "gpt-5.6-luna",
+  seat_a: "gpt-5.6-terra",
+  seat_b: "gpt-5.6-sol",
+  seat_c: "deepseek-v4-pro",
 };
+// The three authors run concurrently, so round 1 consumes about `model` ms of the
+// shared `total` budget. The fallback round then gets only `total - model`, which
+// must still be large enough to regenerate the whole stage payload — otherwise the
+// retry is structurally dead. Keep `total >= 2 * model + margin`.
+// Measured on the real characters prompt (7000-token payload):
+// claude-haiku-4-5 70s, gpt-5.6-terra 93-108s, claude-opus-5 208s.
+// `model` is sized at roughly 1.3x the slowest observed seat.
 const STAGE_PRIMARY_TIMINGS = Object.freeze({
-  brief: { total: 120_000, model: 100_000 },
-  title: { total: 90_000, model: 80_000 },
-  proposal: { total: 150_000, model: 120_000 },
-  characters: { total: 240_000, model: 210_000 },
-  arc: { total: 300_000, model: 270_000 },
-  scenes: { total: 300_000, model: 270_000 },
-  dialogue: { total: 300_000, model: 270_000 },
+  brief: { total: 270_000, model: 120_000 },
+  title: { total: 200_000, model: 90_000 },
+  proposal: { total: 340_000, model: 150_000 },
+  characters: { total: 600_000, model: 270_000 },
+  arc: { total: 660_000, model: 300_000 },
+  scenes: { total: 660_000, model: 300_000 },
+  dialogue: { total: 660_000, model: 300_000 },
 });
 const MIN_STAGE_PRIMARY_ATTEMPT_MS = 3_000;
-const REVIEW_MODEL_TIMEOUT_MS = 120_000;
+const STAGE_PRIMARY_RETRY_ROUNDS = 2;
+// A review seat must read the whole stage artifact before it can answer, so this
+// budget scales with artifact size, not with review output size. Measured on a
+// 13-character (13.9 kB) characters artifact: gpt-5.6-terra 44s, claude-opus-5
+// exceeded 120s, and its grok fallback then burned another 120s — leaving only one
+// of three seats completed and blocking release. 240s covers the slowest seat on
+// the largest artifacts with headroom for its fallback.
+const REVIEW_MODEL_TIMEOUT_MS = 240_000;
+// Two matching findings are enough to classify a shared issue. Stage release
+// still requires all three independent review seats to finish.
 const REVIEW_QUORUM = 2;
+const REVIEW_COMPLETION_REQUIRED = 3;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
+const EPISODE_BATCH_SIZE = 5;
+const UNIT_STAGES = new Set(["arc", "scenes"]);
 const STAGE_OUTPUT_TOKEN_BUDGETS = Object.freeze({
   brief: 1_800,
   title: 2_400,
   proposal: 2_800,
-  characters: 7_000,
+  // characters schema trimmed to 4 visual fields → output ~3.5 kB → fits 4 k tokens.
+  characters: 4_000,
   arc: 12_000,
   scenes: 12_000,
   dialogue: 12_000,
@@ -42,6 +77,8 @@ const REVIEW_OUTPUT_TOKEN_BUDGETS = Object.freeze({
   scenes: 4_000,
   dialogue: 4_000,
 });
+const UNIT_AUTO_REPAIR_MAX_PASSES = 2;
+const AUTO_REPAIR_TOKEN_BUDGET = 30_000;
 const STAGE_REVIEW_CRITERIA = Object.freeze({
   brief: {
     BRIEF_SPEC_MATCH: "创作规格与用户输入一致",
@@ -116,6 +153,7 @@ const MARKET_PROFILES = {
   thailand: { region: "southeast_asia", label: "泰国", setting: "泰国本土城市、家庭和社会关系细节", names: "使用自然的泰国姓名与地名；不要出现中文角色名", dialogue: "英文对白保持自然国际英语，人物行为与社会细节适配泰国语境" },
   saudi_arabia: { region: "mena", label: "沙特阿拉伯", setting: "沙特本土城市、家庭与社会生活细节", names: "使用自然的阿拉伯姓名与地名；不要出现中文角色名", dialogue: "英文对白保持自然国际英语，尊重当地社会规范，不挪用文化符号" },
   united_arab_emirates: { region: "mena", label: "阿联酋", setting: "阿联酋城市、多元职业与社会生活细节", names: "使用自然的阿拉伯或当地常见姓名与地名；不要出现中文角色名", dialogue: "英文对白保持自然国际英语，尊重当地社会规范，不挪用文化符号" },
+  CN: { region: "east_asia", label: "中国大陆", setting: "中国大陆当代城市、家庭、职场与社会关系细节", names: "使用自然中文姓名、地名和机构名称，符合国内短剧语感", dialogue: "纯中文对白，本土化口语表达，贴近国内观众语感" },
 };
 const STAGE_OPTIONS = {
   brief: { storySetting: ["urban_contemporary", "small_town", "elite_world", "heightened_reality"], storyDirection: ["mystery", "revenge", "romance", "rise"] },
@@ -170,9 +208,12 @@ function normalizeCreativeControls(input = {}) {
   };
 }
 
-function normalizeMarket(input = {}) {
+function normalizeMarket(input = {}, mode = "") {
   const source = asObject(input);
-  const country = MARKET_PROFILES[source.marketCountry] ? source.marketCountry : DEFAULT_MARKET.marketCountry;
+  const normalizedMode = normalizeMode(mode || source.mode);
+  const country = normalizedMode === "cn_short_drama"
+    ? "CN"
+    : MARKET_PROFILES[source.marketCountry] ? source.marketCountry : DEFAULT_MARKET.marketCountry;
   const profile = MARKET_PROFILES[country];
   return {
     marketRegion: profile.region,
@@ -196,8 +237,8 @@ function normalizeStageOptions(input = {}) {
   return { stageOptions, stageGuidance };
 }
 
-function marketPrompt(input = {}) {
-  const market = normalizeMarket(input);
+function marketPrompt(input = {}, mode = "") {
+  const market = normalizeMarket(input, mode);
   const profile = MARKET_PROFILES[market.marketCountry];
   return [
     `目标投放市场：${profile.label}。`,
@@ -241,13 +282,25 @@ function stageParticipationPrompt(stage, input = {}) {
 
 function creativeControlPrompt(input = {}, mode = "tk_short_drama") {
   const controls = normalizeCreativeControls(input);
-  const opening = mode === "tk_short_drama"
-    ? `开头冲击窗口：前 ${controls.openingImpactSeconds} 秒内必须给出可感知的冲击或异常。`
-    : `开场承诺类型：${controls.openingPromise}，首章必须明确主线推进方向。`;
+  const normalized = normalizeMode(mode);
+
+  let opening, dialogueStyle;
+
+  if (normalized === "tk_short_drama") {
+    opening = `开头冲击窗口：前 ${controls.openingImpactSeconds} 秒内必须给出可感知的冲击或异常。`;
+    dialogueStyle = `英文对白风格：${controls.dialogueMode}，仍须保持中文剧情、英文对白且口语化本土化。`;
+  } else if (normalized === "cn_short_drama") {
+    opening = `开头冲击窗口：前 ${controls.openingImpactSeconds} 秒内必须给出强烈的身份反差、情感冲突或爆点。`;
+    dialogueStyle = `中文对白风格：${controls.dialogueMode}，纯中文对白，本土化口语表达，贴近国内观众语感。`;
+  } else {
+    opening = `开场承诺类型：${controls.openingPromise}，首章必须明确主线推进方向。`;
+    dialogueStyle = `英文对白风格：${controls.dialogueMode}，仍须保持中文剧情、英文对白且口语化本土化。`;
+  }
+
   return [
     opening,
     `钩子频率：${controls.hookCadence}。`,
-    `英文对白风格：${controls.dialogueMode}，仍须保持中文剧情、英文对白且口语化本土化。`,
+    dialogueStyle,
     `交接范围：${controls.handoffScope}，不得覆盖正式文件。`,
   ].join("\n");
 }
@@ -263,11 +316,15 @@ function id(prefix, randomUUID = crypto.randomUUID) {
 function normalizeMode(value) {
   const raw = text(value, 80).toLowerCase();
   if (["long", "long_form_drama", "long-form-drama", "普通长剧"].includes(raw)) return "long_form_drama";
+  if (["cn", "cn_short_drama", "cn-short-drama", "国内短剧", "国内"].includes(raw)) return "cn_short_drama";
   return "tk_short_drama";
 }
 
 function modeLabel(mode) {
-  return normalizeMode(mode) === "long_form_drama" ? "普通长剧" : "TK 短剧";
+  const normalized = normalizeMode(mode);
+  if (normalized === "long_form_drama") return "普通长剧";
+  if (normalized === "cn_short_drama") return "国内短剧";
+  return "TK 短剧";
 }
 
 function normalizeStage(value) {
@@ -281,11 +338,32 @@ function normalizeRoutes(value = {}, availableModels = []) {
   for (const key of Object.keys(routes)) {
     const raw = text(value?.[key], 100).toLowerCase();
     if (!raw) continue;
+    const migrated = migratedRouteValue(key, raw);
     // No provider aliases or hidden defaults: PixelTale only accepts model IDs
     // registered by the injected SuperPixel router.
-    if (!allowed.size || allowed.has(raw)) routes[key] = raw;
+    if (!allowed.size || allowed.has(migrated)) routes[key] = migrated;
   }
   return routes;
+}
+
+// A stored route value is rewritten only when it can no longer serve the slot it
+// was saved in. Seat slots additionally reject models that lost their seat, since
+// otherwise a saved roster would outlive every REVIEW_SEATS change. The vestigial
+// 5-slot keys are deliberately left alone: they no longer choose seats, and
+// migrating them would rewrite a value to itself and re-persist on every read.
+function migratedRouteValue(key, raw) {
+  const seat = REVIEW_SEATS.find((item) => item.id === key);
+  if (seat) return LEGACY_ROUTE_MODELS.has(raw) ? seat.model : raw;
+  return RETIRED_MODEL_IDS.has(raw) ? DEFAULT_ROUTES[key] : raw;
+}
+
+// Must mirror migratedRouteValue exactly. If this reports a change the normalizer
+// would not actually make, every read persists the same state forever.
+function routesNeedMigration(value) {
+  return Object.entries(asObject(value)).some(([key, entry]) => {
+    const raw = text(entry, 100).toLowerCase();
+    return raw ? migratedRouteValue(key, raw) !== raw : false;
+  });
 }
 
 function modelForRoute(route) {
@@ -307,13 +385,29 @@ function stageRoute(stage, mode, routes, availableModels = []) {
     primary = current.orchestration;
     reviewer = current.continuity;
   }
-  return { primary, reviewer, consistency: current.consistency };
+  return { ...current, primary, reviewer, consistency: current.consistency };
 }
 
 function titleStylePrompt(mode, input = {}) {
-  const market = normalizeMarket(input);
+  const normalized = normalizeMode(mode);
+  const market = normalizeMarket(input, normalized);
   const profile = MARKET_PROFILES[market.marketCountry];
   const platform = text(input.platform, 120) || "国际流媒体 / 短视频平台";
+
+  if (normalized === "cn_short_drama") {
+    return [
+      "剧名必须输出恰好 4 个候选，不能少于或多于 4 个。",
+      "正式发行剧名字段 title_en 保持英文键名，但字段值必须使用自然中文，适配中国大陆市场与\"" + platform + "\"的传播语感。",
+      "先读取 userInput 中的剧本 DNA、受众、平台和发行属性，再读取 approvedContext 中已确认的 brief；每个候选必须结合国内短剧爆款题材。",
+      "四个候选必须分别使用不同命名基因：身份反差型、逆袭钩子型、情感冲突型、悬念设问型；naming_gene_zh 必须明确写出所用基因。",
+      "国内短剧剧名优先 6-15 个中文字，要有明确的身份、关系或冲突钩子，让人一眼就想点开。",
+      "剧名要直接露出核心钩子和爆点，避免含蓄或文艺化表达。",
+      "题材可优先考虑霸总、赘婿、逆袭、重生、闪婚、马甲、宠妻、追妻等国内短剧常见方向。",
+      "保持商业化表达，避免过度夸张或低俗，确保剧名适合平台发布。",
+      "每个候选的 explanation_zh 用一句话解释剧名的钩子设计；reason_zh 说明它如何承接本剧 DNA、目标受众和发行场景。",
+    ].join("\n");
+  }
+
   return [
     "剧名必须输出恰好 4 个候选，不能少于或多于 4 个，名称之间不得只是同义词替换。",
     `正式发行片名必须使用自然英文，适配${profile.label}市场与“${platform}”的传播语感；中文只能写在 explanation_zh、style_zh、tone_zh、naming_gene_zh 和 reason_zh 中供创作者参考。`,
@@ -354,24 +448,45 @@ function responseContent(payload) {
 }
 
 function stageOutputContract(stage, mode) {
-  const common = stage === "title"
+  const normalized = normalizeMode(mode);
+  let common = stage === "title"
     ? `\n正式片名字段 title_en 必须使用英文；其余带 _zh 的解释字段使用中文。模式：${modeLabel(mode)}。`
     : `\n所有中文剧情字段必须使用中文；对白字段必须是自然、口语化、符合人物身份与语境的英文。不要逐字直译。模式：${modeLabel(mode)}。`;
   const contracts = {
     brief: `{"title_zh":"故事名","logline_zh":"一句话梗概","core_conflict_zh":"核心冲突","viewer_question_zh":"观众要追问的问题","episode_promise_zh":"每集持续兑现的承诺","mode_rules":["模式约束"]}`,
     title: `{"candidates":[{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"}],"selection_note_zh":"选择建议"}`,
     proposal: `{"title_zh":"故事名","premise_zh":"核心命题","logline_zh":"一句话梗概","viewer_question_zh":"核心悬念","protagonist_goal_zh":"主角目标","antagonistic_force_zh":"对抗力量","season_or_series_engine_zh":"持续推进引擎","first_impact_zh":"开头暴击","episode_hook_zh":"集尾钩子","reversal_zh":"首个反转"}`,
-    characters: `{"characters":[{"id":"C001","name_zh":"按目标市场生成的角色显示名，不得翻译为中文名","name_en":"English or romanized display name","role":"protagonist","desire_zh":"欲望","fear_zh":"恐惧","secret_zh":"秘密","arc_zh":"人物弧线","voice_rules_en":["英文声线规则"],"visual_profile":{"gender":"性别","age_phase":"年龄相","body":"体型","hair_color":"发型发色","facial_features":"面部特征","eye_color":"瞳色","costume_accessories":"服装配饰","palette":"识别色","posture":"气质姿态","prompt_zh":"中文文生图提示词"}}],"relationships":[{"from":"C001","to":"C002","dynamic_zh":"关系变化"}],"world_rules":["不可违反的世界规则"]}`,
+    // visual_profile keeps only the 4 fields needed for scene continuity.
+    // body / facial_features / eye_color / costume_accessories / posture / prompt_zh
+    // are moved to the visual-assets stage which already generates them independently.
+    // Removing them from the characters call cuts output from ~8 kB to ~3.5 kB,
+    // which eliminates INVALID_JSON / TIMEOUT on every seat for this stage.
+    characters: `{"characters":[{"id":"C001","name_zh":"按目标市场生成的角色显示名，不得翻译为中文名","name_en":"English or romanized display name","role":"protagonist","desire_zh":"欲望","fear_zh":"恐惧","secret_zh":"秘密","arc_zh":"人物弧线","voice_rules_en":["英文声线规则"],"visual_profile":{"gender":"性别","age_phase":"年龄相","hair_color":"发型发色","palette":"识别色"}}],"relationships":[{"from":"C001","to":"C002","dynamic_zh":"关系变化"}],"world_rules":["不可违反的世界规则"]}`,
     arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","plot_zh":"本集完整剧情推进，包含人物行动、冲突、选择、结果与下一集动力，不是审核摘要","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
-    scenes: `{"scenes":[{"id":"S001","unit_number":1,"purpose_zh":"场景目的","time_zh":"时间","location_zh":"地点","characters":["C001"],"action_zh":"连续动作推进","conflict_zh":"场面冲突","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"aliases":"别名","indoor_outdoor":"室内外","lighting":"光线","palette":"色调","materials":"建筑材质","layout":"空间布局","atmosphere":"氛围气味","prompt_zh":"中文文生图提示词"},"props":[{"id":"PR01","name_zh":"道具名","description_zh":"道具描述","recurring":true,"materials":"材质","appearance":"颜色形态","size":"尺寸","texture":"特殊质感","prompt_zh":"中文文生图提示词"}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
+    // Same trim as characters: the visual-assets stage regenerates every scene and
+    // prop visual field independently, so asking for them here doubled the payload
+    // for nothing. Measured at full payload: claude-opus-5 timed out at 300s,
+    // deepseek-v4-pro returned invalid JSON at 256s, claude-haiku-4-5 returned an
+    // empty scenes array. visual_profile keeps only the 3 fields a shot plan needs
+    // for continuity; props keep identity and recurrence, not their look.
+    scenes: `{"scenes":[{"id":"S001","unit_number":1,"purpose_zh":"场景目的","time_zh":"时间","location_zh":"地点","characters":["C001"],"action_zh":"连续动作推进","conflict_zh":"场面冲突","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"indoor_outdoor":"室内外","lighting":"光线","palette":"色调"},"props":[{"id":"PR01","name_zh":"道具名","description_zh":"道具描述","recurring":true}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
     dialogue: `{"lines":[{"id":"D001","scene_id":"S001","speaker":"C001","intent_zh":"中文剧情意图","dialogue_en":"Natural localized English dialogue.","subtext_zh":"潜台词","delivery_en":"delivery note in English"}],"localization_checks":["口语化","人物声线一致","未泄露悬念"]}`,
   };
+  if (normalized === "cn_short_drama") {
+    common = stage === "title"
+      ? "\n正式剧名字段 title_en 保持英文键名，但字段值必须是 6-15 个中文字；其余解释字段使用中文。模式：" + modeLabel(mode) + "。"
+      : "\n对白字段 dialogue_en 保持英文键名，但字段值必须是纯中文、自然、口语化的对白；所有中文剧情字段使用中文。模式：" + modeLabel(mode) + "。";
+    const cnTitleCandidate = { title_en: "中文正式剧名", explanation_zh: "中文释义", style_zh: "风格标签", tone_zh: "语气与气质", naming_gene_zh: "命名基因", reason_zh: "命名理由" };
+    contracts.title = JSON.stringify({ candidates: Array.from({ length: 4 }, () => ({ ...cnTitleCandidate })), selection_note_zh: "选择建议" });
+    contracts.dialogue = JSON.stringify({ lines: [{ id: "D001", scene_id: "S001", speaker: "C001", intent_zh: "中文剧情意图", dialogue_en: "自然中文对白", subtext_zh: "潜台词", delivery_en: "中文演绎说明" }], localization_checks: ["口语化", "人物声线一致", "未泄露悬念"] });
+  }
   return `${contracts[stage]}${common}`;
 }
 
 function stageSystemPrompt(stage, mode, input = {}) {
   const controls = normalizeCreativeControls(input);
-  const tkRules = mode === "tk_short_drama"
+  const normalized = normalizeMode(mode);
+  let tkRules = normalized === "tk_short_drama"
     ? [
       `开头前 ${controls.openingImpactSeconds} 秒必须出现可感知的冲击或异常。`,
       `按 ${controls.hookCadence} 设计每集钩子，至少有主动选择、重新解释前情的反转，集尾留下未回答问题。`,
@@ -384,6 +499,16 @@ function stageSystemPrompt(stage, mode, input = {}) {
       "伏笔必须绑定后续回收位置，不用只制造氛围的伪伏笔。",
       "人物弧线通过选择体现，不用旁白宣告成长。",
     ];
+  if (normalized === "cn_short_drama") {
+    tkRules = [
+      "前 3 秒内必须给出强烈的身份反差、情感冲突或剧情爆点。",
+      "每集都要通过主动选择、关系升级或身份揭示制造连续钩子。",
+      "对白必须使用纯中文口语，符合中国大陆观众的称呼、节奏和情绪表达。",
+    ];
+  }
+  const dialogueInstruction = normalized === "cn_short_drama"
+    ? "对白字段必须是自然、口语化、符合人物身份与语境的中文；不要夹杂英文台词。"
+    : "对白字段必须是自然、口语化、符合人物身份与语境的英文。不要逐字直译。";
   const titleRules = stage === "title" ? [titleStylePrompt(mode, input)] : [];
   const selectedTitleRule = stage !== "title" && text(input.storyTitle, 200)
     ? [`用户已确认剧名为“${text(input.storyTitle, 200)}”，后续产物必须沿用，不得擅自改名。`]
@@ -396,25 +521,31 @@ function stageSystemPrompt(stage, mode, input = {}) {
     "场景与镜头必须覆盖每一个分集/章节编号，至少每集一个完整场次；不得只输出少量代表场景。",
     "每个场次必须把对应的剧情正文转换为可拍的动作、冲突、人物选择、选择结果和因果转折，不能只写视觉氛围或镜头关键词。",
   ] : [];
+  const unitRules = UNIT_STAGES.has(stage) ? [
+    "当前请求可能只是一个分批单元；严格只输出 userInput.unitScope 指定的集数，不得补写其他集，不得返回整季内容。",
+    "已锁定集只以压缩后的 startState、endState、openThreads 和 contentHash 作为连续性参考，不得重写、复述或复制已锁定集全文。",
+    "arc 的 number 必须是全局集数；scenes 的 id 必须在全剧内唯一，不能每个批次都从同一个编号重新开始。",
+  ] : [];
   return [
     "你是 PixelTale 编剧 Agent 的阶段执行器。你只负责当前阶段，不能跳过结构化资产直接写散文。",
     "输出严格 JSON，不要 Markdown，不要代码围栏，不要解释，不要增加契约之外的顶层字段。",
-    "中文字段服务中文剧情；英文对白必须本土化、口语化，符合人物关系、年龄、阶层和冲突强度。",
+    dialogueInstruction,
     `当前阶段：${stage}。当前模式：${modeLabel(mode)}。`,
     creativeControlPrompt(controls, mode),
     audiencePrompt(input),
-    marketPrompt(input),
+    marketPrompt(input, mode),
     stageParticipationPrompt(stage, input),
     ...tkRules,
     ...titleRules,
     ...selectedTitleRule,
     ...arcRules,
     ...sceneRules,
+    ...unitRules,
     `输出契约：${stageOutputContract(stage, mode)}`,
   ].join("\n");
 }
 
-function stageUserPrompt({ stage, mode, input, previousArtifacts, project, excludedTitles = [] }) {
+function stageUserPrompt({ stage, mode, input, previousArtifacts, project, excludedTitles = [], unitScope = [], lockedContext = [], continuityContext = [] }) {
   const prior = previousArtifacts.map((artifact) => ({
     stage: artifact.stage,
     type: artifact.type,
@@ -424,16 +555,21 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project, exclu
   }));
   return JSON.stringify({
     task: stage === "title"
-      ? "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的英文正式片名候选。"
+      ? (normalizeMode(mode) === "cn_short_drama" ? "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的中文正式剧名候选。" : "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的英文正式片名候选。")
       : "基于创作规格和已确认结构，生成当前阶段唯一可审核的结构化产物。",
     project: { id: text(project?.id, 300), title: text(project?.title, 300), episode: text(project?.episode, 100) },
     mode,
-    dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
+    dialoguePolicy: normalizeMode(mode) === "cn_short_drama" ? "zh_story_zh_localized_dialogue" : DEFAULT_DIALOGUE_POLICY,
     audience: normalizeAudience(input),
     creativeControls: normalizeCreativeControls(input),
-    market: normalizeMarket(input),
+    market: normalizeMarket(input, mode),
     stageParticipation: normalizeStageOptions(input),
     currentStage: stage,
+    ...(UNIT_STAGES.has(stage) ? {
+      unitScope: normalizeUnitNumbers(unitScope, plannedUnitCount(input)),
+      lockedUnitContext: lockedContext,
+      continuityContext,
+    } : {}),
     ...(stage === "title" ? { excludedTitles: uniqueText(excludedTitles, 100) } : {}),
     userInput: asObject(input),
     approvedContext: prior,
@@ -454,28 +590,30 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "只返回最多 3 个会阻断下一阶段的问题；每项使用一个标准 ID、一句证据和一句可执行修改，不写二次策划案。",
     "required_changes 必须与 issues 一一对应，不得追加未在 issues 中举证的新要求。",
     "若输入包含 revisionClosureProtocol，则必须逐条返回 revision_closures：每条合同项只能标记 resolved、partial 或 unresolved，并写明修订证据和未完成时的剩余修改；不得遗漏合同编号。",
+    "四个维度任一评分低于 75 时，必须明确分歧证据并提出供创作者裁决的取舍建议；不要把低于 75 的结果写成通过。",
     "只有 cross_validation、consistency、adversarial 三项均为 true，并且阶段专项检查均通过时，pass 才能为 true；发现任一硬伤必须 pass=false，并在 required_changes 中给出可执行修订意见。",
     creativeControlPrompt(input, mode),
     audiencePrompt(input),
-    marketPrompt(input),
+    marketPrompt(input, mode),
     stageParticipationPrompt(stage, input),
     "pass 只有在结构完整、因果清晰、可执行、符合模式节奏、没有把悬念提前解释，并且角色名、地名、社会细节和对白都符合目标市场时才为 true。",
     "模式规则只能检查当前阶段已有字段：brief 检查开头承诺与追更问题，arc 才检查逐集钩子、反转与回收；不得提前索要后续资产。",
     "对白阶段还要检查英文是否自然口语化、是否保留中文剧情意图、是否像人物会说的话。",
     ...(stage === "title" ? ["剧名阶段必须检查恰好 4 个候选、名称不重复、四种命名基因确实拉开差异，并且每个候选都有风格、语气、命名基因和理由。"] : []),
-    '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改"}],"dimensions":{"structure":{"score":0,"feedback":"结构意见"},"plot":{"score":0,"feedback":"剧情意见"},"design":{"score":0,"feedback":"设计意见"},"logic":{"score":0,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
+    '输出契约：{"pass":true,"score":<0-100整数>,"confidence":<0-100整数>,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改"}],"dimensions":{"structure":{"score":<0-100整数>,"feedback":"结构意见"},"plot":{"score":<0-100整数>,"feedback":"剧情意见"},"design":{"score":<0-100整数>,"feedback":"设计意见"},"logic":{"score":<0-100整数>,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
+    "分数必须是你的真实评估；0 分仅在内容确实完全不可用时使用。confidence 是你对本次判断的确定度（0-100）。",
   ].join("\n");
 }
 
-function reviewerIdentity(provider) {
+function reviewerIdentity(role) {
   return {
-    chatgpt: "结构与规格审查员：核对阶段契约、因果结构和用户要求是否完整兑现。",
-    claude: "连续性与本土化审查员：核对人物动机、前后连续性、地区文化和语言自然度。",
-    deepseek: "钩子与受众对抗审查员：从目标受众视角攻击节奏、爽点、反转和追更动力。",
-  }[providerForRoute(provider)] || "独立交叉审查员：基于证据给出可执行结论。";
+    structure_causality: "结构与因果审查席：核对阶段契约、因果链闭合、用户硬约束兑现、时间线与逻辑自洽。拥有 structure、logic 两个维度的最终判定权。",
+    character_continuity: "人物与连续性审查席：核对人物动机、关系演进、世界规则一致性、长剧连续性、姓名与语境本土化。拥有 plot 维度的最终判定权。",
+    audience_pacing_visual: "受众节奏与视觉审查席：核对首屏冲击、每集钩子、反转因果、对白口语化与人物声线，以及场景/镜头的可拍性、景别机位与视觉呈现。拥有 design 维度的最终判定权。",
+  }[text(role, 120)] || "独立交叉审查员：基于证据给出可执行结论。";
 }
 
-function revisionUserPrompt({ stage, mode, input, previousArtifacts, project, baseArtifact, revisionContract, revisionPlan }) {
+function revisionUserPrompt({ stage, mode, input, previousArtifacts, project, baseArtifact, revisionContract, revisionPlan, unitScope = [], lockedContext = [], continuityContext = [] }) {
   const prior = previousArtifacts.map((artifact) => ({
     stage: artifact.stage,
     type: artifact.type,
@@ -490,9 +628,14 @@ function revisionUserPrompt({ stage, mode, input, previousArtifacts, project, ba
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
     creativeControls: normalizeCreativeControls(input),
     audience: normalizeAudience(input),
-    market: normalizeMarket(input),
+    market: normalizeMarket(input, mode),
     stageParticipation: normalizeStageOptions(input),
     currentStage: stage,
+    ...(UNIT_STAGES.has(stage) ? {
+      unitScope: normalizeUnitNumbers(unitScope, plannedUnitCount(input)),
+      lockedUnitContext: lockedContext,
+      continuityContext,
+    } : {}),
     userRevisionDirection: text(revisionPlan, 14000),
     sourceArtifact: { id: baseArtifact.id, version: baseArtifact.version, content: baseArtifact.content },
     revisionContract,
@@ -500,7 +643,7 @@ function revisionUserPrompt({ stage, mode, input, previousArtifacts, project, ba
   }, null, 2).slice(0, 180000);
 }
 
-function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input, revisionContract = null }) {
+function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input, revisionContract = null, unitScope = [], lockedContext = [], continuityContext = [], ruleFindings = [] }) {
   const revisionItems = asArray(revisionContract?.items);
   return JSON.stringify({
     reviewProtocol: {
@@ -516,9 +659,15 @@ function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input, rev
     mode,
     audience: normalizeAudience(input),
     creativeControls: normalizeCreativeControls(input),
-    market: normalizeMarket(input),
+    market: normalizeMarket(input, mode),
     stageParticipation: normalizeStageOptions(input),
+    ...(UNIT_STAGES.has(stage) ? {
+      unitScope: normalizeUnitNumbers(unitScope, plannedUnitCount(input)),
+      lockedUnitContext: lockedContext,
+      continuityContext,
+    } : {}),
     artifact,
+    ...(ruleFindings.length ? { knownRuleFindings: { label: "已知违规，请重点核验", findings: ruleFindings } } : {}),
     approvedContext: previousArtifacts.map((item) => ({ stage: item.stage, content: item.content })).slice(-6),
     ...(revisionItems.length ? {
       revisionClosureProtocol: {
@@ -542,7 +691,7 @@ function visualAssetSystemPrompt(mode, input = {}) {
     "输出严格 JSON，不要 Markdown、代码围栏或解释。字段值使用中文；name_en 可使用英文；prompt_zh 必须是可直接用于文生图的完整中文画面描述，不含剧情台词。",
     `当前模式：${modeLabel(mode)}。人物要锁定外观、服装、识别色与姿态；场景要锁定光线、色调、材质、空间布局与氛围；道具要锁定材质、形态、尺寸与特殊质感。`,
     audiencePrompt(input),
-    marketPrompt(input),
+    marketPrompt(input, mode),
     '输出契约：{"characters":[{"id":"P01","name_zh":"中文名","name_en":"English name","type":"人物","aliases":"别名","gender":"性别","age_phase":"年龄相","body":"体型","hair_color":"发型发色","facial_features":"面部特征","eye_color":"瞳色","costume_accessories":"服装配饰","palette":"识别色","posture":"气质姿态","prompt_zh":"中文文生图提示词"}],"scenes":[{"id":"S01","name_zh":"场景名","name_en":"English name","type":"场景","aliases":"别名","indoor_outdoor":"室内外","lighting":"光线","palette":"色调","materials":"建筑材质","layout":"空间布局","atmosphere":"氛围气味","prompt_zh":"中文文生图提示词"}],"props":[{"id":"PR01","name_zh":"道具名","name_en":"English name","type":"道具","aliases":"别名","materials":"材质","appearance":"颜色形态","size":"尺寸","texture":"特殊质感","prompt_zh":"中文文生图提示词"}],"consistency_notes":["全剧统一视觉规则"]}',
   ].join("\n");
 }
@@ -553,7 +702,7 @@ function visualAssetUserPrompt({ mode, input, approvedArtifacts, project }) {
     project,
     mode,
     audience: normalizeAudience(input),
-    market: normalizeMarket(input),
+    market: normalizeMarket(input, mode),
     approvedArtifacts: approvedArtifacts.map((item) => ({ stage: item.stage, content: item.content })),
   }, null, 2).slice(0, 240000);
 }
@@ -564,13 +713,14 @@ function visualAssetReviewSystemPrompt(mode, input = {}) {
     "输出严格 JSON，不要 Markdown、代码围栏或额外文字。",
     `当前模式：${modeLabel(mode)}。检查重复资产筛选、编号唯一性、字段完整性、人物与场景连续性、文生图提示词可执行性。`,
     audiencePrompt(input),
-    marketPrompt(input),
-    '输出契约：{"pass":true,"score":0,"findings":["具体发现"],"required_changes":["必须修正的问题"],"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"recurrence":true,"identity":true,"prompt":true}}',
+    marketPrompt(input, mode),
+    '输出契约：{"pass":true,"score":<0-100整数>,"confidence":<0-100整数>,"findings":["具体发现"],"required_changes":["必须修正的问题"],"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"recurrence":true,"identity":true,"prompt":true}}',
+    "分数必须是你的真实评估；0 分仅在内容确实完全不可用时使用。confidence 是你对本次判断的确定度（0-100）。",
   ].join("\n");
 }
 
 function visualAssetReviewUserPrompt({ mode, input, visualAssets }) {
-  return JSON.stringify({ mode, market: normalizeMarket(input), visualAssets }, null, 2).slice(0, 200000);
+  return JSON.stringify({ mode, market: normalizeMarket(input, mode), visualAssets }, null, 2).slice(0, 200000);
 }
 
 function validateVisualAssets(value) {
@@ -622,6 +772,302 @@ function plannedUnitCount(input = {}) {
   const match = text(input.episodeScale, 100).match(/\d+/);
   const parsed = Number(match?.[0]);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function normalizeUnitNumbers(value, total = 0) {
+  const raw = Array.isArray(value) ? value : String(value ?? "").split(/[\s,，、；;]+/u);
+  return [...new Set(raw
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0 && (!total || item <= total)))]
+    .sort((left, right) => left - right);
+}
+
+function unitNumberForStage(stage, item) {
+  const value = asObject(item);
+  return Number(stage === "scenes" ? value.unit_number : value.number);
+}
+
+function unitNumbersForContent(stage, content) {
+  const items = stage === "scenes" ? asArray(asObject(content).scenes) : asArray(asObject(content).units);
+  return [...new Set(items.map((item) => unitNumberForStage(stage, item)).filter((item) => Number.isInteger(item) && item > 0))].sort((left, right) => left - right);
+}
+
+function unitItemsForContent(stage, content, unitNumbers = []) {
+  const scope = new Set(normalizeUnitNumbers(unitNumbers));
+  const items = stage === "scenes" ? asArray(asObject(content).scenes) : asArray(asObject(content).units);
+  return items.filter((item) => {
+    const number = unitNumberForStage(stage, item);
+    return !scope.size || scope.has(number);
+  });
+}
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") return Object.keys(value).sort().reduce((result, key) => {
+    result[key] = stableValue(value[key]);
+    return result;
+  }, {});
+  return value;
+}
+
+function contentHash(value) {
+  return crypto.createHash("sha256").update(JSON.stringify(stableValue(value))).digest("hex");
+}
+
+function unitContinuityState(stage, itemOrItems) {
+  if (stage === "scenes") {
+    const scenes = asArray(itemOrItems);
+    const last = asObject(scenes.at(-1));
+    return {
+      unitNumber: Number(last.unit_number) || 0,
+      lastSceneId: text(last.id, 120),
+      location: text(last.location_zh, 240),
+      result: text(last.result_zh, 1200),
+      turn: text(last.turn_zh, 1200),
+      shotCount: scenes.reduce((count, scene) => count + asArray(asObject(scene).shot_plan).length, 0),
+    };
+  }
+  const unit = asObject(itemOrItems);
+  return {
+    unitNumber: Number(unit.number) || 0,
+    title: text(unit.title_zh, 240),
+    causalTurn: text(unit.causal_turn_zh, 1200),
+    reversal: text(unit.reversal_zh, 1200),
+    hook: text(unit.hook_zh, 1200),
+    cliffhanger: text(unit.cliffhanger_question_zh, 1200),
+    payoff: text(unit.payoff_zh, 1200),
+  };
+}
+
+function unitOpenThreads(stage, itemOrItems) {
+  if (stage === "scenes") {
+    const last = asObject(asArray(itemOrItems).at(-1));
+    return [text(last.turn_zh, 800), text(last.result_zh, 800)].filter(Boolean).slice(-2);
+  }
+  const unit = asObject(itemOrItems);
+  return [text(unit.cliffhanger_question_zh, 1000), text(unit.hook_zh, 1000)].filter(Boolean);
+}
+
+function compactLockedUnit(stage, lock) {
+  return {
+    unitNumber: Number(lock.unitNumber),
+    version: Number(lock.version || 0),
+    contentHash: text(lock.contentHash, 80),
+    startState: asObject(lock.startState),
+    endState: asObject(lock.endState),
+    openThreads: asArray(lock.openThreads).map((item) => text(item, 1000)).filter(Boolean),
+    lockedAt: text(lock.lockedAt, 80),
+  };
+}
+
+function lockedUnitNumbers(state, stage) {
+  return Object.keys(asObject(state?.unitLocks?.[stage]))
+    .map((number) => Number(number))
+    .filter((number) => Number.isInteger(number) && number > 0 && asObject(state.unitLocks[stage][number]).status === "locked")
+    .sort((left, right) => left - right);
+}
+
+function lockedUnitContext(state, stage, excludeNumbers = []) {
+  const excluded = new Set(normalizeUnitNumbers(excludeNumbers));
+  return lockedUnitNumbers(state, stage)
+    .filter((number) => !excluded.has(number))
+    .map((number) => compactLockedUnit(stage, state.unitLocks[stage][number]));
+}
+
+function splitUnitBatches(unitNumbers, batchSize = EPISODE_BATCH_SIZE) {
+  const batches = [];
+  for (let index = 0; index < unitNumbers.length; index += batchSize) batches.push(unitNumbers.slice(index, index + batchSize));
+  return batches;
+}
+
+function normalizeUnitProgress(source = {}) {
+  const progress = asObject(source);
+  return {
+    totalUnits: Number(progress.totalUnits) || 0,
+    batchSize: Number(progress.batchSize) || EPISODE_BATCH_SIZE,
+    lockedUnits: normalizeUnitNumbers(progress.lockedUnits),
+    pendingUnits: normalizeUnitNumbers(progress.pendingUnits),
+    currentBatch: normalizeUnitNumbers(progress.currentBatch),
+    batches: asArray(progress.batches).map((batch) => ({
+      id: text(batch?.id, 200),
+      units: normalizeUnitNumbers(batch?.units),
+      status: text(batch?.status, 40),
+      artifactId: text(batch?.artifactId, 200),
+      reviewId: text(batch?.reviewId, 200),
+      error: text(batch?.error, 1600),
+      startedAt: text(batch?.startedAt, 80),
+      completedAt: text(batch?.completedAt, 80),
+    })).filter((batch) => batch.id || batch.units.length),
+    updatedAt: text(progress.updatedAt, 80),
+  };
+}
+
+function unitStageContent(stage, content, unitNumbers) {
+  const scope = new Set(normalizeUnitNumbers(unitNumbers));
+  if (stage === "arc") return { ...asObject(content), units: unitItemsForContent(stage, content, [...scope]) };
+  if (stage === "scenes") return { ...asObject(content), scenes: unitItemsForContent(stage, content, [...scope]) };
+  return asObject(content);
+}
+
+function assertLockedUnitsUnchanged(stage, beforeContent, afterContent, state, excludedNumbers = []) {
+  const excluded = new Set(normalizeUnitNumbers(excludedNumbers));
+  for (const number of lockedUnitNumbers(state, stage)) {
+    if (excluded.has(number)) continue;
+    const before = unitItemsForContent(stage, beforeContent, [number]);
+    const after = unitItemsForContent(stage, afterContent, [number]);
+    if (contentHash(before) !== contentHash(after)) {
+      const error = new Error(`第${number}集已锁定，不能被当前批次覆盖`);
+      error.code = "UNIT_LOCK_VIOLATION";
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+}
+
+function mergeStageBatchContent(stage, sourceContent, candidateContent, { unitNumbers = [], state = {}, allowLockedUnitRevision = false } = {}) {
+  const source = asObject(sourceContent);
+  const candidate = asObject(candidateContent);
+  const requested = normalizeUnitNumbers(unitNumbers);
+  const locked = new Set(lockedUnitNumbers(state, stage));
+  const overlapping = requested.filter((number) => locked.has(number));
+  if (overlapping.length && !allowLockedUnitRevision) {
+    const error = new Error(`第${overlapping.join("、")}集已经锁定，不能被普通重试覆盖`);
+    error.code = "UNIT_LOCKED";
+    error.statusCode = 409;
+    throw error;
+  }
+  const merged = { ...source, ...candidate };
+  if (stage === "arc") {
+    const sourceUnits = asArray(source.units);
+    const candidateUnits = asArray(candidate.units);
+    const target = new Set(requested.length ? requested : unitNumbersForContent(stage, candidate));
+    const candidates = new Map(candidateUnits.map((item) => [unitNumberForStage(stage, item), item]));
+    const units = sourceUnits.map((item) => {
+      const number = unitNumberForStage(stage, item);
+      return target.has(number) && candidates.has(number) ? candidates.get(number) : item;
+    });
+    const existing = new Set(units.map((item) => unitNumberForStage(stage, item)));
+    candidateUnits.forEach((item) => {
+      const number = unitNumberForStage(stage, item);
+      if (Number.isInteger(number) && !existing.has(number)) units.push(item);
+    });
+    merged.units = units.sort((left, right) => unitNumberForStage(stage, left) - unitNumberForStage(stage, right));
+  }
+  if (stage === "scenes") {
+    const sourceScenes = asArray(source.scenes);
+    const candidateScenes = asArray(candidate.scenes);
+    const target = new Set(requested.length ? requested : unitNumbersForContent(stage, candidate));
+    const scenes = sourceScenes.filter((scene) => !target.has(unitNumberForStage(stage, scene)));
+    const usedIds = new Set(scenes.map((scene) => text(scene?.id, 120)).filter(Boolean));
+    candidateScenes.forEach((scene) => {
+      const next = { ...asObject(scene) };
+      const baseId = text(next.id, 120) || `S${String(next.unit_number).padStart(3, "0")}`;
+      let sceneId = baseId;
+      let suffix = 1;
+      while (usedIds.has(sceneId)) sceneId = `${baseId}_E${Number(next.unit_number) || 0}_${suffix++}`;
+      next.id = sceneId;
+      usedIds.add(sceneId);
+      scenes.push(next);
+    });
+    merged.scenes = scenes.sort((left, right) => unitNumberForStage(stage, left) - unitNumberForStage(stage, right) || text(left.id, 120).localeCompare(text(right.id, 120)));
+  }
+  assertLockedUnitsUnchanged(stage, source, merged, state, allowLockedUnitRevision ? overlapping : []);
+  return merged;
+}
+
+function batchReviewSummary(stage, batchReviews, totalUnits, unitLocks) {
+  const reviews = asArray(batchReviews);
+  const hasBasePass = (review) => Object.hasOwn(asObject(review), "basePass")
+    ? review.basePass === true
+    : review?.pass === true;
+  const average = (key, fallback = null) => {
+    const values = reviews.map((review) => Number(review?.[key])).filter((value) => Number.isFinite(value));
+    return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : fallback;
+  };
+  const dimensions = Object.fromEntries(REVIEW_DIMENSIONS.map((dimension) => {
+    const scores = reviews.flatMap((review) => {
+      const value = Number(review?.dimensions?.[dimension]?.average);
+      return Number.isFinite(value) ? [value] : [];
+    });
+    const agreements = reviews.flatMap((review) => {
+      const value = Number(review?.dimensions?.[dimension]?.agreement);
+      return Number.isFinite(value) ? [value] : [];
+    });
+    return [dimension, {
+      average: scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : null,
+      agreement: agreements.length ? Math.round(agreements.reduce((sum, value) => sum + value, 0) / agreements.length) : null,
+      scores: reviews.flatMap((review) => asArray(review?.dimensions?.[dimension]?.scores)),
+    }];
+  }));
+  const lockedUnits = Object.keys(asObject(unitLocks)).map(Number).filter(Number.isInteger).sort((a, b) => a - b);
+  const conflicts = reviews.flatMap((review) => asArray(review?.conflicts));
+  const quorumMet = reviews.length > 0 && reviews.every((review) => review?.quorum?.met === true);
+  // Only batches that actually produced a quorum record may lower these numbers.
+  // Taking Math.min over every batch let a not-yet-run batch (no quorum → `|| 0`)
+  // report the whole stage as 0/3 seats completed and flag it degraded, even when
+  // every batch that had run was fully staffed with three distinct models.
+  const measuredQuorums = reviews.map((review) => asObject(review?.quorum)).filter((quorum) => Number.isFinite(Number(quorum.completed)));
+  const completedReviewSeats = measuredQuorums.length
+    ? Math.min(REVIEW_COMPLETION_REQUIRED, ...measuredQuorums.map((quorum) => Math.max(0, Number(quorum.completed))))
+    : 0;
+  const measuredDistinctModels = measuredQuorums
+    .map((quorum) => Number(quorum.distinctActualModels))
+    .filter((value) => Number.isFinite(value));
+  // A single batch whose seats collapsed onto one model is a real finding, but it
+  // describes that batch, not the stage. Report it with the batch identified.
+  const degradedBatches = reviews
+    .map((review, index) => ({ index, quorum: asObject(review?.quorum) }))
+    .filter((entry) => entry.quorum.degraded === true);
+  const reviewCompletion = Math.round((completedReviewSeats / REVIEW_COMPLETION_REQUIRED) * 100);
+  const basePass = reviews.length > 0
+    && reviews.every(hasBasePass)
+    && lockedUnits.length >= totalUnits;
+  return {
+    pass: basePass,
+    basePass,
+    score: average("score"),
+    consensusIndex: average("consensusIndex"),
+    agreement: average("agreement"),
+    quality: average("quality"),
+    reviewCompletion,
+    quorum: {
+      required: REVIEW_COMPLETION_REQUIRED,
+      completedSeats: completedReviewSeats,
+      completed: completedReviewSeats,
+      passing: reviews.filter((review) => review?.pass).length,
+      distinctActualModels: measuredDistinctModels.length ? Math.min(...measuredDistinctModels) : 0,
+      met: quorumMet,
+      degraded: degradedBatches.length > 0,
+      degradedBatches: degradedBatches.map((entry) => entry.index + 1),
+    },
+    dimensions,
+    feedbacks: reviews.flatMap((review) => asArray(review?.feedbacks)),
+    reviewIssues: reviews.flatMap((review) => asArray(review?.reviewIssues)),
+    issueCount: reviews.reduce((sum, review) => sum + Number(review?.issueCount || 0), 0),
+    commonIssues: reviews.flatMap((review) => asArray(review?.commonIssues)),
+    commonIssueCount: reviews.reduce((sum, review) => sum + Number(review?.commonIssueCount || 0), 0),
+    mandatoryIssues: reviews.flatMap((review) => asArray(review?.mandatoryIssues)),
+    mandatoryIssueCount: reviews.reduce((sum, review) => sum + Number(review?.mandatoryIssueCount || 0), 0),
+    recommendedIssues: reviews.flatMap((review) => asArray(review?.recommendedIssues)),
+    recommendedIssueCount: reviews.reduce((sum, review) => sum + Number(review?.recommendedIssueCount || 0), 0),
+    independentIssues: reviews.flatMap((review) => asArray(review?.independentIssues)),
+    independentIssueCount: reviews.reduce((sum, review) => sum + Number(review?.independentIssueCount || 0), 0),
+    conflicts,
+    findings: uniqueText(reviews.flatMap((review) => asArray(review?.findings)), 60),
+    technicalFailures: reviews.flatMap((review) => asArray(review?.technicalFailures)),
+    required_changes: uniqueText(reviews.flatMap((review) => asArray(review?.required_changes)), 60),
+    advisories: { independentIssues: reviews.flatMap((review) => asArray(review?.advisories?.independentIssues)), conflicts: reviews.flatMap((review) => asArray(review?.advisories?.conflicts)), failedReviews: reviews.flatMap((review) => asArray(review?.advisories?.failedReviews)) },
+    checks: {
+      cross_validation: quorumMet,
+      consistency: reviews.every((review) => review?.checks?.consistency !== false),
+      adversarial: reviews.every((review) => review?.checks?.adversarial === true),
+      issues_converged: reviews.every((review) => review?.checks?.issues_converged !== false),
+      dimensions_agree: conflicts.length === 0,
+      revision_contract_closed: reviews.every((review) => review?.checks?.revision_contract_closed !== false),
+    },
+    batchCoverage: { stage, totalUnits, lockedUnits, batches: reviews.length },
+    revision: null,
+  };
 }
 
 function mergeRevisionList(sourceItems, candidateItems, key, mergeItem = (source, candidate) => ({ ...source, ...candidate })) {
@@ -679,6 +1125,7 @@ function mergeRevisionContent(stage, content, sourceContent) {
 
 function validateContent(stage, content, input = {}) {
   const value = asObject(content);
+  const normalizedMode = normalizeMode(input.mode);
   const required = requiredContentFields(stage);
   const missing = required.filter((key) => value[key] === undefined || value[key] === null || (typeof value[key] === "string" && !value[key].trim()) || (Array.isArray(value[key]) && value[key].length === 0));
   if (missing.length) {
@@ -688,6 +1135,39 @@ function validateContent(stage, content, input = {}) {
   }
   if (stage === "title") {
     const candidates = asArray(value.candidates).map((candidate) => asObject(candidate));
+    if (normalizedMode === "cn_short_drama") {
+      const cnNames = candidates.map((candidate) => text(candidate.title_en, 200)).filter(Boolean);
+      const cnGenes = candidates.map((candidate) => text(candidate.naming_gene_zh, 300).toLowerCase()).filter(Boolean);
+      const excludedTitles = new Set(asArray(input.excludedTitles).map((name) => text(name, 200).toLowerCase()).filter(Boolean));
+      const invalidCnTitle = cnNames.some((name) => {
+        const hanCount = (name.match(/[\u3400-\u9fff]/gu) || []).length;
+        return !hanCount || hanCount < 6 || hanCount > 15 || /[A-Za-z]/u.test(name) || excludedTitles.has(name.toLowerCase());
+      });
+      const invalidCn = candidates.length !== 4
+        || cnNames.length !== 4
+        || new Set(cnNames).size !== 4
+        || cnGenes.length !== 4
+        || new Set(cnGenes).size !== 4
+        || invalidCnTitle
+        || candidates.some((candidate) => !/[\u3400-\u9fff]/u.test(text(candidate.explanation_zh, 500)) || !text(candidate.style_zh, 200) || !text(candidate.tone_zh, 300) || !text(candidate.naming_gene_zh, 300) || !text(candidate.reason_zh, 1000));
+      if (invalidCn) {
+        const error = new Error("国内短剧剧名产物必须包含 4 个不重复、6-15 个中文字且说明完整的候选");
+        error.code = "SCHEMA_INVALID";
+        throw error;
+      }
+      return {
+        ...value,
+        candidates: candidates.map((candidate) => ({
+          title_en: text(candidate.title_en, 200),
+          explanation_zh: text(candidate.explanation_zh, 500),
+          style_zh: text(candidate.style_zh, 200),
+          tone_zh: text(candidate.tone_zh, 300),
+          naming_gene_zh: text(candidate.naming_gene_zh, 300),
+          reason_zh: text(candidate.reason_zh, 1000),
+        })),
+        selection_note_zh: text(value.selection_note_zh, 1000),
+      };
+    }
     const names = candidates.map((candidate) => text(candidate.title_en, 200)).filter(Boolean);
     const normalizedNames = names.map((name) => name.toLowerCase());
     const namingGenes = candidates.map((candidate) => text(candidate.naming_gene_zh, 300).toLowerCase()).filter(Boolean);
@@ -730,9 +1210,13 @@ function validateContent(stage, content, input = {}) {
     };
   }
   if (stage === "dialogue") {
-    const invalid = value.lines.some((line) => !text(line?.speaker, 120) || !text(line?.dialogue_en, 1000) || !text(line?.intent_zh, 1000));
+    const invalid = value.lines.some((line) => {
+      const dialogue = text(line?.dialogue_en, 1000);
+      const chineseModeInvalid = normalizedMode === "cn_short_drama" && (!/[\u3400-\u9fff]/u.test(dialogue) || /[A-Za-z]/u.test(dialogue));
+      return !text(line?.speaker, 120) || !dialogue || !text(line?.intent_zh, 1000) || chineseModeInvalid;
+    });
     if (invalid) {
-      const error = new Error("对白产物必须同时包含 speaker、intent_zh 和 dialogue_en");
+      const error = new Error(normalizedMode === "cn_short_drama" ? "国内短剧对白必须包含 speaker、intent_zh 和纯中文 dialogue_en" : "对白产物必须同时包含 speaker、intent_zh 和 dialogue_en");
       error.code = "SCHEMA_INVALID";
       throw error;
     }
@@ -740,17 +1224,24 @@ function validateContent(stage, content, input = {}) {
   if (stage === "arc") {
     const units = asArray(value.units);
     const expectedCount = plannedUnitCount(input);
+    const requestedUnits = normalizeUnitNumbers(input.unitScope || input.unitNumbers, expectedCount);
+    const expectedUnits = requestedUnits.length ? requestedUnits : [...Array(expectedCount || 0)].map((_, index) => index + 1);
+    const actualUnits = units.map((unit) => Number(asObject(unit).number));
+    const locked = normalizeUnitNumbers(input.lockedUnitNumbers, expectedCount);
+    const lockedOverlap = actualUnits.filter((number) => locked.includes(number));
     const invalidUnit = units.find((unit, index) => {
       const item = asObject(unit);
-      return Number(item.number) !== index + 1
+      return !expectedUnits.includes(Number(item.number))
         || !text(item.title_zh, 300)
         || !text(item.plot_zh, 8000)
         || !text(item.impact_zh, 2000)
         || !text(item.hook_zh, 2000)
         || !text(item.cliffhanger_question_zh, 2000);
     });
-    if (!expectedCount || units.length !== expectedCount || invalidUnit) {
-      const error = new Error(`分集与章节必须逐集写出 ${expectedCount || "计划"} 集完整剧情，不能只返回结构摘要`);
+    if (!expectedCount || units.length !== expectedUnits.length || new Set(actualUnits).size !== actualUnits.length || expectedUnits.some((number) => !actualUnits.includes(number)) || lockedOverlap.length && input.allowLockedUnitRevision !== true || invalidUnit) {
+      const error = new Error(lockedOverlap.length && input.allowLockedUnitRevision !== true
+        ? `分集与章节包含已锁定的第${[...new Set(lockedOverlap)].join("、")}集，不能重复提交`
+        : `分集与章节必须只返回当前批次的第${expectedUnits.join("、")}集完整剧情，不能漏集或返回结构摘要`);
       error.code = "SCHEMA_INVALID";
       throw error;
     }
@@ -758,7 +1249,11 @@ function validateContent(stage, content, input = {}) {
   if (stage === "scenes") {
     const scenes = asArray(value.scenes);
     const expectedCount = plannedUnitCount(input);
+    const requestedUnits = normalizeUnitNumbers(input.unitScope || input.unitNumbers, expectedCount);
+    const expectedUnits = requestedUnits.length ? requestedUnits : [...Array(expectedCount || 0)].map((_, index) => index + 1);
     const coveredUnits = new Set(scenes.map((scene) => Number(asObject(scene).unit_number)).filter((number) => Number.isInteger(number)));
+    const locked = new Set(normalizeUnitNumbers(input.lockedUnitNumbers, expectedCount));
+    const lockedOverlap = [...coveredUnits].filter((number) => locked.has(number));
     const invalidScene = scenes.find((scene) => {
       const item = asObject(scene);
       return !text(item.id, 120)
@@ -770,8 +1265,10 @@ function validateContent(stage, content, input = {}) {
         || !text(item.result_zh, 2000)
         || !text(item.turn_zh, 2000);
     });
-    if (!expectedCount || scenes.length < expectedCount || [...Array(expectedCount)].some((_, index) => !coveredUnits.has(index + 1)) || invalidScene) {
-      const error = new Error(`场景与镜头必须覆盖全部 ${expectedCount || "计划"} 集，不能只生成少量代表场景`);
+    if (!expectedCount || scenes.length < expectedUnits.length || expectedUnits.some((number) => !coveredUnits.has(number)) || lockedOverlap.length && input.allowLockedUnitRevision !== true || invalidScene) {
+      const error = new Error(lockedOverlap.length && input.allowLockedUnitRevision !== true
+        ? `场景与镜头包含已锁定的第${lockedOverlap.join("、")}集，不能重复提交`
+        : `场景与镜头必须只覆盖当前批次的第${expectedUnits.join("、")}集，不能漏集或只生成少量代表场景`);
       error.code = "SCHEMA_INVALID";
       throw error;
     }
@@ -797,7 +1294,7 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
     const item = asObject(rawDimensions[key]);
     const rawScore = Number(rawDimensions[key]?.score ?? rawDimensions[key]);
     return [key, {
-      score: Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 0,
+      score: Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : null,
       feedback: text(item.feedback || rawDimensions[key], 1200),
     }];
   }));
@@ -840,6 +1337,7 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
   return {
     pass: review.pass && missingHardChecks.length === 0 && missingDimensions.length === 0 && missingClosures.length === 0,
     score: Math.max(0, Math.min(100, Number(review.score))),
+    confidence: Number.isFinite(Number(review.confidence)) ? Math.max(0, Math.min(100, Number(review.confidence))) : null,
     findings: review.findings.map((item) => text(item, 1000)).filter(Boolean).slice(0, 6),
     required_changes: requiredChanges,
     checks,
@@ -854,11 +1352,12 @@ function providerForRoute(route) {
   if (raw.startsWith("gpt-")) return "chatgpt";
   if (raw.startsWith("claude-")) return "claude";
   if (raw.startsWith("deepseek-")) return "deepseek";
+  if (raw.startsWith("grok-")) return "grok";
   return "superpixel";
 }
 
 function pairwiseAgreement(scores) {
-  if (scores.length < 2) return 0;
+  if (scores.length < 2) return null;
   let total = 0;
   let pairs = 0;
   for (let index = 0; index < scores.length; index += 1) {
@@ -929,6 +1428,10 @@ function reviewAdvisoryGate(review = {}) {
   const accepted = items.filter((item) => decisions.get(item.id)?.status === "accepted");
   const blockingPending = items.filter((item) => {
     const decision = decisions.get(item.id);
+    // Conflicts get no special case. An undecided score disagreement is resolved
+    // automatically (adjudications[].mode === "automatic") and must not gate the
+    // stage; it only blocks when the creator explicitly asks to review it.
+    // The same rule is duplicated in public/pixeltale/app.js — keep both in sync.
     return decision?.status === "needs_human_review";
   });
   return { items, decisions, accepted, blockingPending };
@@ -953,7 +1456,7 @@ function groupedReviewIssues(feedbacks) {
         suggestions: [],
         evidence: [],
       };
-      group.models.set(feedback.model, feedback.provider);
+      group.models.set(feedback.actualModel || feedback.model, feedback);
       if ((issueSeverityRank[issue.severity] ?? 1) < (issueSeverityRank[group.severity] ?? 1)) group.severity = issue.severity;
       if (issue.fix) group.suggestions.push(issue.fix);
       if (issue.feedback) group.evidence.push(`${feedback.model}：${issue.feedback}`);
@@ -968,6 +1471,9 @@ function groupedReviewIssues(feedbacks) {
       severity: group.severity,
       modelCount: group.models.size,
       models: [...group.models.keys()],
+      ownerHighConfidence: [...group.models.values()].some((feedback) => feedback.ownedDimensions?.includes(group.dimension)
+        && asArray(feedback.issues).some((issue) => issue.dimension === group.dimension && issue.severity === "high")
+        && Number(feedback.confidence) >= 80),
       suggestions: uniqueText(group.suggestions, 5),
       evidence: uniqueText(group.evidence, 5),
     }))
@@ -993,16 +1499,14 @@ function revisionIssueId(stage, item = {}) {
   return `${stage}-R-${issueKey(seed)}`.slice(0, 180);
 }
 
+// 「必修」的唯一判定。曾经 aggregateCrossReview 与 buildRevisionContract 各写一套，
+// 导致单席维度主人问题能拦停阶段却进不了修订合同，用户被堵死。两处必须同源。
+function isMandatoryReviewIssue(issue) {
+  return issue?.severity === "high"
+    && (Number(issue.modelCount) >= REVIEW_QUORUM || issue.ownerHighConfidence === true);
+}
+
 function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
-  // When the quorum is not met (review seats failed/unconfigured) a consensus
-  // contract would always be empty and the stage would dead-lock: approve is
-  // refused, directed revision throws REVISION_CONTRACT_EMPTY, and the user has
-  // no escape hatch. Degrade to single-seat high issues so a lone surviving
-  // reviewer can still drive revision instead of blocking the stage forever.
-  const quorumMet = review.quorum?.met !== false;
-  const minModelCount = quorumMet ? REVIEW_QUORUM : 1;
-  const freshCommonIssues = asArray(review.commonIssues)
-    .filter((item) => Number(item.modelCount) >= minModelCount && item.severity === "high");
   const acceptedAdvisories = reviewAdvisoryItems(review)
     .filter((item) => item.kind !== "failed" && advisoryDecisionMap(review).get(item.id)?.status === "accepted")
     .map((item) => {
@@ -1018,11 +1522,16 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
         evidence: uniqueText(asArray(item.evidence), 5),
       };
     });
-  const freshIssues = [...freshCommonIssues, ...acceptedAdvisories];
-  if (!freshIssues.length) {
-    freshIssues.push(...asArray(review.reviewIssues)
-      .filter((item) => Number(item.modelCount) >= minModelCount && item.severity === "high"));
-  }
+  // Prefer the aggregator's authoritative list — the frontend reads the same field,
+  // so both agree on what "must fix" means. Older review artifacts predate that
+  // field and carry only reviewIssues/commonIssues, so fall back through both using
+  // the shared predicate rather than a second, divergent filter.
+  const freshMandatory = asArray(review.mandatoryIssues).length
+    ? asArray(review.mandatoryIssues)
+    : [...asArray(review.reviewIssues), ...asArray(review.commonIssues)]
+      .filter(isMandatoryReviewIssue)
+      .filter((item, index, all) => all.findIndex((candidate) => revisionIssueId(stage, candidate) === revisionIssueId(stage, item)) === index);
+  const freshIssues = [...freshMandatory, ...acceptedAdvisories];
   const previousItems = asArray(review.revision?.contract?.items);
   const previousClosures = new Map(asArray(review.revision?.closure?.items).map((item) => [item.id, item]));
   const previousByKey = new Map();
@@ -1074,6 +1583,39 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
   };
 }
 
+function automaticUnitRepairPlan(stage, review, unitNumbers = []) {
+  const commonIssues = asArray(review?.commonIssues)
+    .filter((item) => Number(item?.modelCount) >= REVIEW_QUORUM && item?.severity === "high");
+  if (!commonIssues.length) return "";
+  const scope = normalizeUnitNumbers(unitNumbers).map((number) => `第${number}集`).join("、");
+  return [
+    `这是${stage === "scenes" ? "场景与镜头" : "分集与章节"}的集级自动恢复修订。只修改${scope || "当前未锁定批次"}，一次性解决下列至少两个模型共同确认的高风险问题。`,
+    "保持已锁定集、未涉及的内容、整体故事基因和上下文不变；修订后必须返回完整目标集结构，而不是审核说明。",
+    ...commonIssues.map((issue, index) => {
+      const evidence = asArray(issue.evidence).filter(Boolean).join("；");
+      const fixes = asArray(issue.suggestions).filter(Boolean).join("；") || "补足可验证的因果、冲突和结果";
+      return `${index + 1}. ${text(issue.tag || "集级结构问题", 160)}：${fixes}${evidence ? `；证据：${evidence}` : ""}`;
+    }),
+  ].join("\n");
+}
+
+function revisionIssueSignatures(review = {}) {
+  const source = asObject(review);
+  return new Set(asArray(source.mandatoryIssues).map((issue) => `${text(issue.id || issue.criterionId || issue.tag, 180)}:${text(issue.fieldPath, 300)}`));
+}
+
+function tokenUsage(result) {
+  return Number(result?.usage?.total_tokens || result?.usage?.totalTokens || result?.total_tokens || 0);
+}
+
+function stalledRevision(previousReview, currentReview) {
+  const previous = revisionIssueSignatures(previousReview);
+  const current = revisionIssueSignatures(currentReview);
+  if (!previous.size || !current.size) return false;
+  const overlap = [...current].filter((key) => previous.has(key)).length / Math.max(previous.size, current.size);
+  return overlap >= 0.8;
+}
+
 function aggregateRevisionClosure(feedbacks = [], revisionContract = null) {
   const items = asArray(revisionContract?.items);
   if (!items.length) return { required: false, allResolved: true, items: [] };
@@ -1099,13 +1641,21 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
   const feedbacks = reviews.map((item) => {
     if (item.result) {
       const review = item.result;
+      const route = asObject(item.route);
+      const actualModel = text(review.actualModel || review.model, 120);
       return {
-        provider: review.provider,
-        model: review.model,
-        role: item.role || reviewerIdentity(review.model),
+        seatId: text(route.seatId, 40),
+        role: text(item.role || route.role, 120) || "",
+        requiredModel: text(route.requiredModel || route.model || review.model, 120),
+        actualModel,
+        provider: review.provider || providerForRoute(actualModel),
+        fallbackUsed: review.fallbackUsed === true,
+        model: actualModel,
+        ownedDimensions: asArray(route.ownedDimensions),
         status: "completed",
         pass: review.content.pass,
         score: review.content.score,
+        confidence: review.content.confidence,
         findings: review.content.findings,
         required_changes: review.content.required_changes,
         checks: review.content.checks,
@@ -1114,31 +1664,52 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
         revisionClosures: review.content.revisionClosures,
       };
     }
+    const failureCode = text(item.errorCode || item.code, 80).toUpperCase();
+    const failureReason = {
+      TIMEOUT: "timeout",
+      NETWORK_ERROR: "network_error",
+      EMPTY_RESPONSE: "empty_response",
+      INVALID_JSON: "invalid_json",
+      SCHEMA_INVALID: "schema_error",
+      MODEL_NOT_CONFIGURED: "not_configured",
+    }[failureCode] || "network_error";
     return {
-      provider: providerForRoute(item.route),
+      seatId: text(item.route?.seatId, 40),
+      role: text(item.role || item.route?.role, 120) || "",
+      requiredModel: text(item.route?.requiredModel || item.model, 120),
+      actualModel: "",
+      provider: providerForRoute(item.model),
+      fallbackUsed: false,
       model: item.model,
-      role: item.role || reviewerIdentity(item.route),
       status: "failed",
       pass: false,
-      score: 0,
+      score: null,
+      confidence: null,
       findings: [item.error || "模型未返回审核意见"],
-      required_changes: ["该模型审核未完成，不能将一致性指数视为完整"],
+      required_changes: [],
+      failureReason,
       checks: {},
-      dimensions: Object.fromEntries(REVIEW_DIMENSIONS.map((key) => [key, { score: 0, feedback: "审核未完成" }])),
+      dimensions: Object.fromEntries(REVIEW_DIMENSIONS.map((key) => [key, { score: null, feedback: "未返回（调用失败）" }])),
       issues: [],
       revisionClosures: [],
     };
   });
   const completed = feedbacks.filter((item) => item.status === "completed");
   const dimensions = Object.fromEntries(REVIEW_DIMENSIONS.map((key) => {
-    const scores = completed.map((item) => Number(item.dimensions?.[key]?.score || 0));
-    const average = scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : 0;
+    const scores = completed.map((item) => item.dimensions?.[key]?.score)
+      .map((value) => (value === null || value === undefined || value === "" ? NaN : Number(value)))
+      .filter((value) => Number.isFinite(value));
+    const average = scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null;
     return [key, { average, agreement: pairwiseAgreement(scores), scores }];
   }));
-  const agreement = Math.round(REVIEW_DIMENSIONS.reduce((sum, key) => sum + dimensions[key].agreement, 0) / REVIEW_DIMENSIONS.length);
-  const quality = completed.length ? Math.round(completed.reduce((sum, item) => sum + item.score, 0) / completed.length) : 0;
+  const agreementValues = REVIEW_DIMENSIONS.map((key) => dimensions[key].agreement).filter(Number.isFinite);
+  const agreement = agreementValues.length ? Math.round(agreementValues.reduce((sum, value) => sum + value, 0) / agreementValues.length) : null;
+  const qualityScores = completed.map((item) => Number(item.score)).filter(Number.isFinite);
+  const quality = qualityScores.length ? Math.round(qualityScores.reduce((sum, score) => sum + score, 0) / qualityScores.length) : null;
   const reviewCompletion = Math.round((completed.length / 3) * 100);
-  const index = Math.round(agreement * 0.45 + quality * 0.35 + reviewCompletion * 0.2);
+  const index = Number.isFinite(agreement) && Number.isFinite(quality)
+    ? Math.round(agreement * 0.45 + quality * 0.35 + reviewCompletion * 0.2)
+    : null;
   const structuredIssues = groupedReviewIssues(completed);
   const structuredIssueText = structuredIssues.flatMap((issue) => [...issue.suggestions, ...issue.evidence]);
   const supplementalIssues = completed
@@ -1157,33 +1728,67 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     .filter((issue, index, all) => all.findIndex((candidate) => candidate.id === issue.id) === index);
   const reviewIssues = [...structuredIssues, ...supplementalIssues];
   const commonIssues = reviewIssues.filter((issue) => issue.modelCount >= 2);
-  const mandatoryIssues = commonIssues.filter((issue) => issue.severity === "high");
+  const mandatoryIssues = reviewIssues.filter(isMandatoryReviewIssue);
   const recommendedIssues = commonIssues.filter((issue) => issue.severity !== "high");
   const independentIssues = reviewIssues.filter((issue) => issue.modelCount === 1);
   const conflicts = REVIEW_DIMENSIONS
-    .filter((key) => completed.length >= 2 && dimensions[key].agreement < 75)
+    // agreement 为 null 表示该维度有效分不足 2 个，无法判断分歧。
+    // 不加 Number.isFinite 守卫的话 null < 75 在 JS 里为 true，会凭空生成假分歧裁决记录。
+    .filter((key) => completed.length >= 2 && Number.isFinite(dimensions[key].agreement) && dimensions[key].agreement < 75)
     .map((key) => ({
       id: `advisory_conflict_${key}`,
       dimension: key,
       agreement: dimensions[key].agreement,
       scores: dimensions[key].scores,
-      models: completed.map((item) => item.model),
-      suggestion: `已完成模型对${key}维度评分差异较大，建议人工核对证据与取舍`,
+      seats: completed.map((item) => item.seatId),
+      suggestion: `已完成模型对${key}维度评分差异较大，建议按证据强度与阶段契约自动裁决`,
     }));
+  const adjudications = conflicts.map((item) => ({
+    id: item.id,
+    dimension: item.dimension,
+    agreement: item.agreement,
+    scores: item.scores,
+    seats: item.seats,
+    adjudication: {
+      mode: "automatic",
+      status: "resolved",
+      basis: "按§8.1优先级与证据强度取舍",
+    },
+  }));
   const revisionClosure = aggregateRevisionClosure(completed, revisionContract);
-  const quorumMet = completed.length >= REVIEW_QUORUM;
+  const distinctActualModels = new Set(completed.map((item) => item.actualModel || item.model).filter(Boolean)).size;
+  const quorumMet = completed.length >= REVIEW_COMPLETION_REQUIRED && distinctActualModels >= REVIEW_COMPLETION_REQUIRED;
+  const degraded = completed.length >= REVIEW_COMPLETION_REQUIRED && distinctActualModels < REVIEW_COMPLETION_REQUIRED;
+  // Name the seats that actually collided and the model they landed on. A hardcoded
+  // "B/C" was wrong the moment the roster changed — seat_a and seat_b now share the
+  // GPT channel, so the pair that collapses depends on which channel failed.
+  const collapsedSeats = (() => {
+    const byModel = new Map();
+    completed.forEach((item) => {
+      const model = item.actualModel || item.model;
+      if (!model) return;
+      if (!byModel.has(model)) byModel.set(model, []);
+      byModel.get(model).push(item.seatId || "?");
+    });
+    return [...byModel.entries()].filter(([, seats]) => seats.length > 1);
+  })();
+  const degradedMessage = collapsedSeats.length
+    ? `技术未完成：${collapsedSeats.map(([model, seats]) => `${seats.join("/")} 席位都兜底到了 ${model}`).join("；")}，三席交叉审核不成立`
+    : "技术未完成：三席未能提供三个独立模型的审核，交叉审核不成立";
+  const technicalFailures = [
+    ...feedbacks.filter((item) => item.status === "failed").map((item) => ({ seatId: item.seatId, status: "failed", failureReason: item.failureReason, message: item.findings[0] })),
+    ...(degraded ? [{ status: "degraded", collapsedSeats: collapsedSeats.map(([model, seats]) => ({ model, seats })), message: degradedMessage }] : []),
+  ];
   const passingReviews = completed.filter((item) => item.pass).length;
-  // A lone reviewer's hard "no" must not be swallowed: when a completed model
-  // returns pass=false while flagging a high-severity issue, the artifact must
-  // not sail through just because that issue did not reach consensus (two
-  // models may flag different high issues). A pass=false that only carries
-  // medium recommendations stays non-blocking, matching the review contract.
-  const highIssueVeto = completed.some((item) => item.pass === false && asArray(item.issues).some((issue) => issue.severity === "high"));
-  const pass = quorumMet && !highIssueVeto && mandatoryIssues.length === 0 && revisionClosure.allResolved;
+  const allReviewsPass = completed.length === REVIEW_COMPLETION_REQUIRED
+    && completed.every((item) => item.pass === true);
+  const basePass = quorumMet && allReviewsPass && mandatoryIssues.length === 0 && revisionClosure.allResolved;
+  const pass = basePass;
   const checks = {
-    cross_validation: quorumMet && !highIssueVeto,
+    cross_validation: quorumMet,
+    reviews_passed: allReviewsPass,
     consistency: mandatoryIssues.length === 0,
-    adversarial: completed.filter((item) => item.checks?.adversarial === true).length >= REVIEW_QUORUM,
+    adversarial: completed.filter((item) => item.checks?.adversarial === true).length >= REVIEW_COMPLETION_REQUIRED,
     issues_converged: mandatoryIssues.length === 0,
     dimensions_agree: conflicts.length === 0,
     revision_contract_closed: revisionClosure.allResolved,
@@ -1198,12 +1803,13 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     .map((item) => `【${item.id} / ${item.tag}】修订关闭未通过：${item.remainingFix.join("；") || "请按验收条件补充修订"}`);
   return {
     pass,
-    score: index,
+    basePass,
+    score: quality,
     consensusIndex: index,
     agreement,
     quality,
     reviewCompletion,
-    quorum: { required: REVIEW_QUORUM, completed: completed.length, passing: passingReviews, met: quorumMet },
+    quorum: { required: REVIEW_COMPLETION_REQUIRED, completedSeats: completed.length, completed: completed.length, passing: passingReviews, distinctActualModels, met: quorumMet, degraded },
     dimensions,
     feedbacks,
     reviewIssues,
@@ -1217,6 +1823,8 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     independentIssues,
     independentIssueCount: independentIssues.length,
     conflicts,
+    adjudications,
+    technicalFailures,
     findings: uniqueText([...commonIssues.map((item) => `共识问题【${item.tag}】（${item.modelCount} 个模型）`), ...conflicts.map((item) => `意见冲突：${item.dimension} 一致性 ${item.agreement}%`), ...feedbacks.flatMap((item) => item.findings)]),
     required_changes: uniqueText([...issueChanges, ...closureChanges], 60),
     advisories: {
@@ -1226,6 +1834,20 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     },
     checks,
     revision: revisionContract ? { contract: revisionContract, closure: revisionClosure } : null,
+  };
+}
+
+function ruleBlockedReview(ruleResult) {
+  const base = aggregateCrossReview([], null);
+  const findings = ruleResult.violations.map((item) => `规则违规【${item.code}】：${item.message}`);
+  return {
+    ...base,
+    pass: false,
+    basePass: false,
+    findings,
+    ruleFindings: ruleResult.violations,
+    technicalFailures: [{ status: "rule_blocked", message: "命中 high 规则，审核模型未调用" }],
+    checks: { ...base.checks, rule_gate: false },
   };
 }
 
@@ -1239,79 +1861,353 @@ class ProviderError extends Error {
   }
 }
 
-async function callProvider({ provider, system, user, modelRouter, timeoutMs, maxTokens, purpose = "pixeltale", signal }) {
+async function callProvider({ provider, system, user, modelRouter, timeoutMs, maxTokens, purpose = "pixeltale", temperature, signal }) {
   if (!modelRouter || typeof modelRouter.call !== "function") {
-    throw new ProviderError("PixelTale 未接入 SuperPixel 文本模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
+    throw new ProviderError("PixelTale 未接入独立编剧 API 路由", { code: "PIXELTALE_API_ROUTER_MISSING" });
   }
-  return modelRouter.call({ model: modelForRoute(provider), system, user, purpose, timeoutMs, maxTokens, signal });
+  return modelRouter.call({ model: modelForRoute(provider), system, user, purpose, timeoutMs, maxTokens, temperature, signal });
 }
 
+// "Can we try a DIFFERENT model?" — not "can we retry this one?". TRUNCATED_OUTPUT
+// is deliberately marked non-retryable at the API layer because repeating the same
+// model with the same max_tokens truncates again, but another model may well fit the
+// budget. Leaving it out killed a whole review seat on one truncation and dropped
+// the stage below quorum.
 function canFallbackFrom(error) {
-  return error?.retryable === true || ["TIMEOUT", "NETWORK_ERROR", "EMPTY_RESPONSE", "INVALID_JSON", "SCHEMA_INVALID"].includes(error?.code);
+  return error?.retryable === true || ["TIMEOUT", "NETWORK_ERROR", "EMPTY_RESPONSE", "INVALID_JSON", "SCHEMA_INVALID", "TRUNCATED_OUTPUT"].includes(error?.code);
 }
 
 function stagePrimaryTiming(stage) {
   return STAGE_PRIMARY_TIMINGS[stage] || STAGE_PRIMARY_TIMINGS.proposal;
 }
 
-async function callStagePrimary({
+function creativeAuthorIdentity(role, slot = 0) {
+  return {
+    structure_causality: "结构与因果主创：负责结构、因果、用户要求和阶段契约兑现。",
+    character_continuity: "人物与连续性主创：负责人物动机、关系连续性、世界规则、市场细节和语言自然度。",
+    audience_pacing_visual: "受众节奏与视觉主创：负责首屏冲击、反转、对白声线、场景可拍性和追更动力。",
+  }[text(role, 120)] || [
+    "结构与规格主创：负责结构、因果、用户要求和阶段契约兑现。",
+    "人物与连续性主创：负责人物动机、关系连续性、世界规则、市场细节和语言自然度。",
+    "受众节奏与视觉主创：负责首屏冲击、反转、对白声线、场景可拍性和追更动力。",
+  ][slot] || "独立主创：基于当前阶段契约提出可执行创作方案。";
+}
+
+function parsePromptObject(value) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : { sourceRequest: value };
+  } catch {
+    return { sourceRequest: text(value, 120000) };
+  }
+}
+
+function councilPromptWithRole(user, role) {
+  const payload = parsePromptObject(user);
+  return JSON.stringify({
+    ...payload,
+    creativeCouncilRole: role,
+    creativeCouncilInstruction: "独立完成本角色的完整阶段产物；不要等待其他模型，也不要只给意见。你的输出会与另外两份独立产物一起交给合并器。",
+  }, null, 2).slice(0, 180000);
+}
+
+function stageSynthesisPrompt({ stage, mode, user, contributions }) {
+  return JSON.stringify({
+    task: "三模型独立创作已经全部完成。请作为合并编排器，基于三份完整贡献合并出唯一的阶段产物。必须同时吸收三份贡献的有效内容，解决彼此冲突，保留用户规格和已确认上下文；不得只复制某一个模型，也不得丢失本阶段契约字段。",
+    currentStage: stage,
+    mode,
+    sourceRequest: parsePromptObject(user),
+      creativeCouncil: {
+      requiredModels: 3,
+      instruction: "三份贡献均为必需输入；如果存在冲突，按用户规格、阶段契约和因果可执行性取舍，不得静默忽略任何一份。",
+      contributions: contributions.map((item) => ({
+        model: item.requiredModel || item.model,
+        actualModel: item.actualModel || item.model,
+        provider: item.provider,
+        role: item.role,
+        fallbackUsed: item.fallbackUsed === true,
+        content: item.result.content,
+      })),
+    },
+    outputInstruction: `严格按照当前阶段的输出契约返回 JSON：${stageOutputContract(stage, mode)}`,
+  }, null, 2).slice(0, 180000);
+}
+
+// The merge step is the only single point of decision in a stage: one model
+// compresses three independent drafts into the released artifact, and nothing
+// downstream can see what it discarded (reviewers only receive the merged
+// result). This computes retention deterministically — no extra model call — so
+// a merge that simply copied one draft becomes visible instead of silent.
+function leafStrings(value, out = []) {
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (text) out.push(text);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => leafStrings(item, out));
+    return out;
+  }
+  if (value && typeof value === "object") {
+    Object.values(value).forEach((item) => leafStrings(item, out));
+  }
+  return out;
+}
+
+// Character 5-grams, not whole strings. The merger legitimately rewords while
+// reconciling three drafts, so whole-string matching reported ~6% retention on a
+// prose-heavy stage even for a sound merge. Shingles survive light rewording but
+// still collapse when a draft was genuinely discarded.
+const MERGE_SHINGLE_SIZE = 5;
+
+function contentShingles(value) {
+  const out = new Set();
+  for (const text of leafStrings(value)) {
+    const compact = text.replace(/\s+/g, "");
+    if (compact.length < MERGE_SHINGLE_SIZE) continue;
+    for (let index = 0; index + MERGE_SHINGLE_SIZE <= compact.length; index += 1) {
+      out.add(compact.slice(index, index + MERGE_SHINGLE_SIZE));
+    }
+  }
+  return out;
+}
+
+function computeMergeAudit(contributions = [], mergedContent = null) {
+  const merged = contentShingles(mergedContent);
+  if (!merged.size) return null;
+  const seats = contributions.map((item) => {
+    const own = contentShingles(item?.result?.content);
+    let kept = 0;
+    own.forEach((gram) => { if (merged.has(gram)) kept += 1; });
+    return {
+      seatId: item?.seatId || "",
+      role: item?.role || "",
+      ownShingles: own.size,
+      keptShingles: kept,
+      retentionPct: own.size ? Math.round((kept / own.size) * 100) : null,
+    };
+  });
+  const rates = seats.map((seat) => seat.retentionPct).filter((value) => Number.isFinite(value));
+  if (rates.length < 2) return { seats, dominatedBy: "", ignoredDrafts: false, spreadPct: null, note: "" };
+  const highest = Math.max(...rates);
+  const lowest = Math.min(...rates);
+  const leader = seats.find((seat) => seat.retentionPct === highest);
+  // Two distinct failure shapes, and the earlier version only caught the first:
+  //  - one seat dominates → the other drafts were thrown away
+  //  - every seat is low  → the merger ignored all three and wrote its own version,
+  //    which is worse and previously reported as "no dominance".
+  const dominated = highest >= 60 && highest - lowest >= 40;
+  const ignoredDrafts = highest < 25;
+  const notes = [];
+  if (dominated) notes.push(`合并由 ${leader?.seatId || "某一席"} 主导（留存 ${highest}% vs 最低 ${lowest}%），另外两席基本未被采纳`);
+  if (ignoredDrafts) notes.push(`合并器几乎没有采纳任何一席（最高留存仅 ${highest}%），产物可能是它自己重写的，请核对是否丢失三席的有效内容`);
+  return {
+    seats,
+    spreadPct: highest - lowest,
+    dominatedBy: dominated ? (leader?.seatId || "") : "",
+    ignoredDrafts,
+    note: notes.join("；"),
+  };
+}
+
+async function callStageCouncil({
   route,
   system,
   user,
   stage = "brief",
+  mode = "tk_short_drama",
   modelRouter,
   nowMs = () => Date.now(),
   totalTimeoutMs,
   perModelTimeoutMs,
+  validateContribution,
+  onPhase,
 }) {
   if (!modelRouter || typeof modelRouter.stageModels !== "function") {
-    throw new ProviderError("PixelTale 未接入 SuperPixel 主创模型路由", { code: "SUPER_PIXEL_ROUTER_MISSING" });
+    throw new ProviderError("PixelTale 未接入独立编剧 API 主创路由", { code: "PIXELTALE_API_ROUTER_MISSING" });
   }
-  const providers = uniqueText(modelRouter.stageModels(route).slice(0, 3), 3);
+  // Seats are positional now, so this list must stay aligned with REVIEW_SEATS.
+  // Deduplicating here would drop a seat whenever two seats share one model.
+  const providers = modelRouter.stageModels(route).slice(0, 3).map((model) => text(model, 120).toLowerCase()).filter(Boolean);
   const failures = [];
   const timing = stagePrimaryTiming(stage);
   const totalBudgetMs = totalTimeoutMs ?? timing.total;
   const perModelBudgetMs = perModelTimeoutMs ?? timing.model;
   const startedAtMs = nowMs();
-  const deadlineMs = startedAtMs + Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, totalBudgetMs);
-  if (!providers.length) {
-    throw new ProviderError("SuperPixel 没有可用的主创模型", { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });
+  const authorDeadlineMs = startedAtMs + Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, totalBudgetMs);
+  if (providers.length !== 3) {
+    const error = new ProviderError("三模型创作未齐备，当前阶段不能进入合并和审核", { code: "STAGE_CREATIVE_COUNCIL_INCOMPLETE", retryable: false });
+    error.creativeCouncil = { requiredModels: 3, completedModels: 0, missingModels: providers.length ? 3 - providers.length : 3, contributors: providers };
+    throw error;
   }
-  for (const [index, provider] of providers.entries()) {
-    const remainingMs = deadlineMs - nowMs();
-    if (remainingMs < MIN_STAGE_PRIMARY_ATTEMPT_MS) {
-      const error = new ProviderError("主创阶段的响应预算已用尽，未启动该模型请求", { code: "STAGE_TIMEOUT_BUDGET_EXHAUSTED", retryable: true });
-      failures.push({ provider, code: error.code, message: error.message });
-      break;
-    }
-    const timeoutMs = Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelBudgetMs, remainingMs));
-    try {
+  const synthesisTimeoutMs = Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelBudgetMs, totalBudgetMs));
+  const roles = providers.map((model, index) => ({
+    seat: REVIEW_SEATS[index],
+    // Keyed by seat position, not by model id: two seats may run the same model.
+    seatKey: index,
+    model,
+    role: REVIEW_SEATS[index]?.role || "",
+    roleDescription: creativeAuthorIdentity(REVIEW_SEATS[index]?.role, index),
+    fallbackModel: typeof modelRouter.fallbackModelFor === "function" ? modelRouter.fallbackModelFor(model, REVIEW_SEATS[index]?.id) : "",
+  }));
+  const completed = new Map();
+  const attemptedModels = [];
+  let pending = roles.slice();
+  let authorRounds = 0;
+
+  for (let round = 1; round <= STAGE_PRIMARY_RETRY_ROUNDS && pending.length; round += 1) {
+    authorRounds = round;
+    const settled = await Promise.allSettled(pending.map(async (author) => {
+      const model = author.candidate || author.model;
+      attemptedModels.push(model);
+      const remainingMs = authorDeadlineMs - nowMs();
+      if (remainingMs < MIN_STAGE_PRIMARY_ATTEMPT_MS) {
+        throw new ProviderError("主创席位剩余预算不足，未启动该席位请求", { code: "STAGE_TIMEOUT_BUDGET_EXHAUSTED", retryable: true });
+      }
       const result = await callProvider({
-        provider,
-        system,
-        user,
+        provider: model,
+        system: `${system}\n本次固定创作身份：${author.roleDescription}\n必需席位模型：${author.model}\n本次实际调用模型：${model}`,
+        user: councilPromptWithRole(user, author.roleDescription),
         modelRouter,
-        timeoutMs,
+        timeoutMs: Math.max(MIN_STAGE_PRIMARY_ATTEMPT_MS, Math.min(perModelBudgetMs, remainingMs)),
         maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal,
         purpose: `pixeltale:${stage}:author`,
+        temperature: { seat_a: 0.3, seat_b: 0.7, seat_c: 1.0 }[author.seat?.id] ?? 0.25,
       });
+      if (!result?.content || typeof result.content !== "object") {
+        const error = new Error(`${model} 未返回可合并的结构化创作产物`);
+        error.code = "SCHEMA_INVALID";
+        error.retryable = true;
+        throw error;
+      }
+      const content = typeof validateContribution === "function" ? validateContribution(result.content, { model: author.model, actualModel: model, role: author.role }) : result.content;
       return {
-        ...result,
-        fallback: provider !== route.primary,
-        fallbackFailures: failures.slice(),
-        attemptedModels: providers.slice(0, index + 1),
-        primaryBudget: { totalTimeoutMs: totalBudgetMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) },
+        model: author.model,
+        seatId: author.seat?.id || "",
+        requiredModel: author.model,
+        actualModel: model,
+        fallbackUsed: author.fallbackUsed === true,
+        role: author.role,
+        provider: result.provider || providerForRoute(model),
+        result: { ...result, content },
       };
+    }));
+    const retry = [];
+    settled.forEach((item, index) => {
+      const author = pending[index];
+      if (item.status === "fulfilled") {
+        completed.set(author.seatKey, item.value);
+        return;
+      }
+      const reason = item.reason instanceof Error ? item.reason : new Error(String(item.reason || "主创模型请求失败"));
+      const failure = {
+        provider: providerForRoute(author.candidate || author.model),
+        seatId: author.seat?.id || "",
+        requiredModel: author.model,
+        model: author.candidate || author.model,
+        actualModel: author.candidate || author.model,
+        fallbackModel: author.fallbackModel,
+        fallbackUsed: author.fallbackUsed === true,
+        role: author.role,
+        round,
+        code: reason.code || "PROVIDER_ERROR",
+        retryable: canFallbackFrom(reason),
+        message: reason.message || "主创模型请求失败",
+      };
+      failures.push(failure);
+      if (round < STAGE_PRIMARY_RETRY_ROUNDS && canFallbackFrom(reason) && author.fallbackModel && author.fallbackUsed !== true) {
+        retry.push({ ...author, candidate: author.fallbackModel, fallbackUsed: true });
+      }
+    });
+    pending = retry;
+  }
+
+  if (completed.size !== roles.length) {
+    const error = new ProviderError("三模型创作未齐备，当前阶段不能进入合并和审核", { code: "STAGE_CREATIVE_COUNCIL_INCOMPLETE", retryable: false });
+    error.fallbackFailures = failures;
+    error.creativeCouncil = { requiredModels: 3, completedModels: completed.size, contributors: roles.map(({ seat, seatKey, model, role }) => ({ seatId: seat?.id || "", model, requiredModel: model, role, status: completed.has(seatKey) ? "completed" : "failed" })) };
+    error.splitSafe = failures.length > 0 && failures.every((item) => canFallbackFrom(item));
+    error.primaryBudget = { totalTimeoutMs: totalBudgetMs * STAGE_PRIMARY_RETRY_ROUNDS, elapsedMs: Math.max(0, nowMs() - startedAtMs), rounds: authorRounds, authorAttempts: attemptedModels.length };
+    throw error;
+  }
+
+  const contributions = roles.map(({ seatKey }) => completed.get(seatKey));
+  try {
+    if (typeof onPhase === "function") onPhase("synthesizing");
+  } catch {
+    // Phase reporting is observational and must never interrupt generation.
+  }
+  const synthesisModel = providers[0];
+  const synthesisCandidates = uniqueText([synthesisModel, typeof modelRouter.fallbackModelFor === "function" ? modelRouter.fallbackModelFor(synthesisModel) : ""], 2);
+  let synthesisResult;
+  const synthesisFailures = [];
+  let synthesisActualModel = synthesisModel;
+  let synthesisFallbackUsed = false;
+  for (const [index, candidate] of synthesisCandidates.entries()) {
+    synthesisActualModel = candidate;
+    synthesisFallbackUsed = index > 0;
+    try {
+      synthesisResult = await callProvider({
+        provider: candidate,
+        system: `${system}\n本次固定身份：合并编排器。三份独立创作均已齐备，必须综合三份贡献后输出唯一阶段产物。\n必需合并模型：${synthesisModel}\n本次实际调用模型：${candidate}`,
+        user: stageSynthesisPrompt({ stage, mode, user, contributions }),
+        modelRouter,
+        timeoutMs: synthesisTimeoutMs,
+        maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal,
+        purpose: `pixeltale:${stage}:synthesis`,
+        temperature: 0.35,
+      });
+      break;
     } catch (error) {
-      failures.push({ provider, code: error?.code || "PROVIDER_ERROR", message: error?.message || "主创模型请求失败" });
+      const failure = { requiredModel: synthesisModel, model: candidate, actualModel: candidate, fallbackUsed: index > 0, retryable: canFallbackFrom(error), code: error?.code || "PROVIDER_ERROR", message: error?.message || "创作合并失败" };
+      synthesisFailures.push(failure);
       if (!canFallbackFrom(error)) break;
     }
   }
-  const detail = failures.map((item) => item.message).join("；");
-  const error = new ProviderError(`SuperPixel 主创模型未能在 ${Math.round(totalBudgetMs / 1000)} 秒响应窗口内完成：${detail}`, { code: "STAGE_GENERATION_UNAVAILABLE", retryable: true });
-  error.fallbackFailures = failures;
-  error.primaryBudget = { totalTimeoutMs: totalBudgetMs, elapsedMs: Math.max(0, nowMs() - startedAtMs) };
-  throw error;
+  if (!synthesisResult?.content || typeof synthesisResult.content !== "object") {
+    const error = new ProviderError("三模型创作合并失败，当前阶段不能进入审核", { code: "STAGE_SYNTHESIS_FAILED", retryable: false });
+    error.fallbackFailures = synthesisFailures;
+    error.creativeCouncil = { requiredModels: 3, completedModels: 3, contributors: contributions.map(({ seatId, model, requiredModel, actualModel, provider, role, fallbackUsed }) => ({ seatId, model: requiredModel || model, requiredModel: requiredModel || model, actualModel, provider, role, fallbackUsed: fallbackUsed === true, status: "completed" })), synthesizer: { requiredModel: synthesisModel, actualModel: synthesisActualModel, fallbackUsed: synthesisFallbackUsed, status: "failed" } };
+    error.splitSafe = synthesisFailures.length > 0 && synthesisFailures.every((item) => canFallbackFrom(item));
+    throw error;
+  }
+  const creativeCouncil = {
+    mode: "parallel_authoring_then_synthesis",
+    requiredModels: 3,
+    completedModels: contributions.length,
+    contributors: contributions.map(({ seatId, model, requiredModel, actualModel, provider, role, fallbackUsed, result }) => ({
+      seatId,
+      model: requiredModel || model,
+      requiredModel: requiredModel || model,
+      actualModel,
+      provider,
+      role,
+      fallbackUsed: fallbackUsed === true,
+      status: "completed",
+      attempts: attemptedModels.filter((item) => item === model || item === actualModel).length,
+      contribution: {
+        contentHash: contentHash(result.content),
+        outputChars: JSON.stringify(result.content).length,
+        excerpt: JSON.stringify(result.content).slice(0, 800),
+      },
+    })),
+    synthesizer: { requiredModel: synthesisModel, actualModel: synthesisActualModel, provider: synthesisResult.provider || providerForRoute(synthesisActualModel), role: "合并编排器", fallbackUsed: synthesisFallbackUsed, attempts: synthesisFailures.length + 1 },
+    mergeAudit: computeMergeAudit(contributions, synthesisResult.content),
+  };
+  return {
+    ...synthesisResult,
+    attempts: attemptedModels.length + synthesisFailures.length + 1,
+    fallback: contributions.some((item) => item.fallbackUsed) || synthesisFallbackUsed,
+    fallbackFailures: [...failures, ...synthesisFailures],
+    attemptedModels: [...new Set(attemptedModels)],
+    tokenUsageTotal: [...contributions.map((item) => tokenUsage(item.result)), tokenUsage(synthesisResult)].reduce((sum, value) => sum + value, 0),
+    creativeCouncil,
+    primaryBudget: { totalTimeoutMs: totalBudgetMs * (STAGE_PRIMARY_RETRY_ROUNDS + 1), elapsedMs: Math.max(0, nowMs() - startedAtMs), rounds: authorRounds, authorAttempts: attemptedModels.length, synthesisAttempts: synthesisFailures.length + 1 },
+  };
+}
+
+async function callStagePrimary(args) {
+  return callStageCouncil(args);
 }
 
 async function collectCrossReviewQuorum({ reviewRoutes = [], revisionContract = null, execute }) {
@@ -1325,6 +2221,7 @@ async function collectCrossReviewQuorum({ reviewRoutes = [], revisionContract = 
         route: reviewRoute,
         model: reviewRoute?.model || reviewRoute,
         error: error?.message || "审核模型请求失败",
+        errorCode: error?.code || "NETWORK_ERROR",
       }))
       .then((result) => ({ index, result }));
     return { controller, promise };
@@ -1334,23 +2231,17 @@ async function collectCrossReviewQuorum({ reviewRoutes = [], revisionContract = 
     settled.forEach(({ index, result }) => { results[index] = result; });
   };
 
-  const firstIndexes = reviewRoutes.slice(0, REVIEW_QUORUM).map((_route, index) => index);
-  await settle(firstIndexes);
-  const completed = results.filter((item) => item?.result);
-  const allCompletedPass = completed.length > 0 && completed.every((item) => item.result?.content?.pass === true);
-  if (completed.length >= REVIEW_QUORUM && allCompletedPass && !aggregateCrossReview(completed, revisionContract).conflicts.length) {
-    return results.filter(Boolean);
-  }
-
-  // Only a genuine disagreement or an incomplete quorum opens the third review slot.
-  await settle(reviewRoutes.slice(REVIEW_QUORUM).map((_route, index) => index + REVIEW_QUORUM));
+  // The three review seats run in parallel every time. A fast agreement between
+  // two models is useful evidence, but it is not a release gate: the third
+  // independent review is part of the interactive consistency baseline.
+  await settle(reviewRoutes.map((_route, index) => index));
   return results.filter(Boolean);
 }
 
 function emptyState({ projectId, mode = "tk", now = () => new Date() }) {
   const timestamp = nowIso(now);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     projectId: text(projectId, 500),
     mode: normalizeMode(mode),
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
@@ -1359,6 +2250,11 @@ function emptyState({ projectId, mode = "tk", now = () => new Date() }) {
     routes: { ...DEFAULT_ROUTES },
     artifacts: [],
     approvedArtifactIds: [],
+    unitLocks: { arc: {}, scenes: {} },
+    stageProgress: {
+      arc: normalizeUnitProgress(),
+      scenes: normalizeUnitProgress(),
+    },
     runs: [],
     handoffs: [],
     visualAssets: null,
@@ -1373,31 +2269,178 @@ function emptyState({ projectId, mode = "tk", now = () => new Date() }) {
 function normalizeState(raw, params) {
   const base = emptyState(params);
   const source = asObject(raw);
-  return {
+  const stateMode = normalizeMode(source.mode || params.mode);
+  const state = {
     ...base,
     ...source,
     projectId: text(source.projectId || params.projectId, 500),
-    mode: normalizeMode(source.mode || params.mode),
+    mode: stateMode,
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
-    input: { ...asObject(source.input), audienceGender: normalizeAudience(source.input), ...normalizeCreativeControls(source.input), ...normalizeMarket(source.input), ...normalizeStageOptions(source.input) },
+    input: { ...asObject(source.input), mode: stateMode, audienceGender: normalizeAudience(source.input), ...normalizeCreativeControls(source.input), ...normalizeMarket(source.input, stateMode), ...normalizeStageOptions(source.input) },
     stage: source.stage === "handoff" ? "handoff" : normalizeStage(source.stage),
     routes: normalizeRoutes(source.routes),
     artifacts: asArray(source.artifacts),
     approvedArtifactIds: asArray(source.approvedArtifactIds),
+    unitLocks: {
+      arc: asObject(source.unitLocks?.arc),
+      scenes: asObject(source.unitLocks?.scenes),
+    },
+    stageProgress: {
+      arc: normalizeUnitProgress(source.stageProgress?.arc),
+      scenes: normalizeUnitProgress(source.stageProgress?.scenes),
+    },
     runs: asArray(source.runs).slice(-50),
     handoffs: asArray(source.handoffs),
   };
+  migrateApprovedUnitLocks(state);
+  return state;
+}
+
+function migrateApprovedUnitLocks(state) {
+  for (const stage of UNIT_STAGES) {
+    if (Object.keys(asObject(state.unitLocks?.[stage])).length) continue;
+    const approvedIds = new Set(state.approvedArtifactIds);
+    const artifact = asArray(state.artifacts)
+      .filter((item) => item?.stage === stage && item?.type === `pixeltale_${stage}` && approvedIds.has(item.id))
+      .sort((left, right) => Number(left.version || 0) - Number(right.version || 0))
+      .at(-1);
+    if (!artifact) continue;
+    const content = asObject(artifact.content);
+    const numbers = unitNumbersForContent(stage, content);
+    if (!numbers.length) continue;
+    const total = plannedUnitCount(state.input) || Math.max(...numbers);
+    if (numbers.length < total) continue;
+    state.input.episodeCount ||= total;
+    lockStageUnits(state, stage, content, numbers, artifact, () => new Date());
+    state.stageProgress[stage] = {
+      ...normalizeUnitProgress(state.stageProgress?.[stage]),
+      totalUnits: total,
+      batchSize: EPISODE_BATCH_SIZE,
+      lockedUnits: numbers,
+      pendingUnits: [],
+      currentBatch: [],
+      batches: [{ id: `migration_${artifact.id}`, units: numbers, status: "migrated", artifactId: artifact.id, reviewId: artifact.reviewId, error: "", startedAt: text(artifact.createdAt, 80), completedAt: text(artifact.updatedAt || artifact.createdAt, 80) }],
+      updatedAt: text(artifact.updatedAt || artifact.createdAt, 80),
+    };
+  }
 }
 
 function readState({ stateRoot, projectId, mode, readPixelTaleState, writePixelTaleState, now }) {
   const raw = asObject(readPixelTaleState(stateRoot));
   const state = normalizeState(raw, { projectId, mode, now });
-  if (!Object.keys(raw).length) writePixelTaleState(stateRoot, state);
+  if (!Object.keys(raw).length || JSON.stringify(raw.routes || {}) !== JSON.stringify(state.routes)) writePixelTaleState(stateRoot, state);
   return state;
 }
 
 function saveState({ stateRoot, state, writePixelTaleState }) {
   return writePixelTaleState(stateRoot, state);
+}
+
+function stageBatchInput({ stage, totalUnits, unitScope, lockedUnits, allowLockedUnitRevision = false }) {
+  return {
+    unitScope: normalizeUnitNumbers(unitScope, totalUnits),
+    unitNumbers: normalizeUnitNumbers(unitScope, totalUnits),
+    lockedUnitNumbers: normalizeUnitNumbers(lockedUnits, totalUnits),
+    allowLockedUnitRevision,
+  };
+}
+
+function stageBatchContext(state, stage, unitScope) {
+  const scope = normalizeUnitNumbers(unitScope, plannedUnitCount(state.input));
+  const previous = scope.map((number) => state.unitLocks?.[stage]?.[number - 1]).filter(Boolean).map((lock) => compactLockedUnit(stage, lock));
+  const locked = lockedUnitContext(state, stage, scope);
+  return [...previous, ...locked].slice(-12);
+}
+
+function transientUnitContext(stage, content, unitNumbers) {
+  return normalizeUnitNumbers(unitNumbers).map((number) => {
+    const items = unitItemsForContent(stage, content, [number]);
+    if (!items.length) return null;
+    const current = stage === "scenes" ? items : items[0];
+    return {
+      unitNumber: number,
+      version: 0,
+      contentHash: contentHash(items),
+      startState: unitContinuityState(stage, null),
+      endState: unitContinuityState(stage, current),
+      openThreads: unitOpenThreads(stage, current),
+      transient: true,
+    };
+  }).filter(Boolean);
+}
+
+function updateUnitStageProgress(state, stage, totalUnits, { batchId = "", units = [], status = "running", artifactId = "", reviewId = "", error = "", startedAt = "", completedAt = "" } = {}) {
+  const progress = normalizeUnitProgress(state.stageProgress?.[stage]);
+  const locked = lockedUnitNumbers(state, stage);
+  const pending = [...Array(totalUnits || 0)].map((_, index) => index + 1).filter((number) => !locked.includes(number));
+  const batch = batchId ? {
+    id: batchId,
+    units: normalizeUnitNumbers(units, totalUnits),
+    status,
+    artifactId: text(artifactId, 200),
+    reviewId: text(reviewId, 200),
+    error: text(error, 1600),
+    startedAt: text(startedAt, 80),
+    completedAt: text(completedAt, 80),
+  } : null;
+  const batches = batch
+    ? [...progress.batches.filter((entry) => entry.id !== batch.id), batch]
+    : progress.batches;
+  state.stageProgress[stage] = {
+    ...progress,
+    totalUnits,
+    batchSize: EPISODE_BATCH_SIZE,
+    lockedUnits: locked,
+    pendingUnits: pending,
+    currentBatch: status === "running" ? normalizeUnitNumbers(units, totalUnits) : [],
+    batches: batches.slice(-30),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function lockStageUnits(state, stage, content, unitNumbers, artifact, now) {
+  if (!UNIT_STAGES.has(stage)) return;
+  if (!state.unitLocks[stage] || typeof state.unitLocks[stage] !== "object") state.unitLocks[stage] = {};
+  const sorted = normalizeUnitNumbers(unitNumbers);
+  const allItems = stage === "scenes" ? asArray(asObject(content).scenes) : asArray(asObject(content).units);
+  sorted.forEach((number) => {
+    const items = allItems.filter((item) => unitNumberForStage(stage, item) === number);
+    if (!items.length) return;
+    const previous = state.unitLocks[stage][number];
+    const previousUnit = stage === "scenes"
+      ? asArray(asObject(content).scenes).filter((item) => unitNumberForStage(stage, item) === number - 1)
+      : asObject(asArray(asObject(content).units).find((item) => unitNumberForStage(stage, item) === number - 1));
+    const current = stage === "scenes" ? items : items[0];
+    state.unitLocks[stage][number] = {
+      status: "locked",
+      unitNumber: number,
+      artifactId: text(artifact?.id, 200),
+      version: Number(artifact?.version || 0),
+      contentHash: contentHash(items),
+      startState: unitContinuityState(stage, previousUnit),
+      endState: unitContinuityState(stage, current),
+      openThreads: unitOpenThreads(stage, current),
+      previousLock: text(previous?.artifactId, 200),
+      lockedAt: nowIso(now),
+    };
+  });
+}
+
+function synthesizeBatchReview(stage, batchReviews, totalUnits, unitLocks, revisionContract = null) {
+  const review = batchReviewSummary(stage, batchReviews, totalUnits, unitLocks);
+  review.revision = revisionContract ? { contract: revisionContract, closure: { required: true, allResolved: review.basePass, items: asArray(revisionContract.items).map((item) => ({ ...item, status: review.basePass ? "resolved" : "unresolved", evidence: review.basePass ? "每个分批产物均完成三模型审核并关闭硬性问题" : "至少一个分批产物未完成基础审核条件", remainingFix: review.basePass ? "" : "按失败批次重新修订" })) } } : null;
+  return review;
+}
+
+function scopedPreviousArtifacts(previousArtifacts, unitScope) {
+  const scope = normalizeUnitNumbers(unitScope);
+  return asArray(previousArtifacts).map((artifact) => {
+    if (!UNIT_STAGES.has(artifact?.stage)) return artifact;
+    return {
+      ...artifact,
+      content: unitStageContent(artifact.stage, artifact.content, scope),
+    };
+  });
 }
 
 function publicArtifact(artifact) {
@@ -1458,7 +2501,7 @@ function buildArtifact({ stage, mode, input, content, model, version, review, no
     status: ready ? "ready" : "needs_review",
     source: "pixeltale_agent",
     content,
-    evidence: ["用户创作规格", "已确认阶段上下文", `${modeLabel(mode)} / 中文剧情 + 英文对白策略`, `目标市场：${MARKET_PROFILES[normalizeMarket(input).marketCountry].label}`],
+    evidence: ["用户创作规格", "已确认阶段上下文", `${modeLabel(mode)} / 中文剧情 + 英文对白策略`, `目标市场：${MARKET_PROFILES[normalizeMarket(input, mode).marketCountry].label}`],
     model,
     reviewId: "",
     createdAt: timestamp,
@@ -1535,7 +2578,7 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
     mode: state.mode,
     dialoguePolicy: DEFAULT_DIALOGUE_POLICY,
     creativeControls,
-    market: normalizeMarket(state.input),
+    market: normalizeMarket(state.input, state.mode),
     stageParticipation: normalizeStageOptions(state.input),
     handoffScope: creativeControls.handoffScope,
     input: state.input,
@@ -1561,8 +2604,17 @@ function createPixelTaleAgent(options = {}) {
   const writeHandoffFile = options.writeHandoffFile || (() => "");
   const writeVisualAssetDocument = options.writeVisualAssetDocument;
   const writeScriptDocument = options.writeScriptDocument;
+  const onPhase = typeof options.onPhase === "function" ? options.onPhase : () => {};
   if (typeof readPixelTaleState !== "function" || typeof writePixelTaleState !== "function") throw new Error("PixelTale Agent 缺少独立 state adapter");
-  if (!modelRouter || typeof modelRouter.call !== "function" || typeof modelRouter.models !== "function") throw new Error("PixelTale Agent 必须使用 SuperPixel 文本模型路由");
+  if (!modelRouter || typeof modelRouter.call !== "function" || typeof modelRouter.models !== "function") throw new Error("PixelTale Agent 必须使用独立编剧 API 路由");
+
+  function reportPhase(params, phase) {
+    try {
+      onPhase(params, phase);
+    } catch {
+      // Phase reporting is observational and must never interrupt generation.
+    }
+  }
 
   function availableModels() {
     return asArray(modelRouter.models());
@@ -1576,7 +2628,17 @@ function createPixelTaleAgent(options = {}) {
       writePixelTaleState,
       now,
     });
-    state.routes = normalizeRoutes(state.routes, availableModels());
+    const storedRoutes = state.routes;
+    state.routes = normalizeRoutes(storedRoutes, availableModels());
+    // A migrated route must be written back. Migrating only in memory lets the
+    // retired model reappear on every subsequent read of the stored session.
+    if (routesNeedMigration(storedRoutes)) {
+      try {
+        persistState(params, state);
+      } catch {
+        // Never fail a read because the migration write-back failed.
+      }
+    }
     return state;
   }
 
@@ -1593,6 +2655,286 @@ function createPixelTaleAgent(options = {}) {
     return publicState(state, modelRouter);
   }
 
+  async function runUnitStage({ params, state, stage, mode, routes, route, runInput, runId, startedAt, revisionPlan, autoRepairPass = 0, revisionBudget = { used: 0, previousReview: null } }) {
+    const totalUnits = plannedUnitCount(runInput);
+    const explicitUnits = normalizeUnitNumbers(
+      params.unitNumbers || params.input?.unitNumbers || params.input?.revisionUnitNumbers || state.input?.revisionUnitNumbers,
+      totalUnits,
+    );
+    const existingLocked = lockedUnitNumbers(state, stage);
+    const lockedTarget = explicitUnits.filter((number) => existingLocked.includes(number));
+    const allowLockedUnitRevision = !!revisionPlan && lockedTarget.length > 0;
+    if (!totalUnits) {
+      const error = new Error("分集与章节需要有效的计划集数，才能建立批次");
+      error.code = "UNIT_COUNT_INVALID";
+      error.statusCode = 409;
+      throw error;
+    }
+    if (lockedTarget.length && !allowLockedUnitRevision) {
+      const error = new Error(`第${lockedTarget.join("、")}集已经锁定；普通重试只能处理未锁定集`);
+      error.code = "UNIT_LOCKED";
+      error.statusCode = 409;
+      throw error;
+    }
+    const allUnits = [...Array(totalUnits)].map((_, index) => index + 1);
+    const targetUnits = explicitUnits.length ? explicitUnits : allUnits.filter((number) => !existingLocked.includes(number));
+    if (!targetUnits.length) {
+      const existingArtifact = artifactForStage(state, stage) || approvedForStage(state, stage);
+      const existingReview = existingArtifact?.reviewId ? state.artifacts.find((artifact) => artifact.id === existingArtifact.reviewId) : null;
+      state.input.revisionUnitNumbers = "";
+      const record = { runId, stage, mode, route: { primary: route.primary }, status: existingArtifact?.status === "ready" ? "completed" : "needs_review", noOp: true, unitProgress: state.stageProgress[stage], primaryModel: "", reviewModels: [], artifactIds: existingArtifact ? [existingArtifact.id, existingReview?.id].filter(Boolean) : [], errors: [], retryCount: 0, startedAt, completedAt: nowIso(now) };
+      state.runs.push(record);
+      persistState(params, state);
+      return { ...publicRun(record), artifacts: state.artifacts.filter((artifact) => record.artifactIds.includes(artifact.id)).map(publicArtifact), state: publicState(state, modelRouter) };
+    }
+
+    const sourceArtifact = artifactForStage(state, stage) || approvedForStage(state, stage);
+    const sourceReview = sourceArtifact?.reviewId ? state.artifacts.find((artifact) => artifact.id === sourceArtifact.reviewId) : null;
+    let revisionContract = null;
+    if (revisionPlan) {
+      if (!sourceArtifact || !sourceReview?.content) {
+        const error = new Error("当前阶段没有可执行的待修订版本");
+        error.code = "REVISION_SOURCE_INVALID";
+        error.statusCode = 409;
+        throw error;
+      }
+      revisionContract = buildRevisionContract(sourceReview.content, { stage, sourceArtifactId: sourceArtifact.id, id: `revision_${runId}` });
+      if (!revisionContract.items.length) {
+        const error = new Error("当前审核没有形成可执行的共识修订项，不能安全开始定向修订");
+        error.code = "REVISION_CONTRACT_EMPTY";
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+
+    let accumulatedContent = asObject(sourceArtifact?.content);
+    if (stage === "arc" && !Array.isArray(accumulatedContent.units)) accumulatedContent = { ...accumulatedContent, units: [] };
+    if (stage === "scenes" && !Array.isArray(accumulatedContent.scenes)) accumulatedContent = { ...accumulatedContent, scenes: [] };
+    const previousArtifacts = scopedPreviousArtifacts(STAGES.map((item) => approvedForStage(state, item)).filter(Boolean), targetUnits);
+    const batches = splitUnitBatches(targetUnits);
+    const batchReviews = [];
+    const completedArtifactIds = [];
+    const errors = [];
+    let retryCount = 0;
+    let lastPrimary = null;
+    let lastReview = null;
+    let continuityCarry = [];
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+      const batchUnits = batches[batchIndex];
+      const batchId = `${runId}_batch_${batchIndex + 1}`;
+      const batchStartedAt = nowIso(now);
+      const batchInput = {
+        ...runInput,
+        ...stageBatchInput({ stage, totalUnits, unitScope: batchUnits, lockedUnits: lockedUnitNumbers(state, stage), allowLockedUnitRevision }),
+        unitCount: totalUnits,
+      };
+      const continuityContext = [...stageBatchContext({ ...state, input: batchInput }, stage, batchUnits), ...continuityCarry].slice(-12);
+      updateUnitStageProgress(state, stage, totalUnits, { batchId, units: batchUnits, status: "running", startedAt: batchStartedAt });
+      state.updatedAt = nowIso(now);
+      persistState(params, state);
+      try {
+        const previousProgress = normalizeUnitProgress(state.stageProgress?.[stage]);
+        const previousBatch = previousProgress.batches
+          .filter((entry) => entry.status === "needs_review"
+            && entry.units.length === batchUnits.length
+            && entry.units.every((number, index) => number === batchUnits[index])
+            && entry.artifactId)
+          .at(-1);
+        const previousArtifact = previousBatch ? state.artifacts.find((artifact) => artifact.id === previousBatch.artifactId && artifact.stage === stage) : null;
+        const previousBatchContent = previousArtifact ? unitStageContent(stage, previousArtifact.content, batchUnits) : null;
+        const canReuseFailedBatch = !revisionContract
+          && previousArtifact
+          && unitNumbersForContent(stage, previousBatchContent).length === batchUnits.length;
+        let primary;
+        let batchContent;
+        let mergedContent;
+        if (canReuseFailedBatch) {
+          const recoveryContent = stage === "arc" && !text(previousBatchContent.arc_summary_zh, 2000)
+            ? { ...previousBatchContent, arc_summary_zh: text(accumulatedContent.arc_summary_zh || sourceArtifact?.content?.arc_summary_zh || "本季故事围绕核心冲突持续推进，并在每集结尾留下下一集追问。", 2000) }
+            : previousBatchContent;
+          batchContent = validateContent(stage, recoveryContent, { ...batchInput, unitScope: batchUnits, lockedUnitNumbers: lockedUnitNumbers(state, stage), allowLockedUnitRevision });
+          mergedContent = mergeStageBatchContent(stage, accumulatedContent, batchContent, { unitNumbers: batchUnits, state, allowLockedUnitRevision });
+          primary = {
+            provider: "recovery",
+            model: text(previousArtifact.model, 200) || route.primary,
+            attempts: 0,
+            reused: true,
+            creativeCouncil: previousArtifact.creativeCouncil || null,
+          };
+        } else {
+          const system = stageSystemPrompt(stage, mode, batchInput);
+          const batchSourceArtifact = sourceArtifact ? { ...sourceArtifact, content: unitStageContent(stage, accumulatedContent, batchUnits) } : { id: "", version: 0, content: unitStageContent(stage, accumulatedContent, batchUnits) };
+          const user = revisionContract
+            ? revisionUserPrompt({ stage, mode, input: batchInput, previousArtifacts, project: params.project, baseArtifact: batchSourceArtifact, revisionContract, revisionPlan, unitScope: batchUnits, lockedContext: lockedUnitContext(state, stage, batchUnits), continuityContext })
+            : stageUserPrompt({ stage, mode, input: batchInput, previousArtifacts, project: params.project, unitScope: batchUnits, lockedContext: lockedUnitContext(state, stage, batchUnits), continuityContext });
+          reportPhase(params, "authoring");
+          primary = await callStageCouncil({
+            route,
+            stage,
+            mode,
+            system,
+            user,
+            modelRouter,
+            onPhase: (phase) => reportPhase(params, phase),
+            validateContribution: (content) => {
+              const rawContent = asObject(content);
+              const candidateContent = stage === "arc" && !text(rawContent.arc_summary_zh, 2000)
+                ? { ...rawContent, arc_summary_zh: text(accumulatedContent.arc_summary_zh || sourceArtifact?.content?.arc_summary_zh || "本季故事围绕核心冲突持续推进，并在每集结尾留下下一集追问。", 2000) }
+                : rawContent;
+              return validateContent(stage, candidateContent, { ...batchInput, unitScope: batchUnits, lockedUnitNumbers: lockedUnitNumbers(state, stage), allowLockedUnitRevision });
+            },
+          });
+          retryCount += primary.attempts || 0;
+          revisionBudget.used += Number(primary.tokenUsageTotal || 0);
+          const rawContent = asObject(primary.content);
+          const candidateContent = stage === "arc" && !text(rawContent.arc_summary_zh, 2000)
+            ? { ...rawContent, arc_summary_zh: text(accumulatedContent.arc_summary_zh || sourceArtifact?.content?.arc_summary_zh || "本季故事围绕核心冲突持续推进，并在每集结尾留下下一集追问。", 2000) }
+            : rawContent;
+          batchContent = validateContent(stage, candidateContent, { ...batchInput, unitScope: batchUnits, lockedUnitNumbers: lockedUnitNumbers(state, stage), allowLockedUnitRevision });
+          mergedContent = mergeStageBatchContent(stage, accumulatedContent, batchContent, { unitNumbers: batchUnits, state, allowLockedUnitRevision });
+        }
+        const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
+        const primaryArtifact = buildArtifact({ stage, mode, input: batchInput, content: mergedContent, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
+        if (primary.creativeCouncil) primaryArtifact.creativeCouncil = primary.creativeCouncil;
+        if (primary.reused) primaryArtifact.recovery = { sourceArtifactId: previousArtifact.id, owner: "审核恢复", authorModelSkipped: true };
+        if (revisionContract) primaryArtifact.revision = { sourceArtifactId: sourceArtifact?.id || "", contractId: revisionContract.id, itemCount: revisionContract.items.length, unitNumbers: batchUnits, owner: "本阶段主创" };
+        const reviewTarget = { ...primaryArtifact, content: unitStageContent(stage, batchContent, batchUnits) };
+        const ruleResult = runStageRules({ stage, mode, artifact: reviewTarget.content, approvedContext: { ...batchInput, input: batchInput, artifacts: previousArtifacts }, lockedPaths: lockedUnitContext(state, stage, batchUnits) });
+        const highRuleViolations = ruleResult.violations.filter((item) => item.severity === "high");
+        const reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route);
+        reportPhase(params, "reviewing");
+        const reviews = await collectCrossReviewQuorum({ reviewRoutes, revisionContract, execute: async (reviewRoute, signal) => {
+          const reviewModel = reviewRoute.model || reviewRoute;
+          const role = reviewRoute.role || "";
+          const roleDescription = reviewerIdentity(role);
+          const reviewCandidates = uniqueText([reviewModel, ...asArray(reviewRoute.fallbackModels)], 2);
+          let lastError;
+          let lastAttempted = reviewModel;
+          for (const candidate of reviewCandidates) {
+            lastAttempted = candidate;
+            try {
+              const result = await callProvider({
+                provider: candidate,
+                system: `${reviewSystemPrompt(stage, mode, batchInput)}\n本次固定身份：${roleDescription}`,
+                user: reviewUserPrompt({ stage, mode, input: batchInput, artifact: reviewTarget, previousArtifacts, revisionContract, unitScope: batchUnits, lockedContext: lockedUnitContext(state, stage, batchUnits), continuityContext, ruleFindings: ruleResult.violations }),
+                modelRouter,
+                timeoutMs: REVIEW_MODEL_TIMEOUT_MS,
+                maxTokens: REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000,
+                purpose: `pixeltale:${stage}:review`,
+                temperature: 0.2,
+                signal,
+              });
+              revisionBudget.used += tokenUsage(result);
+              const content = validateReview(result.content, { requireDimensions: true, revisionContract });
+              retryCount += result.attempts || 0;
+              return { route: reviewRoute, selectedModel: reviewModel, role, result: { ...result, content, actualModel: candidate, fallbackUsed: candidate !== reviewModel } };
+            } catch (error) {
+              lastError = error;
+              retryCount += 1;
+              if (!canFallbackFrom(error)) break;
+            }
+          }
+          // Name the model that actually failed. Using the last candidate reported
+          // "grok-4.5: deepseek truncated" for a seat where grok was never called.
+          return { route: reviewRoute, model: lastAttempted || reviewModel, selectedModel: reviewModel, role, error: lastError?.message || "审核模型请求失败", errorCode: lastError?.code || "NETWORK_ERROR" };
+        } });
+        reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
+        const consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract), ruleFindings: ruleResult.violations };
+        if (consensus.revision) consensus.revision.owner = "本阶段主创";
+        const reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviews.map((item) => item.result?.model || item.model).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
+        primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
+        primaryArtifact.reviewId = reviewArtifact.id;
+        state.artifacts.push(primaryArtifact, reviewArtifact);
+        lastPrimary = primaryArtifact;
+        lastReview = reviewArtifact;
+        completedArtifactIds.push(primaryArtifact.id, reviewArtifact.id);
+        batchReviews.push({ ...consensus, batchId, units: batchUnits });
+        if (consensus.pass) {
+          lockStageUnits(state, stage, mergedContent, batchUnits, primaryArtifact, now);
+          updateUnitStageProgress(state, stage, totalUnits, { batchId, units: batchUnits, status: "completed", artifactId: primaryArtifact.id, reviewId: reviewArtifact.id, startedAt: batchStartedAt, completedAt: nowIso(now) });
+        } else {
+          updateUnitStageProgress(state, stage, totalUnits, { batchId, units: batchUnits, status: "needs_review", artifactId: primaryArtifact.id, reviewId: reviewArtifact.id, error: "该批次交叉审核未通过", startedAt: batchStartedAt, completedAt: nowIso(now) });
+        }
+        // 审核失败只阻止锁定当前批次；其产物仍作为临时连续性上下文，保证一次运行可以继续生成后续批次。
+        accumulatedContent = mergedContent;
+        continuityCarry = transientUnitContext(stage, batchContent, batchUnits).slice(-EPISODE_BATCH_SIZE);
+        state.updatedAt = nowIso(now);
+        persistState(params, state);
+      } catch (error) {
+        errors.push({ code: error.code || "RUN_FAILED", message: error.message });
+        const canAutoSplit = batchUnits.length > 1 && (error.splitSafe === true || ["STAGE_TIMEOUT_BUDGET_EXHAUSTED", "SCHEMA_INVALID"].includes(error.code));
+        if (canAutoSplit) {
+          const smallerSize = Math.max(1, Math.ceil(batchUnits.length / 2));
+          const smallerBatches = splitUnitBatches(batchUnits, smallerSize);
+          updateUnitStageProgress(state, stage, totalUnits, { batchId, units: batchUnits, status: "retrying_smaller", error: `${error.message}；已自动拆分为 ${smallerBatches.length} 个小批次重试`, startedAt: batchStartedAt, completedAt: nowIso(now) });
+          batches.splice(batchIndex, 1, ...smallerBatches);
+          state.updatedAt = nowIso(now);
+          persistState(params, state);
+          batchIndex -= 1;
+          continue;
+        }
+        updateUnitStageProgress(state, stage, totalUnits, { batchId, units: batchUnits, status: "failed", error: error.message, startedAt: batchStartedAt, completedAt: nowIso(now) });
+        state.updatedAt = nowIso(now);
+        persistState(params, state);
+        const record = { runId, stage, mode, route, status: "failed", unitProgress: state.stageProgress[stage], primaryModel: "", reviewModels: [], revision: revisionPlan ? { sourceArtifactId: sourceArtifact?.id || "", contractId: revisionContract?.id || "", itemCount: revisionContract?.items.length || 0, unitNumbers: batchUnits, plan: text(revisionPlan, 14000), allResolved: false } : null, artifactIds: completedArtifactIds, errors, retryCount, startedAt, completedAt: nowIso(now) };
+        state.runs.push(record);
+        persistState(params, state);
+        return { ...publicRun(record), artifacts: state.artifacts.filter((artifact) => record.artifactIds.includes(artifact.id)).map(publicArtifact), state: publicState(state, modelRouter) };
+      }
+    }
+
+    const finalReview = synthesizeBatchReview(stage, batchReviews, totalUnits, state.unitLocks[stage], revisionContract);
+    if (revisionContract) finalReview.revision = { contract: revisionContract, closure: { required: true, allResolved: finalReview.basePass, items: revisionContract.items.map((item) => ({ ...item, status: finalReview.basePass ? "resolved" : "unresolved", evidence: finalReview.basePass ? "所有目标批次均完成三模型审核并关闭硬性问题" : "存在未完成基础审核条件的批次", remainingFix: finalReview.basePass ? "" : "按未通过批次重新修订" })) } };
+    let repairPlan = "";
+    let autoRepairEligible = false;
+    if (!finalReview.pass && !revisionPlan && autoRepairPass < UNIT_AUTO_REPAIR_MAX_PASSES && targetUnits.length) {
+      autoRepairEligible = true;
+      repairPlan = automaticUnitRepairPlan(stage, finalReview, targetUnits);
+      const technicalStatus = revisionBudget.used > AUTO_REPAIR_TOKEN_BUDGET
+        ? "budget_exhausted"
+        : stalledRevision(revisionBudget.previousReview, finalReview) ? "stalled" : "";
+      if (technicalStatus) {
+        finalReview.technicalFailures = [{ status: technicalStatus, message: technicalStatus === "stalled" ? "自动修订未收敛，已转人工交接" : "自动修订累计 token 超出阶段预算，已转人工交接" }];
+        repairPlan = "";
+        autoRepairEligible = false;
+      }
+    }
+    const finalReviewArtifact = buildReviewArtifact({ stage, review: finalReview, model: "batch-cross-review", version: Number(lastPrimary?.version || 1), now, randomUUID, primaryArtifactId: lastPrimary?.id || "" });
+    if (lastPrimary) {
+      lastPrimary.status = finalReview.pass ? "ready" : "needs_review";
+      lastPrimary.reviewId = finalReviewArtifact.id;
+    }
+    state.artifacts.push(finalReviewArtifact);
+    if (explicitUnits.length) state.input.revisionUnitNumbers = "";
+    state.updatedAt = nowIso(now);
+    persistState(params, state);
+    if (autoRepairEligible) {
+      // A failed batch used to end the whole request here, forcing the user
+      // to click again. Re-enter the same unit runner once or twice so a
+      // failed review can be retried or repaired without resubmitting locks.
+      const repairPlan = automaticUnitRepairPlan(stage, finalReview, targetUnits);
+      return await runUnitStage({
+        params: { ...params, revisionPlan: repairPlan },
+        state,
+        stage,
+        mode,
+        routes,
+        route,
+        runInput,
+        runId: `${runId}_auto_${autoRepairPass + 1}`,
+        startedAt,
+        revisionPlan: repairPlan,
+        autoRepairPass: autoRepairPass + 1,
+        revisionBudget: { used: revisionBudget.used, previousReview: finalReview },
+      });
+    }
+    const record = { runId, stage, mode, route, status: finalReview.pass ? "completed" : "needs_review", unitProgress: state.stageProgress[stage], primaryModel: lastPrimary?.model || "", reviewModels: [], creativeCouncil: lastPrimary?.creativeCouncil || null, consensusIndex: finalReview.consensusIndex, agreement: finalReview.agreement, reviewCompletion: finalReview.reviewCompletion, revision: revisionPlan ? { sourceArtifactId: sourceArtifact?.id || "", contractId: revisionContract?.id || "", itemCount: revisionContract?.items.length || 0, unitNumbers: targetUnits, plan: text(revisionPlan, 14000), allResolved: finalReview.revision?.closure?.allResolved === true } : null, artifactIds: [...completedArtifactIds, finalReviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+    state.runs.push(record);
+    persistState(params, state);
+    return { ...publicRun(record), artifacts: state.artifacts.filter((artifact) => record.artifactIds.includes(artifact.id)).map(publicArtifact), state: publicState(state, modelRouter) };
+  }
+
   async function run(params = {}) {
     const projectId = text(params.projectId, 500);
     const stage = normalizeStage(params.stage);
@@ -1607,9 +2949,10 @@ function createPixelTaleAgent(options = {}) {
     state.input = {
       ...asObject(state.input),
       ...asObject(params.input),
+      mode,
       audienceGender: normalizeAudience({ ...asObject(state.input), ...asObject(params.input) }),
       ...normalizeCreativeControls({ ...asObject(state.input), ...asObject(params.input) }),
-      ...normalizeMarket({ ...asObject(state.input), ...asObject(params.input) }),
+      ...normalizeMarket({ ...asObject(state.input), ...asObject(params.input) }, mode),
       ...normalizeStageOptions({ ...asObject(state.input), ...asObject(params.input) }),
     };
     const runInput = revisionPlan
@@ -1659,6 +3002,9 @@ function createPixelTaleAgent(options = {}) {
         error.code = "INPUT_INVALID";
         throw error;
       }
+      if (UNIT_STAGES.has(stage)) {
+        return await runUnitStage({ params, state, stage, mode, routes, route, runInput, runId, startedAt, revisionPlan });
+      }
       if (revisionPlan) {
         if (!revisionBase || revisionBase.status !== "needs_review" || !sourceReview?.content) {
           const error = new Error("当前阶段没有可执行的待修订版本");
@@ -1683,6 +3029,7 @@ function createPixelTaleAgent(options = {}) {
       const user = revisionContract
         ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
         : stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, excludedTitles });
+      reportPhase(params, "authoring");
       primary = stage === "title"
         ? await callProvider({
           provider: route.primary,
@@ -1693,7 +3040,16 @@ function createPixelTaleAgent(options = {}) {
           maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS.title,
           purpose: "pixeltale:title:author",
         })
-        : await callStagePrimary({ route, stage, system, user, modelRouter });
+        : await callStageCouncil({
+          onPhase: (phase) => reportPhase(params, phase),
+          route,
+          stage,
+          mode,
+          system,
+          user,
+          modelRouter,
+          validateContribution: (content) => validateContent(stage, content, { ...runInput, mode, excludedTitles }),
+        });
       retryCount += primary.attempts || 0;
       const content = validateContent(
         stage,
@@ -1702,6 +3058,7 @@ function createPixelTaleAgent(options = {}) {
       );
       const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
       primaryArtifact = buildArtifact({ stage, mode, input: runInput, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
+      if (primary.creativeCouncil) primaryArtifact.creativeCouncil = primary.creativeCouncil;
       if (stage === "title") {
         primaryArtifact.status = "ready";
         primaryArtifact.reviewId = "";
@@ -1719,44 +3076,53 @@ function createPixelTaleAgent(options = {}) {
           owner: "本阶段主创",
         };
       }
-      reviewRoutes = modelRouter.reviewModels(route);
+      const ruleResult = runStageRules({ stage, mode, artifact: primaryArtifact.content, approvedContext: { ...runInput, input: runInput, artifacts: previousArtifacts }, lockedPaths: [] });
+      const highRuleViolations = ruleResult.violations.filter((item) => item.severity === "high");
+      reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route);
+      reportPhase(params, "reviewing");
       reviews = await collectCrossReviewQuorum({ reviewRoutes, revisionContract, execute: async (reviewRoute, signal) => {
         const reviewModel = reviewRoute.model || reviewRoute;
-        const role = reviewerIdentity(reviewModel);
+        const role = reviewRoute.role || "";
+        const roleDescription = reviewerIdentity(role);
         const reviewCandidates = uniqueText([reviewModel, ...asArray(reviewRoute.fallbackModels)], 2);
         let lastError;
+        let lastAttempted = reviewModel;
         for (const candidate of reviewCandidates) {
+          lastAttempted = candidate;
           try {
             const result = await callProvider({
               provider: candidate,
-              system: `${reviewSystemPrompt(stage, mode, runInput)}\n本次固定身份：${role}`,
-              user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts, revisionContract }),
+              system: `${reviewSystemPrompt(stage, mode, runInput)}\n本次固定身份：${roleDescription}`,
+              user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts, revisionContract, ruleFindings: ruleResult.violations }),
               modelRouter,
               timeoutMs: REVIEW_MODEL_TIMEOUT_MS,
               maxTokens: REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000,
               purpose: `pixeltale:${stage}:review`,
+              temperature: 0.2,
               signal,
             });
             const content = validateReview(result.content, { requireDimensions: true, revisionContract });
             retryCount += result.attempts || 0;
-            return { route: reviewRoute, selectedModel: reviewModel, role, result: { ...result, content } };
+            return { route: reviewRoute, selectedModel: reviewModel, role, result: { ...result, content, actualModel: candidate, fallbackUsed: candidate !== reviewModel } };
           } catch (error) {
             lastError = error;
             retryCount += 1;
             if (!canFallbackFrom(error)) break;
           }
         }
-        return { route: reviewModel, model: reviewCandidates.at(-1) || reviewModel, selectedModel: reviewModel, role, error: lastError?.message || "审核模型请求失败" };
+        // Name the model that actually failed. Using the last candidate reported
+          // "grok-4.5: deepseek truncated" for a seat where grok was never called.
+          return { route: reviewRoute, model: lastAttempted || reviewModel, selectedModel: reviewModel, role, error: lastError?.message || "审核模型请求失败", errorCode: lastError?.code || "NETWORK_ERROR" };
       } });
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
-      consensus = aggregateCrossReview(reviews, revisionContract);
+      consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract), ruleFindings: ruleResult.violations };
       if (consensus.revision) consensus.revision.owner = "本阶段主创";
       reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviews.map((item) => item.result?.model || item.model).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
       primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
       primaryArtifact.reviewId = reviewArtifact.id;
       state.artifacts.push(primaryArtifact, reviewArtifact);
       const runStatus = consensus.pass ? "completed" : "needs_review";
-      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviews.map((item) => item.result ? `${item.result.provider}:${item.result.model}` : `${providerForRoute(item.model)}:${item.model}`), primaryFallback: primary.fallback ? { attempted: primary.fallbackFailures.length, recovered: true, failures: primary.fallbackFailures, budget: primary.primaryBudget } : null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionPlan ? { sourceArtifactId: revisionBase?.id || "", contractId: revisionContract?.id || "", itemCount: revisionContract?.items.length || 0, plan: text(revisionPlan, 14000), allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviews.map((item) => item.result ? `${item.result.provider}:${item.result.model}` : `${providerForRoute(item.model)}:${item.model}`), creativeCouncil: primary.creativeCouncil || null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionPlan ? { sourceArtifactId: revisionBase?.id || "", contractId: revisionContract?.id || "", itemCount: revisionContract?.items.length || 0, plan: text(revisionPlan, 14000), allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       persistState(params, state);
       return { ...publicRun(record), artifacts: [primaryArtifact, reviewArtifact].map(publicArtifact), state: publicState(state, modelRouter) };
@@ -1764,7 +3130,7 @@ function createPixelTaleAgent(options = {}) {
       errors.push({ code: error.code || "RUN_FAILED", message: error.message });
       if (primaryArtifact && !state.artifacts.some((artifact) => artifact.id === primaryArtifact.id)) state.artifacts.push(primaryArtifact);
       const fallbackReviewModels = stage === "title" ? [] : (reviewRoutes.length ? reviewRoutes : [route.reviewer]);
-      const record = { runId, stage, mode, route: stage === "title" ? { primary: route.primary } : route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary), reviewModels: fallbackReviewModels.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), primaryFallback: error?.fallbackFailures?.length ? { attempted: error.fallbackFailures.length, recovered: false, failures: error.fallbackFailures, budget: error.primaryBudget || null } : null, revision: revisionPlan ? { sourceArtifactId: revisionBase?.id || "", contractId: revisionContract?.id || "", itemCount: revisionContract?.items.length || 0, plan: text(revisionPlan, 14000), allResolved: false } : null, artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
+      const record = { runId, stage, mode, route: stage === "title" ? { primary: route.primary } : route, status: "failed", primaryModel: primary ? `${primary.provider}:${primary.model}` : modelForRoute(route.primary), reviewModels: fallbackReviewModels.map((item) => `${item.provider || providerForRoute(item.model || item)}:${modelForRoute(item.model || item)}`), creativeCouncil: primary?.creativeCouncil || error?.creativeCouncil || null, creativeCouncilFailures: error?.fallbackFailures || [], revision: revisionPlan ? { sourceArtifactId: revisionBase?.id || "", contractId: revisionContract?.id || "", itemCount: revisionContract?.items.length || 0, plan: text(revisionPlan, 14000), allResolved: false } : null, artifactIds: primaryArtifact ? [primaryArtifact.id] : [], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
       state.updatedAt = nowIso(now);
       persistState(params, state);
@@ -1827,7 +3193,10 @@ function createPixelTaleAgent(options = {}) {
     const sourceArtifact = state.artifacts.find((artifact) => artifact.reviewId === review.id);
     if (sourceArtifact) {
       const gate = reviewAdvisoryGate(review.content);
-      sourceArtifact.status = gate.accepted.length || gate.blockingPending.length || !review.content.pass ? "needs_review" : "ready";
+      const basePass = review.content.basePass === true;
+      const resolvedPass = basePass && !gate.accepted.length && !gate.blockingPending.length;
+      review.content = { ...review.content, pass: resolvedPass, releaseResolved: resolvedPass };
+      sourceArtifact.status = resolvedPass ? "ready" : "needs_review";
       sourceArtifact.updatedAt = nowIso(now);
     }
     state.updatedAt = nowIso(now);
@@ -1871,6 +3240,16 @@ function createPixelTaleAgent(options = {}) {
       error.code = "ARTIFACT_NOT_READY";
       error.statusCode = 409;
       throw error;
+    }
+    if (UNIT_STAGES.has(artifact.stage)) {
+      const totalUnits = plannedUnitCount(state.input);
+      const locked = lockedUnitNumbers(state, artifact.stage);
+      if (!totalUnits || locked.length < totalUnits) {
+        const error = new Error(`${STAGE_LABELS[artifact.stage]}仍有未完成集数：已锁定 ${locked.length} / ${totalUnits || "计划"} 集，只能确认完整全剧`);
+        error.code = "UNIT_BATCH_INCOMPLETE";
+        error.statusCode = 409;
+        throw error;
+      }
     }
     if (artifact.stage === "title") {
       const selectedTitle = text(params.selectedTitle, 200);
@@ -2014,9 +3393,10 @@ function createPixelTaleAgent(options = {}) {
       state.input = {
         ...asObject(state.input),
         ...asObject(params.input),
+        mode: state.mode,
         audienceGender: normalizeAudience({ ...asObject(state.input), ...asObject(params.input) }),
         ...normalizeCreativeControls({ ...asObject(state.input), ...asObject(params.input) }),
-        ...normalizeMarket({ ...asObject(state.input), ...asObject(params.input) }),
+        ...normalizeMarket({ ...asObject(state.input), ...asObject(params.input) }, state.mode),
         ...normalizeStageOptions({ ...asObject(state.input), ...asObject(params.input) }),
       };
     }
@@ -2031,18 +3411,32 @@ function createPixelTaleAgent(options = {}) {
 module.exports = {
   createPixelTaleAgent,
   callProvider,
+  callStageCouncil,
+  computeMergeAudit,
   callStagePrimary,
   collectCrossReviewQuorum,
   normalizeMode,
+  modeLabel,
+  creativeControlPrompt,
+  titleStylePrompt,
+  stageOutputContract,
   normalizeRoutes,
   validateContent,
   validateReview,
   mergeRevisionContent,
+  mergeStageBatchContent,
+  normalizeUnitNumbers,
+  unitItemsForContent,
+  contentHash,
+  EPISODE_BATCH_SIZE,
   reviewAdvisoryItems,
   reviewAdvisoryGate,
+  isMandatoryReviewIssue,
   stageRoute,
   buildRevisionContract,
   aggregateRevisionClosure,
   aggregateCrossReview,
+  runStageRules,
+  batchReviewSummary,
   STAGES,
 };

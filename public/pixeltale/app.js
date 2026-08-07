@@ -64,6 +64,7 @@ const state = {
   lastError: "",
   documentError: "",
   activeRun: loadActiveRun(),
+  runPhase: "",
   dnaFilter: "all",
   agent: null,
   routes: { orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
@@ -267,11 +268,15 @@ function agentRequestHeaders() {
 }
 
 function modeValue() {
-  return state.mode === "long" ? "long_form_drama" : "tk_short_drama";
+  if (state.mode === "long") return "long_form_drama";
+  if (state.mode === "cn") return "cn_short_drama";
+  return "tk_short_drama";
 }
 
 function modeLabel() {
-  return state.mode === "tk" ? "TK SHORT DRAMA" : "LONG-FORM DRAMA";
+  if (state.mode === "tk") return "TK SHORT DRAMA";
+  if (state.mode === "cn") return "国内短剧";
+  return "LONG-FORM DRAMA";
 }
 
 function currentMeta() {
@@ -480,26 +485,28 @@ async function runDocumentAction(action) {
 function updateAgentState(agent) {
   state.agent = agent || null;
   if (!agent) return;
-  state.mode = agent.mode === "long_form_drama" ? "long" : "tk";
+  if (agent.mode === "long_form_drama") state.mode = "long"; else if (agent.mode === "cn_short_drama") state.mode = "cn"; else state.mode = "tk";
   state.stage = agent.stage === "script" ? "handoff" : agent.stage || "brief";
-  state.routes = { ...state.routes, ...(agent.routes || {}) };
+  const legacySeatDefaults = { seat_a: "gpt-5.6-terra", seat_b: "claude-opus-5", seat_c: "claude-haiku-4-5" };
+  const migratedRoutes = Object.fromEntries(Object.entries(agent.routes || {}).map(([key, value]) => [key, value === "deepseek-v4-pro" ? (legacySeatDefaults[key] || "claude-haiku-4-5") : value]));
+  state.routes = { ...state.routes, ...migratedRoutes };
   state.input = { ...state.input, ...(agent.input || {}) };
   state.approved = new Set(agent.approvedArtifactIds || []);
   syncRoutingModelOptions(agent.modelOptions || []);
 }
 
 function modelInfo(id) {
-  const fallback = { name: id, provider: id.startsWith("claude-") ? "claude" : id.startsWith("deepseek-") ? "deepseek" : "chatgpt", role: "创作模型", detail: "由 SuperPixel 统一接入与路由" };
+  const fallback = { name: id, provider: id.startsWith("claude-") ? "claude" : id.startsWith("deepseek-") ? "deepseek" : id.startsWith("grok-") ? "grok" : "chatgpt", role: "创作模型", detail: "由独立 PixelTale API 接入与路由" };
   return modelMeta[id] || fallback;
 }
 
 function syncRoutingModelOptions(options) {
   if (!Array.isArray(options) || !options.length) return;
-  const groups = { chatgpt: [], claude: [], deepseek: [] };
+  const groups = { chatgpt: [], claude: [] };
   options.forEach((option) => {
     if (groups[option?.provider]) groups[option.provider].push(option);
   });
-  const labels = { chatgpt: "GPT", claude: "Claude", deepseek: "DeepSeek" };
+  const labels = { chatgpt: "GPT", claude: "Claude" };
   $$('[data-route]').forEach((select) => {
     const selected = state.routes[select.dataset.route] || select.value;
     select.innerHTML = Object.entries(groups).map(([provider, entries]) => entries.length
@@ -542,6 +549,47 @@ function stageRunSummary(stage) {
     : "本轮生成已完成 · 等待确认";
 }
 
+function unitStageProgress(stage) {
+  if (![
+    "arc",
+    "scenes",
+  ].includes(stage)) return null;
+  const progress = state.agent?.stageProgress?.[stage] || {};
+  const total = Number(progress.totalUnits || state.input.episodeCount || 0);
+  const locked = Array.isArray(progress.lockedUnits) ? progress.lockedUnits : [];
+  const pending = Array.isArray(progress.pendingUnits) ? progress.pendingUnits : [...Array(total)].map((_, index) => index + 1).filter((number) => !locked.includes(number));
+  const current = Array.isArray(progress.currentBatch) ? progress.currentBatch : [];
+  return { total, locked, pending, current, complete: !!total && locked.length >= total };
+}
+
+function unitStageScopeInput(stage) {
+  const progress = unitStageProgress(stage);
+  if (!progress) return "";
+  const raw = String(state.input.revisionUnitNumbers || "").trim();
+  const scope = raw.split(/[\s,，、；;]+/u).map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0 && (!progress.total || item <= progress.total));
+  return [...new Set(scope)].join(",");
+}
+
+function collectUnitStageScope(stage) {
+  if (![
+    "arc",
+    "scenes",
+  ].includes(stage)) return [];
+  const raw = String($("#unitScopeInput")?.value ?? state.input.revisionUnitNumbers ?? "").trim();
+  const progress = unitStageProgress(stage);
+  const scope = raw.split(/[\s,，、；;]+/u).map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0 && (!progress?.total || item <= progress.total));
+  state.input.revisionUnitNumbers = [...new Set(scope)].join(",");
+  return [...new Set(scope)];
+}
+
+function renderUnitStageProgress(stage) {
+  const progress = unitStageProgress(stage);
+  if (!progress) return "";
+  const current = progress.current.length ? `当前批次：第 ${progress.current.join("、")} 集` : progress.complete ? "全部集已锁定" : "等待开始下一批";
+  const pending = progress.pending.length ? `待处理 ${progress.pending.length} 集` : "没有待处理集";
+  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>已锁定 ${progress.locked.length} / ${progress.total || "-"} 集</strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track"><i style="width:${progress.total ? Math.min(100, Math.round(progress.locked.length / progress.total * 100)) : 0}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>一次运行会自动生成、审核并恢复全部未锁定集；最多自动修订两轮，仍失败才需要人工介入。已锁定集不会再次提交。指定集数仅用于定向修订。</small></section>`;
+}
+
 function reviewForArtifact(artifact) {
   if (!artifact?.reviewId) return null;
   return (state.agent?.artifacts || []).find((item) => item.id === artifact.reviewId) || null;
@@ -570,7 +618,7 @@ function latestConsensusReview() {
   for (const stage of [...stageOrder].reverse()) {
     const artifact = artifactForStage(stage);
     const review = reviewForArtifact(artifact);
-    if (review?.content?.consensusIndex !== undefined) return review;
+    if (review?.content?.quality !== undefined || review?.content?.reviewCompletion !== undefined) return review;
   }
   return null;
 }
@@ -580,15 +628,13 @@ function consensusMetrics() {
   const content = review?.content || {};
   const interactionCompletion = Math.round((approvedStageCount() / productionStageTotal) * 100);
   const reviewCompletion = Number(content.reviewCompletion || 0);
-  const agreement = Number(content.agreement || 0);
-  const quality = Number(content.quality || 0);
-  const serverIndex = Number(content.consensusIndex);
-  const derivedIndex = Math.round(agreement * 0.45 + quality * 0.35 + reviewCompletion * 0.2);
-  const index = review
-    ? Math.max(0, Math.min(100, Math.round(Number.isFinite(serverIndex) ? serverIndex : derivedIndex)))
-    : 0;
+  const rawAgreement = content.agreement;
+  const agreement = rawAgreement === null || rawAgreement === undefined || rawAgreement === "" ? null : Number(rawAgreement);
+  const rawQuality = content.quality;
+  const quality = rawQuality === null || rawQuality === undefined || rawQuality === "" ? null : Number(rawQuality);
+  const index = Number.isFinite(quality) ? Math.max(0, Math.min(100, Math.round(quality))) : null;
   const quorum = content.quorum || {};
-  return { index, agreement, quality, reviewCompletion, interactionCompletion, completedReviews: Number(quorum.completed || 0), requiredReviews: Number(quorum.required || 3), quorumMet: quorum.met === true, content };
+  return { index, agreement, quality: Number.isFinite(quality) ? quality : null, reviewCompletion, interactionCompletion, completedReviews: Number(quorum.completedSeats ?? quorum.completed ?? 0), requiredReviews: Number(quorum.required || 3), quorumMet: quorum.met === true, releaseReady: content.pass === true, content };
 }
 
 function renderConsensusMeter() {
@@ -599,19 +645,27 @@ function renderConsensusMeter() {
   const label = document.querySelector("#consensusLabel");
   const agreement = document.querySelector("#consensusAgreement");
   const reviewCompletion = document.querySelector("#consensusReviewCompletion");
-  const interactionCompletion = document.querySelector("#consensusInteractionCompletion");
+  const interactionCompletion = document.querySelector("#consensusQuality");
   if (!score || !value || !fill || !label || !agreement || !reviewCompletion || !interactionCompletion) return;
-  const tone = metrics.index >= 90 ? "高度一致" : metrics.index >= 75 ? "可继续审查" : metrics.index > 0 ? "存在分歧" : "等待交叉审核";
-  score.textContent = `${metrics.index}%`;
-  value.textContent = `指数 · ${tone}`;
-  label.textContent = metrics.index > 0
-    ? `交叉审核 ${metrics.completedReviews} / ${metrics.requiredReviews} · ${metrics.quorumMet ? "已达放行门槛" : "等待足够意见"}`
+  const tone = metrics.quality === null ? "等待质量评分" : metrics.quality >= 90 ? "质量良好" : metrics.quality >= 75 ? "质量可接受" : "需要修订";
+  score.textContent = metrics.quality === null ? "—" : `${metrics.quality}%`;
+  value.textContent = `质量分 · ${tone}`;
+  const advisoryGate = reviewAdvisoryGate(metrics.content);
+  const releaseState = !metrics.quorumMet
+    ? "审核未完成"
+    : metrics.releaseReady
+      ? "审核完成 · 可放行"
+      : advisoryGate.blockingPending.length
+        ? "审核完成 · 等待人工裁决"
+        : "审核完成 · 等待修订";
+  label.textContent = metrics.quality !== null
+    ? `交叉审核 ${metrics.completedReviews} / ${metrics.requiredReviews} · ${releaseState}`
     : "完成当前阶段后启动交叉审核";
-  fill.style.setProperty("--consensus-width", `${metrics.index}%`);
-  fill.parentElement?.classList.toggle("is-live", metrics.index > 0);
-  agreement.textContent = `${metrics.agreement}%`;
+  fill.style.setProperty("--consensus-width", `${metrics.quality ?? 0}%`);
+  fill.parentElement?.classList.toggle("is-live", metrics.quality !== null);
+  agreement.textContent = metrics.agreement === null ? "—" : `${metrics.agreement}%`;
   reviewCompletion.textContent = `${metrics.reviewCompletion}%`;
-  interactionCompletion.textContent = `${metrics.interactionCompletion}%`;
+  interactionCompletion.textContent = metrics.quality === null ? "—" : `${metrics.quality}%`;
 }
 
 function stageStatus(stage) {
@@ -620,6 +674,8 @@ function stageStatus(stage) {
   if (artifact && state.approved.has(artifact.id)) return "已确认";
   if (stage === workflowStage()) {
     if (!artifact) return "下一步";
+    const unitProgress = unitStageProgress(stage);
+    if (unitProgress && !unitProgress.complete) return "待继续";
     if (stage === "title" && artifact.status === "ready" && !state.input.storyTitle) return "待选择";
     return artifact.status === "ready" ? "待确认" : "需修订";
   }
@@ -630,6 +686,18 @@ function stageAccessible(stage) {
   return stageStatus(stage) !== "待解锁";
 }
 
+function technicalReviewState(reviewContent = {}) {
+  const quorum = reviewContent.quorum || {};
+  const feedbacks = Array.isArray(reviewContent.feedbacks) ? reviewContent.feedbacks : [];
+  const failures = Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [];
+  const failedSeats = feedbacks.filter((item) => item.status === "failed");
+  const completedSeats = Number(quorum.completedSeats ?? quorum.completed ?? feedbacks.filter((item) => item.status === "completed").length);
+  const stalled = reviewContent.stalled === true || reviewContent.status === "stalled";
+  const budgetExhausted = reviewContent.budget_exhausted === true || reviewContent.status === "budget_exhausted";
+  const notConfigured = [...failedSeats, ...failures].some((item) => item.failureReason === "not_configured");
+  return { blocked: completedSeats < Number(quorum.required || 3) || quorum.degraded === true || notConfigured || failures.length > 0 || failedSeats.length > 0 || stalled || budgetExhausted, failedSeats, failures, degraded: quorum.degraded === true, stalled, budgetExhausted };
+}
+
 function nextStepMeta() {
   const flowStage = workflowStage();
   const flowMeta = stageMeta[flowStage];
@@ -637,13 +705,13 @@ function nextStepMeta() {
     return {
       kind: "busy",
       title: `${flowMeta.title}正在后台运行`,
-      copy: "任务仍在 SuperPixel 后台执行。页面不会重复提交，完成后会自动同步结果。",
+      copy: "任务仍在独立编剧 API 后台执行。页面不会重复提交，完成后会自动同步结果。",
       flowStage,
     };
   }
   if (state.busy) {
     if (flowStage === "title") return { kind: "busy", title: "正在生成 4 个英文剧名", copy: "由总编排中指定的单个模型生成，完成后直接进入人工选择，不执行交叉审核。", flowStage };
-    return { kind: "busy", title: "正在生成并进行交叉审核", copy: "先完成至少两份独立审核；只有出现评分冲突或有效结果不足时，才启动第三份审核。", flowStage };
+    return { kind: "busy", title: "正在生成并进行交叉审核", copy: "三席审核并行执行，必须等三席全部返回后再统一判断共识问题与意见冲突。", flowStage };
   }
   if (state.stage !== flowStage) {
     return {
@@ -677,6 +745,17 @@ function nextStepMeta() {
     };
   }
   const reviewContent = reviewForArtifact(artifact)?.content || {};
+  const technicalState = technicalReviewState(reviewContent);
+  if (technicalState.blocked && reviewForArtifact(artifact)) {
+    return {
+      kind: "run",
+      stage: flowStage,
+      title: `${flowMeta.title}技术未完成`,
+      copy: "三席审核尚未具备有效技术结果。请重新提交当前阶段，完成席位后再判断质量与修订意见。",
+      label: `重新提交${flowMeta.title}并审核 →`,
+      flowStage,
+    };
+  }
   const advisoryGate = reviewAdvisoryGate(reviewContent);
   if (advisoryGate.blockingPending.length) {
     return {
@@ -699,6 +778,18 @@ function nextStepMeta() {
     };
   }
   if (artifact.status === "ready") {
+    const unitProgress = unitStageProgress(flowStage);
+    if (unitProgress && !unitProgress.complete) {
+      const nextUnits = unitProgress.pending.slice(0, 5);
+      return {
+        kind: "run",
+        stage: flowStage,
+        title: `处理剩余${flowMeta.title}`,
+        copy: `当前有 ${unitProgress.pending.length} 集尚未锁定。点击一次后后台会自动处理全部未锁定集，已锁定内容不会再次提交。`,
+        label: "一键处理剩余集 →",
+        flowStage,
+      };
+    }
     const nextStage = stageOrder[stageIndex(flowStage) + 1] || "handoff";
     const nextLabel = stageMeta[nextStage]?.title || "导出";
     if (flowStage === "title" && !state.input.storyTitle) {
@@ -825,49 +916,73 @@ function renderShellState() {
   $("#handoffSummary").textContent = ready ? "全部阶段已确认 · 可生成正式剧本与视觉资产 DOCX" : "完成全部阶段确认后生成正式文件";
 }
 
-function activeRouteForStage() {
-  const route = state.routes;
-  if (state.stage === "characters" || (state.stage === "arc" && state.mode === "long")) return { primary: route.continuity, reviewer: route.orchestration, consistency: route.consistency };
-  if (state.stage === "arc" || state.stage === "dialogue") return { primary: route.hooks, reviewer: route.dialogueReview, consistency: route.consistency };
-  return { primary: route.orchestration, reviewer: route.continuity, consistency: route.consistency };
-}
-
 function renderModelTeam() {
-  const route = activeRouteForStage();
   const options = Array.isArray(state.agent?.modelOptions) ? state.agent.modelOptions : [];
-  const preferred = [route.reviewer, route.consistency, route.primary];
-  const reviewTeam = ["chatgpt", "claude", "deepseek"].map((provider) => {
-    const candidates = [...preferred, ...options.map((item) => item.id)]
-      .map((id) => options.find((item) => item.id === id))
-      .filter((item) => item?.provider === provider);
-    return candidates.find((item) => item.configured) || candidates[0];
-  }).filter(Boolean);
+  const seatDefaults = [
+    { seatId: "seat_a", role: "structure_causality", requiredModel: "gpt-5.6-terra" },
+    { seatId: "seat_b", role: "character_continuity", requiredModel: "claude-opus-5" },
+    { seatId: "seat_c", role: "audience_pacing_visual", requiredModel: "claude-haiku-4-5" },
+  ];
   const status = state.agent?.providerStatus || {};
   const currentArtifact = artifactForStage(state.stage);
   const currentReview = reviewForArtifact(currentArtifact);
   const reviewFeedbacks = Array.isArray(currentReview?.content?.feedbacks) ? currentReview.content.feedbacks : [];
+  const roleLabels = { structure_causality: "结构与因果审查", character_continuity: "人物与连续性审查", audience_pacing_visual: "受众节奏与视觉审查" };
+  const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则", seat_c: "首屏冲击 · 集尾钩子 · 镜头可拍性" };
+  const phases = [
+    { id: "authoring", label: "三席独立创作" },
+    { id: "synthesizing", label: "合并编排" },
+    { id: "reviewing", label: "三席交叉审核" },
+  ];
+  const currentPhaseIndex = phases.findIndex((phase) => phase.id === state.runPhase);
+  const completedPhaseIndex = currentPhaseIndex >= 0 ? currentPhaseIndex - 1 : currentReview ? phases.length - 1 : -1;
+  const phaseRail = `<div class="phase-rail" aria-label="阶段进度">${phases.map((phase, index) => {
+    const isCurrent = phase.id === state.runPhase;
+    const isComplete = index <= completedPhaseIndex;
+    const phaseClass = isCurrent ? "is-current is-live" : isComplete ? "is-complete" : "is-pending";
+    return `<span class="phase-step ${phaseClass}"><i>${isComplete ? "✓" : String(index + 1).padStart(2, "0")}</i><b>${phase.label}</b></span>${index < phases.length - 1 ? "<em aria-hidden=\"true\">→</em>" : ""}`;
+  }).join("")}</div>`;
+  const failureReasons = { timeout: "请求超时", network_error: "网络错误", empty_response: "空响应", invalid_json: "返回格式错误", schema_error: "数据结构错误", not_configured: "模型未配置" };
+  const reviewTeam = seatDefaults.map((seat, index) => {
+    const matched = reviewFeedbacks.find((entry) => entry?.seatId === seat.seatId)
+      || (reviewFeedbacks[index]?.seatId ? null : reviewFeedbacks[index]);
+    return matched ? { ...seat, ...matched } : { ...seat, status: "pending" };
+  });
+  $("#modelTeamCards")?.parentElement?.querySelector(".phase-rail")?.remove();
+  $("#modelTeamCards")?.insertAdjacentHTML("beforebegin", phaseRail);
+  $("#modelTeamCards").className = `model-team-cards${state.runPhase === "authoring" || state.runPhase === "reviewing" ? " is-breathing" : ""}`;
   $("#modelTeamCards").innerHTML = reviewTeam.map((entry) => {
-    const id = entry.id;
-    const meta = modelInfo(id);
-    const configured = entry.configured && status[entry.provider]?.configured;
-    const lane = entry.provider === "chatgpt" ? "结构与因果审查" : entry.provider === "claude" ? "人物与连续性审查" : "钩子与本土化审查";
-    const feedback = reviewFeedbacks.find((item) => item.model === id || item.provider === entry.provider);
-    const stateLabel = !configured
-      ? "审核未接入"
-      : feedback?.status === "completed"
-        ? feedback.pass ? "已完成" : "已完成 · 需修订"
-        : feedback?.status === "failed"
-          ? "审核超时/失败"
-          : currentReview
-            ? "待复审"
-            : "待审核";
-    return `<button class="model-card ${entry.provider === "chatgpt" ? "is-primary" : entry.provider === "claude" ? "is-reviewer" : ""}" type="button" data-model-detail="${id}" title="${lane}：${meta.name}"><i></i><span><strong>${meta.name}</strong><small>${lane} · ${meta.role}</small></span><em>${stateLabel}</em></button>`;
+    const modelId = entry.actualModel || entry.requiredModel || "";
+    const meta = modelInfo(modelId);
+    const provider = entry.provider || meta.provider;
+    const configured = entry.status === "failed" ? false : (entry.configured ?? true) && status[provider]?.configured !== false;
+    const lane = roleLabels[entry.role] || roleLabels[seatDefaults.find((seat) => seat.seatId === entry.seatId)?.role] || "独立交叉审查";
+    const stateLabel = entry.status === "failed"
+      ? `未返回 · 技术未完成 · ${failureReasons[entry.failureReason] || entry.failureReason || "调用失败"}`
+      : !configured
+        ? "审核未接入"
+        : entry.status === "completed"
+        ? entry.pass ? "已完成" : "已完成 · 需修订"
+        : currentReview
+          ? "待复审"
+          : "待审核";
+    const scoreLabel = entry.status === "failed" ? "—" : entry.status === "completed" && entry.score !== null && entry.score !== undefined ? `${entry.score} 分` : "—";
+    const fallbackLabel = entry.actualModel && entry.requiredModel && entry.actualModel !== entry.requiredModel ? " · 已启用备用模型" : "";
+    const seatId = entry.seatId || seatDefaults.find((seat) => seat.role === entry.role)?.seatId || "";
+    return `<button class="model-card ${provider === "chatgpt" ? "is-primary" : provider === "claude" ? "is-reviewer" : ""}" type="button" data-model-detail="${escapeHtml(seatId)}" title="${escapeHtml(lane)}"><i></i><span><strong>${escapeHtml(lane)}</strong><small>${escapeHtml(roleDescriptions[seatId] || "阶段职责 · 独立交叉审查")}${fallbackLabel}</small></span><em>${escapeHtml(scoreLabel)}<br>${escapeHtml(stateLabel)}</em></button>`;
   }).join("");
+  $("#modelTeamCards")?.parentElement?.querySelector(".model-team-degraded")?.remove();
+  if (currentReview?.content?.quorum?.degraded) {
+    // Use the backend's message: it names the seats that actually collided. Which
+    // pair collapses depends on which provider channel failed, so any hardcoded
+    // seat pair here goes stale the moment the roster changes.
+    const degradedNote = (currentReview.content.technicalFailures || []).find((item) => item?.status === "degraded")?.message
+      || "三席交叉审核不成立：有席位兜底到了同一模型";
+    $("#modelTeamCards").insertAdjacentHTML("beforebegin", `<p class="model-team-degraded">${escapeHtml(degradedNote)}</p>`);
+  }
   $$('[data-model-detail]').forEach((button) => button.addEventListener("click", () => {
-    const id = button.dataset.modelDetail;
-    const meta = modelInfo(id);
-    const statusText = status[meta.provider]?.configured ? "已接入" : "待接入";
-    showToast(`${meta.name}：${meta.detail} · ${statusText}`);
+    const lane = roleLabels[seatDefaults.find((seat) => seat.seatId === button.dataset.modelDetail)?.role] || "独立交叉审查";
+    showToast(`${lane} · ${button.querySelector("em")?.textContent?.replace("\n", " · ") || "待审核"}`);
   }));
 }
 
@@ -1505,13 +1620,20 @@ function reviewAdvisoryGate(reviewContent = {}) {
   const accepted = items.filter((item) => decisions.get(item.id)?.status === "accepted");
   const blockingPending = items.filter((item) => {
     const decision = decisions.get(item.id);
+    // Conflicts get no special case. An undecided score disagreement is resolved
+    // automatically by the backend and must not gate confirmation; it blocks only
+    // when the creator explicitly marked it for review. Mirrors the same rule in
+    // server/pixeltale-agent.js — keep both in sync.
     return decision?.status === "needs_human_review";
   });
   return { items, decisions, accepted, blockingPending };
 }
 
 function isMandatoryReviewIssue(item = {}) {
-  return Number(item.modelCount) >= 2 && item.severity === "high";
+  // Mirrors the backend rule: two independent models, OR the dimension owner
+  // alone at high confidence (only one seat is qualified to judge its own
+  // dimension, so requiring a second vote would disable that dimension).
+  return item.severity === "high" && (Number(item.modelCount) >= 2 || item.ownerHighConfidence === true);
 }
 
 function reviewItemKey(item = {}) {
@@ -1604,39 +1726,23 @@ function renderAdvisoryCards(items = [], advisoryGate = {}, reviewId = "") {
   }).join("");
 }
 
-function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage, reviewId = "" } = {}) {
-  const revision = reviewContent.revision || null;
-  const closure = revision?.closure;
-  const closureItems = Array.isArray(closure?.items) ? closure.items : [];
-  const closureResolvedCount = closureItems.filter((item) => item.status === "resolved").length;
-  const closurePanel = closure?.required ? `<section class="revision-progress ${closure.allResolved ? "is-resolved" : "is-open"}"><div class="revision-progress-head"><div><span class="card-label"><i></i>REVISION CHECK</span><strong>${closure.allResolved ? "修订合同已全部关闭" : "修订合同仍有未关闭项"}</strong><p>责任方：${escapeHtml(revision?.owner || "本阶段主创")}。下方只显示仍需处理的工作项，避免重复展示同一问题。</p></div><span>${escapeHtml(`${closureResolvedCount} / ${closureItems.length}`)}</span></div></section>` : "";
-  const advisoryGate = reviewAdvisoryGate(reviewContent);
-  const advisoryItems = advisoryGate.items;
-  const pendingAdvisoryIds = new Set(advisoryGate.blockingPending.map((item) => item.id));
-  const acceptedAdvisoryIds = new Set(advisoryGate.accepted.map((item) => item.id));
-  const blockingAdvisories = advisoryItems.filter((item) => pendingAdvisoryIds.has(item.id));
-  const referenceAdvisories = advisoryItems.filter((item) => !pendingAdvisoryIds.has(item.id) && !acceptedAdvisoryIds.has(item.id));
-  const advisoryPanel = [
-    advisoryGate.accepted.length ? `<p class="review-decision-note">已采纳 ${advisoryGate.accepted.length} 条参考意见，已并入下方“必须修订”清单。</p>` : "",
-    blockingAdvisories.length ? `<section class="review-advisories review-advisories-blocking"><div class="review-advisories-head"><div><strong>需要人工裁决 · ${blockingAdvisories.length} 项</strong><p>这些意见由创作者决定是否转为修订；处理完成前不能确认本阶段。</p></div></div><div class="review-advisory-list">${renderAdvisoryCards(blockingAdvisories, advisoryGate, reviewId)}</div></section>` : "",
-    referenceAdvisories.length ? `<details class="review-reference-panel"><summary><span>参考意见与模型状态</span><em>${referenceAdvisories.length} 项，不阻断确认</em></summary><div class="review-advisory-list">${renderAdvisoryCards(referenceAdvisories, advisoryGate, reviewId)}</div></details>` : "",
-  ].join("");
-  const recommendations = reviewRecommendationGroups(reviewContent);
-  const recommendationPanel = recommendations.length ? `<details class="review-reference-panel review-recommendations"><summary><span>可选优化建议</span><em>${escapeHtml(`${recommendations.length} 项，不阻断确认`)}</em></summary><div class="review-issue-list">${recommendations.map((issue, index) => `<article class="review-issue review-issue-${escapeHtml(issue.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(issue.tag || "共识建议")}</strong><span class="review-issue-severity">${escapeHtml(issue.severity || "medium")} · ${escapeHtml(`${issue.modelCount || 2} 个模型共同指出`)}</span></div>${issue.suggestions?.length ? `<ul>${issue.suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</article>`).join("")}</div></details>` : "";
-  if (passed) return `<div class="review-summary is-passed"><strong>审核通过，可以确认并进入下一步</strong><p>至少两个模型完成独立审核，且没有未关闭的高风险共识问题。评分分歧、低风险建议和单模型超时不会阻断确认。</p>${closurePanel}${recommendationPanel}${advisoryPanel}</div>`;
-  const issues = reviewIssueGroups(reviewContent);
-  const issueList = issues.length
-    ? `<section class="review-worklist"><div class="review-worklist-head"><div><span class="card-label"><i></i>REQUIRED WORKLIST</span><strong>必须修订 · ${issues.length} 类问题</strong><p>这是一份去重后的唯一执行清单。点击右侧按钮后，系统会按这些项目定向改稿并逐项复审。</p></div><span>仅处理此处</span></div><div class="review-issue-list">${issues.map((issue, index) => {
-      const source = issue.acceptedByHuman ? "创作者已采纳" : Number(issue.modelCount) >= 2 ? `${issue.modelCount} 个模型共同指出` : issue.models?.length ? `${issue.models.length} 个模型指出` : "审核清单";
-      const suggestions = (Array.isArray(issue.suggestions) ? issue.suggestions : []).filter(Boolean);
-      const evidence = (Array.isArray(issue.evidence) ? issue.evidence : []).filter(Boolean);
-      return `<article class="review-issue review-issue-${escapeHtml(issue.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(issue.tag || "待修订项")}</strong><span class="review-issue-severity">${escapeHtml(issue.severity || "medium")} · ${escapeHtml(source)}</span></div>${suggestions.length ? `<ul>${suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}${evidence.length ? `<details><summary>查看问题证据</summary><ul>${evidence.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></details>` : ""}</article>`;
-    }).join("")}</div></section>`
-    : `<p class="review-empty">当前没有形成二模型共识修订项，请重新生成当前阶段并重新审核。</p>`;
-  const countLabel = issues.length ? `${issues.length} 类必须修订` : "等待重新审核";
-  const summaryTitle = issues.length ? "审核未通过，需要处理必修项" : "审核未完成，需要重新提交";
-  const summaryCopy = issues.length ? "系统已把重复问题合并为一份工作清单；低风险建议和评分分歧不会混入必修项。" : "当前没有可安全执行的修订合同，请重新提交当前阶段。";
-  return `<div class="review-summary is-needs-review"><div class="review-summary-head"><div><strong>${summaryTitle}</strong><p>${summaryCopy}</p></div><span class="review-issue-count">${escapeHtml(countLabel)}</span></div>${closurePanel}${issueList}${recommendationPanel}${advisoryPanel}<p class="review-panel-note">唯一下一步位于右侧。${issues.length ? "定向修订完成后，系统会按同一清单逐项复审。" : "请重新生成当前阶段并重新审核。"}</p></div>`;
+function renderReviewPanel(reviewContent = {}, { passed = false } = {}) {
+  const closureItems = Array.isArray(reviewContent.revision?.closure?.items) ? reviewContent.revision.closure.items.filter((item) => item.status !== "resolved") : [];
+  const mandatory = mergeReviewItems([...(Array.isArray(reviewContent.mandatoryIssues) ? reviewContent.mandatoryIssues : []), ...closureItems]);
+  const optional = mergeReviewItems([...(Array.isArray(reviewContent.recommendedIssues) ? reviewContent.recommendedIssues : []), ...(Array.isArray(reviewContent.independentIssues) ? reviewContent.independentIssues : [])]);
+  const adjudications = Array.isArray(reviewContent.adjudications) ? reviewContent.adjudications : [];
+  const feedbacks = Array.isArray(reviewContent.feedbacks) ? reviewContent.feedbacks : [];
+  const technicalFailures = [...(Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : []), ...feedbacks.filter((item) => item.status === "failed")];
+  const technical = technicalReviewState(reviewContent);
+  const reasonLabels = { timeout: "请求超时", network_error: "网络错误", empty_response: "空响应", invalid_json: "返回格式错误", schema_error: "数据结构错误", not_configured: "模型未配置" };
+  const issueMarkup = (items, empty) => items.length ? `<div class="review-issue-list">${items.map((item, index) => `<article class="review-issue review-issue-${escapeHtml(item.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.tag || item.code || "审核意见")}</strong><span class="review-issue-severity">${escapeHtml(item.severity || "medium")}</span></div>${item.message ? `<p>${escapeHtml(item.message)}</p>` : ""}${Array.isArray(item.suggestions) && item.suggestions.length ? `<ul>${item.suggestions.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : item.fix ? `<p>${escapeHtml(item.fix)}</p>` : ""}</article>`).join("")}</div>` : `<p class="review-empty">${empty}</p>`;
+  const adjudicationMarkup = adjudications.length ? `<div class="review-issue-list">${adjudications.map((item) => `<article class="review-adjudication"><strong>${escapeHtml(item.dimension || "未标注维度")}</strong><p>分歧度 ${escapeHtml(String(item.agreement ?? "—"))}% · 席位评分 ${escapeHtml((item.scores || []).join(" / "))}</p><p>证据来源：${escapeHtml((item.seats || []).join("、") || "审核席位")}</p><p>裁决依据：${escapeHtml(item.adjudication?.basis || "按证据强度与阶段契约自动裁决")}</p></article>`).join("")}</div>` : `<p class="review-empty">当前没有评分分歧，三席意见可直接汇总。</p>`;
+  const failureMarkup = technicalFailures.length ? `<div class="review-issue-list">${technicalFailures.map((item) => `<article class="review-technical-failure"><strong>${escapeHtml(item.seatId || "未标识席位")}</strong><p>未返回 · 技术未完成 · ${escapeHtml(reasonLabels[item.failureReason] || item.failureReason || item.message || "调用失败")}</p></article>`).join("")}</div>` : `<p class="review-empty">三席未发现技术失败。</p>`;
+  const degradedFlag = technical.degraded
+    ? (technicalFailures.find((item) => item?.status === "degraded")?.message || "三席交叉审核不成立：有席位兜底到了同一模型")
+    : "";
+  const technicalFlags = [degradedFlag, technical.stalled ? "自动修订已停止：stalled" : "", technical.budgetExhausted ? "自动修订已停止：budget_exhausted" : ""].filter(Boolean);
+  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}"><strong>${passed ? "审核结果已生成" : "审核未完成或需要修订"}</strong><p>审核结果按人工修订、可选优化、系统裁决和技术状态分开展示。</p><section class="review-zone review-zone-mandatory"><h3>① 必须修订</h3>${issueMarkup(mandatory, "当前没有必须修订项。")}</section><section class="review-zone review-zone-optional"><h3>② 可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>③ 系统自动裁决</h3>${adjudicationMarkup}</section><section class="review-zone review-zone-technical"><h3>④ 技术失败状态</h3>${failureMarkup}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></div>`;
 }
 
 function renderTitleStage() {
@@ -1663,22 +1769,39 @@ function renderTitleStage() {
   return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">ENGLISH RELEASE TITLE · 4 OPTIONS</span><h3 id="titlePickerHeading">选一个最适合这部剧的英文片名</h3><p>正式发行只使用英文片名。中文释义和命名信息用于创作者快速比较。</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核 · ${escapeHtml(inlineStatus)}</small></div></section>`;
 }
 
+function renderCreationTrace(artifact, reviewContent = {}) {
+  const council = artifact?.creativeCouncil || {};
+  const contributors = Array.isArray(council.contributors) ? council.contributors : [];
+  const reviewers = Array.isArray(reviewContent.feedbacks) ? reviewContent.feedbacks : [];
+  if (!contributors.length && !reviewers.length && !council.synthesizer) return "";
+  const authorRows = contributors.map((seat) => `<li><strong>${escapeHtml(seat.role || "独立主创")}</strong><span>${escapeHtml(seat.actualModel || seat.requiredModel || seat.model || "未返回")}${seat.fallbackUsed ? " · Grok 兜底" : ""}</span></li>`).join("");
+  const mergeRow = council.synthesizer ? `<li><strong>${escapeHtml(council.synthesizer.role || "合并编排器")}</strong><span>${escapeHtml(council.synthesizer.actualModel || council.synthesizer.requiredModel || "未返回")}${council.synthesizer.fallbackUsed ? " · Grok 兜底" : ""}</span></li>` : "";
+  const reviewerRows = reviewers.map((reviewer) => `<li><strong>${escapeHtml(reviewer.role || "交叉审核席位")}</strong><span>${escapeHtml(reviewer.model || reviewer.provider || "未返回")}${reviewer.status === "completed" ? " · 已完成" : " · 未完成"}</span></li>`).join("");
+  return `<details class="review-reference-panel creation-trace"><summary><span>生产链路 · 三席主创 / 一次合并 / 三席审核</span><em>${reviewers.filter((reviewer) => reviewer.status === "completed").length} / 3 审核完成</em></summary><div class="creation-trace-block"><strong>主创与合并</strong><ul>${authorRows}${mergeRow}</ul></div>${reviewerRows ? `<div class="creation-trace-block"><strong>交叉审核</strong><ul>${reviewerRows}</ul></div>` : ""}</details>`;
+}
+
 function renderArtifactStage() {
   const meta = currentMeta();
   const artifact = artifactForStage(state.stage);
   if (!artifact) {
-    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>本阶段尚未有服务端产物</h3><p>完成上一阶段确认后，这里会生成当前阶段的结构化产物，并返回编排与复核结果。下一步操作位于右侧。</p></section>`;
+    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p>${renderUnitStageProgress(state.stage)}<section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>本阶段尚未有服务端产物</h3><p>完成上一阶段确认后，这里会生成当前阶段的结构化产物，并返回编排与复核结果。下一步操作位于右侧。</p></section>`;
   }
   const review = reviewForArtifact(artifact);
   const reviewContent = review?.content || {};
   const approved = state.approved.has(artifact.id);
+  const unitProgress = unitStageProgress(state.stage);
+  const unitComplete = !unitProgress || unitProgress.complete;
   const advisoryGate = reviewAdvisoryGate(reviewContent);
   const blockingItems = reviewIssueGroups(reviewContent);
-  const reviewPassed = approved || (reviewContent.pass && !advisoryGate.accepted.length && !advisoryGate.blockingPending.length);
+  const reviewPassed = approved || (unitComplete && reviewContent.pass && !advisoryGate.accepted.length && !advisoryGate.blockingPending.length);
   const reviewLabel = approved ? "本阶段已确认" : reviewPassed ? "审核通过 · 等待确认" : advisoryGate.blockingPending.length ? "待人工裁决 · 处理右侧意见" : advisoryGate.accepted.length ? "已有采纳意见 · 已并入必修清单" : blockingItems.length ? `待处理 ${blockingItems.length} 类必修项` : "审核未完成 · 需要重新提交";
-  const reviewPanel = review ? renderReviewPanel(reviewContent, { passed: reviewPassed, stage: state.stage, reviewId: review.id }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
-  const inlineStatus = approved ? "已确认版本" : reviewPassed ? "审核通过 · 请在右侧确认" : advisoryGate.blockingPending.length ? "待人工裁决 · 请处理右侧意见" : blockingItems.length ? "待定向修订 · 请使用右侧唯一按钮" : "需要重新提交当前阶段";
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${reviewPanel}</section>`;
+  const reviewPanel = review
+    ? !unitComplete && reviewContent.pass
+      ? `<div class="review-summary is-passed"><strong>当前产物已通过，正在等待整季完成</strong><p>已锁定 ${unitProgress.locked.length} / ${unitProgress.total} 集。点击右侧“一键处理剩余集”，后台会自动完成生成、审核和必要修订，后续请求不会包含已锁定集正文。</p></div>`
+      : renderReviewPanel(reviewContent, { passed: reviewPassed, stage: state.stage, reviewId: review.id })
+    : `<div class="review-summary"><strong>正在等待复核结果</strong><p>当前批次完成后，这里会显示审核与锁定状态。</p></div>`;
+  const inlineStatus = approved ? "已确认版本" : !unitComplete ? `已锁定 ${unitProgress.locked.length} / ${unitProgress.total} 集 · 继续生成` : reviewPassed ? "审核通过 · 请在右侧确认" : advisoryGate.blockingPending.length ? "待人工裁决 · 请处理右侧意见" : blockingItems.length ? "待定向修订 · 请使用右侧唯一按钮" : "需要重新提交当前阶段";
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p>${renderUnitStageProgress(state.stage)}<section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${renderCreationTrace(artifact, reviewContent)}${reviewPanel}</section>`;
 }
 
 function renderHandoff() {
@@ -1717,7 +1840,7 @@ function renderStage() {
 
 const RUN_POLL_INTERVAL_MS = 2_000;
 const RUN_POLL_TIMEOUT_MS = 4 * 60 * 1_000;
-const RUN_BACKGROUND_TIMEOUT_MS = 45 * 60 * 1_000;
+const RUN_BACKGROUND_TIMEOUT_MS = 6 * 60 * 60 * 1_000;
 
 async function waitForRunJob(jobId, { timeoutMs = RUN_POLL_TIMEOUT_MS } = {}) {
   if (!jobId) throw new Error("服务未返回运行任务号，请重新生成当前阶段");
@@ -1728,8 +1851,18 @@ async function waitForRunJob(jobId, { timeoutMs = RUN_POLL_TIMEOUT_MS } = {}) {
     try {
       const job = (await request(`/run-jobs/${encodeURIComponent(jobId)}`)).job;
       consecutiveFailures = 0;
-      if (job?.status === "completed") return job.result;
+      if (job?.status === "running") {
+        state.runPhase = job.phase || "";
+        renderModelTeam();
+      }
+      if (job?.status === "completed") {
+        state.runPhase = "";
+        renderModelTeam();
+        return job.result;
+      }
       if (job?.status === "failed") {
+        state.runPhase = "";
+        renderModelTeam();
         const terminalError = new Error(job.error || "本次运行失败");
         terminalError.terminal = true;
         terminalError.code = job.errorCode || "RUN_FAILED";
@@ -1751,9 +1884,11 @@ async function monitorBackgroundRun(run) {
   try {
     const result = await waitForRunJob(run.jobId, { timeoutMs: RUN_BACKGROUND_TIMEOUT_MS });
     if (result?.status === "detached") {
+      state.runPhase = "";
+      renderModelTeam();
       if (state.activeRun?.jobId === run.jobId) {
         persistActiveRun(null);
-        state.lastError = "后台任务超过 45 分钟仍未返回，输入和已完成产物已保留，请检查模型状态后重试当前阶段。";
+        state.lastError = "后台任务超过 6 小时仍未返回，输入和已完成产物已保留；只有单集连续生成失败时才需要人工介入。";
         showToast(state.lastError);
         renderStage();
       }
@@ -1767,6 +1902,8 @@ async function monitorBackgroundRun(run) {
     showToast(result?.status === "needs_review" ? "后台运行完成，已同步审核结果" : "后台运行完成，已同步当前阶段");
     renderStage();
   } catch (error) {
+    state.runPhase = "";
+    renderModelTeam();
     if (state.activeRun?.jobId !== run.jobId) return;
     state.lastError = userFacingError(error);
     showToast(state.lastError);
@@ -1779,6 +1916,7 @@ async function monitorBackgroundRun(run) {
 async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) {
   if (stage === "brief") collectBriefInput();
   if (stage === "title") state.input.storyTitle = "";
+  const unitNumbers = collectUnitStageScope(stage);
   state.lastError = "";
   state.busy = true;
   renderStage();
@@ -1786,12 +1924,14 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
     let payload;
     let recoveryAttempted = false;
     while (!payload) {
-      const accepted = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan }) });
+      const accepted = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan, unitNumbers }) });
       persistActiveRun({ jobId: accepted.job?.jobId, stage });
       try {
         const result = await waitForRunJob(accepted.job?.jobId);
         if (result?.status === "detached") {
           state.busy = false;
+          state.runPhase = "";
+          renderModelTeam();
           showToast("前台等待窗口已结束，任务仍在后台运行；完成后会自动同步，请勿重复提交。");
           void monitorBackgroundRun({ jobId: accepted.job?.jobId, stage });
           return { detached: true };

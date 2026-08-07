@@ -6187,6 +6187,8 @@ function renderModernStudio(data = state.project) {
   const assetSource = workflowEditorValue("assetDescription");
   const videoConfigReady = Boolean(data.videoConfigStatus?.ready);
   const videoConfigAvailable = Boolean(data.videoConfigStatus?.exists);
+  const durationPlan = data.videoConfigStatus?.durationPlan || null;
+  const durationMismatch = data.videoConfigStatus?.durationMismatch || null;
   const videoRunning = videoProgressHasActiveWork(data.videoProgress || {});
   syncModernDraftAction(data);
   renderModernAssetExtractAction();
@@ -6195,16 +6197,24 @@ function renderModernStudio(data = state.project) {
     const configGenerating = configButton.dataset.studioFeedbackBusy === "true";
     configButton.disabled = configGenerating || !scriptSource.trim();
     configButton.textContent = configGenerating ? "生成中..." : "生成视频配置";
-    configButton.title = configGenerating ? "视频配置生成中" : scriptSource.trim() ? "根据剧本、资产和模型导演设计生成视频配置" : "请先输入或上传剧本";
+    configButton.title = configGenerating
+      ? "视频配置生成中"
+      : durationMismatch
+        ? "当前视频配置与剧本时长不一致，请重新生成分镜草稿后再生成视频配置"
+        : scriptSource.trim()
+          ? "根据剧本、资产和模型导演设计生成视频配置"
+          : "请先输入或上传剧本";
   }
   const videoGenerateButton = $("#modernVideoGenerate");
   if (videoGenerateButton) {
     const configGenerating = configButton?.dataset.studioFeedbackBusy === "true";
     const configMissing = Array.isArray(data.videoConfigStatus?.missing) ? data.videoConfigStatus.missing.filter(Boolean).join("、") : "";
-    videoGenerateButton.disabled = configGenerating || videoRunning || !videoConfigAvailable;
+    videoGenerateButton.disabled = configGenerating || videoRunning || !videoConfigReady;
     videoGenerateButton.textContent = videoRunning ? "生成中..." : "生成全部视频";
     videoGenerateButton.title = videoRunning
       ? "全部视频片段生成中"
+      : durationMismatch
+        ? "当前配置已过期，请先重新生成分镜草稿和视频配置"
       : videoConfigReady
         ? "提交全部视频片段生成任务"
         : videoConfigAvailable
@@ -6224,7 +6234,10 @@ function renderModernStudio(data = state.project) {
   const project = { ...data.project, episodes: data.episodes || data.project.episodes || [] };
   const title = displayProjectTitle(project);
   const progress = data.videoProgress || {};
-  const shots = modernShotRecords(data);
+  // A stale free-mode config must not keep rendering its old shot queue.
+  // The server exposes the expected screenplay plan in durationMismatch;
+  // hide obsolete cards until the user regenerates the config.
+  const shots = durationMismatch ? [] : modernShotRecords(data);
   if (state.selectedId && state.modernStudio.storyboardContinuityLoadedFor !== state.selectedId) {
     try {
       const saved = JSON.parse(localStorage.getItem(`pixelToys.storyboardContinuity.${state.selectedId}`) || "null");
@@ -6241,6 +6254,8 @@ function renderModernStudio(data = state.project) {
   renderModernStoryboardStudio(data, shots);
   renderModernFilmStudio(data);
   const total = shots.length || Number(progress.total || 0);
+  const visibleShotCount = durationMismatch?.expected?.shotCount || total;
+  const visibleDuration = durationMismatch?.expected?.target || durationPlan?.target || 0;
   const completed = shots.filter((shot) => shot.status === "complete").length || Number(progress.completed || 0);
   const queueCount = modernVideoQueueCount(progress);
   const selectedIndex = Math.max(0, Math.min(state.modernStudio.shotIndex, Math.max(0, shots.length - 1)));
@@ -6274,7 +6289,9 @@ function renderModernStudio(data = state.project) {
   const currentPipelineIndex = pipelineComplete.findIndex((done) => !done);
   const pipelineCurrentIndex = currentPipelineIndex === -1 ? pipelineComplete.length - 1 : currentPipelineIndex;
   $("#modernProjectTitle").textContent = title;
-  $("#modernProjectMeta").textContent = `${project.episodeSlug || "当前项目"} · ${data.assets?.length || 0} 个资产 · ${total || 0} 个镜头`;
+  $("#modernProjectMeta").textContent = durationMismatch
+    ? `${project.episodeSlug || "当前项目"} · ${data.assets?.length || 0} 个资产 · 需重生成 ${visibleShotCount} 个镜头 / ${visibleDuration}s`
+    : `${project.episodeSlug || "当前项目"} · ${data.assets?.length || 0} 个资产 · ${total || 0} 个镜头`;
   $("#modernProjectCrumb").textContent = projectName;
   $("#modernEpisodeCrumb").textContent = episodeTitle;
   $("#modernRatioBadge").textContent = ratio;
@@ -6285,7 +6302,7 @@ function renderModernStudio(data = state.project) {
   $("#modernEpisodeKicker").textContent = kicker && kicker !== episodeTitle ? kicker : "EPISODE";
   $("#modernEpisodeHeroTitle").textContent = episodeTitle;
   $("#modernEpisodeHeroCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
-  $("#modernShotCount").textContent = total;
+  $("#modernShotCount").textContent = visibleShotCount;
   $("#modernCompletedCount").textContent = `${pct}%`;
   $("#modernSeriesProgress").style.width = `${pct}%`;
   $("#modernSeriesProgressLabel").textContent = `${pct}%`;
@@ -6298,9 +6315,10 @@ function renderModernStudio(data = state.project) {
     queueButton.setAttribute("aria-label", hasActiveQueue ? `查看正在生成的 ${queueCount} 个视频片段` : "视频生成队列");
     queueButton.title = hasActiveQueue ? `查看正在生成的 ${queueCount} 个视频片段` : "";
   }
-  $("#modernHeroShotCount").textContent = String(total || 0);
+  $("#modernHeroShotCount").textContent = String(visibleShotCount || 0);
   const totalDuration = shots.reduce((sum, shot) => sum + (Number(shot.duration) || 0), 0);
-  $("#modernHeroDuration").textContent = `00:${String(Math.round(totalDuration)).padStart(2, "0")}`;
+  const heroDuration = durationMismatch ? visibleDuration : totalDuration;
+  $("#modernHeroDuration").textContent = `00:${String(Math.round(heroDuration)).padStart(2, "0")}`;
   root.querySelectorAll("[data-modern-focus]").forEach((button, index) => {
     button.classList.toggle("is-complete", pipelineComplete[index]);
     button.classList.toggle("is-current", index === pipelineCurrentIndex);
@@ -6312,7 +6330,11 @@ function renderModernStudio(data = state.project) {
   $("#modernAssetStep").textContent = manifest.confirmed ? `${manifest.items?.length || data.assets?.length || 0} 个资产已确认` : (manifest.items?.length ? "待确认分类" : "等待解析");
   $("#modernAssetImageStep").textContent = confirmedAssetCount ? `${Math.min(generatedAssetCount, confirmedAssetCount)}/${confirmedAssetCount} 已生成` : "等待确认资产";
   $("#modernBoardStep").textContent = storyboardReady ? `${data.storyboards.length} 个故事板已生成` : videoConfigExists ? "可选 · 已跳过" : "可选 · 未生成";
-  $("#modernVideoStep").textContent = data.videoConfigStatus?.ready ? `${total} 个镜头已配置` : "等待配置";
+  $("#modernVideoStep").textContent = durationMismatch
+    ? `需重生成 · ${visibleShotCount} 个镜头 / ${visibleDuration}s`
+    : data.videoConfigStatus?.ready
+      ? `${total} 个镜头已配置`
+      : "等待配置";
   $("#modernCutStep").textContent = finalCutReady ? "成片已组装" : "等待片段";
   $("#modernKitShot").textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")}` : "当前镜头";
   $("#modernKitNames").textContent = selected?.assets?.length ? selected.assets.join(" · ") : "等待故事板分配";
@@ -10329,7 +10351,13 @@ async function changeDialogueLanguage(targetLanguage) {
     if (scriptEditor) scriptEditor.value = data.state?.contents?.script || scriptText;
     renderWorkspace();
     if (data.result?.skipped) {
-      toast(data.result.skipReason === "manual" ? "剧本已标记为英文对白,跳过翻译" : "检测到剧本已是英文对白,跳过翻译");
+      toast(
+        data.result.skipReason === "manual"
+          ? "剧本已标记为英文对白,跳过翻译"
+          : data.result.skipReason === "no-dialogue"
+            ? "未发现可转换的对白,已保存语言选择"
+            : "检测到剧本已是英文对白,跳过翻译",
+      );
     } else {
       toast(`已转换 ${data.result?.count || 0} 段对白`);
     }

@@ -11,16 +11,19 @@ process.env.DEEPSEEK_API_KEY ||= "sk-test-deepseek-0000000000000000000";
 
 const require = createRequire(import.meta.url);
 const server = require("../server.js");
-const { superPixel, pixelTaleRuns } = server.__test;
+const { pixelTaleApi, pixelTaleRuns } = server.__test;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-run-job-"));
 const recoveryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-run-recovery-"));
 
 const dimensions = Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 95, feedback: "通过" }]));
 const requestedTokenBudgets = [];
-superPixel.setFetch(async (_url, options) => {
+const requestedPurposes = [];
+pixelTaleApi.setFetch(async (_url, options) => {
   const request = JSON.parse(options.body);
   requestedTokenBudgets.push(request.max_tokens);
   const review = /交叉审核 Agent/.test(request.messages[0].content);
+  const synthesis = /合并编排器/.test(request.messages[0].content);
+  requestedPurposes.push(review ? "review" : synthesis ? "synthesis" : "author");
   const content = review
     ? {
       pass: true,
@@ -67,10 +70,13 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   assert.equal(job.status, "completed", `background run must complete: ${JSON.stringify(job)}`);
-  assert.equal(job.result.status, "completed", "two-review quorum must release the generated brief");
+  assert.equal(job.result.status, "completed", "three completed reviews must release the generated brief");
   assert.equal(job.result.state.runs.length, 1, "duplicate starts must not create duplicate Agent runs");
-  assert.deepEqual(requestedTokenBudgets.slice().sort((a, b) => a - b), [1_200, 1_200, 1_800], "a quorum release must use one compact author request and two compact reviewer requests");
-  assert.equal(requestedTokenBudgets.length, 3, "two agreeing reviewers must cancel the third reviewer request");
+  assert.equal(requestedPurposes.filter((purpose) => purpose === "author").length, 3, "all three configured author models must contribute");
+  assert.equal(requestedPurposes.filter((purpose) => purpose === "synthesis").length, 1, "the merged draft must be created only after the author council completes");
+  assert.equal(requestedPurposes.filter((purpose) => purpose === "review").length, 3, "all three review seats must complete before release");
+  assert.equal(requestedTokenBudgets.length, 7, "three authors, one merge pass, and three reviewers must stay bounded");
+  assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget === 1_200).length, 3, "reviewers must retain the compact review token budget");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");
   const persistedJob = JSON.parse(fs.readFileSync(path.join(root, "run-jobs", `${first.jobId}.json`), "utf8"));
   assert.deepEqual(persistedJob.request, {
@@ -132,7 +138,7 @@ try {
   assert.equal(reusedCompleted.recovered, true, "reused completed results must disclose restart recovery");
   assert.equal(requestedTokenBudgets.length, requestsBeforeReuse, "reusing a completed Agent result must not call any model again");
 } finally {
-  superPixel.setFetch();
+  pixelTaleApi.setFetch();
   fs.rmSync(root, { recursive: true, force: true });
   fs.rmSync(recoveryRoot, { recursive: true, force: true });
 }

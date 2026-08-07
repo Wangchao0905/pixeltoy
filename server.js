@@ -22,6 +22,12 @@ const {
 const { buildTeamProjectProgressFacts, calculateTeamProjectProgress, selectVideoConfigRecord } = require("./server/team-progress.js");
 const { createAssetLibrary } = require("./server/asset-library.js");
 const { createPixelTaleAgent } = require("./server/pixeltale-agent.js");
+const {
+  createPixelTaleApiRouter,
+  callPixelTaleApiModel,
+  models: pixelTaleApiModelOptions,
+  status: pixelTaleApiModelStatus,
+} = require("./server/pixeltale-api.js");
 const { writeVisualAssetDocument: buildVisualAssetDocument } = require("./server/pixeltale-visual-assets.js");
 const { safeFileName: safeScriptFileName, writeScriptDocument: buildScriptDocument } = require("./server/pixeltale-script-document.js");
 const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
@@ -210,6 +216,7 @@ const jobChildren = new Map();
 const projectVideoQueues = new Map();
 const projectRealPersonVerificationJobs = new Map();
 let superPixelFetch = (...args) => fetch(...args);
+let pixelTaleApiFetch = (...args) => fetch(...args);
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -2527,9 +2534,18 @@ function loadLocalEnv() {
 loadLocalEnv();
 
 const pixelTaleAgent = createPixelTaleAgent({
-  // PixelTale owns story state and review rules only. All model registration,
-  // credentials, upstream calls, and failover belong to SuperPixel.
-  modelRouter: pixelTaleSuperPixelRouter(),
+  // PixelTale is an independent writing product. Its API router owns only
+  // writing-model registration, credentials, upstream calls, and failover.
+  modelRouter: createPixelTaleApiRouter({ fetchImpl: (...args) => pixelTaleApiFetch(...args) }),
+  onPhase(params, phase) {
+    const stage = compactLine(params?.stage || "brief");
+    const jobId = activePixelTaleRuns.get(`${params?.pixelTaleRoot}:${stage}`);
+    const job = jobId ? pixelTaleRunJobs.get(jobId) : null;
+    if (!job) return;
+    job.phase = phase;
+    job.phaseAt = Date.now();
+    persistPixelTaleRunJob(params.pixelTaleRoot, job);
+  },
   readPixelTaleState,
   writePixelTaleState,
   writeHandoffFile(storyRoot, payload) {
@@ -2676,6 +2692,7 @@ function persistablePixelTaleRunParams(params = {}) {
     input: params.input,
     routes: params.routes,
     revisionPlan: params.revisionPlan,
+    unitNumbers: params.unitNumbers,
   };
 }
 
@@ -2717,6 +2734,8 @@ function launchPixelTaleRun(params, job) {
       resultStatus: result.status,
       updatedAt: Date.now(),
       finishedAt: Date.now(),
+      phase: null,
+      phaseAt: Date.now(),
     });
     persistPixelTaleRunJob(params.pixelTaleRoot, job);
   }).catch((error) => {
@@ -2726,6 +2745,8 @@ function launchPixelTaleRun(params, job) {
       errorCode: error?.code || "RUN_FAILED",
       updatedAt: Date.now(),
       finishedAt: Date.now(),
+      phase: null,
+      phaseAt: Date.now(),
     });
     persistPixelTaleRunJob(params.pixelTaleRoot, job);
   }).finally(() => {
@@ -2762,13 +2783,13 @@ function getPixelTaleRunJob(params, jobId) {
       Object.assign(job, { status: "completed", runId: persistedResult.runId, resultStatus: persistedResult.status, recoveredAt: Date.now(), updatedAt: Date.now(), finishedAt: Date.now() });
       pixelTaleRunJobs.set(job.jobId, job);
       persistPixelTaleRunJob(params.pixelTaleRoot, job);
-      return { jobId: job.jobId, status: "completed", result: persistedResult, recovered: true };
+      return { jobId: job.jobId, status: "completed", result: persistedResult, phase: job.phase || null, phaseAt: job.phaseAt || null, recovered: true };
     }
     const persistedRequest = job.request;
     if (persistedRequest?.pixelTaleRoot === params.pixelTaleRoot && persistedRequest.stage === job.stage) {
       Object.assign(job, { recoveredAt: Date.now(), recoveryCount: Number(job.recoveryCount || 0) + 1, updatedAt: Date.now() });
       launchPixelTaleRun(persistedRequest, job);
-      return { jobId: job.jobId, status: "running", stage: job.stage, recovered: true, elapsedMs: 0 };
+      return { jobId: job.jobId, status: "running", stage: job.stage, elapsedMs: 0, phase: job.phase || null, phaseAt: job.phaseAt || null, recovered: true };
     }
     return { jobId: job.jobId, status: "failed", error: "服务更新中断了本次生成，输入和既有产物均已保留，请重新生成当前阶段", errorCode: "RUN_INTERRUPTED" };
   }
@@ -2779,7 +2800,7 @@ function getPixelTaleRunJob(params, jobId) {
       : { jobId: job.jobId, status: "failed", error: "运行已结束但结果索引缺失，请重新生成当前阶段", errorCode: "RUN_RESULT_MISSING" };
   }
   if (job.status === "failed") return { jobId: job.jobId, status: "failed", error: job.error, errorCode: job.errorCode };
-  return { jobId: job.jobId, status: "running", stage: job.stage, elapsedMs: Math.max(0, Date.now() - job.createdAt) };
+  return { jobId: job.jobId, status: "running", stage: job.stage, elapsedMs: Math.max(0, Date.now() - job.createdAt), phase: job.phase || null, phaseAt: job.phaseAt || null };
 }
 
 function startDraftJob(episodeRoot, body) {
@@ -2803,15 +2824,10 @@ function startDraftJob(episodeRoot, body) {
   return { jobId, status: "running" };
 }
 
-function getDraftJob(episodeRoot, jobId, user = null) {
+function getDraftJob(episodeRoot, jobId) {
   const job = draftJobs.get(compactLine(jobId || ""));
   if (!job) return { status: "failed", error: "服务更新中断了本次生成，请重新生成", errorCode: "RUN_INTERRUPTED" };
-  // The completed result must carry the refreshed project state: the client uses it
-  // to release the draft busy guard and re-render the downstream workflow immediately.
-  if (job.status === "completed") {
-    const state = user ? fullProjectStateForUser(episodeRoot, user) : fullProjectState(episodeRoot);
-    return { jobId: job.jobId, status: "completed", result: job.result, state };
-  }
+  if (job.status === "completed") return { jobId: job.jobId, status: "completed", result: job.result };
   if (job.status === "failed") return { jobId: job.jobId, status: "failed", error: job.error };
   return { jobId: job.jobId, status: "running", elapsedMs: Math.max(0, Date.now() - job.createdAt) };
 }
@@ -3067,9 +3083,9 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
   if (!config || !provider) throw superPixelTextError(`SuperPixel 未注册文本模型：${normalizedModel}`, { code: "MODEL_UNSUPPORTED", trace });
   if (!config.apiKey) throw superPixelTextError(`SuperPixel 模型未配置：${normalizedModel}`, { code: "MODEL_NOT_CONFIGURED", trace });
 
-  // PixelTale supplies a shorter request budget so its sequential fallback can
-  // complete before the reverse proxy closes the browser connection. Other
-  // SuperPixel text callers retain the configured two-minute default.
+  // PixelTale supplies a bounded per-model request budget. Its three author
+  // roles run concurrently, so the browser does not pay three serial waits.
+  // Other SuperPixel text callers retain the configured two-minute default.
   const configuredTimeoutMs = Number(requestedTimeoutMs ?? process.env.SUPER_PIXEL_TEXT_TIMEOUT_MS ?? 120_000);
   const timeoutMs = Math.max(3_000, Number.isFinite(configuredTimeoutMs) ? configuredTimeoutMs : 120_000);
   const parsedMaxTokens = Number(requestedMaxTokens);
@@ -3140,7 +3156,7 @@ async function callSuperPixelTextModel({ model, system, user, purpose = "text", 
   } catch (error) {
     if (error?.name === "AbortError") {
       if (externalSignal?.aborted) {
-        throw superPixelTextError(`${normalizedModel} 请求已由主创竞速取消`, { code: "REQUEST_CANCELLED", retryable: false, trace: [...trace, { requestId, event: "cancelled", elapsedMs: Date.now() - startedAt }] });
+        throw superPixelTextError(`${normalizedModel} 请求已取消`, { code: "REQUEST_CANCELLED", retryable: false, trace: [...trace, { requestId, event: "cancelled", elapsedMs: Date.now() - startedAt }] });
       }
       throw superPixelTextError(`${normalizedModel} 请求超时（${Math.round(timeoutMs / 1000)} 秒，追踪号 ${requestId}）`, { code: "TIMEOUT", retryable: true, trace: [...trace, { requestId, event: "timeout", elapsedMs: Date.now() - startedAt }] });
     }
@@ -5306,7 +5322,6 @@ function mediaItem(file, episodeRoot = "") {
     path: file,
     url: `/media?path=${encodeURIComponent(file)}&v=${encodeURIComponent(version)}`,
     size: stat.size,
-    sourceFingerprint: version,
     updatedAt: stat.mtime.toISOString(),
     rel: episodeRoot ? path.relative(episodeRoot, file) : file,
   };
@@ -7212,11 +7227,13 @@ function applyVideoPromptDirectives(prompt = "", dialectStyle = "none", sfxStyle
 }
 
 function projectDialogueLanguage(episodeRoot, fallback = "en") {
+  const workflow = readWorkflowState(episodeRoot);
   const config = readVideoConfig(episodeRoot)?.data;
   const manifest = readAssetManifest(episodeRoot)?.data;
   const storyboardText = readText(findProjectFile(episodeRoot, "storyboard"));
   const seedanceText = readText(findProjectFile(episodeRoot, "seedancePrompts"));
   const configured =
+    workflow?.dialogueLanguage ||
     config?.dialogueLanguage ||
     config?.settings?.dialogueLanguage ||
     manifest?.dialogueLanguage ||
@@ -7241,6 +7258,26 @@ function projectDurationMode(episodeRoot, fallback = DURATION_MODE_TK) {
     manifest?.production?.durationMode ||
     "";
   return normalizeDurationMode(configured, fallback);
+}
+
+// Free mode derives its duration from the screenplay, not from an existing
+// video-config snapshot. Keep this calculation in one place so stale configs
+// can be detected before they are shown as ready or submitted for generation.
+function freeDurationPlanForEpisode(episodeRoot) {
+  const rawScript = readText(findProjectFile(episodeRoot, "script"));
+  const videoScript = modelPlanningScript(rawScript);
+  if (!videoScript.trim()) return null;
+  const rawBeats = scriptBeatCandidates(videoScript);
+  const continuityBeats = consolidateContinuousBeats(rawBeats);
+  const sourceBeats = freeDurationSourceBeats(videoScript, continuityBeats);
+  const beats = sourceBeats.map((beat) => beat.text);
+  const targetShotCount = preferredShotCount(videoScript, continuityBeats, DURATION_MODE_FREE);
+  return planEpisodeDuration({
+    shotCount: beats.length || targetShotCount,
+    beats,
+    durationMode: DURATION_MODE_FREE,
+    script: videoScript,
+  });
 }
 
 function persistProjectDurationMode(episodeRoot, durationMode) {
@@ -7285,6 +7322,12 @@ function persistProjectDurationMode(episodeRoot, durationMode) {
 
 function persistProjectDialogueLanguage(episodeRoot, dialogueLanguage) {
   const normalized = normalizeDialogueLanguage(dialogueLanguage, "en");
+  const workflow = readWorkflowState(episodeRoot);
+  writeWorkflowState(episodeRoot, {
+    ...workflow,
+    dialogueLanguage: normalized,
+    dialogueLanguageUpdatedAt: new Date().toISOString(),
+  });
   const manifestRecord = readAssetManifest(episodeRoot);
   const seriesManifest = readSeriesAssetManifest(episodeRoot);
   const canUpdateManifest = manifestRecord?.data && (
@@ -8182,9 +8225,6 @@ function assetRecordFromMedia(asset, manifest = null, index = 0) {
     textToImagePrompt: item?.textToImagePrompt || "",
     assetStylePreset: compactLine(asset.assetStylePreset || ""),
     assetStyleLabel: compactLine(asset.assetStyleLabel || ""),
-    sourceFingerprint: compactLine(asset.sourceFingerprint || ""),
-    sourceUpdatedAt: compactLine(asset.updatedAt || ""),
-    sourceSize: Number(asset.size || 0) || 0,
     file: asset.reused ? asset.path : asset.rel,
     type: "image",
     manifestType: identity.type,
@@ -8192,95 +8232,6 @@ function assetRecordFromMedia(asset, manifest = null, index = 0) {
     x: 80 + (index % 4) * 360,
     y: 120 + Math.floor(index / 4) * 260,
   };
-}
-
-function clearStaleAssetLibraryBinding(asset = {}) {
-  const { arkPersonAsset, ...record } = asset;
-  return {
-    ...record,
-    assetUrl: "",
-    publicUrl: "",
-    virtualId: "",
-    groupId: "",
-    validationStatus: "",
-    validationError: "",
-    validationMessage: "",
-  };
-}
-
-// 单片段配置重建时，当前磁盘资产是权威来源；旧配置只用于补齐尚未重新扫描到的资产。
-// 同名资产保留旧配置中的位置，但由最新记录替换，避免旧图继续被片段引用。
-function mergeVideoConfigAssetRecords(previousAssets = [], freshAssets = []) {
-  const freshByName = new Map();
-  for (const asset of Array.isArray(freshAssets) ? freshAssets : []) {
-    const name = compactLine(asset?.name || asset?.assetName || asset?.id || "");
-    if (name) freshByName.set(name, asset);
-  }
-  const merged = [];
-  const emitted = new Set();
-  for (const asset of Array.isArray(previousAssets) ? previousAssets : []) {
-    const name = compactLine(asset?.name || asset?.assetName || asset?.id || "");
-    if (!name) {
-      merged.push(asset);
-      continue;
-    }
-    if (emitted.has(name)) continue;
-    merged.push(freshByName.get(name) || asset);
-    emitted.add(name);
-  }
-  for (const asset of Array.isArray(freshAssets) ? freshAssets : []) {
-    const name = compactLine(asset?.name || asset?.assetName || asset?.id || "");
-    if (!name || emitted.has(name)) continue;
-    merged.push(asset);
-    emitted.add(name);
-  }
-  return merged;
-}
-
-function videoAssetSourceChanged(configured = {}, scanned = null) {
-  if (!scanned || typeof scanned !== "object") return false;
-  const configuredFingerprint = compactLine(configured.sourceFingerprint || "");
-  const scannedFingerprint = compactLine(scanned.sourceFingerprint || "");
-  const configuredUpdatedAt = compactLine(configured.sourceUpdatedAt || "");
-  const scannedUpdatedAt = compactLine(scanned.updatedAt || "");
-  const configuredSize = Number(configured.sourceSize || 0) || 0;
-  const scannedSize = Number(scanned.size || 0) || 0;
-  const configuredFile = compactLine(configured.file || "");
-  const scannedFile = compactLine(scanned.rel || scanned.file || "");
-  const sourceUnknown = !configuredFingerprint && !configuredUpdatedAt && !configuredSize;
-  return !!(
-    (configuredFingerprint && scannedFingerprint && configuredFingerprint !== scannedFingerprint) ||
-    (configuredUpdatedAt && scannedUpdatedAt && configuredUpdatedAt !== scannedUpdatedAt) ||
-    (configuredSize > 0 && scannedSize > 0 && configuredSize !== scannedSize) ||
-    (configuredFile && scannedFile && configuredFile !== scannedFile) ||
-    (sourceUnknown && !!(configured.assetUrl || configured.publicUrl || configured.arkPersonAsset))
-  );
-}
-
-// 同名资产被覆盖时通常仍使用同一个文件名和路径。提交链路不能因此继续沿用
-// 旧配置里的 asset://、公网 URL 或真人库绑定；当前磁盘文件才是唯一有效图源。
-function reconcileVideoReferenceAsset(configured = {}, scanned = null) {
-  if (!scanned || typeof scanned !== "object") return configured;
-  const sourceChanged = videoAssetSourceChanged(configured, scanned);
-  const configuredFingerprint = compactLine(configured.sourceFingerprint || "");
-  const scannedFingerprint = compactLine(scanned.sourceFingerprint || "");
-  const configuredUpdatedAt = compactLine(configured.sourceUpdatedAt || "");
-  const scannedUpdatedAt = compactLine(scanned.updatedAt || "");
-  const configuredSize = Number(configured.sourceSize || 0) || 0;
-  const scannedSize = Number(scanned.size || 0) || 0;
-  const configuredFile = compactLine(configured.file || "");
-  const scannedFile = compactLine(scanned.rel || scanned.file || "");
-  const current = {
-    ...configured,
-    file: scannedFile || configuredFile,
-    url: compactLine(scanned.url || scanned.previewUrl || configured.url || configured.previewUrl || ""),
-    previewUrl: compactLine(scanned.url || scanned.previewUrl || configured.previewUrl || configured.url || ""),
-    localUrl: compactLine(scanned.url || scanned.previewUrl || configured.localUrl || ""),
-    sourceFingerprint: scannedFingerprint || configuredFingerprint,
-    sourceUpdatedAt: scannedUpdatedAt || configuredUpdatedAt,
-    sourceSize: scannedSize || configuredSize,
-  };
-  return sourceChanged ? clearStaleAssetLibraryBinding(current) : current;
 }
 
 function assetLibraryBindingFromAsset(asset = {}) {
@@ -8294,9 +8245,6 @@ function assetLibraryBindingFromAsset(asset = {}) {
     publicUrl: compactLine(asset.publicUrl || asset.public_url || ""),
     virtualId: compactLine(asset.virtualId || asset.virtual_id || ""),
     groupId: compactLine(asset.groupId || asset.group_id || ""),
-    sourceFingerprint: compactLine(asset.sourceFingerprint || ""),
-    sourceUpdatedAt: compactLine(asset.sourceUpdatedAt || ""),
-    sourceSize: Number(asset.sourceSize || 0) || 0,
     validationStatus: "active",
     validationError: "",
     validationMessage: compactLine(asset.validationMessage || asset.message || "素材已 active"),
@@ -8330,23 +8278,12 @@ function applyAssetLibraryBindingsToRecords(records = [], bindings = new Map()) 
   return records.map((record) => {
     const binding = bindings.get(compactLine(record.name || record.assetName || record.id || ""));
     if (!binding) return record;
-    // 没有同一份源文件指纹的历史 binding 不能重新挂到当前磁盘文件，
-    // 否则替换图片后 full/single config rebuild 又会把旧 asset:// 带回来。
-    if (
-      compactLine(record.sourceFingerprint || "") &&
-      (!compactLine(binding.sourceFingerprint || "") || compactLine(binding.sourceFingerprint) !== compactLine(record.sourceFingerprint))
-    ) {
-      return record;
-    }
     return {
       ...record,
       publicUrl: record.publicUrl || binding.publicUrl || "",
       assetUrl: binding.assetUrl,
       virtualId: binding.virtualId || record.virtualId || "",
       groupId: binding.groupId || record.groupId || "",
-      sourceFingerprint: record.sourceFingerprint || binding.sourceFingerprint || "",
-      sourceUpdatedAt: record.sourceUpdatedAt || binding.sourceUpdatedAt || "",
-      sourceSize: record.sourceSize || binding.sourceSize || 0,
       validationStatus: "active",
       validationError: "",
       validationMessage: binding.validationMessage || "素材已 active",
@@ -8562,7 +8499,6 @@ function uploadBoundAsset(episodeRoot, body = {}) {
   asset.type = identity.scanType;
   asset.usage = identity.usage;
   asset.assetIdentity = identity;
-  const videoConfigReplacement = invalidateReplacedAssetInVideoConfig(episodeRoot, asset);
   return {
     asset,
     manifestItem: item,
@@ -8570,54 +8506,8 @@ function uploadBoundAsset(episodeRoot, body = {}) {
     savedAs: path.basename(target),
     ignoredFilename: originalFilename,
     removedFiles: removedFiles.map((file) => path.relative(episodeRoot, file)),
-    videoConfigReplacement,
     message: `${existingAsset ? "已替换" : "已绑定"}上传资产：${assetId}（保存为 ${path.basename(target)}）`,
   };
-}
-
-function invalidateReplacedAssetInVideoConfig(episodeRoot, asset = {}) {
-  const assetName = compactLine(asset.assetName || asset.name || "");
-  if (!assetName) return { updated: false, reason: "缺少资产名称" };
-  const configRecord = ensureVideoConfigIsolation(episodeRoot);
-  if (!configRecord?.file || !configRecord?.data || !Array.isArray(configRecord.data.assets)) {
-    return { updated: false, reason: "视频配置尚未生成" };
-  }
-  const config = configRecord.data;
-  let updated = false;
-  const assets = config.assets.map((configured) => {
-    const name = compactLine(configured?.name || configured?.assetName || configured?.id || "");
-    if (name !== assetName) return configured;
-    updated = true;
-    return clearStaleAssetLibraryBinding({
-      ...configured,
-      file: asset.rel || configured.file || "",
-      url: asset.url || asset.previewUrl || "",
-      previewUrl: asset.url || asset.previewUrl || "",
-      localUrl: asset.url || asset.previewUrl || "",
-      sourceFingerprint: asset.sourceFingerprint || "",
-      sourceUpdatedAt: asset.updatedAt || "",
-      sourceSize: Number(asset.size || 0) || 0,
-    });
-  });
-  if (!updated) return { updated: false, reason: "视频配置中没有同名资产" };
-  const nextConfig = {
-    ...config,
-    assets,
-    updatedAt: new Date().toISOString(),
-    lastAssetReplacement: {
-      assetName,
-      sourceFingerprint: asset.sourceFingerprint || "",
-      updatedAt: asset.updatedAt || new Date().toISOString(),
-    },
-  };
-  writeVideoConfigRecord(configRecord, nextConfig);
-  // 画布是同一条视频生成链路的另一份快照；同步失败不能回滚上传，但不能让旧绑定继续留在画布。
-  try {
-    syncProjectShotsToCanvasState(episodeRoot, nextConfig, Array.isArray(nextConfig.shots) ? nextConfig.shots : []);
-  } catch {
-    // 配置已落盘，下一次打开项目时会由配置重新同步画布。
-  }
-  return { updated: true, assetName, oldBindingRemoved: true };
 }
 
 function uploadStoryboardAsset(episodeRoot, body = {}) {
@@ -9375,7 +9265,6 @@ function snapshotStatusForShot(episodeRoot, shotName, options = {}) {
       message: taskInfo.message || "",
       taskId: taskInfo.taskId || "",
       provider,
-      generationScope: compactLine(taskInfo.generationScope || ""),
       videoPreviewVersion: compactLine(taskInfo.videoPreviewVersion || ""),
       generationStartedAt: compactLine(taskInfo.generationStartedAt || taskInfo.updatedAt || updatedAt || ""),
       videoUrl: videoUrlFrom(rawVideoUrl),
@@ -9870,6 +9759,7 @@ function configReadiness(episodeRoot, configData = null) {
   const config = configData || readVideoConfig(episodeRoot)?.data || null;
   const dialogueLanguage = projectDialogueLanguage(episodeRoot, "en");
   const durationMode = normalizeDurationMode(config?.durationMode || config?.settings?.durationMode || projectDurationMode(episodeRoot));
+  const durationPlan = durationMode === DURATION_MODE_FREE ? freeDurationPlanForEpisode(episodeRoot) : null;
   const runStart = currentRunStartMs(episodeRoot, config);
   const missing = [];
   if (!config) {
@@ -9890,6 +9780,10 @@ function configReadiness(episodeRoot, configData = null) {
       totalDuration: 0,
       dialogueLanguage,
       durationMode,
+      durationPlan: durationPlan
+        ? { target: durationPlan.target, shotCount: durationPlan.shotCount, durations: durationPlan.durations }
+        : null,
+      durationMismatch: null,
       enableStoryboards: false,
       promptMode: "prompt",
       tailFrameContinuity: true,
@@ -9902,6 +9796,20 @@ function configReadiness(episodeRoot, configData = null) {
   const productionAssets = assets.filter((asset) => asset.manifestType !== "Storyboard");
   const storyboards = Array.isArray(config.storyboardReferences) ? config.storyboardReferences : [];
   const shots = Array.isArray(config.shots) ? config.shots : [];
+  const actualDuration = shots.reduce((sum, shot) => sum + Number(shot.duration || 0), 0);
+  const durationMismatch = durationPlan && shots.length > 0 && (
+    shots.length !== durationPlan.shotCount || actualDuration !== durationPlan.target
+  )
+    ? {
+        actual: { shotCount: shots.length, target: actualDuration },
+        expected: { shotCount: durationPlan.shotCount, target: durationPlan.target },
+      }
+    : null;
+  if (durationMismatch) {
+    missing.push(
+      `自由模式配置已过期：当前 ${durationMismatch.actual.shotCount} 镜头 / ${durationMismatch.actual.target}s，剧本要求 ${durationMismatch.expected.shotCount} 镜头 / ${durationMismatch.expected.target}s；请重新生成分镜草稿和视频配置`,
+    );
+  }
   const allAssetNames = new Set(assets.map((asset) => compactLine(asset.name || asset.assetName || "")).filter(Boolean));
   // 兜底:config.assets 名单可能滞后于 shot.storyboardRefs(故事板重分组后名字变化)。把磁盘上真实存在的
   // 故事板文件名并入允许集合,避免"图已在磁盘、引用也对"却因名单滞后被误报"N 个片段引用了未生成资产"。
@@ -9959,7 +9867,11 @@ function configReadiness(episodeRoot, configData = null) {
     canvasAssets: assets.length,
     storyboards: storyboards.length,
     shots: shots.length,
-    totalDuration: shots.reduce((sum, shot) => sum + Number(shot.duration || 0), 0),
+    totalDuration: actualDuration,
+    durationPlan: durationPlan
+      ? { target: durationPlan.target, shotCount: durationPlan.shotCount, durations: durationPlan.durations }
+      : null,
+    durationMismatch,
     dialogueLanguage: config.dialogueLanguage || config.settings?.dialogueLanguage || dialogueLanguage,
     durationMode,
     enableStoryboards: config.settings?.enableStoryboards === true,
@@ -10062,7 +9974,6 @@ function markProjectVideoShotWaiting(episodeRoot, shotName, message = "等待素
     taskInfo: {
       status: 0,
       statusRaw: compactLine(options.statusRaw || "waiting_asset_active"),
-      generationScope: options.generationScope === "batch" ? "batch" : options.generationScope === "single" ? "single" : undefined,
       progressPercent: 0,
       failedReason: "",
       message,
@@ -11089,14 +11000,13 @@ function finalCutStatus(episodeRoot) {
   });
   const stale = exists && !outputCurrent;
   let output = null;
-  if (exists) {
+  if (outputCurrent) {
     const stat = outputStat;
     output = {
       url: `/media?path=${encodeURIComponent(out)}&v=${Math.round(stat.mtimeMs)}`,
       downloadUrl: `/media?path=${encodeURIComponent(out)}&v=${Math.round(stat.mtimeMs)}&download=1&final_cut=1`,
       updatedAt: stat.mtime.toISOString(),
       size: stat.size,
-      current: outputCurrent,
     };
   }
   const status = job?.running
@@ -11120,195 +11030,6 @@ function finalCutStatus(episodeRoot) {
     output,
   };
 }
-
-// 封面设计独立于成片输出:一次生成四个方向,每个方向保留自己的 image-2 任务和结果。
-const COVER_DESIGN_DIR = "12_cover_design";
-const COVER_DESIGN_STATE_FILE = "cover_design.json";
-const COVER_DESIGN_SUBMISSION_TIMEOUT_MS = 2 * 60 * 1000;
-const COVER_DESIGN_STYLES = [
-  { id: "cinematic", label: "电影叙事", cue: "宽阔环境层次、主角关系和电影海报式留白" },
-  { id: "high-conversion", label: "强冲突短剧", cue: "人物对峙、强烈明暗和一眼可读的戏剧冲突" },
-  { id: "romance", label: "情绪关系", cue: "人物情绪、亲密距离和高识别度的浪漫色彩" },
-  { id: "suspense", label: "悬疑反转", cue: "前景遮挡、线索物件、压迫空间和反转感" },
-];
-
-function coverDesignStatePath(episodeRoot) {
-  return path.join(episodeRoot, COVER_DESIGN_DIR, COVER_DESIGN_STATE_FILE);
-}
-
-function readCoverDesignState(episodeRoot) {
-  const state = readJsonFile(coverDesignStatePath(episodeRoot), null);
-  if (!state || typeof state !== "object") return { status: "idle", items: [] };
-  return {
-    status: compactLine(state.status || "idle") || "idle",
-    runId: compactLine(state.runId || ""),
-    title: compactLine(state.title || ""),
-    model: compactLine(state.model || "gpt-image-2") || "gpt-image-2",
-    ratio: compactLine(state.ratio || "9:16") || "9:16",
-    createdAt: compactLine(state.createdAt || ""),
-    updatedAt: compactLine(state.updatedAt || ""),
-    message: compactLine(state.message || ""),
-    items: Array.isArray(state.items)
-      ? state.items.map((item, index) => ({
-          id: compactLine(item?.id || `cover-${index + 1}`),
-          styleId: compactLine(item?.styleId || COVER_DESIGN_STYLES[index]?.id || ""),
-          styleLabel: compactLine(item?.styleLabel || COVER_DESIGN_STYLES[index]?.label || ""),
-          taskId: compactLine(item?.taskId || ""),
-          status: compactLine(item?.status || "queued") || "queued",
-          url: compactLine(item?.url || ""),
-          message: compactLine(item?.message || ""),
-          error: compactLine(item?.error || ""),
-        }))
-      : [],
-  };
-}
-
-function writeCoverDesignState(episodeRoot, state) {
-  const file = coverDesignStatePath(episodeRoot);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const next = { ...state, updatedAt: new Date().toISOString() };
-  writeJsonFile(file, next);
-  return next;
-}
-
-function promptForCoverStyle(style = COVER_DESIGN_STYLES[0], { title = "", referenceNames = [] } = {}) {
-  const selected = COVER_DESIGN_STYLES.find((item) => item.id === style?.id) || style || COVER_DESIGN_STYLES[0];
-  const refs = [...new Set((Array.isArray(referenceNames) ? referenceNames : []).map(compactLine).filter(Boolean))];
-  const referenceLine = refs.length ? refs.join("、") : "当前项目已确认的人物、场景、道具参考图";
-  return [
-    "制作一张 9:16 竖版 TK 短剧封面设计，作为可发布的中文海报，不是分镜截图。",
-    `剧名：${compactLine(title) || "未命名短剧"}`,
-    `封面方向：${selected.label || "电影叙事"}；${selected.cue || "电影感海报构图"}。`,
-    `严格使用并保持以下资产图中的人物、场景和道具身份：${referenceLine}。不要创造与资产无关的人物，不要替换角色外观。`,
-    "海报设计要求：单一主视觉、明确前中后景层级、人物和场景有叙事关系，剧名使用清晰有设计感的中文字体并保持高对比和移动端可读性；标题不可乱码、不可被裁切。",
-    "遵循 TK 短剧封面阅读顺序：先看人物冲突，再读剧名，再感知类型；保留安全边距，避免过多小字、UI、边框、水印和品牌标识。",
-  ].join(" ");
-}
-
-function coverDesignReferenceAssets(episodeRoot) {
-  const manifest = readAssetManifest(episodeRoot)?.data || null;
-  const config = ensureVideoConfigIsolation(episodeRoot)?.data || null;
-  const plannedAssetNames = parseAssetsFromPromptNames(readText(findProjectFile(episodeRoot, "assetPrompts")));
-  const assets = projectProductionAssetsForState(episodeRoot, manifest, {
-    plannedAssetNames,
-    configData: config,
-    minModifiedAt: currentRunStartMs(episodeRoot, config),
-  });
-  const rank = { Character: 0, Scene: 1, Prop: 2, Insert: 3 };
-  return assets
-    .filter((asset) => asset?.path && fs.existsSync(asset.path))
-    .sort((a, b) => (rank[a.manifestType] ?? 9) - (rank[b.manifestType] ?? 9))
-    .slice(0, 4);
-}
-
-function normalizeCoverDesignTaskStatus(status = "", fallback = "queued") {
-  const normalized = compactLine(status).toLowerCase();
-  if (["complete", "completed", "success", "succeeded", "done"].includes(normalized)) return "complete";
-  if (["failed", "failure", "error"].includes(normalized)) return "failed";
-  if (["starting", "queued", "running"].includes(normalized)) return normalized;
-  return fallback;
-}
-
-function refreshCoverDesignState(episodeRoot) {
-  const state = readCoverDesignState(episodeRoot);
-  if (!state.items.length) return state;
-  let changed = false;
-  const startedAt = Date.parse(state.createdAt || state.updatedAt || "");
-  const submissionExpired = Number.isFinite(startedAt) && Date.now() - startedAt >= COVER_DESIGN_SUBMISSION_TIMEOUT_MS;
-  const items = state.items.map((item) => {
-    const itemStatus = normalizeCoverDesignTaskStatus(item.status, "queued");
-    if (!item.taskId) {
-      if (!submissionExpired || !["starting", "queued", "running"].includes(itemStatus)) return item;
-      const next = {
-        ...item,
-        status: "failed",
-        message: "提交超时，请重新生成",
-        error: "封面任务未成功提交，可能是服务重启或提交超时。",
-      };
-      if (JSON.stringify(next) !== JSON.stringify(item)) changed = true;
-      return next;
-    }
-    if (["complete", "failed"].includes(itemStatus)) {
-      if (item.status === itemStatus) return item;
-      const next = { ...item, status: itemStatus };
-      changed = true;
-      return next;
-    }
-    const task = getCanvasImageGeneration(item.taskId);
-    const nextStatus = normalizeCoverDesignTaskStatus(task.status, itemStatus);
-    const next = {
-      ...item,
-      status: nextStatus,
-      url: task.url || item.url || "",
-      message: task.message || item.message || "",
-      error: nextStatus === "failed" ? task.message || item.error || "封面生成失败" : "",
-    };
-    if (JSON.stringify(next) !== JSON.stringify(item)) changed = true;
-    return next;
-  });
-  const status = items.every((item) => item.status === "complete")
-    ? "complete"
-    : items.some((item) => item.status === "failed") && items.every((item) => ["complete", "failed"].includes(item.status))
-      ? "failed"
-      : items.some((item) => ["starting", "queued", "running"].includes(item.status))
-        ? "running"
-        : state.status;
-  if (status !== state.status) changed = true;
-  return changed ? writeCoverDesignState(episodeRoot, { ...state, status, items }) : state;
-}
-
-async function generateProjectCoverDesigns(episodeRoot, { ownerUserId = "" } = {}) {
-  const current = refreshCoverDesignState(episodeRoot);
-  if (["starting", "running"].includes(current.status)) throw new Error("封面正在生成，请等待当前四张封面完成");
-  const summary = projectSummary(episodeRoot);
-  const manifestTitle = compactLine(readAssetManifest(episodeRoot)?.data?.title || "");
-  const title = manifestTitle || summary.title || summary.scriptTitle || summary.episodeLabel || "未命名短剧";
-  const refs = coverDesignReferenceAssets(episodeRoot);
-  const referenceImages = refs.map((asset) => `/media?path=${encodeURIComponent(asset.path)}`).filter(Boolean);
-  const referenceNames = refs.map((asset) => asset.assetName || asset.name).filter(Boolean);
-  const runId = crypto.randomUUID();
-  let state = writeCoverDesignState(episodeRoot, {
-    runId,
-    status: "running",
-    title,
-    model: "gpt-image-2",
-    ratio: "9:16",
-    createdAt: new Date().toISOString(),
-    message: "正在生成 4 个封面方向",
-    items: COVER_DESIGN_STYLES.map((style) => ({
-      id: `${runId}-${style.id}`,
-      styleId: style.id,
-      styleLabel: style.label,
-      taskId: "",
-      status: "starting",
-      url: "",
-      message: "提交中",
-      error: "",
-    })),
-  });
-  await Promise.all(COVER_DESIGN_STYLES.map(async (style, index) => {
-    try {
-      const result = await createCanvasImageGeneration({
-        prompt: promptForCoverStyle(style, { title, referenceNames }),
-        ratio: "9:16",
-        resolution: "1k",
-        imageModel: "gpt-image-2",
-        referenceImages,
-        ownerUserId,
-      });
-      state = readCoverDesignState(episodeRoot);
-      state.items[index] = { ...state.items[index], taskId: result.taskId, status: "running", message: "生成中" };
-      writeCoverDesignState(episodeRoot, state);
-    } catch (error) {
-      state = readCoverDesignState(episodeRoot);
-      state.items[index] = { ...state.items[index], status: "failed", message: "生成失败", error: compactLine(error?.message || "封面生成失败") };
-      state.status = state.items.every((item) => ["complete", "failed"].includes(item.status)) ? "failed" : "running";
-      writeCoverDesignState(episodeRoot, state);
-    }
-  }));
-  return refreshCoverDesignState(episodeRoot);
-}
-
 async function runFinalCutAssembly(episodeRoot, job) {
   const tmpDir = path.join(episodeRoot, FINAL_CUT_DIR, ".tmp");
   try {
@@ -11542,7 +11263,6 @@ function fullProjectState(episodeRoot) {
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     tailFrames: scanTailFrames(episodeRoot),
     finalCut: finalCutStatus(episodeRoot),
-    coverDesign: refreshCoverDesignState(episodeRoot),
     filmStudio: publicFilmStudioState(episodeRoot),
     summary: readSummary(episodeRoot, { runNamespace }),
     jobs: localJobs.map(jobSummary),
@@ -11621,7 +11341,6 @@ function projectStatusSnapshot(episodeRoot) {
     storyboardJob: jobSummary(latestJobForTypes(localJobs, ["storyboards", "storyboard-regenerate"])),
     videoJob: jobSummary(latestJobForTypes(localJobs, ["video"])),
     finalCut: finalCutStatus(episodeRoot),
-    coverDesign: refreshCoverDesignState(episodeRoot),
     filmStudio: publicFilmStudioState(episodeRoot),
     jobs: localJobs.map(jobSummary),
     assetManifest: normalizedAssetManifest,
@@ -11702,8 +11421,67 @@ function hasProductionField(value, names) {
     });
 }
 
-// 密集单段剧本:对白内联在旁白里(名字：台词），用 △/句号分隔、不换行。逐行/项目符号/引号三个提取器都吃不下,
+// 密集单段剧本:对白内联在旁白里(名字：台词),用 △/句号分隔、不换行。逐行/项目符号/引号三个提取器都吃不下,
 // 这里按「名字：台词」切:名字须过 isValidCharacterLabel(排除旁白/场景/道具误判),台词取到下一个 名字：/△/换行/段末。
+// 保留原文偏移供对白语言转换精确替换,普通调用只取 speaker/text。
+function inlineColonDialogueRanges(source, dialogueLanguage = "en", { limit = 8 } = {}) {
+  const text = String(source || "");
+  const language = normalizeDialogueLanguage(dialogueLanguage, "en");
+  const nameToken = "(?:[一-龥·]{2,8}|[A-Z][A-Za-z .'\\-]{1,32})";
+  const paren = "(?:[（(][^）)]{0,24}[）)])?";
+  const re = new RegExp(
+    "(" + nameToken + ")" + paren + "\\s*[：:]" + "\\s*([^：:\\n△]{1,140}?)(?=" + nameToken + paren + "\\s*[：:]|[△\\n]|$)",
+    "g",
+  );
+  const out = [];
+  for (const match of text.matchAll(re)) {
+    const before = text[(match.index || 0) - 1];
+    if (before && !/[\s。！？!?、，,；;：:）)”"』」△]/.test(before)) continue;
+    const speaker = cleanSpeakerCue(match[1]);
+    if (!speaker || !isValidCharacterLabel(speaker)) continue;
+    if (/(?:从手里|皱眉|滑落|说完|抬头|低头|转身|伸手|走到|走向|看着|盯着|笑着|哭着|愣住|回头|突然|轻声)/.test(speaker)) continue;
+    if (
+      /^(内|外|画外)?(人物|旁白|字幕|备注|参考资产|推荐时长|时长|时间|地点|场景|画幅|景别|机位|镜号|集数|第[一二三四五六七八九十百\d]+集)$/.test(speaker) ||
+      /^(剧情动作|动作|表演|画面|环境|声音|音效|光线|调色|色调|构图|材质|质感|节奏|运镜|镜头运动|镜头|景别|景深|氛围|特效|视效|服饰|服装|道具|色彩|布光|机位|摄影|画幅)$/.test(speaker)
+    )
+      continue;
+    const rawBody = String(match[2] || "");
+    const leading = rawBody.search(/\S/);
+    if (leading < 0) continue;
+    const trailing = rawBody.match(/\s*$/)?.[0].length || 0;
+    const bodyStart = (match.index || 0) + match[0].indexOf(rawBody) + leading;
+    const bodyEnd = (match.index || 0) + match[0].indexOf(rawBody) + rawBody.length - trailing;
+    let replaceStart = bodyStart;
+    let replaceEnd = bodyEnd;
+    let spokenSource = text.slice(replaceStart, replaceEnd);
+    let quoteOpen = "";
+    let quoteClose = "";
+    if (/^["“「『]/.test(spokenSource) && /["”」』]$/.test(spokenSource) && spokenSource.length >= 2) {
+      quoteOpen = spokenSource[0];
+      quoteClose = spokenSource.at(-1);
+      replaceStart += 1;
+      replaceEnd -= 1;
+      spokenSource = spokenSource.slice(1, -1).trim();
+    }
+    const bilingual = splitBilingualDialogue(spokenSource);
+    const spoken = language === "zh" ? bilingual.zh || compactLine(spokenSource) : bilingual.en || compactLine(spokenSource);
+    if (spoken) {
+      out.push({
+        speaker,
+        text: spoken,
+        inline: true,
+        range: true,
+        lineIndex: text.slice(0, replaceStart).split(/\r?\n/).length - 1,
+        replaceStart,
+        replaceEnd,
+        quoteOpen,
+        quoteClose,
+      });
+    }
+  }
+  return Number.isFinite(limit) ? out.slice(0, limit) : out;
+}
+
 function inlineColonDialogues(source, dialogueLanguage = "en", { limit = 8 } = {}) {
   const text = String(source || "");
   const language = normalizeDialogueLanguage(dialogueLanguage, "en");
@@ -11879,6 +11657,37 @@ function blockquoteDialogues(source, dialogueLanguage = "en") {
   return blockquoteDialogueBlocks(source, dialogueLanguage).map(({ speaker, text }) => ({ speaker, text }));
 }
 
+// 带叙述的引号对白,例如「小北皱眉："妈咪，那个叔叔闻起来像枪油。"」没有可独占的说话人行,
+// 但引号内部仍是可转换对白。只记录引号内容范围,不改动叙述、角色名和引号样式。
+function quotedDialogueRanges(source, dialogueLanguage = "en", { limit = Infinity } = {}) {
+  const text = String(source || "");
+  const language = normalizeDialogueLanguage(dialogueLanguage, "en");
+  const out = [];
+  const quotePattern = /[“"「『]([^”"」』\n]{2,180})[”"」』]/g;
+  for (const match of text.matchAll(quotePattern)) {
+    const raw = compactLine(match[1]);
+    if (!raw || /^(?:核心画面|素材使用|镜头语言|镜头切换|时间轴|动作|声音|负面约束)$/i.test(raw)) continue;
+    const bilingual = splitBilingualDialogue(raw);
+    const spoken = language === "zh" ? bilingual.zh || raw : bilingual.en || raw;
+    if (!spoken) continue;
+    const start = match.index || 0;
+    const replaceStart = start + 1;
+    const replaceEnd = replaceStart + match[1].length;
+    out.push({
+      speaker: inferSpeakerForQuote(text, start, start + match[0].length),
+      text: spoken,
+      inline: true,
+      range: true,
+      lineIndex: text.slice(0, replaceStart).split(/\r?\n/).length - 1,
+      replaceStart,
+      replaceEnd,
+      quoteOpen: match[0][0],
+      quoteClose: match[0].at(-1),
+    });
+  }
+  return Number.isFinite(limit) ? out.slice(0, limit) : out;
+}
+
 function applyDialogueTranslations(script, blocks, translations) {
   const lines = String(script || "").split(/\r?\n/);
   const byId = new Map(translations.map((item) => [Number(item.id), compactLine(item.text)]));
@@ -11895,7 +11704,31 @@ function applyDialogueTranslations(script, blocks, translations) {
   return lines.join("\n");
 }
 
-function applyDialogueAndBlockquoteTranslations(script, blocks, blockquoteBlocks, translations) {
+function applyDialogueAndBlockquoteTranslations(script, blocks, blockquoteBlocks, translations, inlineBlocks = []) {
+  const source = String(script || "");
+  if (inlineBlocks.length) {
+    const byId = new Map(translations.map((item) => [Number(item.id), compactLine(item.text)]));
+    const operations = inlineBlocks
+      .map((block) => {
+        const translated = byId.get(Number(block.id));
+        if (!translated || !Number.isInteger(block.replaceStart) || !Number.isInteger(block.replaceEnd)) return null;
+        let replacement = translated;
+        if (block.quoteOpen) {
+          replacement = replacement.replace(/^["“「『]|["”」』]$/g, "").trim();
+        }
+        return { start: block.replaceStart, end: block.replaceEnd, replacement };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.start - a.start);
+    let next = source;
+    let appliedEnd = source.length + 1;
+    for (const operation of operations) {
+      if (operation.end > appliedEnd) continue;
+      next = next.slice(0, operation.start) + operation.replacement + next.slice(operation.end);
+      appliedEnd = operation.start;
+    }
+    return applyDialogueAndBlockquoteTranslations(next, blocks, blockquoteBlocks, translations);
+  }
   const lines = String(script || "").split(/\r?\n/);
   const byId = new Map(translations.map((item) => [Number(item.id), compactLine(item.text)]));
   const allBlocks = [...blocks, ...blockquoteBlocks].sort((a, b) => b.lineIndexes[0] - a.lineIndexes[0]);
@@ -12018,25 +11851,45 @@ async function convertScriptDialogueLanguage(script, targetLanguage, modelName, 
     ...block,
     id: blocks.length + index,
   }));
+  const occupiedLineIndexes = new Set(
+    [...blocks, ...blockquoteBlocks].flatMap((block) => (Array.isArray(block.lineIndexes) ? block.lineIndexes : [])),
+  );
+  const rangeCandidates = [
+    ...inlineColonDialogueRanges(script, targetLanguage, { limit: Infinity }),
+    ...quotedDialogueRanges(script, targetLanguage, { limit: Infinity }),
+  ];
+  const seenRanges = new Set();
+  const inlineBlocks = rangeCandidates
+    .filter((block) => !occupiedLineIndexes.has(block.lineIndex))
+    .filter((block) => {
+      const key = block.replaceStart + ":" + block.replaceEnd;
+      if (seenRanges.has(key)) return false;
+      seenRanges.add(key);
+      return true;
+    })
+    .map((block, index) => ({ ...block, id: blocks.length + blockquoteBlocks.length + index }));
+  const translationBlocks = [...blocks, ...blockquoteBlocks, ...inlineBlocks];
+  if (!translationBlocks.length) {
+    return { model: null, count: 0, script, skipped: true, skipReason: "no-dialogue" };
+  }
   // 开关:target=英文 且(用户手动声明已是英文 或 自动检测对白已全英文)→ 跳过模型,原样返回。
   if (targetLanguage === "en") {
-    const allBlocks = [...blocks, ...blockquoteBlocks];
     const assumeEnglish = options.assumeEnglish === true;
-    if ((assumeEnglish || dialogueBlocksAreAllEnglish(allBlocks)) && allBlocks.length) {
+    if (assumeEnglish || dialogueBlocksAreAllEnglish(translationBlocks)) {
       return {
         model: null,
-        count: allBlocks.length,
+        count: translationBlocks.length,
         script,
         skipped: true,
         skipReason: assumeEnglish ? "manual" : "detected-english",
       };
     }
   }
-  const result = await translateDialogueBlocks([...blocks, ...blockquoteBlocks], targetLanguage, modelName);
+  const result = await translateDialogueBlocks(translationBlocks, targetLanguage, modelName);
   return {
     model: result.model,
-    count: blocks.length + blockquoteBlocks.length,
-    script: applyDialogueAndBlockquoteTranslations(script, blocks, blockquoteBlocks, result.translations),
+    count: translationBlocks.length,
+    script: applyDialogueAndBlockquoteTranslations(script, blocks, blockquoteBlocks, result.translations, inlineBlocks),
   };
 }
 
@@ -16295,9 +16148,6 @@ function projectAssetForVideoPayload(episodeRoot, asset = {}) {
     assetStylePreset: compactLine(asset.assetStylePreset || ""),
     assetStyleLabel: compactLine(asset.assetStyleLabel || ""),
     generationMode: compactLine(asset.generationMode || asset.generation_mode || ""),
-    sourceFingerprint: compactLine(asset.sourceFingerprint || ""),
-    sourceUpdatedAt: compactLine(asset.sourceUpdatedAt || ""),
-    sourceSize: Number(asset.sourceSize || 0) || 0,
     aiGenerated: asset.aiGenerated === true,
     verificationType: compactLine(asset.verificationType || asset.verification_type || ""),
     // 方舟私域虚拟人像绑定状态必须透传:asset:// 只存在 arkPersonAsset.assetUrl,
@@ -16491,11 +16341,7 @@ function projectShotUsableVideoReferenceAssets(episodeRoot = "", config = {}, sh
     projectShotAllVideoReferenceAssets(config, shot).map((asset) => [compactLine(asset?.name || asset?.assetName || asset?.id || ""), asset]),
   );
   return projectShotVideoReferenceNames(config, shot)
-    .map((name) => {
-      const configuredAsset = configured.get(name);
-      const scannedAsset = episodeRoot ? resolveScannedAssetByName(episodeRoot, name) : null;
-      return reconcileVideoReferenceAsset(configuredAsset || {}, scannedAsset || null) || scannedAsset || configuredAsset;
-    })
+    .map((name) => configured.get(name) || (episodeRoot ? resolveScannedAssetByName(episodeRoot, name) : null))
     .filter(Boolean)
     .map((asset) => (episodeRoot ? projectAssetForVideoPayload(episodeRoot, asset) : asset))
     .filter(videoReferenceAssetHasPotentialSource);
@@ -16555,10 +16401,10 @@ function referenceAssetSource(episodeRoot, assetByName, name) {
   const cfg = assetByName.get(name) || null;
   const scanned = resolveScannedAssetByName(episodeRoot, name);
   if (!cfg && !scanned) return null;
-  const base = reconcileVideoReferenceAsset(cfg || {}, scanned || null) || scanned || cfg || {};
-  const assetUrl = compactLine(base.assetUrl || "");
-  const publicUrl = compactLine(base.publicUrl || "");
-  const source = assetUrl || publicUrl || compactLine(base.url || base.previewUrl || (scanned && scanned.url) || "");
+  const base = cfg || scanned || {};
+  const assetUrl = compactLine((cfg && cfg.assetUrl) || "");
+  const publicUrl = compactLine((cfg && cfg.publicUrl) || "");
+  const source = assetUrl || publicUrl || compactLine((cfg && cfg.url) || (scanned && scanned.url) || (base && base.previewUrl) || "");
   return { ...base, name, assetUrl, publicUrl, url: source };
 }
 
@@ -17376,7 +17222,7 @@ function assertVideoConfigAssetsReady(config = {}, shot = null, episodeRoot = ""
   }
   skippedReferenceAssets.push(...missingRefs);
   if (shot) {
-    projectShotUsableVideoReferenceAssets(root, config, shot);
+    projectShotUsableVideoReferenceAssets(config.episodeRoot || "", config, shot);
   }
   return { skippedReferenceAssets: [...new Set(skippedReferenceAssets)] };
 }
@@ -17950,7 +17796,6 @@ function markProjectVideoShotQueued(episodeRoot, shotName, message = "等待前�
     taskInfo: {
       status: 0,
       statusRaw: "queued_local",
-      generationScope: "batch",
       progressPercent: 0,
       failedReason: "",
       message,
@@ -18060,7 +17905,6 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
   const shotName = compactLine(body.shotName || body.name || "");
   if (!shotName) throw new Error("缺少要生成的视频片段");
   const authUser = body.authUser || null;
-  const generationScope = body.generationScope === "batch" ? "batch" : "single";
   const configRecord = readVideoConfig(episodeRoot);
   let config = applyRequestedRealPersonVerification(configRecord, body) || configRecord?.data || {};
   const fallback = canvasVideoFallbackForShot(episodeRoot, shotName);
@@ -18125,7 +17969,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     assertProjectTailFrameReadyForShot(episodeRoot, shot, config);
   } catch (error) {
     const message = error.message || "等待上一段尾帧";
-    markProjectVideoShotWaiting(episodeRoot, shotName, message, { statusRaw: "waiting_tail_frame", generationScope });
+    markProjectVideoShotWaiting(episodeRoot, shotName, message, { statusRaw: "waiting_tail_frame" });
     return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
   }
   archiveShotVideoArtifactsForRegeneration(episodeRoot, shotName);
@@ -18135,7 +17979,6 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     runNamespace,
     taskInfo: {
       status: 1,
-      generationScope,
       progressPercent: 1,
       failedReason: "",
       message: "正在提交 Seedance 任务",
@@ -18163,12 +18006,12 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
   // HTTP 单段请求只排队返回;批量队列显式传 false,在已有后台 worker 中等待认证完成。
   if (pollInBackground && needsArkPersonPreparation) {
     const message = "正在完成方舟私域虚拟人像认证，完成后自动提交视频";
-    markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion, generationScope });
+    markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion });
     setImmediate(() => {
       generateProjectVideoShot(episodeRoot, { ...body, shotName, pollInBackground: false }).catch((error) => {
         const errorMessage = error.message || "视频生成失败";
         if (isAssetActivationWaitFailure(errorMessage)) {
-          markProjectVideoShotWaiting(episodeRoot, shotName, errorMessage, { videoPreviewVersion, generationScope });
+          markProjectVideoShotWaiting(episodeRoot, shotName, errorMessage, { videoPreviewVersion });
           return;
         }
         writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
@@ -18189,7 +18032,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
     syncProjectShotsToCanvasState(episodeRoot, config, [latestShot]);
     if (!readiness.ready) {
       const message = readiness.message || "超写实参考图素材库验证未完成，暂不提交视频生成";
-      markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion, generationScope });
+      markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion });
       return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
     }
     let payload = projectVideoPayloadForShot(episodeRoot, latestShot, config);
@@ -18200,7 +18043,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
       if (tailFrameAsset.config && tailFrameAsset.config !== readiness.config) writeVideoConfigRecord(configRecord, config);
       if (!tailFrameAsset.ready) {
         const message = tailFrameAsset.message || "上一段尾帧正在进入素材库，暂不提交视频生成";
-        markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion, generationScope });
+        markProjectVideoShotWaiting(episodeRoot, shotName, message, { videoPreviewVersion });
         return { shotName, waitingForAssets: true, result: { status: "queued", progress: 0, message } };
       }
       payload = { ...payload, startFrameUrl: tailFrameAsset.url };
@@ -18373,11 +18216,11 @@ async function runProjectVideoGenerationQueue(queue, episodeRoot, selected, body
             },
           };
         } else {
-          result = await generateProjectVideoShot(episodeRoot, { ...body, shotName, generationScope: "batch", pollInBackground: false });
+          result = await generateProjectVideoShot(episodeRoot, { ...body, shotName, pollInBackground: false });
         }
         if (result?.waitingForAssets || projectVideoShotIsWaitingForAssets(episodeRoot, shotName, queue.runNamespace)) {
           await waitForProjectVideoShotAssetGate(episodeRoot, shotName, { timeoutMs: Number(body.assetWaitTimeoutMs || 12 * 60 * 1000) });
-          result = await generateProjectVideoShot(episodeRoot, { ...body, shotName, generationScope: "batch", pollInBackground: false });
+          result = await generateProjectVideoShot(episodeRoot, { ...body, shotName, pollInBackground: false });
         }
         await waitForProjectVideoShotComplete(episodeRoot, shotName, { timeoutMs: Number(body.timeoutMs || 45 * 60 * 1000) });
         markUserVideoTaskFinished(body.authUser || null, result?.result?.taskId || "");
@@ -18390,7 +18233,7 @@ async function runProjectVideoGenerationQueue(queue, episodeRoot, selected, body
       } catch (error) {
         const message = error.message || "视频生成失败";
         if (isAssetActivationWaitFailure(message)) {
-          markProjectVideoShotWaiting(episodeRoot, shotName, message, { generationScope: "batch" });
+          markProjectVideoShotWaiting(episodeRoot, shotName, message);
         } else {
           writeProjectVideoTaskSnapshot(episodeRoot, shotName, {
             runNamespace: queue.runNamespace,
@@ -18478,7 +18321,7 @@ function recoverProjectVideoQueueIfNeeded(episodeRoot, config = {}) {
   const runNamespace = currentRunNamespace(episodeRoot, config);
   const firstPendingIndex = shots.findIndex((shot) => {
     const snapshot = snapshotStatusForShot(episodeRoot, shot.name, { runNamespace });
-    if (!snapshot || snapshot.generationScope !== "batch") return false;
+    if (!snapshot) return false;
     if (snapshot.statusCode === 1 && snapshot.taskId) return true;
     if (projectVideoShotNeedsFinalization(snapshot)) return true;
     if (snapshot.statusCode !== 0) return false;
@@ -18503,7 +18346,7 @@ function recoverProjectVideoQueueIfNeeded(episodeRoot, config = {}) {
     updatedAt: new Date().toISOString(),
   };
   projectVideoQueues.set(queueKey, queue);
-  runProjectVideoGenerationQueue(queue, episodeRoot, unfinished, { recovered: true, generationScope: "batch" }).catch((error) => {
+  runProjectVideoGenerationQueue(queue, episodeRoot, unfinished, { recovered: true }).catch((error) => {
     queue.running = false;
     queue.status = "failed";
     queue.error = error.message || "恢复批量视频生成失败";
@@ -20364,21 +20207,28 @@ function parseScriptTimestamp(minutes, seconds) {
 
 function scriptTimecodeBeats(script) {
   const source = String(script || "");
-  const beats = [];
-  const pattern = /^\s*(?:\d{1,3}\s*[|｜]\s*)?(\d{1,3}):(\d{1,2}(?:\.\d+)?)\s*[—–-]\s*(\d{1,3}):(\d{1,2}(?:\.\d+)?)([^\r\n]*)$/gm;
-  const matches = [...source.matchAll(pattern)];
-  for (let index = 0; index < matches.length; index += 1) {
-    const match = matches[index];
+  const lines = source.split(/\r?\n/);
+  const entries = [];
+  // Screenplays commonly wrap timecode headings in Markdown emphasis, for example
+  // `**00:00-00:04　店门推开**`. Parse the heading line separately so the
+  // following multiline action remains part of the same beat.
+  const pattern = /^\s*(?:[*_`~>#]+\s*)?(?:\d{1,3}\s*[|｜]\s*)?(\d{1,3}):(\d{1,2}(?:\.\d+)?)\s*[—–-]\s*(\d{1,3}):(\d{1,2}(?:\.\d+)?)(?:\s*[|｜:：-]\s*|\s+|\u3000+)?(.*?)(?:\s*[*_`~]+)?\s*$/;
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const match = lines[lineIndex].match(pattern);
+    if (!match) continue;
     const start = parseScriptTimestamp(match[1], match[2]);
     const end = parseScriptTimestamp(match[3], match[4]);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
-    const bodyStart = (match.index || 0) + match[0].length;
-    const bodyEnd = index + 1 < matches.length ? matches[index + 1].index : source.length;
-    const text = compactLine(`${match[5] || ""} ${source.slice(bodyStart, bodyEnd)}`)
-      .replace(/^[|｜:：\s]+/, "") || `时间码 ${match[1]}:${match[2]}-${match[3]}:${match[4]}`;
-    beats.push({ index: beats.length + 1, start, end, text });
+    entries.push({ lineIndex, start, end, inline: match[5] || "", minutes: match[1], startSeconds: match[2], endMinutes: match[3], endSeconds: match[4] });
   }
-  return beats;
+  return entries.map((entry, index) => {
+    const bodyLines = lines.slice(entry.lineIndex + 1, entries[index + 1]?.lineIndex);
+    const text = compactLine(`${entry.inline} ${bodyLines.join(" ")}`)
+      .replace(/^[|｜:：\s]+/, "")
+      .replace(/[*_`~]+$/g, "")
+      .trim() || `时间码 ${entry.minutes}:${entry.startSeconds}-${entry.endMinutes}:${entry.endSeconds}`;
+    return { index: index + 1, start: entry.start, end: entry.end, text };
+  });
 }
 
 function scriptTimecodeTotalSeconds(script) {
@@ -24539,40 +24389,9 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     durationMode: previous.durationMode || previous.settings?.durationMode || projectDurationMode(episodeRoot),
   });
   const resolvedDialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, dialogueLanguage);
-  const manifestNames = new Set((manifest.items || []).map((item) => compactLine(item?.id || "")).filter(Boolean));
-  const freshProductionAssets = projectProductionAssetsForState(episodeRoot, manifest)
-    .filter((asset) => asset.manifestType !== "Storyboard")
-    .filter((asset) => !manifestNames.size || manifestNames.has(compactLine(asset.assetName || "")))
-    .filter((asset) => !asset.invalid && !asset.conflicts?.length);
-  const historicalAssetBindings = collectHistoricalAssetLibraryBindings(episodeRoot, previous);
-  const previousAssetsByName = new Map(
-    (Array.isArray(previous.assets) ? previous.assets : [])
-      .map((asset) => [compactLine(asset?.name || asset?.assetName || asset?.id || ""), asset])
-      .filter(([name]) => !!name),
-  );
-  const previousConfigUpdatedAt = Date.parse(previous.updatedAt || previous.videoConfigUpdatedAt || "") || 0;
-  const freshAssetRecords = freshProductionAssets
-    .map((asset, index) => assetRecordFromMedia(asset, manifest, index))
-    .filter(Boolean)
-    .map((record) => {
-      const previousRecord = previousAssetsByName.get(compactLine(record.name || ""));
-      if (!previousRecord) return applyAssetLibraryBindingsToRecords([record], historicalAssetBindings)[0] || record;
-      const freshUpdatedAt = Date.parse(record.sourceUpdatedAt || "") || 0;
-      const previousUpdatedAt = Date.parse(previousRecord.sourceUpdatedAt || "") || previousConfigUpdatedAt;
-      const fileChanged = compactLine(previousRecord.file || "") && compactLine(record.file || "") && previousRecord.file !== record.file;
-      const sourceChanged = videoAssetSourceChanged(previousRecord, record);
-      if (fileChanged || sourceChanged || (freshUpdatedAt > 0 && freshUpdatedAt > previousUpdatedAt)) {
-        return clearStaleAssetLibraryBinding(record);
-      }
-      return applyAssetLibraryBindingsToRecords([record], historicalAssetBindings)[0] || record;
-    });
-  const configAssets = mergeVideoConfigAssetRecords(
-    Array.isArray(previous.assets) && previous.assets.length ? previous.assets : manifestItemsToAssets(manifest),
-    freshAssetRecords,
-  );
-  const productionConfigAssets = configAssets.filter((asset) => asset.manifestType !== "Storyboard");
-  const videoStylePreset = compactLine(previousShots[shotIndex]?.videoStylePreset || "") || videoStylePresetFromProductionAssets(productionConfigAssets, body);
-  const videoStyleDirective = compactLine(previousShots[shotIndex]?.videoStyleDirective || "") || videoStyleDirectiveFromProductionAssets(productionConfigAssets, body);
+  const configAssets = Array.isArray(previous.assets) && previous.assets.length ? previous.assets : manifestItemsToAssets(manifest);
+  const videoStylePreset = compactLine(previousShots[shotIndex]?.videoStylePreset || "") || videoStylePresetFromProductionAssets(configAssets, body);
+  const videoStyleDirective = compactLine(previousShots[shotIndex]?.videoStyleDirective || "") || videoStyleDirectiveFromProductionAssets(configAssets, body);
   const promptMode = compactLine(previous.settings?.promptMode || previous.promptMode || "").toLowerCase();
   const storyboardsActive =
     promptMode === "production_board" ||
@@ -24584,7 +24403,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     modelPlan,
     script,
     dialogueLanguage: resolvedDialogueLanguage,
-    assets: productionConfigAssets,
+    assets: configAssets,
     videoStylePreset,
     videoStyleDirective,
   });
@@ -24650,7 +24469,6 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
       dialectStyle: requestedDialectStyle,
       sfxStyle: requestedSfxStyle,
     },
-    assets: configAssets,
     shots: previousShots.map((shot, index) => (index === shotIndex ? nextShot : shot)),
     updatedAt: new Date().toISOString(),
     lastSingleShotConfig: {
@@ -26523,6 +26341,7 @@ async function handleApi(req, res, url) {
         input: body.input,
         routes: body.routes || body.modelRoute,
         revisionPlan: body.revisionPlan,
+        unitNumbers: body.unitNumbers || body.input?.unitNumbers || body.input?.revisionUnitNumbers,
       });
       return send(res, 202, { ok: true, job }, { "Cache-Control": "no-store" });
     }
@@ -26612,16 +26431,6 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && action === "status") {
     const user = currentUserFromRequest(req);
     return send(res, 200, projectStatusSnapshotForUser(episodeRoot, user));
-  }
-
-  if (req.method === "GET" && action === "cover-designs") {
-    return send(res, 200, { ok: true, coverDesign: refreshCoverDesignState(episodeRoot) });
-  }
-
-  if (req.method === "POST" && action === "cover-designs") {
-    const user = currentUserFromRequest(req);
-    const coverDesign = await generateProjectCoverDesigns(episodeRoot, { ownerUserId: user?.id || "" });
-    return send(res, 202, { ok: true, coverDesign, state: fullProjectStateForUser(episodeRoot, user) });
   }
 
   if (req.method === "GET" && action === "film-studio") {
@@ -26987,7 +26796,7 @@ async function handleApi(req, res, url) {
   const draftJobMatch = action.match(/^draft-jobs\/([^/]+)$/);
   if (req.method === "GET" && draftJobMatch) {
     const jobId = decodeURIComponent(draftJobMatch[1]);
-    return send(res, 200, { ok: true, job: getDraftJob(episodeRoot, jobId, currentUserFromRequest(req)) }, { "Cache-Control": "no-store" });
+    return send(res, 200, { ok: true, job: getDraftJob(episodeRoot, jobId) }, { "Cache-Control": "no-store" });
   }
 
 
@@ -27340,6 +27149,15 @@ module.exports = {
       textReviewModels: superPixelTextReviewModels,
       callText: callSuperPixelTextModel,
     },
+    pixelTaleApi: {
+      router: createPixelTaleApiRouter,
+      setFetch(fetchImpl) {
+        pixelTaleApiFetch = typeof fetchImpl === "function" ? fetchImpl : (...args) => fetch(...args);
+      },
+      call: callPixelTaleApiModel,
+      models: pixelTaleApiModelOptions,
+      status: pixelTaleApiModelStatus,
+    },
     pixelTaleRuns: {
       start: startPixelTaleRun,
       get: getPixelTaleRunJob,
@@ -27436,6 +27254,9 @@ module.exports = {
     dialogue: {
       dialoguesForText,
       inlineColonDialogues,
+      inlineColonDialogueRanges,
+      quotedDialogueRanges,
+      applyDialogueAndBlockquoteTranslations,
       backfillDialogueSpeakers,
       normalizeDialogueItems,
       seedanceDialogueText,
@@ -27502,12 +27323,6 @@ module.exports = {
       finalCutNativeTarget,
       finalCutStatus,
     },
-    coverDesign: {
-      styles: COVER_DESIGN_STYLES,
-      promptForStyle: promptForCoverStyle,
-      normalizeTaskStatus: normalizeCoverDesignTaskStatus,
-      refresh: refreshCoverDesignState,
-    },
     videoRetry: {
       updateVideoModelForShotInConfig,
       projectVideoModelForShot,
@@ -27528,6 +27343,9 @@ module.exports = {
       isSpeakerCueLine,
       dialogueBlocksLookSafe,
       blockquoteDialogues,
+      inlineColonDialogueRanges,
+      quotedDialogueRanges,
+      applyDialogueAndBlockquoteTranslations,
       convertScriptDialogueLanguage,
       dialogueBlocksAreAllEnglish,
       dialoguesForText,
@@ -27550,17 +27368,11 @@ module.exports = {
       projectShotVideoReferenceNames,
       projectShotAllVideoReferenceAssets,
       projectShotUsableVideoReferenceAssets,
-      reconcileAssetSource: reconcileVideoReferenceAsset,
     },
     videoVerification: {
       applyRequestedRealPersonVerification,
       arkPersonReferenceNames,
       realPersonVerificationEnabled,
-    },
-    videoConfig: {
-      mergeAssetRecords: mergeVideoConfigAssetRecords,
-      clearStaleAssetLibraryBinding,
-      applyHistoricalBindings: applyAssetLibraryBindingsToRecords,
     },
     projectVideo: {
       generateProjectVideoShot,

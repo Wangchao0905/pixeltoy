@@ -137,6 +137,22 @@ try {
   assert.equal(reusedCompleted.status, "completed", "a completed Agent result must be reused after an index-only restart");
   assert.equal(reusedCompleted.recovered, true, "reused completed results must disclose restart recovery");
   assert.equal(requestedTokenBudgets.length, requestsBeforeReuse, "reusing a completed Agent result must not call any model again");
+  // ── 启动扫描：上一进程遗留的 running 任务必须被标记为中断 ──
+  const staleRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-stale-")), ".pixel-tale-sessions");
+  const staleSession = path.join(staleRoot, "sess-stale");
+  const staleJobsDir = path.join(staleSession, "run-jobs");
+  fs.mkdirSync(staleJobsDir, { recursive: true });
+  fs.writeFileSync(path.join(staleJobsDir, "ptrun_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.json"), JSON.stringify({ jobId: "ptrun_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", status: "running", stage: "characters", createdAt: 1000, updatedAt: 1000 }));
+  fs.writeFileSync(path.join(staleJobsDir, "ptrun_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.json"), JSON.stringify({ jobId: "ptrun_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", status: "completed", stage: "title", createdAt: 1000, updatedAt: 1000 }));
+  fs.writeFileSync(path.join(staleJobsDir, "not-a-job.json"), JSON.stringify({ status: "running" }));
+  const markedCount = pixelTaleRuns.markStaleInterrupted(staleRoot);
+  assert.equal(markedCount, 1, "exactly one stale running job must be marked interrupted");
+  const markedJob = JSON.parse(fs.readFileSync(path.join(staleJobsDir, "ptrun_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.json"), "utf8"));
+  assert.equal(markedJob.status, "failed", "stale running job must be flipped to failed");
+  assert.equal(markedJob.errorCode, "RUN_INTERRUPTED", "stale running job must carry RUN_INTERRUPTED");
+  const untouchedJob = JSON.parse(fs.readFileSync(path.join(staleJobsDir, "ptrun_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.json"), "utf8"));
+  assert.equal(untouchedJob.status, "completed", "non-running jobs must be left untouched");
+  fs.rmSync(path.dirname(staleRoot), { recursive: true, force: true });
 } finally {
   pixelTaleApi.setFetch();
   fs.rmSync(root, { recursive: true, force: true });

@@ -2666,6 +2666,43 @@ function prunePixelTaleRunJobs() {
   }
 }
 
+// On boot, persisted "running" jobs belong to a previous process (their in-memory
+// task is gone). Without this sweep they would stay running forever unless the
+// frontend happens to poll them (which re-runs or interrupts them). The deploy
+// restart that interrupts an in-flight generation is exactly the case the No
+// Record session hit. Mark them interrupted so the UI shows "请重新生成当前阶段"
+// instead of spinning forever; inputs/artifacts are preserved on disk.
+function markStalePixelTaleRunsInterrupted(sessionsRoot = PIXELTALE_SESSION_ROOT) {
+  if (!fs.existsSync(sessionsRoot)) return 0;
+  let marked = 0;
+  for (const entry of fs.readdirSync(sessionsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const jobsDir = path.join(sessionsRoot, entry.name, "run-jobs");
+    if (!fs.existsSync(jobsDir)) continue;
+    for (const file of fs.readdirSync(jobsDir)) {
+      if (!/^ptrun_[A-Za-z0-9-]{20,80}\.json$/.test(file)) continue;
+      const jobPath = path.join(jobsDir, file);
+      try {
+        const job = JSON.parse(fs.readFileSync(jobPath, "utf8"));
+        if (job?.status !== "running") continue;
+        Object.assign(job, {
+          status: "failed",
+          error: "服务更新（重启）中断了本次生成，输入和既有产物均已保留，请重新生成当前阶段",
+          errorCode: "RUN_INTERRUPTED",
+          finishedAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        fs.writeFileSync(jobPath, JSON.stringify(job, null, 2));
+        marked += 1;
+      } catch {
+        // Malformed job files are left untouched.
+      }
+    }
+  }
+  if (marked) console.log(`[pixel-tale] 启动恢复：${marked} 个中断的运行任务已标记为 RUN_INTERRUPTED`);
+  return marked;
+}
+
 function pixelTaleRunJobFile(storyRoot, jobId) {
   if (!/^ptrun_[A-Za-z0-9-]{20,80}$/.test(String(jobId || ""))) return "";
   return path.join(storyRoot, "run-jobs", `${jobId}.json`);
@@ -27561,6 +27598,9 @@ if (require.main === module) {
     console.error("[unhandledRejection]", reason && reason.stack ? reason.stack : reason);
   });
 
+  // 重启后把上一进程遗留的 running 任务标记为中断，避免前端永远空转等待。
+  markStalePixelTaleRunsInterrupted();
+
   server.listen(PORT, () => {
     console.log(`Pixel Toys running at http://localhost:${PORT}`);
     console.log(`Workspace: ${APP_ROOT}`);
@@ -27604,6 +27644,7 @@ module.exports = {
       status: pixelTaleApiModelStatus,
     },
     pixelTaleRuns: {
+      markStaleInterrupted: markStalePixelTaleRunsInterrupted,
       start: startPixelTaleRun,
       get: getPixelTaleRunJob,
     },

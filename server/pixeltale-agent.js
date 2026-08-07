@@ -77,6 +77,14 @@ const REVIEW_OUTPUT_TOKEN_BUDGETS = Object.freeze({
   scenes: 4_000,
   dialogue: 4_000,
 });
+
+// DeepSeek 官方端点严格按 max_tokens 截断（OpenAI 兼容网关不截断 maxTokens）。中文审核输出
+// token 密度高：1800 的 proposal 审核预算对 deepseek-v4-pro 曾被截断（TRUNCATED_OUTPUT，
+// 2026-08-07 提案卡死事故）。这里仅对 deepseek provider 放大输出预算，其余模型保持紧凑审核设计。
+function reviewTokenBudget(stage, provider) {
+  const base = REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000;
+  return String(provider).startsWith("deepseek") ? base * 3 : base;
+}
 const UNIT_AUTO_REPAIR_MAX_PASSES = 2;
 const AUTO_REPAIR_TOKEN_BUDGET = 30_000;
 const STAGE_REVIEW_CRITERIA = Object.freeze({
@@ -2820,7 +2828,7 @@ function createPixelTaleAgent(options = {}) {
                 user: reviewUserPrompt({ stage, mode, input: batchInput, artifact: reviewTarget, previousArtifacts, revisionContract, unitScope: batchUnits, lockedContext: lockedUnitContext(state, stage, batchUnits), continuityContext, ruleFindings: ruleResult.violations }),
                 modelRouter,
                 timeoutMs: REVIEW_MODEL_TIMEOUT_MS,
-                maxTokens: REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000,
+                maxTokens: reviewTokenBudget(stage, candidate),
                 purpose: `pixeltale:${stage}:review`,
                 temperature: 0.2,
                 signal,
@@ -3096,7 +3104,7 @@ function createPixelTaleAgent(options = {}) {
               user: reviewUserPrompt({ stage, mode, input: runInput, artifact: primaryArtifact, previousArtifacts, revisionContract, ruleFindings: ruleResult.violations }),
               modelRouter,
               timeoutMs: REVIEW_MODEL_TIMEOUT_MS,
-              maxTokens: REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000,
+              maxTokens: reviewTokenBudget(stage, candidate),
               purpose: `pixeltale:${stage}:review`,
               temperature: 0.2,
               signal,

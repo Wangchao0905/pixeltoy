@@ -76,7 +76,8 @@ try {
   assert.equal(requestedPurposes.filter((purpose) => purpose === "synthesis").length, 1, "the merged draft must be created only after the author council completes");
   assert.equal(requestedPurposes.filter((purpose) => purpose === "review").length, 3, "all three review seats must complete before release");
   assert.equal(requestedTokenBudgets.length, 7, "three authors, one merge pass, and three reviewers must stay bounded");
-  assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget === 1_200).length, 3, "reviewers must retain the compact review token budget");
+  assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget === 1_200).length, 2, "non-deepseek reviewers must retain the compact review token budget");
+  assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget > 1_200).length, 1, "deepseek reviewer must get an enlarged budget (official endpoint enforces max_tokens truncation)");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");
   const persistedJob = JSON.parse(fs.readFileSync(path.join(root, "run-jobs", `${first.jobId}.json`), "utf8"));
   assert.deepEqual(persistedJob.request, {

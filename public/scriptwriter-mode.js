@@ -49,7 +49,7 @@
       type: "button",
       class: "sw-tab-btn",
       "data-sw-pipeline-tab": "true",
-      title: "Pixel Writer：文风契约 · 倒推对弈 · 审核修订",
+      title: "Pixel Writer",
     }, [
       el("span", { class: "sw-tab-mark", text: "✦", "aria-hidden": "true" }),
       el("span", { class: "sw-tab-label", text: TAB_LABEL }),
@@ -68,8 +68,7 @@
     overlay.style.display = "none";
 
     var header = el("div", { class: "sw-overlay-head" }, [
-      el("span", { class: "sw-overlay-title", text: "Pixel Writer · 编剧工作台" }),
-      el("span", { class: "sw-overlay-note", text: "文风契约 · Codex 主笔 · DeepSeek 逻辑审核 · Claude 叙事审核 · 对白润色" }),
+      el("span", { class: "sw-overlay-title", text: "Pixel Writer 编剧工作台" }),
       el("button", {
         type: "button",
         class: "sw-overlay-close",

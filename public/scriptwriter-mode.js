@@ -42,6 +42,16 @@
   var tabBtn = null;
 
   function injectTab() {
+    var staticBtn = document.getElementById("swPipelineTab");
+    if (staticBtn) {
+      tabBtn = staticBtn;
+      tabBtn.classList.add("is-injected");
+      if (!tabBtn._swBound) {
+        tabBtn.addEventListener("click", toggle);
+        tabBtn._swBound = true;
+      }
+      return true;
+    }
     var topActions = document.querySelector(".top-actions") || document.querySelector(".topbar");
     if (!topActions || topActions.querySelector("[data-sw-pipeline-tab]")) return !!tabBtn;
 

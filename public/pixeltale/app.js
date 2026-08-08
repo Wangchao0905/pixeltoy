@@ -579,7 +579,20 @@ function unitStageProgress(stage) {
   const progress = state.agent?.stageProgress?.[stage] || {};
   const total = Number(progress.totalUnits || state.input.episodeCount || 0);
   const locked = Array.isArray(progress.lockedUnits) ? progress.lockedUnits : [];
-  const generated = Array.isArray(progress.generatedUnits) ? progress.generatedUnits : locked;
+  // 已生成集优先读后端 generatedUnits；存量 stageProgress（部署前数据）没有该字段时，
+  // 从 batches（非 running 批次覆盖的集）回退计算，否则黄段会一直为 0。
+  let generated;
+  if (Array.isArray(progress.generatedUnits) && progress.generatedUnits.length) {
+    generated = progress.generatedUnits;
+  } else {
+    const seen = new Set(
+      (Array.isArray(progress.batches) ? progress.batches : [])
+        .filter((entry) => entry?.status !== "running")
+        .flatMap((entry) => (Array.isArray(entry?.units) ? entry.units : [])),
+    );
+    generated = [...seen].sort((a, b) => a - b);
+  }
+  if (!generated.length) generated = locked;
   const pending = Array.isArray(progress.pendingUnits) ? progress.pendingUnits : [...Array(total)].map((_, index) => index + 1).filter((number) => !locked.includes(number));
   const current = Array.isArray(progress.currentBatch) ? progress.currentBatch : [];
   return { total, locked, generated, pending, current, complete: !!total && locked.length >= total };

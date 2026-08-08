@@ -168,6 +168,19 @@ class TestRevisionLoop(unittest.TestCase):
         compliant = {"scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去！", "action": "她抬头"}, {"speaker": "管家", "line": "小姐请留步", "action": "伸手拦住"}]}]}
         self.assertTrue(PixelWriterEngine._revision_respects_scope(original, compliant, issues))
 
+    def test_revision_overreach_merges_quoted_only(self):
+        # 修订越界 → _merge_revision：未点名处恢复原文，点名处保留修订版
+        original = {"scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去", "action": "她抬头"}, {"speaker": "管家", "line": "小姐请留步", "action": "伸手拦住"}]}]}
+        overreach = {"scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去！", "action": "她抬头"}, {"speaker": "管家", "line": "小姐请留步，请回吧", "action": "伸手拦住"}]}]}
+        issues = [{"severity": "high", "quote": "我要进去", "fix": "加感叹号增强情绪"}]
+        merged = PixelWriterEngine._merge_revision(original, overreach, issues)
+        self.assertIsNotNone(merged)
+        self.assertEqual(merged["scenes"][0]["beats"][0]["line"], "我要进去！", "点名处必须采用修订版")
+        self.assertEqual(merged["scenes"][0]["beats"][1]["line"], "小姐请留步", "未点名处必须恢复原文")
+        # 结构无法对齐 → None（交人工）
+        broken = {"scenes": [{"location": "豪门门口", "beats": []}]}
+        self.assertIsNone(PixelWriterEngine._merge_revision(original, broken, issues))
+
     def test_pass_string_false_not_truthy(self):
         # DeepSeek 返回 "pass":"false"（字符串）：必须走修订 → 3 次未通过 → needs-human，不得 approved
         engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(PASS_STR_FALSE), state_dir="/tmp/pw-test")

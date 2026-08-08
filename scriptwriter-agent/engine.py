@@ -305,6 +305,41 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
                         return False
         return True
 
+    @staticmethod
+    def _merge_revision(original, revised, issues):
+        """修订越界合并：未被点名的段落恢复原文措辞，被点名（quote 命中）的段落
+        采用修订版。结构无法逐位对齐（场景/节拍数变化且非结构类问题）返回 None，
+        由调用方交人工处理。"""
+        if not isinstance(revised, dict):
+            return None
+        quoted = {str(issue.get("quote", "")).strip() for issue in (issues or []) if isinstance(issue, dict) and issue.get("quote")}
+        structural = any(
+            not str(issue.get("quote", "")).strip()
+            and any(k in str(issue.get("fix", "")) for k in ("节拍", "时长", "结构", "hook", "cliffhanger"))
+            for issue in (issues or []) if isinstance(issue, dict)
+        )
+        orig_scenes = original.get("scenes", []) or []
+        rev_scenes = revised.get("scenes", []) or []
+        if structural:
+            # 结构类问题允许修订版结构调整：直接采用修订版（diff 检查已保证未点名对白保留）
+            return json.loads(json.dumps(revised))
+        if len(orig_scenes) != len(rev_scenes):
+            return None
+        merged = json.loads(json.dumps(original))
+        for si, (os_, rs) in enumerate(zip(orig_scenes, rev_scenes)):
+            ov = os_.get("location", "")
+            if ov != rs.get("location", "") and ov.strip() in quoted:
+                merged["scenes"][si]["location"] = rs.get("location", "")
+            ob, rb = os_.get("beats", []) or [], rs.get("beats", []) or []
+            if len(ob) != len(rb):
+                return None
+            for bi, (ob_, rb_) in enumerate(zip(ob, rb)):
+                for field in ("speaker", "line", "action"):
+                    val = ob_.get(field, "")
+                    if val != rb_.get(field, "") and val.strip() in quoted:
+                        merged["scenes"][si]["beats"][bi][field] = rb_.get(field, "")
+        return merged
+
     def run_episode_loop(self, state, outline):
         """单集生成 + 审核修订闭环：最多 MAX_REVISION_ROUNDS 轮修订，超限置 needs-human 不阻塞后续集。
 
@@ -357,12 +392,17 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
             if not isinstance(revised, dict):
                 status = "needs-human"
                 break
-            # diff 约束：未被点名段落被模型顺手改写则判定修订越界，交人工处理
+            # diff 约束：未被点名段落被模型顺手改写 → 合并回滚（未点名处恢复原文，
+            # 点名处用修订版），继续进入下一轮审核——不再直接交人工（初稿修订常需
+            # 顺滑衔接，全量拒绝会造成死循环）。merge 失败才交人工。
             if not self._revision_respects_scope(episode, revised, verdict.get("issues", [])):
-                status = "needs-human"
-                state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
-                                              "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "修订越界：模型改写了未点名内容，已交人工处理"}]}
-                break
+                merged = self._merge_revision(episode, revised, verdict.get("issues", []))
+                if merged is None:
+                    status = "needs-human"
+                    state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
+                                                  "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "修订越界且无法合并，已交人工处理"}]}
+                    break
+                revised = merged
             episode = revised
             rounds += 1
         state.artifacts.setdefault("episodes", {})[str(idx)] = episode

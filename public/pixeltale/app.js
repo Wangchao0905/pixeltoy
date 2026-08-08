@@ -1011,19 +1011,18 @@ function renderModelTeam() {
   const options = Array.isArray(state.agent?.modelOptions) ? state.agent.modelOptions : [];
   const seatDefaults = [
     { seatId: "seat_a", role: "structure_causality", requiredModel: "gpt-5.6-terra" },
-    { seatId: "seat_b", role: "character_continuity", requiredModel: "claude-opus-5" },
-    { seatId: "seat_c", role: "audience_pacing_visual", requiredModel: "claude-haiku-4-5" },
+    { seatId: "seat_b", role: "character_continuity", requiredModel: "gpt-5.6-sol" },
   ];
   const status = state.agent?.providerStatus || {};
   const currentArtifact = artifactForStage(state.stage);
   const currentReview = reviewForArtifact(currentArtifact);
   const reviewFeedbacks = Array.isArray(currentReview?.content?.feedbacks) ? currentReview.content.feedbacks : [];
   const roleLabels = { structure_causality: "结构与因果审查", character_continuity: "人物与连续性审查", audience_pacing_visual: "受众节奏与视觉审查" };
-  const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则", seat_c: "首屏冲击 · 集尾钩子 · 镜头可拍性" };
+  const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则 · 视觉设计" };
   const phases = [
     { id: "authoring", label: "三席独立创作" },
     { id: "synthesizing", label: "合并编排" },
-    { id: "reviewing", label: "三席交叉审核" },
+    { id: "reviewing", label: "双席交叉审核" },
   ];
   const currentPhaseIndex = phases.findIndex((phase) => phase.id === state.runPhase);
   const completedPhaseIndex = currentPhaseIndex >= 0 ? currentPhaseIndex - 1 : currentReview ? phases.length - 1 : -1;

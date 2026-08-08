@@ -23,8 +23,9 @@ const REVIEW_SEATS = Object.freeze([
   // seat_b moved off claude-opus-5: measured 300s TIMEOUT on a full scenes payload
   // (gpt-5.6-terra 171s, grok-4.5 124s on the same load).
   Object.freeze({ id: "seat_b", role: "character_continuity", model: "gpt-5.6-sol", ownedDimensions: Object.freeze(["plot"]) }),
-  // seat_c moved off claude-haiku-4-5: it returned a syntactically valid but empty
-  // scenes array (48 bytes, 0 scenes), which schema validation then rejected.
+  // seat_c kept for the three-seat author council; the 2-seat review speed pass
+  // (2026-08-08) folds its design dimension into seat_b at reviewModels time and
+  // drops the deepseek seat from the review loop only.
   Object.freeze({ id: "seat_c", role: "audience_pacing_visual", model: "deepseek-v4-pro", ownedDimensions: Object.freeze(["design"]) }),
 ]);
 
@@ -185,12 +186,15 @@ function fallbackModelFor(model, seatId) {
 
 function reviewModels(route = {}) {
   const seatModels = stageModels(route);
-  return REVIEW_SEATS.map((seat, index) => {
+  // 2-seat review speed pass (2026-08-08): only seat_a + seat_b review; the
+  // deepseek seat_c (slow official endpoint) is dropped from the review loop,
+  // and its design dimension folds into seat_b so every dimension stays owned.
+  return REVIEW_SEATS.slice(0, 2).map((seat, index) => {
     const model = seatModels[index];
     return {
       seatId: seat.id,
       role: seat.role,
-      ownedDimensions: seat.ownedDimensions,
+      ownedDimensions: seat.id === "seat_b" ? [...seat.ownedDimensions, "design"] : seat.ownedDimensions,
       requiredModel: seat.model,
       model,
       provider: modelProvider(model),

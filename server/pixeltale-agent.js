@@ -52,10 +52,10 @@ const STAGE_PRIMARY_RETRY_ROUNDS = 2;
 // the largest artifacts with headroom for its fallback.
 const REVIEW_MODEL_TIMEOUT_MS = 240_000;
 // Two matching findings are enough to classify a shared issue. Stage release
-// still requires all three independent review seats to finish.
+// requires the review seats to finish (2 seats since 2026-08-08 speed pass).
 const REVIEW_QUORUM = 2;
-const REVIEW_COMPLETION_REQUIRED = 3;
-// 共识放行阈值：3 席中至少 2 席通过（多数制）即可放行；分歧席记录不阻断。
+const REVIEW_COMPLETION_REQUIRED = 2;
+// 共识放行阈值：2 席全部通过即放行（多数制）；分歧席记录不阻断。
 const REVIEW_PASS_QUORUM = 2;
 // 自动放行：多数通过 + 意见一致 ≥ 90% 时，无需人工确认，自动进入下一步。
 const AUTO_APPROVE_AGREEMENT = 90;
@@ -98,7 +98,8 @@ function stageTokenBudget(stage, provider) {
   const base = STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal;
   return String(provider).startsWith("deepseek") ? Math.min(8_000, Math.max(base * 4, 4_800)) : base;
 }
-const UNIT_AUTO_REPAIR_MAX_PASSES = 2;
+// 2026-08-08 提速：自动修复轮 2 → 1（每批省一整轮 主笔+审核 ≈ 19 分钟）。
+const UNIT_AUTO_REPAIR_MAX_PASSES = 1;
 const AUTO_REPAIR_TOKEN_BUDGET = 30_000;
 const STAGE_REVIEW_CRITERIA = Object.freeze({
   brief: {
@@ -597,6 +598,22 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project, exclu
       unitScope: normalizeUnitNumbers(unitScope, plannedUnitCount(input)),
       lockedUnitContext: lockedContext,
       continuityContext,
+    } : {}),
+    ...(stage === "arc" ? {
+      structureExample: [
+        {
+          number: 1,
+          title_zh: "黑雨里的徽记",
+          promise_zh: "用主角被迫接管一件异常事件，建立她与核心悬念（徽记/旧承诺）的关联，并启动一条不可逆的照护路径。",
+          plot_zh: "开场即异常：主角在雨夜撞见被黑色裂隙包围的孩子，孩子手中徽记发烫并呼唤旧名。主角在救人与上报之间做出主动选择（先救人），因此被卷入规则之外。中段反派/规则方登场施压，主角发现常规流程无效，被迫越界。结尾：孩子体征恶化，主角决定独自调查，为下一集留下行动钩子。",
+        },
+        {
+          number: 2,
+          title_zh: "她记得他",
+          promise_zh: "揭示一个改变双方关系的身份事实：孩子记得主角的旧日身份，且这份记忆与徽记的力量绑定。",
+          plot_zh: "承接上集：主角尝试常规求助却被挡回，孩子说出只有旧识才知道的话，主角意识到自己被认出来了。反派意识到徽记被激活，提前收网。主角利用对方一次误判设下反制（主动选择），短暂获得主动权。结尾：反制成功但暴露了主角的位置，反派放话追到天涯，钩住下一集。",
+        },
+      ],
     } : {}),
     ...(stage === "title" ? { excludedTitles: uniqueText(excludedTitles, 100) } : {}),
     userInput: asObject(input),

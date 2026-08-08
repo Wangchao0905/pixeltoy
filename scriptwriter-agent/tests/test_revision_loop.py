@@ -1,7 +1,7 @@
 """Task 4: 审核修订闭环测试（FakeReviewer 模拟 DeepSeek，不真实调用模型）。"""
 import json
 import unittest
-from engine import PixelWriterEngine, ProjectState
+from engine import PixelWriterEngine, ProjectState, normalize_idea
 
 class FakeWriter:
     def __init__(self, responses):
@@ -77,6 +77,33 @@ class TestRevisionLoop(unittest.TestCase):
         state.artifacts["episodes"] = {"1": {"scenes": [{"location": "月亮花店门口", "beats": [{"speaker": "Luna", "line": "肚子疼", "action": "她靠在橱窗边。"}]}]}}
         converted = engine.localize_actions(state)
         self.assertEqual(converted, 0, "纯中文内容不应触发转换")
+
+    def test_generate_episode_auto_localizes_english_prose(self):
+        # 生成时自动强制中文化：模型输出英文 action/location → 保存前自动转换（对白不动）
+        writer = FakeWriter([
+            json.dumps({"scenes": [
+                {"location": "Outside Moonflower House, late afternoon",
+                 "beats": [{"speaker": "Luna", "line": "Excuse me, little one.", "action": "Dorian slows on the sidewalk."}]}
+            ]}, ensure_ascii=False),
+            json.dumps({"items": [
+                {"key": "loc:0", "zh": "月亮花店门口，午后"},
+                {"key": "act:0:0", "zh": "Dorian 在花店旁放慢脚步"},
+            ]}, ensure_ascii=False),
+        ])
+        engine = PixelWriterEngine(writer, ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-auto", stage="episode")
+        state.current_episode = 1
+        idea = normalize_idea("小美为救母亲进入豪门，却身世成谜")
+        idea["episode_duration_seconds"] = 60
+        idea["dialogue_language"] = "en"
+        state.idea = idea
+        state.artifacts["worldbuilding"] = {"characters": [{"name": "小美"}], "world_rules": []}
+        state.artifacts["outline"] = {"episodes": [{"index": 1, "episode_title": "第1集", "hook": "开场冲突", "events": ["相遇"], "cliffhanger": "悬念"}]}
+        engine.generate_episode(state)
+        scene = state.artifacts["episodes"]["1"]["scenes"][0]
+        self.assertEqual(scene["location"], "月亮花店门口，午后", "生成后 location 必须被自动转为中文")
+        self.assertEqual(scene["beats"][0]["action"], "Dorian 在花店旁放慢脚步", "生成后 action 必须被自动转为中文")
+        self.assertEqual(scene["beats"][0]["line"], "Excuse me, little one.", "对白语言不得被改动")
 
     def test_pass_string_false_not_truthy(self):
         # DeepSeek 返回 "pass":"false"（字符串）：必须走修订 → 3 次未通过 → needs-human，不得 approved

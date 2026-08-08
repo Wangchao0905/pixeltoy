@@ -143,11 +143,45 @@ def make_handler(engine_factory):
                     engine.run_outline(state, episode_count)
                     # 以规范化后的大纲实际集数为界推进，模型输出不足时不再越界
                     episodes = state.artifacts["outline"]["episodes"]
-                    while state.current_episode <= len(episodes):
-                        outline = episodes[state.current_episode - 1]
-                        engine.run_episode_loop(state, outline)
-                    state.stage = "export"
+                    stepwise = body.get("stepwise") is True
+                    if stepwise:
+                        # 逐集模式：先生成第 1 集，返回等待"生成下一集"
+                        if state.current_episode <= len(episodes):
+                            engine.run_episode_loop(state, episodes[state.current_episode - 1])
+                    else:
+                        while state.current_episode <= len(episodes):
+                            outline = episodes[state.current_episode - 1]
+                            engine.run_episode_loop(state, outline)
+                        state.stage = "export"
                     self._json(200, {"ok": True, "state": json.loads(state.to_json())})
+                elif parsed.path == "/api/continue":
+                    # 逐集推进：从磁盘恢复 state，生成下一集；全部完成后置 export。
+                    # 复用 run_episode_loop（单集 + 审核修订闭环 + 自带落盘）。
+                    pid = body.get("project_id", "")
+                    path = _safe_project_path(pid, ".json")
+                    if path is None or not os.path.exists(path):
+                        self._json(404, {"ok": False, "error": "project not found"})
+                        return
+                    try:
+                        with open(path, encoding="utf-8") as f:
+                            state = ProjectState.from_json(f.read())
+                    except Exception:
+                        self._json(500, {"ok": False, "error": "corrupt project state"})
+                        return
+                    engine = engine_factory()
+                    episodes = state.artifacts.get("outline", {}).get("episodes", [])
+                    if state.current_episode > len(episodes) or state.stage == "export":
+                        state.stage = "export"
+                        self._json(200, {"ok": True, "done": True, "state": json.loads(state.to_json())})
+                        return
+                    outline = episodes[state.current_episode - 1]
+                    engine.run_episode_loop(state, outline)
+                    done = state.current_episode > len(episodes)
+                    if done:
+                        state.stage = "export"
+                        # run_episode_loop 已落盘；此处仅补写 stage=export（测试假引擎可能无 _save）
+                        getattr(engine, "_save", lambda s: None)(state)
+                    self._json(200, {"ok": True, "done": done, "state": json.loads(state.to_json())})
                 elif parsed.path == "/api/export":
                     pid = body.get("project_id", "")
                     path = _safe_project_path(pid, ".json")

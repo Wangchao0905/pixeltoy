@@ -203,6 +203,52 @@ class TestPostStart(unittest.TestCase):
             resp = json.loads(r.read().decode("utf-8"))
         self.assertEqual(resp["state"]["idea"]["episode_duration_seconds"], 90)
 
+    def test_start_stepwise_stops_after_first_episode(self):
+        # 逐集模式：只推进第 1 集，不直接完成
+        payload = json.dumps({"idea": "测试", "episode_count": 2, "stepwise": True}).encode("utf-8")
+        req = urllib.request.Request(self._base + "/api/start", data=payload, method="POST")
+        with urllib.request.urlopen(req) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+        self.assertTrue(resp["ok"])
+        self.assertEqual(resp["state"]["current_episode"], 2, "stepwise 只应推进 1 集")
+        self.assertNotEqual(resp["state"]["stage"], "export", "stepwise 不应直接完成")
+
+    def test_continue_progresses_next_episode_then_done(self):
+        # 手工落盘一个进行中的项目（假引擎不写盘），再调 /api/continue 逐集推进
+        os.makedirs("projects", exist_ok=True)
+        state = ProjectState(project_id="p2", stage="episode", current_episode=1)
+        state.artifacts["outline"] = {"episodes": [{"index": 1, "hook": "h"}, {"index": 2, "hook": "h"}]}
+        with open(os.path.join("projects", "p2.json"), "w", encoding="utf-8") as f:
+            f.write(state.to_json())
+        try:
+            body = json.dumps({"project_id": "p2"}).encode("utf-8")
+            req = urllib.request.Request(self._base + "/api/continue", data=body, method="POST")
+            with urllib.request.urlopen(req) as r:
+                self.assertEqual(r.status, 200)
+                resp = json.loads(r.read().decode("utf-8"))
+            self.assertTrue(resp["ok"])
+            self.assertEqual(resp["state"]["current_episode"], 2)
+            self.assertFalse(resp["done"])
+            # 模拟真实引擎 run_episode_loop 落盘：把返回 state 写回磁盘
+            with open(os.path.join("projects", "p2.json"), "w", encoding="utf-8") as f:
+                f.write(ProjectState.from_json(json.dumps(resp["state"])).to_json())
+            req2 = urllib.request.Request(self._base + "/api/continue", data=body, method="POST")
+            with urllib.request.urlopen(req2) as r:
+                resp2 = json.loads(r.read().decode("utf-8"))
+            self.assertTrue(resp2["done"])
+            self.assertEqual(resp2["state"]["stage"], "export")
+        finally:
+            for p in ("projects/p2.json", "projects/p1.json"):
+                if os.path.exists(p):
+                    os.remove(p)
+
+    def test_continue_project_not_found(self):
+        body = json.dumps({"project_id": "no_such"}).encode("utf-8")
+        req = urllib.request.Request(self._base + "/api/continue", data=body, method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req)
+        self.assertEqual(ctx.exception.code, 404)
+
     def test_start_engine_error_returns_structured_500(self):
         # run_outline 抛 ValueError（模型输出非法）→ 结构化 500 JSON，而非 500 裸 HTML
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FailingOutlineEngine))

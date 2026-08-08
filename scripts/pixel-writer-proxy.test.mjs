@@ -43,6 +43,7 @@ assert.match(ui, /post\("api\/export"/, "UI 必须用相对路径调用 api/expo
 assert.match(ui, /window\.location\.href\s*=\s*result\.file\s*\|\|\s*\("projects\/"\s*\+\s*encodeURIComponent\(projectId\)\s*\+\s*"\.docx"\)/, "UI 下载必须用相对路径 projects/<id>.docx（优先服务端返回的 file）");
 assert.match(ui, /beat-action/, "UI 必须渲染动作描述（beat.action），不能只有对白（speaker/line 存在时 action 曾被丢弃）");
 assert.match(ui, /api\/project\?project_id=/, "创作历史加载必须用 GET + query（/api/project 是 GET 接口，POST 会 404 导致点击无反应）");
+assert.match(ui, /ideaBox\.raw/, "点击创作历史后必须把故事种子（idea.raw）回填到输入框");
 assert.doesNotMatch(ui, /fetch\("\/api\//, "UI 不得用绝对路径 /api/（会绕过代理打到主站 API）");
 
 console.log("pixel-writer proxy + mount tests passed");

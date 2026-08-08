@@ -73,10 +73,13 @@ class TestDialogueLanguage(unittest.TestCase):
     def test_en_prompt_localizes_dialogue(self):
         engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
         prompt = engine._prompt_episode(self._make_state("en"), {"index": 1, "events": []})
-        self.assertIn("对白语言：英文", prompt)
+        self.assertIn("对白语言", prompt)
         self.assertIn("本土化", prompt)
         self.assertIn("不得直译", prompt)
         self.assertIn("俚语", prompt)
+        # 语言范围：只有对白是英文，剧情/动作/场景恒中文
+        self.assertIn("只有对白（line 字段）使用英文", prompt)
+        self.assertIn("动作描述（action）及一切剧情描述一律使用中文", prompt)
 
     def test_zh_prompt_keeps_contract(self):
         engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(ACCEPT), state_dir="/tmp/pw-test")

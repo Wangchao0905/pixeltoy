@@ -191,9 +191,10 @@ class PixelWriterEngine:
         dialogue_lang = state.idea.get("dialogue_language") or "zh"
         if dialogue_lang == "en":
             dialogue_check = (
-                "dialogue 维度额外检查：对白是否符合英语母语者的语境与表达方式"
-                "（自然口语化、无中文式英语、俚语/省略符合人物身份与文化语境、不翻译腔）；"
+                "dialogue 维度额外检查：只有对白（line）应为符合英语母语者语境与表达方式的自然英文"
+                "（无中文式英语、俚语/省略符合人物身份与文化语境、不翻译腔）；"
                 "存在明显翻译腔或中式英语必须 high issue。"
+                "动作（action）与场景（location）应使用中文，若写成英文视为剧情描述语言错误，需 high issue。"
             )
             ai_check = "对白按英文自然度审核（human_tone 指英文表达的自然度，不套用中文 AI 腔规则）"
         else:
@@ -356,9 +357,10 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
         dialogue_lang = state.idea.get("dialogue_language") or "zh"
         if dialogue_lang == "en":
             dialogue_rule = (
-                "对白语言：英文。所有对白必须针对英语母语者的语境与表达方式进行本土化设计——"
+                "对白语言：只有对白（line 字段）使用英文，并按英语母语者的语境与表达方式进行本土化设计——"
                 "使用自然口语化的英语（俚语、省略、情绪化用语、真实对话节奏），贴合人物身份与场景文化语境，"
                 "不得直译中文思路、不得出现中文式英语；潜台词按英语表达习惯呈现，语气词按英文习惯（如 well/come on/you know 等，仅在自然处使用）。"
+                "场景位置（location）、动作描述（action）及一切剧情描述一律使用中文，不得因对白为英文而写成英文。"
             )
         else:
             dialogue_rule = f"对白语言：中文。对白契约：{contract[:500] if contract else '口语化、短句、有潜台词'}"

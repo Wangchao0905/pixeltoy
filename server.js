@@ -2544,6 +2544,9 @@ const pixelTaleAgent = createPixelTaleAgent({
     if (!job) return;
     job.phase = phase;
     job.phaseAt = Date.now();
+    // phase 推进即视为有进展：刷新 updatedAt，避免看门狗把正常的多轮
+    // 修订任务（主笔→审核→修订→复审，单批可超 30 分钟）误判为挂起。
+    job.updatedAt = Date.now();
     persistPixelTaleRunJob(params.pixelTaleRoot, job);
   },
   readPixelTaleState,
@@ -2657,7 +2660,9 @@ function pruneDraftJobs() {
 
 const pixelTaleRunJobs = new Map();
 // 看门狗阈值：运行中 job 超过该时长无进展（updatedAt 未刷新）即判定挂起。
-const RUN_JOB_STALL_MS = 30 * 60 * 1000;
+// onPhase 已随阶段推进刷新 updatedAt——正常多轮修订批次（主笔+审核+修订+复审
+// 可达 40-50 分钟）不会被误杀；60 分钟无任何推进才兜底。
+const RUN_JOB_STALL_MS = 60 * 60 * 1000;
 const activePixelTaleRuns = new Map();
 const PIXEL_TALE_JOB_MEMORY_TTL_MS = 30 * 60 * 1_000;
 

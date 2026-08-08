@@ -80,6 +80,7 @@ try {
   assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget > 1_200).length, 1, "deepseek reviewer must get an enlarged budget (official endpoint enforces max_tokens truncation)");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");
   const persistedJob = JSON.parse(fs.readFileSync(path.join(root, "run-jobs", `${first.jobId}.json`), "utf8"));
+  assert.ok(persistedJob.updatedAt > persistedJob.createdAt, "phase progress must refresh updatedAt so the watchdog never misjudges an advancing multi-round revision as stalled");
   assert.deepEqual(persistedJob.request, {
     pixelTaleRoot: root,
     projectId: params.projectId,
@@ -181,8 +182,8 @@ try {
     jobId: stalledJobId,
     status: "running",
     stage: "arc",
-    createdAt: Date.now() - 45 * 60 * 1000,
-    updatedAt: Date.now() - 45 * 60 * 1000,
+    createdAt: Date.now() - 70 * 60 * 1000,
+    updatedAt: Date.now() - 70 * 60 * 1000,
     request: { ...params, project: params.project },
   }));
   const stalledResult = pixelTaleRuns.get({ ...params, pixelTaleRoot: stalledRoot }, stalledJobId);

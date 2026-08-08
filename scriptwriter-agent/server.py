@@ -135,10 +135,14 @@ def make_handler(engine_factory):
                         if not 30 <= episode_duration_seconds <= 120:
                             self._json(400, {"ok": False, "error": "invalid episode_duration_seconds"})
                             return
+                    dialogue_language = "en" if body.get("dialogue_language") == "en" else "zh"
                     engine = engine_factory()
                     state = engine.run_brief(body.get("idea", ""))
-                    if episode_duration_seconds is not None:
-                        state.idea["episode_duration_seconds"] = episode_duration_seconds
+                    idea_box = state.setdefault("idea", {}) if isinstance(state, dict) else getattr(state, "idea", None)
+                    if idea_box is not None:
+                        if episode_duration_seconds is not None:
+                            idea_box["episode_duration_seconds"] = episode_duration_seconds
+                        idea_box["dialogue_language"] = dialogue_language
                     engine.run_worldbuilding(state)
                     engine.run_outline(state, episode_count)
                     # 以规范化后的大纲实际集数为界推进，模型输出不足时不再越界

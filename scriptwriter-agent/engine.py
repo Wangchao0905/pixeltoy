@@ -188,7 +188,20 @@ class PixelWriterEngine:
             f"地点：{json.dumps(cont['locations'], ensure_ascii=False)}"
         )
         hooks_part = "\n".join(cont["open_hooks"]) if cont["open_hooks"] else "（无待兑现悬念）"
-        prompt = f"""你是短剧审核编辑。对照【设定事实】【前情提要】【跨集状态】【Humanizer-zh 中文 AI 腔清单】审核本集。
+        dialogue_lang = state.idea.get("dialogue_language") or "zh"
+        if dialogue_lang == "en":
+            dialogue_check = (
+                "dialogue 维度额外检查：对白是否符合英语母语者的语境与表达方式"
+                "（自然口语化、无中文式英语、俚语/省略符合人物身份与文化语境、不翻译腔）；"
+                "存在明显翻译腔或中式英语必须 high issue。"
+            )
+            ai_check = "对白按英文自然度审核（human_tone 指英文表达的自然度，不套用中文 AI 腔规则）"
+        else:
+            dialogue_check = "对白需口语化、短句、有潜台词、符合人物声线。"
+            ai_check = "对照【Humanizer-zh 中文 AI 腔清单】检查中文表达"
+        prompt = f"""你是短剧审核编辑。对照【设定事实】【前情提要】【跨集状态】审核本集。
+{dialogue_check}
+{ai_check}
 设定：{wb[:800]}
 前情提要（上集结尾，本集开头必须承接）：{prev_part[:400]}
 上集悬念：{prev_hook[:200] if prev_hook else "（无）"}
@@ -220,7 +233,10 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 
     def revise_episode(self, state, episode, issues):
         """GPT 按审核问题清单定向修订本集，只改问题涉及处，保持其余不变。"""
+        dialogue_lang = state.idea.get("dialogue_language") or "zh"
+        lang_note = "对白保持英文，并按英语母语者的语境与表达方式修订（不得改为中文，不得翻译腔）。" if dialogue_lang == "en" else "对白保持中文口语化风格。"
         prompt = f"""按问题清单定向修订本集，只改问题涉及处，保持其余不变。输出与原结构相同的 JSON 剧本。
+{lang_note}
 问题清单：{json.dumps(issues, ensure_ascii=False)}
 本集：{json.dumps(episode, ensure_ascii=False)}"""
         content = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=4000)
@@ -316,6 +332,15 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
             else ""
         )
         duration_note = f"本集目标时长约 {state.idea['episode_duration_seconds']} 秒；场景数、动作节拍和对白量必须匹配该时长。" if state.idea.get("episode_duration_seconds") else ""
+        dialogue_lang = state.idea.get("dialogue_language") or "zh"
+        if dialogue_lang == "en":
+            dialogue_rule = (
+                "对白语言：英文。所有对白必须针对英语母语者的语境与表达方式进行本土化设计——"
+                "使用自然口语化的英语（俚语、省略、情绪化用语、真实对话节奏），贴合人物身份与场景文化语境，"
+                "不得直译中文思路、不得出现中文式英语；潜台词按英语表达习惯呈现，语气词按英文习惯（如 well/come on/you know 等，仅在自然处使用）。"
+            )
+        else:
+            dialogue_rule = f"对白语言：中文。对白契约：{contract[:500] if contract else '口语化、短句、有潜台词'}"
         return f"""写第 {idx} 集剧本，输出 JSON：
 {{"scenes":[{{"location":"","beats":[{{"speaker":"","line":"","action":""}}]}}]}}
 事件：{json.dumps(outline, ensure_ascii=False)}
@@ -324,7 +349,7 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 {ledger_part}
 {hooks_part}
 {duration_note}
-对白契约：{contract[:500] if contract else '口语化、短句、有潜台词'}
+{dialogue_rule}
 要求：本集开头衔接上集结尾；角色状态/地点延续跨集状态；按待兑现悬念推进伏笔，不提前草草了结。"""
 
     @staticmethod

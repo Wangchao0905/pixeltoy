@@ -59,6 +59,47 @@ class TestRevisionLoop(unittest.TestCase):
         self.assertEqual(result["status"], "needs-human")
         self.assertIs(result["verdict"]["pass"], False)  # 规范化后是布尔 False
 
+class TestDialogueLanguage(unittest.TestCase):
+    """对白语言选择：英文时生成/审核/修订全部按英语母语者语境本土化。"""
+
+    def _make_state(self, lang=None):
+        state = ProjectState(project_id="t-dl", stage="episode")
+        state.artifacts["worldbuilding"] = {"characters": []}
+        state.idea["episode_duration_seconds"] = 60
+        if lang:
+            state.idea["dialogue_language"] = lang
+        return state
+
+    def test_en_prompt_localizes_dialogue(self):
+        engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+        prompt = engine._prompt_episode(self._make_state("en"), {"index": 1, "events": []})
+        self.assertIn("对白语言：英文", prompt)
+        self.assertIn("本土化", prompt)
+        self.assertIn("不得直译", prompt)
+        self.assertIn("俚语", prompt)
+
+    def test_zh_prompt_keeps_contract(self):
+        engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+        prompt = engine._prompt_episode(self._make_state(), {"index": 1, "events": []})
+        self.assertIn("对白语言：中文", prompt)
+        self.assertIn("对白契约", prompt)
+
+    def test_en_review_checks_english_naturalness(self):
+        reviewer = FakeReviewer([ACCEPT])
+        engine = PixelWriterEngine(ConstLLM("{}"), reviewer, state_dir="/tmp/pw-test")
+        engine.review_episode(self._make_state("en"), {"scenes": []})
+        review_prompt = reviewer.calls[-1][0]["content"]
+        self.assertIn("英语母语者", review_prompt)
+        self.assertIn("翻译腔", review_prompt)
+
+    def test_en_revise_keeps_english(self):
+        writer = FakeWriter(["{}"])
+        engine = PixelWriterEngine(writer, ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+        engine.revise_episode(self._make_state("en"), {"scenes": []}, [{"severity": "high", "mode": 1, "quote": "x", "fix": "y"}])
+        revise_prompt = writer.calls[-1][0]["content"]
+        self.assertIn("保持英文", revise_prompt)
+        self.assertIn("不得翻译腔", revise_prompt)
+
     def test_human_tone_below_70_forces_needs_human(self):
         # pass=true 但 human_tone=40 < 70：代码级强制门必须否决，最终 needs-human
         engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(PASS_TRUE_LOW_TONE), state_dir="/tmp/pw-test")

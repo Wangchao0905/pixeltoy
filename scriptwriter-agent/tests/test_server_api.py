@@ -249,6 +249,18 @@ class TestPostStart(unittest.TestCase):
             urllib.request.urlopen(req)
         self.assertEqual(ctx.exception.code, 404)
 
+    def test_start_records_dialogue_language(self):
+        payload = json.dumps({"idea": "测试", "episode_count": 1, "dialogue_language": "en"}).encode("utf-8")
+        req = urllib.request.Request(self._base + "/api/start", data=payload, method="POST")
+        with urllib.request.urlopen(req) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+        self.assertEqual(resp["state"]["idea"]["dialogue_language"], "en")
+        payload_zh = json.dumps({"idea": "测试", "episode_count": 1, "dialogue_language": "zh"}).encode("utf-8")
+        req_zh = urllib.request.Request(self._base + "/api/start", data=payload_zh, method="POST")
+        with urllib.request.urlopen(req_zh) as r:
+            resp_zh = json.loads(r.read().decode("utf-8"))
+        self.assertEqual(resp_zh["state"]["idea"]["dialogue_language"], "zh")
+
     def test_start_engine_error_returns_structured_500(self):
         # run_outline 抛 ValueError（模型输出非法）→ 结构化 500 JSON，而非 500 裸 HTML
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FailingOutlineEngine))

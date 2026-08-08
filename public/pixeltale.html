@@ -31,7 +31,7 @@
             <button type="button" data-mode="long" class="mode-button">普通长剧</button>
             <button type="button" data-mode="cn" class="mode-button">国内短剧</button>
           </div>
-          <button id="swPipelineTab" type="button" class="sw-tab-btn" onclick="window.swOpenPixelWriter?swOpenPixelWriter():location.href='/pixel-writer/'" style="display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 14px;margin:0 8px;border:2px solid #1b8a2e;border-radius:9px;color:#fff;background:#25b135;font-size:13px;font-weight:800;white-space:nowrap;cursor:pointer;box-shadow:0 2px 8px rgba(37,177,53,.35);" title="打开 Pixel Writer 编剧工作台">✦ Pixel Writer</button>
+          <button id="swPipelineTab" type="button" class="sw-tab-btn" onclick="location.href='/pixel-writer/'" style="display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 14px;margin:0 8px;border:2px solid #1b8a2e;border-radius:9px;color:#fff;background:#25b135;font-size:13px;font-weight:800;white-space:nowrap;cursor:pointer;box-shadow:0 2px 8px rgba(37,177,53,.35);" title="打开 Pixel Writer 编剧工作台">✦ Pixel Writer</button>
           <span id="saveStatus" class="save-status"><i></i>已保存</span>
           <button id="openHistory" class="tool-button history-button" type="button" title="打开创作历史"><span aria-hidden="true">↺</span> 创作历史</button>
           <button id="openModelRouting" class="tool-button" type="button">创作分工</button>
@@ -140,6 +140,6 @@
       </form>
     </dialog>
     <script src="/pixeltale/app.js?v=pixeltale-runtime-20260808-r18"></script>
-      <script src="/scriptwriter-mode.js?v=sw-20260808-r9"></script>
+      <script src="/scriptwriter-mode.js?v=sw-20260808-r10"></script>
   </body>
 </html>

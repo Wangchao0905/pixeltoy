@@ -294,6 +294,52 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
         self._save(state)
         return {"status": status, "episode": episode, "verdict": verdict, "rounds": rounds}
 
+    @staticmethod
+    def _has_cjk(text):
+        return any("\u4e00" <= ch <= "\u9fff" for ch in (text or ""))
+
+    def localize_actions(self, state):
+        """把已生成集的 action/location 转为中文（对白 line 不动）。
+        供"剧情中文化"使用：英文对白模式下，动作/场景描述保持中文。"""
+        episodes = state.artifacts.get("episodes", {})
+        converted = 0
+        for idx, ep in episodes.items():
+            if not ep or not isinstance(ep, dict):
+                continue
+            scenes = ep.get("scenes") or []
+            pending = []
+            for si, scene in enumerate(scenes):
+                loc = scene.get("location", "")
+                if loc and not self._has_cjk(loc):
+                    pending.append({"key": f"loc:{si}", "zh": ""})
+                for bi, beat in enumerate(scene.get("beats") or []):
+                    action = beat.get("action", "")
+                    if action and not self._has_cjk(action):
+                        pending.append({"key": f"act:{si}:{bi}", "zh": ""})
+            if not pending:
+                continue
+            try:
+                result = self.writer.chat([
+                    {"role": "system", "content": "你是中文短剧编剧。把英文的动作描述与场景地点翻译成自然、简洁的中文短剧描述：动作以'他/她'开头的短句，地点用中文场所名。只输出 JSON：{\"items\":[{\"key\":\"...\",\"zh\":\"...\"}]}"},
+                    {"role": "user", "content": json.dumps(pending, ensure_ascii=False)},
+                ], temperature=0.3, max_tokens=2000)
+                items = self._parse_json_block(result).get("items", []) if isinstance(self._parse_json_block(result), dict) else []
+            except Exception:
+                continue
+            mapping = {item.get("key", ""): item.get("zh", "") for item in items if item.get("key") and item.get("zh")}
+            for si, scene in enumerate(scenes):
+                loc_zh = mapping.get(f"loc:{si}")
+                if loc_zh:
+                    scene["location"] = loc_zh
+                    converted += 1
+                for bi, beat in enumerate(scene.get("beats") or []):
+                    act_zh = mapping.get(f"act:{si}:{bi}")
+                    if act_zh and beat.get("action"):
+                        beat["action"] = act_zh
+                        converted += 1
+        self._save(state)
+        return converted
+
     # --- 提示词构造（确定性模板，模型只负责内容）---
     def _prompt_worldbuilding(self, state):
         i = state.idea

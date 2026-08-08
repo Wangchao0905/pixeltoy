@@ -1,4 +1,5 @@
 """Task 4: 审核修订闭环测试（FakeReviewer 模拟 DeepSeek，不真实调用模型）。"""
+import json
 import unittest
 from engine import PixelWriterEngine, ProjectState
 
@@ -50,6 +51,32 @@ class TestRevisionLoop(unittest.TestCase):
         state = ProjectState(project_id="t2", stage="episode")
         result = engine.run_episode_loop(state, {"index": 1, "events": []})
         self.assertEqual(result["status"], "approved")
+
+    def test_localize_actions_converts_english_prose(self):
+        # 剧情中文化：英文 action/location → 中文（对白 line 不动）
+        writer = FakeWriter([json.dumps({"items": [
+            {"key": "loc:0", "zh": "月亮花店门口"},
+            {"key": "act:0:0", "zh": "她靠在花店橱窗边"},
+        ]}, ensure_ascii=False)])
+        engine = PixelWriterEngine(writer, ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-loc", stage="episode")
+        state.artifacts["episodes"] = {"1": {"scenes": [{
+            "location": "Outside Moonflower House, late afternoon",
+            "beats": [{"speaker": "Luna", "line": "My tummy hurts.", "action": "She leans against the window."}],
+        }]}}
+        converted = engine.localize_actions(state)
+        scene = state.artifacts["episodes"]["1"]["scenes"][0]
+        self.assertGreaterEqual(converted, 2, "应转换 location + action 两处")
+        self.assertEqual(scene["location"], "月亮花店门口")
+        self.assertEqual(scene["beats"][0]["action"], "她靠在花店橱窗边")
+        self.assertEqual(scene["beats"][0]["line"], "My tummy hurts.", "对白语言不得被改动")
+
+    def test_localize_skips_chinese_content(self):
+        engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-loc2", stage="episode")
+        state.artifacts["episodes"] = {"1": {"scenes": [{"location": "月亮花店门口", "beats": [{"speaker": "Luna", "line": "肚子疼", "action": "她靠在橱窗边。"}]}]}}
+        converted = engine.localize_actions(state)
+        self.assertEqual(converted, 0, "纯中文内容不应触发转换")
 
     def test_pass_string_false_not_truthy(self):
         # DeepSeek 返回 "pass":"false"（字符串）：必须走修订 → 3 次未通过 → needs-human，不得 approved

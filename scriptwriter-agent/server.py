@@ -215,6 +215,22 @@ def make_handler(engine_factory):
                         # run_episode_loop 已落盘；此处仅补写 stage=export（测试假引擎可能无 _save）
                         getattr(engine, "_save", lambda s: None)(state)
                     self._json(200, {"ok": True, "done": done, "state": json.loads(state.to_json())})
+                elif parsed.path == "/api/localize":
+                    # 剧情中文化：把已生成集的 action/location 转为中文（对白 line 不动）
+                    pid = body.get("project_id", "")
+                    path = _safe_project_path(pid, ".json")
+                    if path is None or not os.path.exists(path):
+                        self._json(404, {"ok": False, "error": "project not found"})
+                        return
+                    try:
+                        with open(path, encoding="utf-8") as f:
+                            state = ProjectState.from_json(f.read())
+                    except Exception:
+                        self._json(500, {"ok": False, "error": "corrupt project state"})
+                        return
+                    engine = engine_factory()
+                    converted = engine.localize_actions(state)
+                    self._json(200, {"ok": True, "converted": converted, "state": json.loads(state.to_json())})
                 elif parsed.path == "/api/export":
                     pid = body.get("project_id", "")
                     path = _safe_project_path(pid, ".json")

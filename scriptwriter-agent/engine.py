@@ -225,8 +225,13 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 
 输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"human_tone":0-100,"hook":0-100,"plot":0-100,"dialogue":0-100,"continuity":0-100}},"issues":[{{"severity":"high|medium","mode":1-21,"quote":"原文","fix":"改写建议"}}]}}
 规则：AI 腔分数<70 必须 pass=false；hook<60（开场无钩/集尾无悬念/无反转且平淡）必须 pass=false；continuity<70（本集开头未衔接上集结尾/角色状态矛盾/悬念未推进）必须 pass=false；情节断裂/对白与设定冲突必须 high issue。"""
-        content = self.reviewer.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=2000)
+        content = self.reviewer.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=4000)
         verdict = self._parse_json_block(content)
+        if not isinstance(verdict, dict):
+            # 审核输出无法解析（hook/规则冲突/结构校验使 prompt 与输出变长，
+            # 2000 token 预算下 DeepSeek 易截断）→ 重试一次，仍失败返回 None
+            content = self.reviewer.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=4000)
+            verdict = self._parse_json_block(content)
         if not isinstance(verdict, dict):
             return None
         # 强制门：pass 必须严格为布尔 True 才视为通过（字符串 "false" 不再 truthy）
@@ -369,7 +374,13 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
             return {"status": status, "episode": None, "verdict": None, "rounds": 0}
         while rounds <= MAX_REVISION_ROUNDS:
             verdict = self.review_episode(state, episode)
-            state.evaluation[str(idx)] = verdict  # 审核记录落盘，便于 Task 5 附录/UI 展示
+            if verdict is None:
+                # 审核输出无法解析：写结构化失败记录（避免 evaluation 落 null，
+                # UI 显示"待处理"而非可读的失败原因），并尝试修订后复审
+                state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
+                                              "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "审核输出无法解析，已重试仍失败"}]}
+            else:
+                state.evaluation[str(idx)] = verdict  # 审核记录落盘，便于 Task 5 附录/UI 展示
             if verdict is None:
                 # 审核输出无法解析：视为未通过；已到最后轮则 needs-human，否则尝试修订
                 if rounds >= MAX_REVISION_ROUNDS:

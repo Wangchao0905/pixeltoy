@@ -181,6 +181,22 @@ class TestRevisionLoop(unittest.TestCase):
         broken = {"scenes": [{"location": "豪门门口", "beats": []}]}
         self.assertIsNone(PixelWriterEngine._merge_revision(original, broken, issues))
 
+    def test_review_retries_on_unparseable_output(self):
+        # 审核输出非法 → 自动重试一次；第二次合法 → verdict 正常返回
+        reviewer = FakeReviewer(["这不是 JSON，审核模型跑偏……", ACCEPT])
+        engine = PixelWriterEngine(ConstLLM("{}"), reviewer, state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-rev-retry", stage="episode")
+        state.current_episode = 1
+        state.idea = normalize_idea("小美为救母亲进入豪门，却身世成谜")
+        state.idea["episode_duration_seconds"] = 60
+        state.idea["dialogue_language"] = "zh"
+        state.artifacts["worldbuilding"] = {"characters": [{"name": "小美"}], "world_rules": []}
+        episode = {"hook": "开场冲突", "cliffhanger": "悬念", "scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去", "action": "她抬头"}]}]}
+        v = engine.review_episode(state, episode)
+        self.assertIsNotNone(v, "重试后应返回合法审核结果")
+        self.assertTrue(v["pass"])
+        self.assertEqual(len(reviewer.calls), 2, "应调用审核模型两次（失败 + 重试）")
+
     def test_pass_string_false_not_truthy(self):
         # DeepSeek 返回 "pass":"false"（字符串）：必须走修订 → 3 次未通过 → needs-human，不得 approved
         engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(PASS_STR_FALSE), state_dir="/tmp/pw-test")

@@ -100,6 +100,36 @@ class TestDialogueLanguage(unittest.TestCase):
         self.assertIn("保持英文", revise_prompt)
         self.assertIn("不得翻译腔", revise_prompt)
 
+class TestDurationTemplate(unittest.TestCase):
+    """时长驱动的单集结构模板：30-45s 快节奏 / 60s 双节拍 / 90-120s 双转折。"""
+
+    def _engine(self):
+        return PixelWriterEngine(ConstLLM("{}"), ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+
+    def test_template_levels(self):
+        engine = self._engine()
+        self.assertIn("45 秒内快节奏", engine._structure_template(30))
+        self.assertIn("60 秒双节拍", engine._structure_template(60))
+        self.assertIn("90-120 秒双转折", engine._structure_template(120))
+        self.assertIn("开场即冲突", engine._structure_template(None))
+
+    def test_outline_embeds_template(self):
+        engine = self._engine()
+        state = ProjectState(project_id="t-dur", stage="outline")
+        state.idea["episode_duration_seconds"] = 60
+        state.artifacts["worldbuilding"] = {"characters": []}
+        prompt = engine._prompt_outline(state, 3)
+        self.assertIn("60 秒双节拍", prompt)
+
+    def test_episode_embeds_template(self):
+        engine = self._engine()
+        state = ProjectState(project_id="t-dur2", stage="episode")
+        state.idea["episode_duration_seconds"] = 120
+        state.artifacts["worldbuilding"] = {"characters": []}
+        prompt = engine._prompt_episode(state, {"index": 1, "events": []})
+        self.assertIn("双转折", prompt)
+        self.assertIn("7-10 个节拍", prompt)
+
     def test_human_tone_below_70_forces_needs_human(self):
         # pass=true 但 human_tone=40 < 70：代码级强制门必须否决，最终 needs-human
         engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(PASS_TRUE_LOW_TONE), state_dir="/tmp/pw-test")

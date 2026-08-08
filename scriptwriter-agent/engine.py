@@ -304,9 +304,29 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 创意：{i['raw']}
 约束：人物动机必须可解释；结局不变量必须明确。{duration_note}"""
 
+    def _structure_template(self, seconds):
+        """按时长区间返回单集结构模板（借鉴时长分层设计：30-60s 快节奏单冲突，
+        90-120s 双转折；长剧另有三幕由 PixTale 侧承载）。"""
+        if not seconds:
+            return "每集：开场即冲突，快节奏推进，结尾留钩子。"
+        if seconds <= 45:
+            return (
+                "单集结构模板（45 秒内快节奏）：开场即冲突 → 一次小转折 → 危机升级 → 钩子收尾；"
+                "建议 2-3 个场景、4-5 个动作/对白节拍，对白短促直给。"
+            )
+        if seconds <= 75:
+            return (
+                "单集结构模板（60 秒双节拍）：冲突建立 → 升级 → 意外发现 → 代价逼近 → 钩子收尾；"
+                "建议 3-4 个场景、5-7 个节拍，对白含潜台词。"
+            )
+        return (
+            "单集结构模板（90-120 秒双转折）：冲突建立 → 小胜利 → 反转 → 危机 → 被迫选择 → 钩子收尾；"
+            "建议 4-6 个场景、7-10 个节拍，允许一段关系或细节刻画。"
+        )
+
     def _prompt_outline(self, state, episode_count):
         wb = json.dumps(state.artifacts.get("worldbuilding", {}), ensure_ascii=False)
-        duration_note = f"每集目标时长约 {state.idea['episode_duration_seconds']} 秒，事件量必须匹配该时长。" if state.idea.get("episode_duration_seconds") else ""
+        duration_note = self._structure_template(state.idea.get("episode_duration_seconds"))
         return f"""基于设定生成 {episode_count} 集分集大纲，输出 JSON：
 {{"episodes":[{{"index":1,"hook":"","cliffhanger":"","events":[]}}]}}
 要求：每集以钩子开头、以悬念收尾，事件链因果衔接。
@@ -331,7 +351,8 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
             if cont["open_hooks"]
             else ""
         )
-        duration_note = f"本集目标时长约 {state.idea['episode_duration_seconds']} 秒；场景数、动作节拍和对白量必须匹配该时长。" if state.idea.get("episode_duration_seconds") else ""
+        duration_note = (f"本集目标时长约 {state.idea['episode_duration_seconds']} 秒。"
+                         if state.idea.get("episode_duration_seconds") else "") + self._structure_template(state.idea.get("episode_duration_seconds"))
         dialogue_lang = state.idea.get("dialogue_language") or "zh"
         if dialogue_lang == "en":
             dialogue_rule = (

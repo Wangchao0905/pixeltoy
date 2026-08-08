@@ -102,12 +102,12 @@ class TestReviewContinuityGate(unittest.TestCase):
         self.assertFalse(v["pass"], "continuity=60 必须否决")
 
     def test_continuity_ok_passes(self):
-        v = self._review('{"pass":true,"score":85,"dimensions":{"human_tone":90,"plot":80,"dialogue":85,"continuity":85},"issues":[]}')
+        v = self._review('{"pass":true,"score":85,"dimensions":{"human_tone":90,"hook":85,"plot":80,"dialogue":85,"continuity":85},"issues":[]}')
         self.assertTrue(v["pass"])
 
     def test_continuity_missing_is_lenient(self):
         # 旧审核输出无 continuity 维度：不否决（兼容）
-        v = self._review('{"pass":true,"score":85,"dimensions":{"human_tone":90,"plot":80,"dialogue":85},"issues":[]}')
+        v = self._review('{"pass":true,"score":85,"dimensions":{"human_tone":90,"hook":85,"plot":80,"dialogue":85},"issues":[]}')
         self.assertTrue(v["pass"])
 
     def test_review_prompt_requests_continuity_dimension(self):

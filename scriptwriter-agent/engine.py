@@ -177,8 +177,9 @@ class PixelWriterEngine:
     def review_episode(self, state, episode):
         """DeepSeek 审核单集，返回审核契约 dict。
 
-        多维度：human_tone（Humanizer-zh 去 AI 腔）、plot、dialogue、continuity
-        （与前集衔接 / 角色状态延续 / 悬念推进）。human_tone<70 或 continuity<70 必须 pass=false。
+        多维度：human_tone（Humanizer-zh 去 AI 腔）、hook（开场钩/集尾悬念/反转强度）、
+        plot、dialogue、continuity（与前集衔接 / 角色状态延续 / 悬念推进）。
+        human_tone<70、continuity<70 或 hook<60 必须 pass=false（代码级门槛）。
         """
         humanizer = self.facts["humanizer-zh.md"]
         wb = json.dumps(state.artifacts.get("worldbuilding", {}), ensure_ascii=False)
@@ -191,6 +192,11 @@ class PixelWriterEngine:
             f"地点：{json.dumps(cont['locations'], ensure_ascii=False)}"
         )
         hooks_part = "\n".join(cont["open_hooks"]) if cont["open_hooks"] else "（无待兑现悬念）"
+        # 代码级规则检测：设定冲突 + 结构模板校验（确定性，不依赖模型自觉）
+        setting_conflicts = self._check_setting_conflicts(state, episode, idx)
+        structure_notes = self._validate_episode_structure(episode, state.idea.get("episode_duration_seconds") if isinstance(state.idea, dict) else None)
+        conflict_part = "\n".join(setting_conflicts) if setting_conflicts else "（无）"
+        structure_part = "\n".join(structure_notes) if structure_notes else "（结构达标）"
         dialogue_lang = state.idea.get("dialogue_language") or "zh"
         if dialogue_lang == "en":
             dialogue_check = (
@@ -203,32 +209,35 @@ class PixelWriterEngine:
         else:
             dialogue_check = "对白需口语化、短句、有潜台词、符合人物声线。"
             ai_check = "对照【Humanizer-zh 中文 AI 腔清单】检查中文表达"
-        prompt = f"""你是短剧审核编辑。对照【设定事实】【前情提要】【跨集状态】审核本集。
+        prompt = f"""你是短剧审核编辑。对照【设定事实】【前情提要】【跨集状态】【规则检测】【结构校验】审核本集。
 {dialogue_check}
 {ai_check}
+hook 维度：评估开场钩子（首句/前三秒是否暴击或异常）、集尾悬念（cliffhanger 是否制造追更欲）、反转强度（如有反转是否够狠且逻辑成立）。短剧留存完全依赖钩子，hook<60 必须 pass=false。
 设定：{wb[:800]}
 前情提要（上集结尾，本集开头必须承接）：{prev_part[:400]}
 上集悬念：{prev_hook[:200] if prev_hook else "（无）"}
 跨集状态：{ledger_part[:400]}
 待兑现悬念：{hooks_part[:400]}
+【规则冲突检测（代码级，必须逐条处理，确认属实后给 high issue 并写 fix）】{conflict_part}
+【结构模板校验（代码级）】{structure_part}
 本集：{json.dumps(episode, ensure_ascii=False)[:2000]}
 AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 
-输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"human_tone":0-100,"plot":0-100,"dialogue":0-100,"continuity":0-100}},"issues":[{{"severity":"high|medium","mode":1-21,"quote":"原文","fix":"改写建议"}}]}}
-规则：AI 腔分数<70 必须 pass=false；continuity<70（本集开头未衔接上集结尾/角色状态矛盾/悬念未推进）必须 pass=false；情节断裂/对白与设定冲突必须 high issue。"""
+输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"human_tone":0-100,"hook":0-100,"plot":0-100,"dialogue":0-100,"continuity":0-100}},"issues":[{{"severity":"high|medium","mode":1-21,"quote":"原文","fix":"改写建议"}}]}}
+规则：AI 腔分数<70 必须 pass=false；hook<60（开场无钩/集尾无悬念/无反转且平淡）必须 pass=false；continuity<70（本集开头未衔接上集结尾/角色状态矛盾/悬念未推进）必须 pass=false；情节断裂/对白与设定冲突必须 high issue。"""
         content = self.reviewer.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=2000)
         verdict = self._parse_json_block(content)
         if not isinstance(verdict, dict):
             return None
         # 强制门：pass 必须严格为布尔 True 才视为通过（字符串 "false" 不再 truthy）
         verdict["pass"] = verdict.get("pass") is True
-        # 代码级多维度门槛：human_tone<70 与 continuity<70 强制不通过，不依赖 prompt 软约束。
-        # human_tone 缺失/非法按不达标（保守否决）；continuity 缺失按宽松处理（兼容旧审核输出/旧数据）。
+        # 代码级多维度门槛：human_tone<70、continuity<70、hook<60 强制不通过，不依赖 prompt 软约束。
+        # human_tone/hook 缺失/非法按不达标（保守否决）；continuity 缺失按宽松处理（兼容旧审核输出/旧数据）。
         dims = verdict.get("dimensions")
         if isinstance(dims, dict):
-            for dim, strict in (("human_tone", True), ("continuity", False)):
+            for dim, strict in (("human_tone", True), ("hook", True), ("continuity", False)):
                 try:
-                    low = float(dims.get(dim)) < 70
+                    low = float(dims.get(dim)) < (60 if dim == "hook" else 70)
                 except (TypeError, ValueError):
                     low = strict
                 if low:
@@ -241,10 +250,60 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
         lang_note = "对白保持英文，并按英语母语者的语境与表达方式修订（不得改为中文，不得翻译腔）。" if dialogue_lang == "en" else "对白保持中文口语化风格。"
         prompt = f"""按问题清单定向修订本集，只改问题涉及处，保持其余不变。输出与原结构相同的 JSON 剧本。
 {lang_note}
+铁律：未被问题清单点名的场景、节拍、对白、动作一律一字不改（包括 speaker/line/action/location 的顺序与措辞）；
+只允许：① 修改清单中 quote 命中的原文；② 为结构类问题（节拍不足/时长过短/缺 hook/cliffhanger）增补或精简内容。
 问题清单：{json.dumps(issues, ensure_ascii=False)}
 本集：{json.dumps(episode, ensure_ascii=False)}"""
         content = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=4000)
         return self._parse_json_block(content)
+
+    @staticmethod
+    def _revision_respects_scope(original, revised, issues):
+        """修订后 diff 检查：未被问题清单点名（quote 命中）的 scene/beat 必须逐字不变。
+
+        结构类问题（quote 为空、fix 含“节拍/时长/结构/hook/cliffhanger”）放行结构调整；
+        其余段落若被模型顺手改动（重写未点名对白/动作/场景），判定修订越界。
+        """
+        if not isinstance(revised, dict):
+            return False
+        quoted = {str(issue.get("quote", "")).strip() for issue in (issues or []) if isinstance(issue, dict) and issue.get("quote")}
+        structural = any(
+            not str(issue.get("quote", "")).strip()
+            and any(k in str(issue.get("fix", "")) for k in ("节拍", "时长", "结构", "hook", "cliffhanger"))
+            for issue in (issues or []) if isinstance(issue, dict)
+        )
+        orig_scenes = original.get("scenes", []) or []
+        rev_scenes = revised.get("scenes", []) or []
+        if structural:
+            # 结构类修订允许增删节拍，但仍不允许改动未点名段落的措辞
+            for o in orig_scenes:
+                for ob in o.get("beats", []) or []:
+                    found = False
+                    for r in rev_scenes:
+                        for rb in r.get("beats", []) or []:
+                            if rb.get("speaker") == ob.get("speaker") and rb.get("line") == ob.get("line"):
+                                found = True
+                                break
+                        if found:
+                            break
+                    if not found and ob.get("line", "").strip() not in quoted:
+                        return False
+            return True
+        if len(orig_scenes) != len(rev_scenes):
+            return False
+        for si, (o, r) in enumerate(zip(orig_scenes, rev_scenes)):
+            ov = o.get("location", "")
+            if ov != r.get("location", "") and ov.strip() not in quoted:
+                return False
+            ob, rb = o.get("beats", []) or [], r.get("beats", []) or []
+            if len(ob) != len(rb):
+                return False
+            for bi, (ob_, rb_) in enumerate(zip(ob, rb)):
+                for field in ("speaker", "line", "action"):
+                    val = ob_.get(field, "")
+                    if val != rb_.get(field, "") and val.strip() not in quoted:
+                        return False
+        return True
 
     def run_episode_loop(self, state, outline):
         """单集生成 + 审核修订闭环：最多 MAX_REVISION_ROUNDS 轮修订，超限置 needs-human 不阻塞后续集。
@@ -282,7 +341,7 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
                     status = "needs-human"
                     break
                 revised = self.revise_episode(state, episode, [])
-                if not isinstance(revised, dict):
+                if not isinstance(revised, dict) or not self._revision_respects_scope(episode, revised, []):
                     status = "needs-human"
                     break
                 episode = revised
@@ -297,6 +356,12 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
             revised = self.revise_episode(state, episode, verdict.get("issues", []))
             if not isinstance(revised, dict):
                 status = "needs-human"
+                break
+            # diff 约束：未被点名段落被模型顺手改写则判定修订越界，交人工处理
+            if not self._revision_respects_scope(episode, revised, verdict.get("issues", [])):
+                status = "needs-human"
+                state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
+                                              "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "修订越界：模型改写了未点名内容，已交人工处理"}]}
                 break
             episode = revised
             rounds += 1
@@ -431,7 +496,7 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
         else:
             dialogue_rule = f"对白语言：中文。对白契约：{contract[:500] if contract else '口语化、短句、有潜台词'}"
         return f"""写第 {idx} 集剧本，输出 JSON：
-{{"scenes":[{{"location":"","beats":[{{"speaker":"","line":"","action":""}}]}}]}}
+{{"hook":"","cliffhanger":"","scenes":[{{"location":"","beats":[{{"speaker":"","line":"","action":""}}]}}]}}
 事件：{json.dumps(outline, ensure_ascii=False)}
 设定：{wb}
 {prev_part}
@@ -439,7 +504,75 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 {hooks_part}
 {duration_note}
 {dialogue_rule}
-要求：本集开头衔接上集结尾；角色状态/地点延续跨集状态；按待兑现悬念推进伏笔，不提前草草了结。"""
+要求：本集开头衔接上集结尾；角色状态/地点延续跨集状态；按待兑现悬念推进伏笔，不提前草草了结。
+hook 字段写开场钩子（前三秒的暴击/异常/悬念，1 句）；cliffhanger 字段写集尾追更钩（1 句，为下集留悬念）。"""
+
+    def _check_setting_conflicts(self, state, episode, idx):
+        """跨集设定冲突规则检测（零模型，确定性）。
+
+        1) 角色注册：beats 的 speaker 必须已注册（worldbuilding.characters 或前集出现过），
+           未注册的新人物会被标记——新人必须是有意引入（后续可人工确认）。
+        2) 世界规则否定词：world_rules 含“禁止/不能/无法”等否定规则时，若本集正文直接出现
+           规则对象关键词，标记为疑似违背。
+        返回问题清单（str 列表），由审核注入处理。
+        """
+        problems = []
+        wb = state.artifacts.get("worldbuilding", {}) or {}
+        known = {c.get("name", "") for c in wb.get("characters", []) or [] if isinstance(c, dict)}
+        for i in range(1, idx):
+            ep = (state.artifacts.get("episodes", {}) or {}).get(str(i))
+            if not ep or not isinstance(ep, dict):
+                continue
+            for scene in ep.get("scenes", []) or []:
+                for beat in scene.get("beats", []) or []:
+                    if beat.get("speaker"):
+                        known.add(beat["speaker"])
+        spoken = {beat.get("speaker") for scene in episode.get("scenes", []) or [] for beat in scene.get("beats", []) or [] if beat.get("speaker")}
+        for name in spoken:
+            if name and name not in known and "旁白" not in name:
+                problems.append(f"角色「{name}」未在设定与前期剧本注册（新人物需在人物设定补充说明）。")
+        body_text = json.dumps(episode, ensure_ascii=False)
+        for rule in wb.get("world_rules", []) or []:
+            if not isinstance(rule, str):
+                continue
+            for neg in ("禁止", "不能", "无法", "永远不会", "绝对不"):
+                if neg in rule:
+                    subject = rule.split(neg)[0].strip()[-12:]
+                    if subject and subject in body_text:
+                        problems.append(f"世界规则「{rule[:40]}」疑似被本集违背（检测到关键对象「{subject}」）。")
+                    break
+        return problems
+
+    def _validate_episode_structure(self, episode, duration_seconds):
+        """产出后结构模板校验（确定性，零模型）。
+
+        节拍数下限（单薄检测）、估算时长区间（对白≈4字/秒、动作≈3秒、场景切换≈2秒）、
+        hook/cliffhanger 字段是否齐全。开场钩强度与集尾悬念质量由审核 hook 维度评判。
+        """
+        problems = []
+        scenes = episode.get("scenes", []) or []
+        total_beats = 0
+        est_seconds = 0.0
+        for scene in scenes:
+            est_seconds += 2.0
+            for beat in scene.get("beats", []) or []:
+                total_beats += 1
+                est_seconds += max(1.0, len(beat.get("line", "") or "") / 4.0)
+                if beat.get("action"):
+                    est_seconds += 3.0
+        if total_beats < 4:
+            problems.append(f"全集仅 {total_beats} 个节拍，结构单薄（短剧单集至少 4-6 个节拍）。")
+        if duration_seconds:
+            lo, hi = duration_seconds * 0.6, duration_seconds * 1.4
+            if est_seconds < lo:
+                problems.append(f"估算时长约 {int(est_seconds)} 秒，明显短于目标 {duration_seconds} 秒（内容不足）。")
+            elif est_seconds > hi:
+                problems.append(f"估算时长约 {int(est_seconds)} 秒，超出目标 {duration_seconds} 秒（需精简或拆集）。")
+        if not (episode.get("hook") or "").strip():
+            problems.append("缺少 hook 字段：前三秒必须有暴击/异常/悬念。")
+        if not (episode.get("cliffhanger") or "").strip():
+            problems.append("缺少 cliffhanger 字段：集尾必须留下追更钩子。")
+        return problems
 
     @staticmethod
     def _parse_json_block(text):

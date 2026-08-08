@@ -22,12 +22,12 @@ class FakeReviewer:
         return self.verdicts.pop(0)
 
 REJECT = '{"pass":false,"score":55,"dimensions":{"human_tone":40,"plot":60,"dialogue":50},"issues":[{"severity":"high","mode":1,"quote":"总之","fix":"删掉开场总结"}]}'
-ACCEPT = '{"pass":true,"score":82,"dimensions":{"human_tone":85,"plot":80,"dialogue":82},"issues":[]}'
+ACCEPT = '{"pass":true,"score":82,"dimensions":{"human_tone":85,"hook":85,"plot":80,"dialogue":82},"issues":[]}'
 # 反例 1：模型把 pass 输出成字符串 "false"（truthy bug）；反例 2：pass=true 但 human_tone<70
-PASS_STR_FALSE = '{"pass":"false","score":80,"dimensions":{"human_tone":85,"plot":80,"dialogue":82},"issues":[]}'
-PASS_TRUE_LOW_TONE = '{"pass":true,"score":70,"dimensions":{"human_tone":40,"plot":85,"dialogue":75},"issues":[]}'
+PASS_STR_FALSE = '{"pass":"false","score":80,"dimensions":{"human_tone":85,"hook":85,"plot":80,"dialogue":82},"issues":[]}'
+PASS_TRUE_LOW_TONE = '{"pass":true,"score":70,"dimensions":{"human_tone":40,"hook":85,"plot":85,"dialogue":75},"issues":[]}'
 # 反例 3：human_tone 是字符串 "40"（类型不达标），门槛同样必须否决
-PASS_TRUE_STR_TONE = '{"pass":true,"score":70,"dimensions":{"human_tone":"40","plot":85,"dialogue":75},"issues":[]}'
+PASS_TRUE_STR_TONE = '{"pass":true,"score":70,"dimensions":{"human_tone":"40","hook":85,"plot":85,"dialogue":75},"issues":[]}'
 
 class ConstLLM:
     """始终返回同一文本的假模型，供多轮循环反复调用。"""
@@ -124,6 +124,49 @@ class TestRevisionLoop(unittest.TestCase):
         ep = state.artifacts["episodes"].get("1")
         self.assertIsNotNone(ep, "重试成功后应生成第 1 集")
         self.assertEqual(ep["scenes"][0]["location"], "月亮花店门口")
+
+    def test_hook_gate_rejects_weak_hook(self):
+        # hook 维度 <60 → 代码级强制 pass=false（即使 pass=true 且其他维度达标）
+        verdict = '{"pass":true,"score":70,"dimensions":{"human_tone":85,"hook":55,"plot":80,"dialogue":82},"issues":[]}'
+        engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(verdict), state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-hook", stage="episode")
+        state.current_episode = 1
+        state.idea = normalize_idea("小美为救母亲进入豪门，却身世成谜")
+        state.idea["episode_duration_seconds"] = 60
+        state.idea["dialogue_language"] = "zh"
+        state.artifacts["worldbuilding"] = {"characters": [{"name": "小美"}], "world_rules": []}
+        state.artifacts["episodes"] = {}
+        state.artifacts["outline"] = {"episodes": [{"index": 1, "hook": "开场冲突", "cliffhanger": "悬念"}]}
+        v = engine.review_episode(state, {"hook": "开场冲突", "cliffhanger": "悬念", "scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去", "action": "她抬头"}]}]})
+        self.assertIsNotNone(v)
+        self.assertFalse(v["pass"], "hook<60 必须强制不通过")
+
+    def test_setting_conflict_detects_unregistered_character(self):
+        engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-conf", stage="episode")
+        state.artifacts["worldbuilding"] = {"characters": [{"name": "小美"}], "world_rules": []}
+        episode = {"hook": "h", "cliffhanger": "c", "scenes": [{"location": "豪门", "beats": [{"speaker": "神秘人", "line": "站住", "action": "拦住"}]}]}
+        problems = engine._check_setting_conflicts(state, episode, 1)
+        self.assertTrue(any("神秘人" in p for p in problems), "未注册角色必须被规则检测标记")
+
+    def test_structure_validation_flags_thin_episode(self):
+        engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+        episode = {"hook": "", "cliffhanger": "", "scenes": [{"location": "门口", "beats": [{"speaker": "小美", "line": "走", "action": "推门"}]}]}
+        problems = engine._validate_episode_structure(episode, 60)
+        joined = " ".join(problems)
+        self.assertIn("节拍", joined, "节拍不足必须被结构校验标记")
+        self.assertIn("hook", joined, "缺 hook 字段必须被标记")
+        self.assertIn("cliffhanger", joined, "缺 cliffhanger 必须被标记")
+
+    def test_revision_respects_scope_guards_untouched_lines(self):
+        original = {"scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去", "action": "她抬头"}, {"speaker": "管家", "line": "小姐请留步", "action": "伸手拦住"}]}]}
+        # 越界：未点名的第 2 个 beat 对白被改写 → 必须判 False
+        overreach = {"scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去！", "action": "她抬头"}, {"speaker": "管家", "line": "小姐请留步，请回吧", "action": "伸手拦住"}]}]}
+        issues = [{"severity": "high", "quote": "我要进去", "fix": "加感叹号增强情绪"}]
+        self.assertFalse(PixelWriterEngine._revision_respects_scope(original, overreach, issues))
+        # 合规：只改点名的那句 → 必须判 True
+        compliant = {"scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去！", "action": "她抬头"}, {"speaker": "管家", "line": "小姐请留步", "action": "伸手拦住"}]}]}
+        self.assertTrue(PixelWriterEngine._revision_respects_scope(original, compliant, issues))
 
     def test_pass_string_false_not_truthy(self):
         # DeepSeek 返回 "pass":"false"（字符串）：必须走修订 → 3 次未通过 → needs-human，不得 approved

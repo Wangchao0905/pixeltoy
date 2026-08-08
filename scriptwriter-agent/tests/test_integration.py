@@ -6,7 +6,7 @@ import os, tempfile, zipfile
 
 class ScriptedLLM:
     """按 prompt 关键字返回脚本化输出，模拟双模型。"""
-    def __init__(self): self.outputs = {"worldbuilding": '{"characters":[{"name":"林晓"}],"world":{"rules":[]},"ending_invariants":[]}', "outline": '{"episodes":[{"index":1,"hook":"h","cliffhanger":"c","events":[]}]}', "episode": '{"scenes":[{"location":"拳场","beats":[{"speaker":"林晓","line":"我妹妹的命，我来挣。","action":"握拳"}]}]}', "review_ok": '{"pass":true,"score":82,"dimensions":{"human_tone":85,"plot":80,"dialogue":82},"issues":[]}'}
+    def __init__(self): self.outputs = {"worldbuilding": '{"characters":[{"name":"林晓"}],"world":{"rules":[]},"ending_invariants":[]}', "outline": '{"episodes":[{"index":1,"hook":"h","cliffhanger":"c","events":[]}]}', "episode": '{"scenes":[{"location":"拳场","beats":[{"speaker":"林晓","line":"我妹妹的命，我来挣。","action":"握拳"}]}]}', "review_ok": '{"pass":true,"score":82,"dimensions":{"human_tone":85,"hook":85,"plot":80,"dialogue":82},"issues":[]}'}
     def chat(self, messages, **kw):
         # 路由关键字与 engine.py 实际 prompt 对齐：episode 提示词尾部拼接的文风契约含"审核"字样，
         # 故"写第"（episode 独有）必须优先于 review；"审核本集"仅 review prompt 含，revise 提示词以"问题清单"识别。

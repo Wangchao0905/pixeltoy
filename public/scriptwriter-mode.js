@@ -67,17 +67,6 @@
     overlay = el("div", { class: "sw-overlay", id: "sw-pipeline-overlay" });
     overlay.style.display = "none";
 
-    var header = el("div", { class: "sw-overlay-head" }, [
-      el("span", { class: "sw-overlay-title", text: "Pixel Writer 编剧工作台" }),
-      el("button", {
-        type: "button",
-        class: "sw-overlay-close",
-        title: "返回 Story Forge",
-        "aria-label": "关闭 Pixel Writer",
-      }, ["✕ 返回"]),
-    ]);
-    header.querySelector(".sw-overlay-close").addEventListener("click", toggle);
-
     iframe = el("iframe", {
       src: SW_URL,
       class: "sw-overlay-frame",
@@ -146,11 +135,6 @@
     ".sw-tab-mark { color:currentColor; font-size:13px; line-height:1; }",
     ".sw-tab-label { letter-spacing:-.01em; }",
     ".sw-overlay { position:fixed; inset:0; z-index:9999; background:#0d1117; flex-direction:column; }",
-    ".sw-overlay-head { display:flex; align-items:center; gap:14px; padding:10px 18px; background:#131a24; border-bottom:1px solid #232e3d; flex-shrink:0; }",
-    ".sw-overlay-title { font-weight:700; font-size:13px; color:#dce4ee; letter-spacing:.5px; }",
-    ".sw-overlay-note { color:#8b98a9; font-size:11px; flex:1; }",
-    ".sw-overlay-close { min-height:28px; border:1px solid #232e3d; border-radius:6px; padding:0 12px; color:#dce4ee; background:#1b2431; font-size:11px; font-weight:600; cursor:pointer; }",
-    ".sw-overlay-close:hover { border-color:#e05d5d; color:#e05d5d; }",
     ".sw-overlay-frame { flex:1; width:100%; border:0; background:#0d1117; }",
   ].join("\n");
 

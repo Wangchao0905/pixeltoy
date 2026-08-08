@@ -46,10 +46,6 @@
     if (staticBtn) {
       tabBtn = staticBtn;
       tabBtn.classList.add("is-injected");
-      if (!tabBtn._swBound) {
-        tabBtn.addEventListener("click", toggle);
-        tabBtn._swBound = true;
-      }
       return true;
     }
     var topActions = document.querySelector(".top-actions") || document.querySelector(".topbar");
@@ -148,6 +144,21 @@
     ".sw-overlay { position:fixed; inset:0; z-index:9999; background:#0d1117; flex-direction:column; }",
     ".sw-overlay-frame { flex:1; width:100%; border:0; background:#0d1117; }",
   ].join("\n");
+
+  window.swOpenPixelWriter = function () {
+    if (!overlay) return;
+    var willOpen = !active;
+    active = willOpen;
+    if (active) {
+      overlay.style.display = "flex";
+      if (tabBtn) tabBtn.classList.add("is-active");
+      if (!iframe || !iframe.src || !iframe.getAttribute("src")) iframe.src = SW_URL;
+    } else {
+      overlay.style.display = "none";
+      if (tabBtn) tabBtn.classList.remove("is-active");
+    }
+    try { localStorage.setItem("sw.activePipeline", active ? "1" : ""); } catch (e) {}
+  };
 
   init();
 })();

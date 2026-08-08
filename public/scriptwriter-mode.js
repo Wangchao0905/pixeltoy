@@ -102,6 +102,19 @@
       overlay.style.display = "none";
       tabBtn.classList.remove("is-active");
     }
+    try { localStorage.setItem("sw.activePipeline", active ? "1" : ""); } catch (e) {}
+  }
+
+  function restoreActiveTab() {
+    // 刷新后恢复 Pixel Writer tab：上次打开过则直接激活，避免每次跳回 Story Forge。
+    if (active || !iframe || !tabBtn) return;
+    try {
+      if (localStorage.getItem("sw.activePipeline") !== "1") return;
+    } catch (e) { return; }
+    active = true;
+    overlay.style.display = "flex";
+    tabBtn.classList.add("is-active");
+    iframe.src = SW_URL;
   }
 
   function init() {
@@ -114,12 +127,16 @@
       var tries = 0;
       var timer = setInterval(function () {
         tries += 1;
-        if (injectTab() || tries > 20) clearInterval(timer);
+        if (injectTab() || tries > 20) {
+          clearInterval(timer);
+          restoreActiveTab();
+        }
       }, 300);
     }
     var css = document.createElement("style");
     css.textContent = SW_CSS;
     document.head.appendChild(css);
+    restoreActiveTab();
   }
 
   var SW_CSS = [

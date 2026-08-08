@@ -44,6 +44,10 @@ assert.match(ui, /window\.location\.href\s*=\s*result\.file\s*\|\|\s*\("projects
 assert.match(ui, /beat-action/, "UI 必须渲染动作描述（beat.action），不能只有对白（speaker/line 存在时 action 曾被丢弃）");
 assert.match(ui, /api\/project\?project_id=/, "创作历史加载必须用 GET + query（/api/project 是 GET 接口，POST 会 404 导致点击无反应）");
 assert.match(ui, /ideaBox\.raw/, "点击创作历史后必须把故事种子（idea.raw）回填到输入框");
+// Pixel Writer tab 需在刷新后恢复（localStorage 记忆），否则每次刷新都跳回 Story Forge
+const swMode = fs.readFileSync(path.join(root, "public/scriptwriter-mode.js"), "utf8");
+assert.match(swMode, /restoreActiveTab/, "scriptwriter-mode 必须支持刷新后恢复 Pixel Writer tab");
+assert.match(swMode, /sw\.activePipeline/, "tab 激活状态必须写入 localStorage 以便刷新恢复");
 assert.doesNotMatch(ui, /fetch\("\/api\//, "UI 不得用绝对路径 /api/（会绕过代理打到主站 API）");
 
 console.log("pixel-writer proxy + mount tests passed");

@@ -497,6 +497,12 @@ function stageOutputContract(stage, mode) {
     const cnTitleCandidate = { title_en: "中文正式剧名", explanation_zh: "中文释义", style_zh: "风格标签", tone_zh: "语气与气质", naming_gene_zh: "命名基因", reason_zh: "命名理由" };
     contracts.title = JSON.stringify({ candidates: Array.from({ length: 4 }, () => ({ ...cnTitleCandidate })), selection_note_zh: "选择建议" });
     contracts.dialogue = JSON.stringify({ lines: [{ id: "D001", scene_id: "S001", speaker: "C001", intent_zh: "中文剧情意图", dialogue_en: "自然中文对白", subtext_zh: "潜台词", delivery_en: "中文演绎说明" }], localization_checks: ["口语化", "人物声线一致", "未泄露悬念"] });
+    // 国内短剧：voice_rules_en 键名保持通用（对白阶段仍按此字段引用声线），
+    // 但内容必须是中文——角色说话方式用中文描写，与 dialogue_en 中文对白同模式。
+    contracts.characters = contracts.characters.replace(
+      '"voice_rules_en":["英文声线规则"]',
+      '"voice_rules_en":["中文声线规则（用中文描写角色说话方式：句式长短、语气、口头禅、情绪表达习惯）"]',
+    );
   }
   return `${contracts[stage]}${common}`;
 }

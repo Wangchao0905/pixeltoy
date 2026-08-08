@@ -25,7 +25,7 @@ const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.h
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const ruleFindings = (result, code) => result.violations.filter((item) => item.code === code);
 assert.ok(ruleFindings(runStageRules({ stage: "brief", artifact: {}, approvedContext: {} }), "SCHEMA_INCOMPLETE").length, "rules must detect missing stage schema fields");
@@ -1301,5 +1301,14 @@ assert.ok(appGateBody.includes("blockingPending"), "the frontend advisory gate m
 assert.doesNotMatch(appGateBody, /kind === "conflict"/, "the frontend gate must not re-introduce a conflict special case that blocks confirmation");
 const agentGateBody = agent.slice(agent.indexOf("function reviewAdvisoryGate"), agent.indexOf("const issueSeverityRank"));
 assert.doesNotMatch(agentGateBody, /kind === "conflict"/, "the backend gate must not re-introduce a conflict special case that blocks confirmation");
+
+// 6. Voice rules must be localized per mode: cn_short_drama produces Chinese
+//    voice rules under the shared voice_rules_en key (dialogue stage reads it),
+//    while TK keeps English content.
+const cnCharactersContract = stageOutputContract("characters", "cn_short_drama");
+assert.match(cnCharactersContract, /中文声线规则/, "cn mode characters contract must ask for Chinese voice rules");
+assert.doesNotMatch(cnCharactersContract, /英文声线规则/, "cn mode characters contract must not ask for English voice rules");
+const tkCharactersContract = stageOutputContract("characters", "tk_short_drama");
+assert.match(tkCharactersContract, /英文声线规则/, "tk mode characters contract keeps English voice rules");
 
 console.log("pixeltale workflow contract ok");

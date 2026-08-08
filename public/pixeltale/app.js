@@ -1315,7 +1315,7 @@ const fieldLabelMap = {
   fear_zh: "恐惧",
   secret_zh: "秘密",
   arc_zh: "人物弧线",
-  voice_rules_en: "英文声线规则",
+  voice_rules_en: "声线规则",
   visual_profile: "视觉设定",
   gender: "性别",
   age_phase: "年龄阶段",

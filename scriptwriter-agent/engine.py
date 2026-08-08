@@ -312,16 +312,16 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
         for si, scene in enumerate(scenes):
             loc = scene.get("location", "")
             if loc and not self._has_cjk(loc):
-                pending.append({"key": f"loc:{si}", "zh": ""})
+                pending.append({"key": f"loc:{si}", "text": loc})
             for bi, beat in enumerate(scene.get("beats") or []):
                 action = beat.get("action", "")
                 if action and not self._has_cjk(action):
-                    pending.append({"key": f"act:{si}:{bi}", "zh": ""})
+                    pending.append({"key": f"act:{si}:{bi}", "text": action})
         if not pending:
             return 0
         try:
             result = self.writer.chat([
-                {"role": "system", "content": "你是中文短剧编剧。把英文的动作描述与场景地点翻译成自然、简洁的中文短剧描述：动作以'他/她'开头的短句，地点用中文场所名。只输出 JSON：{\"items\":[{\"key\":\"...\",\"zh\":\"...\"}]}"},
+                {"role": "system", "content": "你是中文短剧编剧。把每条 text（英文动作描述或场景地点）翻译成自然、简洁的中文短剧描述：动作以'他/她'开头的短句，地点用中文场所名。不要照抄占位内容，必须把每条 text 完整翻译成中文填进 zh。只输出 JSON：{\"items\":[{\"key\":\"...\",\"zh\":\"翻译结果\"}]}"},
                 {"role": "user", "content": json.dumps(pending, ensure_ascii=False)},
             ], temperature=0.3, max_tokens=2000)
             parsed = self._parse_json_block(result)

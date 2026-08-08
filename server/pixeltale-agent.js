@@ -2578,6 +2578,16 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
   const creativeControls = normalizeCreativeControls(state.input);
   const timestamp = nowIso(now);
   const handoffId = id("handoff", randomUUID);
+  // 对白完整性校验：每个场景都应有对白行，缺行静默出"空对白剧本"会让交付残缺。
+  const sceneIds = new Set(asArray(scenes.scenes).map((scene) => text(scene.id, 120)).filter(Boolean));
+  const coveredSceneIds = new Set(asArray(dialogue.lines).map((line) => text(line.scene_id, 120)).filter(Boolean));
+  const missingScenes = [...sceneIds].filter((sceneId) => !coveredSceneIds.has(sceneId));
+  if (missingScenes.length) {
+    const error = new Error(`对白未覆盖全部场景：${missingScenes.slice(0, 5).join("、")}${missingScenes.length > 5 ? ` 等 ${missingScenes.length} 个场景` : ""}缺少对白行。请重新生成对白或人工放行后再导出。`);
+    error.code = "HANDOFF_INCOMPLETE";
+    error.statusCode = 409;
+    throw error;
+  }
   const storyTitle = text(state.input?.storyTitle || proposal.title_zh || "PixelTale 剧本", 200);
   const script = [
     `# ${storyTitle}`,
@@ -3469,6 +3479,7 @@ function createPixelTaleAgent(options = {}) {
 
 module.exports = {
   createPixelTaleAgent,
+  createHandoffPayload,
   callProvider,
   callStageCouncil,
   computeMergeAudit,

@@ -350,7 +350,11 @@ async function request(suffix, options = {}) {
     headers: { ...agentRequestHeaders(), ...(options.headers || {}) },
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.ok === false) throw new Error(payload.message || `请求失败：${response.status}`);
+  if (!response.ok || payload.ok === false) {
+    const error = new Error(payload.message || `请求失败：${response.status}`);
+    error.code = payload.code || `HTTP_${response.status}`;
+    throw error;
+  }
   return payload;
 }
 
@@ -630,7 +634,7 @@ function renderUnitStageProgress(stage) {
   const lockedPct = progress.total ? Math.min(100, Math.round(lockedCount / progress.total * 100)) : 0;
   const status = generatedCount ? `已生成 ${generatedCount} 集 · 已锁定 ${lockedCount} 集` : `已锁定 ${lockedCount} 集`;
   const pending = pendingCount ? `未锁定 ${pendingCount} 集` : "没有待处理集";
-  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="绿=已锁定 · 黄=已生成待审核 · 灰=未生成"><i class="is-generated" style="width:${generatedPct}%"></i><i class="is-locked" style="width:${lockedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>一次运行会自动生成、审核并恢复全部未锁定集；最多自动修订两轮，仍失败才需要人工介入。已锁定集不会再次提交。指定集数仅用于定向修订。</small></section>`;
+  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="绿=已锁定 · 黄=已生成待审核 · 灰=未生成"><i class="is-generated" style="width:${generatedPct}%"></i><i class="is-locked" style="width:${lockedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>一次运行会自动生成、审核并恢复全部未锁定集；自动修订每轮最多两轮，仍不收敛或审核不通过时可人工放行继续。已锁定集不会再次提交。指定集数仅用于定向修订。</small></section>`;
 }
 
 function reviewForArtifact(artifact) {
@@ -820,12 +824,15 @@ function nextStepMeta() {
   const reviewContent = reviewForArtifact(artifact)?.content || {};
   const technicalState = technicalReviewState(reviewContent);
   if (technicalState.blocked && reviewForArtifact(artifact)) {
+    // 技术未完成（席位失败/降级/stalled/预算耗尽）时，"重新提交"之外提供
+    // 人工放行出口——修订不收敛或席位持续失败时避免无限点击（与 auto-revise 同构）。
     return {
       kind: "run",
       stage: flowStage,
       title: `${flowMeta.title}技术未完成`,
-      copy: "三席审核尚未具备有效技术结果。请重新提交当前阶段，完成席位后再判断质量与修订意见。",
+      copy: "三席审核尚未具备有效技术结果。请重新提交当前阶段，完成席位后再判断质量与修订意见；或接受当前版本继续。",
       label: `重新提交${flowMeta.title}并审核 →`,
+      allowOverride: true,
       flowStage,
     };
   }
@@ -910,7 +917,13 @@ function renderAgentTaskAction(action) {
   const guidedClass = !disabled && action.kind !== "busy" ? " is-next-action" : "";
   if (action.kind === "run") {
     const id = action.stage === "brief" ? "runBrief" : "agentRunStage";
-    return `<button id="${id}" class="stage-primary agent-task-primary${guidedClass}" data-flow-action="run" data-run-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+    const primary = `<button id="${id}" class="stage-primary agent-task-primary${guidedClass}" data-flow-action="run" data-run-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+    // 技术未完成分支允许人工放行：接受当前生成版本继续，避免无限"重新提交"。
+    if (action.allowOverride) {
+      const override = `<button class="stage-secondary agent-task-secondary" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>接受当前版本并继续（人工放行）</button>`;
+      return `<div style="display:flex;gap:8px;flex-wrap:wrap">${primary}${override}</div>`;
+    }
+    return primary;
   }
   if (action.kind === "auto-revise") {
     const primary = `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
@@ -1804,9 +1817,10 @@ async function monitorBackgroundRun(run) {
     state.runPhase = "";
     renderModelTeam();
     if (state.activeRun?.jobId !== run.jobId) return;
-    // 终端失败（含服务重启中断 RUN_INTERRUPTED）：必须清除残留 activeRun，
-    // 否则 nextStepMeta 会一直命中 busy 分支，界面永远停在"处理中"且没有重新生成按钮。
-    if (error?.terminal) persistActiveRun(null);
+    // 任何监控失败都清除残留 activeRun：terminal（服务重启/失败）与网络类
+    // 失败（waitForRunJob 连续 5 次轮询抛错）都会让界面永久停在 busy 且无按钮。
+    // 清掉后用户可重新提交；后台若仍在运行，服务端有中断恢复/幂等兜底。
+    persistActiveRun(null);
     state.lastError = userFacingError(error);
     showToast(state.lastError);
     renderStage();
@@ -1825,8 +1839,25 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
   try {
     let payload;
     let recoveryAttempted = false;
+    let overrideRetried = false;
     while (!payload) {
-      const accepted = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan, unitNumbers }) });
+      let accepted;
+      try {
+        accepted = await request("/runs", { method: "POST", body: JSON.stringify({ stage, mode: modeValue(), input: state.input, routes: state.routes, revisionPlan, unitNumbers, override: overrideRetried || undefined }) });
+      } catch (requestError) {
+        // 已确认阶段重跑：后端要求 override 显式确认（会使下游已确认内容失效）。
+        if (requestError?.code === "STAGE_RERUN_REQUIRES_OVERRIDE" && !overrideRetried) {
+          const ok = window.confirm("该阶段已有已确认版本。重新生成会使下游已确认内容失效（可重新确认）。确定继续？");
+          if (!ok) {
+            state.busy = false;
+            renderStage();
+            return { canceled: true };
+          }
+          overrideRetried = true;
+          continue;
+        }
+        throw requestError;
+      }
       persistActiveRun({ jobId: accepted.job?.jobId, stage });
       try {
         const result = await waitForRunJob(accepted.job?.jobId);

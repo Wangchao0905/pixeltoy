@@ -25,7 +25,7 @@ const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.h
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, createHandoffPayload } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const ruleFindings = (result, code) => result.violations.filter((item) => item.code === code);
 assert.ok(ruleFindings(runStageRules({ stage: "brief", artifact: {}, approvedContext: {} }), "SCHEMA_INCOMPLETE").length, "rules must detect missing stage schema fields");
@@ -104,7 +104,7 @@ assert.deepEqual(normalizeRoutes(reseated, models()), reseated, "route normaliza
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
 assert.match(agent, /modelRouter\.reviewModels\(route\)/, "cross-review must be selected by the independent PixelTale router");
 assert.doesNotMatch(agent, /PIXELTALE_(CHATGPT|CLAUDE|GROK|DEEPSEEK)_API_KEY/, "PixelTale must not own provider credentials");
-assert.match(app, /if \(error\?\.terminal\) persistActiveRun\(null\);/, "a terminal run failure (RUN_INTERRUPTED after server restart) must clear the stale activeRun so the stage shows a rerun button instead of stuck 'processing'");
+assert.match(app, /persistActiveRun\(null\);[\s\S]{0,80}state\.lastError = userFacingError\(error\)/, "any monitor failure (terminal RUN_INTERRUPTED or network polling failure) must clear the stale activeRun so the stage shows a rerun button instead of stuck 'processing'");
 assert.match(app, /syncRoutingModelOptions\(agent\.modelOptions \|\| \[\]\)/, "model choices must be synchronized from SuperPixel's returned registry");
 assert.doesNotMatch(app, /\["chatgpt", "claude", "deepseek"\]/, "review UI must not deduplicate seats by provider");
 assert.match(app, /const reviewTeam = seatDefaults\.map\(\(seat, index\) =>/, "review UI must always render from the three-seat roster");
@@ -1345,5 +1345,27 @@ assert.match(tkCharactersContract, /英文声线规则/, "tk mode characters con
 assert.match(app, /function buildHumanOverrideBrief/, "app.js must expose the human-override evidence builder");
 assert.match(app, /审核依据/, "the human-override dialog must present review evidence before confirming");
 assert.match(app, /人工放行不会修复问题/, "the human-override dialog must state that it does not fix issues");
+
+// 8. Handoff must not silently export a script missing dialogue for scenes.
+const handoffIncompleteState = {
+  input: { idea: "测试", episodeCount: 1, storyTitle: "测试剧" },
+  mode: "cn_short_drama",
+  approvedArtifactIds: ["h_brief", "h_title", "h_proposal", "h_chars", "h_arc", "h_scenes", "h_dialogue"],
+  artifacts: [
+    { id: "h_brief", type: "pixeltale_brief", stage: "brief", version: 1, status: "approved", content: { title_zh: "测试", logline_zh: "测试", core_conflict_zh: "测试", viewer_question_zh: "测试", episode_promise_zh: "测试" } },
+    { id: "h_title", type: "pixeltale_title", stage: "title", version: 1, status: "approved", content: { candidates: [{ title_en: "Test", explanation_zh: "测试" }] } },
+    { id: "h_proposal", type: "pixeltale_proposal", stage: "proposal", version: 1, status: "approved", content: { title_zh: "测试", premise_zh: "测试命题", logline_zh: "测试", viewer_question_zh: "测试", protagonist_goal_zh: "测试" } },
+    { id: "h_chars", type: "pixeltale_characters", stage: "characters", version: 1, status: "approved", content: { characters: [{ id: "C001", name_zh: "小明", arc_zh: "成长" }], world_rules: [] } },
+    { id: "h_arc", type: "pixeltale_arc", stage: "arc", version: 1, status: "approved", content: { units: [{ number: 1, title_zh: "第一集", impact_zh: "暴击", plot_zh: "剧情", hook_zh: "钩子", cliffhanger_question_zh: "悬念" }], arc_summary_zh: "概要" } },
+    { id: "h_scenes", type: "pixeltale_scenes", stage: "scenes", version: 1, status: "approved", content: { scenes: [{ id: "S001", unit_number: 1, location_zh: "地点", action_zh: "动作" }], props: [] } },
+    // 对白缺 S001：handoff 必须拒绝而非静默出包
+    { id: "h_dialogue", type: "pixeltale_dialogue", stage: "dialogue", version: 1, status: "approved", content: { lines: [{ id: "D001", scene_id: "S999", speaker: "C001", intent_zh: "意图", dialogue_en: "台词", subtext_zh: "潜台词" }] } },
+  ],
+};
+assert.throws(
+  () => createHandoffPayload({ state: handoffIncompleteState, project: { id: "t", title: "t", episode: "DRAFT" }, now: () => new Date("2026-08-08T00:00:00Z"), randomUUID: () => "uuid-1" }),
+  (error) => error.code === "HANDOFF_INCOMPLETE",
+  "handoff must reject dialogue that does not cover every scene",
+);
 
 console.log("pixeltale workflow contract ok");

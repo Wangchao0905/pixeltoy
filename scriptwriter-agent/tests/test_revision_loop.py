@@ -80,8 +80,7 @@ class TestRevisionLoop(unittest.TestCase):
 
     def test_generate_episode_auto_localizes_english_prose(self):
         # 生成时自动强制中文化：模型输出英文 action/location → 保存前自动转换（对白不动）
-        writer = FakeWriter([
-            json.dumps({"scenes": [
+        writer = FakeWriter([            json.dumps({"scenes": [
                 {"location": "Outside Moonflower House, late afternoon",
                  "beats": [{"speaker": "Luna", "line": "Excuse me, little one.", "action": "Dorian slows on the sidewalk."}]}
             ]}, ensure_ascii=False),
@@ -104,6 +103,27 @@ class TestRevisionLoop(unittest.TestCase):
         self.assertEqual(scene["location"], "月亮花店门口，午后", "生成后 location 必须被自动转为中文")
         self.assertEqual(scene["beats"][0]["action"], "Dorian 在花店旁放慢脚步", "生成后 action 必须被自动转为中文")
         self.assertEqual(scene["beats"][0]["line"], "Excuse me, little one.", "对白语言不得被改动")
+
+    def test_episode_draft_retries_on_invalid_json(self):
+        # 初稿非 JSON 自动重试（最多 3 次）：第 1 次非法、第 2 次合法 → 应成功生成
+        writer = FakeWriter([
+            "这不是 JSON，模型跑偏了……",
+            json.dumps({"scenes": [{"location": "月亮花店门口", "beats": [{"speaker": "Luna", "line": "肚子疼", "action": "她捂着肚子。"}]}]}, ensure_ascii=False),
+        ])
+        engine = PixelWriterEngine(writer, ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-retry", stage="episode")
+        state.current_episode = 1
+        idea = normalize_idea("小美为救母亲进入豪门，却身世成谜")
+        idea["episode_duration_seconds"] = 60
+        idea["dialogue_language"] = "zh"
+        state.idea = idea
+        state.artifacts["worldbuilding"] = {"characters": [{"name": "小美"}], "world_rules": []}
+        state.artifacts["outline"] = {"episodes": [{"index": 1, "episode_title": "第1集", "hook": "开场冲突", "events": ["相遇"], "cliffhanger": "悬念"}]}
+        result = engine.run_episode_loop(state, state.artifacts["outline"]["episodes"][0])
+        self.assertEqual(result["status"], "needs-human" if not result["episode"] else result["status"])
+        ep = state.artifacts["episodes"].get("1")
+        self.assertIsNotNone(ep, "重试成功后应生成第 1 集")
+        self.assertEqual(ep["scenes"][0]["location"], "月亮花店门口")
 
     def test_pass_string_false_not_truthy(self):
         # DeepSeek 返回 "pass":"false"（字符串）：必须走修订 → 3 次未通过 → needs-human，不得 approved

@@ -208,7 +208,15 @@ def make_handler(engine_factory):
                         self._json(200, {"ok": True, "done": True, "state": json.loads(state.to_json())})
                         return
                     outline = episodes[state.current_episode - 1]
-                    engine.run_episode_loop(state, outline)
+                    try:
+                        engine.run_episode_loop(state, outline)
+                    except Exception as exc:
+                        # 生成/审核异常必须落日志并返回 JSON 错误，否则 UI 会
+                        # 收到 500 HTML 而提示"服务返回了无法读取的内容"，无法诊断。
+                        import traceback
+                        traceback.print_exc()
+                        self._json(500, {"ok": False, "error": f"生成第 {state.current_episode} 集失败：{type(exc).__name__}: {exc}"})
+                        return
                     done = state.current_episode > len(episodes)
                     if done:
                         state.stage = "export"

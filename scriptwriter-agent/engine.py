@@ -253,14 +253,22 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
         """
         rounds = 0
         prompt = self._prompt_episode(state, outline)
-        episode = self._parse_json_block(self.writer.chat([{"role": "user", "content": prompt}], max_tokens=4000))
+        episode = None
+        raw_output = ""
+        # 初稿非 JSON 时重试 2 次：第二集起 prompt 更长（前情+跨集状态+悬念），
+        # 模型可能在 max_tokens 截断处输出不完整 JSON——重试通常能成功。
+        for attempt in range(3):
+            raw_output = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=4000)
+            episode = self._parse_json_block(raw_output)
+            if isinstance(episode, dict):
+                break
         idx = outline.get("index", state.current_episode)
         verdict = None
         status = "needs-human"
         if not isinstance(episode, dict):
-            # 初稿不是合法 JSON：不阻塞流水线，记 needs-human 交人工处理
+            # 初稿重试 3 次仍不是合法 JSON：不阻塞流水线，记 needs-human 交人工处理
             state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
-                                          "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "模型输出非法 JSON"}]}
+                                          "issues": [{"severity": "high", "mode": 0, "quote": str(raw_output)[:200], "fix": "模型输出非法 JSON，已重试 3 次"}]}
             state.artifacts.setdefault("episodes", {})[str(idx)] = None
             state.current_episode = max(state.current_episode, idx + 1)
             self._save(state)

@@ -42,7 +42,7 @@
   var tabBtn = null;
 
   function injectTab() {
-    var topActions = document.querySelector(".top-actions");
+    var topActions = document.querySelector(".top-actions") || document.querySelector(".topbar");
     if (!topActions || topActions.querySelector("[data-sw-pipeline-tab]")) return !!tabBtn;
 
     tabBtn = el("button", {
@@ -115,11 +115,12 @@
       var tries = 0;
       var timer = setInterval(function () {
         tries += 1;
-        if (injectTab() || tries > 20) {
+        if (injectTab() || tries > 40) {
           clearInterval(timer);
+          injectTab();
           restoreActiveTab();
         }
-      }, 300);
+      }, 250);
     }
     var css = document.createElement("style");
     css.textContent = SW_CSS;

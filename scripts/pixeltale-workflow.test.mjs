@@ -541,6 +541,23 @@ const allReviewsFailed = aggregateCrossReview([
 assert.equal(allReviewsFailed.quorum.passing, 0, "the quorum must report zero passing reviews");
 assert.equal(allReviewsFailed.checks.reviews_passed, false, "all review seats must pass before release");
 assert.equal(allReviewsFailed.pass, false, "three completed but failed reviews must block release");
+// 共识降级：三席全部完成（quorumMet 仍严格），但 2/3 多数通过即可放行；
+// 分歧席不阻断，记录到 disagreements 供追溯/导出标注。
+const majorityRelease = aggregateCrossReview([
+  reviewCase({ model: "review-a", seatId: "seat_a" }),
+  reviewCase({ model: "review-b", seatId: "seat_b" }),
+  reviewCase({ model: "review-c", seatId: "seat_c", pass: false, issues: [{ criterionId: "C", tag: "单席分歧", severity: "medium" }] }),
+]);
+assert.equal(majorityRelease.pass, true, "2-of-3 majority must release when the third seat dissents");
+assert.equal(majorityRelease.checks.majority_consensus, true, "majority consensus check must be true");
+assert.equal(majorityRelease.checks.reviews_passed, true, "reviews_passed must reflect the majority");
+assert.equal(majorityRelease.disagreements.length, 1, "the dissenting seat must be recorded for traceability");
+assert.equal(majorityRelease.disagreements[0].seatId, "seat_c", "the disagreement must name the dissenting seat");
+const twoCompletedOneAbsent = aggregateCrossReview([
+  reviewCase({ model: "review-a", seatId: "seat_a" }),
+  reviewCase({ model: "review-b", seatId: "seat_b" }),
+]);
+assert.equal(twoCompletedOneAbsent.pass, false, "two seats alone must not release: quorumMet still requires three completed seats");
 const failedSeat = aggregateCrossReview([
   reviewCase({ model: "gpt-5.6-terra", seatId: "seat_a" }),
   { route: { seatId: "seat_b", role: "character_continuity", requiredModel: "claude-opus-5", model: "claude-opus-5" }, model: "claude-opus-5", error: "upstream timeout", errorCode: "TIMEOUT" },

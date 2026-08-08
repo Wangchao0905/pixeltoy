@@ -728,6 +728,8 @@ function renderConsensusMeter() {
   score.textContent = metrics.quality === null ? "—" : `${metrics.quality}%`;
   value.textContent = `质量分 · ${tone}`;
   const advisoryGate = reviewAdvisoryGate(metrics.content);
+  const disagreements = Array.isArray(metrics.content?.disagreements) ? metrics.content.disagreements : [];
+  const consensusNote = metrics.releaseReady && disagreements.length ? ` · 部分共识（${disagreements.length} 席有分歧已记录）` : "";
   const releaseState = !metrics.quorumMet
     ? "审核未完成"
     : metrics.releaseReady
@@ -736,7 +738,7 @@ function renderConsensusMeter() {
         ? "审核完成 · 等待人工裁决"
         : "审核完成 · 等待修订";
   label.textContent = metrics.quality !== null
-    ? `交叉审核 ${metrics.completedReviews} / ${metrics.requiredReviews} · ${releaseState}`
+    ? `交叉审核 ${metrics.completedReviews} / ${metrics.requiredReviews} · ${releaseState}${consensusNote}`
     : "完成当前阶段后启动交叉审核";
   fill.style.setProperty("--consensus-width", `${metrics.quality ?? 0}%`);
   fill.parentElement?.classList.toggle("is-live", metrics.quality !== null);

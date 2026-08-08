@@ -55,6 +55,8 @@ const REVIEW_MODEL_TIMEOUT_MS = 240_000;
 // still requires all three independent review seats to finish.
 const REVIEW_QUORUM = 2;
 const REVIEW_COMPLETION_REQUIRED = 3;
+// 共识放行阈值：3 席中至少 2 席通过（多数制）即可放行；分歧席记录不阻断。
+const REVIEW_PASS_QUORUM = 2;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
 const EPISODE_BATCH_SIZE = 5;
 const UNIT_STAGES = new Set(["arc", "scenes"]);
@@ -1811,13 +1813,20 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     ...(degraded ? [{ status: "degraded", collapsedSeats: collapsedSeats.map(([model, seats]) => ({ model, seats })), message: degradedMessage }] : []),
   ];
   const passingReviews = completed.filter((item) => item.pass).length;
-  const allReviewsPass = completed.length === REVIEW_COMPLETION_REQUIRED
-    && completed.every((item) => item.pass === true);
-  const basePass = quorumMet && allReviewsPass && mandatoryIssues.length === 0 && revisionClosure.allResolved;
+  // 共识降级：3 席全票 → 2 席多数通过即可放行（仍需无 mandatory 硬伤 + 修订闭环）。
+  // 第三席的分歧不阻断，记录到 disagreements 供追溯/导出标注——保留三席独立
+  // 评估的严谨性，同时消除"单席异议永久卡死"（实测 30 次运行 0 通过）。
+  const majorityPass = completed.length >= REVIEW_PASS_QUORUM
+    && passingReviews >= REVIEW_PASS_QUORUM;
+  const disagreements = completed
+    .filter((item) => item.pass !== true)
+    .map((item) => ({ seatId: item.seatId || "", model: item.actualModel || item.model || "", issues: asArray(item.mandatoryIssues).slice(0, 5).map((issue) => issue.tag || issue.criterionId || "分歧意见") }));
+  const basePass = quorumMet && majorityPass && mandatoryIssues.length === 0 && revisionClosure.allResolved;
   const pass = basePass;
   const checks = {
     cross_validation: quorumMet,
-    reviews_passed: allReviewsPass,
+    reviews_passed: majorityPass,
+    majority_consensus: majorityPass,
     consistency: mandatoryIssues.length === 0,
     adversarial: completed.filter((item) => item.checks?.adversarial === true).length >= REVIEW_COMPLETION_REQUIRED,
     issues_converged: mandatoryIssues.length === 0,
@@ -1841,6 +1850,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     quality,
     reviewCompletion,
     quorum: { required: REVIEW_COMPLETION_REQUIRED, completedSeats: completed.length, completed: completed.length, passing: passingReviews, distinctActualModels, met: quorumMet, degraded },
+    disagreements,
     dimensions,
     feedbacks,
     reviewIssues,

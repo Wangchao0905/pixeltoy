@@ -53,7 +53,36 @@ def make_handler(engine_factory):
 
         def do_GET(self):
             parsed = urllib.parse.urlparse(self.path)
-            if parsed.path == "/api/project":
+            if parsed.path == "/api/projects":
+                # 创作历史：列出 projects/ 下的项目摘要（按最近更新排序）
+                items = []
+                try:
+                    if os.path.isdir(PROJECTS_DIR):
+                        for name in os.listdir(PROJECTS_DIR):
+                            if not name.endswith(".json"):
+                                continue
+                            path = os.path.join(PROJECTS_DIR, name)
+                            try:
+                                with open(path, encoding="utf-8") as f:
+                                    state = ProjectState.from_json(f.read())
+                            except Exception:
+                                continue
+                            episodes = state.artifacts.get("outline", {}).get("episodes", []) if isinstance(state.artifacts, dict) else []
+                            total = len(episodes) if isinstance(episodes, list) else 0
+                            items.append({
+                                "project_id": state.project_id,
+                                "stage": state.stage,
+                                "current_episode": state.current_episode,
+                                "total_episodes": total,
+                                "mtime": os.path.getmtime(path),
+                                "idea": (state.idea or {}).get("raw", "")[:60] if isinstance(state.idea, dict) else "",
+                                "dialogue_language": (state.idea or {}).get("dialogue_language", "zh") if isinstance(state.idea, dict) else "zh",
+                            })
+                except Exception:
+                    items = []
+                items.sort(key=lambda item: item.get("mtime") or 0, reverse=True)
+                self._json(200, {"ok": True, "projects": items})
+            elif parsed.path == "/api/project":
                 qs = urllib.parse.parse_qs(parsed.query)
                 pid = qs.get("project_id", [""])[0]
                 path = _safe_project_path(pid, ".json")

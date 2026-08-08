@@ -249,6 +249,30 @@ class TestPostStart(unittest.TestCase):
             urllib.request.urlopen(req)
         self.assertEqual(ctx.exception.code, 404)
 
+    def test_projects_lists_history(self):
+        # 落盘两个项目后 /api/projects 应返回摘要列表
+        os.makedirs("projects", exist_ok=True)
+        for pid in ("phist1", "phist2"):
+            state = ProjectState(project_id=pid, stage="episode", current_episode=2)
+            state.artifacts["outline"] = {"episodes": [{"index": 1, "hook": "h"}, {"index": 2, "hook": "h"}]}
+            with open(os.path.join("projects", f"{pid}.json"), "w", encoding="utf-8") as f:
+                f.write(state.to_json())
+        try:
+            req = urllib.request.Request(self._base + "/api/projects")
+            with urllib.request.urlopen(req) as r:
+                resp = json.loads(r.read().decode("utf-8"))
+            self.assertTrue(resp["ok"])
+            ids = [item["project_id"] for item in resp["projects"]]
+            self.assertIn("phist1", ids)
+            self.assertIn("phist2", ids)
+            entry = next(item for item in resp["projects"] if item["project_id"] == "phist1")
+            self.assertEqual(entry["total_episodes"], 2)
+            self.assertEqual(entry["current_episode"], 2)
+        finally:
+            for p in ("projects/phist1.json", "projects/phist2.json"):
+                if os.path.exists(p):
+                    os.remove(p)
+
     def test_start_records_dialogue_language(self):
         payload = json.dumps({"idea": "测试", "episode_count": 1, "dialogue_language": "en"}).encode("utf-8")
         req = urllib.request.Request(self._base + "/api/start", data=payload, method="POST")

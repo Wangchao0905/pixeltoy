@@ -1340,4 +1340,10 @@ assert.doesNotMatch(cnCharactersContract, /英文声线规则/, "cn mode charact
 const tkCharactersContract = stageOutputContract("characters", "tk_short_drama");
 assert.match(tkCharactersContract, /英文声线规则/, "tk mode characters contract keeps English voice rules");
 
+// 7. Human override must be informed: the confirm dialog shows review
+//    evidence (score / issue counts / revision state) before releasing.
+assert.match(app, /function buildHumanOverrideBrief/, "app.js must expose the human-override evidence builder");
+assert.match(app, /审核依据/, "the human-override dialog must present review evidence before confirming");
+assert.match(app, /人工放行不会修复问题/, "the human-override dialog must state that it does not fix issues");
+
 console.log("pixeltale workflow contract ok");

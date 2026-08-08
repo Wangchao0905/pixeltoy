@@ -638,6 +638,36 @@ function reviewForArtifact(artifact) {
   return (state.agent?.artifacts || []).find((item) => item.id === artifact.reviewId) || null;
 }
 
+// 人工放行前的审核依据摘要：让创作者基于分数/问题统计/修订状态做决定，
+// 而不是盲目跳过质量门。
+function buildHumanOverrideBrief(reviewContent = {}) {
+  const lines = [];
+  const score = reviewContent.score;
+  if (Number.isFinite(score)) lines.push(`• 质量分：${Math.round(score)} / 100`);
+  const dims = reviewContent.dimensions || {};
+  const dimLabels = { structure: "结构", plot: "剧情", design: "设计", logic: "逻辑" };
+  const dimLine = Object.entries(dims)
+    .filter(([key]) => dimLabels[key])
+    .map(([key, value]) => `${dimLabels[key]} ${typeof value === "number" ? Math.round(value) : (value?.score ?? value)}`)
+    .join(" · ");
+  if (dimLine) lines.push(`• 分项：${dimLine}`);
+  const issueArrays = ["mandatoryIssues", "commonIssues", "reviewIssues"].filter((key) => Array.isArray(reviewContent[key]));
+  const issues = issueArrays.flatMap((key) => reviewContent[key]);
+  const pendingClosures = Array.isArray(reviewContent.revision?.closure?.items)
+    ? reviewContent.revision.closure.items.filter((item) => item.status !== "resolved")
+    : [];
+  const counts = {};
+  for (const item of [...issues, ...pendingClosures]) counts[item.severity] = (counts[item.severity] || 0) + 1;
+  const sevLabels = { high: "严重", medium: "中等", low: "轻微" };
+  const sevLine = Object.entries(counts).filter(([sev]) => sevLabels[sev]).map(([sev, n]) => `${sevLabels[sev]} ${n}`).join(" · ");
+  if (sevLine) lines.push(`• 未解决问题：${sevLine}`);
+  if (pendingClosures.length) lines.push(`• 修订：${pendingClosures.length} 项未关闭`);
+  const failures = Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [];
+  const stalled = failures.find((item) => item?.status === "stalled" || item?.status === "budget_exhausted");
+  if (stalled) lines.push(`• 状态：${stalled.message || "自动修订未收敛，已转人工交接"}`);
+  return lines.length ? lines.join("\n") : "（无评分数据，请自行核对当前版本）";
+}
+
 function approvedStageCount() {
   const artifacts = state.agent?.artifacts || [];
   return stageOrder.slice(0, -1).filter((stage) => artifacts.some((item) => item.stage === stage && state.approved.has(item.id))).length;
@@ -2053,8 +2083,11 @@ function bindAgentTaskAction() {
     if (action === "human-override") {
       const stage = button.dataset.humanOverride || state.stage;
       const artifact = (state.agent?.artifacts || []).find((item) => item.stage === stage);
+      const review = reviewForArtifact(artifact);
+      const brief = buildHumanOverrideBrief(review?.content || {});
       const unitNote = UNIT_STAGES.has(stage) ? "；未锁定集将一并标记为已确认并锁定" : "";
-      if (!window.confirm(`当前版本未通过交叉审核。确认接受此版本并继续？${unitNote}\n\n此操作不会覆盖已确认内容，后续可随时重新生成修订。`)) return;
+      const message = `当前版本未通过交叉审核，确认接受此版本并继续？${unitNote}\n\n审核依据：\n${brief}\n\n⚠️ 人工放行不会修复问题，仅跳过审核门槛；后续可随时重新生成修订。`;
+      if (!window.confirm(message)) return;
       void approveArtifact(artifact?.id, { humanOverride: true });
       return;
     }

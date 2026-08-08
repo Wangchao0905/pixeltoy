@@ -870,6 +870,35 @@ assert.throws(
   (error) => error.code === "ADVISORY_DECISION_REQUIRED",
   "an explicit human-review decision must take priority over an accepted advisory",
 );
+// 人工放行：needs_review 产物默认拒绝（ARTIFACT_NOT_READY），humanOverride=true
+// 时跳过审核闸、强制锁定未锁定集并确认，打破"修订不收敛无出口"死循环。
+stateStore.set("human-override-e2e", {
+  projectId: "human-override-e2e",
+  stage: "arc",
+  artifacts: [
+    { id: "a_brief", type: "pixeltale_brief", stage: "brief", version: 1, status: "ready", content: {} },
+    { id: "a_title", type: "pixeltale_title", stage: "title", version: 1, status: "ready", content: {} },
+    { id: "a_proposal", type: "pixeltale_proposal", stage: "proposal", version: 1, status: "ready", content: {} },
+    { id: "a_characters", type: "pixeltale_characters", stage: "characters", version: 1, status: "ready", content: {} },
+    { id: "artifact_hr", type: "pixeltale_arc", stage: "arc", version: 1, status: "needs_review", reviewId: "review_hr", content: { units: [{ number: 1, title_zh: "第一集", plot_zh: "剧情推进", hook_zh: "集尾钩子" }, { number: 2, title_zh: "第二集", plot_zh: "剧情推进", hook_zh: "集尾钩子" }], arc_summary_zh: "整体推进" } },
+    { id: "review_hr", type: "pixeltale_stage_review", stage: "arc", version: 1, status: "failed", content: { pass: false, score: 42 } },
+  ],
+  approvedArtifactIds: ["a_brief", "a_title", "a_proposal", "a_characters"],
+  input: { idea: "测试", episodeCount: 2 },
+  unitLocks: { arc: {} },
+});
+const humanParams = { pixelTaleRoot: "human-override-e2e", projectId: "human-override-e2e" };
+assert.throws(
+  () => runAgent.approve({ ...humanParams, artifactId: "artifact_hr" }),
+  (error) => error.code === "ARTIFACT_NOT_READY",
+  "needs_review without humanOverride must still be rejected",
+);
+const humanOverrideResult = runAgent.approve({ ...humanParams, artifactId: "artifact_hr", humanOverride: true });
+const humanArtifact = humanOverrideResult.state.artifacts.find((item) => item.id === "artifact_hr");
+assert.equal(humanArtifact.status, "approved", "human override must approve the needs_review artifact");
+assert.ok(humanArtifact.humanOverride, "human override must record the override marker");
+assert.equal(Object.keys(humanOverrideResult.state.unitLocks.arc).length, 2, "human override must force-lock the unlocked units");
+assert.equal(humanOverrideResult.state.stage, "scenes", "approving arc advances to the next stage");
 const runParams = { pixelTaleRoot: "revision-e2e", projectId: "revision-e2e", project: { id: "revision-e2e", title: "Revision E2E", episode: "DRAFT" }, stage: "brief", input: { idea: "主角为救家人闯入禁区" } };
 const phaseEvents = [];
 phaseEvents.length = 0;

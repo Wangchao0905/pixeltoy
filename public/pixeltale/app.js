@@ -105,6 +105,7 @@ const modelMeta = {
 
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];
 const productionStageTotal = stageOrder.length - 1;
+const UNIT_STAGES = new Set(["arc", "scenes"]);
 
 function productionStepNumber(stage = workflowStage()) {
   return Math.min(productionStageTotal, Math.max(1, stageIndex(stage) + 1));
@@ -882,7 +883,10 @@ function renderAgentTaskAction(action) {
     return `<button id="${id}" class="stage-primary agent-task-primary${guidedClass}" data-flow-action="run" data-run-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
   if (action.kind === "auto-revise") {
-    return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+    const primary = `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+    // 修订反复不收敛时，允许人工放行（接受当前版本继续），打破"反复点击确认"死循环。
+    const override = `<button class="stage-secondary agent-task-secondary" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>接受当前版本并继续（人工放行）</button>`;
+    return `<div style="display:flex;gap:8px;flex-wrap:wrap">${primary}${override}</div>`;
   }
   if (action.kind === "review-advisories") {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="review-advisories" data-review-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
@@ -1945,7 +1949,7 @@ async function decideAdvisory(reviewId, advisoryId, status, reason = "", require
   }
 }
 
-async function approveArtifact(artifactId) {
+async function approveArtifact(artifactId, { humanOverride = false } = {}) {
   const requiredStage = workflowStage();
   const artifact = (state.agent?.artifacts || []).find((item) => item.id === artifactId);
   if (!artifact || artifact.stage !== requiredStage) {
@@ -1959,9 +1963,9 @@ async function approveArtifact(artifactId) {
   state.lastError = "";
   renderShellState();
   try {
-    const payload = await request(`/artifacts/${encodeURIComponent(artifactId)}/approve`, { method: "POST", body: JSON.stringify({ selectedTitle: state.input.storyTitle || "" }) });
+    const payload = await request(`/artifacts/${encodeURIComponent(artifactId)}/approve`, { method: "POST", body: JSON.stringify({ selectedTitle: state.input.storyTitle || "", humanOverride, humanOverrideReason: humanOverride ? "用户人工放行：接受当前版本继续" : "" }) });
     updateAgentState(payload.result?.state);
-    showToast("本阶段已确认，进入下一阶段");
+    showToast(humanOverride ? "已人工放行并确认，进入下一阶段" : "本阶段已确认，进入下一阶段");
   } catch (error) {
     state.lastError = userFacingError(error);
     showToast(state.lastError);
@@ -2044,6 +2048,14 @@ function bindAgentTaskAction() {
     }
     if (action === "auto-revise") {
       void runAutoRevision(button.dataset.autoRevise || state.stage);
+      return;
+    }
+    if (action === "human-override") {
+      const stage = button.dataset.humanOverride || state.stage;
+      const artifact = (state.agent?.artifacts || []).find((item) => item.stage === stage);
+      const unitNote = UNIT_STAGES.has(stage) ? "；未锁定集将一并标记为已确认并锁定" : "";
+      if (!window.confirm(`当前版本未通过交叉审核。确认接受此版本并继续？${unitNote}\n\n此操作不会覆盖已确认内容，后续可随时重新生成修订。`)) return;
+      void approveArtifact(artifact?.id, { humanOverride: true });
       return;
     }
     if (action === "review-advisories") {

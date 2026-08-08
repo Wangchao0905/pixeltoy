@@ -26857,7 +26857,7 @@ async function handleApi(req, res, url) {
     if (req.method === "POST" && approveMatch) {
       const artifactId = decodeURIComponent(approveMatch[1]);
       const body = await readBody(req);
-      const result = pixelTaleAgent.approve({ ...params, artifactId, selectedTitle: body.selectedTitle });
+      const result = pixelTaleAgent.approve({ ...params, artifactId, selectedTitle: body.selectedTitle, humanOverride: body.humanOverride === true, humanOverrideReason: body.humanOverrideReason });
       return send(res, 200, { ok: true, result });
     }
 

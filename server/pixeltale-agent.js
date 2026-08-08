@@ -3244,6 +3244,9 @@ function createPixelTaleAgent(options = {}) {
     const state = stateFor(params);
     const artifactId = text(params.artifactId, 200);
     const artifact = state.artifacts.find((item) => item.id === artifactId);
+    // 人工放行：接受当前版本继续，跳过审核闸（仅锁定与推进状态仍执行）。
+    // 用于修订轮数耗尽或 stalled 后，用户确认"接受现状"打破死循环。
+    const humanOverride = params.humanOverride === true;
     if (!artifact || !STAGES.includes(artifact.stage) || !artifact.type.startsWith("pixeltale_")) {
       const error = new Error("PixelTale 产物不存在");
       error.code = "ARTIFACT_NOT_FOUND";
@@ -3259,19 +3262,19 @@ function createPixelTaleAgent(options = {}) {
     }
     const review = artifact.reviewId ? state.artifacts.find((item) => item.id === artifact.reviewId) : null;
     const advisoryGate = reviewAdvisoryGate(review?.content || {});
-    if (advisoryGate.blockingPending.length) {
+    if (!humanOverride && advisoryGate.blockingPending.length) {
       const error = new Error("请先处理高影响审核建议或结构、逻辑分歧");
       error.code = "ADVISORY_DECISION_REQUIRED";
       error.statusCode = 409;
       throw error;
     }
-    if (advisoryGate.accepted.length) {
+    if (!humanOverride && advisoryGate.accepted.length) {
       const error = new Error("已有审核建议被采纳，请先执行定向修订并完成复审");
       error.code = "ADVISORY_REVISION_REQUIRED";
       error.statusCode = 409;
       throw error;
     }
-    if (artifact.status !== "ready") {
+    if (artifact.status !== "ready" && !humanOverride) {
       const error = new Error("只有通过复核的产物才可以确认");
       error.code = "ARTIFACT_NOT_READY";
       error.statusCode = 409;
@@ -3281,11 +3284,23 @@ function createPixelTaleAgent(options = {}) {
       const totalUnits = plannedUnitCount(state.input);
       const locked = lockedUnitNumbers(state, artifact.stage);
       if (!totalUnits || locked.length < totalUnits) {
-        const error = new Error(`${STAGE_LABELS[artifact.stage]}仍有未完成集数：已锁定 ${locked.length} / ${totalUnits || "计划"} 集，只能确认完整全剧`);
-        error.code = "UNIT_BATCH_INCOMPLETE";
-        error.statusCode = 409;
-        throw error;
+        if (!humanOverride) {
+          const error = new Error(`${STAGE_LABELS[artifact.stage]}仍有未完成集数：已锁定 ${locked.length} / ${totalUnits || "计划"} 集，只能确认完整全剧`);
+          error.code = "UNIT_BATCH_INCOMPLETE";
+          error.statusCode = 409;
+          throw error;
+        }
+        // 人工放行：把该产物覆盖且尚未锁定的集强制锁定，解锁后续阶段。
+        const numbers = unitNumbersForContent(artifact.stage, artifact.content)
+          .filter((number) => !lockedUnitNumbers(state, artifact.stage).includes(number));
+        if (numbers.length) {
+          lockStageUnits(state, artifact.stage, artifact.content, numbers, artifact, () => new Date());
+          updateUnitStageProgress(state, artifact.stage, totalUnits, { batchId: `human_override_${artifact.id}`, units: numbers, status: "completed", artifactId: artifact.id, reviewId: artifact.reviewId || "", startedAt: text(artifact.createdAt, 80), completedAt: nowIso(now) });
+        }
       }
+    }
+    if (humanOverride) {
+      artifact.humanOverride = { confirmedAt: nowIso(now), reason: text(params.humanOverrideReason, 500) || "人工放行：接受当前版本继续" };
     }
     if (artifact.stage === "title") {
       const selectedTitle = text(params.selectedTitle, 200);

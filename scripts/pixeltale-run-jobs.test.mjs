@@ -173,6 +173,24 @@ try {
       else process.env[key] = pairingEnv[key];
     }
   }
+  // ── 看门狗：running 且 30 分钟无进展（updatedAt 未刷新）→ 判定挂起失败 ──
+  const stalledRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-stall-"));
+  fs.mkdirSync(path.join(stalledRoot, "run-jobs"), { recursive: true });
+  const stalledJobId = "ptrun_stalled00000000000000000001";
+  fs.writeFileSync(path.join(stalledRoot, "run-jobs", `${stalledJobId}.json`), JSON.stringify({
+    jobId: stalledJobId,
+    status: "running",
+    stage: "arc",
+    createdAt: Date.now() - 45 * 60 * 1000,
+    updatedAt: Date.now() - 45 * 60 * 1000,
+    request: { ...params, project: params.project },
+  }));
+  const stalledResult = pixelTaleRuns.get({ ...params, pixelTaleRoot: stalledRoot }, stalledJobId);
+  assert.equal(stalledResult.status, "failed", "a stalled running job must be judged failed");
+  assert.equal(stalledResult.errorCode, "RUN_JOB_STALLED", "a stalled job must carry the RUN_JOB_STALLED code");
+  const stalledPersisted = JSON.parse(fs.readFileSync(path.join(stalledRoot, "run-jobs", `${stalledJobId}.json`), "utf8"));
+  assert.equal(stalledPersisted.status, "failed", "the stalled verdict must be persisted so polling stays consistent");
+  fs.rmSync(stalledRoot, { recursive: true, force: true });
 } finally {
   pixelTaleApi.setFetch();
   fs.rmSync(root, { recursive: true, force: true });

@@ -2656,6 +2656,8 @@ function pruneDraftJobs() {
 }
 
 const pixelTaleRunJobs = new Map();
+// 看门狗阈值：运行中 job 超过该时长无进展（updatedAt 未刷新）即判定挂起。
+const RUN_JOB_STALL_MS = 30 * 60 * 1000;
 const activePixelTaleRuns = new Map();
 const PIXEL_TALE_JOB_MEMORY_TTL_MS = 30 * 60 * 1_000;
 
@@ -2834,6 +2836,24 @@ function startPixelTaleRun(params) {
 function getPixelTaleRunJob(params, jobId) {
   const job = readPixelTaleRunJob(params.pixelTaleRoot, jobId);
   if (!job) return { status: "failed", error: "运行任务不存在或已过期，请重新生成", errorCode: "JOB_NOT_FOUND" };
+  // 看门狗：running 且超过 30 分钟无任何进展（批次推进会刷新 updatedAt）。
+  // 模型调用一旦在超时未生效的路径挂起，job 会永久 running、前端永久"处理中"；
+  // 这里判定失败，让前端轮询得到 failed 并清理 activeRun，用户可重新提交。
+  if (job.status === "running" && Date.now() - Number(job.updatedAt || job.createdAt) > RUN_JOB_STALL_MS) {
+    Object.assign(job, {
+      status: "failed",
+      error: "任务超过 30 分钟无进展，已判定为挂起；输入与既有产物均已保留，请重新提交当前阶段",
+      errorCode: "RUN_JOB_STALLED",
+      updatedAt: Date.now(),
+      finishedAt: Date.now(),
+    });
+    pixelTaleRunJobs.delete(job.jobId);
+    for (const [key, activeId] of activePixelTaleRuns) {
+      if (activeId === job.jobId) activePixelTaleRuns.delete(key);
+    }
+    persistPixelTaleRunJob(params.pixelTaleRoot, job);
+    return { jobId: job.jobId, status: "failed", error: job.error, errorCode: "RUN_JOB_STALLED" };
+  }
   if (job.status === "running" && !pixelTaleRunJobs.has(job.jobId)) {
     const persistedResult = pixelTaleRunResult(params, job);
     if (persistedResult) {

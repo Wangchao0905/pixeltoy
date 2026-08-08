@@ -196,6 +196,13 @@ class TestPostStart(unittest.TestCase):
         self.assertEqual(resp["state"]["project_id"], "p1")
         self.assertEqual(resp["state"]["stage"], "export")
 
+    def test_start_records_episode_duration_seconds(self):
+        payload = json.dumps({"idea": "测试", "episode_count": 2, "episode_duration_seconds": 90}).encode("utf-8")
+        req = urllib.request.Request(self._base + "/api/start", data=payload, method="POST")
+        with urllib.request.urlopen(req) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+        self.assertEqual(resp["state"]["idea"]["episode_duration_seconds"], 90)
+
     def test_start_engine_error_returns_structured_500(self):
         # run_outline 抛 ValueError（模型输出非法）→ 结构化 500 JSON，而非 500 裸 HTML
         srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FailingOutlineEngine))

@@ -123,8 +123,22 @@ def make_handler(engine_factory):
                     if episode_count < 1:
                         self._json(400, {"ok": False, "error": "invalid episode_count"})
                         return
+                    raw_duration = body.get("episode_duration_seconds")
+                    if raw_duration in (None, "", 0):
+                        episode_duration_seconds = None
+                    else:
+                        try:
+                            episode_duration_seconds = int(raw_duration)
+                        except (TypeError, ValueError):
+                            self._json(400, {"ok": False, "error": "invalid episode_duration_seconds"})
+                            return
+                        if not 30 <= episode_duration_seconds <= 120:
+                            self._json(400, {"ok": False, "error": "invalid episode_duration_seconds"})
+                            return
                     engine = engine_factory()
                     state = engine.run_brief(body.get("idea", ""))
+                    if episode_duration_seconds is not None:
+                        state.idea["episode_duration_seconds"] = episode_duration_seconds
                     engine.run_worldbuilding(state)
                     engine.run_outline(state, episode_count)
                     # 以规范化后的大纲实际集数为界推进，模型输出不足时不再越界

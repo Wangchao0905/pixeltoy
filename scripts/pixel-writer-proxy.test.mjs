@@ -44,6 +44,8 @@ assert.match(ui, /window\.location\.href\s*=\s*result\.file\s*\|\|\s*\("projects
 assert.match(ui, /beat-action/, "UI 必须渲染动作描述（beat.action），不能只有对白（speaker/line 存在时 action 曾被丢弃）");
 assert.match(ui, /api\/project\?project_id=/, "创作历史加载必须用 GET + query（/api/project 是 GET 接口，POST 会 404 导致点击无反应）");
 assert.match(ui, /ideaBox\.raw/, "点击创作历史后必须把故事种子（idea.raw）回填到输入框");
+assert.match(ui, /data-retry/, "待处理/未完成集必须提供'重新生成本集'按钮（data-retry）");
+assert.match(ui, /api\/continue",\{project_id:projectId,episode:retryEp\}/, "重新生成本集必须带 episode 参数调用 /api/continue");
 // Pixel Writer tab 需在刷新后恢复（localStorage 记忆），否则每次刷新都跳回 Story Forge
 const swMode = fs.readFileSync(path.join(root, "public/scriptwriter-mode.js"), "utf8");
 assert.match(swMode, /restoreActiveTab/, "scriptwriter-mode 必须支持刷新后恢复 Pixel Writer tab");

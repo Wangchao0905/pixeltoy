@@ -203,6 +203,20 @@ def make_handler(engine_factory):
                         return
                     engine = engine_factory()
                     episodes = state.artifacts.get("outline", {}).get("episodes", [])
+                    # 重试指定集：回退 current_episode 并清除该集旧产物/审核记录，
+                    # 再走同一生成审核闭环（用于"待处理/需人工处理"集重新生成）。
+                    retry_ep = body.get("episode")
+                    if retry_ep is not None:
+                        try:
+                            retry_ep = int(retry_ep)
+                        except (TypeError, ValueError):
+                            retry_ep = 0
+                        if 1 <= retry_ep <= len(episodes):
+                            state.current_episode = retry_ep
+                            state.artifacts.setdefault("episodes", {}).pop(str(retry_ep), None)
+                            if isinstance(state.evaluation, dict):
+                                state.evaluation.pop(str(retry_ep), None)
+                            state.stage = "episode"
                     if state.current_episode > len(episodes) or state.stage == "export":
                         state.stage = "export"
                         self._json(200, {"ok": True, "done": True, "state": json.loads(state.to_json())})

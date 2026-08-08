@@ -242,6 +242,30 @@ class TestPostStart(unittest.TestCase):
                 if os.path.exists(p):
                     os.remove(p)
 
+    def test_continue_retry_episode(self):
+        # /api/continue 带 episode 参数：回退到指定集重试，清除该集旧产物与审核记录
+        os.makedirs("projects", exist_ok=True)
+        state = ProjectState(project_id="p2b", stage="episode", current_episode=3)
+        state.artifacts["outline"] = {"episodes": [{"index": 1, "hook": "h"}, {"index": 2, "hook": "h"}, {"index": 3, "hook": "h"}]}
+        state.artifacts["episodes"] = {"1": {"scenes": []}, "2": {"scenes": []}, "3": {"scenes": []}}
+        state.evaluation = {"1": {"pass": True}, "2": {"pass": False}, "3": {"pass": True}}
+        with open(os.path.join("projects", "p2b.json"), "w", encoding="utf-8") as f:
+            f.write(state.to_json())
+        try:
+            body = json.dumps({"project_id": "p2b", "episode": 2}).encode("utf-8")
+            req = urllib.request.Request(self._base + "/api/continue", data=body, method="POST")
+            with urllib.request.urlopen(req) as r:
+                self.assertEqual(r.status, 200)
+                resp = json.loads(r.read().decode("utf-8"))
+            self.assertTrue(resp["ok"])
+            self.assertNotIn("2", resp["state"].get("artifacts", {}).get("episodes", {}), "重试集旧产物必须被清除")
+            self.assertNotIn("2", resp["state"].get("evaluation", {}), "重试集旧审核记录必须被清除")
+            self.assertIn("3", resp["state"].get("artifacts", {}).get("episodes", {}), "后续已生成集必须保留")
+        finally:
+            for p in ("projects/p2b.json",):
+                if os.path.exists(p):
+                    os.remove(p)
+
     def test_continue_project_not_found(self):
         body = json.dumps({"project_id": "no_such"}).encode("utf-8")
         req = urllib.request.Request(self._base + "/api/continue", data=body, method="POST")

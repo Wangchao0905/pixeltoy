@@ -9,7 +9,7 @@ const pixeltaleApi = fs.readFileSync(path.join(root, "server/pixeltale-api.js"),
 const pixeltaleAgentSource = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 process.env.PIXELTALE_GPT_API_KEY ||= "sk-test-pixeltale-gpt-000000000000";
 process.env.PIXELTALE_GEMINI_API_KEY ||= "sk-test-pixeltale-gemini-000000000000";
-const { callPixelTaleApiModel, reviewModels, models, MODEL_DEFINITIONS, GROK_FALLBACK_MODEL, GEMINI_FALLBACK_MODEL } = createRequire(import.meta.url)("../server/pixeltale-api.js");
+const { callPixelTaleApiModel, readStreamPayload, reviewModels, models, MODEL_DEFINITIONS, GROK_FALLBACK_MODEL, GEMINI_FALLBACK_MODEL } = createRequire(import.meta.url)("../server/pixeltale-api.js");
 const apiTemperatures = [];
 await callPixelTaleApiModel({ model: "gpt-5.6-terra", system: "test", user: "test", temperature: 0.6, fetchImpl: async (_url, options) => {
   apiTemperatures.push(JSON.parse(options.body).temperature);
@@ -1367,5 +1367,20 @@ assert.throws(
   (error) => error.code === "HANDOFF_INCOMPLETE",
   "handoff must reject dialogue that does not cover every scene",
 );
+
+// 9. Streaming read must time out even when AbortController cannot interrupt
+//    reader.read() — a hung SSE body used to stall authoring for 30+ minutes.
+{
+  const hungReader = {
+    read: () => new Promise(() => { /* 永不返回 */ }),
+    cancel: async () => {},
+  };
+  const hungResponse = { body: { getReader: () => hungReader } };
+  await assert.rejects(
+    () => readStreamPayload(hungResponse, { timeoutMs: 60 }),
+    (error) => error?.code === "STREAM_READ_TIMEOUT",
+    "a hung stream must be forced to time out by wall-clock deadline",
+  );
+}
 
 console.log("pixeltale workflow contract ok");

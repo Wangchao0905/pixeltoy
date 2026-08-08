@@ -236,10 +236,11 @@ function upstreamMessage(statusCode, raw) {
   return detail ? `模型返回 HTTP ${statusCode}：${detail}` : `模型返回 HTTP ${statusCode}`;
 }
 
-async function readStreamPayload(response) {
+async function readStreamPayload(response, { timeoutMs = 240_000 } = {}) {
   if (!response.body) return { content: "", raw: await response.text() };
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  const deadlineMs = Date.now() + Math.max(3_000, timeoutMs);
   let pending = "";
   let raw = "";
   let content = "";
@@ -265,7 +266,37 @@ async function readStreamPayload(response) {
     }
   };
   while (true) {
-    const { done, value } = await reader.read();
+    // 读超时兜底：AbortController 在个别 fetch/流实现下可能不中断 read()，
+    // 用 Promise.race 保证 read() 本身挂起时也能按墙钟截止强制退出——此前
+    // job 曾停在 authoring 30+ 分钟无进展，只能靠 run-job 看门狗收尾。
+    const remainingMs = deadlineMs - Date.now();
+    if (remainingMs <= 0) {
+      try { await reader.cancel(); } catch { /* 尽力释放流 */ }
+      const error = new Error(`流式读取超时（${Math.round(timeoutMs / 1000)} 秒）`);
+      error.code = "STREAM_READ_TIMEOUT";
+      error.retryable = true;
+      throw error;
+    }
+    let timer;
+    let chunk;
+    try {
+      chunk = await Promise.race([
+        reader.read(),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            try { reader.cancel().catch(() => {}); } catch { /* 尽力释放流 */ }
+            const error = new Error(`流式读取超时（${Math.round(timeoutMs / 1000)} 秒）`);
+            error.code = "STREAM_READ_TIMEOUT";
+            error.retryable = true;
+            reject(error);
+          }, remainingMs);
+        }),
+      ]);
+    } finally {
+      // race 胜出后必须清理计时器，否则 pending timer 会拖住进程不退出。
+      if (timer) clearTimeout(timer);
+    }
+    const { done, value } = chunk;
     if (done) break;
     pending += decoder.decode(value, { stream: true });
     const lines = pending.split(/\r?\n/);
@@ -319,7 +350,7 @@ async function callPixelTaleApiModel({ model, system, user, purpose = "pixeltale
       body: JSON.stringify(request),
       signal: controller.signal,
     });
-    const payload = await readStreamPayload(response);
+    const payload = await readStreamPayload(response, { timeoutMs });
     if (!response.ok) {
       const error = new Error(upstreamMessage(response.status, payload.raw));
       error.code = "HTTP_ERROR";
@@ -384,6 +415,7 @@ module.exports = {
   RETIRED_SEAT_MODELS,
   MODEL_DEFINITIONS,
   callPixelTaleApiModel,
+  readStreamPayload,
   createPixelTaleApiRouter,
   modelConfig,
   models,

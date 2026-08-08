@@ -25,7 +25,7 @@ const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.h
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, createHandoffPayload } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, createHandoffPayload, confirmArtifact } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const ruleFindings = (result, code) => result.violations.filter((item) => item.code === code);
 assert.ok(ruleFindings(runStageRules({ stage: "brief", artifact: {}, approvedContext: {} }), "SCHEMA_INCOMPLETE").length, "rules must detect missing stage schema fields");
@@ -994,7 +994,10 @@ const initialSceneRun = await runAgent.run(sceneParams);
 assert.equal(initialSceneRun.status, "completed", "scene review failures must recover inside the same user-triggered run");
 assert.equal(initialSceneRun.artifacts[0].version, 2, "automatic scene recovery must create a repaired version in the same run");
 
-runAgent.approve({ ...runParams, artifactId: revisionRun.artifacts[0].id });
+// 自动放行：修订通过且意见一致≥90% → brief 已自动确认并推进（无需手动 approve）
+const autoApprovedArtifact = stateStore.get("revision-e2e").artifacts.find((item) => item.id === revisionRun.artifacts[0].id);
+assert.equal(autoApprovedArtifact.status, "approved", "a passing revision with ≥90% agreement must auto-approve");
+assert.equal(autoApprovedArtifact.autoApproved, true, "auto-approved artifacts must carry the marker");
 const staleState = stateStore.get("revision-e2e");
 staleState.stage = "brief";
 stateStore.set("revision-e2e", staleState);
@@ -1398,6 +1401,29 @@ assert.throws(
     (error) => error?.code === "STREAM_READ_TIMEOUT",
     "a hung stream must be forced to time out by wall-clock deadline",
   );
+}
+
+// 10. 自动放行：多数通过 + 意见一致≥90% → confirmArtifact(auto) 自动确认并推进。
+{
+  const autoConfirmState = {
+    artifacts: [
+      { id: "a_brief", type: "pixeltale_brief", stage: "brief", version: 1, status: "approved", content: {} },
+      { id: "a_proposal", type: "pixeltale_proposal", stage: "proposal", version: 1, status: "approved", content: {} },
+      { id: "a_auto", type: "pixeltale_characters", stage: "characters", version: 1, status: "ready", content: {} },
+      { id: "a_dialogue", type: "pixeltale_dialogue", stage: "dialogue", version: 1, status: "approved", content: {} },
+    ],
+    approvedArtifactIds: ["a_brief", "a_proposal", "a_dialogue"],
+    stage: "characters",
+  };
+  const autoArtifact = autoConfirmState.artifacts.find((item) => item.id === "a_auto");
+  confirmArtifact(autoConfirmState, autoArtifact, () => new Date("2026-08-08T00:00:00Z"), { auto: true });
+  assert.equal(autoArtifact.status, "approved", "auto-confirm must approve the artifact");
+  assert.equal(autoArtifact.autoApproved, true, "auto-confirm must mark autoApproved for traceability");
+  assert.equal(autoConfirmState.approvedArtifactIds.includes("a_auto"), true, "auto-confirm must register the artifact as approved");
+  // 自动放行会 supersede 下游已确认内容（dialogue 在 characters 之后 → 失效）；上游 proposal 保留
+  assert.equal(autoConfirmState.artifacts.find((item) => item.id === "a_dialogue").status, "needs_review", "auto-confirm must invalidate downstream approvals");
+  assert.equal(autoConfirmState.artifacts.find((item) => item.id === "a_proposal").status, "approved", "upstream approvals must survive");
+  assert.equal(autoConfirmState.stage, "arc", "auto-confirm must advance to the next stage");
 }
 
 console.log("pixeltale workflow contract ok");

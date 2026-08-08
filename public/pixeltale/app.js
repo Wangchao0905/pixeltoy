@@ -1883,16 +1883,24 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
     }
     persistActiveRun(null);
     updateAgentState(payload.result?.state);
-    // The run response may contain the last approved stage; keep the stage the user just ran visible.
-    state.stage = stage;
-    state.lastError = payload.result?.status === "failed" ? (payload.result.errors || []).map((item) => item.message).join("；") : "";
-    if (state.lastError) throw new Error(state.lastError);
-    const revision = payload.result?.revision;
-    showToast(stage === "title" && payload.result?.status === "completed"
-      ? "已由指定模型生成 4 个英文剧名，可选择或重新生成"
-      : payload.result?.status === "needs_review"
-      ? (revision ? "交叉修订已执行，但仍有问题未通过逐项关闭" : "已生成，但三模型审核存在共识问题或意见冲突")
-      : (revision ? "交叉修订已逐项复审关闭，等待确认" : "已生成并完成三模型交叉审核，等待确认"));
+    const resultStage = payload.result?.state?.stage;
+    const autoApproved = payload.result?.status === "completed" && stage !== "title" && resultStage && resultStage !== stage;
+    if (autoApproved) {
+      // 自动放行：多数通过 + 意见一致≥90% → 后端已推进阶段，保留推进并提示
+      state.stage = resultStage;
+      showToast("审核通过（2 席共识≥90%），已自动进入下一阶段");
+    } else {
+      // The run response may contain the last approved stage; keep the stage the user just ran visible.
+      state.stage = stage;
+      state.lastError = payload.result?.status === "failed" ? (payload.result.errors || []).map((item) => item.message).join("；") : "";
+      if (state.lastError) throw new Error(state.lastError);
+      const revision = payload.result?.revision;
+      showToast(stage === "title" && payload.result?.status === "completed"
+        ? "已由指定模型生成 4 个英文剧名，可选择或重新生成"
+        : payload.result?.status === "needs_review"
+        ? (revision ? "交叉修订已执行，但仍有问题未通过逐项关闭" : "已生成，但三模型审核存在共识问题或意见冲突")
+        : (revision ? "交叉修订已逐项复审关闭，等待确认" : "已生成并完成三模型交叉审核，等待确认"));
+    }
     return { result: payload.result };
   } catch (error) {
     if (error?.terminal) {

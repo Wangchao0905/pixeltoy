@@ -57,6 +57,8 @@ const REVIEW_QUORUM = 2;
 const REVIEW_COMPLETION_REQUIRED = 3;
 // 共识放行阈值：3 席中至少 2 席通过（多数制）即可放行；分歧席记录不阻断。
 const REVIEW_PASS_QUORUM = 2;
+// 自动放行：多数通过 + 意见一致 ≥ 90% 时，无需人工确认，自动进入下一步。
+const AUTO_APPROVE_AGREEMENT = 90;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
 const EPISODE_BATCH_SIZE = 5;
 const UNIT_STAGES = new Set(["arc", "scenes"]);
@@ -2651,6 +2653,27 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
   };
 }
 
+function confirmArtifact(state, artifact, now, { auto = false } = {}) {
+  artifact.status = "approved";
+  artifact.updatedAt = nowIso(now);
+  if (auto) artifact.autoApproved = true;
+  if (!state.approvedArtifactIds.includes(artifact.id)) state.approvedArtifactIds.push(artifact.id);
+  // Approving a rerun supersedes every downstream approval: downstream
+  // artifacts were built against the previous upstream context and would
+  // otherwise silently produce an inconsistent handoff.
+  const stageIndex = STAGES.indexOf(artifact.stage);
+  state.approvedArtifactIds = state.approvedArtifactIds.filter((id) => {
+    const item = state.artifacts.find((candidate) => candidate.id === id);
+    return !item || STAGES.indexOf(item.stage) <= stageIndex;
+  });
+  state.artifacts.forEach((item) => {
+    if (item.stage !== artifact.stage && STAGES.indexOf(item.stage) > stageIndex && item.status === "approved") {
+      item.status = "needs_review";
+    }
+  });
+  state.stage = nextStage(artifact.stage);
+}
+
 function createPixelTaleAgent(options = {}) {
   const modelRouter = options.modelRouter;
   const now = options.now || (() => new Date());
@@ -2963,6 +2986,11 @@ function createPixelTaleAgent(options = {}) {
     }
     state.artifacts.push(finalReviewArtifact);
     if (explicitUnits.length) state.input.revisionUnitNumbers = "";
+    // 自动放行：多数通过 + 意见一致≥90% → 自动确认并进入下一步（无需人工 approve）。
+    // 仅在全部目标批通过（finalReview.pass）时触发；分歧席已记录在 disagreements。
+    if (lastPrimary && finalReview.pass && Number(finalReview.agreement) >= AUTO_APPROVE_AGREEMENT) {
+      confirmArtifact(state, lastPrimary, now, { auto: true });
+    }
     state.updatedAt = nowIso(now);
     persistState(params, state);
     if (autoRepairEligible) {
@@ -3048,10 +3076,16 @@ function createPixelTaleAgent(options = {}) {
       }
       const approvedVersion = approvedForStage(state, stage);
       if (approvedVersion && !revisionPlan && params.override !== true) {
-        const error = new Error(`“${STAGE_LABELS[stage] || stage}”已有已确认版本 v${approvedVersion.version || 0}，重新生成会使下游已确认内容失效；如确认继续请重试（override）`);
-        error.code = "STAGE_RERUN_REQUIRES_OVERRIDE";
-        error.statusCode = 409;
-        throw error;
+        // 已确认阶段重跑需显式 override；但 unit 阶段若全部集已锁定，
+        // 重复提交应为无害 noOp（全锁定时不调模型），而不是 409 拦截。
+        const allUnitsLocked = UNIT_STAGES.has(stage)
+          && lockedUnitNumbers(state, stage).length >= (plannedUnitCount(state.input) || 0);
+        if (!allUnitsLocked) {
+          const error = new Error(`“${STAGE_LABELS[stage] || stage}”已有已确认版本 v${approvedVersion.version || 0}，重新生成会使下游已确认内容失效；如确认继续请重试（override）`);
+          error.code = "STAGE_RERUN_REQUIRES_OVERRIDE";
+          error.statusCode = 409;
+          throw error;
+        }
       }
       if (!text(params.input?.idea || params.input?.coreConflict || (stage !== "brief" ? "context" : ""), 6000)) {
         const error = new Error("创作规格需要一个可识别的核心冲突");
@@ -3177,6 +3211,10 @@ function createPixelTaleAgent(options = {}) {
       primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
       primaryArtifact.reviewId = reviewArtifact.id;
       state.artifacts.push(primaryArtifact, reviewArtifact);
+      // 自动放行：多数通过 + 意见一致≥90% → 自动确认并进入下一步（title 由人工选题，不放行）
+      if (consensus.pass && Number(consensus.agreement) >= AUTO_APPROVE_AGREEMENT && stage !== "title") {
+        confirmArtifact(state, primaryArtifact, now, { auto: true });
+      }
       const runStatus = consensus.pass ? "completed" : "needs_review";
       const record = { runId, stage, mode, route: { ...route, crossReview: reviewRoutes.map((item) => item.model || item) }, status: runStatus, primaryModel: `${primary.provider}:${primary.model}`, reviewModels: reviews.map((item) => item.result ? `${item.result.provider}:${item.result.model}` : `${providerForRoute(item.model)}:${item.model}`), creativeCouncil: primary.creativeCouncil || null, consensusIndex: consensus.consensusIndex, agreement: consensus.agreement, reviewCompletion: consensus.reviewCompletion, revision: revisionPlan ? { sourceArtifactId: revisionBase?.id || "", contractId: revisionContract?.id || "", itemCount: revisionContract?.items.length || 0, plan: text(revisionPlan, 14000), allResolved: consensus.revision?.closure?.allResolved === true } : null, artifactIds: [primaryArtifact.id, reviewArtifact.id], errors, retryCount, startedAt, completedAt: nowIso(now) };
       state.runs.push(record);
@@ -3260,7 +3298,7 @@ function createPixelTaleAgent(options = {}) {
     return { review: publicArtifact(review), state: publicState(state, modelRouter) };
   }
 
-  function approve(params = {}) {
+function approve(params = {}) {
     const state = stateFor(params);
     const artifactId = text(params.artifactId, 200);
     const artifact = state.artifacts.find((item) => item.id === artifactId);
@@ -3341,23 +3379,7 @@ function createPixelTaleAgent(options = {}) {
       }
       state.input = { ...asObject(state.input), storyTitle: selectedTitle };
     }
-    artifact.status = "approved";
-    artifact.updatedAt = nowIso(now);
-    if (!state.approvedArtifactIds.includes(artifact.id)) state.approvedArtifactIds.push(artifact.id);
-    // Approving a rerun supersedes every downstream approval: downstream
-    // artifacts were built against the previous upstream context and would
-    // otherwise silently produce an inconsistent handoff.
-    const stageIndex = STAGES.indexOf(artifact.stage);
-    state.approvedArtifactIds = state.approvedArtifactIds.filter((id) => {
-      const item = state.artifacts.find((candidate) => candidate.id === id);
-      return !item || STAGES.indexOf(item.stage) <= stageIndex;
-    });
-    state.artifacts.forEach((item) => {
-      if (item.stage !== artifact.stage && STAGES.indexOf(item.stage) > stageIndex && item.status === "approved") {
-        item.status = "needs_review";
-      }
-    });
-    state.stage = nextStage(artifact.stage);
+    confirmArtifact(state, artifact, now);
     state.updatedAt = nowIso(now);
     persistState(params, state);
     return { artifact: publicArtifact(artifact), state: publicState(state, modelRouter) };
@@ -3490,6 +3512,7 @@ function createPixelTaleAgent(options = {}) {
 module.exports = {
   createPixelTaleAgent,
   createHandoffPayload,
+  confirmArtifact,
   callProvider,
   callStageCouncil,
   computeMergeAudit,

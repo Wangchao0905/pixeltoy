@@ -40,7 +40,7 @@ assert.equal(__test.pixelWriterProxyTarget("/api/start"), "/api/start", "非 /pi
 const ui = fs.readFileSync(path.join(root, "scriptwriter-agent/ui/index.html"), "utf8");
 assert.match(ui, /post\("api\/start"/, "UI 必须用相对路径调用 api/start（iframe 走 /pixel-writer/ 代理）");
 assert.match(ui, /post\("api\/export"/, "UI 必须用相对路径调用 api/export");
-assert.match(ui, /location\.href = "projects\/" \+ projectId \+ "\.docx"/, "UI 下载必须用相对路径 projects/<id>.docx");
+assert.match(ui, /window\.location\.href\s*=\s*result\.file\s*\|\|\s*\("projects\/"\s*\+\s*encodeURIComponent\(projectId\)\s*\+\s*"\.docx"\)/, "UI 下载必须用相对路径 projects/<id>.docx（优先服务端返回的 file）");
 assert.doesNotMatch(ui, /fetch\("\/api\//, "UI 不得用绝对路径 /api/（会绕过代理打到主站 API）");
 
 console.log("pixel-writer proxy + mount tests passed");

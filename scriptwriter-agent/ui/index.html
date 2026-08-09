@@ -312,6 +312,34 @@ dialog#command-palette{border-color:var(--taste-line);background:#191c1a;color:v
 @media(max-width:720px){body{overflow:auto}.app{display:block;min-height:100dvh;height:auto}.topbar{position:sticky;top:0;height:60px;padding:0 14px}.brand small,.service,.back,#command-trigger{display:none}.rail{display:none}.desk{display:block}.workspace{padding:0 14px 28px;overflow:visible}.workspace-tabs{height:62px;overflow:auto}.stage-head{padding:42px 0 28px}.stage-head h2{font-size:clamp(2.5rem,12vw,4rem)}.stage-head::after{right:2%;bottom:22px;width:110px;height:110px}.composer-bottom{flex-direction:column;align-items:stretch}.composer-bottom .button{width:100%}.struct-rail{grid-template-columns:1fr}.next-actions{bottom:8px;overflow:auto}.next-actions .button{flex:0 0 auto}.ep-chips{flex-wrap:nowrap;overflow-x:auto}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 </style>
+<style id="pixel-writer-functional-first">
+/* 首屏优先服务输入与启动，不让装饰抢占创作空间。 */
+.stage-head{min-height:0;padding:28px 0 20px;align-items:center}
+.stage-head::after{display:none}
+.stage-head h2{max-width:760px;font-size:clamp(2rem,3.6vw,3.55rem);letter-spacing:-.055em}
+.stage-head p{max-width:48ch;margin-top:10px;font-size:13px;line-height:1.55}
+.stage-head .eyebrow{margin-bottom:8px;letter-spacing:.14em}
+.project-state{align-self:flex-start;margin-top:5px;white-space:nowrap}
+.composer{margin-top:0}
+.composer-summary{padding:16px 20px}
+.composer-summary strong{font-size:15px}
+.composer-body{padding:0 20px 20px}
+#idea,#storyBox{min-height:110px;margin-top:16px;padding:15px;font-size:15px;line-height:1.65}
+.composer-bottom{margin-top:12px}
+.run-config{gap:7px;margin-top:0}
+.run-config label{padding:6px 8px}
+.hint{margin:10px 0 0;max-width:72ch}
+.workspace-tabs{height:64px}
+@media(max-width:720px){
+  .stage-head{padding:26px 0 18px;display:block}
+  .stage-head h2{font-size:clamp(2.15rem,10vw,3.3rem)}
+  .stage-head p{max-width:34ch;margin-top:9px}
+  .project-state{display:inline-flex;margin-top:14px}
+  .composer-summary{padding:14px 16px}
+  .composer-body{padding:0 16px 18px}
+  #idea,#storyBox{min-height:128px}
+}
+</style>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
 </head>
 <body>
@@ -322,7 +350,7 @@ dialog#command-palette{border-color:var(--taste-line);background:#191c1a;color:v
   <div class="desk">
     
     <main class="workspace" data-view="script"><nav id="workspace-tabs" class="workspace-tabs" aria-label="创作内容视图"><button class="view-tab" data-view="brief" type="button">简报</button><button class="view-tab" data-view="outline" type="button">大纲</button><button class="view-tab is-active" data-view="script" type="button">剧本</button><button class="view-tab" data-view="review" type="button">审阅</button><button id="toggle-context" class="context-toggle" type="button" aria-pressed="false">收起上下文</button></nav><div class="stage">
-      <header class="stage-head"><div><span class="eyebrow">NEW STORY</span><h2>写下一个能开场的故事</h2><p>只需说明主角、目标与阻碍。Pixel Writer 会建立设定、拆分集次，并生成可继续修改的短剧剧本。</p></div><span id="project-state" class="project-state">等待故事种子</span></header>
+      <header class="stage-head"><div><span class="eyebrow">开始创作</span><h2>先写下故事种子</h2><p>写清主角、目标和阻碍，其他结构交给 Pixel Writer。</p></div><span id="project-state" class="project-state">等待故事种子</span></header>
       <details class="composer" id="composer-panel" open><summary class="composer-summary"><span><span class="eyebrow">STORY SEED</span><strong>故事种子与创作设置</strong></span><small>点击展开或收起</small></summary><div class="composer-body"><div class="composer-top"><div><span class="eyebrow">STORY SEED</span><h3 id="composer-title">故事种子</h3></div><small>至少写清一位人物与一个冲突</small></div><textarea id="idea" class="idea" rows="5" placeholder="例如：被逐出家门的女儿伪装成保姆回到豪门，只为找到母亲留下的遗嘱，却发现她必须先救下最讨厌的继兄。"></textarea><div class="composer-bottom"><div class="run-config"><label class="episode-field">计划集数 <input id="episodes" type="number" min="1" max="500" value="3" inputmode="numeric"> <span>集</span></label><label class="episode-field">单集时长 <select id="duration" aria-label="单集时长（秒）"><option value="30">30 秒</option><option value="45">45 秒</option><option value="60" selected>60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option></select></label><label class="episode-field">对白语言 <select id="dialogue-lang" aria-label="对白语言"><option value="zh" selected>中文</option><option value="en">英文（本土化）</option></select></label></div><button id="start" class="button" type="button">开始创作 <span>生成完整写作链路</span></button></div><p class="hint">集数和单集时长都会写入创作约束，影响大纲事件量、场景节拍与对白量；选择英文时，所有对白将按英语母语者的语境与表达方式本土化设计。</p><div id="progress" class="progress" role="status"><i class="spinner"></i><span>创作中，正在生成完整短剧结构…</span></div><div id="error" class="error hidden" role="alert"></div></div></details>
       <section id="empty-work" class="empty-work"><div class="empty-copy"><span class="eyebrow">WHAT HAPPENS NEXT</span><h3>把灵感变成可以审阅的剧本</h3><p>创作完成后，分集钩子、场景动作、人物对白与审核记录会在这里按顺序呈现。每一集都可单独重新生成，审核不过自动修订，直到可直接导出 docx。</p></div></section>
       <section id="output" class="output" aria-live="polite"></section>

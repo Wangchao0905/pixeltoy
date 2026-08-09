@@ -48,6 +48,12 @@ const MODEL_DEFINITIONS = Object.freeze([
     baseNames: ["PIXELTALE_GPT_BASE_URL", "STORYBOARD_BASE_URL", "OPENAI_BASE_URL"],
   },
   {
+    id: "gpt-5.5",
+    provider: "chatgpt",
+    keyNames: ["PIXELTALE_GPT_API_KEY", "STORYBOARD_API_KEY", "OPENAI_API_KEY"],
+    baseNames: ["PIXELTALE_GPT_BASE_URL", "STORYBOARD_BASE_URL", "OPENAI_BASE_URL"],
+  },
+  {
     id: "claude-opus-5",
     provider: "claude",
     keyNames: ["PIXELTALE_CLAUDE_API_KEY", "ASSET_ANALYZER_API_KEY"],

@@ -19,6 +19,14 @@
 - 每次改动后 `npm test` 101 组全绿；PixTale 缓存戳两个 pixeltale.html 各 2 处同步 bump
 
 ---
+## 双专家融合补强（2026-08-09 决策，已落入下方 Task）
+
+从 Backend Architect + Prompt Engineer 对比（docs/superpowers/specs/2026-08-09-pixeltale-arch-compare.md）吸收 4 项独有补强：
+- **P1 if-match 乐观锁**：`unit/update` 请求带 `if-match: <version>`，版本不匹配 → 409（Task 6）
+- **P2 契约版本化**：审核契约升级 `REVIEW_CONTRACT_V2`，issues 锚点带 few-shot 正反例（Task 4）
+- **P3 版本快照回滚**：unitLocks 保留前 5 版内容快照（环形缓冲），止损回滚 = 指针回退（Task 5）
+- **P4 claim 互斥**：修复/编辑任务复用 `_claim_project` 单写者锁（Task 5/6）
+
 ## 文件结构
 
 - `server/pixeltale-agent.js` — 锁状态机函数、审核锚点契约、修订 diff 校验、单 unit 审核

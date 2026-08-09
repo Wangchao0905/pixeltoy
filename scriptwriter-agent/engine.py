@@ -233,6 +233,21 @@ class PixelWriterEngine:
                            for k in ("human_tone", "hook", "plot", "dialogue", "continuity")}
         return a
 
+    def _duration_check(self, episode, duration_seconds):
+        """零模型时长估算：对白≈4字/秒、动作节拍≈3秒、场景切换≈2秒。
+        返回 (ok, est_seconds)：目标 60%-140% 区间内为合规。"""
+        if not duration_seconds:
+            return True, None
+        est = 0.0
+        for scene in episode.get("scenes", []) or []:
+            est += 2.0
+            for beat in scene.get("beats", []) or []:
+                est += max(1.0, len(beat.get("line", "") or "") / 4.0)
+                if beat.get("action"):
+                    est += 3.0
+        lo, hi = duration_seconds * 0.6, duration_seconds * 1.4
+        return lo <= est <= hi, est
+
     def _review_once(self, client, state, episode):
         """单个审核器的完整审核（prompt + 解析重试 + 代码级强制门）。
 
@@ -306,6 +321,19 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
                     low = strict
                 if low:
                     verdict["pass"] = False
+        # 时长硬门槛（代码级）：估算时长超出目标 60%-140% 区间 → 强制不通过。
+        target = state.idea.get("episode_duration_seconds") if isinstance(state.idea, dict) else None
+        ok_dur, est = self._duration_check(episode, target)
+        if not ok_dur:
+            verdict["pass"] = False
+            issues = verdict.setdefault("issues", [])
+            issue = {
+                "severity": "high", "mode": 0, "quote": "",
+                "fix": (f"估算时长约 {int(est)} 秒，超出目标 {target} 秒的 60%-140% 区间。"
+                        f"需精简（删减节拍/缩短对白）或补足内容，使单集时长贴合目标。"),
+            }
+            if issue not in issues:
+                issues.append(issue)
         return verdict
 
     def revise_episode(self, state, episode, issues, round_no=0):
@@ -599,7 +627,18 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
             else ""
         )
         duration_note = (f"本集目标时长约 {state.idea['episode_duration_seconds']} 秒。"
-                         if state.idea.get("episode_duration_seconds") else "") + self._structure_template(state.idea.get("episode_duration_seconds"))
+                         if state.idea.get("episode_duration_seconds") else "")
+        if state.idea.get("episode_duration_seconds"):
+            target = state.idea["episode_duration_seconds"]
+            # 节拍预算：对白≈4字/秒、动作节拍≈3秒/个、场景切换≈2秒/个
+            beat_budget = max(4, int((target * 0.9) / 5))
+            line_budget = int(target * 4 * 0.75)
+            duration_note += (
+                f"时长预算（必须遵守，代码级审核）：按估算模型（对白 4 字/秒、动作节拍 3 秒、场景切换 2 秒），"
+                f"全集估算时长必须落在 {int(target*0.6)}-{int(target*1.4)} 秒区间。"
+                f"参考预算：约 {beat_budget} 个节拍、对白总量约 {line_budget} 字——超出上限会被审核直接否决，需精简；不足则需补足内容。"
+            )
+        duration_note += self._structure_template(state.idea.get("episode_duration_seconds"))
         dialogue_lang = state.idea.get("dialogue_language") or "zh"
         if dialogue_lang == "en":
             dialogue_rule = (

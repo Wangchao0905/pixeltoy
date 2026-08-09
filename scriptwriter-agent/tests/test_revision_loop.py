@@ -108,7 +108,11 @@ class TestRevisionLoop(unittest.TestCase):
         # 初稿非 JSON 自动重试（最多 3 次）：第 1 次非法、第 2 次合法 → 应成功生成
         writer = FakeWriter([
             "这不是 JSON，模型跑偏了……",
-            json.dumps({"scenes": [{"location": "月亮花店门口", "beats": [{"speaker": "Luna", "line": "肚子疼", "action": "她捂着肚子。"}]}]}, ensure_ascii=False),
+            json.dumps({"scenes": [{"location": "月亮花店门口", "beats": [
+                {"speaker": "Luna", "line": "我肚子突然疼得厉害，今天这些婚礼要用的花怕是送不完了，这可怎么办才好", "action": "她捂着肚子蹲下"},
+                {"speaker": "店主", "line": "你先去后面歇着，这批订单我替你送，别硬撑，身体要紧", "action": "他扶她到柜台边坐下"},
+                {"speaker": "Luna", "line": "可那批白玫瑰是今晚婚礼点名要的，耽误了时辰可就砸了招牌", "action": "她咬着牙站起来"},
+                {"speaker": "店主", "line": "你放心，我骑车快，来回四十分钟就够，你在店里看着就好", "action": "他拎起花篮推门出去"}]}]}, ensure_ascii=False),
         ])
         engine = PixelWriterEngine(writer, ConstLLM(ACCEPT), state_dir="/tmp/pw-test")
         state = ProjectState(project_id="t-retry", stage="episode")
@@ -191,7 +195,11 @@ class TestRevisionLoop(unittest.TestCase):
         state.idea["episode_duration_seconds"] = 60
         state.idea["dialogue_language"] = "zh"
         state.artifacts["worldbuilding"] = {"characters": [{"name": "小美"}], "world_rules": []}
-        episode = {"hook": "开场冲突", "cliffhanger": "悬念", "scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去", "action": "她抬头"}]}]}
+        episode = {"hook": "开场冲突", "cliffhanger": "悬念", "scenes": [{"location": "豪门门口", "beats": [
+            {"speaker": "小美", "line": "我要进去，母亲的药不能断，再晚就来不及了，求您放行", "action": "她抬头望向门内"},
+            {"speaker": "管家", "line": "小姐，老爷吩咐过今晚不见任何客人，您还是改日再来吧", "action": "他伸手拦住门口"},
+            {"speaker": "小美", "line": "那就麻烦您通报一声，就说林家女儿来还当年欠下的债", "action": "她从怀里掏出一枚玉佩"},
+            {"speaker": "管家", "line": "这玉佩……您稍等，我这就去请老爷出来见您一面", "action": "他盯着玉佩脸色一变，转身快步进去"}]}]}
         v = engine.review_episode(state, episode)
         self.assertIsNotNone(v, "重试后应返回合法审核结果")
         self.assertTrue(v["pass"])

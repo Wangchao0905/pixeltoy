@@ -31,7 +31,7 @@ FAIL_B = ('{"pass":false,"score":45,"dimensions":{"human_tone":50,"hook":35,"plo
 
 def make_state():
     s = ProjectState(project_id="d1", stage="episode", current_episode=1)
-    s.idea = {"dialogue_language": "zh", "episode_duration_seconds": 90}
+    s.idea = {"dialogue_language": "zh"}  # 不设时长：共识/容错测试关注审核合并逻辑
     s.artifacts["worldbuilding"] = {"characters": {"林晚": {"role": "主角"}}}
     s.artifacts["episodes"] = {"1": {"scenes": [{"location": "天台", "beats": [{"speaker": "林晚", "line": "总之我们走吧"}]}]}}
     return s
@@ -136,6 +136,57 @@ class TestReviewFaultTolerance(unittest.TestCase):
         eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
         verdict = eng.review_episode(make_state(), {"scenes": []})
         self.assertIsNone(verdict, "两席全故障返回 None，由上游按'审核失败'处理而非抛异常")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+PASS_LONG_DIALOGUE = ('{"pass":true,"score":85,"dimensions":{"human_tone":85,"hook":85,"plot":80,"dialogue":82,"continuity":88},'
+                      '"issues":[]}')
+
+
+class TestDurationHardGate(unittest.TestCase):
+    def _state(self, duration=90):
+        s = make_state()
+        s.idea["episode_duration_seconds"] = duration
+        return s
+
+    def test_oversize_episode_forced_fail(self):
+        """90 秒目标，但对白巨长（估算远超 126 秒）→ 代码级强制不通过并注入 high issue。"""
+        writer = SeqLLM(['{"scenes":[]}'])
+        reviewer_a = SeqLLM([PASS_LONG_DIALOGUE])
+        eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects")
+        episode = {"scenes": [
+            {"location": "A", "beats": [{"speaker": "林晚", "line": "床前明月光" * 200},
+                                        {"speaker": "林晚", "line": "疑是地上霜" * 200}]}
+        ]}
+        verdict = eng.review_episode(self._state(), episode)
+        self.assertFalse(verdict["pass"], "超时长必须被代码级否决")
+        self.assertTrue(any("超出目标" in (i.get("fix") or "") for i in verdict["issues"]))
+
+    def test_under_size_episode_forced_fail(self):
+        writer = SeqLLM(['{"scenes":[]}'])
+        reviewer_a = SeqLLM([PASS_LONG_DIALOGUE])
+        eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects")
+        episode = {"scenes": [{"location": "A", "beats": [{"speaker": "林晚", "line": "走"}]}]}
+        verdict = eng.review_episode(self._state(), episode)
+        self.assertFalse(verdict["pass"], "过短也必须被代码级否决")
+
+    def test_on_target_pass(self):
+        writer = SeqLLM(['{"scenes":[]}'])
+        reviewer_a = SeqLLM([PASS_A])
+        eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects")
+        # 90 秒目标：4 个节拍、每拍对白 ~60 字 → 估算 ≈ 4*15+2 ≈ 62 秒，落在 54-126 区间内
+        episode = {"scenes": [
+            {"location": "A", "beats": [
+                {"speaker": "林晚", "line": "这一条对白是用于时长估算的测试内容填充物" * 3},
+                {"speaker": "林晚", "line": "这一条对白是用于时长估算的测试内容填充物" * 3},
+                {"speaker": "林晚", "line": "这一条对白是用于时长估算的测试内容填充物" * 3},
+                {"speaker": "林晚", "line": "这一条对白是用于时长估算的测试内容填充物" * 3},
+            ]}
+        ]}
+        verdict = eng.review_episode(self._state(), episode)
+        self.assertTrue(verdict["pass"])
 
 
 if __name__ == "__main__":

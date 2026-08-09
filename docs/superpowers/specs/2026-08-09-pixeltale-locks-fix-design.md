@@ -51,6 +51,17 @@ open（未生成/自由）
 - 同 finding 连续 2 轮未消 → escalated → 该 unit needs_review（复用 humanOverride 放行）
 - 整批修订路径保留（批次整体不过时仍走 revisionPlan）
 
+### 3.4 跨集保护机制（单集修复不得破坏前后剧集）
+
+1. **锁 + 压缩上下文（现有机制复用）**：修复 prompt 注入时，已锁定/已生成的其他集**只以压缩状态**（`compactLockedUnit`：unitNumber/version/contentHash/startState/endState/openThreads）呈现——**不给全文**——模型物理上接触不到其他集内容，不可能改写
+2. **锚点跨 unit 拒绝（API 硬校验）**：`fix-issue` 请求的 `issue.field_path` 前缀必须等于请求的 `unit`（如请求修第 6 集，field_path 必须是 `scenes[0]...` 且 scenes 属于 unit 6）；跨集锚点（指向其他 unit）**直接拒绝**，不进入修订
+3. **写入隔离**：修复结果只写 `artifacts[stage].units[unit]` 单集位置；其余集文件位置不动
+4. **diff 约束**（§3.2）：GPT 修订只改锚点命中处，未点名 scene/beat 逐字不变；越界 → 合并回滚
+5. **continuity 兜底（现有审核维度）**：修复后增量审核**必须含连续性维度**（与前集衔接/角色状态延续/悬念推进）——若修复破坏了前后集衔接 → continuity 分下降 → 审核不过 → 不锁定
+6. **止损回滚（§3.2）**：修复后问题数（含 continuity 破坏类）不减反增 → 自动恢复原版本 + 原审核记录
+
+> 结论：单集修复被 6 层保护包围，前后集内容不可达、不可写、不可改——最坏情况是"本集修不好"（回滚/人工），不会污染其他集。
+
 ## 4. 数据流
 
 ```

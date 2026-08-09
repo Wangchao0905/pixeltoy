@@ -95,7 +95,7 @@ class TestReviewContinuityGate(unittest.TestCase):
     def _review(self, verdict):
         state = make_state({"1": EP1})
         engine = PixelWriterEngine(None, self.FakeReviewer(verdict))
-        return engine.review_episode(state, EP2)
+        return engine.review_episode(state, EP2, idx=2)
 
     def test_continuity_below_70_forces_reject(self):
         v = self._review('{"pass":true,"score":70,"dimensions":{"human_tone":90,"plot":80,"dialogue":85,"continuity":60},"issues":[]}')
@@ -113,7 +113,7 @@ class TestReviewContinuityGate(unittest.TestCase):
     def test_review_prompt_requests_continuity_dimension(self):
         state = make_state({"1": EP1})
         engine = PixelWriterEngine(None, self.FakeReviewer('{"pass":true}'))
-        engine.review_episode(state, EP2)
+        engine.review_episode(state, EP2, idx=2)
         prompt = engine.reviewer.calls[0] if hasattr(engine.reviewer, "calls") else None
         # 直接断言 prompt 构造（用记录 calls 的替身）
         class Recorder:
@@ -125,7 +125,7 @@ class TestReviewContinuityGate(unittest.TestCase):
                 return '{"pass":true}'
 
         engine2 = PixelWriterEngine(None, Recorder())
-        engine2.review_episode(state, EP2)
+        engine2.review_episode(state, EP2, idx=2)
         prompt = engine2.reviewer.calls[0]
         self.assertIn("continuity", prompt)
         self.assertIn("前情提要", prompt)

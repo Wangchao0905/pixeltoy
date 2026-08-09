@@ -48,7 +48,7 @@ class TestDualReviewArbitration(unittest.TestCase):
     def test_a_pass_skips_arbiter(self):
         """DeepSeek 通过 → 直接返回，不调用 Gemini（省一半调用）。"""
         eng, a, b = self._engine([PASS_A], [])
-        verdict = eng.review_episode(make_state(), {"scenes": []})
+        verdict = eng.review_episode(make_state(), {"scenes": []}, idx=1)
         self.assertTrue(verdict["pass"])
         self.assertEqual(verdict["score"], 80)
         self.assertEqual(len(b.calls), 0, "通过时不得调用仲裁席")
@@ -56,18 +56,18 @@ class TestDualReviewArbitration(unittest.TestCase):
     def test_disagreement_arbiter_releases(self):
         """DeepSeek 未过 + Gemini 通过（无硬门槛）→ 仲裁放行。"""
         eng, a, b = self._engine([FAIL_A], [PASS_B])
-        verdict = eng.review_episode(make_state(), {"scenes": []})
+        verdict = eng.review_episode(make_state(), {"scenes": []}, idx=1)
         self.assertTrue(verdict["pass"], "仲裁应放行 Gemini 判定通过的误判")
 
     def test_disagreement_hard_gate_blocks_release(self):
         """DeepSeek 未过含 mode-0 硬门槛（时长）+ Gemini 通过 → 不放行（硬门槛不可仲裁）。"""
         eng, a, b = self._engine([FAIL_A_HARD], [PASS_B])
-        verdict = eng.review_episode(make_state(), {"scenes": []})
+        verdict = eng.review_episode(make_state(), {"scenes": []}, idx=1)
         self.assertFalse(verdict["pass"], "时长硬门槛不得被仲裁放行")
 
     def test_both_fail_merge_dedup(self):
         eng, a, b = self._engine([FAIL_A], [FAIL_B])
-        verdict = eng.review_episode(make_state(), {"scenes": []})
+        verdict = eng.review_episode(make_state(), {"scenes": []}, idx=1)
         self.assertFalse(verdict["pass"])
         self.assertEqual(len(verdict["issues"]), 2, "重复的'总之'应去重，共 2 条")
         quotes = {i["quote"] for i in verdict["issues"]}
@@ -77,7 +77,7 @@ class TestDualReviewArbitration(unittest.TestCase):
         writer = SeqLLM(['{"scenes":[]}'])
         reviewer_a = SeqLLM([PASS_A])
         eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects")
-        verdict = eng.review_episode(make_state(), {"scenes": []})
+        verdict = eng.review_episode(make_state(), {"scenes": []}, idx=1)
         self.assertTrue(verdict["pass"])
         self.assertEqual(verdict["score"], 80)
 
@@ -111,7 +111,7 @@ class TestReviewFaultTolerance(unittest.TestCase):
         reviewer_a = SeqLLM([PASS_A])
         reviewer_b = ExplodingReviewer()
         eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
-        verdict = eng.review_episode(make_state(), {"scenes": []})
+        verdict = eng.review_episode(make_state(), {"scenes": []}, idx=1)
         self.assertTrue(verdict["pass"], "席 B 故障时应降级用席 A 结果")
         self.assertEqual(verdict["score"], 80)
 
@@ -120,7 +120,7 @@ class TestReviewFaultTolerance(unittest.TestCase):
         reviewer_a = ExplodingReviewer()
         reviewer_b = SeqLLM([PASS_B])
         eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
-        verdict = eng.review_episode(make_state(), {"scenes": []})
+        verdict = eng.review_episode(make_state(), {"scenes": []}, idx=1)
         self.assertTrue(verdict["pass"])
         self.assertEqual(verdict["score"], 90)
 
@@ -129,7 +129,7 @@ class TestReviewFaultTolerance(unittest.TestCase):
         reviewer_a = ExplodingReviewer()
         reviewer_b = ExplodingReviewer()
         eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
-        verdict = eng.review_episode(make_state(), {"scenes": []})
+        verdict = eng.review_episode(make_state(), {"scenes": []}, idx=1)
         self.assertIsNone(verdict, "两席全故障返回 None，由上游按'审核失败'处理而非抛异常")
 
 
@@ -158,7 +158,7 @@ class TestDurationHardGate(unittest.TestCase):
             {"location": "A", "beats": [{"speaker": "林晚", "line": "床前明月光" * 200},
                                         {"speaker": "林晚", "line": "疑是地上霜" * 200}]}
         ]}
-        verdict = eng.review_episode(self._state(), episode)
+        verdict = eng.review_episode(self._state(), episode, idx=1)
         self.assertFalse(verdict["pass"], "超时长必须被代码级否决")
         self.assertTrue(any("超出目标" in (i.get("fix") or "") for i in verdict["issues"]))
 
@@ -167,7 +167,7 @@ class TestDurationHardGate(unittest.TestCase):
         reviewer_a = SeqLLM([PASS_LONG_DIALOGUE])
         eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects")
         episode = {"scenes": [{"location": "A", "beats": [{"speaker": "林晚", "line": "走"}]}]}
-        verdict = eng.review_episode(self._state(), episode)
+        verdict = eng.review_episode(self._state(), episode, idx=1)
         self.assertFalse(verdict["pass"], "过短也必须被代码级否决")
 
     def test_on_target_pass(self):
@@ -183,7 +183,7 @@ class TestDurationHardGate(unittest.TestCase):
                 {"speaker": "林晚", "line": "这一条对白是用于时长估算的测试内容填充物" * 3},
             ]}
         ]}
-        verdict = eng.review_episode(self._state(), episode)
+        verdict = eng.review_episode(self._state(), episode, idx=1)
         self.assertTrue(verdict["pass"])
 
 

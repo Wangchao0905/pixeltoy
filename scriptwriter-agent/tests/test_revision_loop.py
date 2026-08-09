@@ -154,7 +154,7 @@ class TestRevisionLoop(unittest.TestCase):
         state.artifacts["worldbuilding"] = {"characters": [{"name": "小美"}], "world_rules": []}
         state.artifacts["episodes"] = {}
         state.artifacts["outline"] = {"episodes": [{"index": 1, "hook": "开场冲突", "cliffhanger": "悬念"}]}
-        v = engine.review_episode(state, {"hook": "开场冲突", "cliffhanger": "悬念", "scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去", "action": "她抬头"}]}]})
+        v = engine.review_episode(state, {"hook": "开场冲突", "cliffhanger": "悬念", "scenes": [{"location": "豪门门口", "beats": [{"speaker": "小美", "line": "我要进去", "action": "她抬头"}]}]}, idx=1)
         self.assertIsNotNone(v)
         self.assertFalse(v["pass"], "hook<60 必须强制不通过")
 
@@ -213,7 +213,7 @@ class TestRevisionLoop(unittest.TestCase):
             {"speaker": "管家", "line": "小姐，老爷吩咐过今晚不见任何客人，您还是改日再来吧", "action": "他伸手拦住门口"},
             {"speaker": "小美", "line": "那就麻烦您通报一声，就说林家女儿来还当年欠下的债", "action": "她从怀里掏出一枚玉佩"},
             {"speaker": "管家", "line": "这玉佩……您稍等，我这就去请老爷出来见您一面", "action": "他盯着玉佩脸色一变，转身快步进去"}]}]}
-        v = engine.review_episode(state, episode)
+        v = engine.review_episode(state, episode, idx=1)
         self.assertIsNotNone(v, "重试后应返回合法审核结果")
         self.assertTrue(v["pass"])
         self.assertEqual(len(reviewer.calls), 2, "应调用审核模型两次（失败 + 重试）")
@@ -259,7 +259,7 @@ class TestDialogueLanguage(unittest.TestCase):
     def test_en_review_checks_english_naturalness(self):
         reviewer = FakeReviewer([ACCEPT])
         engine = PixelWriterEngine(ConstLLM("{}"), reviewer, state_dir="/tmp/pw-test")
-        engine.review_episode(self._make_state("en"), {"scenes": []})
+        engine.review_episode(self._make_state("en"), {"scenes": []}, idx=1)
         review_prompt = reviewer.calls[-1][0]["content"]
         self.assertIn("翻译腔", review_prompt)
         self.assertIn("动作 action 与场景 location 必须中文", review_prompt)
@@ -413,3 +413,59 @@ class TestFirstEpisodeNoPrevious(unittest.TestCase):
         self.assertIn("上集悬念：（无）", cap.prompt)
         self.assertNotIn("侧门", cap.prompt.split("前情提要")[1].split("本集：")[0],
                          "第 1 集前情不得包含集 2 内容")
+
+
+class TestContextSelfCheckInvariants(unittest.TestCase):
+    """根本防御不变量：上下文错位必须被代码级拦截，从机制上杜绝荒谬审核。"""
+
+    def _state_with_ep2(self):
+        import json
+        from engine import ProjectState
+        ep1 = {"scenes": [{"location": "路", "beats": [
+            {"speaker": "A", "line": "你好", "action": "点头"},
+            {"speaker": "B", "line": "来了", "action": "招手"},
+            {"speaker": "A", "line": "走吧", "action": "转身"},
+            {"speaker": "B", "line": "好", "action": "跟上"}]}]}
+        ep2 = {"scenes": [{"location": "侧门", "beats": [
+            {"speaker": "A", "line": "秘密", "action": "低语"},
+            {"speaker": "B", "line": "地图", "action": "翻找"},
+            {"speaker": "A", "line": "约定", "action": "点头"},
+            {"speaker": "B", "line": "好", "action": "离开"}]}]}
+        state = ProjectState(project_id="t-inv", stage="episode")
+        state.idea = {"raw": "测试", "episode_duration_seconds": 30}
+        state.artifacts["episodes"] = {"1": ep1, "2": ep2}
+        state.current_episode = 3
+        return state
+
+    def test_ledger_first_episode_previous_always_empty(self):
+        state = self._state_with_ep2()
+        eng = PixelWriterEngine(FakeWriter([]), ConstLLM("{}"), state_dir="/tmp/pw-test")
+        ledger = eng._continuity_ledger(state, 1)
+        self.assertEqual(ledger["previous_episode_end"], [], "首集前情必须为空（即使集 2 已存在）")
+        self.assertEqual(ledger["previous_cliffhanger"], "", "首集无上集悬念")
+
+    def test_ledger_only_contains_earlier_episodes(self):
+        state = self._state_with_ep2()
+        eng = PixelWriterEngine(FakeWriter([]), ConstLLM("{}"), state_dir="/tmp/pw-test")
+        ledger = eng._continuity_ledger(state, 2)
+        joined = " ".join(ledger["previous_episode_end"])
+        self.assertIn("你好", joined, "前情应来自集 1")
+        self.assertNotIn("秘密", joined, "前情不得包含本集（集 2）内容")
+
+    def test_verdict_wrong_episode_rejected(self):
+        """审核模型声明审的是别的集 → 整条审核结果被拒绝（上下文错位证据）。"""
+        import json
+        state = self._state_with_ep2()
+        wrong = {"episode": 2, "pass": True, "score": 90,
+                 "dimensions": {"hook": 90, "dialogue": 85, "continuity": 95}, "issues": []}
+        eng = PixelWriterEngine(FakeWriter([]), ConstLLM(json.dumps(wrong, ensure_ascii=False)),
+                                state_dir="/tmp/pw-test")
+        verdict = eng.review_episode(state, state.artifacts["episodes"]["1"], idx=1)
+        self.assertIsNone(verdict, "审核声明审集 2 但被审集是 1 → 必须拒绝")
+
+    def test_review_episode_requires_explicit_idx(self):
+        """漏传 idx 必须 TypeError（可变状态推断被禁用，回归即失败）。"""
+        state = self._state_with_ep2()
+        eng = PixelWriterEngine(FakeWriter([]), ConstLLM("{}"), state_dir="/tmp/pw-test")
+        with self.assertRaises(TypeError):
+            eng.review_episode(state, state.artifacts["episodes"]["1"])

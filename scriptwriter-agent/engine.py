@@ -204,6 +204,12 @@ class PixelWriterEngine:
         2) 跨集状态（角色/地点最后出现集——角色状态延续与伏笔回收的依据）
         3) 待兑现悬念（分集大纲中本集及以后的 cliffhanger，引导伏笔推进）
         """
+        idx = int(idx)
+        # 不变量：前情只可能来自 < idx 的集。idx==1 时 previous 必须为空——
+        # 若调用方/数据异常传入非空 previous，在这里强制清空（根本防御，
+        # 杜绝"第 1 集被注入上集结尾"这类荒谬审核再次发生）。
+        if idx < 1:
+            idx = 1
         episodes = state.artifacts.get("episodes", {}) or {}
         chars = {}
         locations = {}
@@ -242,11 +248,11 @@ class PixelWriterEngine:
             ),
         }
 
-    def review_episode(self, state, episode, idx=None):
+    def review_episode(self, state, episode, idx):
         """单审核 + 争议仲裁：DeepSeek 正常审核；仅当未通过时 Gemini 复核一次。
 
-        idx：被审核的集序号（默认取 state.current_episode）。必须显式传被审集，
-        否则"重新审核本集"时 current_episode 已推进到下一集，前情会取错集。
+        idx：被审核的集序号，必填（显式传递，禁止从 state.current_episode 推断——
+        那是可变状态，会随生成推进漂移，导致"重新审核本集"取错前情的严重缺陷）。
 
         仲裁规则（极简）：
         - DeepSeek 通过 → 直接用（不调 Gemini，省一半调用）。
@@ -325,7 +331,7 @@ class PixelWriterEngine:
         lo, hi = duration_seconds * 0.6, duration_seconds * 1.4
         return lo <= est <= hi, est
 
-    def _review_once(self, client, state, episode, idx=None):
+    def _review_once(self, client, state, episode, idx):
         """单个审核器的完整审核（prompt + 解析重试 + 代码级强制门）。
 
         多维度：human_tone（Humanizer-zh 去 AI 腔）、hook（开场钩/集尾悬念/反转强度）、
@@ -334,8 +340,7 @@ class PixelWriterEngine:
         """
         humanizer = self.facts["humanizer-zh.md"]
         wb = json.dumps(state.artifacts.get("worldbuilding", {}), ensure_ascii=False)
-        if idx is None:
-            idx = state.current_episode if state.current_episode else 1
+        idx = int(idx)
         cont = self._continuity_ledger(state, idx)
         prev_part = "\n".join(cont["previous_episode_end"]) if cont["previous_episode_end"] else "（首集，无前集）"
         prev_hook = cont["previous_cliffhanger"]
@@ -373,9 +378,9 @@ class PixelWriterEngine:
 上集悬念：{prev_hook[:200] if prev_hook else "（无）"}
 跨集状态：{ledger_part[:400]}
 待兑现悬念：{hooks_part[:400]}
-本集：{json.dumps(episode, ensure_ascii=False)[:2200]}
+本集为第 {idx} 集：{json.dumps(episode, ensure_ascii=False)[:2200]}
 
-输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"hook":0-100,"dialogue":0-100,"continuity":0-100}},"issues":[{{"severity":"high|medium","mode":0,"quote":"原文","fix":"改写建议"}}]}}
+输出 JSON：{{"episode":{idx},"pass":bool,"score":0-100,"dimensions":{{"hook":0-100,"dialogue":0-100,"continuity":0-100}},"issues":[{{"severity":"high|medium","mode":0,"quote":"原文","fix":"改写建议"}}]}}
 规则：hook<60（开场无钩/集尾无悬念/无反转且平淡）必须 pass=false；continuity<70（开头未衔接上集/角色状态矛盾/悬念未推进）必须 pass=false；设定冲突必须 high issue；其余轻微问题最多 medium 建议，不得因风格/措辞细节反复否决。"""
         content = client.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=4000)
         verdict = self._parse_json_block(content)
@@ -386,6 +391,17 @@ class PixelWriterEngine:
             verdict = self._parse_json_block(content)
         if not isinstance(verdict, dict):
             return None
+        # 上下文自检：审核模型若声明了集号，必须与被审集一致。不一致 = 上下文错位
+        # （前情/设定注入错误）——直接拒绝该审核结果，避免荒谬建议流入用户。
+        # （未声明集号视为兼容旧输出，接受；prompt 已要求输出集号，真实模型都会带上。）
+        v_ep = verdict.get("episode")
+        if v_ep is not None:
+            try:
+                v_ep = int(v_ep)
+            except (TypeError, ValueError):
+                return None
+            if v_ep != idx:
+                return None
         # 强制门：pass 必须严格为布尔 True 才视为通过（字符串 "false" 不再 truthy）
         verdict["pass"] = verdict.get("pass") is True
         # 代码级多维度门槛：human_tone<70、continuity<70、hook<60 强制不通过，不依赖 prompt 软约束。
@@ -559,7 +575,7 @@ class PixelWriterEngine:
                                                   "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": f"结构校验不达标已重写 {REWRITE_MAX} 次（{('；'.join(reason_parts))[:120]}），请人工处理"}]}
                 continue  # 重写换稿
             # 简化审核（关键 3 项：设定一致 / hook / 对白自然度）
-            verdict = self.review_episode(state, episode)
+            verdict = self.review_episode(state, episode, idx=idx)
             if verdict is None:
                 reason = "\n\n【上次审核无法解析，请整集重写】确保结构清晰、字段完整。"
                 if attempts > REWRITE_MAX:

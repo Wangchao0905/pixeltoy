@@ -23,11 +23,10 @@ const REVIEW_SEATS = Object.freeze([
   // seat_b moved off claude-opus-5: measured 300s TIMEOUT on a full scenes payload
   // (gpt-5.6-terra 171s, grok-4.5 124s on the same load).
   Object.freeze({ id: "seat_b", role: "character_continuity", model: "gpt-5.6-sol", ownedDimensions: Object.freeze(["plot"]) }),
-  // seat_c kept for the three-seat author council; the 2-seat review speed pass
-  // (2026-08-08) folds its design dimension into seat_b at reviewModels time and
-  // drops the deepseek seat from the review loop only.
+  // seat_c remains available as the first configured heterogeneous review seat.
   Object.freeze({ id: "seat_c", role: "audience_pacing_visual", model: "deepseek-v4-pro", ownedDimensions: Object.freeze(["design"]) }),
 ]);
+const REVIEW_DIMENSIONS = Object.freeze(["structure", "plot", "design", "logic"]);
 
 const MODEL_DEFINITIONS = Object.freeze([
   {
@@ -184,24 +183,47 @@ function fallbackModelFor(model, seatId) {
     : "";
 }
 
-function reviewModels(route = {}) {
+function reviewModels(route = {}, { getModelConfig = modelConfig } = {}) {
   const seatModels = stageModels(route);
-  // 2-seat review speed pass (2026-08-08): only seat_a + seat_b review; the
-  // deepseek seat_c (slow official endpoint) is dropped from the review loop,
-  // and its design dimension folds into seat_b so every dimension stays owned.
-  return REVIEW_SEATS.slice(0, 2).map((seat, index) => {
+  const firstSeat = { seat: REVIEW_SEATS[0], index: 0 };
+  const secondSeat = REVIEW_SEATS
+    .map((seat, index) => ({ seat, index, model: seatModels[index] }))
+    .slice(1)
+    .find(({ model }) => modelProvider(model) !== modelProvider(seatModels[firstSeat.index]) && !!getModelConfig(model)?.apiKey);
+  const selectedSeats = [firstSeat, secondSeat || { seat: REVIEW_SEATS[1], index: 1 }];
+  const missingDimensions = REVIEW_DIMENSIONS.filter((dimension) => !selectedSeats
+    .some(({ seat }) => seat.ownedDimensions.includes(dimension)));
+  const heterogeneous = !!secondSeat;
+  return selectedSeats.map(({ seat, index }, selectedIndex) => {
     const model = seatModels[index];
     return {
       seatId: seat.id,
       role: seat.role,
-      ownedDimensions: seat.id === "seat_b" ? [...seat.ownedDimensions, "design"] : seat.ownedDimensions,
+      ownedDimensions: [...seat.ownedDimensions, ...(selectedIndex === 1 ? missingDimensions : [])],
       requiredModel: seat.model,
       model,
       provider: modelProvider(model),
-      configured: !!modelConfig(model)?.apiKey,
+      configured: !!getModelConfig(model)?.apiKey,
       fallbackModels: fallbackModelsForSeat(seat.id, model),
+      heterogeneous,
     };
   });
+}
+
+function checkReviewFallbackProviders(route = {}) {
+  const seats = reviewModels(route).map(({ seatId, model, fallbackModels }) => {
+    const fallbackModel = fallbackModels[0] || "";
+    return { seatId, model, fallbackModel, provider: modelProvider(fallbackModel) };
+  });
+  const [firstSeat, secondSeat] = seats;
+  const sameProvider = !!firstSeat?.provider && firstSeat.provider === secondSeat?.provider;
+  return {
+    ok: seats.length === 2 && !!firstSeat?.provider && !!secondSeat?.provider && !sameProvider,
+    seats,
+    collision: sameProvider
+      ? { provider: firstSeat.provider, seats: seats.map((seat) => seat.seatId), models: seats.map((seat) => seat.fallbackModel) }
+      : null,
+  };
 }
 
 function outputText(payload) {
@@ -408,7 +430,7 @@ async function callPixelTaleApiModel({ model, system, user, purpose = "pixeltale
 
 function createPixelTaleApiRouter({ fetchImpl } = {}) {
   const call = (args = {}) => callPixelTaleApiModel({ ...args, fetchImpl: fetchImpl || fetch });
-  return { call, models, status, stageModels, reviewModels, fallbackModelFor, modelProvider };
+  return { call, models, status, stageModels, reviewModels, checkReviewFallbackProviders, fallbackModelFor, modelProvider };
 }
 
 module.exports = {
@@ -426,6 +448,7 @@ module.exports = {
   status,
   stageModels,
   reviewModels,
+  checkReviewFallbackProviders,
   fallbackModelsForSeat,
   fallbackModelFor,
   modelProvider,

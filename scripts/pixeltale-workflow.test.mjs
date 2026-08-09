@@ -9,7 +9,9 @@ const pixeltaleApi = fs.readFileSync(path.join(root, "server/pixeltale-api.js"),
 const pixeltaleAgentSource = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 process.env.PIXELTALE_GPT_API_KEY ||= "sk-test-pixeltale-gpt-000000000000";
 process.env.PIXELTALE_GEMINI_API_KEY ||= "sk-test-pixeltale-gemini-000000000000";
-const { callPixelTaleApiModel, readStreamPayload, reviewModels, models, MODEL_DEFINITIONS, GROK_FALLBACK_MODEL, GEMINI_FALLBACK_MODEL } = createRequire(import.meta.url)("../server/pixeltale-api.js");
+process.env.PIXELTALE_DEEPSEEK_API_KEY ||= "sk-test-pixeltale-deepseek-000000000000";
+process.env.PIXELTALE_GROK_API_KEY ||= "sk-test-pixeltale-grok-000000000000";
+const { callPixelTaleApiModel, readStreamPayload, reviewModels, checkReviewFallbackProviders, models, MODEL_DEFINITIONS, GROK_FALLBACK_MODEL, GEMINI_FALLBACK_MODEL } = createRequire(import.meta.url)("../server/pixeltale-api.js");
 const apiTemperatures = [];
 await callPixelTaleApiModel({ model: "gpt-5.6-terra", system: "test", user: "test", temperature: 0.6, fetchImpl: async (_url, options) => {
   apiTemperatures.push(JSON.parse(options.body).temperature);
@@ -25,6 +27,7 @@ const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.h
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
+const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
 const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, createHandoffPayload, confirmArtifact } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const ruleFindings = (result, code) => result.violations.filter((item) => item.code === code);
@@ -45,8 +48,8 @@ assert.equal(ruleFindings(runStageRules({ stage: "brief", artifact: { title_zh: 
 // gpt-5.6-terra 122s, gpt-5.6-sol 108s, deepseek-v4-pro 166s, grok-4.5 99s.
 // claude-opus-5 was replaced after timing out at 300s and claude-haiku-4-5 after
 // returning a valid-but-empty scenes array.
-// 2026-08-08 提速：审核 3 席 → 2 席（去 deepseek-v4-pro 慢席，design 并入 seat_b）。
-const ROSTER = [["seat_a", "gpt-5.6-terra"], ["seat_b", "gpt-5.6-sol"]];
+// 审核固定保留 structure/logic owner，并选择第一个已配置的异构 provider。
+const ROSTER = [["seat_a", "gpt-5.6-terra"], ["seat_c", "deepseek-v4-pro"]];
 const fixedReviewSeats = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"]
   .map((stage) => ({ stage, models: reviewModels({ stage }) }));
 assert.deepEqual(
@@ -54,14 +57,27 @@ assert.deepEqual(
   fixedReviewSeats.map(() => ROSTER),
   "review seat identities and models must remain fixed across all stages",
 );
-// The seats must stay two genuinely different models. Two seats sharing one model
-// collapses cross-review into a single opinion voting twice, which is exactly what
-// the degraded-quorum guard exists to reject.
+// The seats must stay on two providers, while every review dimension remains owned.
 const rosterModels = fixedReviewSeats[0].models.map((item) => item.model);
 assert.equal(new Set(rosterModels).size, 2, "the two seats must be two distinct models");
+assert.equal(new Set(fixedReviewSeats[0].models.map((item) => item.provider)).size, 2, "the default review seats must use different providers");
+assert.ok(fixedReviewSeats[0].models.every((item) => item.heterogeneous === true), "a configured default route must report a heterogeneous review pair");
+assert.deepEqual(
+  [...new Set(fixedReviewSeats[0].models.flatMap((item) => item.ownedDimensions))].sort(),
+  ["design", "logic", "plot", "structure"],
+  "the two review seats must cover every review dimension",
+);
+const singleProviderReviewSeats = reviewModels({}, {
+  getModelConfig: (model) => ({ apiKey: model.startsWith("gpt-") ? "test-gpt-key" : "" }),
+});
+assert.deepEqual(singleProviderReviewSeats.map((item) => [item.seatId, item.model]), [["seat_a", "gpt-5.6-terra"], ["seat_b", "gpt-5.6-sol"]], "a single configured provider must retain two review seats on its channel");
+assert.ok(singleProviderReviewSeats.every((item) => item.heterogeneous === false), "a single configured provider must report independent review as unavailable");
 assert.ok(!rosterModels.includes(GROK_FALLBACK_MODEL), "the shared fallback model must not also hold a seat, or a single failure would fake a quorum");
 assert.equal(fixedReviewSeats[0].models[0].fallbackModels[0], GEMINI_FALLBACK_MODEL, "seat_a must prefer the configured Gemini fallback");
-assert.notEqual(fixedReviewSeats[0].models[0].fallbackModels[0], fixedReviewSeats[0].models[1].fallbackModels[0], "seat_a and seat_b must not collapse onto the same fallback");
+assert.notEqual(fixedReviewSeats[0].models[0].fallbackModels[0], fixedReviewSeats[0].models[1].fallbackModels[0], "the active review seats must not collapse onto the same fallback");
+const fallbackProviderCheck = checkReviewFallbackProviders();
+assert.equal(fallbackProviderCheck.ok, true, "the active review seats must have heterogeneous preferred fallback providers");
+assert.equal(fallbackProviderCheck.collision, null, "heterogeneous preferred fallbacks must not report a collision");
 
 // Retiring a model must still rewrite stored routes on read and persist the result,
 // otherwise a saved session keeps reclaiming a seat with a model we removed.
@@ -507,7 +523,7 @@ const mediumConsensusContract = buildRevisionContract({
 assert.equal(mediumConsensusContract.items.length, 0, "medium consensus recommendations must not enter the mandatory revision contract");
 const resolvedReview = (model) => ({
   result: {
-    provider: "chatgpt",
+    provider: ({ "review-a": "chatgpt", "review-b": "claude", "review-c": "deepseek" })[model] || "chatgpt",
     model,
     content: {
       pass: true,
@@ -531,12 +547,12 @@ const quorumPass = aggregateCrossReview([
   { route: "deepseek-v4-pro", model: "deepseek-v4-pro", error: "upstream timeout" },
 ]);
 assert.equal(quorumPass.pass, true, "two completed review seats release the stage (2-seat speed pass; the third legacy seat is ignored)");
-assert.deepEqual(quorumPass.quorum, { required: 2, completedSeats: 2, completed: 2, passing: 2, distinctActualModels: 2, met: true, degraded: false }, "the canonical review result must expose the two-seat completion gate");
+assert.deepEqual(quorumPass.quorum, { required: 2, completedSeats: 2, completed: 2, passing: 2, distinctActualModels: 2, distinctProviders: 2, met: true, degraded: false, independenceUnavailable: false }, "the canonical review result must expose the two-seat completion gate");
 
 const reviewCase = ({ model, seatId, ownedDimensions = [], score = 90, pass = true, issues = [], confidence = 90, dimensions: dimensionValues } = {}) => ({
   route: { seatId, role: seatId === "seat_c" ? "audience_pacing_visual" : "structure_causality", requiredModel: model, model, ownedDimensions },
   result: {
-    provider: model.startsWith("claude") ? "claude" : model.startsWith("grok") ? "grok" : "chatgpt",
+    provider: model.startsWith("claude") ? "claude" : model.startsWith("grok") ? "grok" : model.startsWith("deepseek") ? "deepseek" : ({ "review-a": "chatgpt", "review-b": "claude", "review-c": "deepseek" })[model] || "chatgpt",
     model,
     actualModel: model,
     content: {
@@ -585,6 +601,8 @@ assert.equal(failedSeat.feedbacks.find((item) => item.status === "failed").score
 assert.equal(failedSeat.feedbacks.find((item) => item.status === "failed").failureReason, "timeout", "failed seats must preserve the real failure reason");
 assert.equal(failedSeat.quality, 90, "failed seats must not enter the quality average");
 assert.equal(failedSeat.dimensions.structure.average, 90, "failed seats must not enter dimension averages");
+assert.equal(failedSeat.pass, false, "a failed review seat must still block release");
+assert.equal(failedSeat.decision.kind, "rerun", "a failed review seat must still require rerunning the incomplete review");
 const realZero = aggregateCrossReview([reviewCase({ model: "gpt-5.6-terra", seatId: "seat_a", score: 0 })]);
 assert.equal(realZero.feedbacks[0].score, 0, "a valid zero score must be preserved");
 assert.equal(realZero.feedbacks[0].status, "completed", "a valid zero score must remain completed");
@@ -595,6 +613,31 @@ const degradedQuorum = aggregateCrossReview([
 assert.equal(degradedQuorum.quorum.degraded, true, "same-model fallback must mark quorum as degraded");
 assert.equal(degradedQuorum.quorum.met, false, "degraded quorum must not be met");
 assert.equal(degradedQuorum.pass, false, "degraded quorum must block release");
+const singleProviderQuorum = aggregateCrossReview([
+  reviewCase({ model: "gpt-5.6-terra", seatId: "seat_a" }),
+  reviewCase({ model: "gpt-5.6-sol", seatId: "seat_b" }),
+], null, { heterogeneityAvailable: singleProviderReviewSeats.some((item) => item.heterogeneous === true) });
+assert.equal(singleProviderQuorum.quorum.independenceUnavailable, true, "a route with one configured provider must record that independent review is unavailable");
+assert.equal(singleProviderQuorum.quorum.degraded, false, "a one-provider environment is not a fallback collapse");
+assert.equal(singleProviderQuorum.quorum.met, true, "two completed passing seats may release when independent review is unavailable by configuration");
+assert.equal(singleProviderQuorum.pass, true, "a one-provider environment must not block the stage after two passing reviews complete");
+assert.equal(singleProviderQuorum.decision.kind, "approve", "configuration cannot be fixed by rerunning the same review");
+assert.match(singleProviderQuorum.technicalFailures.find((item) => item.status === "independence_unavailable").message, /非独立复核/, "the release basis must disclose the non-independent review");
+assert.match(buildHumanOverrideBrief(singleProviderQuorum), /非独立复核/, "the human override brief must disclose the non-independent review");
+const sameProviderQuorum = aggregateCrossReview([
+  reviewCase({ model: "gpt-5.6-terra", seatId: "seat_a" }),
+  reviewCase({ model: "gpt-5.6-sol", seatId: "seat_b" }),
+], null, { heterogeneityAvailable: fixedReviewSeats[0].models.some((item) => item.heterogeneous === true) });
+assert.equal(sameProviderQuorum.quorum.degraded, true, "two completed models from one provider must degrade the quorum");
+assert.equal(sameProviderQuorum.quorum.met, false, "two completed models from one provider must not meet the quorum");
+assert.equal(sameProviderQuorum.pass, false, "a same-provider fallback remains blocked when another configured provider exists");
+assert.equal(sameProviderQuorum.decision.kind, "rerun", "a same-provider fallback must retain the rerun decision");
+const heterogeneousQuorum = aggregateCrossReview([
+  reviewCase({ model: "gpt-5.6-terra", seatId: "seat_a" }),
+  reviewCase({ model: "deepseek-v4-pro", seatId: "seat_c" }),
+]);
+assert.equal(heterogeneousQuorum.quorum.degraded, false, "two completed providers must not degrade the quorum");
+assert.equal(heterogeneousQuorum.quorum.met, true, "two completed providers must meet the quorum");
 const autoAdjudicated = aggregateCrossReview([
   reviewCase({ model: "gpt-5.6-terra", seatId: "seat_a", score: 100 }),
   reviewCase({ model: "claude-opus-5", seatId: "seat_b", score: 50 }),
@@ -1350,9 +1393,9 @@ assert.equal(emptyBatchSummary.score, null, "an unmeasured batch score must be n
 //     batches that HAD run were fully staffed with three distinct models.
 const seatDraft = (seatId, model, score = 70) => ({
   route: { seatId, role: seatId, ownedDimensions: [], requiredModel: model },
-  result: { provider: "p", model, actualModel: model, content: { pass: true, score, confidence: 90, findings: [], required_changes: [], checks: { adversarial: true }, dimensions: seatDims(score), issues: [], revisionClosures: [] } },
+  result: { provider: model.startsWith("gpt-") ? "chatgpt" : "grok", model, actualModel: model, content: { pass: true, score, confidence: 90, findings: [], required_changes: [], checks: { adversarial: true }, dimensions: seatDims(score), issues: [], revisionClosures: [] } },
 });
-const healthyBatch = aggregateCrossReview([seatDraft("seat_a", "gpt-5.6-terra"), seatDraft("seat_b", "gpt-5.6-sol")]);
+const healthyBatch = aggregateCrossReview([seatDraft("seat_a", "gpt-5.6-terra"), seatDraft("seat_c", "grok-4.5")]);
 const collapsedBatch = aggregateCrossReview([seatDraft("seat_a", "grok-4.5"), seatDraft("seat_b", "grok-4.5")]);
 const withUnrunBatch = batchReviewSummary("scenes", [healthyBatch, healthyBatch, {}], 15, {});
 assert.equal(withUnrunBatch.quorum.completedSeats, 2, "a batch that has not run must not drag completedSeats to zero");
@@ -1366,7 +1409,7 @@ assert.deepEqual(withCollapsedBatch.quorum.degradedBatches, [1], "a degraded sta
 // 2d. The degraded message must name the seats that actually collided.
 const bcNote = collapsedBatch.technicalFailures.find((item) => item.status === "degraded");
 assert.match(bcNote.message, /seat_a\/seat_b/, "a degraded message must name the seats that actually collapsed");
-assert.match(bcNote.message, /grok-4\.5/, "a degraded message must name the model they collapsed onto");
+assert.match(bcNote.message, /provider（grok）/, "a degraded message must name the provider they collapsed onto");
 assert.doesNotMatch(agent, /B\/C 席位已兜底至同一模型/, "the degraded message must be derived, not a hardcoded seat pair");
 assert.doesNotMatch(app, /B\/C 已兜底至同一模型/, "the frontend must render the backend's degraded message, not a hardcoded seat pair");
 

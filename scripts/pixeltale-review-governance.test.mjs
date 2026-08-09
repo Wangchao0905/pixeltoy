@@ -7,7 +7,7 @@ function review(model, { issues = [], revisionClosures = [], pass = true } = {})
   return {
     route: { seatId: model },
     result: {
-      provider: "test",
+      provider: model === "review-b" ? "claude" : "chatgpt",
       model,
       content: {
         pass,

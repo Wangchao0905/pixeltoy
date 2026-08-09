@@ -24,7 +24,7 @@ def load_env(path=".env"):
     return env
 
 class LLMClient:
-    def __init__(self, base_url, api_key, model, timeout=120):
+    def __init__(self, base_url, api_key, model, timeout=300):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model

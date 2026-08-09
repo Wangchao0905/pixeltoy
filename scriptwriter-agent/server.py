@@ -390,7 +390,16 @@ def make_handler(engine_factory):
                     self._json(404, {"ok": False, "error": "not found"})
             except Exception as e:
                 # 引擎业务错误（如模型输出非法 JSON）也返回结构化 JSON，绝不回 500 裸 HTML
-                self._json(500, {"ok": False, "error": f"internal error: {type(e).__name__}: {e}"})
+                import traceback
+                traceback.print_exc()
+                msg = str(e)
+                if "timed out" in msg or "timeout" in msg.lower() or "network" in msg.lower():
+                    friendly = "模型响应超时（生成内容较长或网络波动）。已保留当前进度，请稍后重试或减少单次生成量。"
+                elif "401" in msg:
+                    friendly = "模型接口鉴权失败（401），请联系维护者检查密钥配置。"
+                else:
+                    friendly = f"{type(e).__name__}: {msg}"
+                self._json(500, {"ok": False, "error": friendly})
 
         def log_message(self, *args):
             pass  # 静默访问日志

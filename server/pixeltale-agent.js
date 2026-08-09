@@ -3024,6 +3024,7 @@ function createPixelTaleAgent(options = {}) {
     let lastPrimary = null;
     let lastReview = null;
     let continuityCarry = [];
+    const continuityBatches = [];
 
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
       const batchUnits = batches[batchIndex];
@@ -3105,7 +3106,14 @@ function createPixelTaleAgent(options = {}) {
         if (revisionContract) primaryArtifact.revision = { sourceArtifactId: sourceArtifact?.id || "", contractId: revisionContract.id, itemCount: revisionContract.items.length, unitNumbers: batchUnits, owner: "本阶段主创" };
         const reviewTarget = { ...primaryArtifact, content: unitStageContent(stage, batchContent, batchUnits) };
         reportPhase(params, "validating");
-        const ruleResult = runStageRules({ stage, mode, artifact: reviewTarget.content, approvedContext: { ...batchInput, input: batchInput, artifacts: previousArtifacts }, lockedPaths: lockedUnitContext(state, stage, batchUnits) });
+        const ruleContext = {
+          ...batchInput,
+          input: batchInput,
+          artifacts: previousArtifacts,
+          cumulativeArtifact: { stage, content: mergedContent },
+          unitBatches: [...continuityBatches, { id: batchId, units: batchUnits }],
+        };
+        const ruleResult = runStageRules({ stage, mode, artifact: reviewTarget.content, approvedContext: ruleContext, lockedPaths: lockedUnitContext(state, stage, batchUnits) });
         const highRuleViolations = ruleResult.violations.filter((item) => item.severity === "high");
         const reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route).slice(0, reviewPolicy.requiredSeats);
         reportPhase(params, "reviewing");
@@ -3166,6 +3174,7 @@ function createPixelTaleAgent(options = {}) {
         // 审核失败只阻止锁定当前批次；其产物仍作为临时连续性上下文，保证一次运行可以继续生成后续批次。
         accumulatedContent = mergedContent;
         continuityCarry = transientUnitContext(stage, batchContent, batchUnits).slice(-EPISODE_BATCH_SIZE);
+        continuityBatches.push({ id: batchId, units: batchUnits });
         state.updatedAt = nowIso(now);
         persistState(params, state);
       } catch (error) {

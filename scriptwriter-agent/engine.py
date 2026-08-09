@@ -112,6 +112,19 @@ class PixelWriterEngine:
         except Exception:
             return {"pass": True, "score": 0, "dimensions": {}, "issues": [], "warning": "大纲审核调用异常，已视为通过"}
 
+    def review_existing_episode(self, state, idx):
+        """对已生成的集单独跑审核（不重新生成）：补写 evaluation，UI 据此显示问题。"""
+        episode = (state.artifacts.get("episodes") or {}).get(str(idx))
+        if not episode:
+            raise ValueError("该集尚未生成，无法审核")
+        verdict = self.review_episode(state, episode)
+        if not isinstance(verdict, dict):
+            raise ValueError("审核输出无法解析，请重试")
+        state.evaluation[str(idx)] = verdict
+        self._save(state)
+        return verdict
+
+
     def run_outline(self, state, episode_count):
         """生成分集大纲 + 质量审核（不过重写，最多 2 次）+ 结构规范化。"""
         outline = None

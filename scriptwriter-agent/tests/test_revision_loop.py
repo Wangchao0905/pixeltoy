@@ -340,3 +340,35 @@ class TestReviewExhaustedWritesEvaluation(unittest.TestCase):
         self.assertFalse(ev.get("pass"))
         self.assertTrue(ev.get("issues"))
         self.assertEqual(result["status"], "needs-human")
+
+
+class TestReviewExistingEpisode(unittest.TestCase):
+    """对已生成集单独审核（不重新生成）→ 写 evaluation。"""
+
+    def test_review_existing_writes_evaluation(self):
+        import json
+        from engine import ProjectState
+        episode = {"scenes": [{"location": "路边", "beats": [
+            {"speaker": "A", "line": "你好", "action": "点头"},
+            {"speaker": "B", "line": "来了", "action": "招手"},
+            {"speaker": "A", "line": "走吧", "action": "转身"},
+            {"speaker": "B", "line": "好", "action": "跟上"}]}]}
+        verdict = {"pass": False, "score": 60, "dimensions": {"human_tone": 75, "hook": 55},
+                   "issues": [{"severity": "medium", "quote": "开头", "fix": "钩子可更强"}]}
+        eng = PixelWriterEngine(FakeWriter([]), ConstLLM(json.dumps(verdict, ensure_ascii=False)), state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-re", stage="episode")
+        state.idea = {"raw": "测试", "episode_duration_seconds": 30}
+        state.artifacts["episodes"] = {"1": episode}
+        v = eng.review_existing_episode(state, 1)
+        self.assertFalse(v["pass"])
+        self.assertEqual(state.evaluation["1"]["score"], 60)
+        self.assertGreaterEqual(len(state.evaluation["1"]["issues"]), 1)
+
+    def test_review_existing_missing_episode_raises(self):
+        from engine import ProjectState
+        eng = PixelWriterEngine(FakeWriter([]), ConstLLM("{}"), state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-re2", stage="episode")
+        state.idea = {"raw": "测试"}
+        state.artifacts["episodes"] = {}
+        with self.assertRaises(ValueError):
+            eng.review_existing_episode(state, 3)

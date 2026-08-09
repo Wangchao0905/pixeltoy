@@ -282,6 +282,35 @@ def make_handler(engine_factory):
                     engine = engine_factory()
                     converted = engine.localize_actions(state)
                     self._json(200, {"ok": True, "converted": converted, "state": json.loads(state.to_json())})
+                elif parsed.path == "/api/review-episode":
+                    # 只审核不重新生成：对已生成的集跑审核并写 evaluation（存量集补审核）
+                    pid = body.get("project_id", "")
+                    path = _safe_project_path(pid, ".json")
+                    if path is None or not os.path.exists(path):
+                        self._json(404, {"ok": False, "error": "project not found"})
+                        return
+                    try:
+                        idx = int(body.get("episode"))
+                    except (TypeError, ValueError):
+                        self._json(400, {"ok": False, "error": "invalid episode"})
+                        return
+                    if not _claim_project(pid):
+                        self._json(409, {"ok": False, "error": "该创作任务正在处理中，请等待完成后重试。"})
+                        return
+                    try:
+                        with open(path, encoding="utf-8") as f:
+                            state = ProjectState.from_json(f.read())
+                        engine = engine_factory()
+                        verdict = engine.review_existing_episode(state, idx)
+                        with open(path, "w", encoding="utf-8") as f:
+                            f.write(state.to_json())
+                        self._json(200, {"ok": True, "state": json.loads(state.to_json()),
+                                         "verdict": verdict})
+                    except Exception as exc:
+                        _release_project(pid)
+                        self._json(500, {"ok": False, "error": f"审核失败：{type(exc).__name__}: {exc}"})
+                    finally:
+                        _release_project(pid)
                 elif parsed.path == "/api/fix-issue":
                     # 单条问题定向修复：只把这一条 issue 交给 GPT 修订（quote 命中处），
                     # 其余 scene/beat 逐字不变（diff 约束 + 越界合并回滚），修完重新审核本集。

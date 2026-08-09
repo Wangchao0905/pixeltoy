@@ -1439,7 +1439,7 @@ const refClean = runStageRules({ stage: "scenes", artifact: { scenes: [{ id: "S0
 assert.equal(ruleFindings(refClean, "UNKNOWN_CHARACTER_REF").length, 0, "valid character references must not be flagged");
 const refGhost = runStageRules({ stage: "scenes", artifact: { scenes: [{ id: "S001", characters: ["C001", "C999"] }] }, approvedContext: refCtx });
 assert.equal(ruleFindings(refGhost, "UNKNOWN_CHARACTER_REF").length, 1, "a scene referencing an undefined character must be a hard violation");
-assert.equal(ruleFindings(refGhost, "UNKNOWN_CHARACTER_REF")[0].severity, "high", "a phantom character reference must block before spending review tokens");
+assert.equal(ruleFindings(refGhost, "UNKNOWN_CHARACTER_REF")[0].severity, "medium", "a new character in a scene is normal writing: flagged non-blocking so the review model validates the entry instead of hard-blocking");
 
 // A 90-second episode legitimately breaks into several scenes — the rule must not
 // treat a repeated unit_number as a batch mismatch. This was a live regression:

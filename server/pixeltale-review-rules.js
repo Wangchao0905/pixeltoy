@@ -231,9 +231,12 @@ function checkCrossStageRefs(stage, artifact, approvedContext, violations) {
       array(object(scene).characters).forEach((ref, ri) => {
         const id = String(ref || "");
         if (id && !charIds.has(id)) {
-          add(violations, "UNKNOWN_CHARACTER_REF", "high",
+          // 新剧集引入新人物是正常创作：降为 medium 提示（不阻断），
+          // 交由审核模型按 knownRuleFindings 核验出场合理性；只有对白
+          // 发言者（UNKNOWN_SPEAKER_REF）才保持 high 硬拦。
+          add(violations, "UNKNOWN_CHARACTER_REF", "medium",
             `scenes[${si}].characters[${ri}]`,
-            `场景引用了未知人物 ID "${id}"（已知: ${[...charIds].slice(0, 8).join(", ")}）`);
+            `场景引用了未在已确认人物名单中的 ID "${id}"（已知: ${[...charIds].slice(0, 8).join(", ")}）——新人物可正常出场，由审核核验合理性`);
         }
       });
     });

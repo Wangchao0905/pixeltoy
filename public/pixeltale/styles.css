@@ -1438,3 +1438,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .unit-fix-row strong { font-size: 12px; font-weight: 700; color: #7a4d00; white-space: nowrap; }
 .unit-fix-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pt-muted); font-size: 11px; }
 .unit-fix-row .fix-unit-btn { margin-left: 0; }
+
+/* 规则拦截时的双动作：重跑 + 人工放行 */
+.agent-task-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.agent-task-actions .agent-task-secondary { font-weight: 600; }

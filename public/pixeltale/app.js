@@ -1048,6 +1048,7 @@ function nextStepMeta() {
     return {
       kind: "auto-revise",
       stage: flowStage,
+      ruleBlocked: !!ruleBlocked,
       title: ruleBlocked ? `${flowMeta.title}未达基础标准` : `${flowMeta.title}需要定向修订`,
       copy: ruleBlocked
         ? "本次生成命中代码级校验规则（未达基础标准），审核未执行、无质量评分。请调整内容后重跑本阶段；或使用右下角「接受当前版本并继续」人工放行。"
@@ -1983,9 +1984,12 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     ? (technicalFailures.find((item) => item?.status === "degraded")?.message || `${reviewMode}不成立：有席位兜底到了同一模型`)
     : "";
   const technicalFlags = [degradedFlag, technical.stalled ? "自动修订已停止：stalled" : "", technical.budgetExhausted ? "自动修订已停止：budget_exhausted" : ""].filter(Boolean);
+  const ruleBlockedOverride = technicalFailures.some((item) => item?.status === "rule_blocked")
+    ? `<button class="stage-primary agent-task-primary is-next-action" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}" type="button">接受当前版本并继续</button><p class="review-technical-flags">规则拦截已阻断自动审核：只有你确认接受当前内容才能进入下一阶段。</p>`
+    : "";
   const decisionItems = Array.isArray(decision.items) ? decision.items : [];
   const decisionCard = `<section class="review-decision-card is-${escapeHtml(decision.kind || "rerun")}"><span>系统裁判</span><div><h3>${escapeHtml(decision.title || "等待决定")}</h3><p>${escapeHtml(decision.summary || "等待审核结果")}</p></div>${decisionItems.length ? `<ol>${decisionItems.slice(0, 3).map((item) => `<li>${escapeHtml(item.tag || item.message || "待处理事项")}</li>`).join("")}</ol>` : ""}</section>`;
-  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}${showDecisionWorkbench ? renderDecisionImpactWorkbench(reviewContent, { stage, reviewId }) : ""}<details id="reviewEvidence" class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
+  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}${showDecisionWorkbench ? renderDecisionImpactWorkbench(reviewContent, { stage, reviewId }) : ""}<details id="reviewEvidence" class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${ruleBlockedOverride}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
 }
 
 function renderTitleStage() {
@@ -2180,8 +2184,12 @@ function renderRiskNote() {
   let html = "";
   let riskCount = 0;
   if (ruleBlocked) {
-    html = `<span class="risk-dot"></span><span>规则校验未通过（未达基础标准），本次审核未执行。请调整内容后重跑本阶段，或人工放行。</span>`;
-    riskCount = 1;
+    const findings = (Array.isArray(content.ruleFindings) ? content.ruleFindings : [])
+      .filter((item) => item.severity === "high" || !item.severity)
+      .slice(0, 3).map((item) => item.message || item.code || "内容未达基础标准");
+    const findingText = findings.length ? findings.join("；") : "内容未达基础标准";
+    html = `<span class="risk-dot"></span><span>规则校验未通过：${escapeHtml(findingText)}。本次审核未执行；可重新生成本阶段，或在下方「审核依据」中点「接受当前版本并继续」人工放行。</span>`;
+    riskCount = findings.length || 1;
   } else if (feedbacks.length === 0) {
     html = `<span class="risk-dot"></span><span>钩子必须在集尾留下一个未回答的问题。</span>`;
   } else if (disagreements.length) {

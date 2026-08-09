@@ -2087,7 +2087,14 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     ? `<button class="stage-primary agent-task-primary is-next-action" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}" type="button">接受当前版本并继续</button><p class="review-technical-flags">规则拦截已阻断自动审核：只有你确认接受当前内容才能进入下一阶段。</p>`
     : "";
   const decisionItems = Array.isArray(decision.items) ? decision.items : [];
-  const decisionCard = `<section class="review-decision-card is-${escapeHtml(decision.kind || "rerun")}"><span>系统裁判</span><div><h3>${escapeHtml(decision.title || "等待决定")}</h3><p>${escapeHtml(decision.summary || "等待审核结果")}</p></div>${decisionItems.length ? `<ol>${decisionItems.slice(0, 3).map((item) => `<li>${escapeHtml(item.tag || item.message || "待处理事项")}</li>`).join("")}</ol>` : ""}</section>`;
+  // 2026-08-10：把「执行定向修订」直接放到系统裁判决定卡上（用户在内容区先看到它，
+  // 不再依赖右侧 rail 的下一步按钮才能发起修订）。
+  const decisionRuleBlocked = (Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [])
+    .some((item) => item?.status === "rule_blocked");
+  const decisionReviseButton = decision.kind === "revise" && !decisionRuleBlocked
+    ? `<button type="button" class="stage-primary agent-task-primary is-next-action decision-revise-btn" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(stage)}">执行定向修订 →</button>`
+    : "";
+  const decisionCard = `<section class="review-decision-card is-${escapeHtml(decision.kind || "rerun")}"><span>系统裁判</span><div><h3>${escapeHtml(decision.title || "等待决定")}</h3><p>${escapeHtml(decision.summary || "等待审核结果")}</p></div>${decisionItems.length ? `<ol>${decisionItems.slice(0, 3).map((item) => `<li>${escapeHtml(item.tag || item.message || "待处理事项")}</li>`).join("")}</ol>` : ""}${decisionReviseButton}</section>`;
   return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}${renderReviewScoreBars(reviewContent)}${showDecisionWorkbench ? renderDecisionImpactWorkbench(reviewContent, { stage, reviewId }) : ""}<details id="reviewEvidence" class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${ruleBlockedOverride}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
 }
 

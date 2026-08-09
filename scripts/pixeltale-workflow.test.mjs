@@ -365,6 +365,17 @@ assert.match(app, /data-scroll-agent-task/, "the stage cockpit must guide users 
 assert.match(styles, /\.stage-cockpit \{/, "the stage cockpit must have a dedicated visual surface");
 assert.match(styles, /\.execution-rail-step\.is-current/, "the execution rail must visibly identify the active step");
 assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*stage-cockpit/, "the stage cockpit must respect reduced-motion preferences");
+assert.match(app, /function renderStoryPulse\(/, "arc output must expose a story pulse visualization renderer");
+assert.match(app, /rhythm_signals/, "story pulse must read the shared rhythm signal contract when present");
+assert.match(app, /data-pulse-node/, "story pulse events must expose clickable inspection nodes");
+assert.match(app, /尚未生成剧情脉冲/, "story pulse must have an honest empty state when no episode data exists");
+assert.match(app, /function renderReviewScoreBars\(/, "review output must expose a multidimensional score bar renderer");
+assert.match(app, /评分门槛 75/, "review score bars must show the explicit release threshold");
+assert.match(app, /未评分/, "review score bars must distinguish unmeasured dimensions from zero");
+assert.doesNotMatch(app, /CURRENT UNIT/, "the stage cockpit must not repeat the passive CURRENT UNIT label");
+assert.doesNotMatch(app, /stage-cockpit-brief/, "the stage cockpit must not render a redundant four-column explanation block");
+assert.match(styles, /\.story-pulse \{/, "story pulse must have a dedicated bounded visual surface");
+assert.match(styles, /\.review-score-bars \{/, "review score bars must have a dedicated visual surface");
 assert.match(app, /review-zone-optional[\s\S]*可选优化/, "low-risk recommendations must be presented in the optional zone");
 assert.match(app, /未返回 · 技术未完成[\s\S]*scoreLabel = entry\.status === "failed" \? "—"/, "failed seats must show technical incompletion and a dash score");
 assert.match(app, /一键修订并复审/, "review output must offer one canonical revision action");

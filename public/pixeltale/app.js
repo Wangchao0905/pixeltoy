@@ -1595,9 +1595,6 @@ function renderBrief() {
   const marketRegion = state.input.marketRegion || "north_america";
   const marketCountry = state.input.marketCountry || "united_states";
   return `
-    <div class="stage-kicker"><span class="eyebrow">${currentMeta().kicker}</span><span class="artifact-meta">独立会话 · ${state.agent ? "已连接" : "准备开始"}</span></div>
-    <h2>${currentMeta().title}</h2>
-    <p class="stage-intro">${long ? "先锁定主线、人物弧线和章节尺度，再把故事拆成可持续推进的长剧结构。" : "先锁定平台节奏和追更机制，再把一句想法变成一集接一集的故事。"}</p>
     <div class="content-grid">
       <section class="form-panel">
         <h3>故事架构</h3>
@@ -1711,6 +1708,13 @@ const fieldLabelMap = {
   choice_zh: "人物选择",
   result_zh: "选择结果",
   turn_zh: "因果转折",
+  impact_zh: "开头冲击",
+  causal_turn_zh: "因果转折",
+  reversal_zh: "反转",
+  hook_zh: "集尾钩子",
+  cliffhanger_question_zh: "悬念问题",
+  payoff_zh: "回收",
+  rhythm_signals: "节奏信号",
   consistency_notes: "一致性说明",
 };
 
@@ -1959,6 +1963,101 @@ function renderAdvisoryCards(items = [], advisoryGate = {}, reviewId = "") {
   }).join("");
 }
 
+function pulseUnitsForArtifact(artifact) {
+  const content = artifact?.content || {};
+  const source = Array.isArray(content.units)
+    ? content.units
+    : Array.isArray(content.episodes)
+      ? content.episodes
+      : Array.isArray(content.scenes)
+        ? content.scenes
+        : [];
+  return source
+    .map((unit, index) => ({ ...unit, pulseNumber: Number(unit?.number ?? unit?.unit_number ?? unit?.episode_number ?? index + 1) }))
+    .filter((unit) => Number.isInteger(unit.pulseNumber) && unit.pulseNumber > 0 && unit.pulseNumber <= 30)
+    .sort((left, right) => left.pulseNumber - right.pulseNumber);
+}
+
+function pulseText(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join("；");
+  if (value && typeof value === "object") return value.title_zh || value.summary_zh || value.text_zh || "";
+  return value == null ? "" : String(value);
+}
+
+function pulseSignalValue(source, keys) {
+  for (const key of keys) {
+    const value = Number(source?.[key]);
+    if (Number.isFinite(value)) return Math.max(0, Math.min(100, value));
+  }
+  return null;
+}
+
+function rhythmSignalForUnit(unit) {
+  const source = Array.isArray(unit?.rhythm_signals) ? unit.rhythm_signals[0] : unit?.rhythm_signals;
+  if (!source || typeof source !== "object") return null;
+  return {
+    tension: pulseSignalValue(source, ["tension", "tension_score", "tension_zh_score"]),
+    emotion: pulseSignalValue(source, ["emotion", "emotion_score", "emotional_intensity"]),
+    highlight: pulseSignalValue(source, ["highlight", "highlight_score", "impact"]),
+  };
+}
+
+function pulseEventsForUnit(unit) {
+  return [
+    ["hook", "钩子", pulseText(unit?.hook_zh || unit?.cliffhanger_question_zh)],
+    ["reversal", "反转", pulseText(unit?.reversal_zh || unit?.causal_turn_zh)],
+    ["payoff", "回收", pulseText(unit?.payoff_zh)],
+    ["highlight", "高光", pulseText(unit?.impact_zh || unit?.highlight_zh)],
+  ].filter(([, , detail]) => detail);
+}
+
+function renderPulseNode(number, type, label, detail) {
+  return `<button type="button" class="pulse-node is-${type}" data-pulse-node data-pulse-episode="${number}" data-pulse-type="${escapeHtml(type)}" data-pulse-label="${escapeHtml(label)}" data-pulse-detail="${escapeHtml(detail)}" aria-label="第 ${number} 集 ${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+}
+
+function renderStoryPulse(artifact) {
+  const units = pulseUnitsForArtifact(artifact);
+  if (!units.length) {
+    return `<section class="story-pulse is-empty" aria-labelledby="storyPulseTitle"><div class="story-pulse-head"><div><span class="card-label"><i></i>STORY PULSE</span><h3 id="storyPulseTitle">剧情脉冲</h3></div><span class="story-pulse-range">01—30 集</span></div><div class="story-pulse-empty"><strong>尚未生成剧情脉冲</strong><p>生成分集产物后，这里会显示钩子、反转与回收节点。</p></div></section>`;
+  }
+  const unitByNumber = new Map(units.map((unit) => [unit.pulseNumber, unit]));
+  const tracks = [["hook", "钩子"], ["reversal", "反转"], ["payoff", "回收"], ["highlight", "高光"]];
+  const axis = Array.from({ length: 30 }, (_, index) => `<span>${String(index + 1).padStart(2, "0")}</span>`).join("");
+  const trackMarkup = tracks.map(([type, label]) => {
+    const cells = Array.from({ length: 30 }, (_, index) => {
+      const number = index + 1;
+      const unit = unitByNumber.get(number);
+      const event = unit ? pulseEventsForUnit(unit).find(([eventType]) => eventType === type) : null;
+      return `<span class="pulse-cell">${event ? renderPulseNode(number, event[0], event[1], event[2]) : ""}</span>`;
+    }).join("");
+    return `<div class="pulse-track"><strong>${label}</strong><div class="pulse-track-grid">${cells}</div></div>`;
+  }).join("");
+  const signals = units.map((unit) => ({ number: unit.pulseNumber, ...rhythmSignalForUnit(unit) })).filter((item) => item.tension !== null || item.emotion !== null || item.highlight !== null);
+  const signalKey = signals.some((item) => item.tension !== null) ? "tension" : signals.some((item) => item.emotion !== null) ? "emotion" : signals.some((item) => item.highlight !== null) ? "highlight" : "";
+  const linePoints = signalKey
+    ? signals.filter((item) => item[signalKey] !== null).map((item) => `${24 + ((item.number - 1) / 29) * 952},${134 - (item[signalKey] / 100) * 100}`).join(" ")
+    : "";
+  const curve = linePoints ? `<svg class="pulse-curve" viewBox="0 0 1000 160" role="img" aria-label="剧情${signalKey === "tension" ? "张力" : signalKey === "emotion" ? "情绪" : "高光"}曲线"><line x1="24" y1="134" x2="976" y2="134" /><polyline points="${linePoints}" /><g>${signals.filter((item) => item[signalKey] !== null).map((item) => `<circle cx="${24 + ((item.number - 1) / 29) * 952}" cy="${134 - (item[signalKey] / 100) * 100}" r="3.5"><title>第 ${item.number} 集 · ${item[signalKey]}</title></circle>`).join("")}</g></svg>` : `<div class="pulse-no-curve">等待 rhythm_signals 数值；当前先显示真实的剧情节点。</div>`;
+  return `<section class="story-pulse" aria-labelledby="storyPulseTitle"><div class="story-pulse-head"><div><span class="card-label"><i></i>STORY PULSE</span><h3 id="storyPulseTitle">剧情脉冲</h3><p>用一条时间轴看见每集的推进、悬念和回收。</p></div><span class="story-pulse-range">01—30 集</span></div><div class="pulse-chart"><div class="pulse-chart-label">${signalKey ? `${signalKey === "tension" ? "张力" : signalKey === "emotion" ? "情绪" : "高光"}曲线` : "剧情节点"}</div>${curve}<div class="pulse-axis">${axis}</div>${trackMarkup}</div><aside id="pulseInspector" class="pulse-inspector" aria-live="polite"><span class="card-label"><i></i>NODE INSPECTOR</span><strong data-pulse-inspector-title>选择一个节点</strong><p data-pulse-inspector-copy>点击钩子、反转、回收或高光节点，在固定检视区查看证据。</p><small data-pulse-inspector-meta>尚未选择 · 已载入 ${units.length} 集</small></aside></section>`;
+}
+
+function scoreFromDimension(value) {
+  const candidate = typeof value === "number" ? value : value?.average ?? value?.score;
+  const score = Number(candidate);
+  return Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score))) : null;
+}
+
+function renderReviewScoreBars(reviewContent = {}) {
+  const labels = { structure: "结构", plot: "剧情", design: "设计", logic: "逻辑" };
+  const dimensions = reviewContent.dimensions || {};
+  const rows = Object.entries(labels).map(([key, label]) => {
+    const score = scoreFromDimension(dimensions[key]);
+    const status = score === null ? "未评分" : score >= 75 ? "达标" : "低于门槛";
+    return `<div class="review-score-row is-${score === null ? "unmeasured" : score >= 75 ? "pass" : "needs-review"}"><span class="review-score-label">${label}</span><div class="review-score-track" aria-label="${label}${score === null ? "未评分" : `${score} 分`}"><i style="width:${score === null ? 0 : score}%"></i><b style="left:75%"></b></div><strong>${score === null ? "—" : score}</strong><em>${status}</em></div>`;
+  }).join("");
+  return `<section class="review-score-bars" aria-labelledby="reviewScoreTitle"><div class="review-score-head"><div><span class="card-label"><i></i>QUALITY GATE</span><h3 id="reviewScoreTitle">多维评分</h3></div><span class="review-score-threshold">评分门槛 75</span></div><div class="review-score-list">${rows}</div><p class="review-score-note">未评分表示该维度没有有效测量，不等同于 0 分。</p></section>`;
+}
+
 function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage, reviewId = "", showDecisionWorkbench = true } = {}) {
   const decision = reviewContent.decision || {
     kind: passed ? "approve" : "rerun",
@@ -1989,11 +2088,10 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     : "";
   const decisionItems = Array.isArray(decision.items) ? decision.items : [];
   const decisionCard = `<section class="review-decision-card is-${escapeHtml(decision.kind || "rerun")}"><span>系统裁判</span><div><h3>${escapeHtml(decision.title || "等待决定")}</h3><p>${escapeHtml(decision.summary || "等待审核结果")}</p></div>${decisionItems.length ? `<ol>${decisionItems.slice(0, 3).map((item) => `<li>${escapeHtml(item.tag || item.message || "待处理事项")}</li>`).join("")}</ol>` : ""}</section>`;
-  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}${showDecisionWorkbench ? renderDecisionImpactWorkbench(reviewContent, { stage, reviewId }) : ""}<details id="reviewEvidence" class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${ruleBlockedOverride}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
+  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}${renderReviewScoreBars(reviewContent)}${showDecisionWorkbench ? renderDecisionImpactWorkbench(reviewContent, { stage, reviewId }) : ""}<details id="reviewEvidence" class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${ruleBlockedOverride}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
 }
 
 function renderTitleStage() {
-  const meta = currentMeta();
   const artifact = artifactForStage("title");
   const isCnShortDrama = state.mode === "cn";
   const releaseLanguage = isCnShortDrama ? "中文" : "英文";
@@ -2002,7 +2100,7 @@ function renderTitleStage() {
   const selectionCopy = isCnShortDrama ? "正式发行使用中文剧名。命名信息用于创作者快速比较。" : "正式发行只使用英文片名。中文释义和命名信息用于创作者快速比较。";
   const selectionNote = isCnShortDrama ? "每个候选均为独立片名短语，不使用剧情摘要句。重新生成会建立新版本，并避开已有候选。" : "中文释义只供创作者对照，不会写入后续正式标题。重新生成会建立新版本，并避开已有候选。";
   if (!artifact) {
-    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 4 个${releaseLanguage}候选剧名</h3><p>系统会读取剧本 DNA、发行平台和目标市场，用一个指定模型生成 4 个命名基因不同的${releaseLanguage}片名。下一步操作位于右侧。</p></section>`;
+    return `<section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>先生成 4 个${releaseLanguage}候选剧名</h3><p>系统会读取剧本 DNA、发行平台和目标市场，用一个指定模型生成 4 个命名基因不同的${releaseLanguage}片名。</p></section>`;
   }
   const candidates = Array.isArray(artifact.content?.candidates) ? artifact.content.candidates : [];
   const selectedTitle = state.input.storyTitle || "";
@@ -2019,7 +2117,7 @@ function renderTitleStage() {
   const statusLabel = approved ? "本阶段已确认" : "单模型生成完成 · 等待人工选择";
   const regenerate = approved ? "" : `<button class="stage-secondary title-regenerate" type="button" data-regenerate-title${state.busy ? " disabled" : ""}>重新生成 4 个</button>`;
   const inlineStatus = approved ? "已确认版本" : selectedTitle ? "已选择 · 请在右侧确认后进入故事提案" : "等待选择剧名 · 确认入口在右侧";
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p><section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">${releaseLabel}</span><h3 id="titlePickerHeading">${selectionHeading}</h3><p>${selectionCopy}</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">${selectionNote}</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核 · ${escapeHtml(inlineStatus)}</small></div></section>`;
+  return `<section class="title-picker" aria-labelledby="titlePickerHeading"><div class="title-picker-head"><div class="title-picker-title-block"><span class="title-picker-label">${releaseLabel}</span><h3 id="titlePickerHeading">${selectionHeading}</h3><p>${selectionCopy}</p></div><div class="title-picker-actions"><span class="title-selection-status">${selectedTitle ? `已选：${escapeHtml(selectedTitle)}` : "尚未选择"}</span>${regenerate}</div></div><div class="title-options" role="radiogroup" aria-labelledby="titlePickerHeading">${options}</div><p class="title-picker-note">${selectionNote}</p><div class="card-footer"><small>${escapeHtml(statusLabel)} · 不进入交叉审核 · ${escapeHtml(inlineStatus)}</small></div></section>`;
 }
 
 function renderCreationTrace(artifact, reviewContent = {}) {
@@ -2092,29 +2190,23 @@ function renderStageCockpit(stage = state.stage, reviewContent = {}) {
   return `<section class="stage-cockpit${state.busy && isCurrent ? " is-running" : ""}" aria-label="当前阶段工作台">
     <div class="stage-cockpit-summary">
       <span class="stage-cockpit-number">${stageNumber}</span>
-      <div><span class="eyebrow">CURRENT UNIT</span><h2>${escapeHtml(meta.title)}</h2><p>${escapeHtml(meta.task)}</p></div>
+      <div><h2>${escapeHtml(meta.title)}</h2><p>${escapeHtml(meta.task)}</p></div>
       <button type="button" class="stage-cockpit-jump" data-scroll-agent-task>查看执行轨道</button>
     </div>
-    <dl class="stage-cockpit-brief">
-      <div><dt>当前目标</dt><dd>${escapeHtml(meta.task)}</dd></div>
-      <div><dt>阶段状态</dt><dd>${escapeHtml(unitLabel)}</dd></div>
-      <div><dt>创作策略</dt><dd>${stage === "title" ? "单模型候选 · 人工选择" : "主笔生成 · 规则校验 · 分层审读"}</dd></div>
-      <div><dt>下一步</dt><dd>${escapeHtml(action.title)}</dd></div>
-    </dl>
+    <div class="stage-cockpit-context"><span>${isCurrent ? "当前阶段" : "已查看阶段"} · ${escapeHtml(unitLabel)}</span><strong>下一步：${escapeHtml(action.title)}</strong></div>
     <div class="execution-rail" aria-label="执行进度">
-      <article class="execution-rail-step ${artifact ? "is-complete" : isCurrent ? "is-current" : ""}"><span>01</span><div><strong>生成</strong><small>${artifact ? "当前产物已就绪" : isCurrent ? "等待开始" : "等待解锁"}</small></div><em>${artifact ? "完成" : isCurrent ? "当前" : "—"}</em></article>
-      <article class="execution-rail-step ${review?.pass === true || isApproved ? "is-complete" : artifact && isCurrent ? "is-current" : ""}"><span>02</span><div><strong>校验</strong><small>规则校验与分层审读</small></div><em>${escapeHtml(reviewLabel)}</em></article>
-      <article class="execution-rail-step ${isApproved ? "is-complete" : artifact && isCurrent ? "is-current" : ""}"><span>03</span><div><strong>决定</strong><small>系统裁判给出唯一下一步</small></div><em>${escapeHtml(decisionLabel)}</em></article>
+      <article class="execution-rail-step ${artifact ? "is-complete" : isCurrent ? "is-current" : ""}"><span>01</span><div><strong>生成</strong></div><em>${artifact ? "已完成" : isCurrent ? "执行中" : "等待"}</em></article>
+      <article class="execution-rail-step ${review?.pass === true || isApproved ? "is-complete" : artifact && isCurrent ? "is-current" : ""}"><span>02</span><div><strong>校验</strong></div><em>${escapeHtml(reviewLabel)}</em></article>
+      <article class="execution-rail-step ${isApproved ? "is-complete" : artifact && isCurrent ? "is-current" : ""}"><span>03</span><div><strong>决定</strong></div><em>${escapeHtml(decisionLabel)}</em></article>
     </div>
     <p class="stage-cockpit-status" role="status">${escapeHtml(runCopy)}</p>
   </section>`;
 }
 
 function renderArtifactStage() {
-  const meta = currentMeta();
   const artifact = artifactForStage(state.stage);
   if (!artifact) {
-    return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">尚未生成</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p>${renderUnitStageProgress(state.stage)}<section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>本阶段尚未有服务端产物</h3><p>完成上一阶段确认后，这里会生成当前阶段的结构化产物，并返回编排与复核结果。下一步操作位于右侧。</p></section>`;
+    return `${renderUnitStageProgress(state.stage)}<section class="artifact-card empty-artifact"><span class="card-label"><i></i>WAITING FOR RUN</span><h3>本阶段尚未有服务端产物</h3><p>完成上一阶段确认后，这里会生成当前阶段的结构化产物，并返回编排与复核结果。</p></section>`;
   }
   const review = reviewForArtifact(artifact);
   const reviewContent = review?.content || {};
@@ -2132,7 +2224,7 @@ function renderArtifactStage() {
       : renderReviewPanel(reviewContent, { passed: reviewPassed, stage: state.stage, reviewId: review.id, showDecisionWorkbench: false })
     : `<div class="review-summary"><strong>正在等待复核结果</strong><p>当前批次完成后，这里会显示审核与锁定状态。</p></div>`;
   const inlineStatus = approved ? "已确认版本" : !unitComplete ? `已锁定 ${unitProgress.locked.length} / ${unitProgress.total} 集 · 继续生成` : reviewPassed ? "审核通过 · 请在右侧确认" : advisoryGate.blockingPending.length ? "待人工裁决 · 请处理右侧意见" : blockingItems.length ? "待定向修订 · 请使用右侧唯一按钮" : "需要重新提交当前阶段";
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><p class="stage-intro">${meta.copy}</p>${renderUnitStageProgress(state.stage)}${decisionWorkbench}<section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><details class="stage-artifact-details"><summary><span>查看完整阶段产物</span><em>${escapeHtml(inlineStatus)}</em></summary><div class="structured-content">${renderValue(artifact.content)}</div></details><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${renderCreationTrace(artifact, reviewContent)}${reviewPanel}</section>`;
+  return `${state.stage === "arc" ? renderStoryPulse(artifact) : ""}${renderUnitStageProgress(state.stage)}${decisionWorkbench}<section class="artifact-card live-artifact"><div class="artifact-card-head"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><details class="stage-artifact-details"><summary><span>查看完整阶段产物</span><em>${escapeHtml(inlineStatus)}</em></summary><div class="structured-content">${renderValue(artifact.content)}</div></details><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${renderCreationTrace(artifact, reviewContent)}${reviewPanel}</section>`;
 }
 
 function renderHandoff() {
@@ -2158,7 +2250,7 @@ function renderHandoff() {
   const documentActions = scriptReady
     ? `<div class="document-delivery-actions"><button type="button" class="stage-primary" data-download-script ${state.documentBusy ? "disabled" : ""}>下载剧本 DOCX <span aria-hidden="true">↓</span></button><button type="button" class="stage-secondary" data-save-script ${state.documentBusy ? "disabled" : ""}>选择文件夹并保存</button></div>`
     : "";
-  return `<div class="stage-kicker"><span class="eyebrow">${currentMeta().kicker}</span><span class="artifact-meta">${ready ? "READY" : "LOCKED"}</span></div><h2>${currentMeta().title}</h2><p class="stage-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集剧情、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "逐集中文剧情 + English Dialogue" : "等待全剧确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>`;
+  return `<p class="stage-intro handoff-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集剧情、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "逐集中文剧情 + English Dialogue" : "等待全剧确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>`;
 }
 
 // 依据与风险：动态显示当前审核的实际分歧（不再只显示静态标准文案）
@@ -2210,7 +2302,7 @@ function renderStage() {
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;
   const currentArtifact = artifactForStage(state.stage);
   const currentReview = reviewForArtifact(currentArtifact)?.content || {};
-  $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="生产流程"><div><span class="eyebrow">PRODUCTION FLOW</span><strong>当前阶段 ${productionProgressLabel(workflowStage())}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>完成后</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderStageCockpit(state.stage, currentReview)}${renderer()}`;
+  $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="阶段导航"><div><span class="eyebrow">STORY MAP</span><strong>当前阶段 ${productionProgressLabel(workflowStage())}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>下一步</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderStageCockpit(state.stage, currentReview)}${renderer()}`;
   bindStageActions();
   renderShellState();
   renderRiskNote();
@@ -2670,6 +2762,17 @@ function bindDecisionImpactWorkbench() {
 }
 
 function bindStageActions() {
+  $$('[data-pulse-node]').forEach((button) => button.addEventListener("click", () => {
+    const inspector = document.querySelector("#pulseInspector");
+    if (!inspector) return;
+    $$('[data-pulse-node]').forEach((node) => node.classList.toggle("is-selected", node === button));
+    const episode = button.dataset.pulseEpisode || "—";
+    const label = button.dataset.pulseLabel || "剧情节点";
+    const detail = button.dataset.pulseDetail || "暂无字段证据";
+    inspector.querySelector("[data-pulse-inspector-title]").textContent = `第 ${episode} 集 · ${label}`;
+    inspector.querySelector("[data-pulse-inspector-copy]").textContent = detail;
+    inspector.querySelector("[data-pulse-inspector-meta]").textContent = `节点类型 · ${label} · 来自分集字段`;
+  }));
   $$('[data-scroll-agent-task]').forEach((button) => button.addEventListener("click", () => {
     const target = $(".agent-task");
     target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });

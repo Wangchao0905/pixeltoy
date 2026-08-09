@@ -36,6 +36,64 @@ assert.ok(ruleFindings(runStageRules({ stage: "arc", artifact: { units: [{ numbe
 assert.ok(ruleFindings(runStageRules({ stage: "brief", artifact: { locked: "changed" }, approvedContext: { lockedArtifact: { locked: "original" } }, lockedPaths: ["locked"] }), "LOCKED_PATH_TOUCHED").length, "rules must detect locked path changes");
 assert.ok(ruleFindings(runStageRules({ stage: "review", artifact: { dimensions: { structure: {}, plot: {}, design: {}, } } }), "DIMENSION_KEY_MISSING").length, "rules must detect missing review dimensions");
 assert.ok(ruleFindings(runStageRules({ stage: "arc", mode: "tk_short_drama", artifact: { units: [{ number: 1, hook_zh: "月光洒在空房间" }] } }), "EMPTY_HOOK").length, "TK rules must detect empty or atmospheric hooks");
+assert.ok(ruleFindings(runStageRules({ stage: "arc", mode: "cn_short_drama", artifact: { units: [{ number: 1, hook_zh: "月光洒在空房间" }] } }), "EMPTY_HOOK").length, "CN rules must detect empty or atmospheric hooks");
+
+const sceneWithDurations = (unitNumber, durations) => ({
+  unit_number: unitNumber,
+  shot_plan: durations.map((duration_seconds) => ({ duration_seconds })),
+});
+const durationResult = (durations, approvedContext = { durationValue: 90, durationUnit: "sec", unitScope: [3] }) => runStageRules({
+  stage: "scenes",
+  artifact: { scenes: [sceneWithDurations(3, durations)] },
+  approvedContext,
+});
+const severelyShortEpisode = ruleFindings(durationResult([35]), "DURATION_BUDGET_MISMATCH");
+assert.equal(severelyShortEpisode.length, 1, "a 35-second episode against a 90-second target must be flagged");
+assert.equal(severelyShortEpisode[0].severity, "high", "a duration deviation above 40% must be high severity");
+assert.equal(severelyShortEpisode[0].fieldPath, "scenes.unit_3.shot_plan", "duration findings must point to the episode shot plan");
+assert.match(severelyShortEpisode[0].message, /第 3 集.*目标 90 秒.*实际 35 秒.*偏差 -61\.1%/u, "duration findings must include the episode, target, actual duration, and deviation");
+assert.ok(durationResult([35]).checked.includes("DURATION_BUDGET_MISMATCH"), "duration budget must be listed as a checked rule");
+assert.ok(durationResult([35]).checked.includes("UNIT_CONTINUITY_BROKEN"), "unit continuity must be listed as a checked rule");
+assert.equal(ruleFindings(durationResult([75]), "DURATION_BUDGET_MISMATCH").length, 0, "a 75-second episode must stay inside the tolerance");
+assert.equal(ruleFindings(durationResult([72]), "DURATION_BUDGET_MISMATCH").length, 0, "a 72-second episode must stay inside the tolerance");
+assert.equal(ruleFindings(durationResult([68]), "DURATION_BUDGET_MISMATCH").length, 0, "a 68-second episode must stay inside the tolerance");
+const moderatelyShortEpisode = ruleFindings(durationResult([65]), "DURATION_BUDGET_MISMATCH");
+assert.equal(moderatelyShortEpisode.length, 1, "a 65-second episode must exceed the tolerance");
+assert.equal(moderatelyShortEpisode[0].severity, "medium", "a 25%-40% duration deviation must be medium severity");
+assert.equal(ruleFindings(durationResult([35], { durationValue: 90, unitScope: [3] }), "DURATION_BUDGET_MISMATCH").length, 0, "a missing duration unit must skip duration checks");
+assert.equal(ruleFindings(durationResult([35], { durationValue: 90, durationUnit: "hours", unitScope: [3] }), "DURATION_BUDGET_MISMATCH").length, 0, "an unknown duration unit must skip duration checks");
+const explicitSecondTarget = ruleFindings(durationResult([35], { targetDurationSeconds: 90, durationValue: 10, durationUnit: "min", unitScope: [3] }), "DURATION_BUDGET_MISMATCH");
+assert.equal(explicitSecondTarget.length, 1, "an explicit second target must take precedence over duration value and unit");
+assert.match(explicitSecondTarget[0].message, /目标 90 秒/u, "an explicit second target must be used as seconds");
+const minuteDuration = ruleFindings(durationResult([400], { durationValue: 10, durationUnit: "min", unitScope: [3] }), "DURATION_BUDGET_MISMATCH");
+assert.equal(minuteDuration.length, 1, "minute duration input must be evaluated in seconds");
+assert.match(minuteDuration[0].message, /目标 600 秒/u, "minute duration input must convert to seconds before comparison");
+assert.equal(ruleFindings(runStageRules({
+  stage: "scenes",
+  artifact: { scenes: [{ unit_number: 3, shot_plan: [] }, { unit_number: 4, shot_plan: [{}] }] },
+  approvedContext: { durationValue: 90, durationUnit: "sec", unitScope: [3, 4] },
+}), "DURATION_BUDGET_MISMATCH").length, 0, "episodes without usable shot durations must skip duration checks");
+
+const continuityGap = ruleFindings(runStageRules({
+  stage: "arc",
+  artifact: { units: [{ number: 3 }], arc_summary_zh: "测试" },
+  approvedContext: {
+    cumulativeArtifact: { stage: "arc", content: { units: [{ number: 1 }, { number: 3 }] } },
+    unitBatches: [{ id: "batch_1", units: [1] }, { id: "batch_2", units: [3] }],
+  },
+}), "UNIT_CONTINUITY_BROKEN");
+assert.equal(continuityGap.length, 1, "a gap in accumulated arc episodes must be flagged");
+assert.equal(continuityGap[0].severity, "high", "unit continuity findings must block the batch");
+const continuityRepeat = ruleFindings(runStageRules({
+  stage: "scenes",
+  artifact: { scenes: [sceneWithDurations(1, [90]), sceneWithDurations(2, [90])] },
+  approvedContext: {
+    cumulativeArtifact: { stage: "scenes", content: { scenes: [sceneWithDurations(1, [90]), sceneWithDurations(1, [90]), sceneWithDurations(2, [90])] } },
+    unitBatches: [{ id: "batch_1", units: [1] }, { id: "batch_2", units: [1, 2] }],
+  },
+}), "UNIT_CONTINUITY_BROKEN");
+assert.equal(continuityRepeat.length, 1, "a unit repeated in different batches must be flagged even when scenes legitimately repeat within an episode");
+assert.equal(ruleFindings(runStageRules({ stage: "arc", artifact: { units: [{ number: 3 }], arc_summary_zh: "测试" }, approvedContext: { unitScope: [3] } }), "UNIT_CONTINUITY_BROKEN").length, 0, "a single batch without accumulated content must skip continuity checks");
 const localizedNames = runStageRules({ stage: "characters", artifact: { characters: [{ name_zh: "李明", plot_zh: "李明在雨夜追查真相。" }] }, approvedContext: { marketCountry: "united_states" } });
 assert.equal(ruleFindings(localizedNames, "NAME_LOCALIZATION").length, 1, "western-market CJK display names must be flagged");
 const chinesePlot = runStageRules({ stage: "brief", artifact: { title_zh: "雾镇", logline_zh: "中文剧情叙述：主角在雨夜追查真相。", core_conflict_zh: "真相与生存冲突", viewer_question_zh: "他能否活下来？" }, approvedContext: { marketCountry: "united_states" } });

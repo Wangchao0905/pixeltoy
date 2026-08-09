@@ -76,6 +76,91 @@ function checkUnitCount(stage, artifact, approvedContext, violations) {
   }
 }
 
+function targetDurationSeconds(approvedContext) {
+  const direct = contextValue(approvedContext, "targetDurationSeconds");
+  if (direct !== undefined) {
+    const seconds = Number(direct);
+    return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+  }
+  const duration = Number(contextValue(approvedContext, "durationValue"));
+  if (!Number.isFinite(duration) || duration <= 0) return null;
+  const unit = String(contextValue(approvedContext, "durationUnit") || "").trim().toLowerCase();
+  if (["sec", "secs", "second", "seconds", "秒"].includes(unit)) return duration;
+  if (["min", "mins", "minute", "minutes", "分", "分钟"].includes(unit)) return duration * 60;
+  return null;
+}
+
+function formatSeconds(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(1)));
+}
+
+function checkDurationBudget(stage, artifact, approvedContext, violations) {
+  if (stage !== "scenes") return;
+  const target = targetDurationSeconds(approvedContext);
+  if (target === null) return;
+  const grouped = new Map();
+  array(artifact.scenes).forEach((scene) => {
+    const item = object(scene);
+    const number = Number(item.unit_number);
+    if (!Number.isInteger(number)) return;
+    if (!grouped.has(number)) grouped.set(number, { seconds: 0, hasDuration: false });
+    const total = grouped.get(number);
+    array(item.shot_plan).forEach((shot) => {
+      const seconds = Number(object(shot).duration_seconds);
+      if (!Number.isFinite(seconds)) return;
+      total.seconds += seconds;
+      total.hasDuration = true;
+    });
+  });
+  const requested = array(contextValue(approvedContext, "unitScope") || contextValue(approvedContext, "unitNumbers"))
+    .map(Number).filter(Number.isInteger);
+  const numbers = (requested.length ? requested : [...grouped.keys()]).filter((number) => grouped.has(number));
+  numbers.forEach((number) => {
+    const total = grouped.get(number);
+    if (!total.hasDuration) return;
+    const deviation = (total.seconds - target) / target;
+    const absoluteDeviation = Math.abs(deviation);
+    if (absoluteDeviation <= 0.25) return;
+    const severity = absoluteDeviation > 0.4 ? "high" : "medium";
+    const percent = Number((deviation * 100).toFixed(1));
+    add(violations, "DURATION_BUDGET_MISMATCH", severity, `scenes.unit_${number}.shot_plan`, `第 ${number} 集时长预算不匹配：目标 ${formatSeconds(target)} 秒，实际 ${formatSeconds(total.seconds)} 秒，偏差 ${percent}%`);
+  });
+}
+
+function checkUnitContinuity(stage, approvedContext, violations) {
+  if (!(stage === "arc" || stage === "scenes")) return;
+  const cumulativeArtifact = object(contextValue(approvedContext, "cumulativeArtifact"));
+  const cumulativeContent = object(cumulativeArtifact.content || cumulativeArtifact);
+  const batches = array(contextValue(approvedContext, "unitBatches"));
+  if (!Object.keys(cumulativeContent).length || batches.length < 2) return;
+  const key = stage === "scenes" ? "scenes" : "units";
+  const numberKey = stage === "scenes" ? "unit_number" : "number";
+  const numbers = array(cumulativeContent[key]).map((item) => Number(object(item)[numberKey])).filter(Number.isInteger);
+  const batchNumbers = new Map();
+  batches.forEach((batch, index) => {
+    const item = object(batch);
+    const batchId = String(item.id || index + 1);
+    const units = array(item.units || item.unitScope || item.unitNumbers || batch).map(Number).filter(Number.isInteger);
+    [...new Set(units)].forEach((number) => {
+      if (!batchNumbers.has(number)) batchNumbers.set(number, []);
+      batchNumbers.get(number).push(batchId);
+    });
+  });
+  const repeatedAcrossBatches = [...batchNumbers.entries()].filter(([, ids]) => ids.length > 1);
+  const duplicateArcNumbers = stage === "arc" ? numbers.filter((number, index) => numbers.indexOf(number) !== index) : [];
+  const sorted = [...new Set(numbers)].sort((left, right) => left - right);
+  const missing = stage === "arc" && sorted.length
+    ? Array.from({ length: sorted.at(-1) - sorted[0] + 1 }, (_, index) => sorted[0] + index).filter((number) => !sorted.includes(number))
+    : [];
+  if (!repeatedAcrossBatches.length && !duplicateArcNumbers.length && !missing.length) return;
+  const details = [
+    repeatedAcrossBatches.length ? `集号 ${repeatedAcrossBatches.map(([number]) => number).join(",")} 在不同批次重复出现` : "",
+    duplicateArcNumbers.length ? `累计产物集号 ${[...new Set(duplicateArcNumbers)].join(",")} 重复` : "",
+    missing.length ? `累计集号缺少 ${missing.join(",")}` : "",
+  ].filter(Boolean).join("；");
+  add(violations, "UNIT_CONTINUITY_BROKEN", "high", `${stage}.${key}`, `${stage} 集号连续性异常：${details}`);
+}
+
 function checkLockedPaths(artifact, approvedContext, lockedPaths, violations) {
   const paths = array(lockedPaths).map((entry) => typeof entry === "string" ? entry : entry?.path).filter(Boolean);
   for (const fieldPath of paths) {
@@ -94,7 +179,7 @@ function checkDimensions(artifact, violations) {
 }
 
 function checkHooks(stage, mode, artifact, violations) {
-  if (mode !== "tk_short_drama" || stage !== "arc") return;
+  if (!(["tk_short_drama", "cn_short_drama"].includes(mode)) || stage !== "arc") return;
   array(artifact.units).forEach((unit, index) => {
     const item = object(unit);
     const hook = item.endingHook ?? item.ending_hook ?? item.hook_zh;
@@ -184,6 +269,8 @@ function runStageRules({ stage = "", mode = "", artifact = {}, approvedContext =
   const violations = [];
   checkSchema(normalizedStage, object(artifact), violations);
   checkUnitCount(normalizedStage, object(artifact), approvedContext, violations);
+  checkDurationBudget(normalizedStage, object(artifact), approvedContext, violations);
+  checkUnitContinuity(normalizedStage, approvedContext, violations);
   checkLockedPaths(object(artifact), approvedContext, lockedPaths, violations);
   checkDimensions(object(artifact), violations);
   checkHooks(normalizedStage, normalizedMode, object(artifact), violations);
@@ -193,7 +280,7 @@ function runStageRules({ stage = "", mode = "", artifact = {}, approvedContext =
     violations,
     checked: [
       "SCHEMA_INCOMPLETE", "UNIT_COUNT_MISMATCH", "LOCKED_PATH_TOUCHED",
-      "DIMENSION_KEY_MISSING", "EMPTY_HOOK", "NAME_LOCALIZATION",
+      "DURATION_BUDGET_MISMATCH", "UNIT_CONTINUITY_BROKEN", "DIMENSION_KEY_MISSING", "EMPTY_HOOK", "NAME_LOCALIZATION",
       "UNKNOWN_CHARACTER_REF", "UNKNOWN_SCENE_REF", "UNKNOWN_SPEAKER_REF",
     ],
   };

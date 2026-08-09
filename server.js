@@ -2806,6 +2806,7 @@ function persistablePixelTaleRunParams(params = {}) {
     routes: params.routes,
     revisionPlan: params.revisionPlan,
     unitNumbers: params.unitNumbers,
+    ...(params.override === true ? { override: true } : {}),
   };
 }
 
@@ -26918,6 +26919,7 @@ async function handleApi(req, res, url) {
         routes: body.routes || body.modelRoute,
         revisionPlan: body.revisionPlan,
         unitNumbers: body.unitNumbers || body.input?.unitNumbers || body.input?.revisionUnitNumbers,
+        override: body.override === true,
       });
       return send(res, 202, { ok: true, job }, { "Cache-Control": "no-store" });
     }

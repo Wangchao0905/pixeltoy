@@ -2109,7 +2109,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
   };
   const issueChanges = mandatoryIssues.map((issue) => {
     const source = `至少 ${issue.modelCount} 个模型共同指出`;
-    const suggestions = issue.suggestions.length ? issue.suggestions.join("；") : "针对该问题补充具体修订并重新提交三模型审核";
+    const suggestions = issue.suggestions.length ? issue.suggestions.join("；") : "针对该问题补充具体修订并重新提交规定审核席位复审";
     return `${source}【${issue.severity} / ${issue.tag}】：${suggestions}`;
   });
   const closureChanges = revisionClosure.items
@@ -2798,7 +2798,7 @@ function lockStageUnits(state, stage, content, unitNumbers, artifact, now) {
 
 function synthesizeBatchReview(stage, batchReviews, totalUnits, unitLocks, revisionContract = null) {
   const review = batchReviewSummary(stage, batchReviews, totalUnits, unitLocks);
-  review.revision = revisionContract ? { contract: revisionContract, closure: { required: true, allResolved: review.basePass, items: asArray(revisionContract.items).map((item) => ({ ...item, status: review.basePass ? "resolved" : "unresolved", evidence: review.basePass ? "每个分批产物均完成三模型审核并关闭硬性问题" : "至少一个分批产物未完成基础审核条件", remainingFix: review.basePass ? "" : "按失败批次重新修订" })) } } : null;
+  review.revision = revisionContract ? { contract: revisionContract, closure: { required: true, allResolved: review.basePass, items: asArray(revisionContract.items).map((item) => ({ ...item, status: review.basePass ? "resolved" : "unresolved", evidence: review.basePass ? "每个分批产物均完成规定审核席位审读并关闭硬性问题" : "至少一个分批产物未完成基础审核条件", remainingFix: review.basePass ? "" : "按失败批次重新修订" })) } } : null;
   return review;
 }
 
@@ -3298,7 +3298,7 @@ function createPixelTaleAgent(options = {}) {
     }
 
     const finalReview = synthesizeBatchReview(stage, batchReviews, totalUnits, state.unitLocks[stage], revisionContract);
-    if (revisionContract) finalReview.revision = { contract: revisionContract, closure: { required: true, allResolved: finalReview.basePass, items: revisionContract.items.map((item) => ({ ...item, status: finalReview.basePass ? "resolved" : "unresolved", evidence: finalReview.basePass ? "所有目标批次均完成三模型审核并关闭硬性问题" : "存在未完成基础审核条件的批次", remainingFix: finalReview.basePass ? "" : "按未通过批次重新修订" })) } };
+    if (revisionContract) finalReview.revision = { contract: revisionContract, closure: { required: true, allResolved: finalReview.basePass, items: revisionContract.items.map((item) => ({ ...item, status: finalReview.basePass ? "resolved" : "unresolved", evidence: finalReview.basePass ? "所有目标批次均完成规定审核席位审读并关闭硬性问题" : "存在未完成基础审核条件的批次", remainingFix: finalReview.basePass ? "" : "按未通过批次重新修订" })) } };
     let repairPlan = "";
     let autoRepairEligible = false;
     if (!finalReview.pass && !revisionPlan && autoRepairPass < UNIT_AUTO_REPAIR_MAX_PASSES && targetUnits.length) {

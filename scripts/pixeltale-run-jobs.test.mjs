@@ -14,6 +14,7 @@ const server = require("../server.js");
 const { pixelTaleApi, pixelTaleRuns } = server.__test;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-run-job-"));
 const recoveryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-run-recovery-"));
+const overrideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-run-override-"));
 
 const dimensions = Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 95, feedback: "通过" }]));
 const requestedTokenBudgets = [];
@@ -90,6 +91,18 @@ try {
     input: params.input,
   }, "persisted run jobs must retain only the safe request needed for restart recovery");
   assert.equal(Object.hasOwn(persistedJob.request, "apiKey"), false, "persisted run jobs must never include provider credentials");
+
+  const overrideParams = { ...params, pixelTaleRoot: overrideRoot, projectId: "standalone:override-run", override: true };
+  const overrideJob = pixelTaleRuns.start(overrideParams);
+  const persistedOverrideJob = JSON.parse(fs.readFileSync(path.join(overrideRoot, "run-jobs", `${overrideJob.jobId}.json`), "utf8"));
+  assert.equal(persistedOverrideJob.request.override, true, "confirmed-stage reruns must persist the explicit override for restart recovery");
+  let overrideResult;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    overrideResult = pixelTaleRuns.get(overrideParams, overrideJob.jobId);
+    if (overrideResult.status !== "running") break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(overrideResult.status, "completed", `an explicitly confirmed rerun must remain executable: ${JSON.stringify(overrideResult)}`);
 
   const recoveryJobId = "ptrun_0123456789abcdef0123456789";
   const recoveryParams = { ...params, pixelTaleRoot: recoveryRoot, projectId: "standalone:recovery-run" };
@@ -196,6 +209,7 @@ try {
   pixelTaleApi.setFetch();
   fs.rmSync(root, { recursive: true, force: true });
   fs.rmSync(recoveryRoot, { recursive: true, force: true });
+  fs.rmSync(overrideRoot, { recursive: true, force: true });
 }
 
 console.log("pixeltale run jobs ok");

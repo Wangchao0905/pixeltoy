@@ -64,7 +64,7 @@ const scenes = { scenes: [scene(1), scene(2)] };
 const dialogue = { lines: [line(1), line(2)], localization_checks: ["口语化", "人物声线一致", "未泄露悬念"] };
 
 assert.doesNotThrow(() => validateContent("arc", arc, { episodeCount: 2 }), "complete episode prose must pass the arc contract");
-assert.throws(() => validateContent("arc", { ...arc, units: [unit(1)] }, { episodeCount: 2 }), /逐集写出/, "an arc missing an episode must be rejected");
+assert.throws(() => validateContent("arc", { ...arc, units: [unit(1)] }, { episodeCount: 2 }), /当前批次.*完整剧情/, "an arc missing an episode must be rejected");
 assert.doesNotThrow(() => validateContent("scenes", scenes, { episodeCount: 2 }), "scene coverage must pass for every episode");
 assert.doesNotThrow(() => validateContent("dialogue", dialogue, { episodeCount: 2 }), "localized dialogue must pass the dialogue contract");
 

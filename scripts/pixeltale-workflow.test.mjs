@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pixeltaleApi = fs.readFileSync(path.join(root, "server/pixeltale-api.js"), "utf8");
+const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const pixeltaleAgentSource = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 process.env.PIXELTALE_GPT_API_KEY ||= "sk-test-pixeltale-gpt-000000000000";
 process.env.PIXELTALE_GEMINI_API_KEY ||= "sk-test-pixeltale-gemini-000000000000";
@@ -373,6 +374,10 @@ assert.match(app, /currentIssues = remainingIssues/, "automatic revision must re
 assert.match(app, /return \{ detached: true \}/, "automatic revision must stop when the run continues in the background");
 assert.match(app, /outcome\?\.detached \|\| state\.lastError/, "automatic revision must not submit a second pass for a detached run");
 assert.match(app, /async function runAutoRevision[\s\S]*const payload = await request\(""\)/, "revision clicks must refresh the server session before selecting a source artifact");
+assert.match(app, /waitForRunJob\([\s\S]*STAGE_RERUN_REQUIRES_OVERRIDE[\s\S]*state\.pendingRerun/, "a post-202 rerun refusal must return to the inline confirmation flow");
+assert.match(serverSource, /override: body\.override/, "the run route must forward explicit rerun confirmation");
+assert.match(serverSource, /params\.override === true/, "persisted run parameters must retain explicit rerun confirmation");
+assert.doesNotMatch([app, html, nestedHtml].join("\n"), /三模型复核完成后|三模型审核存在|三模型交叉审核|三模型一致性审查|三席意见可直接汇总|三席未发现技术失败/, "visible review copy must describe the actual stage review seats");
 assert.match(app, /action\.kind === "auto-revise"[\s\S]*等待执行修订/, "the right rail must distinguish a pending revision from waiting for input");
 assert.match(app, /reviewContent\.revision\?\.closure\?\.items/, "revision output must expose unresolved closure items");
 assert.match(app, /data-advisory-decision/, "advisory feedback must expose creator decision actions");
@@ -1340,7 +1345,6 @@ assert.match(app, /accepted\.job\?\.jobId/, "the stage runner must poll the exac
 assert.match(app, /const RUN_BACKGROUND_TIMEOUT_MS = 6 \* 60 \* 60 \* 1_000/, "long runs must continue in the background after the foreground window");
 assert.match(app, /return \{ status: "detached", jobId \}/, "foreground polling must detach instead of converting a running job into a failure");
 assert.match(app, /function monitorBackgroundRun\(/, "detached PixelTale jobs must keep a background monitor");
-const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 assert.match(serverSource, /function startPixelTaleRun\(/, "the server must execute PixelTale stages as background jobs");
 assert.match(serverSource, /activePixelTaleRuns/, "the server must deduplicate concurrent runs for the same stage");
 assert.match(serverSource, /max_tokens: maxTokens/, "the PixelTale API router must honor the stage output budget");

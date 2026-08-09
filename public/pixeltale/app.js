@@ -110,6 +110,21 @@ const modelMeta = {
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];
 const productionStageTotal = stageOrder.length - 1;
 const UNIT_STAGES = new Set(["arc", "scenes"]);
+const FAST_REVIEW_STAGES = new Set(["brief", "proposal", "characters", "dialogue"]);
+
+function requiredReviewSeatsFor(stage = state.stage, reviewContent = {}, artifact = null) {
+  const stored = Number(reviewContent?.reviewPolicy?.requiredSeats);
+  if (stored === 1 || stored === 2) return stored;
+  return FAST_REVIEW_STAGES.has(stage) && !artifact?.revision ? 1 : 2;
+}
+
+function reviewModeLabelFor(stage = state.stage, reviewContent = {}, artifact = null) {
+  return requiredReviewSeatsFor(stage, reviewContent, artifact) === 1 ? "单席快速审读" : "双席审读";
+}
+
+function reviewOpinionLabelFor(stage = state.stage, reviewContent = {}, artifact = null) {
+  return requiredReviewSeatsFor(stage, reviewContent, artifact) === 1 ? "单席审读意见" : "双席审读意见";
+}
 
 function productionStepNumber(stage = workflowStage()) {
   return Math.min(productionStageTotal, Math.max(1, stageIndex(stage) + 1));
@@ -1161,10 +1176,8 @@ function renderModelTeam() {
   const primaryExecution = currentArtifact?.primaryExecution || {};
   const currentReview = reviewForArtifact(currentArtifact);
   const reviewFeedbacks = Array.isArray(currentReview?.content?.feedbacks) ? currentReview.content.feedbacks : [];
-  const fastReviewStages = new Set(["brief", "proposal", "characters", "dialogue"]);
   const storedReviewPolicy = currentReview?.content?.reviewPolicy || {};
-  const requiredReviewSeats = Number(storedReviewPolicy.requiredSeats)
-    || (fastReviewStages.has(state.stage) && !currentArtifact?.revision ? 1 : 2);
+  const requiredReviewSeats = requiredReviewSeatsFor(state.stage, storedReviewPolicy, currentArtifact);
   const activeSeats = seatDefaults.slice(0, requiredReviewSeats);
   const roleLabels = { structure_causality: "结构与因果审查", character_continuity: "人物与连续性审查", audience_pacing_visual: "受众节奏与视觉审查" };
   const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则 · 视觉设计" };
@@ -1219,7 +1232,7 @@ function renderModelTeam() {
     // pair collapses depends on which provider channel failed, so any hardcoded
     // seat pair here goes stale the moment the roster changes.
     const degradedNote = (currentReview.content.technicalFailures || []).find((item) => item?.status === "degraded")?.message
-      || "三席交叉审核不成立：有席位兜底到了同一模型";
+      || `${reviewModeLabelFor(state.stage, currentReview.content, currentArtifact)}不成立：有席位兜底到了同一模型`;
     $("#modelTeamCards").insertAdjacentHTML("beforebegin", `<p class="model-team-degraded">${escapeHtml(degradedNote)}</p>`);
   }
   $$('[data-model-detail]').forEach((button) => button.addEventListener("click", () => {
@@ -1452,7 +1465,8 @@ function renderBriefArtifact() {
   const reviewContent = review?.content || {};
   const passed = artifact.status === "ready" && reviewContent.pass !== false;
   const status = passed ? "已生成 · 复核通过 · 待确认" : review ? "已生成 · 复核未通过" : "已生成 · 等待复核";
-  const reviewPanel = review ? renderReviewPanel(reviewContent, { passed, stage: "brief" }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>三模型复核完成后，这里会显示完整问题清单。</p></div>`;
+  const reviewMode = reviewModeLabelFor("brief", reviewContent, artifact);
+  const reviewPanel = review ? renderReviewPanel(reviewContent, { passed, stage: "brief" }) : `<div class="review-summary"><strong>正在等待复核结果</strong><p>${reviewMode}完成后，这里会显示完整问题清单。</p></div>`;
   return `<section class="artifact-card live-artifact brief-result" aria-labelledby="briefResultTitle"><div class="stage-kicker"><span class="card-label"><i></i>STORY ARCHITECTURE</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(status)}</span></div><h3 id="briefResultTitle">故事架构生成结果</h3><div class="structured-content">${renderValue(artifact.content)}</div>${reviewPanel}</section>`;
 }
 
@@ -1841,14 +1855,16 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   const optional = mergeReviewItems([...(Array.isArray(reviewContent.recommendedIssues) ? reviewContent.recommendedIssues : []), ...(Array.isArray(reviewContent.independentIssues) ? reviewContent.independentIssues : [])]);
   const adjudications = Array.isArray(reviewContent.adjudications) ? reviewContent.adjudications : [];
   const feedbacks = Array.isArray(reviewContent.feedbacks) ? reviewContent.feedbacks : [];
+  const reviewMode = reviewModeLabelFor(stage, reviewContent, artifactForStage(stage));
+  const reviewOpinion = reviewOpinionLabelFor(stage, reviewContent, artifactForStage(stage));
   const technicalFailures = [...(Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : []), ...feedbacks.filter((item) => item.status === "failed")];
   const technical = technicalReviewState(reviewContent);
   const reasonLabels = { timeout: "请求超时", network_error: "网络错误", empty_response: "空响应", invalid_json: "返回格式错误", schema_error: "数据结构错误", not_configured: "模型未配置" };
   const issueMarkup = (items, empty) => items.length ? `<div class="review-issue-list">${items.map((item, index) => `<article class="review-issue review-issue-${escapeHtml(item.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.tag || item.code || "审核意见")}</strong><span class="review-issue-severity">${escapeHtml(item.severity || "medium")}</span></div>${item.message ? `<p>${escapeHtml(item.message)}</p>` : ""}${Array.isArray(item.suggestions) && item.suggestions.length ? `<ul>${item.suggestions.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : item.fix ? `<p>${escapeHtml(item.fix)}</p>` : ""}</article>`).join("")}</div>` : `<p class="review-empty">${empty}</p>`;
-  const adjudicationMarkup = adjudications.length ? `<div class="review-issue-list">${adjudications.map((item) => `<article class="review-adjudication"><strong>${escapeHtml(item.dimension || "未标注维度")}</strong><p>分歧度 ${escapeHtml(String(item.agreement ?? "—"))}% · 席位评分 ${escapeHtml((item.scores || []).join(" / "))}</p><p>证据来源：${escapeHtml((item.seats || []).join("、") || "审核席位")}</p><p>裁决依据：${escapeHtml(item.adjudication?.basis || "按证据强度与阶段契约自动裁决")}</p></article>`).join("")}</div>` : `<p class="review-empty">当前没有评分分歧，三席意见可直接汇总。</p>`;
-  const failureMarkup = technicalFailures.length ? `<div class="review-issue-list">${technicalFailures.map((item) => `<article class="review-technical-failure"><strong>${escapeHtml(item.seatId || "未标识席位")}</strong><p>未返回 · 技术未完成 · ${escapeHtml(reasonLabels[item.failureReason] || item.failureReason || item.message || "调用失败")}</p></article>`).join("")}</div>` : `<p class="review-empty">三席未发现技术失败。</p>`;
+  const adjudicationMarkup = adjudications.length ? `<div class="review-issue-list">${adjudications.map((item) => `<article class="review-adjudication"><strong>${escapeHtml(item.dimension || "未标注维度")}</strong><p>分歧度 ${escapeHtml(String(item.agreement ?? "—"))}% · 席位评分 ${escapeHtml((item.scores || []).join(" / "))}</p><p>证据来源：${escapeHtml((item.seats || []).join("、") || "审核席位")}</p><p>裁决依据：${escapeHtml(item.adjudication?.basis || "按证据强度与阶段契约自动裁决")}</p></article>`).join("")}</div>` : `<p class="review-empty">当前没有评分分歧，${reviewOpinion}可直接汇总。</p>`;
+  const failureMarkup = technicalFailures.length ? `<div class="review-issue-list">${technicalFailures.map((item) => `<article class="review-technical-failure"><strong>${escapeHtml(item.seatId || "未标识席位")}</strong><p>未返回 · 技术未完成 · ${escapeHtml(reasonLabels[item.failureReason] || item.failureReason || item.message || "调用失败")}</p></article>`).join("")}</div>` : `<p class="review-empty">${reviewMode}未发现技术失败。</p>`;
   const degradedFlag = technical.degraded
-    ? (technicalFailures.find((item) => item?.status === "degraded")?.message || "三席交叉审核不成立：有席位兜底到了同一模型")
+    ? (technicalFailures.find((item) => item?.status === "degraded")?.message || `${reviewMode}不成立：有席位兜底到了同一模型`)
     : "";
   const technicalFlags = [degradedFlag, technical.stalled ? "自动修订已停止：stalled" : "", technical.budgetExhausted ? "自动修订已停止：budget_exhausted" : ""].filter(Boolean);
   const decisionItems = Array.isArray(decision.items) ? decision.items : [];
@@ -2149,6 +2165,11 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "", overrid
         }
         payload = { result };
       } catch (error) {
+        if (error?.code === "STAGE_RERUN_REQUIRES_OVERRIDE" && !overrideRetried) {
+          persistActiveRun(null);
+          state.pendingRerun = { stage, revisionPlan };
+          return { pendingConfirmation: true };
+        }
         if (!recoveryAttempted && error?.recoverable) {
           recoveryAttempted = true;
           showToast("检测到服务重启，正在使用已保存输入恢复当前阶段…");
@@ -2164,18 +2185,20 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "", overrid
     if (autoApproved) {
       // 自动放行：多数通过 + 意见一致≥90% → 后端已推进阶段，保留推进并提示
       state.stage = resultStage;
-      showToast("审核通过（2 席共识≥90%），已自动进入下一阶段");
+      showToast("审核通过，已自动进入下一阶段");
     } else {
       // The run response may contain the last approved stage; keep the stage the user just ran visible.
       state.stage = stage;
       state.lastError = payload.result?.status === "failed" ? (payload.result.errors || []).map((item) => item.message).join("；") : "";
       if (state.lastError) throw new Error(state.lastError);
       const revision = payload.result?.revision;
+      const resultArtifact = artifactForStage(stage);
+      const reviewMode = reviewModeLabelFor(stage, reviewForArtifact(resultArtifact)?.content || {}, resultArtifact);
       showToast(stage === "title" && payload.result?.status === "completed"
         ? "已由指定模型生成 4 个英文剧名，可选择或重新生成"
         : payload.result?.status === "needs_review"
-        ? (revision ? "交叉修订已执行，但仍有问题未通过逐项关闭" : "已生成，但三模型审核存在共识问题或意见冲突")
-        : (revision ? "交叉修订已逐项复审关闭，等待确认" : "已生成并完成三模型交叉审核，等待确认"));
+        ? (revision ? "交叉修订已执行，但仍有问题未通过逐项关闭" : `已生成，但${reviewMode}存在共识问题或意见冲突`)
+        : (revision ? "交叉修订已逐项复审关闭，等待确认" : `已生成并完成${reviewMode}，等待确认`));
     }
     return { result: payload.result };
   } catch (error) {

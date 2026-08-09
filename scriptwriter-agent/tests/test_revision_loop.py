@@ -372,3 +372,44 @@ class TestReviewExistingEpisode(unittest.TestCase):
         state.artifacts["episodes"] = {}
         with self.assertRaises(ValueError):
             eng.review_existing_episode(state, 3)
+
+
+class TestFirstEpisodeNoPrevious(unittest.TestCase):
+    """第 1 集审核：前情必须为空（"首集，无前集"），不得注入其他集内容。"""
+
+    def test_review_first_episode_has_no_previous(self):
+        import json
+        from engine import ProjectState
+        class Capture:
+            def __init__(self):
+                self.prompt = ""
+                self.calls = 0
+            def chat(self, messages, **kw):
+                self.prompt = messages[0]["content"]
+                self.calls += 1
+                return json.dumps({"pass": True, "score": 85,
+                                   "dimensions": {"hook": 88, "dialogue": 82, "continuity": 90},
+                                   "issues": []}, ensure_ascii=False)
+
+        # 场景：集 2 已生成（current_episode=3），重新审核集 1
+        ep1 = {"scenes": [{"location": "路边", "beats": [
+            {"speaker": "A", "line": "你好", "action": "点头"},
+            {"speaker": "B", "line": "来了", "action": "招手"},
+            {"speaker": "A", "line": "走吧", "action": "转身"},
+            {"speaker": "B", "line": "好", "action": "跟上"}]}]}
+        ep2 = {"scenes": [{"location": "侧门", "beats": [
+            {"speaker": "A", "line": "秘密", "action": "低语"},
+            {"speaker": "B", "line": "地图", "action": "翻找"},
+            {"speaker": "A", "line": "约定", "action": "点头"},
+            {"speaker": "B", "line": "好", "action": "离开"}]}]}
+        cap = Capture()
+        eng = PixelWriterEngine(FakeWriter([]), cap, state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-first", stage="episode")
+        state.idea = {"raw": "测试", "episode_duration_seconds": 30}
+        state.artifacts["episodes"] = {"1": ep1, "2": ep2}
+        state.current_episode = 3
+        eng.review_existing_episode(state, 1)
+        self.assertIn("首集，无前集", cap.prompt, "第 1 集审核前情必须为空")
+        self.assertIn("上集悬念：（无）", cap.prompt)
+        self.assertNotIn("侧门", cap.prompt.split("前情提要")[1].split("本集：")[0],
+                         "第 1 集前情不得包含集 2 内容")

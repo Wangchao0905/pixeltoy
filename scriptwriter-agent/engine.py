@@ -117,7 +117,7 @@ class PixelWriterEngine:
         episode = (state.artifacts.get("episodes") or {}).get(str(idx))
         if not episode:
             raise ValueError("该集尚未生成，无法审核")
-        verdict = self.review_episode(state, episode)
+        verdict = self.review_episode(state, episode, idx=idx)
         if not isinstance(verdict, dict):
             raise ValueError("审核输出无法解析，请重试")
         state.evaluation[str(idx)] = verdict
@@ -242,8 +242,11 @@ class PixelWriterEngine:
             ),
         }
 
-    def review_episode(self, state, episode):
+    def review_episode(self, state, episode, idx=None):
         """单审核 + 争议仲裁：DeepSeek 正常审核；仅当未通过时 Gemini 复核一次。
+
+        idx：被审核的集序号（默认取 state.current_episode）。必须显式传被审集，
+        否则"重新审核本集"时 current_episode 已推进到下一集，前情会取错集。
 
         仲裁规则（极简）：
         - DeepSeek 通过 → 直接用（不调 Gemini，省一半调用）。
@@ -254,13 +257,13 @@ class PixelWriterEngine:
         - 任一席调用异常（网关 401/超时）→ 降级用另一席结果，绝不导致整集失败。
         """
         try:
-            verdict_a = self._review_once(self.reviewer, state, episode)
+            verdict_a = self._review_once(self.reviewer, state, episode, idx)
         except Exception:
             verdict_a = None
         if verdict_a is None:
             if self.reviewer_b:
                 try:
-                    return self._review_once(self.reviewer_b, state, episode)
+                    return self._review_once(self.reviewer_b, state, episode, idx)
                 except Exception:
                     return None
             return None
@@ -269,7 +272,7 @@ class PixelWriterEngine:
         if not self.reviewer_b:
             return verdict_a  # 无仲裁席：维持 DeepSeek 判定
         try:
-            verdict_b = self._review_once(self.reviewer_b, state, episode)
+            verdict_b = self._review_once(self.reviewer_b, state, episode, idx)
         except Exception:
             verdict_b = None
         if verdict_b is None:
@@ -322,7 +325,7 @@ class PixelWriterEngine:
         lo, hi = duration_seconds * 0.6, duration_seconds * 1.4
         return lo <= est <= hi, est
 
-    def _review_once(self, client, state, episode):
+    def _review_once(self, client, state, episode, idx=None):
         """单个审核器的完整审核（prompt + 解析重试 + 代码级强制门）。
 
         多维度：human_tone（Humanizer-zh 去 AI 腔）、hook（开场钩/集尾悬念/反转强度）、
@@ -331,7 +334,8 @@ class PixelWriterEngine:
         """
         humanizer = self.facts["humanizer-zh.md"]
         wb = json.dumps(state.artifacts.get("worldbuilding", {}), ensure_ascii=False)
-        idx = state.current_episode if state.current_episode else 1
+        if idx is None:
+            idx = state.current_episode if state.current_episode else 1
         cont = self._continuity_ledger(state, idx)
         prev_part = "\n".join(cont["previous_episode_end"]) if cont["previous_episode_end"] else "（首集，无前集）"
         prev_hook = cont["previous_cliffhanger"]

@@ -271,6 +271,12 @@ const pixelTaleStylesStamp = html.match(/pixeltale\/styles\.css\?v=([0-9a-zA-Z._
 const pixelTaleAppStamp = html.match(/pixeltale\/app\.js\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
 assert.ok(pixelTaleStylesStamp && pixelTaleAppStamp, "PixelTale static assets must carry cache stamps");
 assert.equal(pixelTaleAppStamp, pixelTaleStylesStamp, "PixelTale styles and app cache stamps must stay synchronized");
+assert.match(app, /const rawReviewCompletion = content\.reviewCompletion/, "review completion must preserve an unmeasured null state");
+assert.match(app, /metrics\.reviewCompletion === null \? "未执行"/, "a rule-blocked review must show that review did not run");
+assert.match(pixeltaleAgentSource, /function ruleBlockedReview\(ruleResult\)[\s\S]*?reviewCompletion: null/, "a rule-blocked review must not report zero completion as an executed review");
+assert.match(html, /id="consensusAgreement">—<\/b>/, "the standalone PixelTale page must not default unmeasured agreement to zero");
+assert.match(nestedHtml, /id="consensusScore">—<\/strong>/, "the nested PixelTale page must not default an unmeasured decision score to zero");
+assert.match(nestedHtml, /id="consensusAgreement">—<\/b>/, "the nested PixelTale page must not default unmeasured agreement to zero");
 // Assert the stamp's shape, not a literal value: pinning the exact string means
 // every legitimate cache bust also has to edit this test, and a stale literal here
 // has broken the suite before.

@@ -2256,6 +2256,7 @@ function ruleBlockedReview(ruleResult) {
     ...base,
     pass: false,
     basePass: false,
+    reviewCompletion: null,
     findings,
     ruleFindings: ruleResult.violations,
     technicalFailures: [{ status: "rule_blocked", message: "命中 high 规则，审核模型未调用" }],

@@ -254,6 +254,68 @@ def make_handler(engine_factory):
                     engine = engine_factory()
                     converted = engine.localize_actions(state)
                     self._json(200, {"ok": True, "converted": converted, "state": json.loads(state.to_json())})
+                elif parsed.path == "/api/fix-issue":
+                    # 单条问题定向修复：只把这一条 issue 交给 GPT 修订（quote 命中处），
+                    # 其余 scene/beat 逐字不变（diff 约束 + 越界合并回滚），修完重新审核本集。
+                    pid = body.get("project_id", "")
+                    path = _safe_project_path(pid, ".json")
+                    if path is None or not os.path.exists(path):
+                        self._json(404, {"ok": False, "error": "project not found"})
+                        return
+                    try:
+                        with open(path, encoding="utf-8") as f:
+                            state = ProjectState.from_json(f.read())
+                    except Exception:
+                        self._json(500, {"ok": False, "error": "corrupt project state"})
+                        return
+                    try:
+                        ep_no = int(body.get("episode", 0))
+                    except (TypeError, ValueError):
+                        self._json(400, {"ok": False, "error": "invalid episode"})
+                        return
+                    issue = body.get("issue")
+                    if not isinstance(issue, dict):
+                        self._json(400, {"ok": False, "error": "missing issue"})
+                        return
+                    episodes_map = state.artifacts.setdefault("episodes", {})
+                    episode = episodes_map.get(str(ep_no))
+                    if not isinstance(episode, dict):
+                        self._json(404, {"ok": False, "error": "episode not found"})
+                        return
+                    engine = engine_factory()
+                    try:
+                        revised = engine.revise_episode(state, episode, [issue])
+                    except Exception as exc:
+                        import traceback
+                        traceback.print_exc()
+                        self._json(500, {"ok": False, "error": f"定向修复失败：{type(exc).__name__}: {exc}"})
+                        return
+                    if not isinstance(revised, dict):
+                        self._json(422, {"ok": False, "error": "模型修订输出无法解析，请重试"})
+                        return
+                    if not engine._revision_respects_scope(episode, revised, [issue]):
+                        merged = engine._merge_revision(episode, revised, [issue])
+                        if merged is None:
+                            self._json(422, {"ok": False, "error": "修订越界且无法安全合并，请改用重新生成本集"})
+                            return
+                    else:
+                        merged = revised
+                    episodes_map[str(ep_no)] = merged
+                    try:
+                        verdict = engine.review_episode(state, merged)
+                    except Exception as exc:
+                        import traceback
+                        traceback.print_exc()
+                        verdict = None
+                    if verdict is None:
+                        verdict = {"pass": False, "score": 0, "dimensions": {},
+                                   "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "审核输出无法解析，请重试"}]}
+                    if not isinstance(state.evaluation, dict):
+                        state.evaluation = {}
+                    state.evaluation[str(ep_no)] = verdict
+                    getattr(engine, "_save", lambda s: None)(state)
+                    status = "approved" if verdict.get("pass") else "needs-human"
+                    self._json(200, {"ok": True, "status": status, "verdict": verdict, "state": json.loads(state.to_json())})
                 elif parsed.path == "/api/export":
                     pid = body.get("project_id", "")
                     path = _safe_project_path(pid, ".json")

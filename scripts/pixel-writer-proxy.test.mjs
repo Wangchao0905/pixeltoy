@@ -47,6 +47,8 @@ assert.match(ui, /ideaBox\.raw/, "点击创作历史后必须把故事种子（i
 assert.match(ui, /data-retry/, "每一集都必须提供'重新生成本集'按钮（含已通过）");
 assert.match(ui, /rows\.push\(`<div class="scene issue"><button class="retry-ep"/, "重试按钮对所有集无条件渲染");
 assert.match(ui, /api\/continue",\{project_id:projectId,episode:retryEp\}/, "重新生成本集必须带 episode 参数调用 /api/continue");
+assert.match(ui, /data-fix-ep/, "每条审核建议必须提供'修复此条'按钮");
+assert.match(ui, /api\/fix-issue",\{project_id:projectId,episode:fixEp,issue\}/, "单条修复必须带 episode + issue 调用 /api/fix-issue");
 // Pixel Writer tab 需在刷新后恢复（localStorage 记忆），否则每次刷新都跳回 Story Forge
 const swMode = fs.readFileSync(path.join(root, "public/scriptwriter-mode.js"), "utf8");
 assert.match(swMode, /restoreActiveTab/, "scriptwriter-mode 必须支持刷新后恢复 Pixel Writer tab");

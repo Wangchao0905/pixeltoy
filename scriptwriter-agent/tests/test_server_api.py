@@ -326,3 +326,88 @@ class TestPostStart(unittest.TestCase):
         finally:
             srv.shutdown()
             srv.server_close()
+
+class FixIssueEngine:
+    """/api/fix-issue 假引擎：revise 产出修订 dict（修 location），review 直接通过。"""
+    def __init__(self):
+        self.saved = None
+    def revise_episode(self, state, episode, issues):
+        ep = json.loads(json.dumps(episode))
+        ep["scenes"][0]["location"] = "修复后的地点"
+        return ep
+    def _revision_respects_scope(self, original, revised, issues):
+        return True
+    def _merge_revision(self, original, revised, issues):
+        return revised
+    def review_episode(self, state, episode):
+        return {"pass": True, "score": 88, "dimensions": {"story": 9}, "issues": []}
+    def _save(self, state):
+        self.saved = state
+
+class ScopeViolationEngine(FixIssueEngine):
+    """修订越界且无法合并 → 422。"""
+    def _revision_respects_scope(self, original, revised, issues):
+        return False
+    def _merge_revision(self, original, revised, issues):
+        return None
+
+class TestFixIssue(unittest.TestCase):
+    def setUp(self):
+        os.makedirs("projects", exist_ok=True)
+        self.state = ProjectState(project_id="pfix", stage="episode", current_episode=2)
+        self.state.artifacts["outline"] = {"episodes": [{"index": 1, "hook": "h"}, {"index": 2, "hook": "h"}]}
+        self.state.artifacts["episodes"] = {"1": {"scenes": [{"location": "旧地点", "beats": [{"speaker": "A", "line": "你好"}]}]}}
+        self.state.evaluation["1"] = {"pass": False, "score": 40, "dimensions": {},
+                                      "issues": [{"severity": "high", "quote": "旧地点", "fix": "改为中文地点"}]}
+        with open(os.path.join("projects", "pfix.json"), "w", encoding="utf-8") as f:
+            f.write(self.state.to_json())
+
+    def _server(self, engine):
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(engine))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return f"http://127.0.0.1:{srv.server_address[1]}", srv
+
+    def test_fix_issue_single(self):
+        base, srv = self._server(FixIssueEngine)
+        try:
+            body = json.dumps({"project_id": "pfix", "episode": 1,
+                               "issue": {"severity": "high", "quote": "旧地点", "fix": "改为中文地点"}}).encode("utf-8")
+            req = urllib.request.Request(base + "/api/fix-issue", data=body, method="POST")
+            with urllib.request.urlopen(req) as r:
+                self.assertEqual(r.status, 200)
+                resp = json.loads(r.read().decode("utf-8"))
+            self.assertTrue(resp["ok"])
+            self.assertEqual(resp["status"], "approved")
+            self.assertEqual(resp["state"]["artifacts"]["episodes"]["1"]["scenes"][0]["location"], "修复后的地点")
+            self.assertEqual(resp["state"]["evaluation"]["1"]["pass"], True)
+        finally:
+            srv.shutdown(); srv.server_close()
+
+    def test_fix_issue_scope_violation_422(self):
+        base, srv = self._server(ScopeViolationEngine)
+        try:
+            body = json.dumps({"project_id": "pfix", "episode": 1,
+                               "issue": {"severity": "high", "quote": "旧地点", "fix": "改为中文地点"}}).encode("utf-8")
+            req = urllib.request.Request(base + "/api/fix-issue", data=body, method="POST")
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(req)
+            self.assertEqual(ctx.exception.code, 422)
+            body_resp = json.loads(ctx.exception.read().decode("utf-8"))
+            self.assertIn("无法安全合并", body_resp["error"])
+        finally:
+            srv.shutdown(); srv.server_close()
+
+    def test_fix_issue_missing_issue_400(self):
+        base, srv = self._server(FixIssueEngine)
+        try:
+            body = json.dumps({"project_id": "pfix", "episode": 1}).encode("utf-8")
+            req = urllib.request.Request(base + "/api/fix-issue", data=body, method="POST")
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(req)
+            self.assertEqual(ctx.exception.code, 400)
+        finally:
+            srv.shutdown(); srv.server_close()
+
+    def tearDown(self):
+        if os.path.exists("projects/pfix.json"):
+            os.remove("projects/pfix.json")

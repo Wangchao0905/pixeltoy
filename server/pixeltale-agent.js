@@ -1773,6 +1773,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
   const requiredSeats = Math.max(1, Math.min(REVIEW_QUORUM, Number(reviewPolicy.requiredSeats) || REVIEW_COMPLETION_REQUIRED));
   const issueSupport = Math.max(1, Math.min(requiredSeats, Number(reviewPolicy.issueSupport) || requiredSeats));
   const reviewMode = reviewPolicy.mode === "fast" ? "fast" : "dual";
+  const heterogeneityAvailable = reviewPolicy.heterogeneityAvailable !== false;
   const feedbacks = reviews.map((item) => {
     if (item.result) {
       const review = item.result;
@@ -1911,29 +1912,42 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
     .map((item) => ({ ...item, tag: item.tag || "未关闭修订项", severity: item.severity || "high", decisionType: "retry_failed" }));
   const automaticRevisionBlocked = Boolean(revisionContract && decisionRequiredIssues.length);
   const distinctActualModels = new Set(completed.map((item) => item.actualModel || item.model).filter(Boolean)).size;
-  const quorumMet = completed.length >= requiredSeats && distinctActualModels >= requiredSeats;
-  const degraded = completed.length >= requiredSeats && distinctActualModels < requiredSeats;
-  // Name the seats that actually collided and the model they landed on. A hardcoded
-  // "B/C" was wrong the moment the roster changed — seat_a and seat_b now share the
-  // GPT channel, so the pair that collapses depends on which channel failed.
+  const distinctProviders = new Set(completed
+    .map((item) => item.provider || providerForRoute(item.actualModel || item.model))
+    .filter(Boolean)).size;
+  const passingReviews = completed.filter((item) => item.pass).length;
+  const allReviewSeatsCompleted = feedbacks.length >= requiredSeats && feedbacks.every((item) => item.status === "completed");
+  const independenceUnavailable = !heterogeneityAvailable;
+  const nonIndependentPass = independenceUnavailable
+    && allReviewSeatsCompleted
+    && passingReviews >= requiredSeats;
+  const quorumMet = completed.length >= requiredSeats
+    && (distinctProviders >= requiredSeats || nonIndependentPass);
+  const degraded = completed.length >= requiredSeats
+    && distinctProviders < requiredSeats
+    && !independenceUnavailable;
+  // Name the seats that actually collided and the provider they landed on. A hardcoded
+  // seat pair was wrong the moment the roster changed, because the pair depends on
+  // which provider ultimately served the completed reviews.
   const collapsedSeats = (() => {
-    const byModel = new Map();
+    const byProvider = new Map();
     completed.forEach((item) => {
-      const model = item.actualModel || item.model;
-      if (!model) return;
-      if (!byModel.has(model)) byModel.set(model, []);
-      byModel.get(model).push(item.seatId || "?");
+      const provider = item.provider || providerForRoute(item.actualModel || item.model);
+      if (!provider) return;
+      if (!byProvider.has(provider)) byProvider.set(provider, []);
+      byProvider.get(provider).push(item.seatId || "?");
     });
-    return [...byModel.entries()].filter(([, seats]) => seats.length > 1);
+    return [...byProvider.entries()].filter(([, seats]) => seats.length > 1);
   })();
   const degradedMessage = collapsedSeats.length
-    ? `技术未完成：${collapsedSeats.map(([model, seats]) => `${seats.join("/")} 席位都兜底到了 ${model}`).join("；")}，独立复核不成立`
+    ? `技术未完成：${collapsedSeats.map(([provider, seats]) => `${seats.join("/")} 席位都落到了同一 provider（${provider}）`).join("；")}，独立复核不成立`
     : "技术未完成：审读席位未满足独立复核条件";
+  const independenceUnavailableMessage = "审核标注：当前仅一个可用模型通道，本次为非独立复核。";
   const technicalFailures = [
     ...feedbacks.filter((item) => item.status === "failed").map((item) => ({ seatId: item.seatId, status: "failed", failureReason: item.failureReason, message: item.findings[0] })),
-    ...(degraded ? [{ status: "degraded", collapsedSeats: collapsedSeats.map(([model, seats]) => ({ model, seats })), message: degradedMessage }] : []),
+    ...(degraded ? [{ status: "degraded", collapsedSeats: collapsedSeats.map(([provider, seats]) => ({ provider, seats })), message: degradedMessage }] : []),
+    ...(independenceUnavailable ? [{ status: "independence_unavailable", message: independenceUnavailableMessage }] : []),
   ];
-  const passingReviews = completed.filter((item) => item.pass).length;
   // 共识降级：3 席全票 → 2 席多数通过即可放行（仍需无 mandatory 硬伤 + 修订闭环）。
   // 第三席的分歧不阻断，记录到 disagreements 供追溯/导出标注——保留三席独立
   // 评估的严谨性，同时消除"单席异议永久卡死"（实测 30 次运行 0 通过）。
@@ -1977,14 +1991,17 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
         : {
           kind: "approve",
           owner: "系统裁判",
-          title: "通过",
-          summary: reviewMode === "fast" ? "硬规则与快速审读均已满足；其余意见仅供参考。" : "硬规则、修订合同和双席共识均已满足；其余意见仅供参考。",
+          title: independenceUnavailable ? "非独立复核放行" : "通过",
+          summary: independenceUnavailable
+            ? "当前仅一个可用模型通道，本次为非独立复核；两席审核均已完成并通过，带标注放行。"
+            : reviewMode === "fast" ? "硬规则与快速审读均已满足；其余意见仅供参考。" : "硬规则、修订合同和双席共识均已满足；其余意见仅供参考。",
           items: [],
         };
   const basePass = decision.kind === "approve";
   const pass = basePass;
   const checks = {
     cross_validation: quorumMet,
+    independent_review: !independenceUnavailable,
     reviews_passed: majorityPass,
     majority_consensus: majorityPass,
     consistency: mandatoryIssues.length === 0,
@@ -2009,8 +2026,8 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
     agreement,
     quality,
     reviewCompletion,
-    reviewPolicy: { mode: reviewMode, requiredSeats, issueSupport },
-    quorum: { required: requiredSeats, completedSeats: completed.length, completed: completed.length, passing: passingReviews, distinctActualModels, met: quorumMet, degraded },
+    reviewPolicy: { mode: reviewMode, requiredSeats, issueSupport, heterogeneityAvailable },
+    quorum: { required: requiredSeats, completedSeats: completed.length, completed: completed.length, passing: passingReviews, distinctActualModels, distinctProviders, met: quorumMet, degraded, independenceUnavailable },
     disagreements,
     dimensions,
     feedbacks,
@@ -3129,7 +3146,8 @@ function createPixelTaleAgent(options = {}) {
         } });
         reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
         reportPhase(params, "refereeing");
-        const consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract, reviewPolicy), ruleFindings: ruleResult.violations };
+        const effectiveReviewPolicy = { ...reviewPolicy, heterogeneityAvailable: !reviewRoutes.every((reviewRoute) => reviewRoute.heterogeneous === false) };
+        const consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract, effectiveReviewPolicy), ruleFindings: ruleResult.violations };
         if (consensus.revision) consensus.revision.owner = "本阶段主创";
         const reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviews.map((item) => item.result?.model || item.model).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
         primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
@@ -3433,7 +3451,8 @@ function createPixelTaleAgent(options = {}) {
       } });
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
       reportPhase(params, "refereeing");
-      consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract, reviewPolicy), ruleFindings: ruleResult.violations };
+      const effectiveReviewPolicy = { ...reviewPolicy, heterogeneityAvailable: !reviewRoutes.every((reviewRoute) => reviewRoute.heterogeneous === false) };
+      consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract, effectiveReviewPolicy), ruleFindings: ruleResult.violations };
       if (consensus.revision) consensus.revision.owner = "本阶段主创";
       reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviews.map((item) => item.result?.model || item.model).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
       primaryArtifact.status = consensus.pass ? "ready" : "needs_review";

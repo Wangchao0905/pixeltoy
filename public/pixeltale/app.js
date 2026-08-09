@@ -674,6 +674,8 @@ function buildHumanOverrideBrief(reviewContent = {}) {
   if (sevLine) lines.push(`• 未解决问题：${sevLine}`);
   if (pendingClosures.length) lines.push(`• 修订：${pendingClosures.length} 项未关闭`);
   const failures = Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [];
+  const independenceUnavailable = failures.find((item) => item?.status === "independence_unavailable");
+  if (independenceUnavailable) lines.push(`• 审核标注：${independenceUnavailable.message || "当前仅一个可用模型通道，本次为非独立复核。"}`);
   const stalled = failures.find((item) => item?.status === "stalled" || item?.status === "budget_exhausted");
   if (stalled) lines.push(`• 状态：${stalled.message || "自动修订未收敛，仅重跑未通过批次"}`);
   return lines.length ? lines.join("\n") : "（无评分数据，请自行核对当前版本）";

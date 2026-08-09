@@ -377,7 +377,7 @@ document.addEventListener("keydown",(event)=>{if((event.metaKey||event.ctrlKey)&
 $("command-input")?.addEventListener("input",(event)=>{const query=event.target.value.trim().toLowerCase();document.querySelectorAll(".command-item").forEach((item)=>{item.hidden=!!query&&!item.textContent.toLowerCase().includes(query);});});
 document.querySelectorAll(".command-item").forEach((item)=>item.addEventListener("click",()=>{const command=item.dataset.command;palette?.close();if(command==="start")$("start")?.click();if(command==="next")$("btn-next")?.click();if(command==="review")setWorkspaceView("review");if(command==="export")$("btn-export")?.click();}));
 $("top-export")?.addEventListener("click",()=>$("btn-export")?.click());
-try{const lastProject=localStorage.getItem("pw.lastProject");if(lastProject){loadProject(lastProject).then((ok)=>{if(ok){renderStages();}});}}catch(e){}
+try{const lastProject=localStorage.getItem("pw.lastProject");if(lastProject&&new URLSearchParams(location.search).get("open")==="1"){loadProject(lastProject).then((ok)=>{if(ok){renderStages();}});}}catch(e){}
 </script>
 </body>
 </html>

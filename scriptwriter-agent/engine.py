@@ -559,6 +559,10 @@ class PixelWriterEngine:
             else:
                 reason = f"\n\n【上次审核未通过（{verdict.get('score')} 分），请整集重写】提升剧情质量与钩子强度。"
             if attempts > REWRITE_MAX:
+                state.evaluation[str(idx)] = {"pass": False, "score": verdict.get("score", 0),
+                                              "dimensions": verdict.get("dimensions", {}) or {},
+                                              "issues": issues[:12] or [{"severity": "high", "mode": 0, "quote": "",
+                                                                         "fix": f"审核未通过（{verdict.get('score')} 分），重写 {REWRITE_MAX} 次仍不达标，请人工处理"}]}
                 break
         if isinstance(episode, dict):
             state.artifacts.setdefault("episodes", {})[str(idx)] = episode

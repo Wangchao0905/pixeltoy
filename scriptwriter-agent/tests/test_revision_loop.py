@@ -315,3 +315,28 @@ class TestDurationTemplate(unittest.TestCase):
         state = ProjectState(project_id="t5", stage="episode")
         result = engine.run_episode_loop(state, {"index": 1, "events": []})
         self.assertEqual(result["status"], "approved")  # v4.0 审核只查 3 项，不再因 human_tone 否决
+
+
+class TestReviewExhaustedWritesEvaluation(unittest.TestCase):
+    """审核不过重写耗尽 → 必须写 evaluation（pass=False + issues），UI 才能显示问题。"""
+
+    def test_review_fail_exhausted_writes_evaluation(self):
+        import json
+        from engine import ProjectState
+        draft = {"scenes": [{"location": "路边", "beats": [
+            {"speaker": "A", "line": "你好", "action": "点头"},
+            {"speaker": "B", "line": "来了", "action": "招手"},
+            {"speaker": "A", "line": "走吧", "action": "转身"},
+            {"speaker": "B", "line": "好", "action": "跟上"}]}]}
+        fail = {"pass": False, "score": 55, "dimensions": {"human_tone": 80, "hook": 50},
+                "issues": [{"severity": "high", "quote": "开头", "fix": "钩子太弱"}]}
+        eng = PixelWriterEngine(FakeWriter([json.dumps(draft, ensure_ascii=False)] * 3),
+                                ConstLLM(json.dumps(fail, ensure_ascii=False)), state_dir="/tmp/pw-test")
+        state = ProjectState(project_id="t-ev", stage="episode")
+        state.idea = {"raw": "测试", "episode_duration_seconds": 30}
+        result = eng.run_episode_loop(state, {"index": 1})
+        ev = state.evaluation.get("1")
+        self.assertIsNotNone(ev, "审核不过重写耗尽必须写 evaluation")
+        self.assertFalse(ev.get("pass"))
+        self.assertTrue(ev.get("issues"))
+        self.assertEqual(result["status"], "needs-human")

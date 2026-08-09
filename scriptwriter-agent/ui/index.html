@@ -333,7 +333,7 @@ function render(state){lastState=state;const artifacts=state.artifacts||{};const
     if(ev.score!==undefined)rows.push(`<div class="verdict-line"><span>审核分 <b>${escapeHtml(ev.score)}</b></span>${ev.pass===true?"<span class=\"status-badge is-approved\">审核通过</span>":"<span class=\"status-badge is-human\">未通过</span>"}</div>`);rows.push(`<div class="scene issue"><button class="retry-ep" data-retry="${index}">重新生成本集</button></div>`);
     (episode.scenes||[]).forEach((scene)=>{rows.push(`<section class="scene"><div class="scene-title">【${escapeHtml(scene.location||"未命名场景")}】</div>`);(scene.beats||[]).forEach((beat)=>{const parts=[];if(beat.action)parts.push(`<span class="beat-action">${escapeHtml(beat.action)}</span>`);if(beat.line)parts.push(`<span class="speaker">${escapeHtml(beat.speaker||"人物")}：</span>${escapeHtml(beat.line)}`);rows.push(`<p class="beat">${parts.join("")}</p>`);});rows.push("</section>");});
     // 修改建议：来自 DeepSeek 审核的问题清单
-    const issues=(ev.issues||[]).filter((issue)=>issue&&issue.fix);
+    const issues=(ev.issues||[]).filter((issue)=>issue&&(issue.fix||issue.quote));
     if(issues.length){rows.push(`<section class="scene"><div class="scene-title">审核修改建议（${issues.length} 条）</div><ul class="fix-list">${issues.map((issue,i)=>issueText(issue,i,index)).join("")}</ul></section>`);}
     rows.push("</div></details>");
   });

@@ -213,6 +213,11 @@ assert.match(styles, /\.app-shell \{ height: 100vh; height: 100dvh;[\s\S]*overfl
 assert.match(styles, /\.stage-content \{ width: min\(1180px,/, "wide screens must use the central workspace");
 assert.match(styles, /\.inspiration-pool \{[\s\S]*height: 360px;/, "inspiration pool must not push the workflow down");
 assert.match(app, /function renderReviewPanel\(reviewContent = \{\}, \{ passed/, "review output must expose a complete issue panel");
+assert.match(app, /function renderStageCockpit\(/, "the default PixelTale workspace must render a bounded stage cockpit");
+assert.match(app, /data-scroll-agent-task/, "the stage cockpit must guide users to the single canonical execution action");
+assert.match(styles, /\.stage-cockpit \{/, "the stage cockpit must have a dedicated visual surface");
+assert.match(styles, /\.execution-rail-step\.is-current/, "the execution rail must visibly identify the active step");
+assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*stage-cockpit/, "the stage cockpit must respect reduced-motion preferences");
 assert.match(app, /review-zone-optional[\s\S]*可选优化/, "low-risk recommendations must be presented in the optional zone");
 assert.match(app, /未返回 · 技术未完成[\s\S]*scoreLabel = entry\.status === "failed" \? "—"/, "failed seats must show technical incompletion and a dash score");
 assert.match(app, /一键修订并复审/, "review output must offer one canonical revision action");

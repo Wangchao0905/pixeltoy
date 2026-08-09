@@ -1802,6 +1802,65 @@ function renderStageTaskCard(stage = state.stage, reviewContent = {}) {
   return `<section class="stage-task-card" aria-label="阶段执行说明"><div class="stage-task-head"><span class="card-label"><i></i>EXECUTION CARD</span><strong>${escapeHtml(status)}</strong></div><dl class="stage-task-grid"><div><dt>阶段目标</dt><dd>${escapeHtml(meta.task)}</dd></div><div><dt>责任人</dt><dd>${escapeHtml(owner)}</dd></div><div><dt>输入</dt><dd>${escapeHtml(input)}</dd></div><div><dt>产出</dt><dd>${escapeHtml(output)}</dd></div><div><dt>完成条件</dt><dd>${escapeHtml(acceptance)}</dd></div></dl></section>`;
 }
 
+function renderStageCockpit(stage = state.stage, reviewContent = {}) {
+  const meta = stageMeta[stage] || stageMeta.brief;
+  const artifact = artifactForStage(stage);
+  const flowStage = workflowStage();
+  const action = nextStepMeta();
+  const review = reviewForArtifact(artifact)?.content || reviewContent;
+  const unitProgress = unitStageProgress(stage);
+  const stageNumber = String(stageIndex(stage) + 1).padStart(2, "0");
+  const isCurrent = stage === flowStage;
+  const isApproved = !!artifact && state.approved.has(artifact.id);
+  const reviewLabel = isApproved
+    ? "已确认"
+    : review?.pass === true
+      ? "已完成"
+      : state.busy && isCurrent
+        ? "执行中"
+        : artifact
+          ? "待裁判"
+          : "待执行";
+  const unitLabel = unitProgress
+    ? `已锁定 ${unitProgress.locked.length} / ${unitProgress.total || "-"} 集`
+    : artifact
+      ? "已生成当前阶段产物"
+      : "等待本阶段输入";
+  const decisionLabel = isApproved
+    ? "已锁定"
+    : action.kind === "needs_decision" || action.kind === "human-override"
+      ? "等待取舍"
+      : action.kind === "auto-revise"
+        ? "等待修订"
+        : action.kind === "approve"
+          ? "等待确认"
+          : "等待结果";
+  const runCopy = state.busy && isCurrent
+    ? "PixelTale 正在执行，进度会自动同步。"
+    : isCurrent
+      ? (stageRunSummary(stage) || action.copy)
+      : `当前正在查看已完成阶段；主线下一步是「${stageMeta[flowStage]?.title || "导出交付"}」。`;
+  return `<section class="stage-cockpit${state.busy && isCurrent ? " is-running" : ""}" aria-label="当前阶段工作台">
+    <div class="stage-cockpit-summary">
+      <span class="stage-cockpit-number">${stageNumber}</span>
+      <div><span class="eyebrow">CURRENT UNIT</span><h2>${escapeHtml(meta.title)}</h2><p>${escapeHtml(meta.task)}</p></div>
+      <button type="button" class="stage-cockpit-jump" data-scroll-agent-task>查看执行轨道</button>
+    </div>
+    <dl class="stage-cockpit-brief">
+      <div><dt>当前目标</dt><dd>${escapeHtml(meta.task)}</dd></div>
+      <div><dt>阶段状态</dt><dd>${escapeHtml(unitLabel)}</dd></div>
+      <div><dt>创作策略</dt><dd>${stage === "title" ? "单模型候选 · 人工选择" : "主笔生成 · 规则校验 · 分层审读"}</dd></div>
+      <div><dt>下一步</dt><dd>${escapeHtml(action.title)}</dd></div>
+    </dl>
+    <div class="execution-rail" aria-label="执行进度">
+      <article class="execution-rail-step ${artifact ? "is-complete" : isCurrent ? "is-current" : ""}"><span>01</span><div><strong>生成</strong><small>${artifact ? "当前产物已就绪" : isCurrent ? "等待开始" : "等待解锁"}</small></div><em>${artifact ? "完成" : isCurrent ? "当前" : "—"}</em></article>
+      <article class="execution-rail-step ${review?.pass === true || isApproved ? "is-complete" : artifact && isCurrent ? "is-current" : ""}"><span>02</span><div><strong>校验</strong><small>规则校验与分层审读</small></div><em>${escapeHtml(reviewLabel)}</em></article>
+      <article class="execution-rail-step ${isApproved ? "is-complete" : artifact && isCurrent ? "is-current" : ""}"><span>03</span><div><strong>决定</strong><small>系统裁判给出唯一下一步</small></div><em>${escapeHtml(decisionLabel)}</em></article>
+    </div>
+    <p class="stage-cockpit-status" role="status">${escapeHtml(runCopy)}</p>
+  </section>`;
+}
+
 function renderArtifactStage() {
   const meta = currentMeta();
   const artifact = artifactForStage(state.stage);
@@ -1824,7 +1883,7 @@ function renderArtifactStage() {
       : renderReviewPanel(reviewContent, { passed: reviewPassed, stage: state.stage, reviewId: review.id, showDecisionWorkbench: false })
     : `<div class="review-summary"><strong>正在等待复核结果</strong><p>当前批次完成后，这里会显示审核与锁定状态。</p></div>`;
   const inlineStatus = approved ? "已确认版本" : !unitComplete ? `已锁定 ${unitProgress.locked.length} / ${unitProgress.total} 集 · 继续生成` : reviewPassed ? "审核通过 · 请在右侧确认" : advisoryGate.blockingPending.length ? "待人工裁决 · 请处理右侧意见" : blockingItems.length ? "待定向修订 · 请使用右侧唯一按钮" : "需要重新提交当前阶段";
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p>${renderUnitStageProgress(state.stage)}${decisionWorkbench}<section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${renderCreationTrace(artifact, reviewContent)}${reviewPanel}</section>`;
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><p class="stage-intro">${meta.copy}</p>${renderUnitStageProgress(state.stage)}${decisionWorkbench}<section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><details class="stage-artifact-details"><summary><span>查看完整阶段产物</span><em>${escapeHtml(inlineStatus)}</em></summary><div class="structured-content">${renderValue(artifact.content)}</div></details><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${renderCreationTrace(artifact, reviewContent)}${reviewPanel}</section>`;
 }
 
 function renderHandoff() {
@@ -1857,7 +1916,7 @@ function renderStage() {
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;
   const currentArtifact = artifactForStage(state.stage);
   const currentReview = reviewForArtifact(currentArtifact)?.content || {};
-  $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="生产流程"><div><span class="eyebrow">PRODUCTION FLOW</span><strong>当前阶段 ${productionProgressLabel(workflowStage())}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>完成后</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderStageTaskCard(state.stage, currentReview)}${renderer()}`;
+  $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="生产流程"><div><span class="eyebrow">PRODUCTION FLOW</span><strong>当前阶段 ${productionProgressLabel(workflowStage())}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>完成后</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderStageCockpit(state.stage, currentReview)}${renderer()}`;
   bindStageActions();
   renderShellState();
 }
@@ -2285,6 +2344,11 @@ function bindDecisionImpactWorkbench() {
 }
 
 function bindStageActions() {
+  $$('[data-scroll-agent-task]').forEach((button) => button.addEventListener("click", () => {
+    const target = $(".agent-task");
+    target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    target?.querySelector("button")?.focus({ preventScroll: true });
+  }));
   $$('[data-title-choice]').forEach((button) => button.addEventListener("click", () => {
     if (state.approved.has(artifactForStage("title")?.id)) return;
     state.input.storyTitle = button.dataset.titleChoice || "";

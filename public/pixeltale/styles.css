@@ -727,7 +727,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .rail-action { min-height: 36px; border: 1px dashed rgba(40, 120, 232, 0.30); border-radius: 9px; color: var(--pt-blue); background: rgba(255, 255, 255, 0.62); }
 .rail-action:hover { border-style: solid; background: var(--pt-card-solid); }
 
-.content-stage { background: rgba(255, 255, 255, 0.24); }
+.content-stage { background: var(--pt-canvas); }
 .stage-content { width: min(1320px, calc(100% - 56px)); padding: 28px 0 76px; }
 .workflow-guide {
   position: sticky;
@@ -753,6 +753,45 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .artifact-meta { color: var(--pt-muted); }
 .stage-content h2 { margin: 14px 0 10px; color: var(--pt-ink); font-size: 36px; font-weight: 600; letter-spacing: -0.035em; line-height: 1.13; }
 .stage-intro { max-width: 720px; margin-bottom: 30px; color: var(--pt-muted); font-size: 14px; line-height: 1.72; }
+.stage-cockpit { display: grid; grid-template-columns: minmax(0, 1fr) 318px; gap: 0 22px; margin: 0 0 28px; border-top: 1px solid var(--pt-line); border-bottom: 1px solid var(--pt-line); background: rgba(255, 255, 255, 0.46); }
+.stage-cockpit-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 13px; padding: 26px 0 20px; }
+.stage-cockpit-number { display: grid; place-items: center; width: 32px; height: 32px; margin-top: 2px; border: 1px solid rgba(40, 120, 232, 0.24); border-radius: 10px; color: var(--pt-blue); background: rgba(244, 249, 255, 0.94); font: 700 14px var(--meta-font); }
+.stage-cockpit-summary h2 { margin: 4px 0 6px; font-size: 30px; }
+.stage-cockpit-summary p { max-width: 580px; margin: 0; color: var(--pt-muted); font-size: 13px; line-height: 1.6; }
+.stage-cockpit-jump { min-height: 32px; margin-top: 3px; border: 1px solid var(--pt-line-strong); border-radius: 9px; padding: 0 11px; color: var(--pt-blue); background: rgba(255, 255, 255, 0.68); font-size: 10px; font-weight: 650; white-space: nowrap; }
+.stage-cockpit-jump:hover { border-color: rgba(40, 120, 232, 0.42); color: var(--pt-ink); background: var(--pt-card-solid); }
+.stage-cockpit-brief { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-column: 1; gap: 0; margin: 0; padding: 0 0 24px; }
+.stage-cockpit-brief div { min-width: 0; padding: 0 14px; border-left: 1px solid var(--pt-line); }
+.stage-cockpit-brief div:first-child { padding-left: 0; border-left: 0; }
+.stage-cockpit-brief dt { color: var(--pt-faint); font: 700 8px var(--meta-font); letter-spacing: .07em; }
+.stage-cockpit-brief dd { margin: 7px 0 0; color: var(--pt-ink-soft); font-size: 10px; line-height: 1.5; }
+.execution-rail { grid-column: 2; grid-row: 1 / span 2; align-self: stretch; display: grid; align-content: center; gap: 8px; padding: 20px 0 20px 21px; border-left: 1px solid var(--pt-line); }
+.execution-rail::before { content: "执行轨道"; margin: 0 0 4px 41px; color: var(--pt-faint); font: 700 8px var(--meta-font); letter-spacing: .08em; }
+.execution-rail-step { display: grid; grid-template-columns: 31px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 49px; padding: 8px 0; border-bottom: 1px solid rgba(23, 25, 28, 0.06); color: var(--pt-faint); }
+.execution-rail-step:last-child { border-bottom: 0; }
+.execution-rail-step > span { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--pt-line-strong); border-radius: 50%; color: var(--pt-muted); background: rgba(255, 255, 255, 0.74); font: 700 8px var(--meta-font); }
+.execution-rail-step strong, .execution-rail-step small { display: block; }
+.execution-rail-step strong { color: var(--pt-ink-soft); font-size: 11px; }
+.execution-rail-step small { margin-top: 3px; color: var(--pt-muted); font-size: 9px; line-height: 1.35; }
+.execution-rail-step em { padding: 3px 6px; border: 1px solid var(--pt-line); border-radius: 999px; color: var(--pt-faint); background: rgba(255, 255, 255, 0.58); font: 700 8px var(--meta-font); font-style: normal; white-space: nowrap; }
+.execution-rail-step.is-current > span { border-color: var(--pt-blue); color: #fff; background: var(--pt-blue); box-shadow: 0 0 0 4px rgba(40, 120, 232, 0.10); }
+.execution-rail-step.is-current em { border-color: rgba(40, 120, 232, 0.20); color: var(--pt-blue); background: rgba(244, 249, 255, 0.82); }
+.execution-rail-step.is-complete > span { border-color: rgba(120, 154, 0, 0.36); color: var(--pt-green-ink); background: rgba(249, 255, 231, 0.88); }
+.execution-rail-step.is-complete em { border-color: rgba(120, 154, 0, 0.24); color: var(--pt-green-ink); background: rgba(249, 255, 231, 0.76); }
+.stage-cockpit-status { grid-column: 1; margin: 0; padding: 11px 0; border-top: 1px solid var(--pt-line); color: var(--pt-muted); font-size: 10px; line-height: 1.5; }
+.stage-cockpit.is-running .execution-rail-step.is-current > span { animation: cockpit-step-pulse 1.8s ease-in-out infinite; }
+.stage-artifact-details { margin-top: 14px; border: 1px solid var(--pt-line); border-radius: 12px; background: rgba(255, 255, 255, 0.48); }
+.stage-artifact-details summary { display: flex; align-items: center; justify-content: space-between; min-height: 45px; padding: 0 13px; color: var(--pt-ink-soft); cursor: pointer; font-size: 11px; font-weight: 600; list-style: none; }
+.stage-artifact-details summary::-webkit-details-marker { display: none; }
+.stage-artifact-details summary::after { content: "+"; margin-left: 10px; color: var(--pt-blue); font: 700 16px var(--meta-font); }
+.stage-artifact-details[open] summary { border-bottom: 1px solid var(--pt-line); }
+.stage-artifact-details[open] summary::after { content: "−"; }
+.stage-artifact-details summary em { margin-left: auto; color: var(--pt-faint); font: 9px var(--meta-font); font-style: normal; }
+.stage-artifact-details .structured-content { padding: 15px; }
+@keyframes cockpit-step-pulse { 0%, 100% { box-shadow: 0 0 0 4px rgba(40, 120, 232, 0.10); } 50% { box-shadow: 0 0 0 7px rgba(40, 120, 232, 0.04); } }
+@media (max-width: 1120px) { .stage-cockpit { grid-template-columns: 1fr; } .execution-rail { grid-column: 1; grid-row: auto; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 16px 0; border-top: 1px solid var(--pt-line); border-left: 0; } .execution-rail::before { grid-column: 1 / -1; margin-left: 0; } .execution-rail-step { grid-template-columns: 26px minmax(0, 1fr); border-bottom: 0; border-left: 1px solid var(--pt-line); padding: 0 11px; } .execution-rail-step:first-of-type { padding-left: 0; border-left: 0; } .execution-rail-step em { display: none; } }
+@media (max-width: 720px) { .stage-cockpit-summary { grid-template-columns: auto minmax(0, 1fr); } .stage-cockpit-jump { grid-column: 2; justify-self: start; } .stage-cockpit-brief { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 0; } .stage-cockpit-brief div:nth-child(3) { padding-left: 0; border-left: 0; } .execution-rail { grid-template-columns: 1fr; gap: 10px; } .execution-rail-step, .execution-rail-step:first-of-type { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 0; border-left: 0; } .execution-rail-step em { display: block; } }
+@media (prefers-reduced-motion: reduce) { .stage-cockpit *, .stage-cockpit.is-running .execution-rail-step.is-current > span { animation: none; transition: none; } }
 .content-grid { grid-template-columns: minmax(0, 1fr) 284px; gap: 18px; }
 .form-panel, .metric-card, .artifact-card, .timeline-card {
   padding: 22px;

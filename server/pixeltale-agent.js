@@ -2116,6 +2116,16 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
   // 评估的严谨性，同时消除"单席异议永久卡死"（实测 30 次运行 0 通过）。
   const majorityPass = completed.length >= requiredSeats
     && passingReviews >= requiredSeats;
+  // 2026-08-10 P1-1：关键维度最低线（防平均分掩盖单维硬伤，§5.3）。
+  // 任一关键维度均值 < 75（3/4）或加权质量 < 80（3.2/4）→ 不得放行。
+  // 缺失维度（null）不拦截（无证据视为参考，兼容旧输出）；有值但低于门槛才拦截。
+  const KEY_DIMENSIONS = ["structure", "plot", "design", "logic"];
+  const dimensionFloorMiss = KEY_DIMENSIONS.filter((key) => {
+    const avg = dimensions[key]?.average;
+    return Number.isFinite(avg) && avg < 75;
+  });
+  const belowQualityFloor = Number.isFinite(quality) && quality < 80;
+  const dimensionGateFailed = dimensionFloorMiss.length > 0 || belowQualityFloor;
   const disagreements = completed
     .filter((item) => item.pass !== true)
     .map((item) => ({ seatId: item.seatId || "", model: item.actualModel || item.model || "", issues: asArray(item.mandatoryIssues).slice(0, 5).map((issue) => issue.tag || issue.criterionId || "分歧意见") }));
@@ -2151,15 +2161,30 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
           summary: reviewMode === "fast" ? "快速审读发现高风险问题，已转为定向修订。" : "仅处理双席共同确认的高风险问题。",
           items: mandatoryIssues,
         }
-        : {
-          kind: "approve",
-          owner: "系统裁判",
-          title: independenceUnavailable ? "非独立复核放行" : "通过",
-          summary: independenceUnavailable
-            ? "当前仅一个可用模型通道，本次为非独立复核；两席审核均已完成并通过，带标注放行。"
-            : reviewMode === "fast" ? "硬规则与快速审读均已满足；其余意见仅供参考。" : "硬规则、修订合同和双席共识均已满足；其余意见仅供参考。",
-          items: [],
-        };
+        : dimensionGateFailed
+          ? {
+            kind: "revise",
+            owner: "系统裁判",
+            title: "关键维度未达最低线",
+            summary: `${dimensionFloorMiss.length ? `维度 ${dimensionFloorMiss.join("/")} 均值低于 75；` : ""}${belowQualityFloor ? "加权质量低于 80；" : ""}不满足放行门槛，需定向修订后再审。`,
+            items: dimensionFloorMiss.map((key) => ({
+              id: `dimension_floor_${key}`,
+              tag: `维度未达最低线：${key}`,
+              severity: "high",
+              dimension: key,
+              suggestions: [`${key} 维度平均分 ${Math.round(dimensions[key].average)} < 75，需提升后重新审核`],
+              evidence: [],
+            })),
+          }
+          : {
+            kind: "approve",
+            owner: "系统裁判",
+            title: independenceUnavailable ? "非独立复核放行" : "通过",
+            summary: independenceUnavailable
+              ? "当前仅一个可用模型通道，本次为非独立复核；两席审核均已完成并通过，带标注放行。"
+              : reviewMode === "fast" ? "硬规则与快速审读均已满足；其余意见仅供参考。" : "硬规则、修订合同和双席共识均已满足；其余意见仅供参考。",
+            items: [],
+          };
   const basePass = decision.kind === "approve";
   const pass = basePass;
   const checks = {

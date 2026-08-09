@@ -80,4 +80,26 @@ assert.equal(scopedReview.decision.kind, "approve", "合同外共识不能阻断
 assert.equal(stalled.decision.kind, "revise", "普通未关闭项应回到统一的定向修订路径");
 assert.equal(creativeStalled.decision.kind, "needs_decision", "真正的创作取舍才由统一裁判转为创作者决定");
 
+// ---- P1-1 关键维度最低线 ----
+{
+  // 低维度：任一关键维 <75 不得放行
+  const lowDim = Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: key === "structure" ? 60 : 90, feedback: "x" }]));
+  const lowReview = { ...review("review-a"), result: { ...review("review-a").result, content: { ...review("review-a").result.content, dimensions: lowDim } } };
+  const lowReviewB = { ...review("review-b"), result: { ...review("review-b").result, content: { ...review("review-b").result.content, dimensions: lowDim } } };
+  const lowDecision = aggregateCrossReview([lowReview, lowReviewB]).decision;
+  assert.equal(lowDecision.kind, "revise", "关键维度低于 75 不得放行（两席平均仍低于门槛）");
+  assert.ok(lowDecision.title.includes("维度"), "维度门槛给出明确标题");
+
+  // 低加权质量：score 平均 <80 不得放行
+  const lowScoreReview = { ...review("review-a"), result: { ...review("review-a").result, content: { ...review("review-a").result.content, score: 70 } } };
+  const lowScoreReviewB = { ...review("review-b"), result: { ...review("review-b").result, content: { ...review("review-b").result.content, score: 70 } } };
+  const lowScoreDecision = aggregateCrossReview([lowScoreReview, lowScoreReviewB]).decision;
+  assert.equal(lowScoreDecision.kind, "revise", "加权质量低于 80 不得放行（两席平均仍低于门槛）");
+
+  // 维度缺失不拦截（兼容旧输出）
+  const missingDim = { ...review("review-a"), result: { ...review("review-a").result, content: { ...review("review-a").result.content, dimensions: {} } } };
+  const missingDecision = aggregateCrossReview([missingDim, review("review-b")]).decision;
+  assert.equal(missingDecision.kind, "approve", "缺失维度视为参考，不拦截");
+}
+
 console.log("PixelTale review governance tests passed.");

@@ -411,3 +411,41 @@ class TestFixIssue(unittest.TestCase):
     def tearDown(self):
         if os.path.exists("projects/pfix.json"):
             os.remove("projects/pfix.json")
+
+class WorseReviewEngine(FixIssueEngine):
+    """修复后重审挑出更多问题 → 应触发止损回滚（status=rolled-back，内容恢复）。"""
+    def review_episode(self, state, episode):
+        return {"pass": False, "score": 30, "dimensions": {},
+                "issues": [{"severity": "high", "quote": "旧地点", "fix": "仍未修复"},
+                           {"severity": "high", "quote": "新问题A", "fix": "新问题"},
+                           {"severity": "medium", "quote": "新问题B", "fix": "新问题"}]}
+
+class TestFixIssueRollback(unittest.TestCase):
+    def setUp(self):
+        os.makedirs("projects", exist_ok=True)
+        state = ProjectState(project_id="proll", stage="episode", current_episode=2)
+        state.artifacts["outline"] = {"episodes": [{"index": 1, "hook": "h"}, {"index": 2, "hook": "h"}]}
+        state.artifacts["episodes"] = {"1": {"scenes": [{"location": "旧地点", "beats": [{"speaker": "A", "line": "你好"}]}]}}
+        state.evaluation["1"] = {"pass": False, "score": 40, "dimensions": {},
+                                 "issues": [{"severity": "high", "quote": "旧地点", "fix": "改为中文地点"}]}
+        with open(os.path.join("projects", "proll.json"), "w", encoding="utf-8") as f:
+            f.write(state.to_json())
+
+    def test_rollback_when_issues_grow(self):
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(WorseReviewEngine))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        try:
+            body = json.dumps({"project_id": "proll", "episode": 1,
+                               "issue": {"severity": "high", "quote": "旧地点", "fix": "改为中文地点"}}).encode("utf-8")
+            req = urllib.request.Request(base + "/api/fix-issue", data=body, method="POST")
+            with urllib.request.urlopen(req) as r:
+                resp = json.loads(r.read().decode("utf-8"))
+            self.assertTrue(resp["ok"])
+            self.assertEqual(resp["status"], "rolled-back")
+            self.assertEqual(resp["state"]["artifacts"]["episodes"]["1"]["scenes"][0]["location"], "旧地点", "回滚后应恢复原地点")
+            self.assertEqual(len(resp["state"]["evaluation"]["1"]["issues"]), 1, "回滚后应保留原 1 条问题")
+        finally:
+            srv.shutdown(); srv.server_close()
+            if os.path.exists("projects/proll.json"):
+                os.remove("projects/proll.json")

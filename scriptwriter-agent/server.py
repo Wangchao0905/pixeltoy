@@ -301,6 +301,11 @@ def make_handler(engine_factory):
                     else:
                         merged = revised
                     episodes_map[str(ep_no)] = merged
+                    # 止损回滚：修复后若未通过且新问题数 >= 修复前问题数（越改越多），
+                    # 自动恢复修复前版本与审核记录，避免"修一条出三条"。
+                    old_eval = state.evaluation.get(str(ep_no)) if isinstance(state.evaluation, dict) else None
+                    old_issues = (old_eval or {}).get("issues", []) if isinstance(old_eval, dict) else []
+                    old_issue_count = len(old_issues)
                     try:
                         verdict = engine.review_episode(state, merged)
                     except Exception as exc:
@@ -310,8 +315,18 @@ def make_handler(engine_factory):
                     if verdict is None:
                         verdict = {"pass": False, "score": 0, "dimensions": {},
                                    "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "审核输出无法解析，请重试"}]}
+                    new_issues = verdict.get("issues", []) if isinstance(verdict, dict) else []
                     if not isinstance(state.evaluation, dict):
                         state.evaluation = {}
+                    if not verdict.get("pass") and len(new_issues) >= old_issue_count and old_issue_count > 0:
+                        # 越改越多：回滚
+                        episodes_map[str(ep_no)] = episode
+                        state.evaluation[str(ep_no)] = old_eval if isinstance(old_eval, dict) else verdict
+                        getattr(engine, "_save", lambda s: None)(state)
+                        self._json(200, {"ok": True, "status": "rolled-back",
+                                         "verdict": state.evaluation[str(ep_no)],
+                                         "state": json.loads(state.to_json())})
+                        return
                     state.evaluation[str(ep_no)] = verdict
                     getattr(engine, "_save", lambda s: None)(state)
                     status = "approved" if verdict.get("pass") else "needs-human"

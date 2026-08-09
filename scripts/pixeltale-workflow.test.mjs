@@ -29,7 +29,7 @@ const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
-const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, autoRegisterEpisodeCharacters } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const durationInput = { durationValue: 90, durationUnit: "sec", openingImpactSeconds: 3, episodeCount: 30 };
 const sceneSystemPrompt = stageSystemPrompt("scenes", "tk_short_drama", durationInput);
@@ -397,6 +397,10 @@ assert.match(serverSource, /params\.override === true/, "persisted run parameter
 assert.doesNotMatch([app, html, nestedHtml].join("\n"), /三模型复核完成后|三模型审核存在|三模型交叉审核|三模型一致性审查|三席意见可直接汇总|三席未发现技术失败/, "visible review copy must describe the actual stage review seats");
 assert.match(app, /action\.kind === "auto-revise"[\s\S]*等待执行修订/, "the right rail must distinguish a pending revision from waiting for input");
 assert.match(app, /reviewContent\.revision\?\.closure\?\.items/, "revision output must expose unresolved closure items");
+assert.match(app, /crossStageIssues = issues\.filter/, "cross-stage review items must not be sent to the current-stage revision writer");
+assert.match(app, /当前清单包含跨阶段问题/, "cross-stage review items must tell the creator which stage owns the repair");
+assert.match(app, /修正归属：/, "review cards must show the owning stage for cross-stage findings");
+assert.match(app, /technicalState\.blocked && reviewForArtifact\(artifact\) && !creativeReviewDecisionGroups/, "a rule-blocked creative tradeoff must reach the decision workbench instead of the generic rerun action");
 assert.match(app, /data-advisory-decision/, "advisory feedback must expose creator decision actions");
 assert.match(app, /const reviewConflictGuidance =/, "score conflicts must have deterministic review guidance");
 assert.match(app, /审核建议[\s\S]*核对指引[\s\S]*决策规则/, "advisory cards must explain what to check and how to decide");
@@ -845,6 +849,24 @@ const historicalMandatoryContract = buildRevisionContract({
   ],
 }, { stage: "brief", sourceArtifactId: "artifact_historical", id: "revision_historical" });
 assert.deepEqual(historicalMandatoryContract.items.map((item) => item.tag), ["历史两席高风险"], "historical reviews must use the shared mandatory predicate");
+
+const crossStageContract = buildRevisionContract({
+  mandatoryIssues: [{
+    criterionId: "SCENE_SPEAKER_ROSTER_MISMATCH",
+    tag: "场景说话人名单错位",
+    dimension: "logic",
+    severity: "high",
+    modelCount: 2,
+    targetStage: "scenes",
+    relatedStage: "dialogue",
+    decisionOptions: ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"],
+    requiresCreatorDecision: true,
+    suggestions: ["先决定修正场景名单还是调整对白说话人"],
+  }],
+  reviewPolicy: { issueSupport: 2 },
+}, { stage: "dialogue", sourceArtifactId: "artifact_dialogue", id: "revision_cross_stage" });
+assert.equal(crossStageContract.items[0].targetStage, "scenes", "revision contracts must retain the stage that owns a cross-stage issue");
+assert.deepEqual(crossStageContract.items[0].decisionOptions, ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"], "revision contracts must retain explicit repair options");
 
 const batchConflictReview = batchReviewSummary("arc", [{
   pass: false,
@@ -1463,6 +1485,30 @@ assert.equal(ruleFindings(runStageRules({ stage: "scenes", artifact: { scenes: m
 assert.equal(ruleFindings(runStageRules({ stage: "arc", artifact: { units: [16, 16, 17, 18, 19, 20].map((n) => ({ number: n })) }, approvedContext: multiSceneCtx }), "UNIT_COUNT_MISMATCH").length, 1, "arc must still reject a duplicate episode number");
 const refSpeaker = runStageRules({ stage: "dialogue", artifact: { lines: [{ speaker: "C999", scene_id: "S001" }] }, approvedContext: refCtx });
 assert.equal(ruleFindings(refSpeaker, "UNKNOWN_SPEAKER_REF").length, 1, "dialogue spoken by an undefined character must be caught");
+const sceneRosterMismatch = runStageRules({
+  stage: "dialogue",
+  artifact: { lines: [{ speaker: "C001", scene_id: "S001" }] },
+  approvedContext: {
+    artifacts: [
+      { stage: "characters", content: { characters: [{ id: "C001" }] } },
+      { stage: "scenes", content: { scenes: [{ id: "S001", characters: [] }] } },
+    ],
+  },
+});
+assert.equal(ruleFindings(sceneRosterMismatch, "SCENE_SPEAKER_ROSTER_MISMATCH").length, 1, "a dialogue speaker missing from the scene roster must be caught");
+assert.equal(ruleFindings(sceneRosterMismatch, "SCENE_SPEAKER_ROSTER_MISMATCH")[0].severity, "high", "a scene speaker roster mismatch must block release until its target is decided");
+assert.deepEqual(ruleFindings(sceneRosterMismatch, "SCENE_SPEAKER_ROSTER_MISMATCH")[0].decisionOptions, ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"], "a cross-stage roster mismatch must preserve its two repair paths");
+const mayaRosterGap = runStageRules({
+  stage: "dialogue",
+  artifact: { lines: [{ id: "D030", speaker: "C004", scene_id: "S008" }] },
+  approvedContext: {
+    artifacts: [
+      { stage: "characters", content: { characters: [{ id: "C004", name_en: "Episode character C004", source: "episode_auto_registered" }] } },
+      { stage: "scenes", content: { scenes: [{ id: "S008", characters: ["C001"], action_zh: "Maya 通过远程设备回应" }] } },
+    ],
+  },
+});
+assert.equal(ruleFindings(mayaRosterGap, "SCENE_SPEAKER_ROSTER_MISMATCH").length, 1, "the known C004/Maya roster gap must remain visible as a concrete regression");
 const refScene = runStageRules({ stage: "dialogue", artifact: { lines: [{ speaker: "C001", scene_id: "S999" }] }, approvedContext: refCtx });
 assert.equal(ruleFindings(refScene, "UNKNOWN_SCENE_REF").length, 1, "dialogue attached to a nonexistent scene must be caught");
 // Upstream may legitimately be unapproved; the check must stay silent then rather
@@ -1695,6 +1741,8 @@ console.log("pixeltale workflow contract ok");
   assert.ok(ids.includes("C004") && ids.includes("C005"), "C004/C005 必须被补录进人物名单");
   const registered = state.artifacts[0].content.characters.find((c) => c.id === "C004");
   assert.equal(registered.source, "episode_auto_registered", "补录角色必须标注来源");
+  assert.equal(registered.identityStatus, "pending_confirmation", "自动补录角色必须标注待确认身份");
+  assert.equal(registered.requiresConfirmation, true, "自动补录角色必须要求身份确认");
   assert.equal(autoRegisterEpisodeCharacters(state, "scenes", scenesContent), 0, "重复运行不得重复补录");
 
   // dialogue 的 speaker 同样自动补录
@@ -1705,6 +1753,11 @@ console.log("pixeltale workflow contract ok");
   // 没有 characters 产物时不抛错
   const emptyState = { artifacts: [] };
   assert.equal(autoRegisterEpisodeCharacters(emptyState, "scenes", scenesContent), 0, "无人物产物时安全跳过");
+
+  const legacyState = { artifacts: [{ stage: "characters", type: "pixeltale_characters", content: { characters: [{ id: "C004", source: "episode_auto_registered" }] } }] };
+  assert.equal(normalizeAutoRegisteredCharacters(legacyState), 2, "读取旧项目时必须补齐待确认身份标记");
+  assert.equal(legacyState.artifacts[0].content.characters[0].identityStatus, "pending_confirmation", "旧的自动补录角色必须迁移为待确认身份");
+  assert.equal(normalizeAutoRegisteredCharacters(legacyState), 0, "角色身份迁移必须幂等");
 }
 
 // ---- 2026-08-10 预防验证：prompt 要求完整角色体系 + 角色使用约束 ----
@@ -1714,5 +1767,5 @@ console.log("pixeltale workflow contract ok");
   const scenesPrompt = stageSystemPrompt("scenes", "tk_short_drama", {});
   assert.match(scenesPrompt, /只引用 characters 阶段已确认的人物 ID/, "scenes 必须约束角色引用");
   const dialoguePrompt = stageSystemPrompt("dialogue", "tk_short_drama", {});
-  assert.match(dialoguePrompt, /引擎会自动把该角色补录进人物名单/, "dialogue 必须说明新角色自动补录");
+  assert.match(dialoguePrompt, /补录进人物名单，但标记为待确认身份/, "dialogue 必须说明新角色补录后仍待确认");
 }

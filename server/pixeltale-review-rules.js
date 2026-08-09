@@ -34,8 +34,8 @@ function contextValue(approvedContext, key) {
   return array(approvedContext).map(object).find((item) => item[key] !== undefined)?.[key];
 }
 
-function add(violations, code, severity, fieldPath, message) {
-  violations.push({ code, severity, fieldPath, message });
+function add(violations, code, severity, fieldPath, message, metadata = {}) {
+  violations.push({ code, severity, fieldPath, message, ...object(metadata) });
 }
 
 function checkSchema(stage, artifact, violations) {
@@ -245,13 +245,26 @@ function checkCrossStageRefs(stage, artifact, approvedContext, violations) {
   if (stage === "dialogue") {
     const spokenIds = new Set();
     array(object(artifact).lines).forEach((line, li) => {
-      const sp = String(object(line).speaker || "");
+      const lineItem = object(line);
+      const sp = String(lineItem.speaker || "");
       if (sp) spokenIds.add(sp);
-      const sid = String(object(line).scene_id || "");
+      const sid = String(lineItem.scene_id || "");
       if (sid && sceneIds.size && !sceneIds.has(sid)) {
         add(violations, "UNKNOWN_SCENE_REF", "high",
           `lines[${li}].scene_id`,
           `对白引用了未知场景 ID "${sid}"`);
+      }
+      const scene = array(sceneArt?.scenes).find((item) => String(object(item).id || "") === sid);
+      if (sp && scene && Array.isArray(scene.characters) && !scene.characters.map((id) => String(id || "")).includes(sp)) {
+        add(violations, "SCENE_SPEAKER_ROSTER_MISMATCH", "high",
+          `lines[${li}].speaker`,
+          `对白发言者 "${sp}" 未列入场景 "${sid}" 的人物名单——请同步场景人物名单或更换说话人`,
+          {
+            targetStage: "scenes",
+            relatedStage: "dialogue",
+            decisionOptions: ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"],
+            requiresCreatorDecision: true,
+          });
       }
     });
     if (charIds.size) {
@@ -288,6 +301,7 @@ function runStageRules({ stage = "", mode = "", artifact = {}, approvedContext =
       "SCHEMA_INCOMPLETE", "UNIT_COUNT_MISMATCH", "LOCKED_PATH_TOUCHED",
       "DURATION_BUDGET_MISMATCH", "UNIT_CONTINUITY_BROKEN", "DIMENSION_KEY_MISSING", "EMPTY_HOOK", "NAME_LOCALIZATION",
       "UNKNOWN_CHARACTER_REF", "UNKNOWN_SCENE_REF", "UNKNOWN_SPEAKER_REF",
+      "SCENE_SPEAKER_ROSTER_MISMATCH",
     ],
   };
 }

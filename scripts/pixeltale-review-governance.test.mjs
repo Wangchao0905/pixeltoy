@@ -37,6 +37,24 @@ assert.equal(aggregateCrossReview([review("review-a", { issues: [fastIssue], pas
 const shared = { tag: "两席共同问题", dimension: "plot", severity: "high", feedback: "缺少触发", fix: "补足触发", modelCount: 2 };
 assert.equal(aggregateCrossReview([review("review-a", { issues: [shared], pass: false }), review("review-b", { issues: [shared], pass: false })]).mandatoryIssueCount, 1, "两席共同确认的高风险问题必须阻断阶段");
 
+const explicitTradeoff = {
+  criterionId: "ARC_OPENING_TRADEOFF",
+  tag: "开场信息顺序取舍",
+  dimension: "structure",
+  severity: "high",
+  feedback: "两种开场都能成立，但会改变观众先获得的信息",
+  fix: "保留一条明确的开场路径",
+  requiresCreatorDecision: true,
+  decisionOptions: ["先揭示现场再补背景", "先交代背景再进入现场"],
+};
+const tradeoffReview = aggregateCrossReview([
+  review("review-a", { issues: [explicitTradeoff], pass: false }),
+  review("review-b", { issues: [explicitTradeoff], pass: false }),
+]);
+assert.equal(tradeoffReview.decisionRequiredIssues.length, 1, "双席明确标注的创作取舍必须进入结构化决定区");
+assert.deepEqual(tradeoffReview.decisionRequiredIssues[0].decisionOptions, ["先揭示现场再补背景", "先交代背景再进入现场"], "创作取舍必须保留两种修法");
+assert.equal(tradeoffReview.decision.kind, "needs_decision", "创作取舍不得被合并成普通定向修订");
+
 const contract = {
   id: "revision_1",
   stage: "brief",

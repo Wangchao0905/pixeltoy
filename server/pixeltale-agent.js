@@ -623,7 +623,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
   ] : [];
   const characterUsage = ["scenes", "dialogue"].includes(stage) ? [
     "场景/对白只引用 characters 阶段已确认的人物 ID；优先复用已定义角色。",
-    "确需新角色时，直接使用新的 C 编号让其自然出场/说话即可——引擎会自动把该角色补录进人物名单（标注剧集引入）。",
+    "确需新角色时，直接使用新的 C 编号让其自然出场/说话即可——引擎会把该角色补录进人物名单，但标记为待确认身份；正式设定仍需回到人物阶段补齐。",
   ] : [];
   const unitRules = UNIT_STAGES.has(stage) ? [
     "当前请求可能只是一个分批单元；严格只输出 userInput.unitScope 指定的集数，不得补写其他集，不得返回整季内容。",
@@ -792,7 +792,7 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "模式规则只能检查当前阶段已有字段：brief 检查开头承诺与追更问题，arc 才检查逐集钩子、反转与回收；不得提前索要后续资产。",
     "对白阶段还要检查英文是否自然口语化、是否保留中文剧情意图、是否像人物会说的话。",
     ...(stage === "title" ? ["剧名阶段必须检查恰好 4 个候选、名称不重复、四种命名基因确实拉开差异，并且每个候选都有风格、语气、命名基因和理由。"] : []),
-    '输出契约：{"pass":true,"score":<0-100整数>,"confidence":<0-100整数>,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议","unit":"集号（arc/scenes 阶段必填，如 6）","field_path":"字段定位路径（scenes 如 scenes[0].beats[2].line；必须属于本集，不得跨集）"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改","requires_creator_decision":false,"decision_options":["方案 A","方案 B"]}],"dimensions":{"structure":{"score":<0-100整数>,"feedback":"结构意见"},"plot":{"score":<0-100整数>,"feedback":"剧情意见"},"design":{"score":<0-100整数>,"feedback":"设计意见"},"logic":{"score":<0-100整数>,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
+    '输出契约：{"pass":true,"score":<0-100整数>,"confidence":<0-100整数>,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议","unit":"集号（arc/scenes 阶段必填，如 6）","field_path":"字段定位路径（scenes 如 scenes[0].beats[2].line；必须属于本集，不得跨集）","target_stage":"问题实际归属阶段（可选）","related_stage":"当前审核阶段（可选）","requires_creator_decision":false,"decision_options":["方案 A","方案 B"]}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改","requires_creator_decision":false,"decision_options":["方案 A","方案 B"]}],"dimensions":{"structure":{"score":<0-100整数>,"feedback":"结构意见"},"plot":{"score":<0-100整数>,"feedback":"剧情意见"},"design":{"score":<0-100整数>,"feedback":"设计意见"},"logic":{"score":<0-100整数>,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
     "锚点示例（arc/scenes 阶段每条 issue 必须给出 unit + field_path）：",
     '正例：{"unit":6,"field_path":"scenes[0].beats[2].line"}；反例：无 unit、或 field_path 指向其他集（如 scenes[1] 属于第 7 集时指向它）——跨集锚点视为无效。',
     "分数必须是你的真实评估；0 分仅在内容确实完全不可用时使用。confidence 是你对本次判断的确定度（0-100）。",
@@ -1593,6 +1593,10 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
       fix: text(entry.fix || entry.suggestion, 1200),
       unit: Number.isInteger(unit) && unit > 0 ? unit : null,
       fieldPath,
+      targetStage: text(entry.target_stage || entry.targetStage, 80),
+      relatedStage: text(entry.related_stage || entry.relatedStage, 80),
+      requiresCreatorDecision: entry.requires_creator_decision === true || entry.requiresCreatorDecision === true,
+      decisionOptions: asArray(entry.decision_options || entry.decisionOptions).map((option) => text(option, 400)).filter(Boolean).slice(0, 2),
       unfixable: !(Number.isInteger(unit) && unit > 0 && fieldPath),
     };
   }).filter((item) => item.tag && item.feedback).slice(0, 3);
@@ -1743,11 +1747,19 @@ function groupedReviewIssues(feedbacks) {
         models: new Map(),
         suggestions: [],
         evidence: [],
+        decisionVotes: new Map(),
+        targetStages: new Set(),
+        relatedStages: new Set(),
       };
       group.models.set(feedback.actualModel || feedback.model, feedback);
       if ((issueSeverityRank[issue.severity] ?? 1) < (issueSeverityRank[group.severity] ?? 1)) group.severity = issue.severity;
       if (issue.fix) group.suggestions.push(issue.fix);
       if (issue.feedback) group.evidence.push(`${feedback.model}：${issue.feedback}`);
+      if (issue.requiresCreatorDecision === true && asArray(issue.decisionOptions).length >= 2) {
+        group.decisionVotes.set(feedback.actualModel || feedback.model, asArray(issue.decisionOptions).slice(0, 2));
+      }
+      if (issue.targetStage) group.targetStages.add(issue.targetStage);
+      if (issue.relatedStage) group.relatedStages.add(issue.relatedStage);
       groups.set(key, group);
     });
   });
@@ -1764,6 +1776,11 @@ function groupedReviewIssues(feedbacks) {
         && Number(feedback.confidence) >= 80),
       suggestions: uniqueText(group.suggestions, 5),
       evidence: uniqueText(group.evidence, 5),
+      requiresCreatorDecision: group.decisionVotes.size >= 2,
+      decisionOptions: uniqueText([...group.decisionVotes.values()].flat(), 2),
+      targetStage: [...group.targetStages][0] || "",
+      targetStages: [...group.targetStages],
+      relatedStage: [...group.relatedStages][0] || "",
     }))
     .sort((left, right) => (issueSeverityRank[left.severity] ?? 1) - (issueSeverityRank[right.severity] ?? 1) || right.modelCount - left.modelCount || left.tag.localeCompare(right.tag, "zh-CN"));
 }
@@ -1847,6 +1864,11 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
       severity: issue.severity || previous?.severity,
       modelCount: Number(issue.modelCount) || Number(previous?.modelCount) || 0,
       models: [...new Set([...(asArray(previous?.models)), ...(asArray(issue.models))].filter(Boolean))],
+      targetStage: issue.targetStage || previous?.targetStage || "",
+      targetStages: [...new Set([...(asArray(previous?.targetStages)), ...(asArray(issue.targetStages)), ...(issue.targetStage ? [issue.targetStage] : [])].filter(Boolean))],
+      relatedStage: issue.relatedStage || previous?.relatedStage || "",
+      requiresCreatorDecision: issue.requiresCreatorDecision === true || previous?.requiresCreatorDecision === true,
+      decisionOptions: uniqueText([...(asArray(previous?.decisionOptions)), ...(asArray(issue.decisionOptions))], 2),
       requiredEdit: uniqueText([...(asArray(previous?.requiredEdit)), ...(asArray(issue.suggestions)), ...(asArray(closure?.remainingFix))], 4),
       evidence: uniqueText([...(asArray(previous?.evidence)), ...(asArray(issue.evidence)), ...(asArray(closure?.remainingFix))], 4),
     });
@@ -1863,6 +1885,11 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
       modelCount: Math.max(0, Number(issue.modelCount) || 0),
       evidence: uniqueText(asArray(issue.evidence), 4),
       requiredEdit: uniqueText(asArray(issue.requiredEdit || issue.suggestions), 4),
+      targetStage: text(issue.targetStage, 80),
+      targetStages: asArray(issue.targetStages).map((stage) => text(stage, 80)).filter(Boolean),
+      relatedStage: text(issue.relatedStage, 80),
+      requiresCreatorDecision: issue.requiresCreatorDecision === true,
+      decisionOptions: uniqueText(asArray(issue.decisionOptions), 2),
       acceptance: `修订版本必须消除“${text(issue.tag || "审核修订项", 160)}”的证据，并与用户规格和已确认上下文保持一致。`,
     })),
   };
@@ -2071,7 +2098,20 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
   }));
   const revisionClosure = aggregateRevisionClosure(completed, revisionContract, requiredSeats);
   const unresolvedContractItems = revisionClosure.items.filter((item) => item.status !== "resolved");
-  const decisionRequiredIssues = unresolvedContractItems
+  const explicitTradeoffIssues = scopedIssues
+    .filter((item) => requiredSeats >= REVIEW_QUORUM
+      && Number(item.modelCount) >= REVIEW_QUORUM
+      && item.requiresCreatorDecision === true
+      && asArray(item.decisionOptions).length >= 2)
+    .map((item) => ({
+      ...item,
+      tag: item.tag || "审核取舍项",
+      severity: item.severity || "high",
+      suggestions: item.suggestions?.length ? item.suggestions : ["请先选择一条创作路径，再执行后续修订"],
+      evidence: item.evidence || [],
+      decisionType: "creative_tradeoff",
+    }));
+  const closureDecisionIssues = unresolvedContractItems
     .filter((item) => item.requiresCreatorDecision === true && asArray(item.decisionOptions).length >= 2)
     .map((item) => ({
       ...item,
@@ -2081,6 +2121,8 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
       evidence: item.evidence || [],
       decisionType: "creative_tradeoff",
     }));
+  const decisionRequiredIssues = [...explicitTradeoffIssues, ...closureDecisionIssues]
+    .filter((item, index, all) => all.findIndex((candidate) => (candidate.id || candidate.criterionId || candidate.tag) === (item.id || item.criterionId || item.tag)) === index);
   const retryRequiredIssues = unresolvedContractItems
     .filter((item) => !item.requiresCreatorDecision)
     .map((item) => ({ ...item, tag: item.tag || "未关闭修订项", severity: item.severity || "high", decisionType: "retry_failed" }));
@@ -2263,6 +2305,18 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
 function ruleBlockedReview(ruleResult) {
   const base = aggregateCrossReview([], null);
   const findings = ruleResult.violations.map((item) => `规则违规【${item.code}】：${item.message}`);
+  const decisionRequiredIssues = ruleResult.violations
+    .filter((item) => item.requiresCreatorDecision === true && asArray(item.decisionOptions).length >= 2)
+    .map((item) => ({
+      ...item,
+      id: `rule_${String(item.code || "issue").toLowerCase()}`,
+      tag: item.code,
+      severity: item.severity || "high",
+      suggestions: [item.message],
+      evidence: [item.message],
+      decisionType: "creative_tradeoff",
+    }));
+  const needsDecision = decisionRequiredIssues.length > 0;
   return {
     ...base,
     pass: false,
@@ -2270,13 +2324,15 @@ function ruleBlockedReview(ruleResult) {
     reviewCompletion: null,
     findings,
     ruleFindings: ruleResult.violations,
+    decisionRequiredIssues,
+    automaticRevisionBlocked: needsDecision,
     technicalFailures: [{ status: "rule_blocked", message: "命中 high 规则，审核模型未调用" }],
     decision: {
-      kind: "revise",
+      kind: needsDecision ? "needs_decision" : "revise",
       owner: "规则校验",
-      title: "定向修订",
-      summary: "规则校验发现必须修正的硬约束。",
-      items: ruleResult.violations,
+      title: needsDecision ? "需要创作者决定" : "定向修订",
+      summary: needsDecision ? "规则校验发现跨阶段取舍，先选择修正归属，再处理对应产物。" : "规则校验发现必须修正的硬约束。",
+      items: needsDecision ? decisionRequiredIssues : ruleResult.violations,
     },
     checks: { ...base.checks, rule_gate: false },
   };
@@ -3115,7 +3171,26 @@ function confirmArtifact(state, artifact, now, { auto = false } = {}) {
 // 此前 characters 阶段只生成主角团，后续阶段模型按剧情需要"自造"角色，
 // 规则只能拦截/提示（人物"不存在"）。现在生成后、规则校验前自动补录：
 // 引用到的未注册 ID 追加进最新 characters 产物（source=episode_auto_registered），
-// 人物从此"存在"，规则不再报未知引用，审核正常核验。
+// 但保留待确认身份，避免占位角色被误当成正式人物设定。
+function normalizeAutoRegisteredCharacters(state) {
+  let changed = 0;
+  asArray(state?.artifacts).forEach((artifact) => {
+    if (artifact?.stage !== "characters" || artifact?.type !== "pixeltale_characters") return;
+    asArray(artifact.content?.characters).forEach((character) => {
+      if (character?.source !== "episode_auto_registered") return;
+      if (character.identityStatus !== "pending_confirmation") {
+        character.identityStatus = "pending_confirmation";
+        changed += 1;
+      }
+      if (character.requiresConfirmation !== true) {
+        character.requiresConfirmation = true;
+        changed += 1;
+      }
+    });
+  });
+  return changed;
+}
+
 function autoRegisterEpisodeCharacters(state, stage, artifactContent, now = () => new Date()) {
   // 纯原生实现（模块级函数不依赖 createPixelTaleAgent 闭包内的 helper）。
   if (!["scenes", "dialogue"].includes(stage)) return 0;
@@ -3145,6 +3220,8 @@ function autoRegisterEpisodeCharacters(state, stage, artifactContent, now = () =
     name_zh: `剧集引入角色 ${id}`,
     role: "supporting",
     source: "episode_auto_registered",
+    identityStatus: "pending_confirmation",
+    requiresConfirmation: true,
     introduced_in_stage: stage,
     note_zh: "由后续剧集阶段自动补录；如需正式设定（欲望/恐惧/声线），请在人物与世界阶段补充。",
   }));
@@ -3188,9 +3265,10 @@ function createPixelTaleAgent(options = {}) {
     });
     const storedRoutes = state.routes;
     state.routes = normalizeRoutes(storedRoutes, availableModels());
+    const normalizedCharacters = normalizeAutoRegisteredCharacters(state);
     // A migrated route must be written back. Migrating only in memory lets the
     // retired model reappear on every subsequent read of the stored session.
-    if (routesNeedMigration(storedRoutes)) {
+    if (routesNeedMigration(storedRoutes) || normalizedCharacters > 0) {
       try {
         persistState(params, state);
       } catch {
@@ -4043,6 +4121,7 @@ module.exports = {
   isUnitProtected,
   markUnitPinned,
   markUnitDirty,
+  normalizeAutoRegisteredCharacters,
   autoRegisterEpisodeCharacters,
   autoRepairableUnits,
   dirtyUnits,

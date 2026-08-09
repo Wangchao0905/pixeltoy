@@ -1006,7 +1006,7 @@ function nextStepMeta() {
   }
   const reviewContent = reviewForArtifact(artifact)?.content || {};
   const technicalState = technicalReviewState(reviewContent);
-  if (technicalState.blocked && reviewForArtifact(artifact)) {
+  if (technicalState.blocked && reviewForArtifact(artifact) && !creativeReviewDecisionGroups(reviewContent).length) {
     return {
       kind: "run",
       stage: flowStage,
@@ -2076,14 +2076,14 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   const technicalFailures = [...(Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : []), ...feedbacks.filter((item) => item.status === "failed")];
   const technical = technicalReviewState(reviewContent);
   const reasonLabels = { timeout: "请求超时", network_error: "网络错误", empty_response: "空响应", invalid_json: "返回格式错误", schema_error: "数据结构错误", not_configured: "模型未配置", stalled: "自动修订未收敛（同一问题连续出现）", new_high_risk: "修订引入新的高风险问题", budget_exhausted: "自动修订超出预算" };
-  const issueMarkup = (items, empty) => items.length ? `<div class="review-issue-list">${items.map((item, index) => { const fixable = Number.isInteger(Number(item.unit)) && Number(item.unit) > 0 && !!item.fieldPath && (stage === "arc" || stage === "scenes"); return `<article class="review-issue review-issue-${escapeHtml(item.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.tag || item.code || "审核意见")}</strong><span class="review-issue-severity">${escapeHtml(item.severity || "medium")}</span>${fixable ? `<button type="button" class="fix-unit-btn" data-fix-unit data-stage="${escapeHtml(stage)}" data-unit="${Number(item.unit)}" data-issue='${escapeHtml(JSON.stringify({ unit: Number(item.unit), field_path: item.fieldPath, tag: item.tag || "", feedback: item.feedback || "", fix: item.fix || "" }))}'>修复此集</button>` : ""}</div>${item.message ? `<p>${escapeHtml(item.message)}</p>` : ""}${Array.isArray(item.suggestions) && item.suggestions.length ? `<ul>${item.suggestions.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : item.fix ? `<p>${escapeHtml(item.fix)}</p>` : ""}</article>`; }).join("")}</div>` : `<p class="review-empty">${empty}</p>`;
+  const issueMarkup = (items, empty) => items.length ? `<div class="review-issue-list">${items.map((item, index) => { const fixable = Number.isInteger(Number(item.unit)) && Number(item.unit) > 0 && !!item.fieldPath && (stage === "arc" || stage === "scenes"); const targetStage = item.targetStage && item.targetStage !== stage ? `<small class="review-issue-target">修正归属：${escapeHtml(stageMeta[item.targetStage]?.title || item.targetStage)}；当前页不直接改写此问题</small>` : ""; return `<article class="review-issue review-issue-${escapeHtml(item.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.tag || item.code || "审核意见")}</strong><span class="review-issue-severity">${escapeHtml(item.severity || "medium")}</span>${fixable ? `<button type="button" class="fix-unit-btn" data-fix-unit data-stage="${escapeHtml(stage)}" data-unit="${Number(item.unit)}" data-issue='${escapeHtml(JSON.stringify({ unit: Number(item.unit), field_path: item.fieldPath, tag: item.tag || "", feedback: item.feedback || "", fix: item.fix || "" }))}'>修复此集</button>` : ""}</div>${targetStage}${item.message ? `<p>${escapeHtml(item.message)}</p>` : ""}${Array.isArray(item.suggestions) && item.suggestions.length ? `<ul>${item.suggestions.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : item.fix ? `<p>${escapeHtml(item.fix)}</p>` : ""}</article>`; }).join("")}</div>` : `<p class="review-empty">${empty}</p>`;
   const adjudicationMarkup = adjudications.length ? `<div class="review-issue-list">${adjudications.map((item) => `<article class="review-adjudication"><strong>${escapeHtml(item.dimension || "未标注维度")}</strong><p>分歧度 ${escapeHtml(String(item.agreement ?? "—"))}% · 席位评分 ${escapeHtml((item.scores || []).join(" / "))}</p><p>证据来源：${escapeHtml((item.seats || []).join("、") || "审核席位")}</p><p>裁决依据：${escapeHtml(item.adjudication?.basis || "按证据强度与阶段契约自动裁决")}</p></article>`).join("")}</div>` : `<p class="review-empty">当前没有评分分歧，${reviewOpinion}可直接汇总。</p>`;
   const failureMarkup = technicalFailures.length ? `<div class="review-issue-list">${technicalFailures.map((item) => `<article class="review-technical-failure"><strong>${escapeHtml(item.seatId || "未标识席位")}</strong><p>未返回 · 技术未完成 · ${escapeHtml(reasonLabels[item.failureReason] || item.failureReason || item.message || "调用失败")}</p></article>`).join("")}</div>` : `<p class="review-empty">${reviewMode}未发现技术失败。</p>`;
   const degradedFlag = technical.degraded
     ? (technicalFailures.find((item) => item?.status === "degraded")?.message || `${reviewMode}不成立：有席位兜底到了同一模型`)
     : "";
   const technicalFlags = [degradedFlag, technical.stalled ? "自动修订已停止：stalled" : "", technical.budgetExhausted ? "自动修订已停止：budget_exhausted" : ""].filter(Boolean);
-  const ruleBlockedOverride = technicalFailures.some((item) => item?.status === "rule_blocked")
+  const ruleBlockedOverride = technicalFailures.some((item) => item?.status === "rule_blocked") && !creativeReviewDecisionGroups(reviewContent).length
     ? `<button class="stage-primary agent-task-primary is-next-action" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}" type="button">接受当前版本并继续</button><p class="review-technical-flags">规则拦截已阻断自动审核：只有你确认接受当前内容才能进入下一阶段。</p>`
     : "";
   const decisionItems = Array.isArray(decision.items) ? decision.items : [];
@@ -2522,6 +2522,12 @@ async function runAutoRevision(stage = state.stage) {
   if (!artifact || !issues.length) {
     showToast("服务端最新状态没有可执行清单，正在重新生成并审核当前阶段");
     await runCurrentStage(stage);
+    return;
+  }
+  const crossStageIssues = issues.filter((issue) => issue.targetStage && issue.targetStage !== stage);
+  if (crossStageIssues.length) {
+    const targets = [...new Set(crossStageIssues.map((issue) => stageMeta[issue.targetStage]?.title || issue.targetStage))];
+    showToast(`当前清单包含跨阶段问题，请先切换到${targets.join("、")}处理，避免在${stageMeta[stage]?.title || stage}中重复改写。`);
     return;
   }
   const maxPasses = 1;

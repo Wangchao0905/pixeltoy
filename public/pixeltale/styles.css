@@ -971,6 +971,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .review-issue-low { border-left-color: var(--pt-blue); }
 .review-issue-head strong { font-size: 12px; }
 .review-issue-severity { color: var(--pt-muted); }
+.review-issue-target { display: block; margin-top: 5px; color: var(--pt-red); font-size: 10px; }
 .review-worklist { margin-top: 15px; padding: 14px; border: 1px solid rgba(220, 89, 107, 0.24); border-left: 3px solid var(--pt-red); border-radius: 11px; background: rgba(255, 249, 250, 0.82); }
 .review-worklist-head, .revision-progress-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .review-worklist-head strong, .revision-progress-head strong { display: block; margin-top: 5px; font-size: 13px; }

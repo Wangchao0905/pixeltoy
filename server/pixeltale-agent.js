@@ -652,10 +652,10 @@ function reviewSystemPrompt(stage, mode, input = {}) {
 
 function reviewerIdentity(role) {
   return {
-    structure_causality: "结构与因果审查席：核对阶段契约、因果链闭合、用户硬约束兑现、时间线与逻辑自洽。拥有 structure、logic 两个维度的最终判定权。",
-    character_continuity: "人物与连续性审查席：核对人物动机、关系演进、世界规则一致性、长剧连续性、姓名与语境本土化。拥有 plot 维度的最终判定权。",
-    audience_pacing_visual: "受众节奏与视觉审查席：核对首屏冲击、每集钩子、反转因果、对白口语化与人物声线，以及场景/镜头的可拍性、景别机位与视觉呈现。拥有 design 维度的最终判定权。",
-  }[text(role, 120)] || "独立交叉审查员：基于证据给出可执行结论。";
+    structure_causality: "结构与因果审读席：核对阶段契约、因果链闭合、用户硬约束兑现、时间线与逻辑自洽，只提交 structure、logic 维度的证据。",
+    character_continuity: "人物与连续性审读席：核对人物动机、关系演进、世界规则一致性、长剧连续性、姓名与语境本土化，只提交 plot 维度的证据。",
+    audience_pacing_visual: "受众节奏与视觉审读席：核对首屏冲击、每集钩子、反转因果、对白口语化与人物声线，以及场景/镜头的可拍性，只提交 design 维度的证据。",
+  }[text(role, 120)] || "独立审读席：基于证据提交结构化发现，系统裁判负责最终决定。";
 }
 
 function revisionUserPrompt({ stage, mode, input, previousArtifacts, project, baseArtifact, revisionContract, revisionPlan, unitScope = [], lockedContext = [], continuityContext = [] }) {
@@ -694,10 +694,12 @@ function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input, rev
     reviewProtocol: {
       type: "adversarial_cross_validation",
       instructions: revisionItems.length ? [
+        "你是审读席，只提交结构化证据；不能自行决定通过、阻断或扩大修订范围。系统裁判会统一生成决定。",
         "本轮只核验修订合同与已知规则违规；合同外新发现只能作为建议记录，不能标记为 required_changes 或 high severity。",
         "逐条核对修订合同是否满足验收条件，不得重建或扩大本轮验收范围。",
         "除 knownRuleFindings 外，不得把合同外意见写入 required_changes。",
       ] : [
+        "你是审读席，只提交结构化证据；不能自行决定通过、阻断或扩大修订范围。系统裁判会统一生成决定。",
         "独立重建验收标准",
         "逐字段核对当前产物与用户规格",
         "逐项核对已确认上下文的一致性",
@@ -1071,9 +1073,20 @@ function batchReviewSummary(stage, batchReviews, totalUnits, unitLocks) {
   const basePass = reviews.length > 0
     && reviews.every(hasBasePass)
     && lockedUnits.length >= totalUnits;
+  const mandatoryIssues = reviews.flatMap((review) => asArray(review?.mandatoryIssues));
+  const decisionRequiredIssues = reviews.flatMap((review) => asArray(review?.decisionRequiredIssues));
+  const decision = !quorumMet
+    ? { kind: "rerun", owner: "系统裁判", title: "审核未完成", summary: "至少一个批次未完成双席审读。", items: [] }
+    : decisionRequiredIssues.length
+      ? { kind: "needs_decision", owner: "系统裁判", title: "需要创作者决定", summary: "至少一个批次的修订未收敛。", items: decisionRequiredIssues }
+      : mandatoryIssues.length
+        ? { kind: "revise", owner: "系统裁判", title: "定向修订", summary: "仅处理双席共同确认的高风险问题。", items: mandatoryIssues }
+        : basePass
+          ? { kind: "approve", owner: "系统裁判", title: "通过", summary: "全部批次已完成规则校验与双席审读。", items: [] }
+          : { kind: "rerun", owner: "系统裁判", title: "尚未完成", summary: "仍有批次未完成，继续处理剩余集数。", items: [] };
   return {
-    pass: basePass,
-    basePass,
+    pass: decision.kind === "approve",
+    basePass: decision.kind === "approve",
     score: average("score"),
     consensusIndex: average("consensusIndex"),
     agreement: average("agreement"),
@@ -1095,8 +1108,11 @@ function batchReviewSummary(stage, batchReviews, totalUnits, unitLocks) {
     issueCount: reviews.reduce((sum, review) => sum + Number(review?.issueCount || 0), 0),
     commonIssues: reviews.flatMap((review) => asArray(review?.commonIssues)),
     commonIssueCount: reviews.reduce((sum, review) => sum + Number(review?.commonIssueCount || 0), 0),
-    mandatoryIssues: reviews.flatMap((review) => asArray(review?.mandatoryIssues)),
-    mandatoryIssueCount: reviews.reduce((sum, review) => sum + Number(review?.mandatoryIssueCount || 0), 0),
+    mandatoryIssues,
+    mandatoryIssueCount: mandatoryIssues.length,
+    decisionRequiredIssues,
+    automaticRevisionBlocked: decision.kind === "needs_decision",
+    decision,
     recommendedIssues: reviews.flatMap((review) => asArray(review?.recommendedIssues)),
     recommendedIssueCount: reviews.reduce((sum, review) => sum + Number(review?.recommendedIssueCount || 0), 0),
     independentIssues: reviews.flatMap((review) => asArray(review?.independentIssues)),
@@ -1849,7 +1865,38 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
   const disagreements = completed
     .filter((item) => item.pass !== true)
     .map((item) => ({ seatId: item.seatId || "", model: item.actualModel || item.model || "", issues: asArray(item.mandatoryIssues).slice(0, 5).map((issue) => issue.tag || issue.criterionId || "分歧意见") }));
-  const basePass = quorumMet && majorityPass && mandatoryIssues.length === 0 && revisionClosure.allResolved;
+  const decision = !quorumMet
+    ? {
+      kind: "rerun",
+      owner: "系统裁判",
+      title: "审核未完成",
+      summary: "审读席位未满足独立复核条件，需要重新完成审核。",
+      items: technicalFailures,
+    }
+    : decisionRequiredIssues.length
+      ? {
+        kind: "needs_decision",
+        owner: "系统裁判",
+        title: "需要创作者决定",
+        summary: "定向修订未收敛或出现合同外共识，自动改稿已停止。",
+        items: decisionRequiredIssues,
+      }
+      : mandatoryIssues.length
+        ? {
+          kind: "revise",
+          owner: "系统裁判",
+          title: "定向修订",
+          summary: "仅处理两席共同确认的高风险问题。",
+          items: mandatoryIssues,
+        }
+        : {
+          kind: "approve",
+          owner: "系统裁判",
+          title: "通过",
+          summary: "硬规则、修订合同和双席共识均已满足；其余意见仅供参考。",
+          items: [],
+        };
+  const basePass = decision.kind === "approve";
   const pass = basePass;
   const checks = {
     cross_validation: quorumMet,
@@ -1890,6 +1937,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     outOfContractIssues,
     decisionRequiredIssues,
     automaticRevisionBlocked,
+    decision,
     recommendedIssues,
     recommendedIssueCount: recommendedIssues.length,
     independentIssues,
@@ -1919,6 +1967,13 @@ function ruleBlockedReview(ruleResult) {
     findings,
     ruleFindings: ruleResult.violations,
     technicalFailures: [{ status: "rule_blocked", message: "命中 high 规则，审核模型未调用" }],
+    decision: {
+      kind: "revise",
+      owner: "规则校验",
+      title: "定向修订",
+      summary: "规则校验发现必须修正的硬约束。",
+      items: ruleResult.violations,
+    },
     checks: { ...base.checks, rule_gate: false },
   };
 }
@@ -2278,8 +2333,45 @@ async function callStageCouncil({
   };
 }
 
-async function callStagePrimary(args) {
-  return callStageCouncil(args);
+async function callStagePrimary({ route, system, user, stage = "brief", modelRouter, validateContribution, onPhase }) {
+  if (!modelRouter || typeof modelRouter.call !== "function") {
+    throw new ProviderError("PixelTale 未接入独立编剧 API 主创路由", { code: "PIXELTALE_API_ROUTER_MISSING" });
+  }
+  const model = text(route?.primary, 120);
+  if (!model) throw new ProviderError("当前阶段未配置主笔模型", { code: "STAGE_PRIMARY_NOT_CONFIGURED" });
+  try {
+    if (typeof onPhase === "function") onPhase("authoring");
+  } catch {
+    // Phase reporting is observational and must never interrupt generation.
+  }
+  let result;
+  try {
+    result = await callProvider({
+      provider: model,
+      system: `${system}\n本次固定身份：主笔。只负责生成完整阶段产物，不自我审核、不扩展任务边界。`,
+      user,
+      modelRouter,
+      timeoutMs: stagePrimaryTiming(stage).model,
+      maxTokens: stageTokenBudget(stage, model),
+      purpose: `pixeltale:${stage}:author`,
+      temperature: 0.4,
+    });
+  } catch (error) {
+    error.splitSafe = canFallbackFrom(error);
+    throw error;
+  }
+  const content = typeof validateContribution === "function" ? validateContribution(result.content) : result.content;
+  return {
+    ...result,
+    content,
+    primaryExecution: {
+      role: "主笔",
+      requiredModel: model,
+      actualModel: result.model || model,
+      provider: result.provider || providerForRoute(model),
+      fallbackUsed: false,
+    },
+  };
 }
 
 async function collectCrossReviewQuorum({ reviewRoutes = [], revisionContract = null, execute }) {
@@ -2868,7 +2960,7 @@ function createPixelTaleAgent(options = {}) {
             model: text(previousArtifact.model, 200) || route.primary,
             attempts: 0,
             reused: true,
-            creativeCouncil: previousArtifact.creativeCouncil || null,
+            primaryExecution: previousArtifact.primaryExecution || { role: "主笔", actualModel: text(previousArtifact.model, 200) || route.primary, provider: "recovery" },
           };
         } else {
           const system = stageSystemPrompt(stage, mode, batchInput);
@@ -2876,8 +2968,7 @@ function createPixelTaleAgent(options = {}) {
           const user = revisionContract
             ? revisionUserPrompt({ stage, mode, input: batchInput, previousArtifacts, project: params.project, baseArtifact: batchSourceArtifact, revisionContract, revisionPlan, unitScope: batchUnits, lockedContext: lockedUnitContext(state, stage, batchUnits), continuityContext })
             : stageUserPrompt({ stage, mode, input: batchInput, previousArtifacts, project: params.project, unitScope: batchUnits, lockedContext: lockedUnitContext(state, stage, batchUnits), continuityContext });
-          reportPhase(params, "authoring");
-          primary = await callStageCouncil({
+          primary = await callStagePrimary({
             route,
             stage,
             mode,
@@ -2904,10 +2995,11 @@ function createPixelTaleAgent(options = {}) {
         }
         const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
         const primaryArtifact = buildArtifact({ stage, mode, input: batchInput, content: mergedContent, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
-        if (primary.creativeCouncil) primaryArtifact.creativeCouncil = primary.creativeCouncil;
+        if (primary.primaryExecution) primaryArtifact.primaryExecution = primary.primaryExecution;
         if (primary.reused) primaryArtifact.recovery = { sourceArtifactId: previousArtifact.id, owner: "审核恢复", authorModelSkipped: true };
         if (revisionContract) primaryArtifact.revision = { sourceArtifactId: sourceArtifact?.id || "", contractId: revisionContract.id, itemCount: revisionContract.items.length, unitNumbers: batchUnits, owner: "本阶段主创" };
         const reviewTarget = { ...primaryArtifact, content: unitStageContent(stage, batchContent, batchUnits) };
+        reportPhase(params, "validating");
         const ruleResult = runStageRules({ stage, mode, artifact: reviewTarget.content, approvedContext: { ...batchInput, input: batchInput, artifacts: previousArtifacts }, lockedPaths: lockedUnitContext(state, stage, batchUnits) });
         const highRuleViolations = ruleResult.violations.filter((item) => item.severity === "high");
         const reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route);
@@ -3148,7 +3240,7 @@ function createPixelTaleAgent(options = {}) {
       const user = revisionContract
         ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
         : stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, excludedTitles });
-      reportPhase(params, "authoring");
+      if (stage === "title") reportPhase(params, "authoring");
       primary = stage === "title"
         ? await callProvider({
           provider: route.primary,
@@ -3159,7 +3251,7 @@ function createPixelTaleAgent(options = {}) {
           maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS.title,
           purpose: "pixeltale:title:author",
         })
-        : await callStageCouncil({
+        : await callStagePrimary({
           onPhase: (phase) => reportPhase(params, phase),
           route,
           stage,
@@ -3177,7 +3269,7 @@ function createPixelTaleAgent(options = {}) {
       );
       const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
       primaryArtifact = buildArtifact({ stage, mode, input: runInput, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
-      if (primary.creativeCouncil) primaryArtifact.creativeCouncil = primary.creativeCouncil;
+      if (primary.primaryExecution) primaryArtifact.primaryExecution = primary.primaryExecution;
       if (stage === "title") {
         primaryArtifact.status = "ready";
         primaryArtifact.reviewId = "";
@@ -3195,6 +3287,7 @@ function createPixelTaleAgent(options = {}) {
           owner: "本阶段主创",
         };
       }
+      reportPhase(params, "validating");
       const ruleResult = runStageRules({ stage, mode, artifact: primaryArtifact.content, approvedContext: { ...runInput, input: runInput, artifacts: previousArtifacts }, lockedPaths: [] });
       const highRuleViolations = ruleResult.violations.filter((item) => item.severity === "high");
       reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route);

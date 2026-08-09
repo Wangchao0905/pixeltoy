@@ -978,6 +978,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .consensus-panel .section-row > strong { color: var(--pt-green-ink); font-size: 10px; }
 .consensus-readout strong { color: var(--pt-ink); font-size: 12px; }
 .consensus-readout span { color: var(--pt-muted); font-size: 9px; }
+.review-decision-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 14px; border: 1px solid var(--pt-line); border-radius: 14px; background: rgba(255, 255, 255, 0.72); }
+.review-decision-card > span { align-self: start; padding: 4px 6px; border-radius: 999px; color: var(--pt-green-ink); background: rgba(120, 154, 0, 0.12); font: 700 8px var(--meta-font); letter-spacing: .06em; }
+.review-decision-card h3 { margin: 0; color: var(--pt-ink); font-size: 15px; }
+.review-decision-card p { margin: 4px 0 0; color: var(--pt-muted); font-size: 11px; line-height: 1.55; }
+.review-decision-card ol { grid-column: 2; margin: 0; padding-left: 16px; color: var(--pt-muted); font-size: 10px; line-height: 1.55; }
+.review-decision-card.is-revise { border-color: rgba(219, 141, 46, .32); }
+.review-decision-card.is-needs_decision { border-color: rgba(40, 120, 232, .30); }
+.review-evidence { margin-top: 8px; }
+.review-evidence > summary { cursor: pointer; color: var(--pt-muted); font-size: 10px; }
+.review-evidence .review-zone { margin-top: 12px; }
 .consensus-track { height: 8px; margin-top: 12px; border: 1px solid rgba(120, 154, 0, 0.18); border-radius: 99px; background: rgba(120, 154, 0, 0.08); }
 .consensus-track span { background: linear-gradient(90deg, var(--pt-blue), #75b4ff 50%, var(--pt-green)); box-shadow: 0 0 12px rgba(40, 120, 232, 0.28); }
 .consensus-breakdown { margin-top: 11px; color: var(--pt-faint); }

@@ -72,10 +72,10 @@ try {
   assert.equal(job.status, "completed", `background run must complete: ${JSON.stringify(job)}`);
   assert.equal(job.result.status, "completed", "two completed reviews must release the generated brief");
   assert.equal(job.result.state.runs.length, 1, "duplicate starts must not create duplicate Agent runs");
-  assert.equal(requestedPurposes.filter((purpose) => purpose === "author").length, 3, "all three configured author models must contribute");
-  assert.equal(requestedPurposes.filter((purpose) => purpose === "synthesis").length, 1, "the merged draft must be created only after the author council completes");
+  assert.equal(requestedPurposes.filter((purpose) => purpose === "author").length, 1, "one accountable primary writer must generate the stage draft");
+  assert.equal(requestedPurposes.filter((purpose) => purpose === "synthesis").length, 0, "the single-writer flow must not run a synthesis pass");
   assert.equal(requestedPurposes.filter((purpose) => purpose === "review").length, 2, "both review seats must complete before release (2-seat speed pass)");
-  assert.equal(requestedTokenBudgets.length, 6, "three authors, one merge pass, and two reviewers must stay bounded");
+  assert.equal(requestedTokenBudgets.length, 3, "one writer and two reviewers must stay bounded");
   assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget === 1_200).length, 2, "both non-deepseek reviewers must retain the compact review token budget");
   assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget > 1_200).length, 0, "no deepseek reviewer remains after the 2-seat speed pass");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");

@@ -724,22 +724,17 @@ function renderConsensusMeter() {
   const reviewCompletion = document.querySelector("#consensusReviewCompletion");
   const interactionCompletion = document.querySelector("#consensusQuality");
   if (!score || !value || !fill || !label || !agreement || !reviewCompletion || !interactionCompletion) return;
+  const decision = metrics.content?.decision || {};
   const tone = metrics.quality === null ? "等待质量评分" : metrics.quality >= 90 ? "质量良好" : metrics.quality >= 75 ? "质量可接受" : "需要修订";
-  score.textContent = metrics.quality === null ? "—" : `${metrics.quality}%`;
-  value.textContent = `质量分 · ${tone}`;
+  score.textContent = decision.kind === "approve" ? "通过" : decision.kind === "revise" ? "修订" : decision.kind === "needs_decision" ? "决定" : decision.kind === "rerun" ? "重试" : "—";
+  value.textContent = decision.title || `质量分 · ${tone}`;
   const advisoryGate = reviewAdvisoryGate(metrics.content);
   const disagreements = Array.isArray(metrics.content?.disagreements) ? metrics.content.disagreements : [];
   const consensusNote = metrics.releaseReady && disagreements.length ? ` · 部分共识（${disagreements.length} 席有分歧已记录）` : "";
-  const releaseState = !metrics.quorumMet
-    ? "审核未完成"
-    : metrics.releaseReady
-      ? "审核完成 · 可放行"
-      : advisoryGate.blockingPending.length
-        ? "审核完成 · 等待人工裁决"
-        : "审核完成 · 等待修订";
+  const releaseState = decision.summary || (!metrics.quorumMet ? "审核未完成" : metrics.releaseReady ? "可确认" : advisoryGate.blockingPending.length ? "等待人工决定" : "等待裁判决定");
   label.textContent = metrics.quality !== null
-    ? `交叉审核 ${metrics.completedReviews} / ${metrics.requiredReviews} · ${releaseState}${consensusNote}`
-    : "完成当前阶段后启动交叉审核";
+    ? `系统裁判 · ${releaseState}${consensusNote}`
+    : "主笔完成后启动规则校验与双席审读";
   fill.style.setProperty("--consensus-width", `${metrics.quality ?? 0}%`);
   fill.parentElement?.classList.toggle("is-live", metrics.quality !== null);
   agreement.textContent = metrics.agreement === null ? "—" : `${metrics.agreement}%`;
@@ -790,7 +785,7 @@ function nextStepMeta() {
   }
   if (state.busy) {
     if (flowStage === "title") return { kind: "busy", title: "正在生成 4 个英文剧名", copy: "由总编排中指定的单个模型生成，完成后直接进入人工选择，不执行交叉审核。", flowStage };
-    return { kind: "busy", title: "正在生成并进行交叉审核", copy: "三席审核并行执行，必须等三席全部返回后再统一判断共识问题与意见冲突。", flowStage };
+    return { kind: "busy", title: "正在执行当前阶段", copy: "主笔生成内容；规则校验和双席审读提交证据；系统裁判随后给出唯一决定。", flowStage };
   }
   if (state.stage !== flowStage) {
     return {
@@ -835,6 +830,37 @@ function nextStepMeta() {
       copy: "三席审核尚未具备有效技术结果。请重新提交当前阶段，完成席位后再判断质量与修订意见；或接受当前版本继续。",
       label: `重新提交${flowMeta.title}并审核 →`,
       allowOverride: true,
+      flowStage,
+    };
+  }
+  const refereeDecision = reviewContent.decision || {};
+  if (refereeDecision.kind === "needs_decision") {
+    return {
+      kind: "human-override",
+      stage: flowStage,
+      title: `${flowMeta.title}需要决定`,
+      copy: refereeDecision.summary || "系统裁判无法安全自动取舍，请记录你的决定后继续。",
+      label: "记录决定并继续 →",
+      flowStage,
+    };
+  }
+  if (refereeDecision.kind === "revise") {
+    return {
+      kind: "auto-revise",
+      stage: flowStage,
+      title: `${flowMeta.title}需要定向修订`,
+      copy: refereeDecision.summary || "系统裁判已给出唯一的定向修订清单。",
+      label: "执行定向修订 →",
+      flowStage,
+    };
+  }
+  if (refereeDecision.kind === "rerun") {
+    return {
+      kind: "run",
+      stage: flowStage,
+      title: `${flowMeta.title}审核未完成`,
+      copy: refereeDecision.summary || "请重新完成本阶段审核。",
+      label: `重新审核${flowMeta.title} →`,
       flowStage,
     };
   }
@@ -1029,14 +1055,16 @@ function renderModelTeam() {
   ];
   const status = state.agent?.providerStatus || {};
   const currentArtifact = artifactForStage(state.stage);
+  const primaryExecution = currentArtifact?.primaryExecution || {};
   const currentReview = reviewForArtifact(currentArtifact);
   const reviewFeedbacks = Array.isArray(currentReview?.content?.feedbacks) ? currentReview.content.feedbacks : [];
   const roleLabels = { structure_causality: "结构与因果审查", character_continuity: "人物与连续性审查", audience_pacing_visual: "受众节奏与视觉审查" };
   const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则 · 视觉设计" };
   const phases = [
-    { id: "authoring", label: "三席独立创作" },
-    { id: "synthesizing", label: "合并编排" },
-    { id: "reviewing", label: "双席交叉审核" },
+    { id: "authoring", label: "主笔生成" },
+    { id: "validating", label: "规则校验" },
+    { id: "reviewing", label: "双席审读" },
+    { id: "referee", label: "系统裁判决定" },
   ];
   const currentPhaseIndex = phases.findIndex((phase) => phase.id === state.runPhase);
   const completedPhaseIndex = currentPhaseIndex >= 0 ? currentPhaseIndex - 1 : currentReview ? phases.length - 1 : -1;
@@ -1055,7 +1083,8 @@ function renderModelTeam() {
   $("#modelTeamCards")?.parentElement?.querySelector(".phase-rail")?.remove();
   $("#modelTeamCards")?.insertAdjacentHTML("beforebegin", phaseRail);
   $("#modelTeamCards").className = `model-team-cards${state.runPhase === "authoring" || state.runPhase === "reviewing" ? " is-breathing" : ""}`;
-  $("#modelTeamCards").innerHTML = reviewTeam.map((entry) => {
+  const authorCard = `<div class="model-card is-primary" aria-label="主笔执行状态"><i></i><span><strong>主笔</strong><small>完整产物 · 只负责写作</small></span><em>${escapeHtml(primaryExecution.actualModel ? "已完成" : state.runPhase === "authoring" ? "执行中" : "待执行")}</em></div>`;
+  $("#modelTeamCards").innerHTML = authorCard + reviewTeam.map((entry) => {
     const modelId = entry.actualModel || entry.requiredModel || "";
     const meta = modelInfo(modelId);
     const provider = entry.provider || meta.provider;
@@ -1653,6 +1682,13 @@ function renderAdvisoryCards(items = [], advisoryGate = {}, reviewId = "") {
 }
 
 function renderReviewPanel(reviewContent = {}, { passed = false } = {}) {
+  const decision = reviewContent.decision || {
+    kind: passed ? "approve" : "rerun",
+    owner: "系统裁判",
+    title: passed ? "通过" : "审核未完成",
+    summary: passed ? "当前阶段可以确认。" : "等待有效审核结果。",
+    items: [],
+  };
   const mandatory = mergeReviewItems(Array.isArray(reviewContent.mandatoryIssues) ? reviewContent.mandatoryIssues : []);
   const decisions = reviewDecisionGroups(reviewContent);
   const optional = mergeReviewItems([...(Array.isArray(reviewContent.recommendedIssues) ? reviewContent.recommendedIssues : []), ...(Array.isArray(reviewContent.independentIssues) ? reviewContent.independentIssues : [])]);
@@ -1668,7 +1704,9 @@ function renderReviewPanel(reviewContent = {}, { passed = false } = {}) {
     ? (technicalFailures.find((item) => item?.status === "degraded")?.message || "三席交叉审核不成立：有席位兜底到了同一模型")
     : "";
   const technicalFlags = [degradedFlag, technical.stalled ? "自动修订已停止：stalled" : "", technical.budgetExhausted ? "自动修订已停止：budget_exhausted" : ""].filter(Boolean);
-  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}"><strong>${passed ? "审核结果已生成" : "审核未完成或需要处理"}</strong><p>只有两席共同确认的高风险问题会进入自动修订；未收敛和合同外争议转为创作者决定。</p><section class="review-zone review-zone-mandatory"><h3>① 必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>② 需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>③ 可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>④ 系统记录</h3>${adjudicationMarkup}${failureMarkup}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></div>`;
+  const decisionItems = Array.isArray(decision.items) ? decision.items : [];
+  const decisionCard = `<section class="review-decision-card is-${escapeHtml(decision.kind || "rerun")}"><span>系统裁判</span><div><h3>${escapeHtml(decision.title || "等待决定")}</h3><p>${escapeHtml(decision.summary || "等待审核结果")}</p></div>${decisionItems.length ? `<ol>${decisionItems.slice(0, 3).map((item) => `<li>${escapeHtml(item.tag || item.message || "待处理事项")}</li>`).join("")}</ol>` : ""}</section>`;
+  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}<details class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
 }
 
 function renderTitleStage() {
@@ -1702,14 +1740,12 @@ function renderTitleStage() {
 }
 
 function renderCreationTrace(artifact, reviewContent = {}) {
-  const council = artifact?.creativeCouncil || {};
-  const contributors = Array.isArray(council.contributors) ? council.contributors : [];
+  const primary = artifact?.primaryExecution || {};
   const reviewers = Array.isArray(reviewContent.feedbacks) ? reviewContent.feedbacks : [];
-  if (!contributors.length && !reviewers.length && !council.synthesizer) return "";
-  const authorRows = contributors.map((seat) => `<li><strong>${escapeHtml(seat.role || "独立主创")}</strong><span>${escapeHtml(seat.actualModel || seat.requiredModel || seat.model || "未返回")}${seat.fallbackUsed ? " · Grok 兜底" : ""}</span></li>`).join("");
-  const mergeRow = council.synthesizer ? `<li><strong>${escapeHtml(council.synthesizer.role || "合并编排器")}</strong><span>${escapeHtml(council.synthesizer.actualModel || council.synthesizer.requiredModel || "未返回")}${council.synthesizer.fallbackUsed ? " · Grok 兜底" : ""}</span></li>` : "";
+  const decision = reviewContent.decision || {};
+  if (!primary.actualModel && !reviewers.length && !decision.kind) return "";
   const reviewerRows = reviewers.map((reviewer) => `<li><strong>${escapeHtml(reviewer.role || "交叉审核席位")}</strong><span>${escapeHtml(reviewer.model || reviewer.provider || "未返回")}${reviewer.status === "completed" ? " · 已完成" : " · 未完成"}</span></li>`).join("");
-  return `<details class="review-reference-panel creation-trace"><summary><span>生产链路 · 三席主创 / 一次合并 / 三席审核</span><em>${reviewers.filter((reviewer) => reviewer.status === "completed").length} / 3 审核完成</em></summary><div class="creation-trace-block"><strong>主创与合并</strong><ul>${authorRows}${mergeRow}</ul></div>${reviewerRows ? `<div class="creation-trace-block"><strong>交叉审核</strong><ul>${reviewerRows}</ul></div>` : ""}</details>`;
+  return `<details class="review-reference-panel creation-trace"><summary><span>执行依据 · 主笔 / 规则校验 / 双席审读 / 系统裁判</span><em>${escapeHtml(decision.title || "等待裁判")}</em></summary><div class="creation-trace-block"><strong>主笔</strong><ul><li><strong>${escapeHtml(primary.role || "主笔")}</strong><span>${escapeHtml(primary.actualModel || "未返回")}</span></li></ul></div><div class="creation-trace-block"><strong>系统裁判</strong><p>${escapeHtml(decision.summary || "等待规则校验与双席审读完成")}</p></div>${reviewerRows ? `<div class="creation-trace-block"><strong>审读依据</strong><ul>${reviewerRows}</ul></div>` : ""}</details>`;
 }
 
 function renderArtifactStage() {

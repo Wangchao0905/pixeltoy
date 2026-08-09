@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { aggregateCrossReview, buildRevisionContract, isMandatoryReviewIssue } from "../server/pixeltale-agent.js";
+import { aggregateCrossReview, buildRevisionContract, callStagePrimary, isMandatoryReviewIssue } from "../server/pixeltale-agent.js";
 
 const dimensions = Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 90, feedback: "通过" }]));
 
@@ -49,5 +49,22 @@ assert.equal(stalled.decisionRequiredIssues.length, 1, "未收敛合同必须转
 
 const nextContract = buildRevisionContract({ revision: { contract, closure: { items: [{ ...contract.items[0], status: "unresolved", remainingFix: ["需要创作者决定取舍"] }] } } }, { stage: "brief", sourceArtifactId: "artifact_2", id: "revision_2" });
 assert.equal(nextContract.items.length, 0, "未被本轮两席重新确认的旧问题不能无限继承为下一轮合同");
+
+const authorCalls = [];
+const authored = await callStagePrimary({
+  route: { primary: "writer-a" },
+  stage: "brief",
+  system: "writer system",
+  user: "writer task",
+  modelRouter: { call: async (request) => {
+    authorCalls.push(request);
+    return { provider: "test", model: request.model, content: { title_zh: "测试" } };
+  } },
+});
+assert.equal(authorCalls.length, 1, "每个阶段只能由一位主笔生成内容");
+assert.equal(authored.primaryExecution.role, "主笔", "主笔执行记录必须明确内容责任人");
+
+assert.equal(scopedReview.decision.kind, "needs_decision", "合同外共识必须由统一裁判转为创作者决定，而非自动改稿");
+assert.equal(stalled.decision.kind, "needs_decision", "未收敛合同必须由统一裁判转为创作者决定");
 
 console.log("PixelTale review governance tests passed.");

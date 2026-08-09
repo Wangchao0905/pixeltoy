@@ -146,11 +146,10 @@ const params = { pixelTaleRoot: "batch-e2e", projectId: "episode-isolation-test"
 const firstRun = await agent.run(params);
 assert.equal(firstRun.status, "completed");
 const authorPayloads = router.calls.filter((call) => call.purpose === "pixeltale:arc:author");
-const expectedAuthorModels = ["claude-haiku-4-5", "claude-sonnet-5", "gpt-5.6-luna"];
 assert.deepEqual(uniqueAuthorScopes(authorPayloads), [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]], "arc must be generated in isolated batches");
 for (const scope of uniqueAuthorScopes(authorPayloads)) {
   const modelsForScope = new Set(authorPayloads.filter((call) => JSON.stringify(call.payload.unitScope || []) === JSON.stringify(scope)).map((call) => call.model));
-  assert.deepEqual([...modelsForScope].sort(), expectedAuthorModels.sort(), "every isolated batch must contain all three configured model contributions");
+  assert.equal(modelsForScope.size, 1, "every isolated batch must have one accountable primary writer");
 }
 assert.ok(authorPayloads.every((call) => !call.payload.approvedContext.some((item) => item.stage === "arc" && item.content?.units?.length > 5)), "a batch must not receive the full season as approved context");
 assert.ok(authorPayloads.find((call) => call.payload.unitScope.includes(6)).payload.lockedUnitContext.every((item) => !item.plot_zh && !item.content), "locked episodes must be represented only by compressed continuity state");

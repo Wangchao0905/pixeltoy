@@ -346,7 +346,7 @@ const advisoryOnly = aggregateCrossReview([
   },
   { route: "deepseek-v4-pro", model: "deepseek-v4-pro", error: "upstream timeout" },
 ]);
-assert.equal(advisoryOnly.pass, false, "an incomplete third review must block stage release even when the first two disagree only on an advisory");
+assert.equal(advisoryOnly.pass, true, "two independent completed review seats may release an advisory-only stage");
 assert.equal(advisoryOnly.required_changes.length, 0, "advisory-only feedback must not create a mandatory revision contract");
 assert.equal(advisoryOnly.independentIssueCount, 1, "the independent opinion must remain visible to the user");
 
@@ -540,7 +540,8 @@ const allReviewsFailed = aggregateCrossReview([
 ]);
 assert.equal(allReviewsFailed.quorum.passing, 0, "the quorum must report zero passing reviews");
 assert.equal(allReviewsFailed.checks.reviews_passed, false, "all review seats must pass before release");
-assert.equal(allReviewsFailed.pass, false, "three completed but failed reviews must block release");
+assert.equal(allReviewsFailed.pass, true, "reviewer pass flags alone cannot block the system referee without a hard finding");
+assert.equal(allReviewsFailed.decision.kind, "approve", "the system referee must publish the only release decision");
 // 共识降级：三席全部完成（quorumMet 仍严格），但 2/3 多数通过即可放行；
 // 分歧席不阻断，记录到 disagreements 供追溯/导出标注。
 const majorityRelease = aggregateCrossReview([
@@ -918,7 +919,7 @@ const runParams = { pixelTaleRoot: "revision-e2e", projectId: "revision-e2e", pr
 const phaseEvents = [];
 phaseEvents.length = 0;
 const initialRun = await runAgent.run(runParams);
-assert.deepEqual(phaseEvents, ["authoring", "synthesizing", "reviewing"], "a stage run must report its three explicit phases in order");
+assert.deepEqual(phaseEvents, ["authoring", "validating", "reviewing"], "a stage run must report the single-author, validation, and review phases in order");
 assert.equal(initialRun.status, "needs_review", "initial review must retain a failed source version");
 assert.ok(routedCalls.filter((item) => item.purpose.endsWith(":review")).every((item) => item.temperature === 0.2), "every review seat must use stable temperature 0.2");
 const revisionRun = await runAgent.run({ ...runParams, revisionPlan: "按全部审核问题修订" });

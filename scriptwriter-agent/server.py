@@ -363,9 +363,12 @@ def main():
     args = ap.parse_args()
 
     def engine_factory():
-        from llm import load_env
+        from llm import load_env, make_gpt_client, make_deepseek_client, make_gemini_client
         env = load_env(ENV_PATH)
-        return PixelWriterEngine(make_gpt_client(env), make_deepseek_client(env), state_dir=PROJECTS_DIR)
+        # 三模型：GPT 主笔/首轮修订 + DeepSeek 审核席 A + Gemini 审核席 B（并行共识 + 第二轮修订轮换）
+        return PixelWriterEngine(make_gpt_client(env), make_deepseek_client(env),
+                                 state_dir=PROJECTS_DIR,
+                                 reviewer_b=make_gemini_client(env) if env.get("GEMINI_API_KEY") else None)
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(engine_factory))
     print(f"Pixel Writer API on :{args.port}")

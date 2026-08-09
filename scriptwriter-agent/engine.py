@@ -42,9 +42,10 @@ class ProjectState:
         return cls(**json.loads(text))
 
 class PixelWriterEngine:
-    def __init__(self, writer, reviewer, state_dir="projects"):
-        self.writer = writer        # LLMClient（GPT）
-        self.reviewer = reviewer    # LLMClient（DeepSeek）
+    def __init__(self, writer, reviewer, state_dir="projects", reviewer_b=None):
+        self.writer = writer        # LLMClient（GPT，主笔 + 首轮修订）
+        self.reviewer = reviewer    # LLMClient（DeepSeek，审核席 A）
+        self.reviewer_b = reviewer_b  # LLMClient（Gemini，审核席 B 独立复核 + 第二轮修订，可 None）
         self.state_dir = state_dir
         os.makedirs(state_dir, exist_ok=True)
         self.facts = self._load_facts()
@@ -175,7 +176,53 @@ class PixelWriterEngine:
         }
 
     def review_episode(self, state, episode):
-        """DeepSeek 审核单集，返回审核契约 dict。
+        """双审核共识：DeepSeek（席 A）+ Gemini（席 B）并行独立审核后合并。
+
+        双过 → 通过（取平均分）；一过一不过 → 按未通过方（保守）+ 合并双方问题；
+        双不过 → 合并去重问题清单（一次修订解决两边），分数/维度取低。
+        第二席未配置（reviewer_b=None）时退化为单审核，向后兼容。
+        """
+        clients = [self.reviewer]
+        if self.reviewer_b:
+            clients.append(self.reviewer_b)
+        if len(clients) == 1:
+            return self._review_once(clients[0], state, episode)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            results = list(ex.map(lambda c: self._review_once(c, state, episode), clients))
+        results = [r for r in results if isinstance(r, dict)]
+        if not results:
+            return None
+        if len(results) == 1:
+            return results[0]
+        a, b = results[0], results[1]
+        if a.get("pass") and b.get("pass"):
+            a["score"] = round(((a.get("score", 0) or 0) + (b.get("score", 0) or 0)) / 2)
+            return a
+        if a.get("pass") != b.get("pass"):
+            loser, winner = (b, a) if a.get("pass") else (a, b)
+            merged = list(loser.get("issues", []))
+            for i in winner.get("issues", []):
+                if i not in merged:
+                    merged.append(i)
+            loser["issues"] = merged[:12]
+            loser["score"] = min(a.get("score", 0) or 0, b.get("score", 0) or 0)
+            loser["pass"] = False
+            return loser
+        merged = list(a.get("issues", []))
+        for i in b.get("issues", []):
+            if i not in merged:
+                merged.append(i)
+        a["issues"] = merged[:12]
+        a["score"] = min(a.get("score", 0) or 0, b.get("score", 0) or 0)
+        a["pass"] = False
+        da, db = a.get("dimensions") or {}, b.get("dimensions") or {}
+        a["dimensions"] = {k: min(float(da.get(k, 0) or 0), float(db.get(k, 0) or 0))
+                           for k in ("human_tone", "hook", "plot", "dialogue", "continuity")}
+        return a
+
+    def _review_once(self, client, state, episode):
+        """单个审核器的完整审核（prompt + 解析重试 + 代码级强制门）。
 
         多维度：human_tone（Humanizer-zh 去 AI 腔）、hook（开场钩/集尾悬念/反转强度）、
         plot、dialogue、continuity（与前集衔接 / 角色状态延续 / 悬念推进）。
@@ -225,12 +272,12 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 
 输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"human_tone":0-100,"hook":0-100,"plot":0-100,"dialogue":0-100,"continuity":0-100}},"issues":[{{"severity":"high|medium","mode":1-21,"quote":"原文","fix":"改写建议"}}]}}
 规则：AI 腔分数<70 必须 pass=false；hook<60（开场无钩/集尾无悬念/无反转且平淡）必须 pass=false；continuity<70（本集开头未衔接上集结尾/角色状态矛盾/悬念未推进）必须 pass=false；情节断裂/对白与设定冲突必须 high issue。"""
-        content = self.reviewer.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=4000)
+        content = client.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=4000)
         verdict = self._parse_json_block(content)
         if not isinstance(verdict, dict):
             # 审核输出无法解析（hook/规则冲突/结构校验使 prompt 与输出变长，
             # 2000 token 预算下 DeepSeek 易截断）→ 重试一次，仍失败返回 None
-            content = self.reviewer.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=4000)
+            content = client.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=4000)
             verdict = self._parse_json_block(content)
         if not isinstance(verdict, dict):
             return None
@@ -249,8 +296,13 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
                     verdict["pass"] = False
         return verdict
 
-    def revise_episode(self, state, episode, issues):
-        """GPT 按审核问题清单定向修订本集，只改问题涉及处，保持其余不变。"""
+    def revise_episode(self, state, episode, issues, round_no=0):
+        """按审核问题清单定向修订本集，只改问题涉及处，保持其余不变。
+
+        round_no>=1 且配置了 reviewer_b 时改用第二模型修订（修订轮换），
+        打破"主笔自己改自己"的惯性循环。
+        """
+        client = self.reviewer_b if (round_no >= 1 and self.reviewer_b) else self.writer
         dialogue_lang = state.idea.get("dialogue_language") or "zh"
         lang_note = "对白保持英文，并按英语母语者的语境与表达方式修订（不得改为中文，不得翻译腔）。" if dialogue_lang == "en" else "对白保持中文口语化风格。"
         prompt = f"""按问题清单定向修订本集，只改问题涉及处，保持其余不变。输出与原结构相同的 JSON 剧本。
@@ -259,7 +311,7 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 只允许：① 修改清单中 quote 命中的原文；② 为结构类问题（节拍不足/时长过短/缺 hook/cliffhanger）增补或精简内容。
 问题清单：{json.dumps(issues, ensure_ascii=False)}
 本集：{json.dumps(episode, ensure_ascii=False)}"""
-        content = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=4000)
+        content = client.chat([{"role": "user", "content": prompt}], max_tokens=4000)
         return self._parse_json_block(content)
 
     @staticmethod
@@ -386,7 +438,7 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
                 if rounds >= MAX_REVISION_ROUNDS:
                     status = "needs-human"
                     break
-                revised = self.revise_episode(state, episode, [])
+                revised = self.revise_episode(state, episode, [], round_no=rounds)
                 if not isinstance(revised, dict) or not self._revision_respects_scope(episode, revised, []):
                     status = "needs-human"
                     break
@@ -399,7 +451,7 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
             if rounds >= MAX_REVISION_ROUNDS:
                 status = "needs-human"
                 break
-            revised = self.revise_episode(state, episode, verdict.get("issues", []))
+            revised = self.revise_episode(state, episode, verdict.get("issues", []), round_no=rounds)
             if not isinstance(revised, dict):
                 status = "needs-human"
                 break

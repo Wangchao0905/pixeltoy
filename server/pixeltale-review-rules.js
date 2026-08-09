@@ -282,6 +282,26 @@ function checkCrossStageRefs(stage, artifact, approvedContext, violations) {
   }
 }
 
+// 2026-08-10 剧本规范：arc 每集标题必须是完整中文短语标题。
+// 历史问题：部分集标题泄漏技术代号（"第4集 Anchor A"、"第7集 A-01"、
+// "第17集 Witness C"、"第15集 Maya Hayes"）——代号/纯英文标题一律 hard 违规。
+const EPISODE_TITLE_CODENAME = /^(?:[A-Za-z]+[ -]?\d+|[A-Z][a-z]+ [A-Z][a-z]+|(?:Anchor|Witness|Suspect|Target|Subject|Agent|Code|File) [A-Z])/u;
+function checkEpisodeTitles(stage, artifact, violations) {
+  if (stage !== "arc") return;
+  array(object(artifact).units).forEach((unit, ui) => {
+    const title = String(object(unit).title_zh || "").trim();
+    if (!title) return;
+    const path = `units[${ui}].title_zh`;
+    if (!CJK.test(title)) {
+      add(violations, "EPISODE_TITLE_NOT_ZH", "high", path, `第${object(unit).number ?? ui + 1}集标题必须是完整中文短语，当前为："${title}"`);
+      return;
+    }
+    if (EPISODE_TITLE_CODENAME.test(title)) {
+      add(violations, "EPISODE_TITLE_CODENAME", "high", path, `第${object(unit).number ?? ui + 1}集标题疑似技术代号："${title}"，请改为完整中文标题`);
+    }
+  });
+}
+
 function runStageRules({ stage = "", mode = "", artifact = {}, approvedContext = {}, lockedPaths = [] } = {}) {
   const normalizedStage = String(stage || "").toLowerCase();
   const normalizedMode = ["tk", "tk_short_drama", "短剧"].includes(String(mode).toLowerCase()) ? "tk_short_drama" : String(mode || "").toLowerCase();
@@ -295,13 +315,14 @@ function runStageRules({ stage = "", mode = "", artifact = {}, approvedContext =
   checkHooks(normalizedStage, normalizedMode, object(artifact), violations);
   checkLocalization(normalizedStage, object(artifact), approvedContext, violations);
   checkCrossStageRefs(normalizedStage, object(artifact), approvedContext, violations);
+  checkEpisodeTitles(normalizedStage, object(artifact), violations);
   return {
     violations,
     checked: [
       "SCHEMA_INCOMPLETE", "UNIT_COUNT_MISMATCH", "LOCKED_PATH_TOUCHED",
       "DURATION_BUDGET_MISMATCH", "UNIT_CONTINUITY_BROKEN", "DIMENSION_KEY_MISSING", "EMPTY_HOOK", "NAME_LOCALIZATION",
       "UNKNOWN_CHARACTER_REF", "UNKNOWN_SCENE_REF", "UNKNOWN_SPEAKER_REF",
-      "SCENE_SPEAKER_ROSTER_MISMATCH",
+      "SCENE_SPEAKER_ROSTER_MISMATCH", "EPISODE_TITLE_NOT_ZH", "EPISODE_TITLE_CODENAME",
     ],
   };
 }

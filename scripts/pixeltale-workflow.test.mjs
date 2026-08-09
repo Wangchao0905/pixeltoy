@@ -1770,6 +1770,29 @@ console.log("pixeltale workflow contract ok");
   assert.equal(normalizeAutoRegisteredCharacters(legacyState), 0, "角色身份迁移必须幂等");
 }
 
+// ---- 2026-08-10 剧本规范验证：arc 集标题必须完整中文（禁代号）----
+{
+  const arcArt = { units: [
+    { number: 1, title_zh: "直播里的好运绳结" },
+    { number: 4, title_zh: "Anchor A" },
+    { number: 7, title_zh: "A-01" },
+    { number: 15, title_zh: "Maya Hayes" },
+  ] };
+  // 纯英文/代号标题 → 无中文字符 → EPISODE_TITLE_NOT_ZH（hard）
+  const findings = ruleFindings(runStageRules({ stage: "arc", artifact: arcArt }), "EPISODE_TITLE_NOT_ZH");
+  assert.equal(findings.length, 3, "Anchor A / A-01 / Maya Hayes 无中文 → NOT_ZH hard 违规");
+  assert.equal(findings[0].severity, "high", "非中文标题必须是 hard 违规");
+  const notZh = ruleFindings(runStageRules({ stage: "arc", artifact: { units: [{ number: 2, title_zh: "The Phone" }] } }), "EPISODE_TITLE_NOT_ZH");
+  assert.equal(notZh.length, 1, "纯英文标题必须判为违规");
+  // 含中文但带代号前缀 → EPISODE_TITLE_CODENAME
+  const codename = ruleFindings(runStageRules({ stage: "arc", artifact: { units: [{ number: 4, title_zh: "Anchor A 的秘密" }] } }), "EPISODE_TITLE_CODENAME");
+  assert.equal(codename.length, 1, "含中文但带代号前缀必须判为代号标题");
+  const clean = ruleFindings(runStageRules({ stage: "arc", artifact: { units: [{ number: 1, title_zh: "沙发里的第二部手机" }] } }), "EPISODE_TITLE_CODENAME");
+  assert.equal(clean.length, 0, "完整中文标题不得误报");
+  const arcPrompt = stageSystemPrompt("arc", "tk_short_drama", {});
+  assert.match(arcPrompt, /title_zh 必须是完整中文短语标题/, "arc prompt 必须约束标题规范");
+}
+
 // ---- 2026-08-10 预防验证：prompt 要求完整角色体系 + 角色使用约束 ----
 {
   const charsPrompt = stageSystemPrompt("characters", "tk_short_drama", {});

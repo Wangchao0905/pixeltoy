@@ -2,11 +2,32 @@
 import argparse
 import json
 import os
+import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from engine import PixelWriterEngine, ProjectState
 from llm import make_gpt_client, make_deepseek_client, load_env
 from docx_export import export_docx
+
+# 同一项目并发写盘防护：/api/continue、/api/fix-issue 是长任务（分钟级），
+# 前端连续点击会并发请求 → 同时 load/写同一 state 文件互相覆盖。
+# 用 set + lock 保证同一 project_id 同时只有一个写任务在跑。
+_busy_projects = set()
+_busy_lock = threading.Lock()
+
+
+def _claim_project(pid):
+    """登记项目为处理中；已处理中返回 False（调用方应返回 409）。"""
+    with _busy_lock:
+        if pid in _busy_projects:
+            return False
+        _busy_projects.add(pid)
+        return True
+
+
+def _release_project(pid):
+    with _busy_lock:
+        _busy_projects.discard(pid)
 
 # 基于本文件位置解析路径，避免依赖进程 cwd（pm2 的 exec cwd 可能不在项目目录）。
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -196,10 +217,14 @@ def make_handler(engine_factory):
                     if path is None or not os.path.exists(path):
                         self._json(404, {"ok": False, "error": "project not found"})
                         return
+                    if not _claim_project(pid):
+                        self._json(409, {"ok": False, "error": "该创作任务正在处理中，请等待完成后重试。"})
+                        return
                     try:
                         with open(path, encoding="utf-8") as f:
                             state = ProjectState.from_json(f.read())
                     except Exception:
+                        _release_project(pid)
                         self._json(500, {"ok": False, "error": "corrupt project state"})
                         return
                     engine = engine_factory()
@@ -220,6 +245,7 @@ def make_handler(engine_factory):
                             state.stage = "episode"
                     if state.current_episode > len(episodes) or state.stage == "export":
                         state.stage = "export"
+                        _release_project(pid)
                         self._json(200, {"ok": True, "done": True, "state": json.loads(state.to_json())})
                         return
                     outline = episodes[state.current_episode - 1]
@@ -230,6 +256,7 @@ def make_handler(engine_factory):
                         # 收到 500 HTML 而提示"服务返回了无法读取的内容"，无法诊断。
                         import traceback
                         traceback.print_exc()
+                        _release_project(pid)
                         self._json(500, {"ok": False, "error": f"生成第 {state.current_episode} 集失败：{type(exc).__name__}: {exc}"})
                         return
                     done = state.current_episode > len(episodes)
@@ -237,6 +264,7 @@ def make_handler(engine_factory):
                         state.stage = "export"
                         # run_episode_loop 已落盘；此处仅补写 stage=export（测试假引擎可能无 _save）
                         getattr(engine, "_save", lambda s: None)(state)
+                    _release_project(pid)
                     self._json(200, {"ok": True, "done": done, "state": json.loads(state.to_json())})
                 elif parsed.path == "/api/localize":
                     # 剧情中文化：把已生成集的 action/location 转为中文（对白 line 不动）
@@ -262,24 +290,31 @@ def make_handler(engine_factory):
                     if path is None or not os.path.exists(path):
                         self._json(404, {"ok": False, "error": "project not found"})
                         return
+                    if not _claim_project(pid):
+                        self._json(409, {"ok": False, "error": "该创作任务正在处理中，请等待完成后重试。"})
+                        return
                     try:
                         with open(path, encoding="utf-8") as f:
                             state = ProjectState.from_json(f.read())
                     except Exception:
+                        _release_project(pid)
                         self._json(500, {"ok": False, "error": "corrupt project state"})
                         return
                     try:
                         ep_no = int(body.get("episode", 0))
                     except (TypeError, ValueError):
+                        _release_project(pid)
                         self._json(400, {"ok": False, "error": "invalid episode"})
                         return
                     issue = body.get("issue")
                     if not isinstance(issue, dict):
+                        _release_project(pid)
                         self._json(400, {"ok": False, "error": "missing issue"})
                         return
                     episodes_map = state.artifacts.setdefault("episodes", {})
                     episode = episodes_map.get(str(ep_no))
                     if not isinstance(episode, dict):
+                        _release_project(pid)
                         self._json(404, {"ok": False, "error": "episode not found"})
                         return
                     engine = engine_factory()
@@ -288,14 +323,17 @@ def make_handler(engine_factory):
                     except Exception as exc:
                         import traceback
                         traceback.print_exc()
+                        _release_project(pid)
                         self._json(500, {"ok": False, "error": f"定向修复失败：{type(exc).__name__}: {exc}"})
                         return
                     if not isinstance(revised, dict):
+                        _release_project(pid)
                         self._json(422, {"ok": False, "error": "模型修订输出无法解析，请重试"})
                         return
                     if not engine._revision_respects_scope(episode, revised, [issue]):
                         merged = engine._merge_revision(episode, revised, [issue])
                         if merged is None:
+                            _release_project(pid)
                             self._json(422, {"ok": False, "error": "修订越界且无法安全合并，请改用重新生成本集"})
                             return
                     else:
@@ -323,12 +361,14 @@ def make_handler(engine_factory):
                         episodes_map[str(ep_no)] = episode
                         state.evaluation[str(ep_no)] = old_eval if isinstance(old_eval, dict) else verdict
                         getattr(engine, "_save", lambda s: None)(state)
+                        _release_project(pid)
                         self._json(200, {"ok": True, "status": "rolled-back",
                                          "verdict": state.evaluation[str(ep_no)],
                                          "state": json.loads(state.to_json())})
                         return
                     state.evaluation[str(ep_no)] = verdict
                     getattr(engine, "_save", lambda s: None)(state)
+                    _release_project(pid)
                     status = "approved" if verdict.get("pass") else "needs-human"
                     self._json(200, {"ok": True, "status": status, "verdict": verdict, "state": json.loads(state.to_json())})
                 elif parsed.path == "/api/export":

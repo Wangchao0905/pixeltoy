@@ -449,3 +449,30 @@ class TestFixIssueRollback(unittest.TestCase):
             srv.shutdown(); srv.server_close()
             if os.path.exists("projects/proll.json"):
                 os.remove("projects/proll.json")
+
+class TestConcurrentGuard(unittest.TestCase):
+    def test_second_continue_while_busy_returns_409(self):
+        """同一项目并发 /api/continue：第二个请求应 409，不并发写盘。"""
+        from server import _claim_project, _release_project
+        self.assertTrue(_claim_project("p-busy"))
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(SuccessfulEngine))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        try:
+            os.makedirs("projects", exist_ok=True)
+            state = ProjectState(project_id="p-busy", stage="episode", current_episode=1)
+            state.artifacts["outline"] = {"episodes": [{"index": 1, "hook": "h"}]}
+            with open(os.path.join("projects", "p-busy.json"), "w", encoding="utf-8") as f:
+                f.write(state.to_json())
+            body = json.dumps({"project_id": "p-busy"}).encode("utf-8")
+            req = urllib.request.Request(base + "/api/continue", data=body, method="POST")
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(req)
+            self.assertEqual(ctx.exception.code, 409, "busy 项目第二次请求必须 409")
+            body_resp = json.loads(ctx.exception.read().decode("utf-8"))
+            self.assertIn("正在处理中", body_resp["error"])
+        finally:
+            srv.shutdown(); srv.server_close()
+            _release_project("p-busy")
+            if os.path.exists("projects/p-busy.json"):
+                os.remove("projects/p-busy.json")

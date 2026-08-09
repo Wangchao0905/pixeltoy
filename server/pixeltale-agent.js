@@ -781,7 +781,9 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "模式规则只能检查当前阶段已有字段：brief 检查开头承诺与追更问题，arc 才检查逐集钩子、反转与回收；不得提前索要后续资产。",
     "对白阶段还要检查英文是否自然口语化、是否保留中文剧情意图、是否像人物会说的话。",
     ...(stage === "title" ? ["剧名阶段必须检查恰好 4 个候选、名称不重复、四种命名基因确实拉开差异，并且每个候选都有风格、语气、命名基因和理由。"] : []),
-    '输出契约：{"pass":true,"score":<0-100整数>,"confidence":<0-100整数>,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改","requires_creator_decision":false,"decision_options":["方案 A","方案 B"]}],"dimensions":{"structure":{"score":<0-100整数>,"feedback":"结构意见"},"plot":{"score":<0-100整数>,"feedback":"剧情意见"},"design":{"score":<0-100整数>,"feedback":"设计意见"},"logic":{"score":<0-100整数>,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
+    '输出契约：{"pass":true,"score":<0-100整数>,"confidence":<0-100整数>,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议","unit":"集号（arc/scenes 阶段必填，如 6）","field_path":"字段定位路径（scenes 如 scenes[0].beats[2].line；必须属于本集，不得跨集）"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改","requires_creator_decision":false,"decision_options":["方案 A","方案 B"]}],"dimensions":{"structure":{"score":<0-100整数>,"feedback":"结构意见"},"plot":{"score":<0-100整数>,"feedback":"剧情意见"},"design":{"score":<0-100整数>,"feedback":"设计意见"},"logic":{"score":<0-100整数>,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
+    "锚点示例（arc/scenes 阶段每条 issue 必须给出 unit + field_path）：",
+    '正例：{"unit":6,"field_path":"scenes[0].beats[2].line"}；反例：无 unit、或 field_path 指向其他集（如 scenes[1] 属于第 7 集时指向它）——跨集锚点视为无效。',
     "分数必须是你的真实评估；0 分仅在内容确实完全不可用时使用。confidence 是你对本次判断的确定度（0-100）。",
   ].join("\n");
 }
@@ -1080,6 +1082,12 @@ function propagateDirty(state, upstreamStage, reason) {
 function dirtyUnits(state, stage) {
   return Object.keys(asObject(state?.unitLocks?.[stage]) || {}).map(Number)
     .filter((u) => unitLockStatus(state, stage, u) === "dirty").sort((a, b) => a - b);
+}
+
+// 提取 issue 的集锚点；非法返回 null（单修时跳过 unfixable issue）
+function extractUnitAnchor(issue) {
+  const unit = Number(asObject(issue).unit);
+  return Number.isInteger(unit) && unit > 0 ? unit : null;
 }
 
 function compactLockedUnit(stage, lock) {
@@ -1563,6 +1571,8 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
   const issues = asArray(review.issues).map((item) => {
     const entry = asObject(item);
     const dimension = REVIEW_DIMENSIONS.includes(entry.dimension) ? entry.dimension : "logic";
+    const unit = entry.unit === undefined || entry.unit === null ? null : Number(entry.unit);
+    const fieldPath = text(entry.field_path || entry.fieldPath, 300);
     return {
       criterionId: text(entry.criterion_id || entry.criterionId, 120).toUpperCase(),
       tag: text(entry.tag, 120),
@@ -1570,6 +1580,9 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
       severity: ["high", "medium", "low"].includes(entry.severity) ? entry.severity : "medium",
       feedback: text(entry.feedback, 1200),
       fix: text(entry.fix || entry.suggestion, 1200),
+      unit: Number.isInteger(unit) && unit > 0 ? unit : null,
+      fieldPath,
+      unfixable: !(Number.isInteger(unit) && unit > 0 && fieldPath),
     };
   }).filter((item) => item.tag && item.feedback).slice(0, 3);
   const missingDimensions = requireDimensions ? REVIEW_DIMENSIONS.filter((key) => !Number.isFinite(Number(rawDimensions[key]?.score ?? rawDimensions[key]))) : [];
@@ -3930,6 +3943,7 @@ module.exports = {
   autoRepairableUnits,
   dirtyUnits,
   propagateDirty,
+  extractUnitAnchor,
   createPixelTaleAgent,
   createHandoffPayload,
   confirmArtifact,

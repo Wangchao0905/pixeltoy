@@ -29,6 +29,8 @@ const {
   status: pixelTaleApiModelStatus,
 } = require("./server/pixeltale-api.js");
 const { writeVisualAssetDocument: buildVisualAssetDocument } = require("./server/pixeltale-visual-assets.js");
+const { fixUnitIssue } = require("./server/pixeltale-unit-fix.js");
+const { markUnitPinned } = require("./server/pixeltale-agent.js");
 const { safeFileName: safeScriptFileName, writeScriptDocument: buildScriptDocument } = require("./server/pixeltale-script-document.js");
 const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
 const { ensureThumbnail } = require("./server/thumbnailer.js");
@@ -2533,10 +2535,27 @@ function loadLocalEnv() {
 
 loadLocalEnv();
 
+function makeUnitFixAdapter(router, model) {
+  return {
+    async chat(messages, opts = {}) {
+      const result = await router.call({
+        model,
+        user: String(messages?.[0]?.content || ""),
+        purpose: "pixeltale:unit-fix",
+        maxTokens: opts.max_tokens || 12000,
+        temperature: opts.temperature ?? 0.25,
+      });
+      return typeof result === "string" ? result : String(result?.content || "");
+    },
+  };
+}
+
+const pixelTaleRouter = createPixelTaleApiRouter({ fetchImpl: (...args) => pixelTaleApiFetch(...args) });
+
 const pixelTaleAgent = createPixelTaleAgent({
   // PixelTale is an independent writing product. Its API router owns only
   // writing-model registration, credentials, upstream calls, and failover.
-  modelRouter: createPixelTaleApiRouter({ fetchImpl: (...args) => pixelTaleApiFetch(...args) }),
+  modelRouter: pixelTaleRouter,
   onPhase(params, phase) {
     const stage = compactLine(params?.stage || "brief");
     const jobId = activePixelTaleRuns.get(`${params?.pixelTaleRoot}:${stage}`);
@@ -26945,6 +26964,60 @@ async function handleApi(req, res, url) {
       const body = await readBody(req);
       const result = pixelTaleAgent.approve({ ...params, artifactId, selectedTitle: body.selectedTitle, humanOverride: body.humanOverride === true, humanOverrideReason: body.humanOverrideReason });
       return send(res, 200, { ok: true, result });
+    }
+
+    // 2026-08-09：单集定向修复 + 编辑保存（集级锁状态机配套）
+    if (req.method === "POST" && action === "unit/fix-issue") {
+      const body = await readBody(req);
+      const stage = String(body.stage || "");
+      const unit = Number(body.unit);
+      const issue = body.issue;
+      if (!["arc", "scenes"].includes(stage) || !Number.isInteger(unit) || unit <= 0 || !issue) {
+        return fail(res, 400, "无效参数：stage/unit/issue 必填");
+      }
+      const busy = [...activePixelTaleRuns.keys()].some((key) => String(key).startsWith(`${params.pixelTaleRoot}:`));
+      if (busy) return fail(res, 409, "该创作任务正在处理中，请等待完成后重试。");
+      const state = readPixelTaleState(params);
+      const agentStatus = pixelTaleAgent.status(params);
+      const route = agentStatus?.route || {};
+      const writer = makeUnitFixAdapter(pixelTaleRouter, route.orchestration || "gpt-5.6-terra");
+      const reviewer = makeUnitFixAdapter(pixelTaleRouter, route.seat_c || "deepseek-v4-pro");
+      try {
+        const result = await fixUnitIssue({ state, stage, unit, issue, writer, reviewer });
+        writePixelTaleState(params, state);
+        return send(res, 200, { ok: true, status: result.status, reason: result.reason, state }, { "Cache-Control": "no-store" });
+      } catch (error) {
+        return fail(res, Number(error.statusCode) || 400, error.message || "单集修复失败", error.code);
+      }
+    }
+
+    if (req.method === "POST" && action === "unit/update") {
+      const body = await readBody(req);
+      const stage = String(body.stage || "");
+      const unit = Number(body.unit);
+      const patchedUnit = body.patchedUnit;
+      if (!["arc", "scenes"].includes(stage) || !Number.isInteger(unit) || unit <= 0 || !patchedUnit) {
+        return fail(res, 400, "无效参数：stage/unit/patchedUnit 必填");
+      }
+      const busy = [...activePixelTaleRuns.keys()].some((key) => String(key).startsWith(`${params.pixelTaleRoot}:`));
+      if (busy) return fail(res, 409, "该创作任务正在处理中，请等待完成后重试。");
+      const state = readPixelTaleState(params);
+      const unitLocks = state?.unitLocks?.[stage] || {};
+      const lock = unitLocks[unit] || {};
+      // P1 if-match 乐观锁：客户端携带 version，不匹配 → 409
+      const clientVersion = body.ifMatch === undefined ? null : Number(body.ifMatch);
+      if (clientVersion !== null && Number.isFinite(clientVersion) && Number(lock.version || 0) !== clientVersion) {
+        return fail(res, 409, "该集已被其他操作修改（版本冲突），请刷新后重试", "VERSION_CONFLICT");
+      }
+      state.artifacts ??= {};
+      state.artifacts[stage] ??= {};
+      state.artifacts[stage].units ??= {};
+      if (!state.artifacts[stage].units[unit]) return fail(res, 404, "该集尚未生成，无法编辑");
+      state.artifacts[stage].units[unit] = patchedUnit;
+      markUnitPinned(state, stage, unit, "human");
+      state.unitLocks[stage][unit].version = Number(lock.version || 0) + 1;
+      writePixelTaleState(params, state);
+      return send(res, 200, { ok: true, state }, { "Cache-Control": "no-store" });
     }
 
     const advisoryDecisionMatch = action.match(/^reviews\/([^/]+)\/advisories\/([^/]+)$/);

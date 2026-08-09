@@ -1,33 +1,83 @@
-"""纯 Python 零依赖 docx 生成（zip + 最小 OOXML）。"""
+"""纯 Python 零依赖 docx 生成（zip + 最小 OOXML）。
+
+v4.1 交付格式：参考短剧标准剧本（对标/核心看点/人物简介/剧本正文），
+动作行 △ 前缀、对白"角色：台词"、场景"集-场 地点"、场景人物清单。
+"""
 import zipfile
 import xml.sax.saxutils as sax
 
-def _par(text):  # paragraph
-    return f"<w:p><w:r><w:t>{sax.escape(str(text))}</w:t></w:r></w:p>"
+
+def _par(text, bold=False):
+    rpr = "<w:rPr><w:b/></w:rPr>" if bold else ""
+    return f"<w:p><w:r>{rpr}<w:t>{sax.escape(str(text))}</w:t></w:r></w:p>"
+
 
 def _heading(text):
     return f'<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>{sax.escape(str(text))}</w:t></w:r></w:p>'
 
+
+def _scene_block(ep_idx, scene_idx, scene):
+    """一个场景块：'集-场 地点' + 人物清单 + △动作行 + '角色：对白'。"""
+    loc = scene.get("location") or "未命名场景"
+    speakers = []
+    for b in scene.get("beats", []) or []:
+        s = (b.get("speaker") or "").strip()
+        if s and s not in speakers:
+            speakers.append(s)
+    lines = [f"{ep_idx}-{scene_idx + 1} {loc}"]
+    if speakers:
+        lines.append(f"人物：{' '.join(speakers)}")
+    for b in scene.get("beats", []) or []:
+        action = (b.get("action") or "").strip()
+        line = (b.get("line") or "").strip()
+        speaker = (b.get("speaker") or "").strip()
+        if action:
+            lines.append(f"△{action}")
+        if line:
+            lines.append(f"{speaker}：{line}" if speaker else line)
+    return [_par(l) for l in lines]
+
+
+def _characters_section(worldbuilding):
+    """人物简介：每人一行名字 + 一段人设（persona/motivation 合并）。"""
+    chars = (worldbuilding or {}).get("characters", []) or []
+    out = []
+    for c in chars:
+        name = c.get("name") or ""
+        persona = c.get("persona") or ""
+        motivation = c.get("motivation") or ""
+        body = "；".join(x for x in (persona, motivation) if x)
+        out.append(_par(name, bold=True))
+        if body:
+            out.append(_par(body))
+    return out
+
+
 def export_docx(state, path):
-    parts = [_heading(f"《{state.idea.get('goal', '未命名')}》剧本")]
-    parts.append(_heading("一、分集大纲"))
-    for ep in state.artifacts.get("outline", {}).get("episodes", []):
-        parts.append(_par(f"第{ep.get('index')}集 钩子：{ep.get('hook')} 悬念：{ep.get('cliffhanger')}"))
-    parts.append(_heading("二、逐集剧本"))
-    for idx, ep in state.artifacts.get("episodes", {}).items():
-        parts.append(_heading(f"第{idx}集"))
-        if ep is None:
-            # 生成失败待人工处理的集：导出占位提示而非崩溃
+    idea = state.idea if isinstance(state.idea, dict) else {}
+    wb = state.artifacts.get("worldbuilding", {}) or {}
+    goal = idea.get("goal") or "未命名"
+    # 标题 + 项目信息（有数据才输出，不编造）
+    parts = [_par(f"《{goal}》", bold=True)]
+    if idea.get("raw"):
+        parts.append(_par("剧情简介："))
+        parts.append(_par(idea["raw"]))
+    # 人物简介
+    parts.append(_heading("人物简介"))
+    chars = _characters_section(wb)
+    parts.extend(chars if chars else [_par("（暂无人物设定）")])
+    # 剧本正文（分集，按参考格式）
+    parts.append(_heading("剧本正文："))
+    episodes = state.artifacts.get("episodes", {}) or {}
+    for idx in sorted(episodes, key=lambda k: (len(k), k)):
+        ep = episodes[idx]
+        parts.append(_par(f"第{idx}集", bold=True))
+        if not isinstance(ep, dict):
             parts.append(_par("（本集生成失败，待人工处理）"))
             continue
-        for scene in ep.get("scenes", []):
-            parts.append(_par(f"【场景】{scene.get('location')}"))
-            for beat in scene.get("beats", []):
-                speaker = beat.get("speaker", "")
-                line = beat.get("line", "")
-                parts.append(_par(f"{speaker}：{line}" if line else beat.get("action", "")))
-    parts.append(_heading("三、审核记录（附录）"))
-    parts.append(_par(str(state.evaluation)))
+        scenes = ep.get("scenes", []) or []
+        for si, scene in enumerate(scenes):
+            parts.extend(_scene_block(int(idx), si, scene))
     document_xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                     '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
                     '<w:body>' + "".join(parts) + '</w:body></w:document>')

@@ -103,3 +103,40 @@ class TestRevisionRotation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ExplodingReviewer:
+    """审核席调用抛异常（网关 401 等）——必须容错降级，不传播异常。"""
+    def chat(self, messages, **kw):
+        raise Exception("HTTP 401: Invalid token")
+
+
+class TestReviewFaultTolerance(unittest.TestCase):
+    def test_seat_b_failure_degrades_to_seat_a(self):
+        writer = SeqLLM(['{"scenes":[]}'])
+        reviewer_a = SeqLLM([PASS_A])
+        reviewer_b = ExplodingReviewer()
+        eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
+        verdict = eng.review_episode(make_state(), {"scenes": []})
+        self.assertTrue(verdict["pass"], "席 B 故障时应降级用席 A 结果")
+        self.assertEqual(verdict["score"], 80)
+
+    def test_seat_a_failure_degrades_to_seat_b(self):
+        writer = SeqLLM(['{"scenes":[]}'])
+        reviewer_a = ExplodingReviewer()
+        reviewer_b = SeqLLM([PASS_B])
+        eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
+        verdict = eng.review_episode(make_state(), {"scenes": []})
+        self.assertTrue(verdict["pass"])
+        self.assertEqual(verdict["score"], 90)
+
+    def test_both_fail_returns_none(self):
+        writer = SeqLLM(['{"scenes":[]}'])
+        reviewer_a = ExplodingReviewer()
+        reviewer_b = ExplodingReviewer()
+        eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
+        verdict = eng.review_episode(make_state(), {"scenes": []})
+        self.assertIsNone(verdict, "两席全故障返回 None，由上游按'审核失败'处理而非抛异常")
+
+
+if __name__ == "__main__":
+    unittest.main()

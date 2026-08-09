@@ -181,15 +181,27 @@ class PixelWriterEngine:
         双过 → 通过（取平均分）；一过一不过 → 按未通过方（保守）+ 合并双方问题；
         双不过 → 合并去重问题清单（一次修订解决两边），分数/维度取低。
         第二席未配置（reviewer_b=None）时退化为单审核，向后兼容。
+        单个席位调用异常（网关 401/超时）→ 该席结果视为失败，降级用另一席，
+        绝不让审核席位故障导致整集生成失败。
         """
         clients = [self.reviewer]
         if self.reviewer_b:
             clients.append(self.reviewer_b)
         if len(clients) == 1:
-            return self._review_once(clients[0], state, episode)
+            try:
+                return self._review_once(clients[0], state, episode)
+            except Exception:
+                return None
         from concurrent.futures import ThreadPoolExecutor
+
+        def safe(c):
+            try:
+                return self._review_once(c, state, episode)
+            except Exception:
+                return None
+
         with ThreadPoolExecutor(max_workers=2) as ex:
-            results = list(ex.map(lambda c: self._review_once(c, state, episode), clients))
+            results = list(ex.map(safe, clients))
         results = [r for r in results if isinstance(r, dict)]
         if not results:
             return None

@@ -77,5 +77,5 @@ def make_deepseek_client(env=None):
 def make_gemini_client(env=None):
     """第二审核席（Gemini，经网关）：与 DeepSeek 并行独立复核，共识降主观。"""
     env = env or load_env()
-    return LLMClient(env.get("GEMINI_BASE_URL", "https://beefapi.com/v1"),
+    return LLMClient(env.get("GEMINI_BASE_URL", "https://api.apikey.fun/v1"),
                      env.get("GEMINI_API_KEY", ""), env.get("GEMINI_MODEL", "gemini-3.1-pro"))

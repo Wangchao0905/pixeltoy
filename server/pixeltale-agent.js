@@ -138,7 +138,7 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
   scenes: {
     SCENE_REFERENCE_INTEGRITY: "人物、地点和事件引用有效",
     SCENE_STATE_CHANGE: "每场戏都改变信息、关系或行动状态",
-    SCENE_DURATION: "镜头与动作适配单集时长",
+    SCENE_DURATION: "每集所有场景的 shot_plan[].duration_seconds 之和相对用户设定的单集目标秒数允许偏差不超过 ±25%（生成时按目标 ±10% 设计）",
     SCENE_DIRECTABILITY: "场面可拍摄、可表演且可制作",
   },
   dialogue: {
@@ -328,6 +328,58 @@ function creativeControlPrompt(input = {}, mode = "tk_short_drama") {
   ].join("\n");
 }
 
+function targetDurationSeconds(input = {}) {
+  const source = asObject(input);
+  const value = Number(source.durationValue);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const unit = text(source.durationUnit, 40).toLowerCase();
+  if (["sec", "secs", "second", "seconds", "秒"].includes(unit)) return value;
+  if (["min", "mins", "minute", "minutes", "分", "分钟"].includes(unit)) return value * 60;
+  return null;
+}
+
+function formatDurationSeconds(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(1)));
+}
+
+function suggestedShotCountRange(targetSeconds) {
+  const seconds = Number(targetSeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const min = Math.ceil(seconds / 6);
+  return { min, max: Math.max(min, Math.floor(seconds / 3)) };
+}
+
+function durationBudget(input = {}) {
+  const targetSeconds = targetDurationSeconds(input);
+  if (targetSeconds === null) return null;
+  return {
+    targetSeconds,
+    minSeconds: targetSeconds * 0.9,
+    maxSeconds: targetSeconds * 1.1,
+    suggestedShots: suggestedShotCountRange(targetSeconds),
+  };
+}
+
+function durationBudgetPrompt(input = {}) {
+  const budget = durationBudget(input);
+  if (!budget) return "";
+  const controls = normalizeCreativeControls(input);
+  return [
+    `单集目标时长：${formatDurationSeconds(budget.targetSeconds)} 秒。`,
+    `硬要求：每集所有 scene 的所有 shot_plan[].duration_seconds 之和必须落在 ${formatDurationSeconds(budget.minSeconds)}-${formatDurationSeconds(budget.maxSeconds)} 秒（目标±10%）。`,
+    `建议每集 ${budget.suggestedShots.min}-${budget.suggestedShots.max} 个镜头（按平均 3-6 秒/镜头推导）。`,
+    "每个镜头的 duration_seconds 必须是有意义的数字，不得为 0 或缺省；每集镜头必须覆盖该集全部剧情。",
+    `开头冲击窗口：前 ${controls.openingImpactSeconds} 秒，已包含在单集目标时长内，不得另行叠加。`,
+  ].join("\n");
+}
+
+function scenePromptInput(input = {}) {
+  const source = asObject(input);
+  if (durationBudget(source)) return source;
+  const { durationValue, durationUnit, duration, ...withoutDuration } = source;
+  return withoutDuration;
+}
+
 function nowIso(now = () => new Date()) {
   return new Date(now()).toISOString();
 }
@@ -510,12 +562,16 @@ function stageOutputContract(stage, mode) {
       '"voice_rules_en":["中文声线规则（用中文描写角色说话方式：句式长短、语气、口头禅、情绪表达习惯）"]',
     );
   }
-  return `${contracts[stage]}${common}`;
+  const sceneDurationContract = stage === "scenes"
+    ? "\n时长契约：每集所有 scene 的所有 shot_plan[].duration_seconds 之和必须贴合用户设定的单集目标秒数；确定性检查允许偏差为 ±25%，生成时必须按目标 ±10% 设计。"
+    : "";
+  return `${contracts[stage]}${common}${sceneDurationContract}`;
 }
 
 function stageSystemPrompt(stage, mode, input = {}) {
   const controls = normalizeCreativeControls(input);
   const normalized = normalizeMode(mode);
+  const sceneDurationPrompt = stage === "scenes" ? durationBudgetPrompt(input) : "";
   let tkRules = normalized === "tk_short_drama"
     ? [
       `开头前 ${controls.openingImpactSeconds} 秒必须出现可感知的冲击或异常。`,
@@ -531,7 +587,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
     ];
   if (normalized === "cn_short_drama") {
     tkRules = [
-      "前 3 秒内必须给出强烈的身份反差、情感冲突或剧情爆点。",
+      `前 ${controls.openingImpactSeconds} 秒内必须给出强烈的身份反差、情感冲突或剧情爆点。`,
       "每集都要通过主动选择、关系升级或身份揭示制造连续钩子。",
       "对白必须使用纯中文口语，符合中国大陆观众的称呼、节奏和情绪表达。",
     ];
@@ -550,6 +606,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
   const sceneRules = stage === "scenes" ? [
     "场景与镜头必须覆盖每一个分集/章节编号，至少每集一个完整场次；不得只输出少量代表场景。",
     "每个场次必须把对应的剧情正文转换为可拍的动作、冲突、人物选择、选择结果和因果转折，不能只写视觉氛围或镜头关键词。",
+    ...(sceneDurationPrompt ? [sceneDurationPrompt] : []),
   ] : [];
   const unitRules = UNIT_STAGES.has(stage) ? [
     "当前请求可能只是一个分批单元；严格只输出 userInput.unitScope 指定的集数，不得补写其他集，不得返回整季内容。",
@@ -637,6 +694,7 @@ function stageContextPacket(previousArtifacts = [], { unitScope = [] } = {}) {
 
 function stageUserPrompt({ stage, mode, input, previousArtifacts, project, excludedTitles = [], unitScope = [], lockedContext = [], continuityContext = [] }) {
   const prior = stageContextPacket(previousArtifacts, { unitScope });
+  const sceneDurationBudget = stage === "scenes" ? durationBudget(input) : null;
   return JSON.stringify({
     task: stage === "title"
       ? (normalizeMode(mode) === "cn_short_drama" ? "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的中文正式剧名候选。" : "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的英文正式片名候选。")
@@ -671,7 +729,22 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project, exclu
       ],
     } : {}),
     ...(stage === "title" ? { excludedTitles: uniqueText(excludedTitles, 100) } : {}),
-    userInput: asObject(input),
+    ...(sceneDurationBudget ? {
+      sceneDurationBudget: {
+        targetSeconds: sceneDurationBudget.targetSeconds,
+        requiredRangeSeconds: { min: sceneDurationBudget.minSeconds, max: sceneDurationBudget.maxSeconds },
+        requiredTolerance: "目标±10%",
+        suggestedShotCount: sceneDurationBudget.suggestedShots,
+        openingImpactSeconds: normalizeCreativeControls(input).openingImpactSeconds,
+        requirements: [
+          "每集所有 scene 的所有 shot_plan[].duration_seconds 之和必须落在目标±10%区间内。",
+          `建议每集 ${sceneDurationBudget.suggestedShots.min}-${sceneDurationBudget.suggestedShots.max} 个镜头（按平均 3-6 秒/镜头推导）。`,
+          "每个镜头的 duration_seconds 必须是有意义的数字，不得为 0 或缺省；每集镜头必须覆盖该集全部剧情。",
+          `开头冲击窗口为前 ${normalizeCreativeControls(input).openingImpactSeconds} 秒，已包含在单集目标时长内。`,
+        ],
+      },
+    } : {}),
+    userInput: stage === "scenes" ? scenePromptInput(input) : asObject(input),
     approvedContext: prior,
   }, null, 2).slice(0, 180000);
 }
@@ -1157,6 +1230,7 @@ function batchReviewSummary(stage, batchReviews, totalUnits, unitLocks) {
     },
     dimensions,
     feedbacks: reviews.flatMap((review) => asArray(review?.feedbacks)),
+    ruleFindings: reviews.flatMap((review) => asArray(review?.ruleFindings)),
     reviewIssues: reviews.flatMap((review) => asArray(review?.reviewIssues)),
     issueCount: reviews.reduce((sum, review) => sum + Number(review?.issueCount || 0), 0),
     commonIssues: reviews.flatMap((review) => asArray(review?.commonIssues)),
@@ -1711,16 +1785,31 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
 
 function automaticUnitRepairPlan(stage, review, unitNumbers = []) {
   const commonIssues = asArray(review?.commonIssues)
-    .filter((item) => Number(item?.modelCount) >= REVIEW_QUORUM && item?.severity === "high");
-  if (!commonIssues.length) return "";
+    .filter((item) => Number(item?.modelCount) >= REVIEW_QUORUM && item?.severity === "high" && item?.code !== "DURATION_BUDGET_MISMATCH");
+  const durationIssues = asArray(review?.ruleFindings)
+    .filter((item) => item?.code === "DURATION_BUDGET_MISMATCH")
+    .map((item) => {
+      const values = text(item.message, 1200).match(/目标\s*([0-9]+(?:\.[0-9]+)?)\s*秒，实际\s*([0-9]+(?:\.[0-9]+)?)\s*秒/u);
+      const target = Number(values?.[1]);
+      const actual = Number(values?.[2]);
+      if (!Number.isFinite(target) || !Number.isFinite(actual)) return "";
+      const difference = target - actual;
+      const unit = text(item.fieldPath, 300).match(/unit_(\d+)/u)?.[1]
+        || text(item.message, 1200).match(/第\s*(\d+)\s*集/u)?.[1]
+        || "当前";
+      return `第 ${unit} 集：当前镜头总时长 ${formatDurationSeconds(actual)} 秒，目标 ${formatDurationSeconds(target)} 秒，差值 ${formatDurationSeconds(Math.abs(difference))} 秒，需${difference >= 0 ? "增加" : "减少"} ${formatDurationSeconds(Math.abs(difference))} 秒。`;
+    })
+    .filter(Boolean);
+  if (!commonIssues.length && !durationIssues.length) return "";
   const scope = normalizeUnitNumbers(unitNumbers).map((number) => `第${number}集`).join("、");
   return [
-    `这是${stage === "scenes" ? "场景与镜头" : "分集与章节"}的集级自动恢复修订。只修改${scope || "当前未锁定批次"}，一次性解决下列至少两个模型共同确认的高风险问题。`,
+    `这是${stage === "scenes" ? "场景与镜头" : "分集与章节"}的集级自动恢复修订。只修改${scope || "当前未锁定批次"}，一次性解决下列必须修正的问题。`,
     "保持已锁定集、未涉及的内容、整体故事基因和上下文不变；修订后必须返回完整目标集结构，而不是审核说明。",
+    ...durationIssues,
     ...commonIssues.map((issue, index) => {
       const evidence = asArray(issue.evidence).filter(Boolean).join("；");
       const fixes = asArray(issue.suggestions).filter(Boolean).join("；") || "补足可验证的因果、冲突和结果";
-      return `${index + 1}. ${text(issue.tag || "集级结构问题", 160)}：${fixes}${evidence ? `；证据：${evidence}` : ""}`;
+      return `${durationIssues.length + index + 1}. ${text(issue.tag || "集级结构问题", 160)}：${fixes}${evidence ? `；证据：${evidence}` : ""}`;
     }),
   ].join("\n");
 }
@@ -3778,8 +3867,13 @@ module.exports = {
   normalizeMode,
   modeLabel,
   creativeControlPrompt,
+  durationBudgetPrompt,
+  suggestedShotCountRange,
   titleStylePrompt,
   stageOutputContract,
+  stageSystemPrompt,
+  stageUserPrompt,
+  automaticUnitRepairPlan,
   normalizeRoutes,
   validateContent,
   validateReview,

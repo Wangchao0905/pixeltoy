@@ -1429,3 +1429,134 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .stage-task-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .stage-task-grid div { padding-left: 0; border-left: 0; }
 }
+
+/* ============================================================
+   v2 极简磨砂覆盖层（2026-08-10 ui-design-team）
+   原则：去噪声背景 / 磨砂卡片化 / 导航精简 / 动效克制
+   ============================================================ */
+:root {
+  --pt-radius: 16px;
+  --pt-radius-sm: 11px;
+  --pt-card-glass: rgba(255, 255, 255, 0.66);
+  --pt-card-glass-strong: rgba(255, 255, 255, 0.84);
+  --pt-shadow-soft: 0 1px 2px rgba(23, 25, 28, 0.03), 0 10px 30px rgba(23, 25, 28, 0.06);
+  --pt-shadow-hover: 0 2px 6px rgba(23, 25, 28, 0.05), 0 16px 40px rgba(23, 25, 28, 0.09);
+}
+
+/* 背景：去双套网格 → 纯净画布 + 极淡青蓝光晕（降低视觉噪声） */
+body {
+  background-image:
+    radial-gradient(1200px 600px at 12% -10%, rgba(47, 155, 255, 0.07), transparent 60%),
+    radial-gradient(900px 520px at 105% 8%, rgba(47, 155, 255, 0.05), transparent 55%);
+  background-attachment: fixed;
+}
+
+/* 顶栏：磨砂统一；workspace-context 适配亮色（原来白字在亮底上不可读） */
+.topbar { color: var(--pt-ink); }
+.topbar .eyebrow { color: var(--pt-faint); }
+.workspace-context strong { color: var(--pt-ink); font-weight: 650; }
+.context-divider { color: rgba(23, 25, 28, 0.25); }
+.segmented { background: rgba(23, 25, 28, 0.045); border: 1px solid rgba(23, 25, 28, 0.10); border-radius: 999px; padding: 3px; }
+.mode-button { min-height: 26px; border-radius: 999px; padding: 0 13px; color: var(--pt-muted); transition: all 160ms ease; cursor: pointer; }
+.mode-button:hover { color: var(--pt-ink); background: rgba(255, 255, 255, 0.6); }
+.mode-button.is-active { color: #fff; background: var(--pt-ink); box-shadow: 0 2px 8px rgba(23, 25, 28, 0.22); }
+.save-status { color: var(--pt-muted); }
+.save-status i { background: #34c759; box-shadow: 0 0 8px rgba(52, 199, 89, 0.5); }
+.tool-button, .primary-button, .icon-button { min-height: 30px; border-radius: 10px; border-color: rgba(23, 25, 28, 0.12); color: var(--pt-ink); background: rgba(255, 255, 255, 0.7); transition: all 160ms ease; cursor: pointer; }
+.tool-button:hover, .icon-button:hover { border-color: rgba(47, 155, 255, 0.5); color: #0b6bcb; background: rgba(255, 255, 255, 0.95); box-shadow: var(--pt-shadow-soft); }
+.primary-button { border-color: var(--blue); color: #fff; background: linear-gradient(135deg, #2f9bff, #1f7fe0); }
+.primary-button:hover { background: linear-gradient(135deg, #3fa4ff, #2b8ce8); box-shadow: 0 6px 18px rgba(47, 155, 255, 0.35); }
+.tool-button:active, .primary-button:active, .icon-button:active, .stage-link:active, .rail-action:active { transform: scale(0.98); }
+
+/* 三栏：留白 + 磨砂卡片化（rail 不再贴边） */
+.workspace-grid { gap: 12px; padding: 12px; background: transparent; }
+.story-rail, .agent-rail {
+  border: 1px solid rgba(23, 25, 28, 0.08);
+  border-radius: var(--pt-radius);
+  background: var(--pt-card-glass);
+  box-shadow: var(--pt-shadow-soft);
+  backdrop-filter: blur(20px) saturate(1.35);
+  -webkit-backdrop-filter: blur(20px) saturate(1.35);
+}
+.story-rail { padding: 20px 14px 16px; border-right: 1px solid rgba(23, 25, 28, 0.08); }
+.agent-rail { padding: 18px 14px; }
+
+/* 中间内容区：透明（卡片交给子组件） */
+.content-stage { background: transparent; }
+
+/* 左侧导航：状态弱化、hover/active 平滑、当前项左指示条 */
+.stage-link { border-radius: var(--pt-radius-sm); color: var(--pt-muted); transition: background 160ms ease, border-color 160ms ease, color 160ms ease; cursor: pointer; }
+.stage-link span { color: var(--pt-faint); }
+.stage-link strong { color: inherit; font-weight: 600; }
+.stage-link em { color: var(--pt-faint); }
+.stage-link:hover { border-color: rgba(47, 155, 255, 0.28); color: var(--pt-ink); background: rgba(255, 255, 255, 0.85); }
+.stage-link.is-active {
+  border-color: rgba(47, 155, 255, 0.35);
+  color: var(--pt-ink);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(235, 244, 255, 0.85));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, var(--pt-shadow-soft);
+}
+.stage-link.is-active::before {
+  content: ""; position: absolute; left: -1px; top: 9px; bottom: 9px; width: 3px;
+  border-radius: 0 3px 3px 0; background: var(--blue); box-shadow: 0 0 10px rgba(47, 155, 255, 0.55);
+}
+.stage-link.is-next-stage { background: rgba(196, 255, 14, 0.08); border-color: rgba(100, 130, 0, 0.32); }
+.stage-link.is-next-stage i { animation: flow-dot-breathe 3s ease-in-out infinite; }
+
+/* 进度条：磨砂轨道 + 平滑过渡 */
+.progress-track { background: rgba(23, 25, 28, 0.08); border-radius: 999px; }
+.progress-track span { background: linear-gradient(90deg, #2f9bff, #55b3ff); box-shadow: 0 0 10px rgba(47, 155, 255, 0.5); transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* 内容卡片：统一磨砂 + 大圆角 + 柔和阴影 + hover 抬升 */
+.form-panel, .metric-card, .artifact-card, .timeline-card, .workflow-guide,
+.consensus-panel, .next-step-card, .stage-task-card, .review-decision-card,
+.handoff-tile, .control-card, .title-picker, .model-team-cards, .routing-card {
+  border: 1px solid rgba(23, 25, 28, 0.08);
+  border-radius: var(--pt-radius);
+  background: var(--pt-card-glass);
+  box-shadow: var(--pt-shadow-soft);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+.form-panel:hover, .artifact-card:hover, .next-step-card:hover, .handoff-tile:hover {
+  box-shadow: var(--pt-shadow-hover);
+  transform: translateY(-1px);
+}
+
+/* 英文眉标：弱化为装饰性小字（去重复感） */
+.eyebrow, .handoff-kicker { color: var(--pt-faint); letter-spacing: 0.14em; }
+
+/* section-row 分隔：更轻 */
+.section-row { border-top-color: rgba(23, 25, 28, 0.07); }
+
+/* 按钮统一 cursor + 过渡 */
+.text-button, .rail-action, .fix-unit-btn, .edit-unit-btn, .tool-button, .icon-button, .primary-button, .mode-button, .segmented button { cursor: pointer; }
+.text-button { color: #0b6bcb; transition: color 150ms ease, opacity 150ms ease; }
+
+/* 呼吸动画整体减弱（噪声源） */
+@keyframes flow-breathe-v2 {
+  0%, 100% { opacity: 1; } 50% { opacity: 0.82; }
+}
+
+/* 滚动条：细、融入卡片 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(23, 25, 28, 0.16); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(23, 25, 28, 0.28); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 尊重系统减弱动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+/* workspace-context 精简：去掉分隔符，LOCAL DRAFT 弱化为次要标注 */
+.workspace-context .context-divider { display: none; }
+.workspace-context strong:last-of-type { padding-left: 2px; font-size: 11px; font-weight: 500; color: var(--pt-faint); }
+
+/* 打磨：键盘焦点可见 + 内容性小字对比提档（impeccable craft-floor） */
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid rgba(47, 155, 255, 0.7); outline-offset: 2px; border-radius: 6px;
+}
+.mini-stat, .save-status, .artifact-meta, .review-issue-index { color: var(--pt-muted); }
+.stage-link em { color: var(--pt-muted); }

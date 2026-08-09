@@ -2666,6 +2666,55 @@ const RUN_JOB_STALL_MS = 60 * 60 * 1000;
 const activePixelTaleRuns = new Map();
 const PIXEL_TALE_JOB_MEMORY_TTL_MS = 30 * 60 * 1_000;
 
+function deletePixelTaleHistorySession({ root = PIXELTALE_SESSION_ROOT, sessionId = "" } = {}) {
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(sessionId))) {
+    const error = new Error("无效的 PixelTale 会话");
+    error.code = "PIXELTALE_SESSION_INVALID";
+    error.status = 400;
+    throw error;
+  }
+  const rootPath = path.resolve(root);
+  const sessionRoot = path.resolve(rootPath, sessionId);
+  if (!isInside(rootPath, sessionRoot) || sessionRoot === rootPath) {
+    const error = new Error("PixelTale 会话路径无效");
+    error.code = "PIXELTALE_SESSION_PATH_INVALID";
+    error.status = 400;
+    throw error;
+  }
+
+  const sessionPrefix = String(sessionRoot) + ":";
+  const runningJob = [...activePixelTaleRuns.entries()]
+    .filter(([key]) => key.startsWith(sessionPrefix))
+    .map(([, jobId]) => pixelTaleRunJobs.get(jobId))
+    .find((job) => job?.status === "running");
+  if (runningJob) {
+    const error = new Error("项目正在运行，完成后才能删除");
+    error.code = "PIXELTALE_SESSION_BUSY";
+    error.status = 409;
+    throw error;
+  }
+
+  const persistedRunningJob = [...pixelTaleRunJobs.values()].find((job) => (
+    job?.status === "running" && path.resolve(job.request?.pixelTaleRoot || "") === sessionRoot
+  ));
+  if (persistedRunningJob) {
+    const error = new Error("项目正在运行，完成后才能删除");
+    error.code = "PIXELTALE_SESSION_BUSY";
+    error.status = 409;
+    throw error;
+  }
+
+  const existed = fs.existsSync(sessionRoot);
+  if (existed) fs.rmSync(sessionRoot, { recursive: true, force: true });
+  for (const [key] of activePixelTaleRuns) {
+    if (key.startsWith(sessionPrefix)) activePixelTaleRuns.delete(key);
+  }
+  for (const [jobId, job] of pixelTaleRunJobs) {
+    if (path.resolve(job?.request?.pixelTaleRoot || "") === sessionRoot) pixelTaleRunJobs.delete(jobId);
+  }
+  return { sessionId, deleted: existed };
+}
+
 function prunePixelTaleRunJobs() {
   const cutoff = Date.now() - PIXEL_TALE_JOB_MEMORY_TTL_MS;
   for (const [jobId, job] of pixelTaleRunJobs) {
@@ -26809,6 +26858,16 @@ async function handleApi(req, res, url) {
     const action = standalonePixelTaleMatch[1] || "";
     const params = standalonePixelTaleParams(req, url);
 
+    const historyDeleteMatch = action.match(/^history\/([A-Za-z0-9_-]{16,128})$/);
+    if (req.method === "DELETE" && historyDeleteMatch) {
+      try {
+        const result = deletePixelTaleHistorySession({ sessionId: historyDeleteMatch[1] });
+        return send(res, 200, { ok: true, ...result }, { "Cache-Control": "no-store" });
+      } catch (error) {
+        return fail(res, Number(error.status) || 500, error.message || "项目删除失败", error.code);
+      }
+    }
+
     if (req.method === "GET" && action === "history") {
       return send(res, 200, { ok: true, history: pixelTaleHistorySummaries({ currentSessionId: standalonePixelTaleSessionId(req, url) }) }, { "Cache-Control": "no-store" });
     }
@@ -27764,6 +27823,7 @@ module.exports = {
     pixelTaleHistory: {
       fromState: pixelTaleHistorySummaryFromState,
       list: pixelTaleHistorySummaries,
+      remove: deletePixelTaleHistorySession,
     },
     canvasAgent: {
       handle: handleCanvasAgentChat,

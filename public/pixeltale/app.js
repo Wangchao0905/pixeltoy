@@ -69,6 +69,7 @@ const state = {
   impactChoices: {},
   pendingHumanOverride: "",
   pendingRerun: null,
+  historyDeletePending: null,
   agent: null,
   routes: { orchestration: "gpt-5.6-terra", continuity: "gemini-3.1-pro", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
   input: {
@@ -371,6 +372,7 @@ function renderCreativeHistory(entries = []) {
   const list = $("#historyList");
   const summary = $("#historySummary");
   if (!list || !summary) return;
+  state.historyEntries = entries;
   summary.textContent = `${entries.length} 个已保存会话`;
   if (!entries.length) {
     list.innerHTML = `<div class="history-empty"><span class="history-empty-mark">+</span><strong>还没有创作历史</strong><p>完成故事架构或保存创作想法后，会话会自动出现在这里。</p></div>`;
@@ -382,6 +384,60 @@ function renderCreativeHistory(entries = []) {
     const statusClass = entry.status === "已导出" ? "is-exported" : entry.status === "制作中" ? "is-active" : "";
     return `<article class="history-item${current ? " is-current" : ""}"><div class="history-item-head"><div class="history-item-title"><span class="history-status ${statusClass}">${escapeHtml(entry.status || "已保存")}</span>${current ? `<span class="history-current">当前会话</span>` : ""}<h3>${escapeHtml(entry.title || "未命名剧集")}</h3><p>${escapeHtml(idea)}</p></div><time datetime="${escapeHtml(entry.updatedAt || "")}">${escapeHtml(historyDate(entry.updatedAt))}</time></div><div class="history-item-meta"><span>${escapeHtml(entry.mode || "TK 短剧")}</span><span>${escapeHtml(entry.stageLabel || "故事架构")}</span><span>已确认 ${escapeHtml(entry.progressLabel || "0 / 7")}</span><span>${escapeHtml(`${entry.artifactCount || 0} 个产物`)}</span></div><button type="button" class="history-open" data-history-open="${escapeHtml(entry.sessionId)}">${current ? "继续当前创作" : "继续创作"}<span aria-hidden="true">↗</span></button></article>`;
   }).join("");
+  list.querySelectorAll(".history-item").forEach((item, index) => {
+    const entry = entries[index];
+    const open = item.querySelector(".history-open");
+    if (!entry || !open) return;
+    const actions = document.createElement("div");
+    actions.className = "history-actions";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "history-delete";
+    remove.dataset.historyDelete = entry.sessionId;
+    remove.dataset.historyTitle = entry.title || "未命名剧集";
+    remove.textContent = "删除项目";
+    open.replaceWith(actions);
+    actions.append(open, remove);
+    if (state.historyDeletePending?.sessionId !== entry.sessionId) return;
+    const confirmation = document.createElement("div");
+    confirmation.className = "history-delete-confirm";
+    const copy = document.createElement("span");
+    copy.textContent = "确定删除“" + (entry.title || "未命名剧集") + "”？项目产物也会一并移除。";
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = "history-delete-confirm-button";
+    confirm.dataset.historyDeleteConfirm = entry.sessionId;
+    confirm.textContent = "确认删除";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "history-delete-cancel";
+    cancel.dataset.historyDeleteCancel = entry.sessionId;
+    cancel.textContent = "取消";
+    confirmation.append(copy, confirm, cancel);
+    item.append(confirmation);
+  });
+}
+
+function requestHistoryDelete(targetSessionId, title = "") {
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(targetSessionId || ""))) return;
+  state.historyDeletePending = { sessionId: targetSessionId, title: title || "未命名剧集" };
+  renderCreativeHistory(state.historyEntries || []);
+}
+
+async function deleteHistorySession(targetSessionId, title = "") {
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(targetSessionId || ""))) return;
+  state.historyDeletePending = null;
+  try {
+    await request(`/history/${encodeURIComponent(targetSessionId)}`, { method: "DELETE" });
+    showToast("项目已删除");
+    if (targetSessionId === sessionId) {
+      startNewDraft();
+      return;
+    }
+    await loadCreativeHistory();
+  } catch (error) {
+    showToast(userFacingError(error));
+  }
 }
 
 async function loadCreativeHistory() {
@@ -2531,6 +2587,19 @@ $("#historyList")?.addEventListener("click", (event) => {
   }
   const open = event.target.closest("[data-history-open]");
   if (open) resumeHistorySession(open.dataset.historyOpen);
+  const remove = event.target.closest("[data-history-delete]");
+  if (remove) {
+    requestHistoryDelete(remove.dataset.historyDelete, remove.dataset.historyTitle);
+    return;
+  }
+  const cancel = event.target.closest("[data-history-delete-cancel]");
+  if (cancel) {
+    state.historyDeletePending = null;
+    renderCreativeHistory(state.historyEntries || []);
+    return;
+  }
+  const confirm = event.target.closest("[data-history-delete-confirm]");
+  if (confirm) void deleteHistorySession(confirm.dataset.historyDeleteConfirm);
 });
 $("#agentMenu").addEventListener("click", () => showToast("Agent 状态独立保存于 Story Forge 会话"));
 function startNewDraft() {

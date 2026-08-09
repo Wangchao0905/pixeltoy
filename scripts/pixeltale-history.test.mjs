@@ -17,10 +17,13 @@ assert.match(html, /id="openHistory"[^>]*>[^<]*<span[^>]*>↺<\/span>\s*创作�
 assert.match(html, /id="historyDialog"/, "PixelTale must provide a history dialog");
 assert.match(nestedHtml, /id="openHistory"/, "the nested PixelTale page must keep the history entry");
 assert.match(app, /async function loadCreativeHistory\(\)[\s\S]*request\("\/history"\)/, "history must load from the server session index");
+assert.match(app, /async function deleteHistorySession\(targetSessionId[\s\S]*method: "DELETE"/, "history items must expose a delete action backed by the API");
+assert.match(app, /data-history-delete/, "history items must expose a delete control");
 assert.match(app, /function resumeHistorySession\(nextSessionId\)[\s\S]*searchParams\.set\("session", nextSessionId\)/, "history items must restore their original session");
 assert.match(app, /function createSessionId\(\)[\s\S]*localStorage\.setItem\(SESSION_STORAGE_KEY, querySession\)/, "URL session recovery must persist the selected session");
 assert.match(app, /function startNewDraft\(\)[\s\S]*searchParams\.set\("session", freshSession\)[\s\S]*window\.location\.assign/, "new drafts must not be captured by an old session query");
 assert.match(serverSource, /action === "history"[\s\S]*pixelTaleHistorySummaries/, "server must expose the read-only history endpoint");
+assert.match(serverSource, /method === "DELETE"[\s\S]*deletePixelTaleHistorySession/, "server must expose a guarded history deletion endpoint");
 
 const historyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-history-"));
 const firstSession = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -58,6 +61,11 @@ assert.equal(history[1].progressLabel, "1 / 7");
 assert.equal(history[1].isCurrent, true, "the active session must be marked current");
 assert.equal(history[1].ideaExcerpt, "A courier finds a signal that predicts the next murder.");
 assert.equal(Object.hasOwn(history[1], "artifacts"), false, "history must not expose full artifacts");
+
+assert.equal(typeof testApi.pixelTaleHistory.remove, "function", "history deletion must be available to focused tests");
+const removed = testApi.pixelTaleHistory.remove({ root: historyRoot, sessionId: secondSession });
+assert.equal(removed.sessionId, secondSession, "history deletion must identify the removed session");
+assert.equal(fs.existsSync(path.join(historyRoot, secondSession)), false, "history deletion must remove the session directory");
 
 fs.rmSync(historyRoot, { recursive: true, force: true });
 console.log("pixeltale history ok");

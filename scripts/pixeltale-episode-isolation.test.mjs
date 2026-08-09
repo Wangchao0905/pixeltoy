@@ -3,6 +3,11 @@ import { callStageCouncil, createPixelTaleAgent, contentHash, isRetryableReviewF
 
 const models = [
   { id: "gpt-5.6-terra", provider: "chatgpt" },
+  { id: "gpt-5.6-sol", provider: "chatgpt" },
+  { id: "gpt-5.6-luna", provider: "chatgpt" },
+  { id: "gpt-5.5", provider: "chatgpt" },
+  { id: "gemini-3.1-pro", provider: "gemini" },
+  { id: "deepseek-v4-pro", provider: "deepseek" },
   { id: "claude-opus-5", provider: "claude" },
   { id: "claude-haiku-4-5", provider: "claude" },
 ];

@@ -19,13 +19,19 @@ const STAGE_LABELS = Object.freeze({ brief: "故事架构", title: "剧名选择
 const DEFAULT_ROUTES = {
   orchestration: "gpt-5.6-terra",
   continuity: "gemini-3.1-pro",
-  hooks: "claude-haiku-4-5",
-  dialogueReview: "claude-sonnet-5",
+  // 网关（beefapi）不提供 claude-* 模型（实测 /models 只有 GPT 系列），
+  // claude-haiku-4-5/claude-sonnet-5 会 404 model_not_found——hooks/dialogueReview
+  // 改用 beefapi 确认存在的模型，保证新项目默认路由可用。
+  hooks: "gpt-5.5",
+  dialogueReview: "deepseek-v4-pro",
   consistency: "gpt-5.6-luna",
   seat_a: "gpt-5.6-terra",
   seat_b: "gpt-5.6-sol",
   seat_c: "deepseek-v4-pro",
 };
+// 网关确定不提供的模型（claude 全家）——任何槽位保存了它们都必须重写为当前默认，
+// 否则存量项目 state 里的旧 hooks/dialogueReview 值会一直 404。
+const UNUSABLE_ROUTE_MODELS = new Set(["claude-opus-5", "claude-haiku-4-5", "claude-sonnet-5"]);
 // The three authors run concurrently, so round 1 consumes about `model` ms of the
 // shared `total` budget. The fallback round then gets only `total - model`, which
 // must still be large enough to regenerate the whole stage payload — otherwise the
@@ -429,6 +435,8 @@ function normalizeRoutes(value = {}, availableModels = []) {
 function migratedRouteValue(key, raw) {
   const seat = REVIEW_SEATS.find((item) => item.id === key);
   if (seat) return LEGACY_ROUTE_MODELS.has(raw) ? seat.model : raw;
+  // 网关不可用模型：任何非 seat 槽保存了它都必须重写为当前默认（否则存量项目持续 404）。
+  if (UNUSABLE_ROUTE_MODELS.has(raw)) return DEFAULT_ROUTES[key];
   return RETIRED_MODEL_IDS.has(raw) ? DEFAULT_ROUTES[key] : raw;
 }
 

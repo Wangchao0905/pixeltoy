@@ -234,9 +234,12 @@ assert.deepEqual(
   ROSTER.map(([, model]) => model),
   "a stored session pinning a replaced roster must migrate to the current seats",
 );
-// The vestigial 5-slot keys no longer choose seats. Rewriting them would map a
-// value onto itself and re-persist state on every single read.
-assert.equal(reseated.continuity, "claude-opus-5", "the legacy route slots must be left untouched by a reseat");
+// claude-* 已从网关不可用（beefapi /models 无 claude，实测 404 model_not_found）。
+// 任何槽位保存了 claude 都必须重写为当前默认——否则存量项目旧 hooks/dialogueReview
+// 值会在 arc/dialogue 阶段持续 404。此断言从"vestigial 槽位不迁移"更新为"不可用模型必迁移"。
+assert.equal(reseated.continuity, "gemini-3.1-pro", "continuity=claude-opus-5 必须迁移到默认 gemini-3.1-pro");
+assert.equal(reseated.hooks, "gpt-5.5", "hooks=claude-haiku-4-5 必须迁移到默认 gpt-5.5");
+assert.equal(reseated.dialogueReview, "deepseek-v4-pro", "dialogueReview=claude-sonnet-5 必须迁移到默认 deepseek-v4-pro（异厂）");
 assert.deepEqual(normalizeRoutes(reseated, models()), reseated, "route normalization must be idempotent, or every read rewrites the session");
 
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");

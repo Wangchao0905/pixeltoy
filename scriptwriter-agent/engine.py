@@ -87,7 +87,7 @@ class PixelWriterEngine:
         outline = self._parse_json_block(content)
         if not isinstance(outline, dict):
             raise ValueError("模型输出不是合法 JSON，已重试仍失败")
-        self._normalize_outline(outline, episode_count)
+        self._normalize_outline(outline, episode_count, state.idea.get("episode_duration_seconds"))
         state.artifacts["outline"] = outline
         state.stage = "episode"
         state.current_episode = 1
@@ -95,7 +95,7 @@ class PixelWriterEngine:
         return state
 
     @staticmethod
-    def _normalize_outline(outline, episode_count):
+    def _normalize_outline(outline, episode_count, duration_seconds=None):
         """规范化分集大纲：按模型输出顺序取前 episode_count 集，每集 index 重写为 1..N，
         与 current_episode 推进保持一致；缺失 hook/cliffhanger 给空串兜底。
         模型输出集数不足时截断并标注 truncated，流水线据此停止生成剩余集而非越界。"""
@@ -108,6 +108,8 @@ class PixelWriterEngine:
             ep.setdefault("hook", "")
             ep.setdefault("cliffhanger", "")
             ep.setdefault("events", [])
+            # 预算模板强约束：服务端按目标时长给每集定死量化预算（零依赖模型）
+            ep["budget"] = PixelWriterEngine._budget_for(ep["index"], outline.get("_duration_seconds"))
         outline["episodes"] = episodes
         if len(raw) < episode_count:
             outline["truncated"] = True
@@ -231,7 +233,7 @@ class PixelWriterEngine:
         dims = verdict.get("dimensions")
         if not isinstance(dims, dict):
             return True  # 无维度数据不追加否决（仲裁侧宽松）
-        for dim, strict in (("human_tone", True), ("hook", True)):
+        for dim, strict in (("hook", True),):
             try:
                 low = float(dims.get(dim)) < (60 if dim == "hook" else 70)
             except (TypeError, ValueError):
@@ -290,22 +292,22 @@ class PixelWriterEngine:
         else:
             dialogue_check = "对白需口语化、短句、有潜台词、符合人物声线。"
             ai_check = "对照【Humanizer-zh 中文 AI 腔清单】检查中文表达"
-        prompt = f"""你是短剧审核编辑。对照【设定事实】【前情提要】【跨集状态】【规则检测】【结构校验】审核本集。
-{dialogue_check}
-{ai_check}
-hook 维度：评估开场钩子（首句/前三秒是否暴击或异常）、集尾悬念（cliffhanger 是否制造追更欲）、反转强度（如有反转是否够狠且逻辑成立）。短剧留存完全依赖钩子，hook<60 必须 pass=false。
+        prompt = f"""你是短剧审核编辑。只查 3 项关键质量（不过度挑风格/措辞细节）：
+① 设定事实一致：角色/世界规则/结局不变量是否与设定冲突、未注册角色出场；
+② hook：开场钩子（首句/前三秒暴击或异常）、集尾悬念（制造追更欲）、反转（够狠且逻辑成立）；
+③ 对白自然度：符合人物声线、推进剧情（{dialogue_lang} 模式下英文对白需母语自然度，不得中文式英语/翻译腔；动作 action 与场景 location 必须中文）。
+
+代码级问题（已由系统检测，必须逐条给 high issue 并写 fix）：{conflict_part} | {structure_part}
+
 设定：{wb[:800]}
 前情提要（上集结尾，本集开头必须承接）：{prev_part[:400]}
 上集悬念：{prev_hook[:200] if prev_hook else "（无）"}
 跨集状态：{ledger_part[:400]}
 待兑现悬念：{hooks_part[:400]}
-【规则冲突检测（代码级，必须逐条处理，确认属实后给 high issue 并写 fix）】{conflict_part}
-【结构模板校验（代码级）】{structure_part}
-本集：{json.dumps(episode, ensure_ascii=False)[:2000]}
-AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
+本集：{json.dumps(episode, ensure_ascii=False)[:2200]}
 
-输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"human_tone":0-100,"hook":0-100,"plot":0-100,"dialogue":0-100,"continuity":0-100}},"issues":[{{"severity":"high|medium","mode":1-21,"quote":"原文","fix":"改写建议"}}]}}
-规则：AI 腔分数<70 必须 pass=false；hook<60（开场无钩/集尾无悬念/无反转且平淡）必须 pass=false；continuity<70（本集开头未衔接上集结尾/角色状态矛盾/悬念未推进）必须 pass=false；情节断裂/对白与设定冲突必须 high issue。"""
+输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"hook":0-100,"dialogue":0-100,"continuity":0-100}},"issues":[{{"severity":"high|medium","mode":0,"quote":"原文","fix":"改写建议"}}]}}
+规则：hook<60（开场无钩/集尾无悬念/无反转且平淡）必须 pass=false；continuity<70（开头未衔接上集/角色状态矛盾/悬念未推进）必须 pass=false；设定冲突必须 high issue；其余轻微问题最多 medium 建议，不得因风格/措辞细节反复否决。"""
         content = client.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=4000)
         verdict = self._parse_json_block(content)
         if not isinstance(verdict, dict):
@@ -321,7 +323,7 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
         # human_tone/hook 缺失/非法按不达标（保守否决）；continuity 缺失按宽松处理（兼容旧审核输出/旧数据）。
         dims = verdict.get("dimensions")
         if isinstance(dims, dict):
-            for dim, strict in (("human_tone", True), ("hook", True), ("continuity", False)):
+            for dim, strict in (("hook", True), ("continuity", False)):
                 try:
                     low = float(dims.get(dim)) < (60 if dim == "hook" else 70)
                 except (TypeError, ValueError):
@@ -444,100 +446,75 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
         return merged
 
     def run_episode_loop(self, state, outline):
-        """单集生成 + 审核修订闭环：最多 MAX_REVISION_ROUNDS 轮修订，超限置 needs-human 不阻塞后续集。
+        """v4.0「一次做对」：预算模板强约束生成 → 结构校验 → 重写换稿 → 简化审核。
 
-        verdict 同时记录到 state.evaluation[str(index)]，供导出/UI 展示审核记录。
+        无修订/打补丁环节：结构不达标或审核不过 → 整集重写（换稿，最多 REWRITE_MAX 次），
+        重写时附带上次不合格原因帮助模型一次做对；重写仍不过 → needs-human 交人工。
+        避免"在错误基础上打补丁越改越多"。
         """
-        rounds = 0
-        prompt = self._prompt_episode(state, outline)
+        idx = outline.get("index", state.current_episode)
+        target = state.idea.get("episode_duration_seconds") if isinstance(state.idea, dict) else None
+        REWRITE_MAX = 2  # 总生成次数 <= REWRITE_MAX + 1（初稿 + 2 次重写）
+        attempts = 0
         episode = None
         raw_output = ""
-        # 初稿非 JSON 时重试 2 次：第二集起 prompt 更长（前情+跨集状态+悬念），
-        # 模型可能在 max_tokens 截断处输出不完整 JSON——重试通常能成功。
-        for attempt in range(3):
-            raw_output = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=4000)
-            episode = self._parse_json_block(raw_output)
-            if isinstance(episode, dict):
-                break
-        idx = outline.get("index", state.current_episode)
         verdict = None
         status = "needs-human"
-        if not isinstance(episode, dict):
-            # 初稿重试 3 次仍不是合法 JSON：不阻塞流水线，记 needs-human 交人工处理
-            state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
-                                          "issues": [{"severity": "high", "mode": 0, "quote": str(raw_output)[:200], "fix": "模型输出非法 JSON，已重试 3 次"}]}
-            state.artifacts.setdefault("episodes", {})[str(idx)] = None
-            state.current_episode = max(state.current_episode, idx + 1)
-            self._save(state)
-            return {"status": status, "episode": None, "verdict": None, "rounds": 0}
-        # 生成后立即时长自检：超限先自动精简/补足，避免"生成长集→审核否决"的无效往返。
-        target = state.idea.get("episode_duration_seconds") if isinstance(state.idea, dict) else None
-        if target:
+        reason = ""
+        while attempts <= REWRITE_MAX:
+            attempts += 1
+            episode = None
+            prompt = self._prompt_episode(state, outline) + reason
+            # 每次生成（初稿/重写）非 JSON 时重试 2 次
+            for attempt in range(3):
+                raw_output = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=4000)
+                episode = self._parse_json_block(raw_output)
+                if isinstance(episode, dict):
+                    break
+            if not isinstance(episode, dict):
+                state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
+                                              "issues": [{"severity": "high", "mode": 0, "quote": str(raw_output)[:200], "fix": "模型输出非法 JSON，已重试 3 次"}]}
+                break
+            # 代码级剧情中文化：动作/场景描述必须中文（对白按设定语言），避免被审核③否决
+            self._localize_episode(episode)
+            # 结构校验（零模型）：节拍数/时长区间/hook/cliffhanger 字段
+            problems = self._validate_episode_structure(episode, target)
             ok_dur, est = self._duration_check(episode, target)
-            if not ok_dur:
-                direction = "压缩（删减冗余节拍/缩短对白），只保留核心冲突与钩子" if est > target else "补足内容（增加节拍/充实对白）"
-                duration_issue = {"severity": "high", "mode": 0, "quote": "",
-                                  "fix": (f"估算时长约 {int(est)} 秒，目标 {target} 秒，需{direction}，"
-                                          f"使估算时长落在 {int(target*0.6)}-{int(target*1.4)} 秒区间。"
-                                          f"这是本次修订唯一要解决的问题，其余内容一律不改。")}
-                revised = self.revise_episode(state, episode, [duration_issue], round_no=rounds)
-                if isinstance(revised, dict):
-                    if self._revision_respects_scope(episode, revised, [duration_issue]):
-                        merged = revised
-                    else:
-                        # 结构类修订（时长精简必然删旧对白/节拍）：merge 直接采用修订版
-                        merged = self._merge_revision(episode, revised, [duration_issue])
-                    if merged is not None:
-                        episode = merged
-                # 修订后仍超限：继续进审核，审核同样会否决并给出精简建议（可人工"修复此条"）
-        while rounds <= MAX_REVISION_ROUNDS:
+            if problems or not ok_dur:
+                reason_parts = list(problems[:4])
+                if not ok_dur and est:
+                    reason_parts.append(f"估算时长约 {int(est)} 秒，需落在目标 {target} 秒的 60%-140% 区间")
+                reason = f"\n\n【上次生成不合格，请整集重写】{'；'.join(reason_parts)}。严格遵守本集预算（节拍数/对白字数/场景数），确保结构达标后再提交。"
+                if attempts > REWRITE_MAX:
+                    state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
+                                                  "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": f"结构校验不达标已重写 {REWRITE_MAX} 次（{('；'.join(reason_parts))[:120]}），请人工处理"}]}
+                continue  # 重写换稿
+            # 简化审核（关键 3 项：设定一致 / hook / 对白自然度）
             verdict = self.review_episode(state, episode)
             if verdict is None:
-                # 审核输出无法解析：写结构化失败记录（避免 evaluation 落 null，
-                # UI 显示"待处理"而非可读的失败原因），并尝试修订后复审
-                state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
-                                              "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "审核输出无法解析，已重试仍失败"}]}
-            else:
-                state.evaluation[str(idx)] = verdict  # 审核记录落盘，便于 Task 5 附录/UI 展示
-            if verdict is None:
-                # 审核输出无法解析：视为未通过；已到最后轮则 needs-human，否则尝试修订
-                if rounds >= MAX_REVISION_ROUNDS:
-                    status = "needs-human"
-                    break
-                revised = self.revise_episode(state, episode, [], round_no=rounds)
-                if not isinstance(revised, dict) or not self._revision_respects_scope(episode, revised, []):
-                    status = "needs-human"
-                    break
-                episode = revised
-                rounds += 1
+                reason = "\n\n【上次审核无法解析，请整集重写】确保结构清晰、字段完整。"
+                if attempts > REWRITE_MAX:
+                    state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
+                                                  "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "审核输出多次无法解析，请人工处理"}]}
                 continue
             if verdict.get("pass"):
                 status = "approved"
                 break
-            if rounds >= MAX_REVISION_ROUNDS:
-                status = "needs-human"
+            # 审核不过 → 重写换稿（带问题摘要）
+            issues = verdict.get("issues", []) or []
+            if issues:
+                reason = f"\n\n【上次审核未通过，请整集重写】问题：{'；'.join(str(i.get('fix', i.get('quote', '')))[:80] for i in issues[:4])}。请针对以上问题重新构思本集，确保剧情推进、钩子与对白自然。"
+            else:
+                reason = f"\n\n【上次审核未通过（{verdict.get('score')} 分），请整集重写】提升剧情质量与钩子强度。"
+            if attempts > REWRITE_MAX:
                 break
-            revised = self.revise_episode(state, episode, verdict.get("issues", []), round_no=rounds)
-            if not isinstance(revised, dict):
-                status = "needs-human"
-                break
-            # diff 约束：未被点名段落被模型顺手改写 → 合并回滚（未点名处恢复原文，
-            # 点名处用修订版），继续进入下一轮审核——不再直接交人工（初稿修订常需
-            # 顺滑衔接，全量拒绝会造成死循环）。merge 失败才交人工。
-            if not self._revision_respects_scope(episode, revised, verdict.get("issues", [])):
-                merged = self._merge_revision(episode, revised, verdict.get("issues", []))
-                if merged is None:
-                    status = "needs-human"
-                    state.evaluation[str(idx)] = {"pass": False, "score": 0, "dimensions": {},
-                                                  "issues": [{"severity": "high", "mode": 0, "quote": "", "fix": "修订越界且无法合并，已交人工处理"}]}
-                    break
-                revised = merged
-            episode = revised
-            rounds += 1
-        state.artifacts.setdefault("episodes", {})[str(idx)] = episode
+        if isinstance(episode, dict):
+            state.artifacts.setdefault("episodes", {})[str(idx)] = episode
+        else:
+            state.artifacts.setdefault("episodes", {})[str(idx)] = None
         state.current_episode = max(state.current_episode, idx + 1)
         self._save(state)
-        return {"status": status, "episode": episode, "verdict": verdict, "rounds": rounds}
+        return {"status": status, "episode": episode, "verdict": verdict, "rounds": attempts - 1}
 
     @staticmethod
     def _has_cjk(text):
@@ -605,6 +582,23 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
 创意：{i['raw']}
 约束：人物动机必须可解释；结局不变量必须明确。{duration_note}"""
 
+    @staticmethod
+    def _budget_for(episode_index, seconds):
+        """v4.0 量化预算模板：按目标时长定死单集场景数/节拍数/对白字数区间。
+
+        估算模型：对白≈4字/秒、动作节拍≈3秒/个、场景切换≈2秒/个。
+        区间按目标时长 60%-140% 折算，生成 prompt 硬性要求，结构校验兜底。
+        """
+        if not seconds:
+            return {"scenes": [2, 5], "beats": [4, 8], "dialogue_chars": [80, 240]}
+        beats_lo = max(3, int(seconds / 18))
+        beats_hi = max(beats_lo + 2, int(seconds / 9))
+        chars_lo = int(seconds * 0.55 * 4 * 0.7)
+        chars_hi = int(seconds * 1.4 * 4 * 0.8)
+        scenes_lo = max(1, int(seconds / 40))
+        scenes_hi = max(scenes_lo + 1, int(seconds / 18) + 1)
+        return {"scenes": [scenes_lo, scenes_hi], "beats": [beats_lo, beats_hi], "dialogue_chars": [chars_lo, chars_hi]}
+
     def _structure_template(self, seconds):
         """按时长区间返回单集结构模板（借鉴时长分层设计：30-60s 快节奏单冲突，
         90-120s 双转折；长剧另有三幕由 PixTale 侧承载）。"""
@@ -663,6 +657,17 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
                 f"时长预算（必须遵守，代码级审核）：按估算模型（对白 4 字/秒、动作节拍 3 秒、场景切换 2 秒），"
                 f"全集估算时长必须落在 {int(target*0.6)}-{int(target*1.4)} 秒区间。"
                 f"参考预算：约 {beat_budget} 个节拍、对白总量约 {line_budget} 字——超出上限会被审核直接否决，需精简；不足则需补足内容。"
+            )
+        # v4.0 预算模板强约束：大纲已定死本集量化预算（场景/节拍/字数），生成必须严格遵守
+        budget = outline.get("budget") if isinstance(outline, dict) else None
+        if isinstance(budget, dict):
+            bs, bh = budget.get("beats", [4, 8])
+            cs, ch = budget.get("dialogue_chars", [80, 240])
+            ss, sh = budget.get("scenes", [2, 5])
+            duration_note += (
+                f"\n本集量化预算（硬性要求，超出或不足都会触发整集重写）："
+                f"场景数 {ss}-{sh} 个；节拍数 {bs}-{bh} 个；对白总字数 {cs}-{ch} 字。"
+                f"按此预算写作，不要多写。"
             )
         duration_note += self._structure_template(state.idea.get("episode_duration_seconds"))
         dialogue_lang = state.idea.get("dialogue_language") or "zh"

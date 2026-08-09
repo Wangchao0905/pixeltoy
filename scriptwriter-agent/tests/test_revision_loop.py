@@ -3,6 +3,19 @@ import json
 import unittest
 from engine import PixelWriterEngine, ProjectState, normalize_idea
 
+def ok_episode_json(hook="开场钩子", cliffhanger="集尾悬念"):
+    """v4.0 结构达标样本：hook/cliffhanger 字段齐全 + 5 个节拍。"""
+    return json.dumps({"hook": hook, "cliffhanger": cliffhanger, "scenes": [
+        {"location": "门口", "beats": [
+            {"speaker": "小美", "line": "我要进去，母亲的药不能断，再晚就来不及了，求您放行", "action": "她抬头"},
+            {"speaker": "管家", "line": "小姐，老爷吩咐过今晚不见任何客人，您还是改日再来吧", "action": "他拦住门口"},
+            {"speaker": "小美", "line": "那就麻烦您通报一声，就说林家女儿来还当年欠下的债", "action": "她掏出玉佩"},
+            {"speaker": "管家", "line": "这玉佩……您稍等，我这就去请老爷出来见您一面", "action": "他转身快步进去"},
+            {"speaker": "小美", "line": "好，我就在这儿等着，麻烦快些，母亲的药等不得", "action": "她攥紧衣角"},
+        ]}
+    ]})
+
+
 class FakeWriter:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -47,7 +60,7 @@ class TestRevisionLoop(unittest.TestCase):
         self.assertLessEqual(len(engine.reviewer.calls), 3)  # 2 轮修订 + 终审
 
     def test_pass_stops_loop(self):
-        engine = PixelWriterEngine(FakeWriter(["{}"]), FakeReviewer([ACCEPT]), state_dir="/tmp/pw-test")
+        engine = PixelWriterEngine(FakeWriter([ok_episode_json()]), FakeReviewer([ACCEPT]), state_dir="/tmp/pw-test")
         state = ProjectState(project_id="t2", stage="episode")
         result = engine.run_episode_loop(state, {"index": 1, "events": []})
         self.assertEqual(result["status"], "approved")
@@ -108,7 +121,7 @@ class TestRevisionLoop(unittest.TestCase):
         # 初稿非 JSON 自动重试（最多 3 次）：第 1 次非法、第 2 次合法 → 应成功生成
         writer = FakeWriter([
             "这不是 JSON，模型跑偏了……",
-            json.dumps({"scenes": [{"location": "月亮花店门口", "beats": [
+            json.dumps({"hook": "开场钩子", "cliffhanger": "集尾悬念", "scenes": [{"location": "月亮花店门口", "beats": [
                 {"speaker": "Luna", "line": "我肚子突然疼得厉害，今天这些婚礼要用的花怕是送不完了，这可怎么办才好", "action": "她捂着肚子蹲下"},
                 {"speaker": "店主", "line": "你先去后面歇着，这批订单我替你送，别硬撑，身体要紧", "action": "他扶她到柜台边坐下"},
                 {"speaker": "Luna", "line": "可那批白玫瑰是今晚婚礼点名要的，耽误了时辰可就砸了招牌", "action": "她咬着牙站起来"},
@@ -207,7 +220,9 @@ class TestRevisionLoop(unittest.TestCase):
 
     def test_pass_string_false_not_truthy(self):
         # DeepSeek 返回 "pass":"false"（字符串）：必须走修订 → 3 次未通过 → needs-human，不得 approved
-        engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(PASS_STR_FALSE), state_dir="/tmp/pw-test")
+        writer = FakeWriter([ok_episode_json(), ok_episode_json(), ok_episode_json()])
+        reviewer = FakeReviewer([PASS_STR_FALSE, PASS_STR_FALSE, PASS_STR_FALSE])
+        engine = PixelWriterEngine(writer, reviewer, state_dir="/tmp/pw-test")
         state = ProjectState(project_id="t3", stage="episode")
         result = engine.run_episode_loop(state, {"index": 1, "events": []})
         self.assertEqual(result["status"], "needs-human")
@@ -246,8 +261,8 @@ class TestDialogueLanguage(unittest.TestCase):
         engine = PixelWriterEngine(ConstLLM("{}"), reviewer, state_dir="/tmp/pw-test")
         engine.review_episode(self._make_state("en"), {"scenes": []})
         review_prompt = reviewer.calls[-1][0]["content"]
-        self.assertIn("英语母语者", review_prompt)
         self.assertIn("翻译腔", review_prompt)
+        self.assertIn("动作 action 与场景 location 必须中文", review_prompt)
 
     def test_en_revise_keeps_english(self):
         writer = FakeWriter(["{}"])
@@ -289,16 +304,14 @@ class TestDurationTemplate(unittest.TestCase):
 
     def test_human_tone_below_70_forces_needs_human(self):
         # pass=true 但 human_tone=40 < 70：代码级强制门必须否决，最终 needs-human
-        engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(PASS_TRUE_LOW_TONE), state_dir="/tmp/pw-test")
+        engine = PixelWriterEngine(FakeWriter([ok_episode_json()]), ConstLLM(PASS_TRUE_LOW_TONE), state_dir="/tmp/pw-test")
         state = ProjectState(project_id="t4", stage="episode")
         result = engine.run_episode_loop(state, {"index": 1, "events": []})
-        self.assertEqual(result["status"], "needs-human")
-        self.assertIs(result["verdict"]["pass"], False)  # 强制改为 False
+        self.assertEqual(result["status"], "approved")  # v4.0 审核只查 3 项，不再因 human_tone 否决
 
     def test_human_tone_string_score_forces_needs_human(self):
         # human_tone 输出为字符串 "40"：强制比较后同样否决，不得 approved
-        engine = PixelWriterEngine(ConstLLM("{}"), ConstLLM(PASS_TRUE_STR_TONE), state_dir="/tmp/pw-test")
+        engine = PixelWriterEngine(FakeWriter([ok_episode_json()]), ConstLLM(PASS_TRUE_STR_TONE), state_dir="/tmp/pw-test")
         state = ProjectState(project_id="t5", stage="episode")
         result = engine.run_episode_loop(state, {"index": 1, "events": []})
-        self.assertEqual(result["status"], "needs-human")
-        self.assertIs(result["verdict"]["pass"], False)
+        self.assertEqual(result["status"], "approved")  # v4.0 审核只查 3 项，不再因 human_tone 否决

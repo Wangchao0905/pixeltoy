@@ -574,14 +574,68 @@ function stageSystemPrompt(stage, mode, input = {}) {
   ].join("\n");
 }
 
-function stageUserPrompt({ stage, mode, input, previousArtifacts, project, excludedTitles = [], unitScope = [], lockedContext = [], continuityContext = [] }) {
-  const prior = previousArtifacts.map((artifact) => ({
-    stage: artifact.stage,
-    type: artifact.type,
-    version: artifact.version,
-    status: artifact.status,
-    content: artifact.content,
+function stageContextContent(artifact, { unitScope = [] } = {}) {
+  const content = asObject(artifact?.content);
+  const scope = new Set(normalizeUnitNumbers(unitScope, 999));
+  const compactUnit = (unit) => ({
+    number: Number(unit?.number || unit?.unit_number || 0),
+    title_zh: text(unit?.title_zh, 160),
+    promise_zh: text(unit?.promise_zh, 300),
+    plot_zh: text(unit?.plot_zh || unit?.action_zh, scope.size ? 2200 : 520),
+    causal_turn_zh: text(unit?.causal_turn_zh, 360),
+    hook_zh: text(unit?.hook_zh, 320),
+    cliffhanger_question_zh: text(unit?.cliffhanger_question_zh, 240),
+    payoff_zh: text(unit?.payoff_zh, 360),
+  });
+  if (artifact?.stage === "arc") {
+    const units = asArray(content.units)
+      .filter((unit) => !scope.size || scope.has(Number(unit?.number)))
+      .map(compactUnit);
+    return { arc_summary_zh: text(content.arc_summary_zh, 1800), units };
+  }
+  if (artifact?.stage === "scenes") {
+    const scenes = asArray(content.scenes)
+      .filter((scene) => !scope.size || scope.has(Number(scene?.unit_number)))
+      .map((scene) => ({
+        id: text(scene?.id, 100),
+        unit_number: Number(scene?.unit_number || 0),
+        location_zh: text(scene?.location_zh, 180),
+        characters: asArray(scene?.characters).slice(0, 10),
+        action_zh: text(scene?.action_zh, scope.size ? 1800 : 460),
+        purpose_zh: text(scene?.purpose_zh, 360),
+      }));
+    return { scenes, props: asArray(content.props).slice(0, 24) };
+  }
+  if (artifact?.stage === "characters") {
+    return {
+      characters: asArray(content.characters).slice(0, 24).map((character) => ({
+        id: text(character?.id, 80), name_zh: text(character?.name_zh, 120), name_en: text(character?.name_en, 120),
+        role: text(character?.role, 180), desire_zh: text(character?.desire_zh, 360), fear_zh: text(character?.fear_zh, 300),
+        secret_zh: text(character?.secret_zh, 360), arc_zh: text(character?.arc_zh, 520), voice_rules_en: text(character?.voice_rules_en, 520),
+      })),
+      relationships: asArray(content.relationships).slice(0, 36),
+      world_rules: asArray(content.world_rules).slice(0, 24),
+    };
+  }
+  const compact = {};
+  Object.entries(content).slice(0, 20).forEach(([key, value]) => {
+    compact[key] = typeof value === "string" ? text(value, 1200) : Array.isArray(value) ? value.slice(0, 12) : value;
+  });
+  return compact;
+}
+
+function stageContextPacket(previousArtifacts = [], { unitScope = [] } = {}) {
+  return previousArtifacts.map((artifact) => ({
+    stage: text(artifact?.stage, 80),
+    type: text(artifact?.type, 120),
+    version: Number(artifact?.version || 0),
+    status: text(artifact?.status, 80),
+    content: stageContextContent(artifact, { unitScope }),
   }));
+}
+
+function stageUserPrompt({ stage, mode, input, previousArtifacts, project, excludedTitles = [], unitScope = [], lockedContext = [], continuityContext = [] }) {
+  const prior = stageContextPacket(previousArtifacts, { unitScope });
   return JSON.stringify({
     task: stage === "title"
       ? (normalizeMode(mode) === "cn_short_drama" ? "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的中文正式剧名候选。" : "基于剧本 DNA、发行属性和已确认故事架构，生成 4 个全新的英文正式片名候选。")
@@ -659,13 +713,7 @@ function reviewerIdentity(role) {
 }
 
 function revisionUserPrompt({ stage, mode, input, previousArtifacts, project, baseArtifact, revisionContract, revisionPlan, unitScope = [], lockedContext = [], continuityContext = [] }) {
-  const prior = previousArtifacts.map((artifact) => ({
-    stage: artifact.stage,
-    type: artifact.type,
-    version: artifact.version,
-    status: artifact.status,
-    content: artifact.content,
-  }));
+  const prior = stageContextPacket(previousArtifacts, { unitScope });
   return JSON.stringify({
     task: "基于已审核版本执行定向修订。只解决修订合同中的问题，保留没有问题的有效内容，不得重置故事方向、改变已确认上下文或用空泛改写回避问题。必须返回当前阶段的完整结构化产物，不能只返回修改片段；未修改的顶层字段必须原样保留。",
     project: { id: text(project?.id, 300), title: text(project?.title, 300), episode: text(project?.episode, 100) },
@@ -719,7 +767,7 @@ function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input, rev
     } : {}),
     artifact,
     ...(ruleFindings.length ? { knownRuleFindings: { label: "已知违规，请重点核验", findings: ruleFindings } } : {}),
-    approvedContext: previousArtifacts.map((item) => ({ stage: item.stage, content: item.content })).slice(-6),
+    approvedContext: stageContextPacket(previousArtifacts.slice(-6), { unitScope }),
     ...(revisionItems.length ? {
       revisionClosureProtocol: {
         sourceArtifactId: text(revisionContract.sourceArtifactId, 200),
@@ -3040,6 +3088,7 @@ function createPixelTaleAgent(options = {}) {
           return { route: reviewRoute, model: lastAttempted || reviewModel, selectedModel: reviewModel, role, error: lastError?.message || "审核模型请求失败", errorCode: lastError?.code || "NETWORK_ERROR" };
         } });
         reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
+        reportPhase(params, "refereeing");
         const consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract), ruleFindings: ruleResult.violations };
         if (consensus.revision) consensus.revision.owner = "本阶段主创";
         const reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviews.map((item) => item.result?.model || item.model).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
@@ -3327,6 +3376,7 @@ function createPixelTaleAgent(options = {}) {
           return { route: reviewRoute, model: lastAttempted || reviewModel, selectedModel: reviewModel, role, error: lastError?.message || "审核模型请求失败", errorCode: lastError?.code || "NETWORK_ERROR" };
       } });
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
+      reportPhase(params, "refereeing");
       consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract), ruleFindings: ruleResult.violations };
       if (consensus.revision) consensus.revision.owner = "本阶段主创";
       reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviews.map((item) => item.result?.model || item.model).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });

@@ -985,6 +985,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .review-decision-card ol { grid-column: 2; margin: 0; padding-left: 16px; color: var(--pt-muted); font-size: 10px; line-height: 1.55; }
 .review-decision-card.is-revise { border-color: rgba(219, 141, 46, .32); }
 .review-decision-card.is-needs_decision { border-color: rgba(40, 120, 232, .30); }
+.stage-task-card { margin: 14px 0 18px; padding: 13px 15px; border: 1px solid var(--pt-line); border-radius: 14px; background: rgba(255, 255, 255, 0.62); box-shadow: var(--pt-shadow-soft); }
+.stage-task-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stage-task-head > strong { color: var(--pt-green-ink); font-size: 11px; }
+.stage-task-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 12px 0 0; }
+.stage-task-grid div { min-width: 0; padding-left: 10px; border-left: 1px solid var(--pt-line); }
+.stage-task-grid div:first-child { padding-left: 0; border-left: 0; }
+.stage-task-grid dt { color: var(--pt-faint); font: 700 8px var(--meta-font); letter-spacing: .06em; }
+.stage-task-grid dd { margin: 5px 0 0; color: var(--pt-ink-soft); font-size: 10px; line-height: 1.45; }
 .review-evidence { margin-top: 8px; }
 .review-evidence > summary { cursor: pointer; color: var(--pt-muted); font-size: 10px; }
 .review-evidence .review-zone { margin-top: 12px; }
@@ -1297,4 +1305,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .unit-stage-progress-head, .unit-stage-progress-foot { align-items: flex-start; flex-direction: column; }
   .unit-stage-progress-foot { gap: 9px; }
   .unit-stage-progress-foot input { width: 170px; }
+  .stage-task-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stage-task-grid div { padding-left: 0; border-left: 0; }
 }

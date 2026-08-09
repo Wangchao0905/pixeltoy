@@ -821,15 +821,12 @@ function nextStepMeta() {
   const reviewContent = reviewForArtifact(artifact)?.content || {};
   const technicalState = technicalReviewState(reviewContent);
   if (technicalState.blocked && reviewForArtifact(artifact)) {
-    // 技术未完成（席位失败/降级/stalled/预算耗尽）时，"重新提交"之外提供
-    // 人工放行出口——修订不收敛或席位持续失败时避免无限点击（与 auto-revise 同构）。
     return {
       kind: "run",
       stage: flowStage,
       title: `${flowMeta.title}技术未完成`,
-      copy: "三席审核尚未具备有效技术结果。请重新提交当前阶段，完成席位后再判断质量与修订意见；或接受当前版本继续。",
+      copy: "审核尚未具备有效技术结果。请重新提交当前阶段，完成审核后再判断质量与修订意见。",
       label: `重新提交${flowMeta.title}并审核 →`,
-      allowOverride: true,
       flowStage,
     };
   }
@@ -880,7 +877,7 @@ function nextStepMeta() {
       kind: "auto-revise",
       stage: flowStage,
       title: `${flowMeta.title}需要执行已采纳修订`,
-      copy: `已有 ${advisoryGate.accepted.length} 条建议被采纳。一次点击会自动处理全部问题，最多执行两轮定向修订与三模型复审。`,
+      copy: `已有 ${advisoryGate.accepted.length} 条建议被采纳。一次点击会自动处理全部问题，并重新提交规则校验、双席审读和系统裁判。`,
       label: "一键修订并复审 →",
       flowStage,
     };
@@ -956,19 +953,10 @@ function renderAgentTaskAction(action) {
   const guidedClass = !disabled && action.kind !== "busy" ? " is-next-action" : "";
   if (action.kind === "run") {
     const id = action.stage === "brief" ? "runBrief" : "agentRunStage";
-    const primary = `<button id="${id}" class="stage-primary agent-task-primary${guidedClass}" data-flow-action="run" data-run-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
-    // 技术未完成分支允许人工放行：接受当前生成版本继续，避免无限"重新提交"。
-    if (action.allowOverride) {
-      const override = `<button class="stage-secondary agent-task-secondary" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>接受当前版本并继续（人工放行）</button>`;
-      return `<div style="display:flex;gap:8px;flex-wrap:wrap">${primary}${override}</div>`;
-    }
-    return primary;
+    return `<button id="${id}" class="stage-primary agent-task-primary${guidedClass}" data-flow-action="run" data-run-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
   if (action.kind === "auto-revise") {
-    const primary = `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
-    // 修订反复不收敛时，允许人工放行（接受当前版本继续），打破"反复点击确认"死循环。
-    const override = `<button class="stage-secondary agent-task-secondary" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>接受当前版本并继续（人工放行）</button>`;
-    return `<div style="display:flex;gap:8px;flex-wrap:wrap">${primary}${override}</div>`;
+    return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
   if (action.kind === "human-override") {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
@@ -1064,7 +1052,7 @@ function renderModelTeam() {
     { id: "authoring", label: "主笔生成" },
     { id: "validating", label: "规则校验" },
     { id: "reviewing", label: "双席审读" },
-    { id: "referee", label: "系统裁判决定" },
+    { id: "refereeing", label: "系统裁判决定" },
   ];
   const currentPhaseIndex = phases.findIndex((phase) => phase.id === state.runPhase);
   const completedPhaseIndex = currentPhaseIndex >= 0 ? currentPhaseIndex - 1 : currentReview ? phases.length - 1 : -1;
@@ -1748,6 +1736,26 @@ function renderCreationTrace(artifact, reviewContent = {}) {
   return `<details class="review-reference-panel creation-trace"><summary><span>执行依据 · 主笔 / 规则校验 / 双席审读 / 系统裁判</span><em>${escapeHtml(decision.title || "等待裁判")}</em></summary><div class="creation-trace-block"><strong>主笔</strong><ul><li><strong>${escapeHtml(primary.role || "主笔")}</strong><span>${escapeHtml(primary.actualModel || "未返回")}</span></li></ul></div><div class="creation-trace-block"><strong>系统裁判</strong><p>${escapeHtml(decision.summary || "等待规则校验与双席审读完成")}</p></div>${reviewerRows ? `<div class="creation-trace-block"><strong>审读依据</strong><ul>${reviewerRows}</ul></div>` : ""}</details>`;
 }
 
+function renderStageTaskCard(stage = state.stage, reviewContent = {}) {
+  const meta = stageMeta[stage] || stageMeta.brief;
+  const artifact = artifactForStage(stage);
+  const decision = reviewContent.decision || {};
+  const owner = stage === "handoff" ? "交付编排器" : stage === "title" ? "创作者" : "主笔";
+  const input = stage === "brief"
+    ? "创作想法、市场与节奏参数"
+    : stage === "handoff"
+      ? "已确认的七项剧作资产"
+      : "已确认阶段摘要 + 当前创作规格";
+  const output = stage === "handoff" ? "正式剧本与资产文件" : meta.title;
+  const acceptance = stage === "title"
+    ? "选择一个正式剧名"
+    : stage === "handoff"
+      ? "七项资产均已确认"
+      : "规则校验完成，双席证据已由系统裁判汇总";
+  const status = decision.title || (artifact ? (state.approved.has(artifact.id) ? "已确认" : "等待裁判决定") : "等待开始");
+  return `<section class="stage-task-card" aria-label="阶段执行说明"><div class="stage-task-head"><span class="card-label"><i></i>EXECUTION CARD</span><strong>${escapeHtml(status)}</strong></div><dl class="stage-task-grid"><div><dt>阶段目标</dt><dd>${escapeHtml(meta.task)}</dd></div><div><dt>责任人</dt><dd>${escapeHtml(owner)}</dd></div><div><dt>输入</dt><dd>${escapeHtml(input)}</dd></div><div><dt>产出</dt><dd>${escapeHtml(output)}</dd></div><div><dt>完成条件</dt><dd>${escapeHtml(acceptance)}</dd></div></dl></section>`;
+}
+
 function renderArtifactStage() {
   const meta = currentMeta();
   const artifact = artifactForStage(state.stage);
@@ -1800,7 +1808,9 @@ function renderHandoff() {
 
 function renderStage() {
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;
-  $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="生产流程"><div><span class="eyebrow">PRODUCTION FLOW</span><strong>当前阶段 ${productionProgressLabel(workflowStage())}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>完成后</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderer()}`;
+  const currentArtifact = artifactForStage(state.stage);
+  const currentReview = reviewForArtifact(currentArtifact)?.content || {};
+  $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="生产流程"><div><span class="eyebrow">PRODUCTION FLOW</span><strong>当前阶段 ${productionProgressLabel(workflowStage())}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>完成后</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderStageTaskCard(state.stage, currentReview)}${renderer()}`;
   bindStageActions();
   renderShellState();
 }

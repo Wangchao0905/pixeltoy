@@ -919,7 +919,7 @@ const runParams = { pixelTaleRoot: "revision-e2e", projectId: "revision-e2e", pr
 const phaseEvents = [];
 phaseEvents.length = 0;
 const initialRun = await runAgent.run(runParams);
-assert.deepEqual(phaseEvents, ["authoring", "validating", "reviewing"], "a stage run must report the single-author, validation, and review phases in order");
+assert.deepEqual(phaseEvents, ["authoring", "validating", "reviewing", "refereeing"], "a stage run must report authoring, validation, review, and referee phases in order");
 assert.equal(initialRun.status, "needs_review", "initial review must retain a failed source version");
 assert.ok(routedCalls.filter((item) => item.purpose.endsWith(":review")).every((item) => item.temperature === 0.2), "every review seat must use stable temperature 0.2");
 const revisionRun = await runAgent.run({ ...runParams, revisionPlan: "按全部审核问题修订" });
@@ -1418,7 +1418,22 @@ assert.throws(
   // 自动放行会 supersede 下游已确认内容（dialogue 在 characters 之后 → 失效）；上游 proposal 保留
   assert.equal(autoConfirmState.artifacts.find((item) => item.id === "a_dialogue").status, "needs_review", "auto-confirm must invalidate downstream approvals");
   assert.equal(autoConfirmState.artifacts.find((item) => item.id === "a_proposal").status, "approved", "upstream approvals must survive");
-  assert.equal(autoConfirmState.stage, "arc", "auto-confirm must advance to the next stage");
+assert.equal(autoConfirmState.stage, "arc", "auto-confirm must advance to the next stage");
 }
+
+// 11. Every stage must make responsibility and acceptance visible without
+// turning the workspace into another long report. The right rail has exactly
+// one next action; creator judgment remains a distinct, explicit state.
+assert.match(app, /function renderStageTaskCard\(/, "every stage must render a compact execution card");
+assert.match(app, /阶段目标/, "the execution card must show the stage goal");
+assert.match(app, /责任人/, "the execution card must name the accountable role");
+assert.match(app, /完成条件/, "the execution card must show the acceptance condition");
+assert.match(app, /主笔生成[\s\S]*规则校验[\s\S]*双席审读[\s\S]*系统裁判/, "the visible timeline must include all four decision steps");
+const agentTaskRenderer = app.slice(app.indexOf("function renderAgentTaskAction(action)"), app.indexOf("function renderShellState()"));
+assert.doesNotMatch(agentTaskRenderer, /接受当前版本并继续（人工放行）/, "the right rail must not present a parallel override beside the canonical action");
+const nextStepRenderer = app.slice(app.indexOf("function nextStepMeta()"), app.indexOf("function renderAgentTaskAction(action)"));
+assert.doesNotMatch(nextStepRenderer, /allowOverride/, "technical retries must have one clear action, not a competing override");
+assert.match(agent, /reportPhase\(params, "refereeing"\)/, "both run paths must report the referee phase to the client");
+assert.match(agent, /function stageContextPacket\(/, "stage prompts must build a compact approved-context packet");
 
 console.log("pixeltale workflow contract ok");

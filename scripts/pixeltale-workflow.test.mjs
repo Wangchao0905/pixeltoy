@@ -28,7 +28,70 @@ const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
-const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, createHandoffPayload, confirmArtifact } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+
+const durationInput = { durationValue: 90, durationUnit: "sec", openingImpactSeconds: 3, episodeCount: 30 };
+const sceneSystemPrompt = stageSystemPrompt("scenes", "tk_short_drama", durationInput);
+const sceneUserPrompt = stageUserPrompt({ stage: "scenes", mode: "tk_short_drama", input: durationInput, previousArtifacts: [], project: {}, unitScope: [1] });
+for (const prompt of [sceneSystemPrompt, sceneUserPrompt]) {
+  assert.match(prompt, /90/u, "scenes prompts must include the 90-second target");
+  assert.match(prompt, /目标±10%/u, "scenes prompts must require the target ±10% range");
+  assert.match(prompt, /15[\s-]*30/u, "scenes prompts must include the suggested 15-30 shot range");
+}
+assert.match(sceneSystemPrompt, /开头冲击窗口：前 3 秒/u, "the opening impact window must remain explicit beside the duration budget");
+assert.match(sceneSystemPrompt, /duration_seconds.*不得为 0 或缺省/u, "scenes system prompts must require meaningful nonzero shot durations");
+const cnSceneSystemPrompt = stageSystemPrompt("scenes", "cn_short_drama", { ...durationInput, openingImpactSeconds: 4 });
+assert.match(cnSceneSystemPrompt, /前 4 秒/u, "CN scenes prompts must use the configured opening impact window");
+assert.doesNotMatch(cnSceneSystemPrompt, /前 3 秒内必须给出/u, "CN scenes prompts must not contradict the configured opening impact window");
+
+const minuteSystemPrompt = stageSystemPrompt("scenes", "tk_short_drama", { durationValue: 10, durationUnit: "min" });
+const minuteUserPrompt = stageUserPrompt({ stage: "scenes", mode: "tk_short_drama", input: { durationValue: 10, durationUnit: "min" }, previousArtifacts: [], project: {}, unitScope: [1] });
+assert.match(minuteSystemPrompt, /600 秒/u, "minute duration input must become seconds in the scenes system prompt");
+assert.match(minuteUserPrompt, /600/u, "minute duration input must become seconds in the scenes user prompt");
+
+for (const invalidDurationInput of [{ durationUnit: "sec" }, { durationValue: 90, durationUnit: "furlong", duration: "90 furlong" }]) {
+  const systemPrompt = stageSystemPrompt("scenes", "tk_short_drama", invalidDurationInput);
+  const userPrompt = stageUserPrompt({ stage: "scenes", mode: "tk_short_drama", input: invalidDurationInput, previousArtifacts: [], project: {}, unitScope: [1] });
+  for (const prompt of [systemPrompt, userPrompt]) {
+    assert.doesNotMatch(prompt, /单集目标时长|目标±10%|建议每集.*镜头/u, "missing or unknown duration units must not inject a duration budget");
+    assert.doesNotMatch(prompt, /(?:60|90|120) 秒/u, "missing or unknown duration units must not invent a default duration");
+  }
+}
+
+const shortShotRange = suggestedShotCountRange(90);
+const longShotRange = suggestedShotCountRange(600);
+assert.ok(shortShotRange.min >= 10 && shortShotRange.max <= 40, "90 seconds must derive a reasonable non-hardcoded shot range");
+assert.ok(longShotRange.min > shortShotRange.min && longShotRange.max > shortShotRange.max, "shot recommendations must grow monotonically with the target duration");
+assert.match(durationBudgetPrompt(durationInput), /15[\s-]*30/u, "the duration budget helper must expose the derived shot range");
+
+const durationRepairPlan = automaticUnitRepairPlan("scenes", {
+  ruleFindings: [{
+    code: "DURATION_BUDGET_MISMATCH",
+    severity: "high",
+    fieldPath: "scenes.unit_3.shot_plan",
+    message: "第 3 集时长预算不匹配：目标 90 秒，实际 35 秒，偏差 -61.1%",
+  }],
+}, [3]);
+assert.match(durationRepairPlan, /当前镜头总时长 35 秒/u, "duration repair plans must state the current episode seconds");
+assert.match(durationRepairPlan, /目标 90 秒/u, "duration repair plans must state the target seconds");
+assert.match(durationRepairPlan, /差值 55 秒.*增加 55 秒/u, "duration repair plans must state the directional seconds difference");
+const batchedDurationRepairPlan = automaticUnitRepairPlan("scenes", batchReviewSummary("scenes", [{
+  ruleFindings: [{
+    code: "DURATION_BUDGET_MISMATCH",
+    severity: "high",
+    fieldPath: "scenes.unit_3.shot_plan",
+    message: "第 3 集时长预算不匹配：目标 90 秒，实际 35 秒，偏差 -61.1%",
+  }],
+}], 1, {}), [3]);
+assert.match(batchedDurationRepairPlan, /差值 55 秒/u, "batch summaries must preserve duration findings for automatic repair");
+
+for (const stage of ["brief", "arc"]) {
+  const systemPrompt = stageSystemPrompt(stage, "tk_short_drama", durationInput);
+  const userPrompt = stageUserPrompt({ stage, mode: "tk_short_drama", input: durationInput, previousArtifacts: [], project: {} });
+  for (const prompt of [systemPrompt, userPrompt]) {
+    assert.doesNotMatch(prompt, /单集目标时长|目标±10%|建议每集.*镜头|duration_seconds.*不得为 0 或缺省/u, "non-scenes prompts must not receive shot-level duration constraints");
+  }
+}
 
 const ruleFindings = (result, code) => result.violations.filter((item) => item.code === code);
 assert.ok(ruleFindings(runStageRules({ stage: "brief", artifact: {}, approvedContext: {} }), "SCHEMA_INCOMPLETE").length, "rules must detect missing stage schema fields");

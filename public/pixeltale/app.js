@@ -2117,10 +2117,9 @@ async function saveRouting(event) {
 }
 
 function bindAgentTaskAction() {
-  const button = $("#agentTaskAction [data-flow-action]");
-  if (!button) return;
-  button.addEventListener("click", () => {
-    const action = button.dataset.flowAction;
+  $$("#agentTaskAction [data-flow-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.flowAction;
     if (action === "run") {
       const stage = button.dataset.runStage || state.stage;
       if (stage === "brief" && !$("#idea")?.value.trim()) {
@@ -2169,6 +2168,7 @@ function bindAgentTaskAction() {
       state.lastError = "";
       renderStage();
     }
+    });
   });
 }
 

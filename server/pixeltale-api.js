@@ -11,12 +11,15 @@ function geminiModelId() {
 }
 const FALLBACK_BY_SEAT = Object.freeze({
   seat_a: GEMINI_FALLBACK_MODEL,
-  seat_b: GROK_FALLBACK_MODEL,
+  // 2026-08-09：seat_b/seat_c 的 fallback 从 grok 改为 Claude（用户决定，同 apikey.fun 网关）。
+  // Claude key（PIXELTALE_CLAUDE_API_KEY）实测可用：claude-sonnet-5 / claude-haiku-4-5 @ apikey.fun 均 200。
+  // seat_b 用 sonnet-5（质量），seat_c 用 haiku-4-5（轻量）；grok 仍保留为通用第二候选（key 无效时被过滤）。
+  seat_b: "claude-sonnet-5",
   // seat_c 原 fallback claude-opus-5 走 apikey.fun 网关，实测 300s 超时
   // （2026-08-07 事故：DeepSeek TRUNCATED_OUTPUT 后 fallback 到它再次失败，提案卡死）。
-  // 改用 XAI 官方端点 grok（XAI_API_KEY 已配，稳定）；gemini 已由 seat_a 占用
+  // 现改 claude-haiku-4-5（轻量快速）；gemini 已由 seat_a 占用
   // （审核独立性：seat_a 与 seat_c 的 fallback 不得相同）。
-  seat_c: GROK_FALLBACK_MODEL,
+  seat_c: "claude-haiku-4-5",
 });
 const REVIEW_SEATS = Object.freeze([
   Object.freeze({ id: "seat_a", role: "structure_causality", model: "gpt-5.6-terra", ownedDimensions: Object.freeze(["structure", "logic"]) }),

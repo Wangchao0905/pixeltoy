@@ -1429,3 +1429,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .stage-task-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .stage-task-grid div { padding-left: 0; border-left: 0; }
 }
+
+/* 待修改集清单（单集粒度：集号 + 问题摘要 + 修复入口） */
+.unit-fix-list { margin-top: 10px; border-top: 1px dashed rgba(23, 25, 28, 0.14); padding-top: 9px; display: grid; gap: 5px; }
+.unit-fix-head { display: flex; align-items: center; gap: 6px; color: #b26a00; font: 700 10px var(--meta-font); letter-spacing: 0.04em; }
+.unit-fix-head i { width: 6px; height: 6px; border-radius: 50%; background: #ffca28; box-shadow: 0 0 6px rgba(255, 202, 40, 0.6); }
+.unit-fix-row { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 4px 8px; border: 1px solid rgba(23, 25, 28, 0.08); border-radius: 9px; background: rgba(255, 250, 240, 0.55); }
+.unit-fix-row strong { font-size: 12px; font-weight: 700; color: #7a4d00; white-space: nowrap; }
+.unit-fix-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pt-muted); font-size: 11px; }
+.unit-fix-row .fix-unit-btn { margin-left: 0; }

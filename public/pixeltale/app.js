@@ -762,6 +762,29 @@ async function refreshPixelTaleState() {
   } catch { /* 静默 */ }
 }
 
+// 待修改集清单：聚合最新审核 issues 按集号分组（已锁定集除外）
+function unitFixSummary(stage) {
+  const progress = unitStageProgress(stage) || {};
+  const lockedSet = new Set(Array.isArray(progress.locked) ? progress.locked.map(Number) : []);
+  const artifact = artifactForStage(stage);
+  const review = reviewForArtifact(artifact);
+  const issues = Array.isArray(review?.content?.issues) ? review.content.issues : [];
+  const byUnit = new Map();
+  for (const issue of issues) {
+    const unit = Number(issue.unit);
+    if (!Number.isInteger(unit) || unit <= 0 || lockedSet.has(unit)) continue;
+    if (!byUnit.has(unit)) byUnit.set(unit, []);
+    byUnit.get(unit).push(issue);
+  }
+  return [...byUnit.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([unit, list]) => {
+      const high = list.filter((item) => item.severity === "high").length;
+      const tags = [...new Set(list.map((item) => item.tag || item.criterion_id || "审核意见"))].slice(0, 3).join("、");
+      return { unit, list, high, tags, issue: list[0] };
+    });
+}
+
 function renderUnitStageProgress(stage) {
   const progress = unitStageProgress(stage);
   if (!progress) return "";
@@ -777,7 +800,14 @@ function renderUnitStageProgress(stage) {
   const pinnedBadge = pinned.length ? `<em class="lock-badge is-pinned" title="人工编辑过的集，自动流程不会覆盖">✍ 人工定稿 ${pinned.length}</em>` : "";
   const dirtyBadge = dirty.length ? `<em class="lock-badge is-dirty" title="依赖已变更，需人工复核">⚠ 依赖已变 ${dirty.length}</em>` : "";
   const pending = pendingCount ? `未锁定 ${pendingCount} 集` : "没有待处理集";
-  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong>${pinnedBadge}${dirtyBadge}</div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="绿=已锁定 · 黄=已生成待审核 · 灰=未生成"><i class="is-generated" style="width:${generatedPct}%"></i><i class="is-locked" style="width:${lockedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label><label for="unitEditInput">人工编辑集号 <input id="unitEditInput" type="text" value="${escapeHtml(state.unitEditTarget || "")}" placeholder="输入集号后点编辑" inputmode="numeric" autocomplete="off" /></label><button type="button" class="edit-unit-btn" data-edit-unit>编辑该集</button></div><small>未关闭项只会重跑对应批次；只有出现无法由阶段契约自动裁决的创作取舍时，才需要你选择方案。已锁定集不会再次提交。</small></section>`;
+  const fixUnits = unitFixSummary(stage);
+  const unitFixListHtml = fixUnits.length
+    ? `<div class="unit-fix-list"><div class="unit-fix-head"><i></i>待修改集（审核未通过 · 可逐集修复）</div>${fixUnits.map((entry) => {
+        const fixable = Number.isInteger(Number(entry.unit)) && entry.unit > 0 && !!entry.issue.fieldPath;
+        return `<div class="unit-fix-row"><strong>第 ${entry.unit} 集</strong><span>${entry.list.length} 个问题${entry.high ? ` · 高优先级 ${entry.high}` : ""}${entry.tags ? `：${escapeHtml(entry.tags)}` : ""}</span>${fixable ? `<button type="button" class="fix-unit-btn" data-fix-unit data-stage="${escapeHtml(stage)}" data-unit="${Number(entry.unit)}" data-issue='${escapeHtml(JSON.stringify({ unit: Number(entry.unit), field_path: entry.issue.fieldPath, tag: entry.issue.tag || "", feedback: entry.issue.feedback || "", fix: entry.issue.fix || "" }))}'>修复该集</button>` : ""}</div>`;
+      }).join("")}</div>`
+    : "";
+  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong>${pinnedBadge}${dirtyBadge}</div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="绿=已锁定 · 黄=已生成待审核 · 灰=未生成"><i class="is-generated" style="width:${generatedPct}%"></i><i class="is-locked" style="width:${lockedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label><label for="unitEditInput">人工编辑集号 <input id="unitEditInput" type="text" value="${escapeHtml(state.unitEditTarget || "")}" placeholder="输入集号后点编辑" inputmode="numeric" autocomplete="off" /></label><button type="button" class="edit-unit-btn" data-edit-unit>编辑该集</button></div>${unitFixListHtml}<small>未关闭项只会重跑对应批次；只有出现无法由阶段契约自动裁决的创作取舍时，才需要你选择方案。已锁定集不会再次提交。</small></section>`;
 }
 
 function reviewForArtifact(artifact) {

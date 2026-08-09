@@ -29,7 +29,15 @@ const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
+const mergeReviewItemsForTest = Function(`${app.slice(app.indexOf("function reviewItemKey"), app.indexOf("function reviewIssueGroups"))}\nreturn mergeReviewItems;`)();
 const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+
+const duplicateDecisionItems = mergeReviewItemsForTest([
+  { id: "rule_scene_speaker_roster_mismatch", tag: "SCENE_SPEAKER_ROSTER_MISMATCH", severity: "high", requiresCreatorDecision: true, decisionOptions: ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"] },
+  { id: "rule_scene_speaker_roster_mismatch", tag: "SCENE_SPEAKER_ROSTER_MISMATCH", severity: "high", requiresCreatorDecision: true, decisionOptions: ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"] },
+]);
+assert.equal(duplicateDecisionItems.length, 1, "页面决定区必须合并相同规则项，不能重复显示");
+assert.deepEqual(duplicateDecisionItems[0].decisionOptions, ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"], "页面决定区必须保留两个处理方案");
 
 const durationInput = { durationValue: 90, durationUnit: "sec", openingImpactSeconds: 3, episodeCount: 30 };
 const sceneSystemPrompt = stageSystemPrompt("scenes", "tk_short_drama", durationInput);
@@ -401,6 +409,8 @@ assert.match(app, /crossStageIssues = issues\.filter/, "cross-stage review items
 assert.match(app, /当前清单包含跨阶段问题/, "cross-stage review items must tell the creator which stage owns the repair");
 assert.match(app, /修正归属：/, "review cards must show the owning stage for cross-stage findings");
 assert.match(app, /technicalState\.blocked && reviewForArtifact\(artifact\) && !creativeReviewDecisionGroups/, "a rule-blocked creative tradeoff must reach the decision workbench instead of the generic rerun action");
+assert.match(app, /const decisionItems = reviewDecisionGroups\(reviewContent\)/, "the decision card must use merged decision items");
+assert.match(app, /decisionOptions\.slice\(0, 2\)/, "the decision card must show the available repair options");
 assert.match(app, /data-advisory-decision/, "advisory feedback must expose creator decision actions");
 assert.match(app, /const reviewConflictGuidance =/, "score conflicts must have deterministic review guidance");
 assert.match(app, /审核建议[\s\S]*核对指引[\s\S]*决策规则/, "advisory cards must explain what to check and how to decide");

@@ -1855,6 +1855,11 @@ function mergeReviewItems(items = []) {
     current.models = [...new Set([...current.models, ...(Array.isArray(item.models) ? item.models : [])].filter(Boolean))];
     current.suggestions = [...new Set([...current.suggestions, ...(Array.isArray(item.suggestions) ? item.suggestions : [])].filter(Boolean))].slice(0, 6);
     current.evidence = [...new Set([...current.evidence, ...(Array.isArray(item.evidence) ? item.evidence : [])].filter(Boolean))].slice(0, 6);
+    current.requiresCreatorDecision = current.requiresCreatorDecision || item.requiresCreatorDecision === true;
+    current.decisionOptions = [...new Set([...(Array.isArray(current.decisionOptions) ? current.decisionOptions : []), ...(Array.isArray(item.decisionOptions) ? item.decisionOptions : [])].filter(Boolean))].slice(0, 2);
+    current.targetStage = current.targetStage || item.targetStage || "";
+    current.targetStages = [...new Set([...(Array.isArray(current.targetStages) ? current.targetStages : []), ...(Array.isArray(item.targetStages) ? item.targetStages : []), ...(item.targetStage ? [item.targetStage] : [])].filter(Boolean))];
+    current.relatedStage = current.relatedStage || item.relatedStage || "";
     current.acceptedByHuman = current.acceptedByHuman || item.acceptedByHuman;
   });
   return [...groups.values()];
@@ -1891,7 +1896,11 @@ function reviewIssueGroups(reviewContent = {}) {
 }
 
 function reviewDecisionGroups(reviewContent = {}) {
-  return mergeReviewItems(Array.isArray(reviewContent.decisionRequiredIssues) ? reviewContent.decisionRequiredIssues : []);
+  const structured = Array.isArray(reviewContent.decisionRequiredIssues) ? reviewContent.decisionRequiredIssues : [];
+  const fallback = reviewContent.decision?.kind === "needs_decision" && Array.isArray(reviewContent.decision.items)
+    ? reviewContent.decision.items
+    : [];
+  return mergeReviewItems([...structured, ...fallback]);
 }
 
 function creativeReviewDecisionGroups(reviewContent = {}) {
@@ -2086,7 +2095,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   const ruleBlockedOverride = technicalFailures.some((item) => item?.status === "rule_blocked") && !creativeReviewDecisionGroups(reviewContent).length
     ? `<button class="stage-primary agent-task-primary is-next-action" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}" type="button">接受当前版本并继续</button><p class="review-technical-flags">规则拦截已阻断自动审核：只有你确认接受当前内容才能进入下一阶段。</p>`
     : "";
-  const decisionItems = Array.isArray(decision.items) ? decision.items : [];
+  const decisionItems = reviewDecisionGroups(reviewContent);
   // 2026-08-10：把「执行定向修订」直接放到系统裁判决定卡上（用户在内容区先看到它，
   // 不再依赖右侧 rail 的下一步按钮才能发起修订）。
   const decisionRuleBlocked = (Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [])

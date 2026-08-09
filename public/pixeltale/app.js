@@ -881,9 +881,13 @@ function renderConsensusMeter() {
   const disagreements = Array.isArray(metrics.content?.disagreements) ? metrics.content.disagreements : [];
   const consensusNote = metrics.releaseReady && disagreements.length ? ` · 部分共识（${disagreements.length} 席有分歧已记录）` : "";
   const releaseState = decision.summary || (!metrics.quorumMet ? "审核未完成" : metrics.releaseReady ? "可确认" : advisoryGate.blockingPending.length ? "等待人工决定" : "等待裁判决定");
-  label.textContent = metrics.quality !== null
-    ? `系统裁判 · ${releaseState}${consensusNote}`
-    : "主笔完成后启动规则校验与双席审读";
+  const technicalFailures = Array.isArray(metrics.content?.technicalFailures) ? metrics.content.technicalFailures : [];
+  const ruleBlocked = technicalFailures.find((failure) => failure.status === "rule_blocked");
+  label.textContent = ruleBlocked
+    ? "系统裁判 · 规则校验未通过（未达基础标准）· 本次审核未执行"
+    : metrics.quality !== null
+      ? `系统裁判 · ${releaseState}${consensusNote}`
+      : "主笔完成后启动规则校验与双席审读";
   fill.style.setProperty("--consensus-width", `${metrics.quality ?? 0}%`);
   fill.parentElement?.classList.toggle("is-live", metrics.quality !== null);
   agreement.textContent = metrics.agreement === null ? "—" : `${metrics.agreement}%`;
@@ -1006,12 +1010,16 @@ function nextStepMeta() {
     };
   }
   if (refereeDecision.kind === "revise") {
+    const ruleBlocked = (Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [])
+      .find((failure) => failure.status === "rule_blocked");
     return {
       kind: "auto-revise",
       stage: flowStage,
-      title: `${flowMeta.title}需要定向修订`,
-      copy: refereeDecision.summary || "系统裁判已给出唯一的定向修订清单。",
-      label: "执行定向修订 →",
+      title: ruleBlocked ? `${flowMeta.title}未达基础标准` : `${flowMeta.title}需要定向修订`,
+      copy: ruleBlocked
+        ? "本次生成命中代码级校验规则（未达基础标准），审核未执行、无质量评分。请调整内容后重跑本阶段；或使用右下角「接受当前版本并继续」人工放行。"
+        : refereeDecision.summary || "系统裁判已给出唯一的定向修订清单。",
+      label: ruleBlocked ? "重新生成本阶段 →" : "执行定向修订 →",
       flowStage,
     };
   }

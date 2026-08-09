@@ -1064,6 +1064,19 @@ function autoRepairableUnits(state, stage, pending) {
   return normalizeUnitNumbers(pending).filter((u) => unitLockStatus(state, stage, u) === "open");
 }
 
+// 上游阶段确认（重跑批准）→ 下游 unit 阶段已有 locked/pinned 的集标 dirty。
+// 简单下游传播（不做全依赖图）：characters 之后是 arc/scenes；arc 之后是 scenes。
+const DIRTY_DOWNSTREAM = { characters: ["arc", "scenes"], arc: ["scenes"] };
+function propagateDirty(state, upstreamStage, reason) {
+  const downstream = DIRTY_DOWNSTREAM[upstreamStage] || [];
+  for (const stage of downstream) {
+    for (const [unit, lock] of Object.entries(asObject(state?.unitLocks?.[stage]) || {})) {
+      if (lock.status === "locked") markUnitDirty(state, stage, Number(unit), reason);
+      else if (lock.status === "pinned") state.unitLocks[stage][unit].dirtyReason = reason;
+    }
+  }
+}
+
 function dirtyUnits(state, stage) {
   return Object.keys(asObject(state?.unitLocks?.[stage]) || {}).map(Number)
     .filter((u) => unitLockStatus(state, stage, u) === "dirty").sort((a, b) => a - b);
@@ -3034,6 +3047,12 @@ function confirmArtifact(state, artifact, now, { auto = false } = {}) {
     }
   });
   state.stage = nextStage(artifact.stage);
+  // 2026-08-09：上游重跑确认 → 下游 unit 阶段已锁定/人工定稿的集标 dirty（不自动改，进复核清单）
+  try {
+    propagateDirty(state, artifact.stage, `${artifact.stage} 重跑确认，依赖已变更`);
+  } catch {
+    // 传播失败不影响主流程（dirty 仅提示）
+  }
 }
 
 function createPixelTaleAgent(options = {}) {
@@ -3910,6 +3929,7 @@ module.exports = {
   markUnitDirty,
   autoRepairableUnits,
   dirtyUnits,
+  propagateDirty,
   createPixelTaleAgent,
   createHandoffPayload,
   confirmArtifact,

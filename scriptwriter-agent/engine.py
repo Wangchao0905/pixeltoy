@@ -80,15 +80,67 @@ class PixelWriterEngine:
         self._save(state)
         return state
 
+    def review_outline(self, state, outline):
+        """DeepSeek 审核分集大纲：只查 3 项（核心创意一致性/结局不变量推进/节奏钩尾）。
+
+        审核异常（超时/解析失败）→ 视为通过并记 warning（大纲仍可用，单集审核兜底），
+        绝不因审核故障阻塞创作。
+        """
+        try:
+            idea = state.idea if isinstance(state.idea, dict) else {}
+            wb = state.artifacts.get("worldbuilding", {}) or {}
+            episodes = outline.get("episodes", []) or []
+            ep_lines = []
+            for ep in episodes[:40]:
+                ep_lines.append(
+                    f"第{ep.get('index')}集 钩:{str(ep.get('hook',''))[:40]} 事件:{'→'.join(str(x)[:12] for x in (ep.get('events') or [])[:4])} 悬念:{str(ep.get('cliffhanger',''))[:30]}")
+            prompt = f"""你是短剧总编。审核分集大纲是否跑偏，只查 3 项：
+① 核心创意一致性：后续集是否偏离主角目标与故事主线（不能中途换线/注水/主角隐身）；
+② 结局不变量推进：全集是否朝设定的结局不变量一步步推进（每集都要有实质推进，不能只是填充）；
+③ 节奏与钩尾衔接：{len(episodes)} 集节奏是否前紧后松/拖沓/虎头蛇尾；每集结尾悬念是否支撑追更欲。
+创意：{str(idea.get('raw',''))[:300]}
+结局不变量：{wb.get('ending_invariants', [])}
+主要人物：{(wb.get('characters') or [])[:6]}
+大纲：{' '.join(ep_lines)[:3500]}
+输出 JSON：{{"pass":bool,"score":0-100,"dimensions":{{"consistency":0-100,"ending":0-100,"pacing":0-100}},"issues":[{{"severity":"high|medium","quote":"第N集","fix":"问题与修改建议"}}]}}
+规则：consistency<60 或 ending<60 必须 pass=false（视为跑偏）；pacing<60 提示但不强制否决；轻微问题最多 medium 建议，不得因风格差异否决。"""
+            content = self.reviewer.chat([{"role": "user", "content": prompt}], temperature=0.2, max_tokens=2500)
+            verdict = self._parse_json_block(content)
+            if not isinstance(verdict, dict):
+                return {"pass": True, "score": 0, "dimensions": {}, "issues": [], "warning": "大纲审核输出无法解析，已视为通过"}
+            return verdict
+        except Exception:
+            return {"pass": True, "score": 0, "dimensions": {}, "issues": [], "warning": "大纲审核调用异常，已视为通过"}
+
     def run_outline(self, state, episode_count):
-        prompt = self._prompt_outline(state, episode_count)
-        # 30+ 集的大纲一次输出会超出固定 4000；按集数放大输出预算（每集约 200 tokens，封顶 12000）。
-        content = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=max(4_000, min(12_000, episode_count * 200)))
-        outline = self._parse_json_block(content)
+        """生成分集大纲 + 质量审核（不过重写，最多 2 次）+ 结构规范化。"""
+        outline = None
+        verdict = None
+        reason = ""
+        for attempt in range(3):
+            prompt = self._prompt_outline(state, episode_count) + reason
+            # 30+ 集的大纲一次输出会超出固定 4000；按集数放大输出预算（每集约 200 tokens，封顶 12000）。
+            content = self.writer.chat([{"role": "user", "content": prompt}], max_tokens=max(4_000, min(12_000, episode_count * 200)))
+            outline = self._parse_json_block(content)
+            if not isinstance(outline, dict):
+                reason = "\n\n【上次大纲输出非法 JSON，请重新生成】严格按 JSON 结构输出。"
+                continue
+            self._normalize_outline(outline, episode_count, state.idea.get("episode_duration_seconds"))
+            verdict = self.review_outline(state, outline)
+            if verdict.get("pass"):
+                break
+            issues = verdict.get("issues", []) or []
+            reason = ("\n\n【上次大纲审核未通过，请重新设计大纲】"
+                      + "；".join(str(i.get("fix", i.get("quote", "")))[:100] for i in issues[:3]))
         if not isinstance(outline, dict):
             raise ValueError("模型输出不是合法 JSON，已重试仍失败")
-        self._normalize_outline(outline, episode_count, state.idea.get("episode_duration_seconds"))
         state.artifacts["outline"] = outline
+        if isinstance(verdict, dict) and not verdict.get("pass"):
+            # 重写仍不过：记录审核问题，大纲仍可用（单集审核兜底），前端提示需人工关注
+            state.artifacts["outline_review"] = {"pass": False, "issues": verdict.get("issues", []) or []}
+        elif isinstance(verdict, dict):
+            state.artifacts["outline_review"] = {"pass": True, "issues": [],
+                                                 "warning": verdict.get("warning")}
         state.stage = "episode"
         state.current_episode = 1
         self._save(state)

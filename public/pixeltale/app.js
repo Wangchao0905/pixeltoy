@@ -883,7 +883,10 @@ function consensusMetrics() {
   const review = latestConsensusReview();
   const content = review?.content || {};
   const interactionCompletion = Math.round((approvedStageCount() / productionStageTotal) * 100);
-  const reviewCompletion = Number(content.reviewCompletion || 0);
+  const rawReviewCompletion = content.reviewCompletion;
+  const reviewCompletion = rawReviewCompletion === null || rawReviewCompletion === undefined || rawReviewCompletion === ""
+    ? null
+    : Number.isFinite(Number(rawReviewCompletion)) ? Number(rawReviewCompletion) : null;
   const rawAgreement = content.agreement;
   const agreement = rawAgreement === null || rawAgreement === undefined || rawAgreement === "" ? null : Number(rawAgreement);
   const rawQuality = content.quality;
@@ -920,9 +923,9 @@ function renderConsensusMeter() {
       : "主笔完成后启动规则校验与双席审读";
   fill.style.setProperty("--consensus-width", `${metrics.quality ?? 0}%`);
   fill.parentElement?.classList.toggle("is-live", metrics.quality !== null);
-  agreement.textContent = metrics.agreement === null ? "—" : `${metrics.agreement}%`;
-  reviewCompletion.textContent = `${metrics.reviewCompletion}%`;
-  interactionCompletion.textContent = metrics.quality === null ? "—" : `${metrics.quality}%`;
+  agreement.textContent = metrics.agreement === null ? "未评分" : `${metrics.agreement}%`;
+  reviewCompletion.textContent = metrics.reviewCompletion === null ? "未执行" : `${metrics.reviewCompletion}%`;
+  interactionCompletion.textContent = metrics.quality === null ? "未评分" : `${metrics.quality}%`;
 }
 
 function stageStatus(stage) {
@@ -2154,6 +2157,47 @@ function renderHandoff() {
   return `<div class="stage-kicker"><span class="eyebrow">${currentMeta().kicker}</span><span class="artifact-meta">${ready ? "READY" : "LOCKED"}</span></div><h2>${currentMeta().title}</h2><p class="stage-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集剧情、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "逐集中文剧情 + English Dialogue" : "等待全剧确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>`;
 }
 
+// 依据与风险：动态显示当前审核的实际分歧（不再只显示静态标准文案）
+function renderRiskNote() {
+  const note = document.querySelector("#riskNote");
+  const count = document.querySelector(".risk-count");
+  if (!note) return;
+  const review = latestConsensusReview();
+  const content = review?.content || {};
+  const feedbacks = (Array.isArray(content.feedbacks) ? content.feedbacks : [])
+    .filter((item) => item.status === "completed" || item.pass !== undefined);
+  const disagreements = Array.isArray(content.disagreements) ? content.disagreements : [];
+  const ruleBlocked = (Array.isArray(content.technicalFailures) ? content.technicalFailures : [])
+    .find((item) => item.status === "rule_blocked");
+  const seatLabel = (item) => {
+    const name = modelMeta[item.actualModel || item.model]?.name || item.actualModel || item.model || "审读席";
+    const pass = item.pass === true;
+    const score = Number.isFinite(Number(item.score)) ? `（${Math.round(Number(item.score))} 分）` : "";
+    const issues = (Array.isArray(item.mandatoryIssues) ? item.mandatoryIssues : [])
+      .map((i) => i.tag || i.criterion_id).filter(Boolean).slice(0, 3).join("、");
+    return `${name} ${pass ? "通过" : "要求修订"}${score}${issues ? `：${issues}` : ""}`;
+  };
+  let html = "";
+  let riskCount = 0;
+  if (ruleBlocked) {
+    html = `<span class="risk-dot"></span><span>规则校验未通过（未达基础标准），本次审核未执行。请调整内容后重跑本阶段，或人工放行。</span>`;
+    riskCount = 1;
+  } else if (feedbacks.length === 0) {
+    html = `<span class="risk-dot"></span><span>钩子必须在集尾留下一个未回答的问题。</span>`;
+  } else if (disagreements.length) {
+    html = `<span class="risk-dot"></span><span>双席审读存在分歧：${feedbacks.map(seatLabel).join("；")}。请在右侧决定。</span>`;
+    riskCount = feedbacks.length;
+  } else {
+    const agreed = feedbacks.every((item) => item.pass === true);
+    const score = Number.isFinite(Number(content.quality)) ? content.quality : content.score;
+    const scoreTxt = Number.isFinite(Number(score)) ? `（质量分 ${Math.round(Number(score))}）` : "";
+    html = `<span class="risk-dot"></span><span>双席审读意见一致：${agreed ? `通过${scoreTxt}，确认后进入下一阶段` : `要求修订${scoreTxt}，按右侧修订清单处理`}。</span>`;
+    riskCount = 1;
+  }
+  note.innerHTML = html;
+  if (count) count.textContent = String(riskCount);
+}
+
 function renderStage() {
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;
   const currentArtifact = artifactForStage(state.stage);
@@ -2161,6 +2205,7 @@ function renderStage() {
   $("#stageContent").innerHTML = `<div class="workflow-guide" aria-label="生产流程"><div><span class="eyebrow">PRODUCTION FLOW</span><strong>当前阶段 ${productionProgressLabel(workflowStage())}</strong></div><div class="workflow-route"><span>当前</span><b>${escapeHtml(stageMeta[workflowStage()]?.title || "交接")}</b><i>→</i><span>完成后</span><b>${escapeHtml(stageMeta[stageOrder[stageIndex(workflowStage()) + 1]]?.title || "完成交接")}</b></div></div>${renderStageCockpit(state.stage, currentReview)}${renderer()}`;
   bindStageActions();
   renderShellState();
+  renderRiskNote();
 }
 
 const RUN_POLL_INTERVAL_MS = 2_000;

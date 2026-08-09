@@ -616,6 +616,15 @@ function stageSystemPrompt(stage, mode, input = {}) {
     "每个场次必须把对应的剧情正文转换为可拍的动作、冲突、人物选择、选择结果和因果转折，不能只写视觉氛围或镜头关键词。",
     ...(sceneDurationPrompt ? [sceneDurationPrompt] : []),
   ] : [];
+  const characterCompleteness = stage === "characters" ? [
+    "一次性定义本剧全生命周期所需的角色体系：主角团、关键配角、反派/对抗方，以及后续集数必然出场的重要角色。",
+    "不要只生成两三个主角：把剧情推进中必然需要的角色（家人、同事、对手、服务角色等）一并定义，避免后续阶段临时引入未定义角色。",
+    "每个角色都必须有 id（C001 起）与 role；次要角色可精简设定，但必须有 ID 和一句话定位。",
+  ] : [];
+  const characterUsage = ["scenes", "dialogue"].includes(stage) ? [
+    "场景/对白只引用 characters 阶段已确认的人物 ID；优先复用已定义角色。",
+    "确需新角色时，直接使用新的 C 编号让其自然出场/说话即可——引擎会自动把该角色补录进人物名单（标注剧集引入）。",
+  ] : [];
   const unitRules = UNIT_STAGES.has(stage) ? [
     "当前请求可能只是一个分批单元；严格只输出 userInput.unitScope 指定的集数，不得补写其他集，不得返回整季内容。",
     "已锁定集只以压缩后的 startState、endState、openThreads 和 contentHash 作为连续性参考，不得重写、复述或复制已锁定集全文。",
@@ -636,6 +645,8 @@ function stageSystemPrompt(stage, mode, input = {}) {
     ...arcRules,
     ...sceneRules,
     ...unitRules,
+    ...characterCompleteness,
+    ...characterUsage,
     `输出契约：${stageOutputContract(stage, mode)}`,
   ].join("\n");
 }
@@ -3100,6 +3111,48 @@ function confirmArtifact(state, artifact, now, { auto = false } = {}) {
   }
 }
 
+// 2026-08-10 根治：场景/对白引入的新角色自动补录进人物名单。
+// 此前 characters 阶段只生成主角团，后续阶段模型按剧情需要"自造"角色，
+// 规则只能拦截/提示（人物"不存在"）。现在生成后、规则校验前自动补录：
+// 引用到的未注册 ID 追加进最新 characters 产物（source=episode_auto_registered），
+// 人物从此"存在"，规则不再报未知引用，审核正常核验。
+function autoRegisterEpisodeCharacters(state, stage, artifactContent, now = () => new Date()) {
+  // 纯原生实现（模块级函数不依赖 createPixelTaleAgent 闭包内的 helper）。
+  if (!["scenes", "dialogue"].includes(stage)) return 0;
+  const artifacts = Array.isArray(state.artifacts) ? state.artifacts : [];
+  const charArtifact = artifacts
+    .filter((a) => a && a.stage === "characters" && a.type === "pixeltale_characters")
+    .sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
+  if (!charArtifact) return 0;
+  const chars = Array.isArray(charArtifact.content && charArtifact.content.characters) ? charArtifact.content.characters : [];
+  const existing = new Set(chars.map((c) => String((c && c.id) || "").trim()).filter(Boolean));
+  const referenced = new Set();
+  if (stage === "scenes") {
+    const scenes = Array.isArray(artifactContent && artifactContent.scenes) ? artifactContent.scenes : [];
+    scenes.forEach((scene) => {
+      const ids = Array.isArray(scene && scene.characters) ? scene.characters : [];
+      ids.forEach((id) => { const v = String(id || "").trim(); if (v) referenced.add(v); });
+    });
+  } else if (stage === "dialogue") {
+    const lines = Array.isArray(artifactContent && artifactContent.lines) ? artifactContent.lines : [];
+    lines.forEach((line) => { const v = String(line && line.speaker || "").trim(); if (v) referenced.add(v); });
+  }
+  const missing = [...referenced].filter((id) => !existing.has(id));
+  if (!missing.length) return 0;
+  const additions = missing.map((id) => ({
+    id,
+    name_en: `Episode character ${id}`,
+    name_zh: `剧集引入角色 ${id}`,
+    role: "supporting",
+    source: "episode_auto_registered",
+    introduced_in_stage: stage,
+    note_zh: "由后续剧集阶段自动补录；如需正式设定（欲望/恐惧/声线），请在人物与世界阶段补充。",
+  }));
+  charArtifact.content = { ...(charArtifact.content || {}), characters: [...chars, ...additions] };
+  charArtifact.updatedAt = new Date(now()).toISOString();
+  return additions.length;
+}
+
 function createPixelTaleAgent(options = {}) {
   const modelRouter = options.modelRouter;
   const now = options.now || (() => new Date());
@@ -3306,6 +3359,7 @@ function createPixelTaleAgent(options = {}) {
         if (primary.reused) primaryArtifact.recovery = { sourceArtifactId: previousArtifact.id, owner: "审核恢复", authorModelSkipped: true };
         if (revisionContract) primaryArtifact.revision = { sourceArtifactId: sourceArtifact?.id || "", contractId: revisionContract.id, itemCount: revisionContract.items.length, unitNumbers: batchUnits, owner: "本阶段主创" };
         const reviewTarget = { ...primaryArtifact, content: unitStageContent(stage, batchContent, batchUnits) };
+        autoRegisterEpisodeCharacters(state, stage, reviewTarget.content, now);
         reportPhase(params, "validating");
         const ruleContext = {
           ...batchInput,
@@ -3637,6 +3691,7 @@ function createPixelTaleAgent(options = {}) {
         };
       }
       reportPhase(params, "validating");
+      autoRegisterEpisodeCharacters(state, stage, primaryArtifact.content, now);
       const ruleResult = runStageRules({ stage, mode, artifact: primaryArtifact.content, approvedContext: { ...runInput, input: runInput, artifacts: previousArtifacts }, lockedPaths: [] });
       const highRuleViolations = ruleResult.violations.filter((item) => item.severity === "high");
       reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route).slice(0, reviewPolicy.requiredSeats);
@@ -3988,6 +4043,7 @@ module.exports = {
   isUnitProtected,
   markUnitPinned,
   markUnitDirty,
+  autoRegisterEpisodeCharacters,
   autoRepairableUnits,
   dirtyUnits,
   propagateDirty,

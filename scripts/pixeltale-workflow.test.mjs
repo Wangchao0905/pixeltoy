@@ -29,7 +29,7 @@ const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
-const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, autoRegisterEpisodeCharacters } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const durationInput = { durationValue: 90, durationUnit: "sec", openingImpactSeconds: 3, episodeCount: 30 };
 const sceneSystemPrompt = stageSystemPrompt("scenes", "tk_short_drama", durationInput);
@@ -1219,6 +1219,7 @@ const sceneParams = {
   input: sceneRevisionState.input,
 };
 const initialSceneRun = await runAgent.run(sceneParams);
+
 assert.equal(initialSceneRun.status, "completed", "scene review failures must recover inside the same user-triggered run");
 assert.equal(initialSceneRun.artifacts[0].version, 2, "automatic scene recovery must create a repaired version in the same run");
 
@@ -1671,3 +1672,36 @@ assert.match(agent, /reportPhase\(params, "refereeing"\)/, "both run paths must 
 assert.match(agent, /function stageContextPacket\(/, "stage prompts must build a compact approved-context packet");
 
 console.log("pixeltale workflow contract ok");
+
+// ---- 2026-08-10 根治验证：新角色自动补录进人物名单 ----
+{
+  const charactersArtifact = { id: "char1", stage: "characters", type: "pixeltale_characters", version: 1, content: { characters: [{ id: "C001" }, { id: "C002" }, { id: "C003" }] } };
+  const state = { artifacts: [charactersArtifact] };
+  const scenesContent = { scenes: [{ id: "S001", unit_number: 1, characters: ["C001", "C004", "C005"] }] };
+  const added = autoRegisterEpisodeCharacters(state, "scenes", scenesContent);
+  assert.equal(added, 2, "scenes 引入的 2 个新角色应自动补录");
+  const ids = state.artifacts[0].content.characters.map((c) => c.id);
+  assert.ok(ids.includes("C004") && ids.includes("C005"), "C004/C005 必须被补录进人物名单");
+  const registered = state.artifacts[0].content.characters.find((c) => c.id === "C004");
+  assert.equal(registered.source, "episode_auto_registered", "补录角色必须标注来源");
+  assert.equal(autoRegisterEpisodeCharacters(state, "scenes", scenesContent), 0, "重复运行不得重复补录");
+
+  // dialogue 的 speaker 同样自动补录
+  const dialogueContent = { lines: [{ id: "D1", scene_id: "S001", speaker: "C006" }] };
+  assert.equal(autoRegisterEpisodeCharacters(state, "dialogue", dialogueContent), 1, "dialogue 新发言者也自动补录");
+  assert.ok(state.artifacts[0].content.characters.some((c) => c.id === "C006"), "C006 必须补录");
+
+  // 没有 characters 产物时不抛错
+  const emptyState = { artifacts: [] };
+  assert.equal(autoRegisterEpisodeCharacters(emptyState, "scenes", scenesContent), 0, "无人物产物时安全跳过");
+}
+
+// ---- 2026-08-10 预防验证：prompt 要求完整角色体系 + 角色使用约束 ----
+{
+  const charsPrompt = stageSystemPrompt("characters", "tk_short_drama", {});
+  assert.match(charsPrompt, /一次性定义本剧全生命周期所需的角色体系/, "characters 阶段必须要求完整角色体系");
+  const scenesPrompt = stageSystemPrompt("scenes", "tk_short_drama", {});
+  assert.match(scenesPrompt, /只引用 characters 阶段已确认的人物 ID/, "scenes 必须约束角色引用");
+  const dialoguePrompt = stageSystemPrompt("dialogue", "tk_short_drama", {});
+  assert.match(dialoguePrompt, /引擎会自动把该角色补录进人物名单/, "dialogue 必须说明新角色自动补录");
+}

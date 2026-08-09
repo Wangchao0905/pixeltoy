@@ -3407,11 +3407,27 @@ function createPixelTaleAgent(options = {}) {
     if (!finalReview.pass && !revisionPlan && autoRepairPass < UNIT_AUTO_REPAIR_MAX_PASSES && targetUnits.length) {
       autoRepairEligible = true;
       repairPlan = automaticUnitRepairPlan(stage, finalReview, targetUnits);
+      // 2026-08-10 P1-2：停止原因细分（文档 §7.3）。
+      // stalled = 同一问题签名重叠 ≥80%（连续两轮未收敛）；
+      // new_high_risk = 修订引入了不在上一轮合同中的高风险问题（越修越坏防扩散）；
+      // budget_exhausted = 累计 token 超预算。
+      const stalled = stalledRevision(revisionBudget.previousReview, finalReview);
+      const prevHighSigs = new Set(asArray(revisionBudget.previousReview?.mandatoryIssues)
+        .map((i) => `${text(i.criterionId || i.tag, 180)}:${text(i.fieldPath, 300)}`));
+      const newHighRisk = Boolean(revisionBudget.previousReview
+        && asArray(finalReview.mandatoryIssues).some((i) => i.severity === "high"
+          && !prevHighSigs.has(`${text(i.criterionId || i.tag, 180)}:${text(i.fieldPath, 300)}`)));
       const technicalStatus = revisionBudget.used > AUTO_REPAIR_TOKEN_BUDGET
         ? "budget_exhausted"
-        : stalledRevision(revisionBudget.previousReview, finalReview) ? "stalled" : "";
+        : stalled ? "stalled"
+          : newHighRisk ? "new_high_risk" : "";
       if (technicalStatus) {
-        finalReview.technicalFailures = [{ status: technicalStatus, message: technicalStatus === "stalled" ? "自动修订未收敛，已转人工交接" : "自动修订累计 token 超出阶段预算，已转人工交接" }];
+        const message = technicalStatus === "stalled"
+          ? "自动修订未收敛：同一问题连续出现（签名重叠≥80%），已停止自动改稿，请查看证据后决定下一步"
+          : technicalStatus === "new_high_risk"
+            ? "修订引入了新的高风险问题（不在上一轮合同内），已停止自动改稿以防越修越坏，请人工决定"
+            : "自动修订累计 token 超出阶段预算，已转人工交接";
+        finalReview.technicalFailures = [{ status: technicalStatus, message }];
         repairPlan = "";
         autoRepairEligible = false;
       }

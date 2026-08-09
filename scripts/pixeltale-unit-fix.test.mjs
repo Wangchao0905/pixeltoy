@@ -89,4 +89,18 @@ import { assertAnchorInUnit, findDiffPaths, respectsScope, fixUnitIssue } from "
   await assert.rejects(() => fixUnitIssue({ state, stage: "scenes", unit: 6, issue: { unit: 6, field_path: "scenes[0].beats[0].line" }, writer: {}, reviewer: {} }), /pinned/, "pinned 集禁止自动修复");
 }
 
+// ---- P1-3：手动修复不计入自动修订预算 ----
+{
+  const unitContent = { scenes: [{ location: "L", beats: [{ speaker: "A", line: "旧", action: "a" }] }] };
+  const state = {
+    artifacts: { scenes: { units: { 6: JSON.parse(JSON.stringify(unitContent)) } } },
+    unitLocks: { scenes: { 6: { status: "open", version: 1 } } },
+  };
+  const writer = { async chat() { return JSON.stringify({ scenes: [{ location: "L", beats: [{ speaker: "A", line: "新", action: "a" }] }] }); } };
+  const reviewer = { async chat() { return JSON.stringify({ pass: true, score: 90, issues: [] }); } };
+  const result = await fixUnitIssue({ state, stage: "scenes", unit: 6, issue: { unit: 6, field_path: "scenes[0].beats[0].line" }, writer, reviewer });
+  assert.equal(result.status, "approved");
+  assert.equal(state.revisionBudget, undefined, "手动单集修复不得触碰自动修订预算（revisionBudget 不被写入/累加）");
+}
+
 console.log("pixeltale unit-fix tests passed");

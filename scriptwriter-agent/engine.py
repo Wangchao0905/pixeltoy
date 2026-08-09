@@ -176,62 +176,69 @@ class PixelWriterEngine:
         }
 
     def review_episode(self, state, episode):
-        """双审核共识：DeepSeek（席 A）+ Gemini（席 B）并行独立审核后合并。
+        """单审核 + 争议仲裁：DeepSeek 正常审核；仅当未通过时 Gemini 复核一次。
 
-        双过 → 通过（取平均分）；一过一不过 → 按未通过方（保守）+ 合并双方问题；
-        双不过 → 合并去重问题清单（一次修订解决两边），分数/维度取低。
-        第二席未配置（reviewer_b=None）时退化为单审核，向后兼容。
-        单个席位调用异常（网关 401/超时）→ 该席结果视为失败，降级用另一席，
-        绝不让审核席位故障导致整集生成失败。
+        仲裁规则（极简）：
+        - DeepSeek 通过 → 直接用（不调 Gemini，省一半调用）。
+        - DeepSeek 未通过 → Gemini 独立复核：
+          · Gemini 也认为未通过 → 合并两份问题清单，一次修订解决两边。
+          · Gemini 认为通过（分歧=可能误判）→ 放行，除非存在代码级硬门槛
+            （时长超标 issue 的 mode==0，或 Gemini 自身维度未过代码级门槛）。
+        - 任一席调用异常（网关 401/超时）→ 降级用另一席结果，绝不导致整集失败。
         """
-        clients = [self.reviewer]
-        if self.reviewer_b:
-            clients.append(self.reviewer_b)
-        if len(clients) == 1:
-            try:
-                return self._review_once(clients[0], state, episode)
-            except Exception:
-                return None
-        from concurrent.futures import ThreadPoolExecutor
-
-        def safe(c):
-            try:
-                return self._review_once(c, state, episode)
-            except Exception:
-                return None
-
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            results = list(ex.map(safe, clients))
-        results = [r for r in results if isinstance(r, dict)]
-        if not results:
+        try:
+            verdict_a = self._review_once(self.reviewer, state, episode)
+        except Exception:
+            verdict_a = None
+        if verdict_a is None:
+            if self.reviewer_b:
+                try:
+                    return self._review_once(self.reviewer_b, state, episode)
+                except Exception:
+                    return None
             return None
-        if len(results) == 1:
-            return results[0]
-        a, b = results[0], results[1]
-        if a.get("pass") and b.get("pass"):
-            a["score"] = round(((a.get("score", 0) or 0) + (b.get("score", 0) or 0)) / 2)
-            return a
-        if a.get("pass") != b.get("pass"):
-            loser, winner = (b, a) if a.get("pass") else (a, b)
-            merged = list(loser.get("issues", []))
-            for i in winner.get("issues", []):
-                if i not in merged:
-                    merged.append(i)
-            loser["issues"] = merged[:12]
-            loser["score"] = min(a.get("score", 0) or 0, b.get("score", 0) or 0)
-            loser["pass"] = False
-            return loser
-        merged = list(a.get("issues", []))
-        for i in b.get("issues", []):
-            if i not in merged:
-                merged.append(i)
-        a["issues"] = merged[:12]
-        a["score"] = min(a.get("score", 0) or 0, b.get("score", 0) or 0)
-        a["pass"] = False
-        da, db = a.get("dimensions") or {}, b.get("dimensions") or {}
-        a["dimensions"] = {k: min(float(da.get(k, 0) or 0), float(db.get(k, 0) or 0))
-                           for k in ("human_tone", "hook", "plot", "dialogue", "continuity")}
-        return a
+        if verdict_a.get("pass"):
+            return verdict_a  # 通过：不调用仲裁席
+        if not self.reviewer_b:
+            return verdict_a  # 无仲裁席：维持 DeepSeek 判定
+        try:
+            verdict_b = self._review_once(self.reviewer_b, state, episode)
+        except Exception:
+            verdict_b = None
+        if verdict_b is None:
+            return verdict_a  # 仲裁失败：维持 DeepSeek 判定
+        if verdict_b.get("pass"):
+            # 分歧：Gemini 认为没问题 → 放行，除非有不可仲裁的硬门槛
+            a_hard = [i for i in verdict_a.get("issues", []) if i.get("mode") == 0]
+            dims_ok = self._dims_pass(verdict_b)
+            target = state.idea.get("episode_duration_seconds") if isinstance(state.idea, dict) else None
+            dur_ok, _ = self._duration_check(episode, target)
+            if not a_hard and dims_ok and dur_ok:
+                return verdict_b  # 采纳仲裁（Gemini 判定通过）
+        # 一致未通过：合并去重问题清单（一次修订解决两边）
+        merged_issues = list(verdict_a.get("issues", []))
+        for i in verdict_b.get("issues", []):
+            if i not in merged_issues:
+                merged_issues.append(i)
+        verdict_a["issues"] = merged_issues[:12]
+        verdict_a["pass"] = False
+        verdict_a["score"] = min(verdict_a.get("score", 0) or 0, verdict_b.get("score", 0) or 0)
+        return verdict_a
+
+    @staticmethod
+    def _dims_pass(verdict):
+        """代码级维度门槛（与 _review_once 一致）：hook<60、human_tone<70 判定不通过。"""
+        dims = verdict.get("dimensions")
+        if not isinstance(dims, dict):
+            return True  # 无维度数据不追加否决（仲裁侧宽松）
+        for dim, strict in (("human_tone", True), ("hook", True)):
+            try:
+                low = float(dims.get(dim)) < (60 if dim == "hook" else 70)
+            except (TypeError, ValueError):
+                low = strict
+            if low:
+                return False
+        return True
 
     def _duration_check(self, episode, duration_seconds):
         """零模型时长估算：对白≈4字/秒、动作节拍≈3秒、场景切换≈2秒。
@@ -339,10 +346,9 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
     def revise_episode(self, state, episode, issues, round_no=0):
         """按审核问题清单定向修订本集，只改问题涉及处，保持其余不变。
 
-        round_no>=1 且配置了 reviewer_b 时改用第二模型修订（修订轮换），
-        打破"主笔自己改自己"的惯性循环。
+        round_no 保留兼容（统一由主笔 GPT 修订，不做模型轮换——简化流程）。
         """
-        client = self.reviewer_b if (round_no >= 1 and self.reviewer_b) else self.writer
+        client = self.writer
         dialogue_lang = state.idea.get("dialogue_language") or "zh"
         lang_note = "对白保持英文，并按英语母语者的语境与表达方式修订（不得改为中文，不得翻译腔）。" if dialogue_lang == "en" else "对白保持中文口语化风格。"
         prompt = f"""按问题清单定向修订本集，只改问题涉及处，保持其余不变。输出与原结构相同的 JSON 剧本。

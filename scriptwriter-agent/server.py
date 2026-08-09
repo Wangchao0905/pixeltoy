@@ -365,7 +365,7 @@ def main():
     def engine_factory():
         from llm import load_env, make_gpt_client, make_deepseek_client, make_gemini_client
         env = load_env(ENV_PATH)
-        # 三模型：GPT 主笔/首轮修订 + DeepSeek 审核席 A + Gemini 审核席 B（并行共识 + 第二轮修订轮换）
+        # 三模型：GPT 主笔/修订 + DeepSeek 审核 + Gemini 争议仲裁（仅审核未过时复核一次）
         return PixelWriterEngine(make_gpt_client(env), make_deepseek_client(env),
                                  state_dir=PROJECTS_DIR,
                                  reviewer_b=make_gemini_client(env) if env.get("GEMINI_API_KEY") else None)

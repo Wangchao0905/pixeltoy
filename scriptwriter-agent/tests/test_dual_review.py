@@ -37,7 +37,7 @@ def make_state():
     return s
 
 
-class TestDualReviewConsensus(unittest.TestCase):
+class TestDualReviewArbitration(unittest.TestCase):
     def _engine(self, a_resp, b_resp):
         writer = SeqLLM(['{"scenes":[]}'])
         reviewer_a = SeqLLM(list(a_resp))
@@ -45,17 +45,25 @@ class TestDualReviewConsensus(unittest.TestCase):
         eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
         return eng, reviewer_a, reviewer_b
 
-    def test_both_pass_average_score(self):
-        eng, a, b = self._engine([PASS_A], [PASS_B])
+    def test_a_pass_skips_arbiter(self):
+        """DeepSeek 通过 → 直接返回，不调用 Gemini（省一半调用）。"""
+        eng, a, b = self._engine([PASS_A], [])
         verdict = eng.review_episode(make_state(), {"scenes": []})
         self.assertTrue(verdict["pass"])
-        self.assertEqual(verdict["score"], 85)  # (80+90)/2
+        self.assertEqual(verdict["score"], 80)
+        self.assertEqual(len(b.calls), 0, "通过时不得调用仲裁席")
 
-    def test_disagreement_conservative(self):
-        eng, a, b = self._engine([PASS_A], [FAIL_B])
+    def test_disagreement_arbiter_releases(self):
+        """DeepSeek 未过 + Gemini 通过（无硬门槛）→ 仲裁放行。"""
+        eng, a, b = self._engine([FAIL_A], [PASS_B])
         verdict = eng.review_episode(make_state(), {"scenes": []})
-        self.assertFalse(verdict["pass"])
-        self.assertEqual(len(verdict["issues"]), 2, "应合并双方问题（通过方无问题）")
+        self.assertTrue(verdict["pass"], "仲裁应放行 Gemini 判定通过的误判")
+
+    def test_disagreement_hard_gate_blocks_release(self):
+        """DeepSeek 未过含 mode-0 硬门槛（时长）+ Gemini 通过 → 不放行（硬门槛不可仲裁）。"""
+        eng, a, b = self._engine([FAIL_A_HARD], [PASS_B])
+        verdict = eng.review_episode(make_state(), {"scenes": []})
+        self.assertFalse(verdict["pass"], "时长硬门槛不得被仲裁放行")
 
     def test_both_fail_merge_dedup(self):
         eng, a, b = self._engine([FAIL_A], [FAIL_B])
@@ -74,31 +82,18 @@ class TestDualReviewConsensus(unittest.TestCase):
         self.assertEqual(verdict["score"], 80)
 
 
-class TestRevisionRotation(unittest.TestCase):
-    def test_round_two_uses_reviewer_b(self):
-        """round_no=1 时应改用 reviewer_b（Gemini）修订，而非主笔 GPT。"""
-        writer = SeqLLM(['{"scenes":[{"location":"天台","beats":[{"speaker":"林晚","line":"你好"}]}]}'])
-        reviewer_a = SeqLLM([PASS_A])  # 首轮审核通过，无修订
-        reviewer_b = SeqLLM(['{"scenes":[{"location":"天台","beats":[{"speaker":"林晚","line":"你好"}]}]}'])
-        eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
-        state = make_state()
-        ep = state.artifacts["episodes"]["1"]
-        revised = eng.revise_episode(state, ep, [{"severity": "high", "quote": "你好", "fix": "改"}], round_no=1)
-        self.assertIsNotNone(revised)
-        self.assertEqual(len(reviewer_b.calls), 1, "第二轮修订必须由 reviewer_b 执行")
-        self.assertEqual(len(writer.calls), 0, "第二轮修订不得再使用主笔 GPT")
-        self.assertIn("定向修订", reviewer_b.calls[0][0]["content"])
-
-    def test_round_zero_uses_writer(self):
+class TestRevisionAlwaysWriter(unittest.TestCase):
+    def test_revision_always_uses_writer(self):
+        """修订统一由主笔 GPT 执行（round_no 兼容但不再轮换到 reviewer_b）。"""
         writer = SeqLLM(['{"scenes":[{"location":"天台","beats":[{"speaker":"林晚","line":"你好"}]}]}'])
         reviewer_a = SeqLLM([PASS_A])
         reviewer_b = SeqLLM([])
         eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects", reviewer_b=reviewer_b)
         state = make_state()
         ep = state.artifacts["episodes"]["1"]
-        eng.revise_episode(state, ep, [{"severity": "high", "quote": "你好", "fix": "改"}], round_no=0)
-        self.assertEqual(len(writer.calls), 1, "首轮修订必须由主笔 GPT 执行")
-        self.assertEqual(len(reviewer_b.calls), 0)
+        eng.revise_episode(state, ep, [{"severity": "high", "quote": "你好", "fix": "改"}], round_no=1)
+        self.assertEqual(len(writer.calls), 1, "修订必须由主笔 GPT 执行")
+        self.assertEqual(len(reviewer_b.calls), 0, "不得调用 reviewer_b 修订")
 
 
 if __name__ == "__main__":
@@ -140,6 +135,9 @@ class TestReviewFaultTolerance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+FAIL_A_HARD = ('{"pass":false,"score":40,"dimensions":{"human_tone":80,"hook":85,"plot":60,"dialogue":70,"continuity":80},'
+               '"issues":[{"severity":"high","mode":0,"quote":"","fix":"估算时长约 200 秒，超出目标 90 秒的 60%-140% 区间"}]}')
 
 PASS_LONG_DIALOGUE = ('{"pass":true,"score":85,"dimensions":{"human_tone":85,"hook":85,"plot":80,"dialogue":82,"continuity":88},'
                       '"issues":[]}')

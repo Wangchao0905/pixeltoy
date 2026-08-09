@@ -693,7 +693,11 @@ function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input, rev
   return JSON.stringify({
     reviewProtocol: {
       type: "adversarial_cross_validation",
-      instructions: [
+      instructions: revisionItems.length ? [
+        "本轮只核验修订合同与已知规则违规；合同外新发现只能作为建议记录，不能标记为 required_changes 或 high severity。",
+        "逐条核对修订合同是否满足验收条件，不得重建或扩大本轮验收范围。",
+        "除 knownRuleFindings 外，不得把合同外意见写入 required_changes。",
+      ] : [
         "独立重建验收标准",
         "逐字段核对当前产物与用户规格",
         "逐项核对已确认上下文的一致性",
@@ -1551,11 +1555,9 @@ function revisionIssueId(stage, item = {}) {
   return `${stage}-R-${issueKey(seed)}`.slice(0, 180);
 }
 
-// 「必修」的唯一判定。曾经 aggregateCrossReview 与 buildRevisionContract 各写一套，
-// 导致单席维度主人问题能拦停阶段却进不了修订合同，用户被堵死。两处必须同源。
+// 「必修」的唯一判定：只有至少两席共同确认的高风险问题才会阻断阶段。
 function isMandatoryReviewIssue(issue) {
-  return issue?.severity === "high"
-    && (Number(issue.modelCount) >= REVIEW_QUORUM || issue.ownerHighConfidence === true);
+  return issue?.severity === "high" && Number(issue.modelCount) >= REVIEW_QUORUM;
 }
 
 function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
@@ -1578,11 +1580,12 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
   // so both agree on what "must fix" means. Older review artifacts predate that
   // field and carry only reviewIssues/commonIssues, so fall back through both using
   // the shared predicate rather than a second, divergent filter.
-  const freshMandatory = asArray(review.mandatoryIssues).length
+  const candidateMandatory = asArray(review.mandatoryIssues).length
     ? asArray(review.mandatoryIssues)
-    : [...asArray(review.reviewIssues), ...asArray(review.commonIssues)]
-      .filter(isMandatoryReviewIssue)
-      .filter((item, index, all) => all.findIndex((candidate) => revisionIssueId(stage, candidate) === revisionIssueId(stage, item)) === index);
+    : [...asArray(review.reviewIssues), ...asArray(review.commonIssues)];
+  const freshMandatory = candidateMandatory
+    .filter(isMandatoryReviewIssue)
+    .filter((item, index, all) => all.findIndex((candidate) => revisionIssueId(stage, candidate) === revisionIssueId(stage, item)) === index);
   const freshIssues = [...freshMandatory, ...acceptedAdvisories];
   const previousItems = asArray(review.revision?.contract?.items);
   const previousClosures = new Map(asArray(review.revision?.closure?.items).map((item) => [item.id, item]));
@@ -1591,12 +1594,10 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
     if (!previousByKey.has(key)) previousByKey.set(key, item);
   }));
   const findPrevious = (issue) => revisionIssueKeys(stage, issue).map((key) => previousByKey.get(key)).find(Boolean);
-  const currentKeys = new Set();
   const issues = [];
   freshIssues.forEach((issue) => {
     const previous = findPrevious(issue);
     const closure = previous ? previousClosures.get(previous.id) : null;
-    revisionIssueKeys(stage, issue).forEach((key) => currentKeys.add(key));
     issues.push({
       id: previous?.id || revisionIssueId(stage, issue),
       criterionId: issue.criterionId || issue.criterion_id || previous?.criterionId,
@@ -1607,15 +1608,6 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
       models: [...new Set([...(asArray(previous?.models)), ...(asArray(issue.models))].filter(Boolean))],
       requiredEdit: uniqueText([...(asArray(previous?.requiredEdit)), ...(asArray(issue.suggestions)), ...(asArray(closure?.remainingFix))], 4),
       evidence: uniqueText([...(asArray(previous?.evidence)), ...(asArray(issue.evidence)), ...(asArray(closure?.remainingFix))], 4),
-    });
-  });
-  previousItems.forEach((item) => {
-    const closure = previousClosures.get(item.id);
-    if (closure?.status === "resolved" || revisionIssueKeys(stage, item).some((key) => currentKeys.has(key))) return;
-    issues.push({
-      ...item,
-      requiredEdit: uniqueText([...(asArray(item.requiredEdit)), ...(asArray(closure?.remainingFix))], 4),
-      evidence: uniqueText([...(asArray(item.evidence)), ...(asArray(closure?.remainingFix))], 4),
     });
   });
   return {
@@ -1780,7 +1772,11 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     .filter((issue, index, all) => all.findIndex((candidate) => candidate.id === issue.id) === index);
   const reviewIssues = [...structuredIssues, ...supplementalIssues];
   const commonIssues = reviewIssues.filter((issue) => issue.modelCount >= 2);
-  const mandatoryIssues = reviewIssues.filter(isMandatoryReviewIssue);
+  const contractKeys = new Set(asArray(revisionContract?.items).flatMap((item) => revisionIssueKeys(revisionContract.stage, item)));
+  const isInRevisionContract = (issue) => !revisionContract || revisionIssueKeys(revisionContract.stage, issue).some((key) => contractKeys.has(key));
+  const scopedIssues = reviewIssues.filter(isInRevisionContract);
+  const outOfContractIssues = revisionContract ? reviewIssues.filter((issue) => !isInRevisionContract(issue)) : [];
+  const mandatoryIssues = scopedIssues.filter(isMandatoryReviewIssue);
   const recommendedIssues = commonIssues.filter((issue) => issue.severity !== "high");
   const independentIssues = reviewIssues.filter((issue) => issue.modelCount === 1);
   const conflicts = REVIEW_DIMENSIONS
@@ -1808,6 +1804,19 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     },
   }));
   const revisionClosure = aggregateRevisionClosure(completed, revisionContract);
+  const unresolvedContractItems = revisionClosure.items.filter((item) => item.status !== "resolved");
+  const decisionRequiredIssues = [
+    ...unresolvedContractItems.map((item) => ({
+      ...item,
+      tag: item.tag || "未收敛修订项",
+      severity: item.severity || "high",
+      suggestions: item.remainingFix?.length ? item.remainingFix : [item.acceptance || "需要创作者决定下一步"],
+      evidence: item.evidence || [],
+      decisionType: "revision_unresolved",
+    })),
+    ...outOfContractIssues.filter(isMandatoryReviewIssue).map((item) => ({ ...item, decisionType: "out_of_contract" })),
+  ];
+  const automaticRevisionBlocked = Boolean(revisionContract && decisionRequiredIssues.length);
   const distinctActualModels = new Set(completed.map((item) => item.actualModel || item.model).filter(Boolean)).size;
   const quorumMet = completed.length >= REVIEW_COMPLETION_REQUIRED && distinctActualModels >= REVIEW_COMPLETION_REQUIRED;
   const degraded = completed.length >= REVIEW_COMPLETION_REQUIRED && distinctActualModels < REVIEW_COMPLETION_REQUIRED;
@@ -1878,6 +1887,9 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     commonIssueCount: commonIssues.length,
     mandatoryIssues,
     mandatoryIssueCount: mandatoryIssues.length,
+    outOfContractIssues,
+    decisionRequiredIssues,
+    automaticRevisionBlocked,
     recommendedIssues,
     recommendedIssueCount: recommendedIssues.length,
     independentIssues,

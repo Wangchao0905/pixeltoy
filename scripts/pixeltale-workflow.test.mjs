@@ -163,10 +163,10 @@ assert.match(app, /class=\"dna-tag-layer\" role=\"list\">\$\{tags\}/, "Story DNA
 assert.doesNotMatch(app, /data-dna-canvas|class=\"dna-core\"|dna-thinking-state/, "Story DNA must not render the retired central visual treatment");
 assert.doesNotMatch(app, /startDnaMotion|createDnaParticles|stopDnaMotion/, "Story DNA must not retain inactive canvas motion code");
 assert.match(app, /title: `\$\{flowMeta\.title\}技术未完成`[\s\S]*请重新提交当前阶段/, "technical review blockers must explain that review is incomplete");
-assert.match(app, /review-zone-mandatory[\s\S]*review-zone-optional[\s\S]*review-zone-adjudication[\s\S]*review-zone-technical/, "review UI must expose the four fixed review zones");
+assert.match(app, /review-zone-mandatory[\s\S]*review-zone-decision[\s\S]*review-zone-optional[\s\S]*review-zone-adjudication/, "review UI must separate mandatory work, creator decisions, optional improvements, and system records");
 assert.match(app, /kind: "auto-revise"[\s\S]*一键修订并复审/, "review flow must expose one canonical revision action");
-assert.match(app, /review-zone-mandatory[\s\S]*必须修订/, "mandatory revisions must be presented in the mandatory zone");
-assert.match(app, /return mergeReviewItems\(\[\.\.\.pendingClosures, \.\.\.mandatoryIssues, \.\.\.acceptedAdvisories\]\)/, "revision UI must merge unresolved contracts with newly discovered mandatory issues");
+assert.match(app, /review-zone-mandatory[\s\S]*必须处理/, "mandatory revisions must be presented in the mandatory zone");
+assert.match(app, /!reviewContent\.automaticRevisionBlocked[\s\S]*pendingClosures/, "unresolved contracts must leave the automatic revision list after convergence stops");
 assert.match(app, /review-reference-panel/, "optional review material must be collapsible");
 assert.doesNotMatch(app, /review-auto-fix/, "review panel must not expose a duplicate revision button");
 assert.match(html, /id="agentTaskAction"/, "the right rail must contain the canonical next-step action slot");
@@ -210,7 +210,7 @@ assert.match(app, /review-zone-optional[\s\S]*可选优化/, "low-risk recommend
 assert.match(app, /未返回 · 技术未完成[\s\S]*scoreLabel = entry\.status === "failed" \? "—"/, "failed seats must show technical incompletion and a dash score");
 assert.match(app, /一键修订并复审/, "review output must offer one canonical revision action");
 assert.match(app, /revisionPlan/, "automatic revision must pass a scoped revision plan");
-assert.match(app, /const maxPasses = 2/, "automatic revision must cap the number of passes");
+assert.match(app, /const maxPasses = 1/, "automatic revision must stop after one scoped pass");
 assert.match(app, /currentIssues = remainingIssues/, "automatic revision must rebuild the plan from the latest review");
 assert.match(app, /return \{ detached: true \}/, "automatic revision must stop when the run continues in the background");
 assert.match(app, /outcome\?\.detached \|\| state\.lastError/, "automatic revision must not submit a second pass for a detached run");
@@ -364,8 +364,7 @@ const inheritedContract = buildRevisionContract({
     },
   },
 }, { stage: "brief", sourceArtifactId: "artifact_v2", id: "revision_test_2" });
-assert.equal(inheritedContract.items.length, 1, "an unresolved prior revision item must be carried into the next revision contract");
-assert.deepEqual(inheritedContract.items[0].requiredEdit, ["补足首个冲击", "补足首个冲击并明确代价"], "inherited contract must retain both the original edit and the latest remaining fix");
+assert.equal(inheritedContract.items.length, 0, "an unresolved prior revision item must not be inherited without fresh two-seat confirmation");
 const stableContract = buildRevisionContract({
   mandatoryIssues: [{ criterionId: "BRIEF_OPENING_PROMISE", tag: "开场冲击", dimension: "structure", severity: "high", modelCount: 2, suggestions: ["补足开场冲击"] }],
   commonIssues: [{ criterionId: "BRIEF_OPENING_PROMISE", tag: "开场冲击", dimension: "structure", severity: "high", modelCount: 2, suggestions: ["补足开场冲击"] }],
@@ -589,13 +588,13 @@ const missingDimension = aggregateCrossReview([reviewCase({ model: "gpt-5.6-terr
 assert.equal(missingDimension.dimensions.structure.average, 85, "missing dimensions must not be treated as zero");
 const designIssue = { tag: "镜头不可拍", dimension: "design", severity: "high", feedback: "机位无法执行", fix: "补足可拍机位" };
 const cDesignIssue = aggregateCrossReview([reviewCase({ model: "claude-haiku-4-5", seatId: "seat_c", ownedDimensions: ["design"], confidence: 80, issues: [designIssue] })]);
-assert.equal(cDesignIssue.mandatoryIssueCount, 1, "the design owner may raise a single high-confidence mandatory issue");
+assert.equal(cDesignIssue.mandatoryIssueCount, 0, "a design owner single-seat issue must remain advisory");
 const aDesignIssue = aggregateCrossReview([reviewCase({ model: "gpt-5.6-terra", seatId: "seat_a", ownedDimensions: ["structure", "logic"], confidence: 100, issues: [designIssue] })]);
 assert.equal(aDesignIssue.mandatoryIssueCount, 0, "a non-owner single-seat design issue must remain advisory");
 
 const mandatoryIssueCases = [
   { issue: { tag: "两席高风险", dimension: "plot", severity: "high", modelCount: 2 }, expected: true, label: "high + two seats" },
-  { issue: { tag: "主人高置信", dimension: "plot", severity: "high", modelCount: 1, ownerHighConfidence: true }, expected: true, label: "high + owner + high confidence" },
+  { issue: { tag: "主人高置信", dimension: "plot", severity: "high", modelCount: 1, ownerHighConfidence: true }, expected: false, label: "high + owner + high confidence" },
   { issue: { tag: "非主人单席", dimension: "plot", severity: "high", modelCount: 1 }, expected: false, label: "high + non-owner single seat" },
   { issue: { tag: "中风险共识", dimension: "plot", severity: "medium", modelCount: 2 }, expected: false, label: "medium + two seats" },
 ];
@@ -621,8 +620,7 @@ const ownerSingleSeatReview = {
   commonIssues: [],
 };
 const ownerSingleSeatContract = buildRevisionContract(ownerSingleSeatReview, { stage: "characters", sourceArtifactId: "artifact_owner_single", id: "revision_owner_single" });
-assert.equal(ownerSingleSeatContract.items.length, 1, "owner high-confidence single-seat mandatory issue must enter the revision contract");
-assert.equal(ownerSingleSeatContract.items[0].tag, ownerSingleSeatReview.mandatoryIssues[0].tag, "contract item must retain the mandatory issue tag");
+assert.equal(ownerSingleSeatContract.items.length, 0, "owner high-confidence single-seat issue must not enter the revision contract");
 const mediumContract = buildRevisionContract({
   reviewIssues: [{ tag: "中风险共识", dimension: "plot", severity: "medium", modelCount: 2, suggestions: ["可选优化"] }],
 }, { stage: "brief", sourceArtifactId: "artifact_medium", id: "revision_medium" });
@@ -638,7 +636,7 @@ const historicalMandatoryContract = buildRevisionContract({
     { tag: "历史主人单席", dimension: "plot", severity: "high", modelCount: 1, ownerHighConfidence: true, suggestions: ["补足主人判断"] },
   ],
 }, { stage: "brief", sourceArtifactId: "artifact_historical", id: "revision_historical" });
-assert.deepEqual(historicalMandatoryContract.items.map((item) => item.tag), ["历史两席高风险", "历史主人单席"], "historical reviews must use the shared mandatory predicate");
+assert.deepEqual(historicalMandatoryContract.items.map((item) => item.tag), ["历史两席高风险"], "historical reviews must use the shared mandatory predicate");
 
 const batchConflictReview = batchReviewSummary("arc", [{
   pass: false,
@@ -1359,7 +1357,8 @@ assert.match(tkCharactersContract, /英文声线规则/, "tk mode characters con
 //    evidence (score / issue counts / revision state) before releasing.
 assert.match(app, /function buildHumanOverrideBrief/, "app.js must expose the human-override evidence builder");
 assert.match(app, /审核依据/, "the human-override dialog must present review evidence before confirming");
-assert.match(app, /人工放行不会修复问题/, "the human-override dialog must state that it does not fix issues");
+assert.match(app, /不会再自动重复改稿/, "the decision dialog must state that it stops repeated automatic rewrites");
+assert.match(app, /请简要记录本次取舍理由/, "the decision dialog must collect a persistent creator rationale");
 
 // 8. Handoff must not silently export a script missing dialogue for scenes.
 const handoffIncompleteState = {

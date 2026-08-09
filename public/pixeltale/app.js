@@ -859,6 +859,17 @@ function nextStepMeta() {
       flowStage,
     };
   }
+  const decisionRequired = reviewDecisionGroups(reviewContent);
+  if (reviewContent.automaticRevisionBlocked || decisionRequired.length) {
+    return {
+      kind: "human-override",
+      stage: flowStage,
+      title: `${flowMeta.title}需要决定`,
+      copy: `自动修订已停止。请查看“需要决定”中的 ${decisionRequired.length} 项，记录取舍后再继续，避免同一问题反复改写。`,
+      label: "记录决定并继续 →",
+      flowStage,
+    };
+  }
   if (artifact.status === "ready") {
     const unitProgress = unitStageProgress(flowStage);
     if (unitProgress && !unitProgress.complete) {
@@ -908,7 +919,7 @@ function nextStepMeta() {
     kind: "auto-revise",
     stage: flowStage,
     title: `${flowMeta.title}需要修订`,
-    copy: "下方“必须修订”是唯一执行清单。一次点击会合并全部问题，最多自动完成两轮定向改稿与复审。",
+    copy: "下方“必须处理”是唯一执行清单。一次点击会合并全部问题，并只执行一轮定向改稿与复审。",
     label: "一键修订并复审 →",
     flowStage,
   };
@@ -932,6 +943,9 @@ function renderAgentTaskAction(action) {
     // 修订反复不收敛时，允许人工放行（接受当前版本继续），打破"反复点击确认"死循环。
     const override = `<button class="stage-secondary agent-task-secondary" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>接受当前版本并继续（人工放行）</button>`;
     return `<div style="display:flex;gap:8px;flex-wrap:wrap">${primary}${override}</div>`;
+  }
+  if (action.kind === "human-override") {
+    return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
   if (action.kind === "review-advisories") {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="review-advisories" data-review-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
@@ -1585,7 +1599,7 @@ function reviewIssueGroups(reviewContent = {}) {
       acceptedByHuman: true,
       suggestions: [...(Array.isArray(item.suggestions) ? item.suggestions : []), advisoryGate.decisions.get(item.id)?.reason].filter(Boolean),
     }));
-  const pendingClosures = Array.isArray(reviewContent.revision?.closure?.items)
+  const pendingClosures = !reviewContent.automaticRevisionBlocked && Array.isArray(reviewContent.revision?.closure?.items)
     ? reviewContent.revision.closure.items.filter((item) => item.status !== "resolved").map((item) => ({
       ...item,
       tag: item.tag || "未关闭修订项",
@@ -1601,6 +1615,10 @@ function reviewIssueGroups(reviewContent = {}) {
     ? reviewContent.mandatoryIssues
     : (Array.isArray(reviewContent.commonIssues) ? reviewContent.commonIssues.filter(isMandatoryReviewIssue) : (Array.isArray(reviewContent.reviewIssues) ? reviewContent.reviewIssues.filter(isMandatoryReviewIssue) : []));
   return mergeReviewItems([...pendingClosures, ...mandatoryIssues, ...acceptedAdvisories]);
+}
+
+function reviewDecisionGroups(reviewContent = {}) {
+  return mergeReviewItems(Array.isArray(reviewContent.decisionRequiredIssues) ? reviewContent.decisionRequiredIssues : []);
 }
 
 function reviewRecommendationGroups(reviewContent = {}) {
@@ -1635,8 +1653,8 @@ function renderAdvisoryCards(items = [], advisoryGate = {}, reviewId = "") {
 }
 
 function renderReviewPanel(reviewContent = {}, { passed = false } = {}) {
-  const closureItems = Array.isArray(reviewContent.revision?.closure?.items) ? reviewContent.revision.closure.items.filter((item) => item.status !== "resolved") : [];
-  const mandatory = mergeReviewItems([...(Array.isArray(reviewContent.mandatoryIssues) ? reviewContent.mandatoryIssues : []), ...closureItems]);
+  const mandatory = mergeReviewItems(Array.isArray(reviewContent.mandatoryIssues) ? reviewContent.mandatoryIssues : []);
+  const decisions = reviewDecisionGroups(reviewContent);
   const optional = mergeReviewItems([...(Array.isArray(reviewContent.recommendedIssues) ? reviewContent.recommendedIssues : []), ...(Array.isArray(reviewContent.independentIssues) ? reviewContent.independentIssues : [])]);
   const adjudications = Array.isArray(reviewContent.adjudications) ? reviewContent.adjudications : [];
   const feedbacks = Array.isArray(reviewContent.feedbacks) ? reviewContent.feedbacks : [];
@@ -1650,7 +1668,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false } = {}) {
     ? (technicalFailures.find((item) => item?.status === "degraded")?.message || "三席交叉审核不成立：有席位兜底到了同一模型")
     : "";
   const technicalFlags = [degradedFlag, technical.stalled ? "自动修订已停止：stalled" : "", technical.budgetExhausted ? "自动修订已停止：budget_exhausted" : ""].filter(Boolean);
-  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}"><strong>${passed ? "审核结果已生成" : "审核未完成或需要修订"}</strong><p>审核结果按人工修订、可选优化、系统裁决和技术状态分开展示。</p><section class="review-zone review-zone-mandatory"><h3>① 必须修订</h3>${issueMarkup(mandatory, "当前没有必须修订项。")}</section><section class="review-zone review-zone-optional"><h3>② 可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>③ 系统自动裁决</h3>${adjudicationMarkup}</section><section class="review-zone review-zone-technical"><h3>④ 技术失败状态</h3>${failureMarkup}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></div>`;
+  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}"><strong>${passed ? "审核结果已生成" : "审核未完成或需要处理"}</strong><p>只有两席共同确认的高风险问题会进入自动修订；未收敛和合同外争议转为创作者决定。</p><section class="review-zone review-zone-mandatory"><h3>① 必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>② 需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>③ 可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>④ 系统记录</h3>${adjudicationMarkup}${failureMarkup}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></div>`;
 }
 
 function renderTitleStage() {
@@ -1959,7 +1977,7 @@ async function runAutoRevision(stage = state.stage) {
     await runCurrentStage(stage);
     return;
   }
-  const maxPasses = 2;
+  const maxPasses = 1;
   const buildPlan = (items, pass) => [
     `这是第 ${pass} 轮自动修订。请一次性解决当前阶段的全部复核问题；保留没有问题的内容，不要只修复其中一项。`,
     ...items.map((issue, index) => {
@@ -2019,7 +2037,7 @@ async function decideAdvisory(reviewId, advisoryId, status, reason = "", require
   }
 }
 
-async function approveArtifact(artifactId, { humanOverride = false } = {}) {
+async function approveArtifact(artifactId, { humanOverride = false, humanOverrideReason = "" } = {}) {
   const requiredStage = workflowStage();
   const artifact = (state.agent?.artifacts || []).find((item) => item.id === artifactId);
   if (!artifact || artifact.stage !== requiredStage) {
@@ -2033,7 +2051,7 @@ async function approveArtifact(artifactId, { humanOverride = false } = {}) {
   state.lastError = "";
   renderShellState();
   try {
-    const payload = await request(`/artifacts/${encodeURIComponent(artifactId)}/approve`, { method: "POST", body: JSON.stringify({ selectedTitle: state.input.storyTitle || "", humanOverride, humanOverrideReason: humanOverride ? "用户人工放行：接受当前版本继续" : "" }) });
+    const payload = await request(`/artifacts/${encodeURIComponent(artifactId)}/approve`, { method: "POST", body: JSON.stringify({ selectedTitle: state.input.storyTitle || "", humanOverride, humanOverrideReason: humanOverride ? humanOverrideReason || "用户人工放行：接受当前版本继续" : "" }) });
     updateAgentState(payload.result?.state);
     showToast(humanOverride ? "已人工放行并确认，进入下一阶段" : "本阶段已确认，进入下一阶段");
   } catch (error) {
@@ -2126,9 +2144,11 @@ function bindAgentTaskAction() {
       const review = reviewForArtifact(artifact);
       const brief = buildHumanOverrideBrief(review?.content || {});
       const unitNote = UNIT_STAGES.has(stage) ? "；未锁定集将一并标记为已确认并锁定" : "";
-      const message = `当前版本未通过交叉审核，确认接受此版本并继续？${unitNote}\n\n审核依据：\n${brief}\n\n⚠️ 人工放行不会修复问题，仅跳过审核门槛；后续可随时重新生成修订。`;
+      const message = `自动修订已停止，确认记录你的取舍并继续？${unitNote}\n\n审核依据：\n${brief}\n\n这会保留当前版本和你的决定记录，不会再自动重复改稿。`;
       if (!window.confirm(message)) return;
-      void approveArtifact(artifact?.id, { humanOverride: true });
+      const reason = window.prompt("请简要记录本次取舍理由（会写入创作历史）", "当前版本满足创作目标，接受已知取舍继续推进");
+      if (!reason?.trim()) return;
+      void approveArtifact(artifact?.id, { humanOverride: true, humanOverrideReason: reason.trim() });
       return;
     }
     if (action === "review-advisories") {

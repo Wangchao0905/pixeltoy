@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { aggregateCrossReview, buildRevisionContract, callStagePrimary, isMandatoryReviewIssue } from "../server/pixeltale-agent.js";
+import { aggregateCrossReview, buildRevisionContract, callStagePrimary, isMandatoryReviewIssue, stageReviewPolicy } from "../server/pixeltale-agent.js";
 
 const dimensions = Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 90, feedback: "通过" }]));
 
@@ -26,6 +26,13 @@ function review(model, { issues = [], revisionClosures = [], pass = true } = {})
 const ownerOnly = { tag: "单席结构意见", dimension: "structure", severity: "high", modelCount: 1, ownerHighConfidence: true };
 assert.equal(isMandatoryReviewIssue(ownerOnly), false, "单席维度意见不能单独阻断阶段");
 assert.equal(aggregateCrossReview([review("review-a", { issues: [ownerOnly] })]).mandatoryIssueCount, 0, "单席高风险意见必须转为建议");
+
+const fastPolicy = stageReviewPolicy("brief");
+assert.equal(fastPolicy.requiredSeats, 1, "first-draft brief review must use one fast review seat");
+assert.equal(stageReviewPolicy("arc").requiredSeats, 2, "episode architecture must retain two review seats");
+assert.equal(stageReviewPolicy("brief", { revisionContract: { id: "revision" } }).requiredSeats, 2, "targeted revisions must restore two-seat confirmation");
+const fastIssue = { tag: "快速审读硬问题", dimension: "structure", severity: "high", feedback: "开场承诺缺失", fix: "补足开场改变" };
+assert.equal(aggregateCrossReview([review("review-a", { issues: [fastIssue], pass: false })], null, fastPolicy).decision.kind, "revise", "a single fast-review hard finding must still produce a bounded revision decision");
 
 const shared = { tag: "两席共同问题", dimension: "plot", severity: "high", feedback: "缺少触发", fix: "补足触发", modelCount: 2 };
 assert.equal(aggregateCrossReview([review("review-a", { issues: [shared], pass: false }), review("review-b", { issues: [shared], pass: false })]).mandatoryIssueCount, 1, "两席共同确认的高风险问题必须阻断阶段");

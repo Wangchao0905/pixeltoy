@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { callStageCouncil, createPixelTaleAgent, contentHash, mergeStageBatchContent, validateContent } from "../server/pixeltale-agent.js";
+import { callStageCouncil, createPixelTaleAgent, contentHash, isRetryableReviewFailure, mergeStageBatchContent, validateContent } from "../server/pixeltale-agent.js";
 
 const models = [
   { id: "gpt-5.6-terra", provider: "chatgpt" },
@@ -50,6 +50,17 @@ function scene(number) {
     turn_zh: "主角从逃亡转为追查",
   };
 }
+
+assert.equal(
+  isRetryableReviewFailure({ technicalFailures: [{ status: "failed", failureReason: "timeout" }] }),
+  true,
+  "a technical review interruption must reuse the generated artifact on retry",
+);
+assert.equal(
+  isRetryableReviewFailure({ technicalFailures: [{ status: "rule_blocked" }] }),
+  false,
+  "a rule finding must return to revision instead of reusing the same artifact",
+);
 
 function baseState({ episodeCount = 10 } = {}) {
   const stages = ["brief", "title", "proposal", "characters"];
@@ -150,6 +161,8 @@ assert.deepEqual(uniqueAuthorScopes(authorPayloads), [[1, 2, 3, 4, 5], [6, 7, 8,
 for (const scope of uniqueAuthorScopes(authorPayloads)) {
   const modelsForScope = new Set(authorPayloads.filter((call) => JSON.stringify(call.payload.unitScope || []) === JSON.stringify(scope)).map((call) => call.model));
   assert.equal(modelsForScope.size, 1, "every isolated batch must have one accountable primary writer");
+  const reviewCalls = router.calls.filter((call) => call.purpose === "pixeltale:arc:review" && JSON.stringify(call.payload.unitScope || []) === JSON.stringify(scope));
+  assert.equal(reviewCalls.length, 2, "episode batches must retain dual review despite the fast first-draft policy");
 }
 assert.ok(authorPayloads.every((call) => !call.payload.approvedContext.some((item) => item.stage === "arc" && item.content?.units?.length > 5)), "a batch must not receive the full season as approved context");
 assert.ok(authorPayloads.find((call) => call.payload.unitScope.includes(6)).payload.lockedUnitContext.every((item) => !item.plot_zh && !item.content), "locked episodes must be represented only by compressed continuity state");

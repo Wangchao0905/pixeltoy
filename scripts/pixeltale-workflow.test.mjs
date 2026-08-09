@@ -108,7 +108,7 @@ assert.doesNotMatch(agent, /PIXELTALE_(CHATGPT|CLAUDE|GROK|DEEPSEEK)_API_KEY/, "
 assert.match(app, /persistActiveRun\(null\);[\s\S]{0,80}state\.lastError = userFacingError\(error\)/, "any monitor failure (terminal RUN_INTERRUPTED or network polling failure) must clear the stale activeRun so the stage shows a rerun button instead of stuck 'processing'");
 assert.match(app, /syncRoutingModelOptions\(agent\.modelOptions \|\| \[\]\)/, "model choices must be synchronized from SuperPixel's returned registry");
 assert.doesNotMatch(app, /\["chatgpt", "claude", "deepseek"\]/, "review UI must not deduplicate seats by provider");
-assert.match(app, /const reviewTeam = seatDefaults\.map\(\(seat, index\) =>/, "review UI must always render from the three-seat roster");
+assert.match(app, /const reviewTeam = activeSeats\.map\(\(seat, index\) =>/, "review UI must render only the seats required by the current review policy");
 assert.match(app, /reviewFeedbacks\[index\]\?\.seatId \? null : reviewFeedbacks\[index\]/, "historical feedback without seat ids must use positional matching");
 const modelTeamRenderer = app.slice(app.indexOf("function renderModelTeam()"), app.indexOf("function collectBriefInput()"));
 const modelCardTemplate = modelTeamRenderer.slice(modelTeamRenderer.indexOf("return `<button"), modelTeamRenderer.indexOf("}).join(\"\");"));
@@ -164,6 +164,13 @@ assert.doesNotMatch(app, /data-dna-canvas|class=\"dna-core\"|dna-thinking-state/
 assert.doesNotMatch(app, /startDnaMotion|createDnaParticles|stopDnaMotion/, "Story DNA must not retain inactive canvas motion code");
 assert.match(app, /title: `\$\{flowMeta\.title\}技术未完成`[\s\S]*请重新提交当前阶段/, "technical review blockers must explain that review is incomplete");
 assert.match(app, /review-zone-mandatory[\s\S]*review-zone-decision[\s\S]*review-zone-optional[\s\S]*review-zone-adjudication/, "review UI must separate mandatory work, creator decisions, optional improvements, and system records");
+assert.match(app, /function renderDecisionImpactWorkbench\(/, "creator decisions must expose a dedicated impact workbench");
+assert.match(app, /data-impact-choice/, "the impact workbench must expose selectable decision paths");
+assert.match(app, /data-impact-evidence/, "the impact workbench must provide an in-context route to review evidence");
+assert.match(app, /function bindDecisionImpactWorkbench\(/, "decision paths must have dedicated interaction bindings");
+assert.match(styles, /\.decision-impact-workbench \{/, "the impact workbench must have a distinct, bounded surface");
+assert.match(styles, /\.impact-connection\.is-active/, "selected paths must visibly update their impact connections");
+assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*impact-connection/, "impact transitions must respect reduced-motion preferences");
 assert.match(app, /kind: "auto-revise"[\s\S]*一键修订并复审/, "review flow must expose one canonical revision action");
 assert.match(app, /review-zone-mandatory[\s\S]*必须处理/, "mandatory revisions must be presented in the mandatory zone");
 assert.match(app, /!reviewContent\.automaticRevisionBlocked[\s\S]*pendingClosures/, "unresolved contracts must leave the automatic revision list after convergence stops");
@@ -922,6 +929,39 @@ const initialRun = await runAgent.run(runParams);
 assert.deepEqual(phaseEvents, ["authoring", "validating", "reviewing", "refereeing"], "a stage run must report authoring, validation, review, and referee phases in order");
 assert.equal(initialRun.status, "needs_review", "initial review must retain a failed source version");
 assert.ok(routedCalls.filter((item) => item.purpose.endsWith(":review")).every((item) => item.temperature === 0.2), "every review seat must use stable temperature 0.2");
+
+// A retry caused only by an incomplete review must not regenerate an already
+// valid artifact. It should reuse the draft and spend calls on review evidence.
+const reviewRetryCalls = [];
+const reviewRetryStore = new Map([["review-retry-e2e", {
+  projectId: "review-retry-e2e",
+  stage: "brief",
+  input: { idea: "主角为救家人闯入禁区" },
+  artifacts: [
+    { id: "retry-brief", type: "pixeltale_brief", stage: "brief", version: 1, status: "needs_review", reviewId: "retry-review", content: { title_zh: "暗门", logline_zh: "主角必须在代价逼近前打开一扇暗门。", core_conflict_zh: "真相与生存冲突。", viewer_question_zh: "她会付出什么代价？" } },
+    { id: "retry-review", type: "pixeltale_stage_review", stage: "brief", version: 1, status: "failed", content: { pass: false, technicalFailures: [{ status: "failed", failureReason: "timeout" }] } },
+  ],
+  approvedArtifactIds: [],
+}]]);
+const reviewRetryAgent = createPixelTaleAgent({
+  modelRouter: {
+    models: () => testModels,
+    status: () => Object.fromEntries(["chatgpt", "claude", "deepseek"].map((provider) => [provider, { provider, configured: true }])),
+    reviewModels: () => testModels.slice(0, 2).map(({ id: model, provider }, index) => ({ seatId: `seat_${index}`, model, provider, configured: true, fallbackModels: [] })),
+    call: async ({ model, system, purpose }) => {
+      reviewRetryCalls.push({ model, purpose });
+      if (purpose.endsWith(":author")) throw new Error("review retry must not invoke the author");
+      return { provider: testModels.find((item) => item.id === model)?.provider || "chatgpt", model, content: reviewOutput(), attempts: 0 };
+    },
+  },
+  readPixelTaleState: (rootPath) => reviewRetryStore.get(rootPath) || {},
+  writePixelTaleState: (rootPath, nextState) => reviewRetryStore.set(rootPath, nextState),
+});
+const reviewRetryRun = await reviewRetryAgent.run({ pixelTaleRoot: "review-retry-e2e", projectId: "review-retry-e2e", project: { id: "review-retry-e2e", title: "Review retry", episode: "DRAFT" }, stage: "brief", input: { idea: "主角为救家人闯入禁区" } });
+assert.equal(reviewRetryRun.status, "needs_review", "a completed review retry still returns a normal review result");
+assert.equal(reviewRetryCalls.filter((call) => call.purpose.endsWith(":author")).length, 0, "technical review retry must reuse the artifact instead of regenerating it");
+assert.equal(reviewRetryStore.get("review-retry-e2e").artifacts.filter((item) => item.type === "pixeltale_brief").length, 1, "technical review retry must retain one source artifact version");
+
 const revisionRun = await runAgent.run({ ...runParams, revisionPlan: "按全部审核问题修订" });
 assert.equal(revisionRun.status, "completed", `revision must run as a distinct, reviewable version: ${JSON.stringify(revisionRun.errors)}`);
 assert.equal(revisionRun.revision.allResolved, true, "the run record must prove all revision contract items were closed");
@@ -1428,7 +1468,7 @@ assert.match(app, /function renderStageTaskCard\(/, "every stage must render a c
 assert.match(app, /阶段目标/, "the execution card must show the stage goal");
 assert.match(app, /责任人/, "the execution card must name the accountable role");
 assert.match(app, /完成条件/, "the execution card must show the acceptance condition");
-assert.match(app, /主笔生成[\s\S]*规则校验[\s\S]*双席审读[\s\S]*系统裁判/, "the visible timeline must include all four decision steps");
+assert.match(app, /主笔生成[\s\S]*规则校验[\s\S]*单席快速审读[\s\S]*双席审读[\s\S]*系统裁判/, "the visible timeline must distinguish fast and dual review before the referee step");
 const agentTaskRenderer = app.slice(app.indexOf("function renderAgentTaskAction(action)"), app.indexOf("function renderShellState()"));
 assert.doesNotMatch(agentTaskRenderer, /接受当前版本并继续（人工放行）/, "the right rail must not present a parallel override beside the canonical action");
 const nextStepRenderer = app.slice(app.indexOf("function nextStepMeta()"), app.indexOf("function renderAgentTaskAction(action)"));

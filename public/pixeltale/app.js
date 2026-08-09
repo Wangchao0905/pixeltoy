@@ -66,6 +66,7 @@ const state = {
   activeRun: loadActiveRun(),
   runPhase: "",
   dnaFilter: "all",
+  impactChoices: {},
   agent: null,
   routes: { orchestration: "gpt-5.6-terra", continuity: "gemini-3.1-pro", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
   input: {
@@ -1046,12 +1047,17 @@ function renderModelTeam() {
   const primaryExecution = currentArtifact?.primaryExecution || {};
   const currentReview = reviewForArtifact(currentArtifact);
   const reviewFeedbacks = Array.isArray(currentReview?.content?.feedbacks) ? currentReview.content.feedbacks : [];
+  const fastReviewStages = new Set(["brief", "proposal", "characters", "dialogue"]);
+  const storedReviewPolicy = currentReview?.content?.reviewPolicy || {};
+  const requiredReviewSeats = Number(storedReviewPolicy.requiredSeats)
+    || (fastReviewStages.has(state.stage) && !currentArtifact?.revision ? 1 : 2);
+  const activeSeats = seatDefaults.slice(0, requiredReviewSeats);
   const roleLabels = { structure_causality: "结构与因果审查", character_continuity: "人物与连续性审查", audience_pacing_visual: "受众节奏与视觉审查" };
   const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则 · 视觉设计" };
   const phases = [
     { id: "authoring", label: "主笔生成" },
     { id: "validating", label: "规则校验" },
-    { id: "reviewing", label: "双席审读" },
+    { id: "reviewing", label: requiredReviewSeats === 1 ? "单席快速审读" : "双席审读" },
     { id: "refereeing", label: "系统裁判决定" },
   ];
   const currentPhaseIndex = phases.findIndex((phase) => phase.id === state.runPhase);
@@ -1063,7 +1069,7 @@ function renderModelTeam() {
     return `<span class="phase-step ${phaseClass}"><i>${isComplete ? "✓" : String(index + 1).padStart(2, "0")}</i><b>${phase.label}</b></span>${index < phases.length - 1 ? "<em aria-hidden=\"true\">→</em>" : ""}`;
   }).join("")}</div>`;
   const failureReasons = { timeout: "请求超时", network_error: "网络错误", empty_response: "空响应", invalid_json: "返回格式错误", schema_error: "数据结构错误", not_configured: "模型未配置" };
-  const reviewTeam = seatDefaults.map((seat, index) => {
+  const reviewTeam = activeSeats.map((seat, index) => {
     const matched = reviewFeedbacks.find((entry) => entry?.seatId === seat.seatId)
       || (reviewFeedbacks[index]?.seatId ? null : reviewFeedbacks[index]);
     return matched ? { ...seat, ...matched } : { ...seat, status: "pending" };
@@ -1089,8 +1095,9 @@ function renderModelTeam() {
           : "待审核";
     const scoreLabel = entry.status === "failed" ? "—" : entry.status === "completed" && entry.score !== null && entry.score !== undefined ? `${entry.score} 分` : "—";
     const fallbackLabel = entry.actualModel && entry.requiredModel && entry.actualModel !== entry.requiredModel ? " · 已启用备用模型" : "";
-    const seatId = entry.seatId || seatDefaults.find((seat) => seat.role === entry.role)?.seatId || "";
-    return `<button class="model-card ${provider === "chatgpt" ? "is-primary" : provider === "claude" ? "is-reviewer" : ""}" type="button" data-model-detail="${escapeHtml(seatId)}" title="${escapeHtml(lane)}"><i></i><span><strong>${escapeHtml(lane)}</strong><small>${escapeHtml(roleDescriptions[seatId] || "阶段职责 · 独立交叉审查")}${fallbackLabel}</small></span><em>${escapeHtml(scoreLabel)}<br>${escapeHtml(stateLabel)}</em></button>`;
+    const seatId = entry.seatId || activeSeats.find((seat) => seat.role === entry.role)?.seatId || "";
+    const reviewMode = requiredReviewSeats === 1 ? "规则校验后快速审读" : "阶段职责 · 独立交叉审查";
+    return `<button class="model-card ${provider === "chatgpt" ? "is-primary" : provider === "claude" ? "is-reviewer" : ""}" type="button" data-model-detail="${escapeHtml(seatId)}" title="${escapeHtml(lane)}"><i></i><span><strong>${escapeHtml(lane)}</strong><small>${escapeHtml(roleDescriptions[seatId] || reviewMode)}${fallbackLabel}</small></span><em>${escapeHtml(scoreLabel)}<br>${escapeHtml(stateLabel)}</em></button>`;
   }).join("");
   $("#modelTeamCards")?.parentElement?.querySelector(".model-team-degraded")?.remove();
   if (currentReview?.content?.quorum?.degraded) {
@@ -1102,7 +1109,7 @@ function renderModelTeam() {
     $("#modelTeamCards").insertAdjacentHTML("beforebegin", `<p class="model-team-degraded">${escapeHtml(degradedNote)}</p>`);
   }
   $$('[data-model-detail]').forEach((button) => button.addEventListener("click", () => {
-    const lane = roleLabels[seatDefaults.find((seat) => seat.seatId === button.dataset.modelDetail)?.role] || "独立交叉审查";
+    const lane = roleLabels[activeSeats.find((seat) => seat.seatId === button.dataset.modelDetail)?.role] || "独立交叉审查";
     showToast(`${lane} · ${button.querySelector("em")?.textContent?.replace("\n", " · ") || "待审核"}`);
   }));
 }
@@ -1638,6 +1645,45 @@ function reviewDecisionGroups(reviewContent = {}) {
   return mergeReviewItems(Array.isArray(reviewContent.decisionRequiredIssues) ? reviewContent.decisionRequiredIssues : []);
 }
 
+function impactTargetsForStage(stage = state.stage) {
+  const targets = {
+    brief: ["故事承诺", "人物目标", "后续提案"],
+    proposal: ["主角选择", "冲突升级", "分集主线"],
+    characters: ["人物动机", "关系推进", "世界规则"],
+    arc: ["人物关系", "后续分集", "终局回收"],
+    scenes: ["场景目的", "镜头重点", "视觉资产"],
+    dialogue: ["人物声线", "冲突表达", "正式剧本"],
+  };
+  return targets[stage] || ["当前产物", "下一阶段", "正式交付"];
+}
+
+function renderDecisionImpactWorkbench(reviewContent = {}, { stage = state.stage, reviewId = "" } = {}) {
+  const decision = reviewContent.decision || {};
+  const decisionIssues = reviewDecisionGroups(reviewContent);
+  const visible = decision.kind === "needs_decision" || decisionIssues.length > 0;
+  if (!visible) return "";
+
+  const workbenchId = reviewId || `${stage}-decision`;
+  const selected = state.impactChoices[workbenchId] || "revise";
+  const focus = decisionIssues[0] || decision.items?.[0] || {};
+  const title = focus.tag || focus.message || "当前取舍";
+  const summary = focus.message || decision.summary || "先比较不同选择对已确认内容与下一阶段的影响，再执行唯一下一步。";
+  const choices = [
+    { id: "revise", title: "按建议定向修订", copy: "把已确认的问题收敛为一次修订目标，不扩写无关内容。", state: "优先路径" },
+    { id: "keep", title: "保留当前版本", copy: "以已确认的创作规格为准，并在证据中记录本次取舍。", state: "需要依据" },
+    { id: "evidence", title: "先核对依据", copy: "查看裁判结论、模型意见与阶段约束后再决定。", state: "建议先看" },
+  ];
+  const targets = impactTargetsForStage(stage);
+  const outcomeCopy = {
+    revise: "下一步会聚焦关闭已标注的问题。",
+    keep: "下一步会保留当前版本，并要求记录选择理由。",
+    evidence: "先打开依据，确认问题是否真的影响后续。",
+  };
+  const choiceMarkup = choices.map((choice, index) => `<button type="button" class="impact-choice${selected === choice.id ? " is-selected" : ""}" data-impact-choice="${choice.id}" data-impact-workbench="${escapeHtml(workbenchId)}" aria-pressed="${selected === choice.id}"><span class="impact-choice-number">0${index + 1}</span><span><strong>${escapeHtml(choice.title)}</strong><small>${escapeHtml(choice.copy)}</small></span><em>${escapeHtml(choice.state)}</em></button>`).join("");
+  const impactMarkup = targets.map((target, index) => `<div class="impact-connection${selected === "evidence" ? "" : " is-active"}" style="--impact-delay:${index * 70}ms"><span aria-hidden="true">→</span><article><small>后续影响 ${String(index + 1).padStart(2, "0")}</small><strong>${escapeHtml(target)}</strong><p>${escapeHtml(selected === "revise" ? "按当前建议校正后继续推进。" : selected === "keep" ? "保留已确认的前提，并同步取舍记录。" : "先用审核依据验证，再决定是否改变。")}</p></article></div>`).join("");
+  return `<section class="decision-impact-workbench" aria-labelledby="impactWorkbenchTitle"><div class="impact-workbench-head"><div><span class="card-label"><i></i>DECISION IMPACT</span><h3 id="impactWorkbenchTitle">选择如何处理「${escapeHtml(title)}」</h3><p>${escapeHtml(summary)}</p></div><button type="button" class="text-button impact-evidence-button" data-impact-evidence aria-controls="reviewEvidence">查看依据</button></div><div class="impact-workbench-grid"><div class="impact-options" role="group" aria-label="处理路径">${choiceMarkup}</div><div class="impact-map" aria-live="polite"><div class="impact-map-origin"><small>当前选择</small><strong>${escapeHtml(choices.find((item) => item.id === selected)?.title || "按建议定向修订")}</strong><p>${escapeHtml(outcomeCopy[selected] || outcomeCopy.revise)}</p></div><div class="impact-map-links">${impactMarkup}</div></div><aside class="impact-explainer"><span>为什么重要</span><strong>影响在执行前可见</strong><p>先看人物、后续内容和终局回收会如何变化，再使用右侧唯一操作执行。</p><small>选择路径 · 影响预览 · 执行确认</small></aside></div></section>`;
+}
+
 function reviewRecommendationGroups(reviewContent = {}) {
   const commonIssues = Array.isArray(reviewContent.recommendedIssues) && reviewContent.recommendedIssues.length
     ? reviewContent.recommendedIssues
@@ -1669,7 +1715,7 @@ function renderAdvisoryCards(items = [], advisoryGate = {}, reviewId = "") {
   }).join("");
 }
 
-function renderReviewPanel(reviewContent = {}, { passed = false } = {}) {
+function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage, reviewId = "", showDecisionWorkbench = true } = {}) {
   const decision = reviewContent.decision || {
     kind: passed ? "approve" : "rerun",
     owner: "系统裁判",
@@ -1694,7 +1740,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false } = {}) {
   const technicalFlags = [degradedFlag, technical.stalled ? "自动修订已停止：stalled" : "", technical.budgetExhausted ? "自动修订已停止：budget_exhausted" : ""].filter(Boolean);
   const decisionItems = Array.isArray(decision.items) ? decision.items : [];
   const decisionCard = `<section class="review-decision-card is-${escapeHtml(decision.kind || "rerun")}"><span>系统裁判</span><div><h3>${escapeHtml(decision.title || "等待决定")}</h3><p>${escapeHtml(decision.summary || "等待审核结果")}</p></div>${decisionItems.length ? `<ol>${decisionItems.slice(0, 3).map((item) => `<li>${escapeHtml(item.tag || item.message || "待处理事项")}</li>`).join("")}</ol>` : ""}</section>`;
-  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}<details class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
+  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}${showDecisionWorkbench ? renderDecisionImpactWorkbench(reviewContent, { stage, reviewId }) : ""}<details id="reviewEvidence" class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
 }
 
 function renderTitleStage() {
@@ -1771,13 +1817,14 @@ function renderArtifactStage() {
   const blockingItems = reviewIssueGroups(reviewContent);
   const reviewPassed = approved || (unitComplete && reviewContent.pass && !advisoryGate.accepted.length && !advisoryGate.blockingPending.length);
   const reviewLabel = approved ? "本阶段已确认" : reviewPassed ? "审核通过 · 等待确认" : advisoryGate.blockingPending.length ? "待人工裁决 · 处理右侧意见" : advisoryGate.accepted.length ? "已有采纳意见 · 已并入必修清单" : blockingItems.length ? `待处理 ${blockingItems.length} 类必修项` : "审核未完成 · 需要重新提交";
+  const decisionWorkbench = review ? renderDecisionImpactWorkbench(reviewContent, { stage: state.stage, reviewId: review.id }) : "";
   const reviewPanel = review
     ? !unitComplete && reviewContent.pass
       ? `<div class="review-summary is-passed"><strong>当前产物已通过，正在等待整季完成</strong><p>已锁定 ${unitProgress.locked.length} / ${unitProgress.total} 集。点击右侧“一键处理剩余集”，后台会自动完成生成、审核和必要修订，后续请求不会包含已锁定集正文。</p></div>`
-      : renderReviewPanel(reviewContent, { passed: reviewPassed, stage: state.stage, reviewId: review.id })
+      : renderReviewPanel(reviewContent, { passed: reviewPassed, stage: state.stage, reviewId: review.id, showDecisionWorkbench: false })
     : `<div class="review-summary"><strong>正在等待复核结果</strong><p>当前批次完成后，这里会显示审核与锁定状态。</p></div>`;
   const inlineStatus = approved ? "已确认版本" : !unitComplete ? `已锁定 ${unitProgress.locked.length} / ${unitProgress.total} 集 · 继续生成` : reviewPassed ? "审核通过 · 请在右侧确认" : advisoryGate.blockingPending.length ? "待人工裁决 · 请处理右侧意见" : blockingItems.length ? "待定向修订 · 请使用右侧唯一按钮" : "需要重新提交当前阶段";
-  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p>${renderUnitStageProgress(state.stage)}<section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${renderCreationTrace(artifact, reviewContent)}${reviewPanel}</section>`;
+  return `<div class="stage-kicker"><span class="eyebrow">${meta.kicker}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)} · PixelTale 输出</span></div><h2>${meta.title}</h2><p class="stage-intro">${meta.copy}</p>${renderUnitStageProgress(state.stage)}${decisionWorkbench}<section class="artifact-card live-artifact"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><div class="structured-content">${renderValue(artifact.content)}</div><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${renderCreationTrace(artifact, reviewContent)}${reviewPanel}</section>`;
 }
 
 function renderHandoff() {
@@ -2218,6 +2265,25 @@ function bindAgentTaskAction() {
   });
 }
 
+function bindDecisionImpactWorkbench() {
+  $$('[data-impact-choice]').forEach((button) => button.addEventListener("click", () => {
+    const workbenchId = button.dataset.impactWorkbench;
+    const choice = button.dataset.impactChoice;
+    if (!workbenchId || !choice) return;
+    state.impactChoices[workbenchId] = choice;
+    renderStage();
+    const labels = { revise: "已聚焦到定向修订路径", keep: "已聚焦到保留当前版本路径", evidence: "已聚焦到核对依据路径" };
+    showToast(`${labels[choice] || "已更新处理路径"}；右侧唯一操作不会被自动触发。`);
+  }));
+  $$('[data-impact-evidence]').forEach((button) => button.addEventListener("click", () => {
+    const evidence = $("#reviewEvidence");
+    if (!evidence) return;
+    evidence.open = true;
+    evidence.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    evidence.querySelector("summary")?.focus({ preventScroll: true });
+  }));
+}
+
 function bindStageActions() {
   $$('[data-title-choice]').forEach((button) => button.addEventListener("click", () => {
     if (state.approved.has(artifactForStage("title")?.id)) return;
@@ -2252,6 +2318,7 @@ function bindStageActions() {
     const reason = card?.querySelector("[data-advisory-reason]")?.value || "";
     void decideAdvisory(button.dataset.reviewId, button.dataset.advisoryId, button.dataset.advisoryDecision, reason, button.dataset.advisoryRequiresReason === "true");
   }));
+  bindDecisionImpactWorkbench();
   if (state.stage === "brief") syncBriefRanges();
   if (state.stage === "brief") syncCreativeControls();
 }

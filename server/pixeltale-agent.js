@@ -62,6 +62,7 @@ const AUTO_APPROVE_AGREEMENT = 90;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
 const EPISODE_BATCH_SIZE = 5;
 const UNIT_STAGES = new Set(["arc", "scenes"]);
+const FAST_REVIEW_STAGES = new Set(["brief", "proposal", "characters", "dialogue"]);
 const STAGE_OUTPUT_TOKEN_BUDGETS = Object.freeze({
   brief: 1_800,
   title: 2_400,
@@ -1619,12 +1620,21 @@ function revisionIssueId(stage, item = {}) {
   return `${stage}-R-${issueKey(seed)}`.slice(0, 180);
 }
 
-// 「必修」的唯一判定：只有至少两席共同确认的高风险问题才会阻断阶段。
-function isMandatoryReviewIssue(issue) {
-  return issue?.severity === "high" && Number(issue.modelCount) >= REVIEW_QUORUM;
+function stageReviewPolicy(stage, { revisionContract = null } = {}) {
+  const needsDualConfirmation = UNIT_STAGES.has(stage) || !!revisionContract;
+  return needsDualConfirmation || !FAST_REVIEW_STAGES.has(stage)
+    ? { mode: "dual", requiredSeats: REVIEW_QUORUM, issueSupport: REVIEW_QUORUM }
+    : { mode: "fast", requiredSeats: 1, issueSupport: 1 };
+}
+
+// 高风险问题需要达到当前阶段的独立证据门槛。首稿快速审读以一席为门槛；
+// 分集、场景和定向修订保持两席共同确认。
+function isMandatoryReviewIssue(issue, requiredSupport = REVIEW_QUORUM) {
+  return issue?.severity === "high" && Number(issue.modelCount) >= requiredSupport;
 }
 
 function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contractId }) {
+  const requiredSupport = Math.max(1, Math.min(REVIEW_QUORUM, Number(review?.reviewPolicy?.issueSupport) || REVIEW_QUORUM));
   const acceptedAdvisories = reviewAdvisoryItems(review)
     .filter((item) => item.kind !== "failed" && advisoryDecisionMap(review).get(item.id)?.status === "accepted")
     .map((item) => {
@@ -1648,7 +1658,7 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
     ? asArray(review.mandatoryIssues)
     : [...asArray(review.reviewIssues), ...asArray(review.commonIssues)];
   const freshMandatory = candidateMandatory
-    .filter(isMandatoryReviewIssue)
+    .filter((issue) => isMandatoryReviewIssue(issue, requiredSupport))
     .filter((item, index, all) => all.findIndex((candidate) => revisionIssueId(stage, candidate) === revisionIssueId(stage, item)) === index);
   const freshIssues = [...freshMandatory, ...acceptedAdvisories];
   const previousItems = asArray(review.revision?.contract?.items);
@@ -1707,6 +1717,10 @@ function automaticUnitRepairPlan(stage, review, unitNumbers = []) {
   ].join("\n");
 }
 
+function isRetryableReviewFailure(review = {}) {
+  return asArray(review?.technicalFailures).some((item) => ["failed", "degraded", "stalled", "budget_exhausted"].includes(text(item?.status, 80)));
+}
+
 function revisionIssueSignatures(review = {}) {
   const source = asObject(review);
   return new Set(asArray(source.mandatoryIssues).map((issue) => `${text(issue.id || issue.criterionId || issue.tag, 180)}:${text(issue.fieldPath, 300)}`));
@@ -1724,7 +1738,7 @@ function stalledRevision(previousReview, currentReview) {
   return overlap >= 0.8;
 }
 
-function aggregateRevisionClosure(feedbacks = [], revisionContract = null) {
+function aggregateRevisionClosure(feedbacks = [], revisionContract = null, requiredSeats = REVIEW_QUORUM) {
   const items = asArray(revisionContract?.items);
   if (!items.length) return { required: false, allResolved: true, items: [] };
   const closureItems = items.map((item) => {
@@ -1733,7 +1747,7 @@ function aggregateRevisionClosure(feedbacks = [], revisionContract = null) {
       return closure || { status: "unresolved", evidence: "该审核模型未提供该修订项的关闭证明", remainingFix: "补充逐项复审结论" };
     });
     const counts = Object.fromEntries(["resolved", "partial", "unresolved"].map((status) => [status, responses.filter((entry) => entry.status === status).length]));
-    const resolved = counts.resolved >= REVIEW_QUORUM;
+    const resolved = counts.resolved >= requiredSeats;
     return {
       ...item,
       status: resolved ? "resolved" : counts.resolved ? "partial" : "unresolved",
@@ -1745,7 +1759,10 @@ function aggregateRevisionClosure(feedbacks = [], revisionContract = null) {
   return { required: true, allResolved: closureItems.every((item) => item.status === "resolved"), items: closureItems };
 }
 
-function aggregateCrossReview(reviews = [], revisionContract = null) {
+function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolicy = {}) {
+  const requiredSeats = Math.max(1, Math.min(REVIEW_QUORUM, Number(reviewPolicy.requiredSeats) || REVIEW_COMPLETION_REQUIRED));
+  const issueSupport = Math.max(1, Math.min(requiredSeats, Number(reviewPolicy.issueSupport) || requiredSeats));
+  const reviewMode = reviewPolicy.mode === "fast" ? "fast" : "dual";
   const feedbacks = reviews.map((item) => {
     if (item.result) {
       const review = item.result;
@@ -1814,7 +1831,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
   const agreement = agreementValues.length ? Math.round(agreementValues.reduce((sum, value) => sum + value, 0) / agreementValues.length) : null;
   const qualityScores = completed.map((item) => Number(item.score)).filter(Number.isFinite);
   const quality = qualityScores.length ? Math.round(qualityScores.reduce((sum, score) => sum + score, 0) / qualityScores.length) : null;
-  const reviewCompletion = Math.round((completed.length / 3) * 100);
+  const reviewCompletion = Math.round((Math.min(completed.length, requiredSeats) / requiredSeats) * 100);
   const index = Number.isFinite(agreement) && Number.isFinite(quality)
     ? Math.round(agreement * 0.45 + quality * 0.35 + reviewCompletion * 0.2)
     : null;
@@ -1835,12 +1852,12 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     }))
     .filter((issue, index, all) => all.findIndex((candidate) => candidate.id === issue.id) === index);
   const reviewIssues = [...structuredIssues, ...supplementalIssues];
-  const commonIssues = reviewIssues.filter((issue) => issue.modelCount >= 2);
+  const commonIssues = reviewIssues.filter((issue) => issue.modelCount >= issueSupport);
   const contractKeys = new Set(asArray(revisionContract?.items).flatMap((item) => revisionIssueKeys(revisionContract.stage, item)));
   const isInRevisionContract = (issue) => !revisionContract || revisionIssueKeys(revisionContract.stage, issue).some((key) => contractKeys.has(key));
   const scopedIssues = reviewIssues.filter(isInRevisionContract);
   const outOfContractIssues = revisionContract ? reviewIssues.filter((issue) => !isInRevisionContract(issue)) : [];
-  const mandatoryIssues = scopedIssues.filter(isMandatoryReviewIssue);
+  const mandatoryIssues = scopedIssues.filter((issue) => isMandatoryReviewIssue(issue, issueSupport));
   const recommendedIssues = commonIssues.filter((issue) => issue.severity !== "high");
   const independentIssues = reviewIssues.filter((issue) => issue.modelCount === 1);
   const conflicts = REVIEW_DIMENSIONS
@@ -1867,7 +1884,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
       basis: "按§8.1优先级与证据强度取舍",
     },
   }));
-  const revisionClosure = aggregateRevisionClosure(completed, revisionContract);
+  const revisionClosure = aggregateRevisionClosure(completed, revisionContract, requiredSeats);
   const unresolvedContractItems = revisionClosure.items.filter((item) => item.status !== "resolved");
   const decisionRequiredIssues = [
     ...unresolvedContractItems.map((item) => ({
@@ -1878,12 +1895,12 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
       evidence: item.evidence || [],
       decisionType: "revision_unresolved",
     })),
-    ...outOfContractIssues.filter(isMandatoryReviewIssue).map((item) => ({ ...item, decisionType: "out_of_contract" })),
+    ...outOfContractIssues.filter((issue) => isMandatoryReviewIssue(issue, issueSupport)).map((item) => ({ ...item, decisionType: "out_of_contract" })),
   ];
   const automaticRevisionBlocked = Boolean(revisionContract && decisionRequiredIssues.length);
   const distinctActualModels = new Set(completed.map((item) => item.actualModel || item.model).filter(Boolean)).size;
-  const quorumMet = completed.length >= REVIEW_COMPLETION_REQUIRED && distinctActualModels >= REVIEW_COMPLETION_REQUIRED;
-  const degraded = completed.length >= REVIEW_COMPLETION_REQUIRED && distinctActualModels < REVIEW_COMPLETION_REQUIRED;
+  const quorumMet = completed.length >= requiredSeats && distinctActualModels >= requiredSeats;
+  const degraded = completed.length >= requiredSeats && distinctActualModels < requiredSeats;
   // Name the seats that actually collided and the model they landed on. A hardcoded
   // "B/C" was wrong the moment the roster changed — seat_a and seat_b now share the
   // GPT channel, so the pair that collapses depends on which channel failed.
@@ -1898,8 +1915,8 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     return [...byModel.entries()].filter(([, seats]) => seats.length > 1);
   })();
   const degradedMessage = collapsedSeats.length
-    ? `技术未完成：${collapsedSeats.map(([model, seats]) => `${seats.join("/")} 席位都兜底到了 ${model}`).join("；")}，三席交叉审核不成立`
-    : "技术未完成：三席未能提供三个独立模型的审核，交叉审核不成立";
+    ? `技术未完成：${collapsedSeats.map(([model, seats]) => `${seats.join("/")} 席位都兜底到了 ${model}`).join("；")}，独立复核不成立`
+    : "技术未完成：审读席位未满足独立复核条件";
   const technicalFailures = [
     ...feedbacks.filter((item) => item.status === "failed").map((item) => ({ seatId: item.seatId, status: "failed", failureReason: item.failureReason, message: item.findings[0] })),
     ...(degraded ? [{ status: "degraded", collapsedSeats: collapsedSeats.map(([model, seats]) => ({ model, seats })), message: degradedMessage }] : []),
@@ -1908,8 +1925,8 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
   // 共识降级：3 席全票 → 2 席多数通过即可放行（仍需无 mandatory 硬伤 + 修订闭环）。
   // 第三席的分歧不阻断，记录到 disagreements 供追溯/导出标注——保留三席独立
   // 评估的严谨性，同时消除"单席异议永久卡死"（实测 30 次运行 0 通过）。
-  const majorityPass = completed.length >= REVIEW_PASS_QUORUM
-    && passingReviews >= REVIEW_PASS_QUORUM;
+  const majorityPass = completed.length >= requiredSeats
+    && passingReviews >= requiredSeats;
   const disagreements = completed
     .filter((item) => item.pass !== true)
     .map((item) => ({ seatId: item.seatId || "", model: item.actualModel || item.model || "", issues: asArray(item.mandatoryIssues).slice(0, 5).map((issue) => issue.tag || issue.criterionId || "分歧意见") }));
@@ -1934,14 +1951,14 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
           kind: "revise",
           owner: "系统裁判",
           title: "定向修订",
-          summary: "仅处理两席共同确认的高风险问题。",
+          summary: reviewMode === "fast" ? "快速审读发现高风险问题，已转为定向修订。" : "仅处理双席共同确认的高风险问题。",
           items: mandatoryIssues,
         }
         : {
           kind: "approve",
           owner: "系统裁判",
           title: "通过",
-          summary: "硬规则、修订合同和双席共识均已满足；其余意见仅供参考。",
+          summary: reviewMode === "fast" ? "硬规则与快速审读均已满足；其余意见仅供参考。" : "硬规则、修订合同和双席共识均已满足；其余意见仅供参考。",
           items: [],
         };
   const basePass = decision.kind === "approve";
@@ -1951,7 +1968,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     reviews_passed: majorityPass,
     majority_consensus: majorityPass,
     consistency: mandatoryIssues.length === 0,
-    adversarial: completed.filter((item) => item.checks?.adversarial === true).length >= REVIEW_COMPLETION_REQUIRED,
+    adversarial: completed.filter((item) => item.checks?.adversarial === true).length >= requiredSeats,
     issues_converged: mandatoryIssues.length === 0,
     dimensions_agree: conflicts.length === 0,
     revision_contract_closed: revisionClosure.allResolved,
@@ -1972,7 +1989,8 @@ function aggregateCrossReview(reviews = [], revisionContract = null) {
     agreement,
     quality,
     reviewCompletion,
-    quorum: { required: REVIEW_COMPLETION_REQUIRED, completedSeats: completed.length, completed: completed.length, passing: passingReviews, distinctActualModels, met: quorumMet, degraded },
+    reviewPolicy: { mode: reviewMode, requiredSeats, issueSupport },
+    quorum: { required: requiredSeats, completedSeats: completed.length, completed: completed.length, passing: passingReviews, distinctActualModels, met: quorumMet, degraded },
     disagreements,
     dimensions,
     feedbacks,
@@ -2959,6 +2977,7 @@ function createPixelTaleAgent(options = {}) {
     if (stage === "arc" && !Array.isArray(accumulatedContent.units)) accumulatedContent = { ...accumulatedContent, units: [] };
     if (stage === "scenes" && !Array.isArray(accumulatedContent.scenes)) accumulatedContent = { ...accumulatedContent, scenes: [] };
     const previousArtifacts = scopedPreviousArtifacts(STAGES.map((item) => approvedForStage(state, item)).filter(Boolean), targetUnits);
+    const reviewPolicy = stageReviewPolicy(stage, { revisionContract });
     const batches = splitUnitBatches(targetUnits);
     const batchReviews = [];
     const completedArtifactIds = [];
@@ -3050,7 +3069,7 @@ function createPixelTaleAgent(options = {}) {
         reportPhase(params, "validating");
         const ruleResult = runStageRules({ stage, mode, artifact: reviewTarget.content, approvedContext: { ...batchInput, input: batchInput, artifacts: previousArtifacts }, lockedPaths: lockedUnitContext(state, stage, batchUnits) });
         const highRuleViolations = ruleResult.violations.filter((item) => item.severity === "high");
-        const reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route);
+        const reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route).slice(0, reviewPolicy.requiredSeats);
         reportPhase(params, "reviewing");
         const reviews = await collectCrossReviewQuorum({ reviewRoutes, revisionContract, execute: async (reviewRoute, signal) => {
           const reviewModel = reviewRoute.model || reviewRoute;
@@ -3089,7 +3108,7 @@ function createPixelTaleAgent(options = {}) {
         } });
         reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
         reportPhase(params, "refereeing");
-        const consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract), ruleFindings: ruleResult.violations };
+        const consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract, reviewPolicy), ruleFindings: ruleResult.violations };
         if (consensus.revision) consensus.revision.owner = "本阶段主创";
         const reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviews.map((item) => item.result?.model || item.model).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
         primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
@@ -3165,8 +3184,8 @@ function createPixelTaleAgent(options = {}) {
     persistState(params, state);
     if (autoRepairEligible) {
       // A failed batch used to end the whole request here, forcing the user
-      // to click again. Re-enter the same unit runner once or twice so a
-      // failed review can be retried or repaired without resubmitting locks.
+      // to click again. Re-enter the same unit runner once so a failed review
+      // can be retried or repaired without resubmitting locks.
       const repairPlan = automaticUnitRepairPlan(stage, finalReview, targetUnits);
       return await runUnitStage({
         params: { ...params, revisionPlan: repairPlan },
@@ -3225,6 +3244,9 @@ function createPixelTaleAgent(options = {}) {
     const previousArtifacts = STAGES.map((item) => approvedForStage(state, item)).filter(Boolean);
     const revisionBase = revisionPlan ? artifactForStage(state, stage) : null;
     const sourceReview = revisionBase?.reviewId ? state.artifacts.find((artifact) => artifact.id === revisionBase.reviewId) : null;
+    const reviewRetryArtifact = !revisionPlan && stage !== "title" ? artifactForStage(state, stage) : null;
+    const reviewRetry = reviewRetryArtifact?.reviewId ? state.artifacts.find((artifact) => artifact.id === reviewRetryArtifact.reviewId) : null;
+    const reuseReviewArtifact = reviewRetryArtifact?.status === "needs_review" && isRetryableReviewFailure(reviewRetry?.content);
     const errors = [];
     let retryCount = 0;
     let primary;
@@ -3282,43 +3304,56 @@ function createPixelTaleAgent(options = {}) {
           throw error;
         }
       }
+      const reviewPolicy = stageReviewPolicy(stage, { revisionContract });
       const excludedTitles = stage === "title"
         ? state.artifacts.filter((artifact) => artifact.stage === "title" && artifact.type === "pixeltale_title").flatMap((artifact) => asArray(artifact.content?.candidates).map((candidate) => candidate?.title_en || candidate?.title_zh))
         : [];
-      const system = stageSystemPrompt(stage, mode, runInput);
-      const user = revisionContract
-        ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
-        : stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, excludedTitles });
-      if (stage === "title") reportPhase(params, "authoring");
-      primary = stage === "title"
-        ? await callProvider({
-          provider: route.primary,
-          system,
-          user,
-          modelRouter,
-          timeoutMs: stagePrimaryTiming("title").model,
-          maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS.title,
-          purpose: "pixeltale:title:author",
-        })
-        : await callStagePrimary({
-          onPhase: (phase) => reportPhase(params, phase),
-          route,
+      if (reuseReviewArtifact) {
+        primaryArtifact = reviewRetryArtifact;
+        primary = {
+          provider: "recovery",
+          model: text(primaryArtifact.model, 200) || route.primary,
+          attempts: 0,
+          reused: true,
+          primaryExecution: primaryArtifact.primaryExecution || { role: "主笔", actualModel: text(primaryArtifact.model, 200) || route.primary, provider: "recovery" },
+        };
+      } else {
+        const system = stageSystemPrompt(stage, mode, runInput);
+        const user = revisionContract
+          ? revisionUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, baseArtifact: revisionBase, revisionContract, revisionPlan })
+          : stageUserPrompt({ stage, mode, input: runInput, previousArtifacts, project: params.project, excludedTitles });
+        if (stage === "title") reportPhase(params, "authoring");
+        primary = stage === "title"
+          ? await callProvider({
+            provider: route.primary,
+            system,
+            user,
+            modelRouter,
+            timeoutMs: stagePrimaryTiming("title").model,
+            maxTokens: STAGE_OUTPUT_TOKEN_BUDGETS.title,
+            purpose: "pixeltale:title:author",
+          })
+          : await callStagePrimary({
+            onPhase: (phase) => reportPhase(params, phase),
+            route,
+            stage,
+            mode,
+            system,
+            user,
+            modelRouter,
+            validateContribution: (content) => validateContent(stage, content, { ...runInput, mode, excludedTitles }),
+          });
+        retryCount += primary.attempts || 0;
+        const content = validateContent(
           stage,
-          mode,
-          system,
-          user,
-          modelRouter,
-          validateContribution: (content) => validateContent(stage, content, { ...runInput, mode, excludedTitles }),
-        });
-      retryCount += primary.attempts || 0;
-      const content = validateContent(
-        stage,
-        revisionPlan ? mergeRevisionContent(stage, primary.content, revisionBase?.content) : primary.content,
-        { ...runInput, mode, excludedTitles },
-      );
-      const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
-      primaryArtifact = buildArtifact({ stage, mode, input: runInput, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
-      if (primary.primaryExecution) primaryArtifact.primaryExecution = primary.primaryExecution;
+          revisionPlan ? mergeRevisionContent(stage, primary.content, revisionBase?.content) : primary.content,
+          { ...runInput, mode, excludedTitles },
+        );
+        const version = state.artifacts.filter((artifact) => artifact.stage === stage && artifact.type === `pixeltale_${stage}`).length + 1;
+        primaryArtifact = buildArtifact({ stage, mode, input: runInput, content, model: `${primary.provider}:${primary.model}`, version, now, randomUUID });
+        if (primary.primaryExecution) primaryArtifact.primaryExecution = primary.primaryExecution;
+      }
+      const version = Number(primaryArtifact.version || 1);
       if (stage === "title") {
         primaryArtifact.status = "ready";
         primaryArtifact.reviewId = "";
@@ -3339,7 +3374,7 @@ function createPixelTaleAgent(options = {}) {
       reportPhase(params, "validating");
       const ruleResult = runStageRules({ stage, mode, artifact: primaryArtifact.content, approvedContext: { ...runInput, input: runInput, artifacts: previousArtifacts }, lockedPaths: [] });
       const highRuleViolations = ruleResult.violations.filter((item) => item.severity === "high");
-      reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route);
+      reviewRoutes = highRuleViolations.length ? [] : modelRouter.reviewModels(route).slice(0, reviewPolicy.requiredSeats);
       reportPhase(params, "reviewing");
       reviews = await collectCrossReviewQuorum({ reviewRoutes, revisionContract, execute: async (reviewRoute, signal) => {
         const reviewModel = reviewRoute.model || reviewRoute;
@@ -3377,12 +3412,13 @@ function createPixelTaleAgent(options = {}) {
       } });
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
       reportPhase(params, "refereeing");
-      consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract), ruleFindings: ruleResult.violations };
+      consensus = highRuleViolations.length ? ruleBlockedReview(ruleResult) : { ...aggregateCrossReview(reviews, revisionContract, reviewPolicy), ruleFindings: ruleResult.violations };
       if (consensus.revision) consensus.revision.owner = "本阶段主创";
       reviewArtifact = buildReviewArtifact({ stage, review: consensus, model: `cross-review:${reviews.map((item) => item.result?.model || item.model).join(",")}`, version, now, randomUUID, primaryArtifactId: primaryArtifact.id });
       primaryArtifact.status = consensus.pass ? "ready" : "needs_review";
       primaryArtifact.reviewId = reviewArtifact.id;
-      state.artifacts.push(primaryArtifact, reviewArtifact);
+      if (!state.artifacts.some((artifact) => artifact.id === primaryArtifact.id)) state.artifacts.push(primaryArtifact);
+      state.artifacts.push(reviewArtifact);
       // 自动放行：多数通过 + 意见一致≥90% → 自动确认并进入下一步（title 由人工选题，不放行）
       if (consensus.pass && Number(consensus.agreement) >= AUTO_APPROVE_AGREEMENT && stage !== "title") {
         confirmArtifact(state, primaryArtifact, now, { auto: true });
@@ -3707,8 +3743,10 @@ module.exports = {
   reviewAdvisoryItems,
   reviewAdvisoryGate,
   isMandatoryReviewIssue,
+  stageReviewPolicy,
   stageRoute,
   buildRevisionContract,
+  isRetryableReviewFailure,
   aggregateRevisionClosure,
   aggregateCrossReview,
   runStageRules,

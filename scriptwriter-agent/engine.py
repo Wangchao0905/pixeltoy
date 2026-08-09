@@ -464,6 +464,26 @@ AI 腔清单：{humanizer[:1200] if humanizer else '中文 AI 腔 21 模式'}
             state.current_episode = max(state.current_episode, idx + 1)
             self._save(state)
             return {"status": status, "episode": None, "verdict": None, "rounds": 0}
+        # 生成后立即时长自检：超限先自动精简/补足，避免"生成长集→审核否决"的无效往返。
+        target = state.idea.get("episode_duration_seconds") if isinstance(state.idea, dict) else None
+        if target:
+            ok_dur, est = self._duration_check(episode, target)
+            if not ok_dur:
+                direction = "压缩（删减冗余节拍/缩短对白），只保留核心冲突与钩子" if est > target else "补足内容（增加节拍/充实对白）"
+                duration_issue = {"severity": "high", "mode": 0, "quote": "",
+                                  "fix": (f"估算时长约 {int(est)} 秒，目标 {target} 秒，需{direction}，"
+                                          f"使估算时长落在 {int(target*0.6)}-{int(target*1.4)} 秒区间。"
+                                          f"这是本次修订唯一要解决的问题，其余内容一律不改。")}
+                revised = self.revise_episode(state, episode, [duration_issue], round_no=rounds)
+                if isinstance(revised, dict):
+                    if self._revision_respects_scope(episode, revised, [duration_issue]):
+                        merged = revised
+                    else:
+                        # 结构类修订（时长精简必然删旧对白/节拍）：merge 直接采用修订版
+                        merged = self._merge_revision(episode, revised, [duration_issue])
+                    if merged is not None:
+                        episode = merged
+                # 修订后仍超限：继续进审核，审核同样会否决并给出精简建议（可人工"修复此条"）
         while rounds <= MAX_REVISION_ROUNDS:
             verdict = self.review_episode(state, episode)
             if verdict is None:

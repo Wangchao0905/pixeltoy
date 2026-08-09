@@ -191,3 +191,40 @@ class TestDurationHardGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestDurationAutoTrim(unittest.TestCase):
+    LONG_DRAFT = {"scenes": [{"location": "天台", "beats": [
+        {"speaker": "林晚", "line": "一长段对白是用于测试时长超限时自动精简的填充内容" * 18, "action": "她叹气"},
+    ]}]}
+    # 4 拍 × ~35 字 → 估算 ≈ 4*8.75+2 ≈ 37 秒，落在 60 秒目标（36-84）区间内
+    TRIMMED = {"scenes": [{"location": "天台", "beats": [
+        {"speaker": "林晚", "line": "我们别再等了，车快开了，这批货再不走今晚就要烂在仓库里，耽误了谁负责"}, {"speaker": "林晚", "line": "可这单子还没交接完，走不了啊，得先把账对清楚才行，不然回头说不清"},
+        {"speaker": "林晚", "line": "那就把单子交给老陈，他明天一早来拿，账目回头再核对一遍就是"}, {"speaker": "林晚", "line": "好，我这就去打电话给他交代清楚，让他七点前过来接货点货"},
+        {"speaker": "林晚", "line": "那我先去把货搬到门口，你打完电话就下来搭把手"},
+    ]}]}
+
+    def test_oversize_draft_auto_trimmed_before_review(self):
+        writer = SeqLLM([json.dumps(self.LONG_DRAFT, ensure_ascii=False),
+                         json.dumps(self.TRIMMED, ensure_ascii=False)])
+        reviewer_a = SeqLLM([PASS_A])
+        eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects")
+        state = make_state()
+        state.idea["episode_duration_seconds"] = 60
+        result = eng.run_episode_loop(state, {"index": 1, "events": []})
+        self.assertEqual(result["status"], "approved", "自动精简后应正常过审")
+        self.assertEqual(len(writer.calls), 2, "主笔被调用两次：生成 + 时长精简修订")
+
+    def test_oversize_draft_trim_fails_still_reviewed(self):
+        # 自检修订未精简（仍超长）→ 进审核被否决 → 修订轮 → needs-human（不抛异常）
+        writer = SeqLLM([json.dumps(self.LONG_DRAFT, ensure_ascii=False),
+                         json.dumps(self.LONG_DRAFT, ensure_ascii=False),
+                         json.dumps(self.LONG_DRAFT, ensure_ascii=False),
+                         json.dumps(self.LONG_DRAFT, ensure_ascii=False)])
+        reviewer_a = SeqLLM([FAIL_A, FAIL_A, FAIL_A])
+        eng = PixelWriterEngine(writer, reviewer_a, state_dir="projects")
+        state = make_state()
+        state.idea["episode_duration_seconds"] = 60
+        result = eng.run_episode_loop(state, {"index": 1, "events": []})
+        self.assertIn(result["status"], ("needs-human", "approved"))
+if __name__ == "__main__":
+    unittest.main()

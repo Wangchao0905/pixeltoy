@@ -2822,11 +2822,17 @@ function updateUnitStageProgress(state, stage, totalUnits, { batchId = "", units
   const generatedUnits = [...new Set(
     batches.filter((entry) => entry.status !== "running").flatMap((entry) => entry.units || []),
   )].sort((a, b) => a - b);
+  const pinList = Object.keys(asObject(state?.unitLocks?.[stage]) || {}).map(Number)
+    .filter((u) => unitLockStatus(state, stage, u) === "pinned").sort((a, b) => a - b);
+  const dirtyList = dirtyUnits(state, stage);
   state.stageProgress[stage] = {
     ...progress,
     totalUnits,
     batchSize: EPISODE_BATCH_SIZE,
     lockedUnits: locked,
+    // 人工定稿集并入锁定语义（进度条绿色），并单独暴露给前端做徽标
+    pinnedUnits: pinList,
+    dirtyUnits: dirtyList,
     pendingUnits: pending,
     currentBatch: status === "running" ? normalizeUnitNumbers(units, totalUnits) : [],
     batches: batches.slice(-30),

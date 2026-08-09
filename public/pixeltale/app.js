@@ -697,6 +697,71 @@ function collectUnitStageScope(stage) {
   return [...new Set(scope)];
 }
 
+async function handleEditUnitClick(btn, stage) {
+  const input = document.getElementById("unitEditInput");
+  const unit = Number(input?.value || 0);
+  if (!Number.isInteger(unit) || unit <= 0) { alert("请输入有效的集号"); return; }
+  const res = await fetch("/api/pixeltale", { headers: { "x-pixeltale-session": sessionStorage.getItem("pixeltale.session") || localStorage.getItem("pw.session") || "" } });
+  const data = await res.json().catch(() => ({}));
+  const agent = data.agent;
+  const unitContent = agent?.artifacts?.find((a) => a.stage === stage)?.content?.units?.[unit] || agent?.artifacts?.find((a) => a.stage === stage)?.content?.[String(unit)];
+  if (!unitContent && !agent) { alert("请先加载项目"); return; }
+  const body = unitContent && typeof unitContent === "object" ? JSON.stringify(unitContent, null, 2) : String(unitContent || "");
+  const edited = prompt(`编辑第 ${unit} 集内容（JSON，仅 ${stage} 阶段）：`, body);
+  if (edited === null) return;
+  let patchedUnit;
+  try { patchedUnit = JSON.parse(edited); } catch { alert("JSON 格式错误，未保存"); return; }
+  try {
+    const save = await fetch("/api/pixeltale/unit/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage, unit, patchedUnit, ifMatch: Number(agent?.stageProgress?.[stage]?.version || 0) }),
+    });
+    const result = await save.json().catch(() => ({}));
+    if (!save.ok) { alert(result.error || "保存失败"); return; }
+    alert(`第 ${unit} 集已保存并标记为「人工定稿」，自动流程不会再覆盖。`);
+    await refreshPixelTaleState();
+  } catch (error) {
+    alert("网络错误，请重试");
+  }
+}
+
+async function handleFixUnitClick(btn) {
+  const stage = btn.dataset.stage;
+  const unit = Number(btn.dataset.unit);
+  let issue;
+  try { issue = JSON.parse(btn.dataset.issue); } catch { return; }
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = "修复中…";
+  try {
+    const res = await fetch("/api/pixeltale/unit/fix-issue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage, unit, issue }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || "修复失败，请重试"); return; }
+    if (data.status === "approved") alert(`第 ${unit} 集该问题已修复，审核通过并已锁定。`);
+    else if (data.status === "rolled-back") alert(`第 ${unit} 集修复未改善，已自动恢复原版本。`);
+    else alert(`第 ${unit} 集已修订，但仍有未解决问题。`);
+    await refreshPixelTaleState();
+  } catch (error) {
+    alert("网络错误，请重试");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+async function refreshPixelTaleState() {
+  try {
+    const res = await fetch("/api/pixeltale", { headers: { "x-pixeltale-session": sessionStorage.getItem("pixeltale.session") || localStorage.getItem("pw.session") || "" } });
+    const data = await res.json();
+    if (data.ok && data.agent) { state.agent = data.agent; renderApp(); }
+  } catch { /* 静默 */ }
+}
+
 function renderUnitStageProgress(stage) {
   const progress = unitStageProgress(stage);
   if (!progress) return "";
@@ -706,9 +771,13 @@ function renderUnitStageProgress(stage) {
   const pendingCount = progress.pending.length;
   const generatedPct = progress.total ? Math.min(100, Math.round(generatedCount / progress.total * 100)) : 0;
   const lockedPct = progress.total ? Math.min(100, Math.round(lockedCount / progress.total * 100)) : 0;
+  const pinned = Array.isArray(progress.pinned) ? progress.pinned : [];
+  const dirty = Array.isArray(progress.dirty) ? progress.dirty : [];
   const status = generatedCount ? `已生成 ${generatedCount} 集 · 已锁定 ${lockedCount} 集` : `已锁定 ${lockedCount} 集`;
+  const pinnedBadge = pinned.length ? `<em class="lock-badge is-pinned" title="人工编辑过的集，自动流程不会覆盖">✍ 人工定稿 ${pinned.length}</em>` : "";
+  const dirtyBadge = dirty.length ? `<em class="lock-badge is-dirty" title="依赖已变更，需人工复核">⚠ 依赖已变 ${dirty.length}</em>` : "";
   const pending = pendingCount ? `未锁定 ${pendingCount} 集` : "没有待处理集";
-  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="绿=已锁定 · 黄=已生成待审核 · 灰=未生成"><i class="is-generated" style="width:${generatedPct}%"></i><i class="is-locked" style="width:${lockedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>未关闭项只会重跑对应批次；只有出现无法由阶段契约自动裁决的创作取舍时，才需要你选择方案。已锁定集不会再次提交。</small></section>`;
+  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong>${pinnedBadge}${dirtyBadge}</div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="绿=已锁定 · 黄=已生成待审核 · 灰=未生成"><i class="is-generated" style="width:${generatedPct}%"></i><i class="is-locked" style="width:${lockedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label><label for="unitEditInput">人工编辑集号 <input id="unitEditInput" type="text" value="${escapeHtml(state.unitEditTarget || "")}" placeholder="输入集号后点编辑" inputmode="numeric" autocomplete="off" /></label><button type="button" class="edit-unit-btn" data-edit-unit>编辑该集</button></div><small>未关闭项只会重跑对应批次；只有出现无法由阶段契约自动裁决的创作取舍时，才需要你选择方案。已锁定集不会再次提交。</small></section>`;
 }
 
 function reviewForArtifact(artifact) {
@@ -1235,6 +1304,12 @@ function renderModelTeam() {
       || `${reviewModeLabelFor(state.stage, currentReview.content, currentArtifact)}不成立：有席位兜底到了同一模型`;
     $("#modelTeamCards").insertAdjacentHTML("beforebegin", `<p class="model-team-degraded">${escapeHtml(degradedNote)}</p>`);
   }
+  $$('[data-fix-unit]').forEach((button) => button.addEventListener("click", () => {
+    handleFixUnitClick(button);
+  }));
+  $$('[data-edit-unit]').forEach((button) => button.addEventListener("click", () => {
+    handleEditUnitClick(button, stage);
+  }));
   $$('[data-model-detail]').forEach((button) => button.addEventListener("click", () => {
     const lane = roleLabels[activeSeats.find((seat) => seat.seatId === button.dataset.modelDetail)?.role] || "独立交叉审查";
     showToast(`${lane} · ${button.querySelector("em")?.textContent?.replace("\n", " · ") || "待审核"}`);
@@ -1860,7 +1935,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   const technicalFailures = [...(Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : []), ...feedbacks.filter((item) => item.status === "failed")];
   const technical = technicalReviewState(reviewContent);
   const reasonLabels = { timeout: "请求超时", network_error: "网络错误", empty_response: "空响应", invalid_json: "返回格式错误", schema_error: "数据结构错误", not_configured: "模型未配置" };
-  const issueMarkup = (items, empty) => items.length ? `<div class="review-issue-list">${items.map((item, index) => `<article class="review-issue review-issue-${escapeHtml(item.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.tag || item.code || "审核意见")}</strong><span class="review-issue-severity">${escapeHtml(item.severity || "medium")}</span></div>${item.message ? `<p>${escapeHtml(item.message)}</p>` : ""}${Array.isArray(item.suggestions) && item.suggestions.length ? `<ul>${item.suggestions.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : item.fix ? `<p>${escapeHtml(item.fix)}</p>` : ""}</article>`).join("")}</div>` : `<p class="review-empty">${empty}</p>`;
+  const issueMarkup = (items, empty) => items.length ? `<div class="review-issue-list">${items.map((item, index) => { const fixable = Number.isInteger(Number(item.unit)) && Number(item.unit) > 0 && !!item.fieldPath && (stage === "arc" || stage === "scenes"); return `<article class="review-issue review-issue-${escapeHtml(item.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.tag || item.code || "审核意见")}</strong><span class="review-issue-severity">${escapeHtml(item.severity || "medium")}</span>${fixable ? `<button type="button" class="fix-unit-btn" data-fix-unit data-stage="${escapeHtml(stage)}" data-unit="${Number(item.unit)}" data-issue='${escapeHtml(JSON.stringify({ unit: Number(item.unit), field_path: item.fieldPath, tag: item.tag || "", feedback: item.feedback || "", fix: item.fix || "" }))}'>修复此集</button>` : ""}</div>${item.message ? `<p>${escapeHtml(item.message)}</p>` : ""}${Array.isArray(item.suggestions) && item.suggestions.length ? `<ul>${item.suggestions.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : item.fix ? `<p>${escapeHtml(item.fix)}</p>` : ""}</article>`; }).join("")}</div>` : `<p class="review-empty">${empty}</p>`;
   const adjudicationMarkup = adjudications.length ? `<div class="review-issue-list">${adjudications.map((item) => `<article class="review-adjudication"><strong>${escapeHtml(item.dimension || "未标注维度")}</strong><p>分歧度 ${escapeHtml(String(item.agreement ?? "—"))}% · 席位评分 ${escapeHtml((item.scores || []).join(" / "))}</p><p>证据来源：${escapeHtml((item.seats || []).join("、") || "审核席位")}</p><p>裁决依据：${escapeHtml(item.adjudication?.basis || "按证据强度与阶段契约自动裁决")}</p></article>`).join("")}</div>` : `<p class="review-empty">当前没有评分分歧，${reviewOpinion}可直接汇总。</p>`;
   const failureMarkup = technicalFailures.length ? `<div class="review-issue-list">${technicalFailures.map((item) => `<article class="review-technical-failure"><strong>${escapeHtml(item.seatId || "未标识席位")}</strong><p>未返回 · 技术未完成 · ${escapeHtml(reasonLabels[item.failureReason] || item.failureReason || item.message || "调用失败")}</p></article>`).join("")}</div>` : `<p class="review-empty">${reviewMode}未发现技术失败。</p>`;
   const degradedFlag = technical.degraded

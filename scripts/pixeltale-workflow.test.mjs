@@ -1579,6 +1579,12 @@ assert.match(tkCharactersContract, /英文声线规则/, "tk mode characters con
 // 7. Human override must be informed: the confirm dialog shows review
 //    evidence (score / issue counts / revision state) before releasing.
 assert.match(app, /function buildHumanOverrideBrief/, "app.js must expose the human-override evidence builder");
+assert.match(app, /unit\/fix-issue/, "app.js 必须接入单集定向修复 API");
+assert.match(app, /unit\/update/, "app.js 必须接入编辑保存 API（改内容→pinned）");
+assert.match(app, /data-fix-unit/, "审核建议必须提供『修复此集』按钮");
+assert.match(app, /data-edit-unit/, "集进度区必须提供人工编辑入口");
+assert.match(app, /lock-badge is-pinned/, "人工定稿徽标必须在位");
+assert.match(app, /lock-badge is-dirty/, "依赖已变徽标必须在位");
 assert.match(app, /审核依据/, "the human-override dialog must present review evidence before confirming");
 assert.match(app, /不会再自动重复改稿/, "the decision dialog must state that it stops repeated automatic rewrites");
 assert.match(app, /请简要记录本次取舍理由/, "the decision dialog must collect a persistent creator rationale");

@@ -689,7 +689,7 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "重点寻找：前后设定冲突、因果断裂、角色动机缺口、市场本土化错误、模式节奏偏离、悬念提前泄露和无法执行的空泛表达。",
     "只返回最多 3 个会阻断下一阶段的问题；每项使用一个标准 ID、一句证据和一句可执行修改，不写二次策划案。",
     "required_changes 必须与 issues 一一对应，不得追加未在 issues 中举证的新要求。",
-    "若输入包含 revisionClosureProtocol，则必须逐条返回 revision_closures：每条合同项只能标记 resolved、partial 或 unresolved，并写明修订证据和未完成时的剩余修改；不得遗漏合同编号。",
+    "若输入包含 revisionClosureProtocol，则必须逐条返回 revision_closures：每条合同项只能标记 resolved、partial 或 unresolved，并写明修订证据和未完成时的剩余修改；不得遗漏合同编号。只有存在两个都符合阶段契约、但会导向不同创作方向的方案时，才能标记 requires_creator_decision=true 并给出两个 decision_options；普通未完成修订必须为 false。",
     "四个维度任一评分低于 75 时，必须明确分歧证据并提出供创作者裁决的取舍建议；不要把低于 75 的结果写成通过。",
     "只有 cross_validation、consistency、adversarial 三项均为 true，并且阶段专项检查均通过时，pass 才能为 true；发现任一硬伤必须 pass=false，并在 required_changes 中给出可执行修订意见。",
     creativeControlPrompt(input, mode),
@@ -700,7 +700,7 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "模式规则只能检查当前阶段已有字段：brief 检查开头承诺与追更问题，arc 才检查逐集钩子、反转与回收；不得提前索要后续资产。",
     "对白阶段还要检查英文是否自然口语化、是否保留中文剧情意图、是否像人物会说的话。",
     ...(stage === "title" ? ["剧名阶段必须检查恰好 4 个候选、名称不重复、四种命名基因确实拉开差异，并且每个候选都有风格、语气、命名基因和理由。"] : []),
-    '输出契约：{"pass":true,"score":<0-100整数>,"confidence":<0-100整数>,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改"}],"dimensions":{"structure":{"score":<0-100整数>,"feedback":"结构意见"},"plot":{"score":<0-100整数>,"feedback":"剧情意见"},"design":{"score":<0-100整数>,"feedback":"设计意见"},"logic":{"score":<0-100整数>,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
+    '输出契约：{"pass":true,"score":<0-100整数>,"confidence":<0-100整数>,"findings":["具体发现"],"required_changes":["必须修正的问题"],"issues":[{"criterion_id":"只能使用本阶段审核标准ID","tag":"稳定短标签","dimension":"structure|plot|design|logic","severity":"high|medium|low","feedback":"问题证据","fix":"具体修改建议"}],"revision_closures":[{"issue_id":"brief-R01","status":"resolved|partial|unresolved","evidence":"修订核验依据","remaining_fix":"未完成时的具体修改","requires_creator_decision":false,"decision_options":["方案 A","方案 B"]}],"dimensions":{"structure":{"score":<0-100整数>,"feedback":"结构意见"},"plot":{"score":<0-100整数>,"feedback":"剧情意见"},"design":{"score":<0-100整数>,"feedback":"设计意见"},"logic":{"score":<0-100整数>,"feedback":"逻辑意见"}},"checks":{"cross_validation":true,"consistency":true,"adversarial":true,"structure":true,"mode":true,"continuity":true,"dialogue":true,"localization":true}}',
     "分数必须是你的真实评估；0 分仅在内容确实完全不可用时使用。confidence 是你对本次判断的确定度（0-100）。",
   ].join("\n");
 }
@@ -1124,10 +1124,14 @@ function batchReviewSummary(stage, batchReviews, totalUnits, unitLocks) {
     && lockedUnits.length >= totalUnits;
   const mandatoryIssues = reviews.flatMap((review) => asArray(review?.mandatoryIssues));
   const decisionRequiredIssues = reviews.flatMap((review) => asArray(review?.decisionRequiredIssues));
+  const retryRequiredIssues = reviews.flatMap((review) => asArray(review?.retryRequiredIssues));
+  const retryUnits = normalizeUnitNumbers(reviews.filter((review) => !hasBasePass(review)).flatMap((review) => asArray(review?.units)), totalUnits);
   const decision = !quorumMet
     ? { kind: "rerun", owner: "系统裁判", title: "审核未完成", summary: "至少一个批次未完成双席审读。", items: [] }
     : decisionRequiredIssues.length
-      ? { kind: "needs_decision", owner: "系统裁判", title: "需要创作者决定", summary: "至少一个批次的修订未收敛。", items: decisionRequiredIssues }
+      ? { kind: "needs_decision", owner: "系统裁判", title: "需要创作者决定", summary: "至少一个批次存在无法由阶段契约自动取舍的创作选择。", items: decisionRequiredIssues }
+      : retryRequiredIssues.length
+        ? { kind: "retry_failed", owner: "系统裁判", title: "只重跑未通过批次", summary: `仅处理第${retryUnits.join("、")}集的未关闭项，已锁定集不会再次提交。`, items: retryRequiredIssues }
       : mandatoryIssues.length
         ? { kind: "revise", owner: "系统裁判", title: "定向修订", summary: "仅处理双席共同确认的高风险问题。", items: mandatoryIssues }
         : basePass
@@ -1160,6 +1164,8 @@ function batchReviewSummary(stage, batchReviews, totalUnits, unitLocks) {
     mandatoryIssues,
     mandatoryIssueCount: mandatoryIssues.length,
     decisionRequiredIssues,
+    retryRequiredIssues,
+    retryUnits,
     automaticRevisionBlocked: decision.kind === "needs_decision",
     decision,
     recommendedIssues: reviews.flatMap((review) => asArray(review?.recommendedIssues)),
@@ -1443,6 +1449,8 @@ function validateReview(value, { requireDimensions = false, revisionContract = n
         : "unresolved",
       evidence: text(entry.evidence, 1200),
       remainingFix: text(entry.remaining_fix || entry.remainingFix, 1200),
+      requiresCreatorDecision: entry.requires_creator_decision === true || entry.requiresCreatorDecision === true,
+      decisionOptions: asArray(entry.decision_options || entry.decisionOptions).map((option) => text(option, 400)).filter(Boolean).slice(0, 2),
     };
   }).filter((item) => item.issueId);
   const missingClosures = contractItems.filter((item) => !revisionClosures.some((closure) => closure.issueId === item.id));
@@ -1744,7 +1752,7 @@ function aggregateRevisionClosure(feedbacks = [], revisionContract = null, requi
   const closureItems = items.map((item) => {
     const responses = feedbacks.map((feedback) => {
       const closure = asArray(feedback.revisionClosures).find((entry) => entry.issueId === item.id);
-      return closure || { status: "unresolved", evidence: "该审核模型未提供该修订项的关闭证明", remainingFix: "补充逐项复审结论" };
+      return closure || { status: "unresolved", evidence: "该审核模型未提供该修订项的关闭证明", remainingFix: "补充逐项复审结论", requiresCreatorDecision: false, decisionOptions: [] };
     });
     const counts = Object.fromEntries(["resolved", "partial", "unresolved"].map((status) => [status, responses.filter((entry) => entry.status === status).length]));
     const resolved = counts.resolved >= requiredSeats;
@@ -1754,6 +1762,8 @@ function aggregateRevisionClosure(feedbacks = [], revisionContract = null, requi
       resolvedBy: counts.resolved,
       responses: responses.map((entry) => ({ status: entry.status, evidence: entry.evidence, remainingFix: entry.remainingFix })),
       remainingFix: uniqueText(responses.filter((entry) => entry.status !== "resolved").map((entry) => entry.remainingFix || entry.evidence), 4),
+      requiresCreatorDecision: !resolved && responses.length >= requiredSeats && responses.every((entry) => entry.requiresCreatorDecision === true && asArray(entry.decisionOptions).length >= 2),
+      decisionOptions: uniqueText(responses.flatMap((entry) => asArray(entry.decisionOptions)), 2),
     };
   });
   return { required: true, allResolved: closureItems.every((item) => item.status === "resolved"), items: closureItems };
@@ -1886,17 +1896,19 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
   }));
   const revisionClosure = aggregateRevisionClosure(completed, revisionContract, requiredSeats);
   const unresolvedContractItems = revisionClosure.items.filter((item) => item.status !== "resolved");
-  const decisionRequiredIssues = [
-    ...unresolvedContractItems.map((item) => ({
+  const decisionRequiredIssues = unresolvedContractItems
+    .filter((item) => item.requiresCreatorDecision === true && asArray(item.decisionOptions).length >= 2)
+    .map((item) => ({
       ...item,
       tag: item.tag || "未收敛修订项",
       severity: item.severity || "high",
       suggestions: item.remainingFix?.length ? item.remainingFix : [item.acceptance || "需要创作者决定下一步"],
       evidence: item.evidence || [],
-      decisionType: "revision_unresolved",
-    })),
-    ...outOfContractIssues.filter((issue) => isMandatoryReviewIssue(issue, issueSupport)).map((item) => ({ ...item, decisionType: "out_of_contract" })),
-  ];
+      decisionType: "creative_tradeoff",
+    }));
+  const retryRequiredIssues = unresolvedContractItems
+    .filter((item) => !item.requiresCreatorDecision)
+    .map((item) => ({ ...item, tag: item.tag || "未关闭修订项", severity: item.severity || "high", decisionType: "retry_failed" }));
   const automaticRevisionBlocked = Boolean(revisionContract && decisionRequiredIssues.length);
   const distinctActualModels = new Set(completed.map((item) => item.actualModel || item.model).filter(Boolean)).size;
   const quorumMet = completed.length >= requiredSeats && distinctActualModels >= requiredSeats;
@@ -1938,7 +1950,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
       summary: "审读席位未满足独立复核条件，需要重新完成审核。",
       items: technicalFailures,
     }
-    : decisionRequiredIssues.length
+      : decisionRequiredIssues.length
       ? {
         kind: "needs_decision",
         owner: "系统裁判",
@@ -1946,6 +1958,14 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
         summary: "定向修订未收敛或出现合同外共识，自动改稿已停止。",
         items: decisionRequiredIssues,
       }
+      : retryRequiredIssues.length
+        ? {
+          kind: "revise",
+          owner: "系统裁判",
+          title: "继续定向修订",
+          summary: "仅处理尚未关闭的修订项，不扩大当前阶段范围。",
+          items: retryRequiredIssues,
+        }
       : mandatoryIssues.length
         ? {
           kind: "revise",
@@ -2002,6 +2022,7 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
     mandatoryIssueCount: mandatoryIssues.length,
     outOfContractIssues,
     decisionRequiredIssues,
+    retryRequiredIssues,
     automaticRevisionBlocked,
     decision,
     recommendedIssues,

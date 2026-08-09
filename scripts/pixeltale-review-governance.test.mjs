@@ -47,12 +47,17 @@ const resolved = { issueId: "brief-R-opening", status: "resolved", evidence: "�
 const outOfContract = { tag: "合同外新问题", dimension: "logic", severity: "high", feedback: "新的争议", fix: "人工决定" };
 const scopedReview = aggregateCrossReview([review("review-a", { issues: [outOfContract], revisionClosures: [resolved] }), review("review-b", { issues: [outOfContract], revisionClosures: [resolved] })], contract);
 assert.equal(scopedReview.mandatoryIssueCount, 0, "复审合同外的问题不能重新触发自动修订");
-assert.equal(scopedReview.outOfContractIssues.length, 1, "合同外共识必须保留为待决定事项");
+assert.equal(scopedReview.outOfContractIssues.length, 1, "合同外共识必须保留为参考事项");
 
-const unresolved = { issueId: "brief-R-opening", status: "unresolved", evidence: "仍有争议", remainingFix: "需要创作者决定取舍" };
+const unresolved = { issueId: "brief-R-opening", status: "unresolved", evidence: "仍有争议", remainingFix: "补足开场触发" };
 const stalled = aggregateCrossReview([review("review-a", { revisionClosures: [unresolved], pass: false }), review("review-b", { revisionClosures: [unresolved], pass: false })], contract);
-assert.equal(stalled.automaticRevisionBlocked, true, "合同修订未收敛时必须停止再次自动改稿");
-assert.equal(stalled.decisionRequiredIssues.length, 1, "未收敛合同必须转为需要决定");
+assert.equal(stalled.automaticRevisionBlocked, false, "普通未关闭修订项应回到定向修订，而非强制人工放行");
+assert.equal(stalled.retryRequiredIssues.length, 1, "普通未关闭修订项必须保留为可重跑清单");
+
+const creativeUnresolved = { ...unresolved, requiresCreatorDecision: true, decisionOptions: ["保留倒叙开场", "改为当下时空开场"] };
+const creativeStalled = aggregateCrossReview([review("review-a", { revisionClosures: [creativeUnresolved], pass: false }), review("review-b", { revisionClosures: [creativeUnresolved], pass: false })], contract);
+assert.equal(creativeStalled.automaticRevisionBlocked, true, "只有双席明确标注的创作取舍才进入人工决定");
+assert.equal(creativeStalled.decisionRequiredIssues.length, 1, "创作取舍必须携带可见的决定项");
 
 const nextContract = buildRevisionContract({ revision: { contract, closure: { items: [{ ...contract.items[0], status: "unresolved", remainingFix: ["需要创作者决定取舍"] }] } } }, { stage: "brief", sourceArtifactId: "artifact_2", id: "revision_2" });
 assert.equal(nextContract.items.length, 0, "未被本轮两席重新确认的旧问题不能无限继承为下一轮合同");
@@ -71,7 +76,8 @@ const authored = await callStagePrimary({
 assert.equal(authorCalls.length, 1, "每个阶段只能由一位主笔生成内容");
 assert.equal(authored.primaryExecution.role, "主笔", "主笔执行记录必须明确内容责任人");
 
-assert.equal(scopedReview.decision.kind, "needs_decision", "合同外共识必须由统一裁判转为创作者决定，而非自动改稿");
-assert.equal(stalled.decision.kind, "needs_decision", "未收敛合同必须由统一裁判转为创作者决定");
+assert.equal(scopedReview.decision.kind, "approve", "合同外共识不能阻断已完成的修订合同");
+assert.equal(stalled.decision.kind, "revise", "普通未关闭项应回到统一的定向修订路径");
+assert.equal(creativeStalled.decision.kind, "needs_decision", "真正的创作取舍才由统一裁判转为创作者决定");
 
 console.log("PixelTale review governance tests passed.");

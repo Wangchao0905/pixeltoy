@@ -67,6 +67,8 @@ const state = {
   runPhase: "",
   dnaFilter: "all",
   impactChoices: {},
+  pendingHumanOverride: "",
+  pendingRerun: null,
   agent: null,
   routes: { orchestration: "gpt-5.6-terra", continuity: "gemini-3.1-pro", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
   input: {
@@ -635,7 +637,7 @@ function renderUnitStageProgress(stage) {
   const lockedPct = progress.total ? Math.min(100, Math.round(lockedCount / progress.total * 100)) : 0;
   const status = generatedCount ? `已生成 ${generatedCount} 集 · 已锁定 ${lockedCount} 集` : `已锁定 ${lockedCount} 集`;
   const pending = pendingCount ? `未锁定 ${pendingCount} 集` : "没有待处理集";
-  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="绿=已锁定 · 黄=已生成待审核 · 灰=未生成"><i class="is-generated" style="width:${generatedPct}%"></i><i class="is-locked" style="width:${lockedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>一次运行会自动生成、审核并恢复全部未锁定集；自动修订每轮最多两轮，仍不收敛或审核不通过时可人工放行继续。已锁定集不会再次提交。指定集数仅用于定向修订。</small></section>`;
+  return `<section class="unit-stage-progress" aria-label="集级生成进度"><div class="unit-stage-progress-head"><div><span class="card-label"><i></i>EPISODE ISOLATION</span><strong>${escapeHtml(status)} <small>/ ${progress.total || "-"} 集</small></strong></div><span>${escapeHtml(current)}</span></div><div class="unit-stage-progress-track" title="绿=已锁定 · 黄=已生成待审核 · 灰=未生成"><i class="is-generated" style="width:${generatedPct}%"></i><i class="is-locked" style="width:${lockedPct}%"></i></div><div class="unit-stage-progress-foot"><span>${escapeHtml(pending)} · 后台自动分批</span><label for="unitScopeInput">指定修订集数 <input id="unitScopeInput" type="text" value="${escapeHtml(unitStageScopeInput(stage))}" placeholder="留空：处理全部未锁定集" inputmode="numeric" autocomplete="off" /></label></div><small>未关闭项只会重跑对应批次；只有出现无法由阶段契约自动裁决的创作取舍时，才需要你选择方案。已锁定集不会再次提交。</small></section>`;
 }
 
 function reviewForArtifact(artifact) {
@@ -653,7 +655,11 @@ function buildHumanOverrideBrief(reviewContent = {}) {
   const dimLabels = { structure: "结构", plot: "剧情", design: "设计", logic: "逻辑" };
   const dimLine = Object.entries(dims)
     .filter(([key]) => dimLabels[key])
-    .map(([key, value]) => `${dimLabels[key]} ${typeof value === "number" ? Math.round(value) : (value?.score ?? value)}`)
+    .map(([key, value]) => {
+      const score = Number(typeof value === "number" ? value : value?.score);
+      return Number.isFinite(score) ? `${dimLabels[key]} ${Math.round(score)}` : "";
+    })
+    .filter(Boolean)
     .join(" · ");
   if (dimLine) lines.push(`• 分项：${dimLine}`);
   const issueArrays = ["mandatoryIssues", "commonIssues", "reviewIssues"].filter((key) => Array.isArray(reviewContent[key]));
@@ -669,7 +675,7 @@ function buildHumanOverrideBrief(reviewContent = {}) {
   if (pendingClosures.length) lines.push(`• 修订：${pendingClosures.length} 项未关闭`);
   const failures = Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [];
   const stalled = failures.find((item) => item?.status === "stalled" || item?.status === "budget_exhausted");
-  if (stalled) lines.push(`• 状态：${stalled.message || "自动修订未收敛，已转人工交接"}`);
+  if (stalled) lines.push(`• 状态：${stalled.message || "自动修订未收敛，仅重跑未通过批次"}`);
   return lines.length ? lines.join("\n") : "（无评分数据，请自行核对当前版本）";
 }
 
@@ -832,13 +838,28 @@ function nextStepMeta() {
     };
   }
   const refereeDecision = reviewContent.decision || {};
-  if (refereeDecision.kind === "needs_decision") {
+  const creativeDecisions = creativeReviewDecisionGroups(reviewContent);
+  if (refereeDecision.kind === "needs_decision" && creativeDecisions.length) {
     return {
       kind: "human-override",
       stage: flowStage,
       title: `${flowMeta.title}需要决定`,
-      copy: refereeDecision.summary || "系统裁判无法安全自动取舍，请记录你的决定后继续。",
-      label: "记录决定并继续 →",
+      copy: refereeDecision.summary || "请选择一个创作方案，系统会记录取舍后继续。",
+      label: "选择方案并继续 →",
+      flowStage,
+    };
+  }
+  if (refereeDecision.kind === "retry_failed" || (refereeDecision.kind === "needs_decision" && UNIT_STAGES.has(flowStage))) {
+    const retryUnits = Array.isArray(reviewContent.retryUnits) && reviewContent.retryUnits.length
+      ? reviewContent.retryUnits
+      : unitStageProgress(flowStage)?.pending || [];
+    return {
+      kind: "retry-failed",
+      stage: flowStage,
+      unitNumbers: retryUnits,
+      title: "只重跑未通过批次",
+      copy: refereeDecision.summary || "仅处理未锁定且未通过的批次；已锁定集不会再次提交。",
+      label: retryUnits.length ? `重跑第 ${retryUnits.join("、")} 集 →` : "重跑未通过批次 →",
       flowStage,
     };
   }
@@ -883,14 +904,14 @@ function nextStepMeta() {
       flowStage,
     };
   }
-  const decisionRequired = reviewDecisionGroups(reviewContent);
-  if (reviewContent.automaticRevisionBlocked || decisionRequired.length) {
+  const decisionRequired = creativeReviewDecisionGroups(reviewContent);
+  if (decisionRequired.length) {
     return {
       kind: "human-override",
       stage: flowStage,
       title: `${flowMeta.title}需要决定`,
-      copy: `自动修订已停止。请查看“需要决定”中的 ${decisionRequired.length} 项，记录取舍后再继续，避免同一问题反复改写。`,
-      label: "记录决定并继续 →",
+      copy: `请查看“需要决定”中的 ${decisionRequired.length} 项，选择创作方案后再继续。`,
+      label: "选择方案并继续 →",
       flowStage,
     };
   }
@@ -949,7 +970,39 @@ function nextStepMeta() {
   };
 }
 
+function renderInlineHumanOverrideForm(stage) {
+  const artifact = (state.agent?.artifacts || []).find((item) => item.stage === stage);
+  const review = reviewForArtifact(artifact);
+  const creativeDecision = creativeReviewDecisionGroups(review?.content || {})[0];
+  const choiceId = state.impactChoices[review?.id || `${stage}-decision`] || "option_1";
+  const choiceIndex = Number(choiceId.replace("option_", "")) - 1;
+  const choice = creativeDecision?.decisionOptions?.[choiceIndex] || creativeDecision?.decisionOptions?.[0] || "";
+  const unitNote = UNIT_STAGES.has(stage) ? "未锁定集会在确认后锁定；已锁定集不会被改动。" : "会保留当前版本，并将本次取舍写入创作历史。";
+  return `<form class="inline-decision-form" data-human-override-form>
+    <span class="card-label"><i></i>CREATOR DECISION</span>
+    <strong>以当前版本继续</strong>
+    <p>自动修订已停止，不会再自动重复改稿。请在页面内查看依据、写下取舍理由后再确认。</p>
+    ${choice ? `<small class="inline-decision-choice">当前选择：${escapeHtml(choice)}</small>` : ""}
+    <pre class="inline-decision-evidence">${escapeHtml(buildHumanOverrideBrief(review?.content || {}))}</pre>
+    <label>请简要记录本次取舍理由<textarea data-human-override-reason required maxlength="600" placeholder="例如：当前版本符合核心创作目标，接受已知取舍后继续推进。"></textarea></label>
+    <small>${escapeHtml(unitNote)}</small>
+    <div class="inline-decision-actions"><button class="stage-primary" data-flow-action="confirm-human-override" data-human-override-stage="${escapeHtml(stage)}" type="button">确认记录并继续 →</button><button class="text-button" data-flow-action="cancel-human-override" type="button">暂不继续</button></div>
+  </form>`;
+}
+
+function renderInlineRerunConfirmation(pending) {
+  const title = stageMeta[pending.stage]?.title || "当前阶段";
+  return `<section class="inline-decision-form inline-rerun-confirmation" aria-label="重新生成确认">
+    <span class="card-label"><i></i>NEW VERSION</span>
+    <strong>重新生成${escapeHtml(title)}</strong>
+    <p>当前阶段已有确认版本。重新生成会建立新版本，后续已确认内容需要重新核对。</p>
+    <div class="inline-decision-actions"><button class="stage-primary" data-flow-action="confirm-rerun" type="button">创建新版本 →</button><button class="text-button" data-flow-action="cancel-rerun" type="button">保留当前版本</button></div>
+  </section>`;
+}
+
 function renderAgentTaskAction(action) {
+  if (state.pendingHumanOverride) return renderInlineHumanOverrideForm(state.pendingHumanOverride);
+  if (state.pendingRerun) return renderInlineRerunConfirmation(state.pendingRerun);
   const disabled = state.busy || action.disabled;
   const guidedClass = !disabled && action.kind !== "busy" ? " is-next-action" : "";
   if (action.kind === "run") {
@@ -958,6 +1011,9 @@ function renderAgentTaskAction(action) {
   }
   if (action.kind === "auto-revise") {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+  }
+  if (action.kind === "retry-failed") {
+    return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="retry-failed" data-retry-stage="${escapeHtml(action.stage)}" data-retry-units="${escapeHtml((action.unitNumbers || []).join(","))}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
   if (action.kind === "human-override") {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
@@ -1623,7 +1679,7 @@ function reviewIssueGroups(reviewContent = {}) {
       acceptedByHuman: true,
       suggestions: [...(Array.isArray(item.suggestions) ? item.suggestions : []), advisoryGate.decisions.get(item.id)?.reason].filter(Boolean),
     }));
-  const pendingClosures = !reviewContent.automaticRevisionBlocked && Array.isArray(reviewContent.revision?.closure?.items)
+  const pendingClosures = !creativeReviewDecisionGroups(reviewContent).length && Array.isArray(reviewContent.revision?.closure?.items)
     ? reviewContent.revision.closure.items.filter((item) => item.status !== "resolved").map((item) => ({
       ...item,
       tag: item.tag || "未关闭修订项",
@@ -1645,6 +1701,10 @@ function reviewDecisionGroups(reviewContent = {}) {
   return mergeReviewItems(Array.isArray(reviewContent.decisionRequiredIssues) ? reviewContent.decisionRequiredIssues : []);
 }
 
+function creativeReviewDecisionGroups(reviewContent = {}) {
+  return reviewDecisionGroups(reviewContent).filter((item) => item.requiresCreatorDecision === true && Array.isArray(item.decisionOptions) && item.decisionOptions.length >= 2);
+}
+
 function impactTargetsForStage(stage = state.stage) {
   const targets = {
     brief: ["故事承诺", "人物目标", "后续提案"],
@@ -1659,29 +1719,24 @@ function impactTargetsForStage(stage = state.stage) {
 
 function renderDecisionImpactWorkbench(reviewContent = {}, { stage = state.stage, reviewId = "" } = {}) {
   const decision = reviewContent.decision || {};
-  const decisionIssues = reviewDecisionGroups(reviewContent);
-  const visible = decision.kind === "needs_decision" || decisionIssues.length > 0;
+  const decisionIssues = creativeReviewDecisionGroups(reviewContent);
+  const visible = decisionIssues.length > 0;
   if (!visible) return "";
 
   const workbenchId = reviewId || `${stage}-decision`;
-  const selected = state.impactChoices[workbenchId] || "revise";
+  const selected = state.impactChoices[workbenchId] || "option_1";
   const focus = decisionIssues[0] || decision.items?.[0] || {};
   const title = focus.tag || focus.message || "当前取舍";
   const summary = focus.message || decision.summary || "先比较不同选择对已确认内容与下一阶段的影响，再执行唯一下一步。";
-  const choices = [
-    { id: "revise", title: "按建议定向修订", copy: "把已确认的问题收敛为一次修订目标，不扩写无关内容。", state: "优先路径" },
-    { id: "keep", title: "保留当前版本", copy: "以已确认的创作规格为准，并在证据中记录本次取舍。", state: "需要依据" },
-    { id: "evidence", title: "先核对依据", copy: "查看裁判结论、模型意见与阶段约束后再决定。", state: "建议先看" },
-  ];
+  const choices = focus.decisionOptions.slice(0, 2).map((option, index) => ({ id: `option_${index + 1}`, title: option, copy: "将此取舍写入创作历史，并按该方向继续。", state: `方案 ${index === 0 ? "A" : "B"}` }));
   const targets = impactTargetsForStage(stage);
   const outcomeCopy = {
-    revise: "下一步会聚焦关闭已标注的问题。",
-    keep: "下一步会保留当前版本，并要求记录选择理由。",
-    evidence: "先打开依据，确认问题是否真的影响后续。",
+    option_1: "下一步会以方案 A 为准，并记录选择理由。",
+    option_2: "下一步会以方案 B 为准，并记录选择理由。",
   };
   const choiceMarkup = choices.map((choice, index) => `<button type="button" class="impact-choice${selected === choice.id ? " is-selected" : ""}" data-impact-choice="${choice.id}" data-impact-workbench="${escapeHtml(workbenchId)}" aria-pressed="${selected === choice.id}"><span class="impact-choice-number">0${index + 1}</span><span><strong>${escapeHtml(choice.title)}</strong><small>${escapeHtml(choice.copy)}</small></span><em>${escapeHtml(choice.state)}</em></button>`).join("");
-  const impactMarkup = targets.map((target, index) => `<div class="impact-connection${selected === "evidence" ? "" : " is-active"}" style="--impact-delay:${index * 70}ms"><span aria-hidden="true">→</span><article><small>后续影响 ${String(index + 1).padStart(2, "0")}</small><strong>${escapeHtml(target)}</strong><p>${escapeHtml(selected === "revise" ? "按当前建议校正后继续推进。" : selected === "keep" ? "保留已确认的前提，并同步取舍记录。" : "先用审核依据验证，再决定是否改变。")}</p></article></div>`).join("");
-  return `<section class="decision-impact-workbench" aria-labelledby="impactWorkbenchTitle"><div class="impact-workbench-head"><div><span class="card-label"><i></i>DECISION IMPACT</span><h3 id="impactWorkbenchTitle">选择如何处理「${escapeHtml(title)}」</h3><p>${escapeHtml(summary)}</p></div><button type="button" class="text-button impact-evidence-button" data-impact-evidence aria-controls="reviewEvidence">查看依据</button></div><div class="impact-workbench-grid"><div class="impact-options" role="group" aria-label="处理路径">${choiceMarkup}</div><div class="impact-map" aria-live="polite"><div class="impact-map-origin"><small>当前选择</small><strong>${escapeHtml(choices.find((item) => item.id === selected)?.title || "按建议定向修订")}</strong><p>${escapeHtml(outcomeCopy[selected] || outcomeCopy.revise)}</p></div><div class="impact-map-links">${impactMarkup}</div></div><aside class="impact-explainer"><span>为什么重要</span><strong>影响在执行前可见</strong><p>先看人物、后续内容和终局回收会如何变化，再使用右侧唯一操作执行。</p><small>选择路径 · 影响预览 · 执行确认</small></aside></div></section>`;
+  const impactMarkup = targets.map((target, index) => `<div class="impact-connection is-active" style="--impact-delay:${index * 70}ms"><span aria-hidden="true">→</span><article><small>后续影响 ${String(index + 1).padStart(2, "0")}</small><strong>${escapeHtml(target)}</strong><p>会按当前选择同步取舍记录。</p></article></div>`).join("");
+  return `<section class="decision-impact-workbench" aria-labelledby="impactWorkbenchTitle"><div class="impact-workbench-head"><div><span class="card-label"><i></i>DECISION IMPACT</span><h3 id="impactWorkbenchTitle">选择如何处理「${escapeHtml(title)}」</h3><p>${escapeHtml(summary)}</p></div><button type="button" class="text-button impact-evidence-button" data-impact-evidence aria-controls="reviewEvidence">查看依据</button></div><div class="impact-workbench-grid"><div class="impact-options" role="group" aria-label="处理路径">${choiceMarkup}</div><div class="impact-map" aria-live="polite"><div class="impact-map-origin"><small>当前选择</small><strong>${escapeHtml(choices.find((item) => item.id === selected)?.title || choices[0].title)}</strong><p>${escapeHtml(outcomeCopy[selected] || outcomeCopy.option_1)}</p></div><div class="impact-map-links">${impactMarkup}</div></div><aside class="impact-explainer"><span>为什么重要</span><strong>影响在执行前可见</strong><p>只在真实创作取舍出现时提供 A/B 选择。</p><small>选择路径 · 影响预览 · 执行确认</small></aside></div></section>`;
 }
 
 function reviewRecommendationGroups(reviewContent = {}) {
@@ -2000,7 +2055,7 @@ async function monitorBackgroundRun(run) {
   }
 }
 
-async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) {
+async function runCurrentStage(stage = state.stage, { revisionPlan = "", override = false } = {}) {
   if (stage === "brief") collectBriefInput();
   if (stage === "title") state.input.storyTitle = "";
   const unitNumbers = collectUnitStageScope(stage);
@@ -2010,7 +2065,7 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
   try {
     let payload;
     let recoveryAttempted = false;
-    let overrideRetried = false;
+    let overrideRetried = override;
     while (!payload) {
       let accepted;
       try {
@@ -2018,14 +2073,8 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "" } = {}) 
       } catch (requestError) {
         // 已确认阶段重跑：后端要求 override 显式确认（会使下游已确认内容失效）。
         if (requestError?.code === "STAGE_RERUN_REQUIRES_OVERRIDE" && !overrideRetried) {
-          const ok = window.confirm("该阶段已有已确认版本。重新生成会使下游已确认内容失效（可重新确认）。确定继续？");
-          if (!ok) {
-            state.busy = false;
-            renderStage();
-            return { canceled: true };
-          }
-          overrideRetried = true;
-          continue;
+          state.pendingRerun = { stage, revisionPlan };
+          return { pendingConfirmation: true };
         }
         throw requestError;
       }
@@ -2289,17 +2338,47 @@ function bindAgentTaskAction() {
       void runAutoRevision(button.dataset.autoRevise || state.stage);
       return;
     }
+    if (action === "retry-failed") {
+      const stage = button.dataset.retryStage || state.stage;
+      state.input.revisionUnitNumbers = button.dataset.retryUnits || "";
+      void runAutoRevision(stage);
+      return;
+    }
     if (action === "human-override") {
       const stage = button.dataset.humanOverride || state.stage;
+      state.pendingHumanOverride = stage;
+      renderShellState();
+      requestAnimationFrame(() => $('[data-human-override-reason]')?.focus());
+      return;
+    }
+    if (action === "confirm-human-override") {
+      const reasonField = $('[data-human-override-reason]');
+      if (!reasonField?.reportValidity()) return;
+      const stage = button.dataset.humanOverrideStage || state.pendingHumanOverride || state.stage;
       const artifact = (state.agent?.artifacts || []).find((item) => item.stage === stage);
       const review = reviewForArtifact(artifact);
-      const brief = buildHumanOverrideBrief(review?.content || {});
-      const unitNote = UNIT_STAGES.has(stage) ? "；未锁定集将一并标记为已确认并锁定" : "";
-      const message = `自动修订已停止，确认记录你的取舍并继续？${unitNote}\n\n审核依据：\n${brief}\n\n这会保留当前版本和你的决定记录，不会再自动重复改稿。`;
-      if (!window.confirm(message)) return;
-      const reason = window.prompt("请简要记录本次取舍理由（会写入创作历史）", "当前版本满足创作目标，接受已知取舍继续推进");
-      if (!reason?.trim()) return;
-      void approveArtifact(artifact?.id, { humanOverride: true, humanOverrideReason: reason.trim() });
+      const creativeDecision = creativeReviewDecisionGroups(review?.content || {})[0];
+      const choiceId = state.impactChoices[review?.id || `${stage}-decision`] || "option_1";
+      const choice = creativeDecision?.decisionOptions?.[Number(choiceId.replace("option_", "")) - 1] || creativeDecision?.decisionOptions?.[0] || "";
+      state.pendingHumanOverride = "";
+      void approveArtifact(artifact?.id, { humanOverride: true, humanOverrideReason: `${choice ? `选择：${choice}\n` : ""}${reasonField.value.trim()}` });
+      return;
+    }
+    if (action === "cancel-human-override") {
+      state.pendingHumanOverride = "";
+      renderShellState();
+      return;
+    }
+    if (action === "confirm-rerun") {
+      const pending = state.pendingRerun;
+      if (!pending) return;
+      state.pendingRerun = null;
+      void runCurrentStage(pending.stage, { revisionPlan: pending.revisionPlan, override: true });
+      return;
+    }
+    if (action === "cancel-rerun") {
+      state.pendingRerun = null;
+      renderShellState();
       return;
     }
     if (action === "review-advisories") {

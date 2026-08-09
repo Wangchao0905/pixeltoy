@@ -173,7 +173,7 @@ assert.match(styles, /\.impact-connection\.is-active/, "selected paths must visi
 assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*impact-connection/, "impact transitions must respect reduced-motion preferences");
 assert.match(app, /kind: "auto-revise"[\s\S]*一键修订并复审/, "review flow must expose one canonical revision action");
 assert.match(app, /review-zone-mandatory[\s\S]*必须处理/, "mandatory revisions must be presented in the mandatory zone");
-assert.match(app, /!reviewContent\.automaticRevisionBlocked[\s\S]*pendingClosures/, "unresolved contracts must leave the automatic revision list after convergence stops");
+assert.match(app, /!creativeReviewDecisionGroups\(reviewContent\)\.length[\s\S]*pendingClosures/, "only real creative tradeoffs may leave unresolved contracts outside the retry list");
 assert.match(app, /review-reference-panel/, "optional review material must be collapsible");
 assert.doesNotMatch(app, /review-auto-fix/, "review panel must not expose a duplicate revision button");
 assert.match(html, /id="agentTaskAction"/, "the right rail must contain the canonical next-step action slot");
@@ -221,6 +221,12 @@ assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*stage-cock
 assert.match(app, /review-zone-optional[\s\S]*可选优化/, "low-risk recommendations must be presented in the optional zone");
 assert.match(app, /未返回 · 技术未完成[\s\S]*scoreLabel = entry\.status === "failed" \? "—"/, "failed seats must show technical incompletion and a dash score");
 assert.match(app, /一键修订并复审/, "review output must offer one canonical revision action");
+assert.doesNotMatch(app, /window\.(confirm|prompt)/, "PixelTale workflow decisions must stay inside the page instead of using browser dialogs");
+assert.match(app, /function renderInlineHumanOverrideForm\(/, "manual release must render as an inline decision form");
+assert.match(app, /data-human-override-reason/, "manual release must collect its rationale in the page");
+assert.match(app, /data-flow-action="confirm-rerun"/, "confirmed-stage regeneration must use an inline confirmation action");
+assert.match(app, /kind: "retry-failed"[\s\S]*只重跑未通过批次/, "ordinary unit-review failures must retry only their failed batches");
+assert.match(app, /function creativeReviewDecisionGroups\(/, "only explicit creative tradeoffs may open the decision workbench");
 assert.match(app, /revisionPlan/, "automatic revision must pass a scoped revision plan");
 assert.match(app, /const maxPasses = 1/, "automatic revision must stop after one scoped pass");
 assert.match(app, /currentIssues = remainingIssues/, "automatic revision must rebuild the plan from the latest review");

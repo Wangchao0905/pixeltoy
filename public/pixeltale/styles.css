@@ -1045,6 +1045,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .agent-task-action { margin-top: 16px; }
 .agent-task-primary { width: 100%; min-height: 42px; }
 .agent-task-busy { display: block; margin-top: 14px; color: var(--pt-blue); font: 700 9px var(--meta-font); letter-spacing: 0.04em; }
+.inline-decision-form { display: grid; gap: 10px; padding: 14px; border: 1px solid rgba(40, 120, 232, 0.26); border-radius: 13px; background: rgba(255, 255, 255, 0.82); }
+.inline-decision-form > strong { color: var(--pt-ink); font-size: 14px; }
+.inline-decision-form > p { margin: -3px 0 0; color: var(--pt-muted); font-size: 11px; line-height: 1.55; }
+.inline-decision-form > label { display: grid; gap: 6px; color: var(--pt-ink-soft); font-size: 10px; font-weight: 650; }
+.inline-decision-form textarea { min-height: 88px; resize: vertical; border: 1px solid var(--pt-line-strong); border-radius: 10px; padding: 10px; color: var(--pt-ink); background: rgba(250, 251, 252, 0.92); font: 11px/1.55 var(--body-font); }
+.inline-decision-form textarea:focus { outline: 0; border-color: var(--pt-blue); box-shadow: 0 0 0 3px rgba(40, 120, 232, 0.10); }
+.inline-decision-evidence { max-height: 148px; margin: 0; overflow: auto; border: 1px solid var(--pt-line); border-radius: 9px; padding: 10px; color: var(--pt-muted); background: rgba(248, 250, 252, 0.72); font: 10px/1.6 var(--body-font); white-space: pre-wrap; }
+.inline-decision-form > small { color: var(--pt-faint); font-size: 9px; line-height: 1.5; }
+.inline-decision-actions { display: flex; align-items: center; gap: 10px; }
+.inline-decision-actions .stage-primary { flex: 1 1 auto; min-height: 38px; }
+.inline-decision-actions .text-button { flex: 0 0 auto; min-height: 34px; padding: 0 5px; color: var(--pt-muted); font-size: 10px; }
+.inline-rerun-confirmation { border-color: rgba(219, 141, 46, 0.30); }
+@media (max-width: 560px) { .inline-decision-actions { align-items: stretch; flex-direction: column; } .inline-decision-actions .text-button { min-height: 36px; } }
 .model-team, .consensus-panel, .agent-run { padding: 18px 0; border-color: var(--pt-line); }
 .section-row { color: var(--pt-muted); }
 .model-team-cards { gap: 7px; margin-top: 11px; }

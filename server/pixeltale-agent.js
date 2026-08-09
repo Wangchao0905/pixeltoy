@@ -1029,6 +1029,46 @@ function unitOpenThreads(stage, itemOrItems) {
   return [text(unit.cliffhanger_question_zh, 1000), text(unit.hook_zh, 1000)].filter(Boolean);
 }
 
+// ===== 集级锁状态机（2026-08-09 新增：open/locked/pinned/dirty）=====
+// open（未生成/自由）→ locked（批次审核通过定稿）→ pinned（人工编辑过，绝对不可被自动流程覆盖）
+// 依赖变更 → dirty（进复核清单，不自动改；pinned 不降级，仅记 dirtyReason 供复核参考）
+function unitLockStatus(state, stage, unit) {
+  const lock = asObject(state?.unitLocks?.[stage]?.[unit]);
+  return lock.status === "locked" || lock.status === "pinned" || lock.status === "dirty" ? lock.status : "open";
+}
+
+function isUnitProtected(state, stage, unit) {
+  const st = unitLockStatus(state, stage, unit);
+  return st === "locked" || st === "pinned";
+}
+
+function markUnitPinned(state, stage, unit, by) {
+  const locks = (state.unitLocks ??= {});
+  locks[stage] ??= {};
+  const prev = locks[stage][unit] || {};
+  locks[stage][unit] = { ...prev, status: "pinned", pinnedBy: by, pinnedAt: new Date().toISOString() };
+}
+
+function markUnitDirty(state, stage, unit, reason) {
+  const locks = (state.unitLocks ??= {});
+  locks[stage] ??= {};
+  const prev = locks[stage][unit] || {};
+  if (prev.status === "pinned") {
+    locks[stage][unit] = { ...prev, dirtyReason: reason, dirtyAt: new Date().toISOString() };
+    return;
+  }
+  locks[stage][unit] = { ...prev, status: "dirty", dirtyReason: reason, dirtyAt: new Date().toISOString() };
+}
+
+function autoRepairableUnits(state, stage, pending) {
+  return normalizeUnitNumbers(pending).filter((u) => unitLockStatus(state, stage, u) === "open");
+}
+
+function dirtyUnits(state, stage) {
+  return Object.keys(asObject(state?.unitLocks?.[stage]) || {}).map(Number)
+    .filter((u) => unitLockStatus(state, stage, u) === "dirty").sort((a, b) => a - b);
+}
+
 function compactLockedUnit(stage, lock) {
   return {
     unitNumber: Number(lock.unitNumber),
@@ -3864,6 +3904,12 @@ function approve(params = {}) {
 }
 
 module.exports = {
+  unitLockStatus,
+  isUnitProtected,
+  markUnitPinned,
+  markUnitDirty,
+  autoRepairableUnits,
+  dirtyUnits,
   createPixelTaleAgent,
   createHandoffPayload,
   confirmArtifact,

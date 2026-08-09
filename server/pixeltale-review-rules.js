@@ -257,9 +257,12 @@ function checkCrossStageRefs(stage, artifact, approvedContext, violations) {
     if (charIds.size) {
       [...spokenIds].forEach((sp) => {
         if (!charIds.has(sp)) {
-          add(violations, "UNKNOWN_SPEAKER_REF", "high",
+          // scenes 阶段已允许新人物出场；dialogue 是延续——若没有"注册新人物"
+          // 通道仍 high 硬拦就是死锁。降为 medium 提示，交由审核模型核验
+          // 新发言者的对白合理性（knownRuleFindings 传入核验清单）。
+          add(violations, "UNKNOWN_SPEAKER_REF", "medium",
             "lines[].speaker",
-            `对白发言者 "${sp}" 不在已确认人物名单中（已知: ${[...charIds].slice(0, 8).join(", ")}）`);
+            `对白发言者 "${sp}" 不在已确认人物名单中（已知: ${[...charIds].slice(0, 8).join(", ")}）——新人物对白由审核核验合理性`);
         }
       });
     }

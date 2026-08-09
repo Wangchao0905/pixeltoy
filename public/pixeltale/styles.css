@@ -1512,3 +1512,33 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* 系统裁判决定卡上的定向修订按钮 */
 .decision-revise-btn { margin-top: 12px; width: 100%; }
+
+/* 导出页生成按钮：精致化（替代默认大蓝 stage-primary 生硬样式） */
+.document-delivery .handoff-generate-btn,
+button.handoff-generate-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 42px; padding: 0 22px;
+  border: 1px solid rgba(47, 155, 255, 0.35); border-radius: 12px;
+  background: linear-gradient(135deg, #2f9bff, #1f7fe0);
+  color: #fff; font-size: 13px; font-weight: 650; letter-spacing: 0.01em;
+  box-shadow: 0 6px 18px rgba(47, 155, 255, 0.28), 0 1px 0 rgba(255, 255, 255, 0.25) inset;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+  cursor: pointer;
+}
+button.handoff-generate-btn:hover { filter: brightness(1.06); box-shadow: 0 10px 26px rgba(47, 155, 255, 0.38); transform: translateY(-1px); }
+button.handoff-generate-btn:active { transform: scale(0.98); }
+button.handoff-generate-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* 系统裁判卡上的定向修订按钮：与生成按钮同一精致语言 */
+button.decision-revise-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 38px; padding: 0 18px; width: 100%;
+  border: 1px solid rgba(47, 155, 255, 0.35); border-radius: 11px;
+  background: linear-gradient(135deg, #2f9bff, #1f7fe0);
+  color: #fff; font-size: 13px; font-weight: 650;
+  box-shadow: 0 5px 14px rgba(47, 155, 255, 0.24);
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+  cursor: pointer;
+}
+button.decision-revise-btn:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(47, 155, 255, 0.32); }
+button.decision-revise-btn:active { transform: scale(0.98); }

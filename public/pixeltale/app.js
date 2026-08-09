@@ -2267,7 +2267,7 @@ function renderHandoff() {
   const documentActions = scriptReady
     ? `<div class="document-delivery-actions"><button type="button" class="stage-primary" data-download-script ${state.documentBusy ? "disabled" : ""}>下载剧本 DOCX <span aria-hidden="true">↓</span></button><button type="button" class="stage-secondary" data-save-script ${state.documentBusy ? "disabled" : ""}>选择文件夹并保存</button></div>`
     : ready
-      ? `<button type="button" class="stage-primary agent-task-primary is-next-action" data-flow-action="handoff" ${state.documentBusy ? "disabled" : ""}>生成正式文件 →</button>`
+      ? `<button type="button" class="handoff-generate-btn" data-flow-action="handoff" ${state.documentBusy ? "disabled" : ""}>生成正式文件 <span aria-hidden="true">→</span></button>`
       : "";
   return `<p class="stage-intro handoff-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集剧情、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "逐集中文剧情 + English Dialogue" : "等待全剧确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>`;
 }
@@ -2682,6 +2682,21 @@ async function saveRouting(event) {
 }
 
 function bindAgentTaskAction() {
+  // 2026-08-10：内容区（stageContent）内的动作按钮（系统裁判决定卡上的定向修订、
+  // 导出页的生成正式文件）也需要响应点击——它们不在右侧 #agentTaskAction 内。
+  // 只处理内容区实际出现的动作，避免与右侧绑定重复触发。
+  $$("#stageContent [data-flow-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.flowAction;
+      if (action === "handoff") { void createHandoff(); return; }
+      if (action === "auto-revise") { void runAutoRevision(button.dataset.autoRevise || state.stage); return; }
+      if (action === "human-override") {
+        state.pendingHumanOverride = button.dataset.humanOverride || state.stage;
+        renderAgentTask();
+        requestAnimationFrame(() => $('[data-human-override-reason]')?.focus());
+      }
+    });
+  });
   $$("#agentTaskAction [data-flow-action]").forEach((button) => {
     button.addEventListener("click", () => {
       const action = button.dataset.flowAction;

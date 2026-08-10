@@ -2402,13 +2402,6 @@ function renderRiskNote() {
 }
 
 function renderStage() {
-  // 2026-08-10：初始加载时 agent 尚未返回 → 显示加载中（不要渲染假 brief）
-  if (!state.agent) {
-    $("#stageContent").innerHTML = '<div class="artifact-card empty-artifact" style="text-align:center;padding:6rem 2rem"><div style="font-size:2rem;margin-bottom:1rem">⏳</div><h3>正在加载项目数据…</h3><p>若长时间未响应，请<a href="#" onclick="location.reload();return false" style="color:var(--brand)">刷新页面</a></p></div>';
-    // 2026-08-10：超时兜底——5 秒后 agent 仍未就绪则强制刷新
-    setTimeout(() => { if (!state.agent) location.reload(); }, 5000);
-    return;
-  }
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;
   const currentArtifact = artifactForStage(state.stage);
   const currentReview = reviewForArtifact(currentArtifact)?.content || {};

@@ -2766,13 +2766,30 @@ async function createHandoff() {
   }
 }
 
-async function syncAgentState({ silent = false } = {}) {
+async function syncAgentState({ silent = false, autoRestore = false } = {}) {
   try {
     const payload = await request("");
     updateAgentState(payload.agent);
     state.lastError = "";
     renderStage();
     if (!silent) showToast("已同步独立编剧会话");
+    // 2026-08-10：刷新后 session 无产物（无效/新会话）且存在历史项目 → 自动恢复最近项目。
+    // 仅在初始加载（autoRestore）且非"新建项目"流程时触发，避免打断新建。
+    const artifacts = Array.isArray(payload?.agent?.artifacts) ? payload.agent.artifacts : [];
+    const pendingNew = (() => { try { return sessionStorage.getItem(PENDING_NOTICE_KEY); } catch { return ""; } })();
+    if (autoRestore && !artifacts.length && !pendingNew) {
+      const historyRes = await fetch(agentApiPath("/history"), agentRequestHeaders()).catch(() => null);
+      const historyData = await historyRes?.json().catch(() => null);
+      const entries = (historyData?.history || []).filter((entry) =>
+        entry.sessionId !== sessionId && Number(entry.artifactCount || 0) > 0
+      );
+      if (entries.length) {
+        const target = new URL(window.location.href);
+        target.searchParams.set("session", entries[0].sessionId);
+        target.hash = "brief";
+        window.location.assign(target.toString());
+      }
+    }
   } catch (error) {
     state.lastError = userFacingError(error);
     if (!silent) showToast(state.lastError);
@@ -3116,7 +3133,7 @@ $$('[data-open-stage]').forEach((button) => button.addEventListener("click", () 
 }));
 
 renderStage();
-syncAgentState({ silent: true }).finally(() => {
+syncAgentState({ silent: true, autoRestore: true }).finally(() => {
   if (state.activeRun) void monitorBackgroundRun(state.activeRun);
 });
 try {

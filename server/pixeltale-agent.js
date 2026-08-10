@@ -3253,9 +3253,11 @@ async function fixEpisodeTitles({ state, modelRouter, writer = "gpt-5.6-terra", 
     const user = `请为以下各集生成规范中文标题（每集一个 4-10 字短语，概括核心事件/冲突，禁止英文代号）：\n${flagged.map((u) => `第${u.number}集：${String((u.plot_zh || u.promise_zh || "").slice(0, 120))}`).join("\n")}\n输出 JSON：[{"number":1,"title_zh":"中文标题"}]`;
     try {
       const res = await callProvider({ provider: writer, system, user, modelRouter, maxTokens: 2000, purpose: "pixeltale-fix-titles" });
-      const content = responseContent(res) || JSON.stringify(res.content || {});
+      const rawContent = typeof res?.content === "string" ? res.content : responseContent(res) || JSON.stringify(res.content || {});
+      const content = rawContent;
+      // stripJsonFence 只处理 {} 对象，数组 JSON（本接口输出）会丢 []——直接先试 JSON.parse。
       let parsed = null;
-      try { parsed = parseJson(content, "标题修正"); } catch { parsed = null; }
+      try { parsed = JSON.parse(content); } catch { try { parsed = JSON.parse(stripJsonFence(content)); } catch { parsed = null; } }
       if (Array.isArray(parsed)) {
         parsed.forEach((item) => {
           const unit = units.find((u) => Number(u.number) === Number(item && item.number));
@@ -3263,7 +3265,7 @@ async function fixEpisodeTitles({ state, modelRouter, writer = "gpt-5.6-terra", 
           if (unit && t && /[\u4e00-\u9fff]/.test(t) && !EPISODE_TITLE_CODENAME.test(t)) unit.title_zh = t;
         });
       }
-    } catch { /* 模型失败保持原样，调用方可提示重试 */ }
+    } catch (error) { console.error("[pixeltale] fix-titles model call failed:", error?.message || error); }
   }
   arcArtifact.updatedAt = new Date(now()).toISOString();
   return { fixed: flaggedCount - units.filter(isBadTitle).length, flagged: units.filter(isBadTitle).length };

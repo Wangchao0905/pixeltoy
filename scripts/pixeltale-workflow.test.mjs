@@ -30,7 +30,7 @@ const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
 const mergeReviewItemsForTest = Function(`${app.slice(app.indexOf("function reviewItemKey"), app.indexOf("function reviewIssueGroups"))}\nreturn mergeReviewItems;`)();
-const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters, fixEpisodeTitles } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const duplicateDecisionItems = mergeReviewItemsForTest([
   { id: "rule_scene_speaker_roster_mismatch", tag: "SCENE_SPEAKER_ROSTER_MISMATCH", severity: "high", requiresCreatorDecision: true, decisionOptions: ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"] },
@@ -1791,6 +1791,23 @@ console.log("pixeltale workflow contract ok");
   assert.equal(clean.length, 0, "完整中文标题不得误报");
   const arcPrompt = stageSystemPrompt("arc", "tk_short_drama", {});
   assert.match(arcPrompt, /title_zh 必须是完整中文短语标题/, "arc prompt 必须约束标题规范");
+}
+
+// ---- 2026-08-10 精准修标题：fixEpisodeTitles 应用中文标题且不误改 ----
+{
+  const fixState = { artifacts: [{ stage: "arc", type: "pixeltale_arc", version: 1, content: { units: [
+    { number: 1, title_zh: "直播里的好运绳结", plot_zh: "x" },
+    { number: 4, title_zh: "Anchor A", plot_zh: "y" },
+    { number: 7, title_zh: "A-01", plot_zh: "z" },
+  ] } }] };
+  const fixRouter = { call: async () => ({ content: '[{"number":4,"title_zh":"绳结直播的裂缝"}]' }) };
+  const fixResult = await fixEpisodeTitles({ state: fixState, modelRouter: fixRouter, writer: "gpt-5.6-terra" });
+  assert.equal(fixResult.fixed, 1, "fixEpisodeTitles 必须应用模型返回的中文标题");
+  assert.equal(fixState.artifacts[0].content.units.find((u) => u.number === 4).title_zh, "绳结直播的裂缝", "代号标题必须被替换");
+  assert.equal(fixState.artifacts[0].content.units.find((u) => u.number === 1).title_zh, "直播里的好运绳结", "中文标题不得被改动");
+  const noRouterResult = await fixEpisodeTitles({ state: fixState, modelRouter: null });
+  assert.equal(noRouterResult.fixed, 1, "无模型时确定性兜底修正剩余违规标题");
+  assert.equal(fixState.artifacts[0].content.units.find((u) => u.number === 7).title_zh, "第7集 剧情推进", "无模型兜底必须消除代号");
 }
 
 // ---- 2026-08-10 预防验证：prompt 要求完整角色体系 + 角色使用约束 ----

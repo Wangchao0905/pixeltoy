@@ -1058,6 +1058,20 @@ function nextStepMeta() {
     };
   }
   if (refereeDecision.kind === "rerun") {
+    const failedSeats = technicalReviewState(reviewContent).failedSeats;
+    const techFailuresOnly = failedSeats.length > 0 && failedSeats.every((seat) => seat.failureReason === "network_error" || seat.failureReason === "timeout" || seat.failureReason === "api_error");
+    const qualityMet = Number.isFinite(Number(reviewContent.quality)) && Number(reviewContent.quality) >= 75;
+    if (techFailuresOnly && qualityMet) {
+      const failedNames = [...new Set(failedSeats.map((seat) => modelMeta[seat.model || seat.actualModel]?.name || seat.model || seat.actualModel || "审读席"))].join("、");
+      return {
+        kind: "human-override",
+        stage: flowStage,
+        title: `${flowMeta.title}评分已达标`,
+        copy: `另一审读席（${failedNames}）网络调用失败，当前质量分 ${Math.round(Number(reviewContent.quality))} 已达标（≥75）。接受当前版本并继续，或重新审核。`,
+        label: "接受当前版本并继续（评分已达标）",
+        flowStage,
+      };
+    }
     return {
       kind: "run",
       stage: flowStage,

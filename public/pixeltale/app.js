@@ -2121,11 +2121,12 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   // 不再依赖右侧 rail 的下一步按钮才能发起修订）。
   const decisionRuleBlocked = (Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [])
     .some((item) => item?.status === "rule_blocked");
-  const decisionReviseButton = decision.kind === "revise" && !decisionRuleBlocked && decisionItems.length
+  const decisionReviseButton = decision.kind === "revise" && !decisionRuleBlocked
     ? `<button type="button" class="stage-primary agent-task-primary is-next-action decision-revise-btn" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(stage)}">执行定向修订 →</button>`
     : "";
-  // 2026-08-10：决策卡提供放行出口（必修项在 decision.items 而非 mandatoryIssues 时也能放行）。
-  const decisionOverride = (decision.kind === "revise" || decision.kind === "needs_decision") && !decisionRuleBlocked && decisionItems.length
+  // 2026-08-10：决策卡放行出口——任何未通过状态（revise/rerun/needs_decision）都常显，
+  // 不依赖具体字段（必修项可能在 mandatoryIssues / decision.items / pendingClosures 任一来源）。
+  const decisionOverride = decision.kind && decision.kind !== "approve" && !decisionRuleBlocked
     ? `<button type="button" class="stage-secondary decision-override-btn" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}">接受当前版本并继续</button>`
     : "";
   // 2026-08-10：needs_decision（跨阶段取舍，如场景名单与对白发言人不一致）时，

@@ -2127,7 +2127,9 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   // 2026-08-10：决策卡放行出口——任何未通过状态（revise/rerun/needs_decision）都常显，
   // 不依赖具体字段（必修项可能在 mandatoryIssues / decision.items / pendingClosures 任一来源）。
   const decisionOverride = decision.kind && decision.kind !== "approve" && !decisionRuleBlocked
-    ? `<button type="button" class="stage-secondary decision-override-btn" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}">接受当前版本并继续</button>`
+    ? state.pendingHumanOverride === stage
+      ? renderInlineHumanOverrideForm(stage)
+      : `<button type="button" class="stage-secondary decision-override-btn" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}">接受当前版本并继续</button>`
     : "";
   // 2026-08-10：needs_decision（跨阶段取舍，如场景名单与对白发言人不一致）时，
   // 在决定卡上直接给"选择方案并继续"，不再让用户误点"定向修订"（后者会被
@@ -2756,15 +2758,45 @@ function bindAgentTaskAction() {
       await refreshPixelTaleState();
     } catch (error) { alert("网络错误，请重试"); } finally { button.disabled = false; button.textContent = original; }
   }));
+function handleConfirmHumanOverride(button) {
+  const reasonField = $("[data-human-override-reason]");
+  if (!reasonField?.reportValidity()) return;
+  const stage = button.dataset.humanOverrideStage || state.pendingHumanOverride || state.stage;
+  const artifact = (state.agent?.artifacts || []).find((item) => item.stage === stage);
+  const review = reviewForArtifact(artifact);
+  const creativeDecision = creativeReviewDecisionGroups(review?.content || {})[0];
+  const choiceId = state.impactChoices[review?.id || `${stage}-decision`] || "option_1";
+  const choice = creativeDecision?.decisionOptions?.[Number(choiceId.replace("option_", "")) - 1] || creativeDecision?.decisionOptions?.[0] || "";
+  state.pendingHumanOverride = "";
+  void approveArtifact(artifact?.id, { humanOverride: true, humanOverrideReason: `${choice ? `选择：${choice}\n` : ""}${reasonField.value.trim()}` });
+}
+
   $$("#stageContent [data-flow-action]").forEach((button) => {
     button.addEventListener("click", () => {
       const action = button.dataset.flowAction;
       if (action === "handoff") { void createHandoff(); return; }
       if (action === "auto-revise") { void runAutoRevision(button.dataset.autoRevise || state.stage); return; }
       if (action === "human-override") {
-        state.pendingHumanOverride = button.dataset.humanOverride || state.stage;
+        const overrideStage = button.dataset.humanOverride || state.stage;
+        if (button.classList.contains("decision-override-btn")) {
+          // 2026-08-10：决策卡放行按钮点击 → 在按钮位置就地渲染确认表单（页面内，不用浏览器弹窗）。
+          state.pendingHumanOverride = overrideStage;
+          renderStage();
+          requestAnimationFrame(() => $('[data-human-override-reason]')?.focus());
+          return;
+        }
+        state.pendingHumanOverride = overrideStage;
         renderAgentTask();
         requestAnimationFrame(() => $('[data-human-override-reason]')?.focus());
+      }
+      if (action === "confirm-human-override") {
+        handleConfirmHumanOverride(button);
+        return;
+      }
+      if (action === "cancel-human-override") {
+        state.pendingHumanOverride = "";
+        renderShellState();
+        return;
       }
     });
   });
@@ -2802,16 +2834,7 @@ function bindAgentTaskAction() {
       return;
     }
     if (action === "confirm-human-override") {
-      const reasonField = $('[data-human-override-reason]');
-      if (!reasonField?.reportValidity()) return;
-      const stage = button.dataset.humanOverrideStage || state.pendingHumanOverride || state.stage;
-      const artifact = (state.agent?.artifacts || []).find((item) => item.stage === stage);
-      const review = reviewForArtifact(artifact);
-      const creativeDecision = creativeReviewDecisionGroups(review?.content || {})[0];
-      const choiceId = state.impactChoices[review?.id || `${stage}-decision`] || "option_1";
-      const choice = creativeDecision?.decisionOptions?.[Number(choiceId.replace("option_", "")) - 1] || creativeDecision?.decisionOptions?.[0] || "";
-      state.pendingHumanOverride = "";
-      void approveArtifact(artifact?.id, { humanOverride: true, humanOverrideReason: `${choice ? `选择：${choice}\n` : ""}${reasonField.value.trim()}` });
+      handleConfirmHumanOverride(button);
       return;
     }
     if (action === "cancel-human-override") {

@@ -58,6 +58,26 @@ assert.equal(
   75,
   "minute-and-second duration declarations must be supported",
 );
+const recommended90SecondScript = `# 自由模式推荐时长测试\n\n推荐时长：90秒\n每集目标时长：90 秒\n\n[场景1]\n咕咚在小屋内完成连续动作并停下。`;
+assert.equal(
+  duration.modelShotPlanNeedsRefresh({
+    scriptFingerprint: crypto.createHash("sha1").update(recommended90SecondScript).digest("hex"),
+    durationMode: FREE,
+    shots: Array.from({ length: 8 }, () => ({ duration: 15 })),
+  }, recommended90SecondScript, FREE),
+  true,
+  "an old eight-shot/120-second free-mode plan must be invalidated when the screenplay declares 90 seconds",
+);
+assert.equal(
+  duration.scriptDeclaredDurationSeconds(recommended90SecondScript),
+  90,
+  "free mode must recognize the screenplay's recommended 90-second duration metadata",
+);
+assert.equal(
+  duration.freeTargetDuration({ script: duration.modelPlanningScript(recommended90SecondScript), beats: twentyBeats }),
+  90,
+  "recommended screenplay duration metadata must survive free-mode planning",
+);
 const markdownTimedScript = `# 奶茶店\n\n**00:00-00:04　店门推开**\n\n傍晚，玻璃门被推开。\n\n**00:04-00:10　柜台前的停顿**\n\n她站在点单台前。\n\n**00:10-00:16　那句问题**\n\n她终于抬眼。\n\n**00:16-00:20　店里静下来**\n\n全店安静。\n\n**00:20-00:30　店员的回答**\n\n店员认真回应。\n\n**00:30-00:36　一杯被替换的选择**\n\n热牛奶注入茶汤。\n\n**00:36-00:41　传染**\n\n后面的人也要一杯。\n\n**00:41-00:45　收尾**\n\n她在窗边喝下奶茶。`;
 assert.equal(
   duration.scriptTimecodeTotalSeconds(markdownTimedScript),

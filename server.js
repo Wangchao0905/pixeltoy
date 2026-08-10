@@ -20483,7 +20483,7 @@ function scriptTimecodeTotalSeconds(script) {
 
 function scriptDeclaredDurationSeconds(script) {
   const lines = String(script || "").split(/\r?\n/).slice(0, 60);
-  const labelPattern = /^(?:[-*•#>\s]*)(?:(?:本集|本片|项目|剧本|脚本|视频|成片|单集)\s*)?(?:总时长|剧本时长|脚本时长|视频时长|成片时长|项目时长|片长|时长|duration|runtime|run\s*time)\s*[:：=]?\s*(.*)$/i;
+  const labelPattern = /^(?:[-*•#>\s]*)(?:(?:本集|每集|本片|项目|剧本|脚本|视频|成片|单集)\s*)?(?:总时长|目标时长|推荐时长|剧本时长|脚本时长|视频时长|成片时长|项目时长|片长|时长|duration|runtime|run\s*time)\s*[:：=]?\s*(.*)$/i;
   const parseValue = (value) => {
     const source = String(value || "")
       .replace(/^(?:约|大约|大致|approximately|approx\.?)[\s:：]*/i, "")

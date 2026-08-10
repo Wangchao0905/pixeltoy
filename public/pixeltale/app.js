@@ -2243,6 +2243,16 @@ function renderArtifactStage() {
   return `${state.stage === "arc" ? renderStoryPulse(artifact) : ""}${renderUnitStageProgress(state.stage)}${decisionWorkbench}<section class="artifact-card live-artifact"><div class="artifact-card-head"><span class="card-label"><i></i>${escapeHtml(artifact.type)}</span><span class="artifact-meta">v${escapeHtml(artifact.version)} · ${escapeHtml(artifact.status)}</span></div><details class="stage-artifact-details"><summary><span>查看完整阶段产物</span><em>${escapeHtml(inlineStatus)}</em></summary><div class="structured-content">${renderValue(artifact.content)}</div></details><div class="card-footer"><small>${escapeHtml(reviewLabel)} · ${escapeHtml(inlineStatus)}</small></div>${renderCreationTrace(artifact, reviewContent)}${reviewPanel}</section>`;
 }
 
+// 2026-08-10：检测 arc 代号/非中文标题（供导出页提示修正）
+function arcBadTitleCount() {
+  const artifact = artifactForStage("arc");
+  const units = Array.isArray(artifact?.content?.units) ? artifact.content.units : [];
+  return units.filter((u) => {
+    const t = String((u && u.title_zh) || "").trim();
+    return !t || !/[\u4e00-\u9fff]/.test(t);
+  }).length;
+}
+
 function renderHandoff() {
   const ready = handoffReady();
   const latest = state.agent?.handoffs?.at(-1);
@@ -2263,13 +2273,17 @@ function renderHandoff() {
         : "等待生成";
   const scriptError = state.documentError || (scriptDocument?.status === "failed" ? scriptDocument.error : "");
   const scriptFileName = scriptDocument?.fileName || "导出后生成正式剧本 DOCX";
+  const badTitles = arcBadTitleCount();
+  const fixTitlesButton = badTitles
+    ? `<div class="handoff-title-fix"><span>检测到 ${badTitles} 集标题为代号/非中文，导出前建议修正</span><button type="button" class="tool-button" data-arc-fix-titles>修正标题（代号→中文）</button></div>`
+    : "";
   // 2026-08-10：生成入口直接放到导出页（不再要求用户去右侧下一步卡找"生成正式文件"）。
   const documentActions = scriptReady
     ? `<div class="document-delivery-actions"><button type="button" class="stage-primary" data-download-script ${state.documentBusy ? "disabled" : ""}>下载剧本 DOCX <span aria-hidden="true">↓</span></button><button type="button" class="stage-secondary" data-save-script ${state.documentBusy ? "disabled" : ""}>选择文件夹并保存</button></div>`
     : ready
       ? `<button type="button" class="handoff-generate-btn" data-flow-action="handoff" ${state.documentBusy ? "disabled" : ""}>生成正式文件 <span aria-hidden="true">→</span></button>`
       : "";
-  return `<p class="stage-intro handoff-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集剧情、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "逐集中文剧情 + English Dialogue" : "等待全剧确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>`;
+  return `${fixTitlesButton}<p class="stage-intro handoff-intro">${ready ? "所有阶段都已确认。现在可以生成正式剧本 DOCX、视觉资产 DOCX 和版本化导出包，不覆盖既有文件。" : "先确认故事架构、剧名、提案、人物与世界、分集剧情、场景镜头和英文对白，完成后即可导出。"}</p><div class="handoff-grid"><div class="handoff-tile"><strong>正式剧本</strong><span>${ready ? "逐集中文剧情 + English Dialogue" : "等待全剧确认"}</span></div><div class="handoff-tile"><strong>结构资产</strong><span>${ready ? "人物 / 关系 / 世界规则" : "等待阶段确认"}</span></div><div class="handoff-tile"><strong>视觉资产</strong><span>${ready ? "人物 / 场景 / 道具 DOCX" : "等待全剧确认"}</span></div></div>${latest ? `<section class="artifact-card"><span class="card-label"><i></i>LAST EXPORT</span><h3>${escapeHtml(latest.id)}</h3><p>导出包已建立：${escapeHtml(latest.packageFile || "版本化文件")}</p>${visualAssetAction ? `<div class="visual-asset-download-row">${visualAssetAction}</div>` : ""}</section>` : ""}<section class="document-delivery" aria-labelledby="scriptDocumentTitle"><div class="document-delivery-head"><div><span class="card-label"><i></i>FORMAL DELIVERABLE</span><h3 id="scriptDocumentTitle">正式剧本 DOCX</h3></div><span class="document-status ${scriptReady ? "is-ready" : scriptDocument?.status === "failed" ? "is-error" : ""}">${scriptStatus}</span></div><p class="document-file-name">${escapeHtml(scriptFileName)}</p>${scriptReady ? `<label class="script-folder-field" for="scriptFolderName"><span>本地新建文件夹名称（可选）</span><input id="scriptFolderName" type="text" placeholder="留空则保存到所选文件夹" autocomplete="off" /></label>` : ""}${scriptError ? `<p class="document-error" role="alert">${escapeHtml(scriptError)}</p>` : ""}${documentActions}</section>`;
 }
 
 // 依据与风险：动态显示当前审核的实际分歧（不再只显示静态标准文案）
@@ -2685,6 +2699,17 @@ function bindAgentTaskAction() {
   // 2026-08-10：内容区（stageContent）内的动作按钮（系统裁判决定卡上的定向修订、
   // 导出页的生成正式文件）也需要响应点击——它们不在右侧 #agentTaskAction 内。
   // 只处理内容区实际出现的动作，避免与右侧绑定重复触发。
+  $$("[data-arc-fix-titles]").forEach((button) => button.addEventListener("click", async () => {
+    const original = button.textContent;
+    button.disabled = true; button.textContent = "修正中…";
+    try {
+      const res = await fetch(agentApiPath("/arc/fix-titles"), { method: "POST", headers: { "Content-Type": "application/json", ...agentRequestHeaders() }, body: "{}" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || "标题修正失败，请重试"); return; }
+      alert(`已修正 ${data.fixed || 0} 集标题${data.flagged ? `，剩余 ${data.flagged} 集待处理` : ""}`);
+      await refreshPixelTaleState();
+    } catch (error) { alert("网络错误，请重试"); } finally { button.disabled = false; button.textContent = original; }
+  }));
   $$("#stageContent [data-flow-action]").forEach((button) => {
     button.addEventListener("click", () => {
       const action = button.dataset.flowAction;

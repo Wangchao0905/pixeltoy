@@ -12,7 +12,7 @@ const LEGACY_ROUTE_MODELS = new Set([...LEGACY_MODEL_IDS, ...RETIRED_SEAT_MODELS
 // the vestigial route keys are not rewritten just because a model lost its seat.
 const RETIRED_MODEL_IDS = new Set(LEGACY_MODEL_IDS);
 const { fallbackVisualAssets } = require("./pixeltale-visual-assets.js");
-const { runStageRules } = require("./pixeltale-review-rules.js");
+const { runStageRules, EPISODE_TITLE_CODENAME } = require("./pixeltale-review-rules.js");
 
 const STAGES = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"];
 const STAGE_LABELS = Object.freeze({ brief: "故事架构", title: "剧名选择", proposal: "故事提案", characters: "人物与世界", arc: "分集与章节", scenes: "场景与镜头", dialogue: "对白本土化" });
@@ -3231,6 +3231,44 @@ function autoRegisterEpisodeCharacters(state, stage, artifactContent, now = () =
   return additions.length;
 }
 
+// 2026-08-10 精准修标题：代号/非中文的 arc 集标题批量改为语义中文标题。
+// 只改 units[].title_zh，不触碰剧情字段；下游（scenes/dialogue）无需重跑。
+async function fixEpisodeTitles({ state, modelRouter, writer = "gpt-5.6-terra", now = () => new Date() } = {}) {
+  const arcArtifact = (state.artifacts || [])
+    .filter((a) => a && a.stage === "arc" && a.type === "pixeltale_arc")
+    .sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
+  if (!arcArtifact) return { fixed: 0, flagged: 0 };
+  const units = Array.isArray(arcArtifact.content && arcArtifact.content.units) ? arcArtifact.content.units : [];
+  const isBadTitle = (u) => {
+    const t = String((u && u.title_zh) || "").trim();
+    return !t || !/[\u4e00-\u9fff]/.test(t) || EPISODE_TITLE_CODENAME.test(t);
+  };
+  const flagged = units.filter(isBadTitle);
+  const flaggedCount = flagged.length;
+  if (!flaggedCount) return { fixed: 0, flagged: 0 };
+  if (!modelRouter) {
+    flagged.forEach((u) => { u.title_zh = `第${u.number}集 剧情推进`; });
+  } else {
+    const system = "你是 PixelTale 编剧助手。根据每集剧情摘要为该集生成一个完整中文短语标题（4-10 字，概括该集核心事件或冲突）。只输出 JSON 数组，不要解释。";
+    const user = `请为以下各集生成规范中文标题（每集一个 4-10 字短语，概括核心事件/冲突，禁止英文代号）：\n${flagged.map((u) => `第${u.number}集：${String((u.plot_zh || u.promise_zh || "").slice(0, 120))}`).join("\n")}\n输出 JSON：[{"number":1,"title_zh":"中文标题"}]`;
+    try {
+      const res = await callProvider({ provider: writer, system, user, modelRouter, maxTokens: 2000, purpose: "pixeltale-fix-titles" });
+      const content = responseContent(res) || JSON.stringify(res.content || {});
+      let parsed = null;
+      try { parsed = parseJson(content, "标题修正"); } catch { parsed = null; }
+      if (Array.isArray(parsed)) {
+        parsed.forEach((item) => {
+          const unit = units.find((u) => Number(u.number) === Number(item && item.number));
+          const t = String(item && item.title_zh || "").trim();
+          if (unit && t && /[\u4e00-\u9fff]/.test(t) && !EPISODE_TITLE_CODENAME.test(t)) unit.title_zh = t;
+        });
+      }
+    } catch { /* 模型失败保持原样，调用方可提示重试 */ }
+  }
+  arcArtifact.updatedAt = new Date(now()).toISOString();
+  return { fixed: flaggedCount - units.filter(isBadTitle).length, flagged: units.filter(isBadTitle).length };
+}
+
 function createPixelTaleAgent(options = {}) {
   const modelRouter = options.modelRouter;
   const now = options.now || (() => new Date());
@@ -4124,6 +4162,7 @@ module.exports = {
   markUnitDirty,
   normalizeAutoRegisteredCharacters,
   autoRegisterEpisodeCharacters,
+  fixEpisodeTitles,
   autoRepairableUnits,
   dirtyUnits,
   propagateDirty,

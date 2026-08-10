@@ -1542,3 +1542,8 @@ button.decision-revise-btn {
 }
 button.decision-revise-btn:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(47, 155, 255, 0.32); }
 button.decision-revise-btn:active { transform: scale(0.98); }
+
+/* 导出页标题修正提示条 */
+.handoff-title-fix { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 14px; border: 1px solid rgba(255, 202, 40, 0.5); border-radius: 12px; background: rgba(255, 250, 240, 0.7); }
+.handoff-title-fix span { color: #7a4d00; font-size: 12px; }
+.handoff-title-fix .tool-button { border-radius: 9px; }

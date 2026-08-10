@@ -327,4 +327,4 @@ function runStageRules({ stage = "", mode = "", artifact = {}, approvedContext =
   };
 }
 
-module.exports = { runStageRules };
+module.exports = { runStageRules, EPISODE_TITLE_CODENAME };

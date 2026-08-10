@@ -336,6 +336,7 @@ const DEFAULT_WINDOWS = {
   storyboards: { left: 24, top: 672, width: 874, height: 420 },
 };
 const VIDEO_MODEL_OPTIONS = {
+  "seedance-2-5": "Seedance 2.5",
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",
@@ -366,6 +367,7 @@ function normalizeVideoModelName(value) {
   const lower = raw.toLowerCase();
   if (!raw) return "seedance-2-0-fast";
   if (VIDEO_MODEL_OPTIONS[raw]) return raw;
+  if (/2\.5|2-5/.test(lower)) return "seedance-2-5";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0-person-reference";
   if (/mini|迷你/.test(lower)) return "seedance-2-0-mini";
   if (/fast|快速/.test(lower)) return "seedance-2-0-fast";

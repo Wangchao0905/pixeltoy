@@ -1,0 +1,32 @@
+// Seedance 2.5 接入测试（2026-08-10）：
+// 火山方舟模型映射、分辨率封顶（2.5 仅 480p/720p）、前端模型选项。
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const mod = await import(path.join(root, "server.js"));
+const serverExports = (mod.default && mod.default.__test ? mod.default : mod);
+const { __test } = serverExports;
+const { normalizeVideoResolution } = __test.canvasVideo;
+
+// 1) 分辨率封顶：Seedance 2.5 仅 480p/720p
+assert.equal(normalizeVideoResolution("1080p", "seedance-2-5"), "720p", "2.5 请求 1080p 必须回退 720p");
+assert.equal(normalizeVideoResolution("4k", "seedance-2-5"), "720p", "2.5 请求 4k 必须回退 720p");
+assert.equal(normalizeVideoResolution("720p", "seedance-2-5"), "720p", "2.5 720p 保持");
+assert.equal(normalizeVideoResolution("480p", "seedance-2-5"), "480p", "2.5 480p 保持");
+// 2.0 不受影响
+assert.equal(normalizeVideoResolution("1080p", "seedance-2-0"), "1080p", "2.0 1080p 保持");
+assert.equal(normalizeVideoResolution("4k", "seedance-2-0"), "4k", "2.0 4k 保持");
+
+// 2) 静态断言：模型映射 + 前端选项 + 文本归一
+const serverSource = readFileSync(path.join(root, "server.js"), "utf8");
+assert.match(serverSource, /"seedance-2-5": "doubao-seedance-2-5-260628"/, "server 必须映射 Seedance 2.5 到火山模型 ID");
+assert.match(serverSource, /SEEDANCE_25_MODEL/, "2.5 必须支持 env 覆盖（SEEDANCE_25_MODEL）");
+
+const appSource = readFileSync(path.join(root, "public", "app.js"), "utf8");
+assert.match(appSource, /"seedance-2-5": "Seedance 2\.5"/, "前端必须提供 Seedance 2.5 模型选项");
+assert.match(appSource, /\/2\\.5\|2-5\//, "前端必须归一化 2.5 文本输入");
+
+console.log("seedance-25-config ok");

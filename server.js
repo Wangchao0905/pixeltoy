@@ -153,6 +153,8 @@ const DEFAULT_DAILY_VIDEO_LIMIT = 10;
 const DEFAULT_CONCURRENT_VIDEO_LIMIT = 2;
 const ACTIVE_VIDEO_TASK_TTL_MS = 1000 * 60 * 60 * 6;
 const DEFAULT_SEEDANCE_MODEL_MAP = {
+  // 2026-08-10：火山方舟已发布 Seedance 2.5（doubao-seedance-2-5-260628，仅 480p/720p，4-30s）
+  "seedance-2-5": "doubao-seedance-2-5-260628",
   "seedance-2-0": "doubao-seedance-2-0-260128",
   "seedance-2-0-fast": "doubao-seedance-2-0-fast-260128",
   "seedance-2-0-mini": "doubao-seedance-2-0-mini-260615",
@@ -13154,6 +13156,7 @@ function normalizeSeedanceModel(value, provider = "") {
     return bp[raw] || raw;
   }
   const map = {
+    "seedance-2-5": process.env.SEEDANCE_25_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-5"],
     "seedance-2-0": process.env.SEEDANCE_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0"],
     "seedance-2-0-fast": process.env.SEEDANCE_FAST_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0-fast"],
     "seedance-2-0-mini": process.env.SEEDANCE_MINI_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0-mini"],
@@ -13202,9 +13205,11 @@ function normalizeVideoResolution(value, model = "") {
   const raw = compactLine(value || "720p");
   const lower = raw.toLowerCase();
   const isFastOrMini = /(?:fast|mini)/i.test(String(model || ""));
+  // Seedance 2.5 仅支持 480p/720p（无 1080p/4k）
+  const is25 = /(?:2-5|2\.5)/i.test(String(model || ""));
   if (["480p", "720p"].includes(lower)) return lower;
-  if (lower === "1080p" && !isFastOrMini) return lower;
-  if (lower === "4k" && !isFastOrMini) return "4k";
+  if (lower === "1080p" && !isFastOrMini && !is25) return lower;
+  if (lower === "4k" && !isFastOrMini && !is25) return "4k";
   return "720p";
 }
 

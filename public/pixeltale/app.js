@@ -2634,6 +2634,14 @@ async function runAutoRevision(stage = state.stage) {
 
   // 跨阶段项不发给当前阶段修订 writer（归属其他阶段），保留在清单供人工处理
   let currentIssues = issues.filter((issue) => !issue.targetStage || issue.targetStage === stage);
+  // 2026-08-10：若必修项全部归属其他阶段（本阶段修订关不掉它们），直接提示放行，
+  // 不做空计划修订（否则'修订 → 复审仍不通过 → 再修订'空转）。
+  if (!currentIssues.length && crossStageIssues.length) {
+    showToast(`必修项均归属其他阶段（${[...new Set(crossStageIssues.map((issue) => stageMeta[issue.targetStage]?.title || issue.targetStage))].join("、")}），当前阶段修订无法关闭；请前往处理，或点「接受当前版本并继续」人工放行`);
+    state.lastError = "";
+    renderStage();
+    return;
+  }
   for (let pass = 1; pass <= maxPasses; pass += 1) {
     showToast(`正在执行第 ${pass} / ${maxPasses} 轮修订与复审 · ${currentIssues.length} 类问题`);
     const outcome = await runCurrentStage(stage, { revisionPlan: buildPlan(currentIssues, pass) });

@@ -2405,6 +2405,17 @@ async function waitForRunJob(jobId, { timeoutMs = RUN_POLL_TIMEOUT_MS } = {}) {
         terminalError.recoverable = terminalError.code === "RUN_INTERRUPTED";
         throw terminalError;
       }
+      // 2026-08-10：服务重启会把在跑任务标为 interrupted。立即结束监控并清除
+      // 残留 activeRun（而不是轮询 4 分钟），让用户马上可以重新提交当前阶段。
+      if (job?.status === "interrupted") {
+        state.runPhase = "";
+        renderModelTeam();
+        const interrupted = new Error(job.error || "服务重启中断了本次运行，请重新提交当前阶段");
+        interrupted.terminal = true;
+        interrupted.code = "RUN_INTERRUPTED";
+        interrupted.recoverable = true;
+        throw interrupted;
+      }
     } catch (error) {
       if (error?.terminal) throw error;
       consecutiveFailures += 1;

@@ -1848,7 +1848,22 @@ function buildRevisionContract(review = {}, { stage, sourceArtifactId, id: contr
   const freshMandatory = candidateMandatory
     .filter((issue) => isMandatoryReviewIssue(issue, requiredSupport))
     .filter((item, index, all) => all.findIndex((candidate) => revisionIssueId(stage, candidate) === revisionIssueId(stage, item)) === index);
-  const freshIssues = [...freshMandatory, ...acceptedAdvisories];
+  // 2026-08-10：系统裁判 decision.items 是"已决定要修"的项（可能来自单席问题/上一轮合同），
+  // 若只认 mandatoryIssues 会在"继续定向修订"时因 issues 空而 REVISION_CONTRACT_EMPTY——
+  // 用户反复点修订反复失败。把 decision.items 并入合同项（去重由 revisionIssueId 完成）。
+  const decisionItems = asArray(review.decision?.items)
+    .filter((item) => item && item.tag)
+    .map((item) => ({
+      criterionId: item.criterionId || item.id || `DECISION_${issueKey(item.tag)}`,
+      tag: item.tag,
+      dimension: item.dimension || "logic",
+      severity: item.severity || "high",
+      modelCount: Number(item.modelCount) || 1,
+      models: asArray(item.models),
+      evidence: asArray(item.evidence),
+      suggestions: asArray(item.suggestions),
+    }));
+  const freshIssues = [...freshMandatory, ...acceptedAdvisories, ...decisionItems];
   const previousItems = asArray(review.revision?.contract?.items);
   const previousClosures = new Map(asArray(review.revision?.closure?.items).map((item) => [item.id, item]));
   const previousByKey = new Map();

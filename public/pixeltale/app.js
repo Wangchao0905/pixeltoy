@@ -2100,7 +2100,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   // 不再依赖右侧 rail 的下一步按钮才能发起修订）。
   const decisionRuleBlocked = (Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [])
     .some((item) => item?.status === "rule_blocked");
-  const decisionReviseButton = decision.kind === "revise" && !decisionRuleBlocked
+  const decisionReviseButton = decision.kind === "revise" && !decisionRuleBlocked && decisionItems.length
     ? `<button type="button" class="stage-primary agent-task-primary is-next-action decision-revise-btn" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(stage)}">执行定向修订 →</button>`
     : "";
   // 2026-08-10：needs_decision（跨阶段取舍，如场景名单与对白发言人不一致）时，

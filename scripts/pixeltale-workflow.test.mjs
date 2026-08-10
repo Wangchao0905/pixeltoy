@@ -1810,6 +1810,15 @@ console.log("pixeltale workflow contract ok");
   assert.equal(fixState.artifacts[0].content.units.find((u) => u.number === 7).title_zh, "第7集 剧情推进", "无模型兜底必须消除代号");
 }
 
+// ---- 2026-08-10 继续定向修订：decision.items 并入合同（issues 空不再 REVISION_CONTRACT_EMPTY）----
+{
+  const contract = buildRevisionContract({ decision: { kind: "revise", items: [{ id: "characters-R-care_scope_gap", tag: "care_scope_gap", dimension: "logic", severity: "high", modelCount: 1, evidence: ["C001 设定不足"] }] }, revision: {} }, { stage: "characters", sourceArtifactId: "a1", id: "rev-1" });
+  assert.ok(contract.items.length >= 1, "decision.items 必须进入修订合同（单席问题也能继续修订）");
+  assert.ok(contract.items.some((item) => item.tag === "care_scope_gap"), "合同必须包含裁判已决定的修订项");
+  const emptyContract = buildRevisionContract({ decision: { kind: "revise", items: [] }, revision: {} }, { stage: "characters", sourceArtifactId: "a2", id: "rev-2" });
+  assert.equal(emptyContract.items.length, 0, "decision.items 与 issues 全空时合同仍为空（REVISION_CONTRACT_EMPTY 防呆保留）");
+}
+
 // ---- 2026-08-10 底层避免：dialogue speaker 自动对齐进场景名单（不再产生跨阶段取舍）----
 {
   const alignState = { artifacts: [

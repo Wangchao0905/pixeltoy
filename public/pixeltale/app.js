@@ -71,6 +71,7 @@ const state = {
   impactChoices: {},
   pendingHumanOverride: "",
   pendingRerun: null,
+  pendingCrossStageRepair: null,
   historyDeletePending: null,
   agent: null,
   routes: { orchestration: "gpt-5.6-terra", continuity: "gemini-3.1-pro", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
@@ -1064,6 +1065,18 @@ function nextStepMeta() {
     if (flowStage === "title") return { kind: "busy", title: "正在生成 4 个英文剧名", copy: "由总编排中指定的单个模型生成，完成后直接进入人工选择，不执行交叉审核。", flowStage };
     return { kind: "busy", title: "正在执行当前阶段", copy: "主笔生成内容；规则校验和双席审读提交证据；系统裁判随后给出唯一决定。", flowStage };
   }
+  if (state.pendingCrossStageRepair?.stage === state.stage) {
+    const repairMeta = stageMeta[state.stage] || stageMeta.brief;
+    const sourceMeta = stageMeta[state.pendingCrossStageRepair.sourceStage] || stageMeta[flowStage] || stageMeta.brief;
+    return {
+      kind: "cross-stage-repair",
+      stage: state.stage,
+      title: `处理${repairMeta.title}跨阶段问题`,
+      copy: `当前问题由“${sourceMeta.title}”审核发现，但归属于本阶段。重新生成${repairMeta.title}会建立新版本，并重新审核下游内容。`,
+      label: `重新生成${repairMeta.title} →`,
+      flowStage,
+    };
+  }
   if (state.stage !== flowStage) {
     return {
       kind: "return",
@@ -1299,6 +1312,9 @@ function renderAgentTaskAction(action) {
   if (action.kind === "run") {
     const id = action.stage === "brief" ? "runBrief" : "agentRunStage";
     return `<button id="${id}" class="stage-primary agent-task-primary${guidedClass}" data-flow-action="run" data-run-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+  }
+  if (action.kind === "cross-stage-repair") {
+    return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="run" data-run-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
   if (action.kind === "auto-revise") {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="auto-revise" data-auto-revise="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
@@ -2229,7 +2245,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   const technicalFailures = [...(Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : []), ...feedbacks.filter((item) => item.status === "failed")];
   const technical = technicalReviewState(reviewContent);
   const reasonLabels = { timeout: "请求超时", network_error: "网络错误", empty_response: "空响应", invalid_json: "返回格式错误", schema_error: "数据结构错误", not_configured: "模型未配置", stalled: "自动修订未收敛（同一问题连续出现）", new_high_risk: "修订引入新的高风险问题", budget_exhausted: "自动修订超出预算" };
-  const issueMarkup = (items, empty) => items.length ? `<div class="review-issue-list">${items.map((item, index) => { const fixable = Number.isInteger(Number(item.unit)) && Number(item.unit) > 0 && !!item.fieldPath && (stage === "arc" || stage === "scenes"); const targetStage = item.targetStage && item.targetStage !== stage ? `<small class="review-issue-target">修正归属：${escapeHtml(stageMeta[item.targetStage]?.title || item.targetStage)}；当前页不直接改写此问题</small>` : ""; return `<article class="review-issue review-issue-${escapeHtml(item.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.tag || item.code || "审核意见")}</strong><span class="review-issue-severity">${escapeHtml(item.severity || "medium")}</span>${fixable ? `<button type="button" class="fix-unit-btn" data-fix-unit data-stage="${escapeHtml(stage)}" data-unit="${Number(item.unit)}" data-issue='${escapeHtml(JSON.stringify({ unit: Number(item.unit), field_path: item.fieldPath, tag: item.tag || "", feedback: item.feedback || "", fix: item.fix || "" }))}'>修复此集</button>` : ""}</div>${targetStage}${item.message ? `<p>${escapeHtml(item.message)}</p>` : ""}${Array.isArray(item.suggestions) && item.suggestions.length ? `<ul>${item.suggestions.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : item.fix ? `<p>${escapeHtml(item.fix)}</p>` : ""}</article>`; }).join("")}</div>` : `<p class="review-empty">${empty}</p>`;
+  const issueMarkup = (items, empty) => items.length ? `<div class="review-issue-list">${items.map((item, index) => { const fixable = Number.isInteger(Number(item.unit)) && Number(item.unit) > 0 && !!item.fieldPath && (stage === "arc" || stage === "scenes"); const crossStage = item.targetStage && item.targetStage !== stage; const targetStage = crossStage ? `<small class="review-issue-target">修正归属：${escapeHtml(stageMeta[item.targetStage]?.title || item.targetStage)}；当前页不直接改写此问题</small>` : ""; const crossStageAction = crossStage && stageAccessible(item.targetStage) ? `<button type="button" class="stage-secondary cross-stage-repair-btn" data-cross-stage-open data-cross-stage="${escapeHtml(item.targetStage)}" data-cross-stage-source="${escapeHtml(stage)}">前往${escapeHtml(stageMeta[item.targetStage]?.title || item.targetStage)}处理 →</button>` : ""; return `<article class="review-issue review-issue-${escapeHtml(item.severity || "medium")}"><div class="review-issue-head"><span class="review-issue-index">${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.tag || item.code || "审核意见")}</strong><span class="review-issue-severity">${escapeHtml(item.severity || "medium")}</span>${fixable ? `<button type="button" class="fix-unit-btn" data-fix-unit data-stage="${escapeHtml(stage)}" data-unit="${Number(item.unit)}" data-issue='${escapeHtml(JSON.stringify({ unit: Number(item.unit), field_path: item.fieldPath, tag: item.tag || "", feedback: item.feedback || "", fix: item.fix || "" }))}'>修复此集</button>` : ""}</div>${targetStage}${crossStageAction}${item.message ? `<p>${escapeHtml(item.message)}</p>` : ""}${Array.isArray(item.suggestions) && item.suggestions.length ? `<ul>${item.suggestions.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : item.fix ? `<p>${escapeHtml(item.fix)}</p>` : ""}</article>`; }).join("")}</div>` : `<p class="review-empty">${empty}</p>`;
   const adjudicationMarkup = adjudications.length ? `<div class="review-issue-list">${adjudications.map((item) => `<article class="review-adjudication"><strong>${escapeHtml(item.dimension || "未标注维度")}</strong><p>分歧度 ${escapeHtml(String(item.agreement ?? "—"))}% · 席位评分 ${escapeHtml((item.scores || []).join(" / "))}</p><p>证据来源：${escapeHtml((item.seats || []).join("、") || "审核席位")}</p><p>裁决依据：${escapeHtml(item.adjudication?.basis || "按证据强度与阶段契约自动裁决")}</p></article>`).join("")}</div>` : `<p class="review-empty">当前没有评分分歧，${reviewOpinion}可直接汇总。</p>`;
   const failureMarkup = technicalFailures.length ? `<div class="review-issue-list">${technicalFailures.map((item) => `<article class="review-technical-failure"><strong>${escapeHtml(item.seatId || "未标识席位")}</strong><p>未返回 · 技术未完成 · ${escapeHtml(reasonLabels[item.failureReason] || item.failureReason || item.message || "调用失败")}</p></article>`).join("")}</div>` : `<p class="review-empty">${reviewMode}未发现技术失败。</p>`;
   const degradedFlag = technical.degraded
@@ -2510,7 +2526,7 @@ function renderStage() {
   }
   // 2026-08-10：当前查看的阶段已确认但主流程停在后面 → 自动跳到主流程阶段
   const flowStage = workflowStage();
-  if (state.stage !== flowStage) {
+  if (state.stage !== flowStage && !state.pendingCrossStageRepair?.stage) {
     const currentArt = artifactForStage(state.stage);
     if (currentArt && state.approved.has(currentArt.id)) { state.stage = flowStage; }
   }
@@ -2694,6 +2710,7 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "", overrid
         ? (revision ? "交叉修订已执行，但仍有问题未通过逐项关闭" : `已生成，但${reviewMode}存在共识问题或意见冲突`)
         : (revision ? "交叉修订已逐项复审关闭，等待确认" : `已生成并完成${reviewMode}，等待确认`));
     }
+    if (state.pendingCrossStageRepair?.stage === stage) state.pendingCrossStageRepair = null;
     return { result: payload.result };
   } catch (error) {
     if (error?.terminal) {
@@ -3128,6 +3145,18 @@ function bindDecisionImpactWorkbench() {
 }
 
 function bindStageActions() {
+  $$('[data-cross-stage-open]').forEach((button) => button.addEventListener("click", () => {
+    const targetStage = button.dataset.crossStageOpen || button.dataset.crossStage;
+    if (!targetStage || !stageAccessible(targetStage)) {
+      showToast(`“${stageMeta[targetStage]?.title || targetStage || "归属阶段"}”当前不可访问`);
+      return;
+    }
+    state.pendingCrossStageRepair = { stage: targetStage, sourceStage: button.dataset.crossStageSource || state.stage };
+    state.stage = targetStage;
+    state.lastError = "";
+    renderStage();
+    requestAnimationFrame(() => $(".agent-task")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }));
   $$('[data-pulse-node]').forEach((button) => button.addEventListener("click", () => {
     const inspector = document.querySelector("#pulseInspector");
     if (!inspector) return;

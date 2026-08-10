@@ -426,6 +426,10 @@ assert.match(app, /reviewContent\.revision\?\.closure\?\.items/, "revision outpu
 assert.match(app, /crossStageIssues = issues\.filter/, "cross-stage review items must not be sent to the current-stage revision writer");
 assert.match(app, /当前清单包含跨阶段问题/, "cross-stage review items must tell the creator which stage owns the repair");
 assert.match(app, /修正归属：/, "review cards must show the owning stage for cross-stage findings");
+assert.match(app, /data-cross-stage-open/, "cross-stage review items must expose a direct navigation action to the owning stage");
+assert.match(app, /pendingCrossStageRepair/, "cross-stage navigation must retain the owning stage repair context");
+assert.match(app, /kind: "cross-stage-repair"/, "the owning stage must expose a concrete repair action instead of only a warning");
+assert.match(app, /state\.stage !== flowStage && !state\.pendingCrossStageRepair\?\.stage/, "cross-stage repair views must not be auto-reset to the main workflow stage");
 assert.match(app, /technicalState\.blocked && reviewForArtifact\(artifact\) && !creativeReviewDecisionGroups/, "a rule-blocked creative tradeoff must reach the decision workbench instead of the generic rerun action");
 assert.match(app, /const decisionItems = reviewDecisionGroups\(reviewContent\)/, "the decision card must use merged decision items");
 assert.match(app, /decisionOptions\.slice\(0, 2\)/, "the decision card must show the available repair options");

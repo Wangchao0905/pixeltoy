@@ -2325,7 +2325,7 @@ function renderRiskNote() {
   } else if (feedbacks.length === 0) {
     html = `<span class="risk-dot"></span><span>钩子必须在集尾留下一个未回答的问题。</span>`;
   } else if (disagreements.length) {
-    html = `<span class="risk-dot"></span><span>双席审读存在分歧：${feedbacks.map(seatLabel).join("；")}。请在右侧决定。</span>`;
+    html = `<span class="risk-dot"></span><span>双席审读存在分歧：${feedbacks.map(seatLabel).join("；")}。分歧已按共识机制自动裁决（评分分歧与裁决依据见下方「审核依据」）；需要创作者决定的取舍才会出现「选择方案」入口。</span>`;
     riskCount = feedbacks.length;
   } else {
     const agreed = feedbacks.every((item) => item.pass === true);

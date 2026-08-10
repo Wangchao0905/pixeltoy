@@ -2403,7 +2403,7 @@ function renderRiskNote() {
 function renderStage() {
   // 2026-08-10：初始加载时 agent 尚未返回 → 显示加载中（不要渲染假 brief）
   if (!state.agent) {
-    $("stageContent").innerHTML = '<div class="artifact-card empty-artifact" style="text-align:center;padding:6rem 2rem"><div style="font-size:2rem;margin-bottom:1rem">⏳</div><h3>正在加载项目数据…</h3><p>若长时间未响应，请从<a href="#" onclick="location.reload();return false" style="color:var(--brand)">创作历史</a>重新进入</p></div>';
+    $("#stageContent").innerHTML = '<div class="artifact-card empty-artifact" style="text-align:center;padding:6rem 2rem"><div style="font-size:2rem;margin-bottom:1rem">⏳</div><h3>正在加载项目数据…</h3><p>若长时间未响应，请从<a href="#" onclick="location.reload();return false" style="color:var(--brand)">创作历史</a>重新进入</p></div>';
     return;
   }
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;

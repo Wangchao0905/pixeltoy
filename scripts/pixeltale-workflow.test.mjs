@@ -1810,6 +1810,22 @@ console.log("pixeltale workflow contract ok");
   assert.equal(fixState.artifacts[0].content.units.find((u) => u.number === 7).title_zh, "第7集 剧情推进", "无模型兜底必须消除代号");
 }
 
+// ---- 2026-08-10 底层避免：dialogue speaker 自动对齐进场景名单（不再产生跨阶段取舍）----
+{
+  const alignState = { artifacts: [
+    { stage: "scenes", type: "pixeltale_scenes", version: 1, content: { scenes: [{ id: "S008", unit_number: 1, characters: ["C001"] }] } },
+    { stage: "characters", type: "pixeltale_characters", version: 1, content: { characters: [{ id: "C001" }, { id: "C004" }] } },
+  ] };
+  const dialogueContent = { lines: [{ id: "D1", scene_id: "S008", speaker: "C004" }] };
+  autoRegisterEpisodeCharacters(alignState, "dialogue", dialogueContent);
+  const scene = alignState.artifacts[0].content.scenes[0];
+  assert.ok(scene.characters.includes("C004"), "speaker 必须自动补进对应场景名单");
+  const aligned = runStageRules({ stage: "dialogue", artifact: dialogueContent, approvedContext: { artifacts: alignState.artifacts } });
+  assert.equal(ruleFindings(aligned, "SCENE_SPEAKER_ROSTER_MISMATCH").length, 0, "名单对齐后不再产生跨阶段取舍 needs_decision");
+  const diaPrompt = stageSystemPrompt("dialogue", "tk_short_drama", {});
+  assert.match(diaPrompt, /speaker 必须出现在该 line 的 scene_id 对应场景的人物名单/, "dialogue prompt 必须约束说话人在场景名单内");
+}
+
 // ---- 2026-08-10 预防验证：prompt 要求完整角色体系 + 角色使用约束 ----
 {
   const charsPrompt = stageSystemPrompt("characters", "tk_short_drama", {});

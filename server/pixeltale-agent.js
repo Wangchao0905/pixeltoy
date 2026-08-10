@@ -625,6 +625,9 @@ function stageSystemPrompt(stage, mode, input = {}) {
   const characterUsage = ["scenes", "dialogue"].includes(stage) ? [
     "场景/对白只引用 characters 阶段已确认的人物 ID；优先复用已定义角色。",
     "确需新角色时，直接使用新的 C 编号让其自然出场/说话即可——引擎会把该角色补录进人物名单，但标记为待确认身份；正式设定仍需回到人物阶段补齐。",
+    ...(stage === "dialogue" ? [
+      "每条对白的 speaker 必须出现在该 line 的 scene_id 对应场景的人物名单（scenes 的 characters）中；如剧情需要该角色在此场景说话而名单未登记，直接使用新 C 编号（引擎会自动同步进场景名单），不要改动 scene_id。",
+    ] : []),
   ] : [];
   const unitRules = UNIT_STAGES.has(stage) ? [
     "当前请求可能只是一个分批单元；严格只输出 userInput.unitScope 指定的集数，不得补写其他集，不得返回整季内容。",
@@ -3212,6 +3215,27 @@ function autoRegisterEpisodeCharacters(state, stage, artifactContent, now = () =
   } else if (stage === "dialogue") {
     const lines = Array.isArray(artifactContent && artifactContent.lines) ? artifactContent.lines : [];
     lines.forEach((line) => { const v = String(line && line.speaker || "").trim(); if (v) referenced.add(v); });
+    // 场景名单对齐（底层避免 SCENE_SPEAKER_ROSTER_MISMATCH）：
+    // speaker 不在其 scene_id 对应场景的人物名单 → 自动补进该场景名单。
+    // 说话人本来就在该场景出场，补录名单是"一致性正确化"，不改剧情。
+    const scenesArtifact = artifacts
+      .filter((a) => a && a.stage === "scenes" && a.type === "pixeltale_scenes")
+      .sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
+    if (scenesArtifact) {
+      const scenes = Array.isArray(scenesArtifact.content && scenesArtifact.content.scenes) ? scenesArtifact.content.scenes : [];
+      let touched = false;
+      lines.forEach((line) => {
+        const sp = String(line && line.speaker || "").trim();
+        const sid = String(line && line.scene_id || "").trim();
+        if (!sp || !sid) return;
+        const scene = scenes.find((sc) => String(sc && sc.id || "") === sid);
+        if (scene) {
+          const roster = Array.isArray(scene.characters) ? scene.characters : [];
+          if (!roster.includes(sp)) { scene.characters = [...roster, sp]; touched = true; }
+        }
+      });
+      if (touched) scenesArtifact.updatedAt = new Date(now()).toISOString();
+    }
   }
   const missing = [...referenced].filter((id) => !existing.has(id));
   if (!missing.length) return 0;

@@ -24,6 +24,7 @@ assert.equal(normalizeVideoResolution("4k", "seedance-2-0"), "4k", "2.0 4k 保�
 const serverSource = readFileSync(path.join(root, "server.js"), "utf8");
 assert.match(serverSource, /"seedance-2-5": "doubao-seedance-2-5-260628"/, "server 必须映射 Seedance 2.5 到火山模型 ID");
 assert.match(serverSource, /SEEDANCE_25_MODEL/, "2.5 必须支持 env 覆盖（SEEDANCE_25_MODEL）");
+assert.ok(serverSource.includes('const maxDuration = /(?:2-5|2\\.5)/i.test(String(model || "")) ? 30 : 15;'), "后端时长 2.5 必须放宽到 30 秒（2.0 保持 15）");
 
 const appSource = readFileSync(path.join(root, "public", "app.js"), "utf8");
 assert.match(appSource, /"seedance-2-5": "Seedance 2\.5"/, "前端必须提供 Seedance 2.5 模型选项");

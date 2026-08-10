@@ -2208,6 +2208,19 @@ function isPersonReferenceVideoNode(node) {
   return (node?.settings?.model || VIDEO_NODE_DEFAULTS.model) === PERSON_REFERENCE_MODEL;
 }
 
+function syncVideoDurationOptions(element, node = {}) {
+  const field = element?.querySelector('input[data-node-field="duration"]');
+  if (!field) return;
+  const model = node.settings?.model || VIDEO_NODE_DEFAULTS.model;
+  const maxDuration = /(?:2-5|2\.5)/i.test(model) ? 30 : 15;
+  field.max = String(maxDuration);
+  const value = Math.max(4, Math.min(maxDuration, Number(field.value || VIDEO_NODE_DEFAULTS.duration)));
+  if (Number(field.value) !== value) {
+    field.value = String(value);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
 function syncVideoResolutionOptions(element, node, settings = {}) {
   const select = element?.querySelector('select[data-node-field="resolution"]');
   if (!select) return;
@@ -4106,11 +4119,13 @@ function syncNodeControls(element, node) {
     });
   });
   syncVideoResolutionOptions(element, node, { ...settings, ...(node.settings || {}) });
+  syncVideoDurationOptions(element, node);
   const durationField = element.querySelector('input[data-node-field="duration"]');
   element.querySelectorAll("[data-duration-step]").forEach((button) => {
     button.addEventListener("click", () => {
       if (!durationField) return;
-      const next = Math.max(4, Math.min(15, Number(durationField.value || VIDEO_NODE_DEFAULTS.duration) + Number(button.dataset.durationStep || 0)));
+      const maxDuration = Number(durationField.max || 15);
+      const next = Math.max(4, Math.min(maxDuration, Number(durationField.value || VIDEO_NODE_DEFAULTS.duration) + Number(button.dataset.durationStep || 0)));
       durationField.value = String(next);
       durationField.dispatchEvent(new Event("input", { bubbles: true }));
     });

@@ -104,6 +104,8 @@ assert.match(css, /\.video-node \.video-settings-button[^}]*grid-column:\s*5/s, 
 assert.match(css, /\.video-node \.video-generate-button[^}]*grid-column:\s*6/s, "video generate button must remain in the final compact-strip column");
 assert.match(css, /\.video-node \.video-settings-strip[^}]*pointer-events:\s*auto/s, "video compact settings strip must accept pointer input");
 assert.match(js, /function syncVideoResolutionOptions\(/, "video resolution choices must be synced with the selected model");
+assert.match(js, /function syncVideoDurationOptions\(element, node = \{\}\)/, "canvas must sync duration options to the selected model");
+assert.match(js, /2-5\|2\\.5\)\/i\.test\(model\) \? 30 : 15/, "Seedance 2.5 duration cap must extend to 30 seconds");
 assert.match(js, /function createImageFromConnectionMenu\(/, "image output connection menu must create an image node");
 assert.match(js, /data-connection-create='image'/, "image generation connection action must be wired");
 assert.match(js, /supports4k/, "video resolution sync must account for 4k support");

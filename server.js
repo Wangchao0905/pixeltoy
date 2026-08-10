@@ -13220,10 +13220,12 @@ function normalizeGravitexVideoResolution(value, model = "") {
   return "720p";
 }
 
-function normalizeSeedanceDuration(value) {
+function normalizeSeedanceDuration(value, model = "") {
   const number = Math.round(Number(value || 5));
   if (!Number.isFinite(number)) return 5;
-  return Math.max(4, Math.min(15, number));
+  // Seedance 2.5 支持 4-30s（2.0 系列上限 15s）
+  const maxDuration = /(?:2-5|2\.5)/i.test(String(model || "")) ? 30 : 15;
+  return Math.max(4, Math.min(maxDuration, number));
 }
 
 function publicRemoteAssetUrl(url) {
@@ -14559,7 +14561,7 @@ async function buildSeedanceGenerationPayload(body = {}) {
   );
   const payload = {
     model,
-    duration: normalizeSeedanceDuration(body.duration),
+    duration: normalizeSeedanceDuration(body.duration, model),
     resolution: normalizeVideoResolution(body.resolution, model),
     ratio: normalizeVideoRatio(body.ratio),
     generate_audio: body.generateAudio !== false,
@@ -14680,7 +14682,7 @@ async function buildGravitexVideoGenerationPayload(body = {}) {
   const payload = {
     model,
     content,
-    duration: normalizeSeedanceDuration(body.duration),
+    duration: normalizeSeedanceDuration(body.duration, model),
     resolution: normalizeGravitexVideoResolution(body.resolution, model),
     ratio: references.length ? normalizeReferenceVideoRatio(body.ratio) : normalizeVideoRatio(body.ratio),
     generate_audio: body.generateAudio !== false,
@@ -17117,7 +17119,7 @@ function projectVideoPayloadForShot(episodeRoot, shot, config = {}) {
     model: projectVideoModelForShot(config, shot),
     modelMode: projectVideoModelForShot(config, shot),
     ratio: config.settings?.ratio || "9:16",
-    duration: normalizeSeedanceDuration(shot.duration || 5),
+    duration: normalizeSeedanceDuration(shot.duration || 5, projectVideoModelForShot(config, shot)),
     resolution: config.settings?.resolution || "480p",
     generateAudio: config.settings?.enableSound !== "off",
     startFrameUrl,
@@ -17171,7 +17173,7 @@ function canvasNodeFromStoryboardAsset(asset = {}, index = 0) {
 }
 
 function canvasNodeFromConfigShot(shot = {}, index = 0, config = {}) {
-  const duration = normalizeSeedanceDuration(shot.duration || 5);
+  const duration = normalizeSeedanceDuration(shot.duration || 5, projectVideoModelForShot(config, shot));
   const safeName = String(shot.name || `shot_${index + 1}`).replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 56);
   const storyboardsActive = isProductionBoardMode(config, shot);
   const sourceIndex = !storyboardsActive && Array.isArray(config.shots) ? config.shots.findIndex((item) => item.name === shot.tailFrameSource) : -1;

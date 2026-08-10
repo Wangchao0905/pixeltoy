@@ -3256,8 +3256,9 @@ function autoRegisterEpisodeCharacters(state, stage, artifactContent, now = () =
   if (!missing.length) return 0;
   const additions = missing.map((id) => ({
     id,
-    name_en: `Episode character ${id}`,
-    name_zh: `剧集引入角色 ${id}`,
+    // 2026-08-10：剧本中一律使用名字，不出现 C001 类代号
+    name_en: "Episode character (auto)",
+    name_zh: "剧集新角色（自动补录）",
     role: "supporting",
     source: "episode_auto_registered",
     identityStatus: "pending_confirmation",

@@ -43,6 +43,14 @@ def node(tag, attrs=None, children=None, text=None):
     return element
 
 
+import re as _re_codename
+
+def strip_codename(name):
+    # 2026-08-10：剧本中一律使用角色/场景名字，不出现 C001/S001 类代号
+    if not isinstance(name, str):
+        return name
+    return _re_codename.sub(r"^C\d+\s*", "", name)
+
 def clean(value, fallback=""):
     if isinstance(value, (list, tuple)):
         value = "、".join(clean(item, "") for item in value if clean(item, ""))
@@ -267,31 +275,30 @@ def document_xml(payload):
     for unit in units:
         number = clean(unit.get("number"), "")
         body.append(paragraph(f"第{number}{episode_label}  {first(unit.get('title_zh'), fallback='未命名')}", style="Heading2"))
-        body.append(labeled_paragraph("本集承诺", unit.get("promise_zh"), style="Action"))
-        body.append(labeled_paragraph("开头暴击", unit.get("impact_zh"), style="Action"))
+        # 2026-08-10 严格投稿格式：每集以剧情概述开始（对应剧本大纲），不输出创作依据
         body.append(paragraph(clean(unit.get("plot_zh"), "未设定剧情"), style="Action"))
-        for scene in scenes_by_unit.get(int(number), []):
+        for scene_index, scene in enumerate(scenes_by_unit.get(int(number), []), start=1):
+            # 2026-08-10 剧本格式（投稿规范）：场号 X-X + 场景/时间/内外，不用 S 编号代号
             scene_id = first(scene.get("id"), fallback="场景")
             time_label = first(scene.get("time_zh"), fallback="时间未设定")
             location = first(scene.get("location_zh"), fallback="地点未设定")
             indoor = clean(scene.get("indoor_outdoor"), "")
-            heading_bits = [f"第{number}{episode_label}  {scene_id}", time_label]
-            if indoor:
-                heading_bits.append(indoor)
-            heading_bits.append(location)
-            body.append(paragraph("  ".join(heading_bits), style="SceneHeading", shading=LIGHT_BLUE))
-            body.append(labeled_paragraph("场景目的", scene.get("purpose_zh"), style="Action"))
-            body.append(labeled_paragraph("出场人物", scene.get("characters"), style="Action"))
+            indoor_label = "内" if indoor == "内" else ("外" if indoor == "外" else (indoor or "未标注"))
+            heading_text = f"{number}-{scene_index} 场景：{location} 时间：{time_label} 内外：{indoor_label}"
+            body.append(paragraph(heading_text, style="SceneHeading", shading=LIGHT_BLUE))
+            # 人物：当集出场，用角色名字（不含 C 编号代号）
+            roster = scene.get("characters") or []
+            roster_names = []
+            for cid in roster:
+                cid_s = clean(cid, "")
+                ch = characters_by_id.get(cid_s) or {}
+                roster_names.append(strip_codename(first(ch.get("name_zh"), ch.get("name_en"), cid_s, fallback="人物")))
+            body.append(labeled_paragraph("人物", "、".join(roster_names) if roster_names else "未设定", style="Action"))
             body.append(paragraph(clean(scene.get("action_zh"), "未设定动作"), style="Action"))
-            body.append(labeled_paragraph("冲突", scene.get("conflict_zh"), style="Action"))
-            body.append(labeled_paragraph("人物选择", scene.get("choice_zh"), style="Action"))
-            body.append(labeled_paragraph("选择结果", scene.get("result_zh"), style="Action"))
-            body.append(labeled_paragraph("因果转折", scene.get("turn_zh"), style="Action"))
-            body.append(labeled_paragraph("视觉意图", scene.get("visual_intent_zh"), style="Action"))
             for line in dialogue_by_scene.get(scene_id, []):
                 speaker = clean(line.get("speaker"), "人物")
                 character = characters_by_id.get(speaker) or {}
-                speaker_name = first(character.get("name_en"), character.get("name_zh"), speaker, fallback="人物")
+                speaker_name = strip_codename(first(character.get("name_en"), character.get("name_zh"), speaker, fallback="人物"))
                 body.append(paragraph(speaker_name.upper(), style="Character"))
                 delivery = clean(line.get("delivery_en"), "")
                 if delivery:
@@ -302,10 +309,7 @@ def document_xml(payload):
                 subtext = clean(line.get("intent_zh") or line.get("subtext_zh"), "")
                 if subtext:
                     body.append(paragraph(f"剧情意图：{subtext}", style="DialogueNote"))
-        body.append(labeled_paragraph("反转", unit.get("reversal_zh"), style="Action"))
-        body.append(labeled_paragraph("集尾强钩子", unit.get("hook_zh"), style="Action"))
-        body.append(labeled_paragraph("未回答问题", unit.get("cliffhanger_question_zh"), style="Action"))
-        body.append(labeled_paragraph("推进与回收", unit.get("payoff_zh"), style="Action"))
+        # 2026-08-10 严格投稿格式：集尾创作依据（反转/钩子/未答/推进）不输出到正文
 
     checks = dialogue.get("localization_checks") or []
     if checks:

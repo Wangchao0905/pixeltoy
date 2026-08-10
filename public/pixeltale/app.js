@@ -1942,6 +1942,39 @@ function reviewItemKey(item = {}) {
   return String(item.criterionId || item.criterion_id || item.id || item.tag || "").toLowerCase().replace(/[\s：:，,。.!?！？；;]/g, "") || "review-item";
 }
 
+function reviewGateIssues(reviewContent = {}) {
+  const dimensionLabels = { structure: "结构", plot: "剧情", design: "设计", logic: "逻辑" };
+  const dimensions = reviewContent.dimensions || {};
+  const issues = Object.entries(dimensions).flatMap(([key, entry]) => {
+    const score = Number(entry && typeof entry === "object" ? entry.average ?? entry.score : entry);
+    if (!Number.isFinite(score) || score >= 75) return [];
+    return [{
+      id: `dimension_floor_${key}`,
+      criterionId: `DIMENSION_FLOOR_${key.toUpperCase()}`,
+      tag: `维度未达最低线：${dimensionLabels[key] || key}`,
+      severity: "high",
+      dimension: key,
+      modelCount: Number(reviewContent.reviewPolicy?.requiredSeats) || 2,
+      suggestions: [`${dimensionLabels[key] || key}维度平均分 ${Math.round(score)} < 75，需提升后重新审核`],
+      evidence: entry && typeof entry === "object" && entry.feedback ? [entry.feedback] : [],
+    }];
+  });
+  const quality = Number(reviewContent.quality ?? reviewContent.score);
+  if (Number.isFinite(quality) && quality < 80) {
+    issues.push({
+      id: "quality_floor",
+      criterionId: "QUALITY_FLOOR",
+      tag: "整体质量未达最低线",
+      severity: "high",
+      dimension: "logic",
+      modelCount: Number(reviewContent.reviewPolicy?.requiredSeats) || 2,
+      suggestions: [`整体质量分 ${Math.round(quality)} < 80，需提升后重新审核`],
+      evidence: [],
+    });
+  }
+  return issues;
+}
+
 function mergeReviewItems(items = []) {
   const groups = new Map();
   const severityRank = { high: 0, medium: 1, low: 2 };
@@ -1999,7 +2032,11 @@ function reviewIssueGroups(reviewContent = {}) {
   const mandatoryIssues = Array.isArray(reviewContent.mandatoryIssues) && reviewContent.mandatoryIssues.length
     ? reviewContent.mandatoryIssues
     : (Array.isArray(reviewContent.commonIssues) ? reviewContent.commonIssues.filter(isMandatoryReviewIssue) : (Array.isArray(reviewContent.reviewIssues) ? reviewContent.reviewIssues.filter(isMandatoryReviewIssue) : []));
-  return mergeReviewItems([...pendingClosures, ...mandatoryIssues, ...acceptedAdvisories]);
+  const gateIssues = reviewGateIssues(reviewContent);
+  const decisionIssues = reviewContent.decision?.kind === "revise" && Array.isArray(reviewContent.decision.items)
+    ? reviewContent.decision.items
+    : [];
+  return mergeReviewItems([...pendingClosures, ...mandatoryIssues, ...gateIssues, ...decisionIssues, ...acceptedAdvisories]);
 }
 
 function reviewDecisionGroups(reviewContent = {}) {
@@ -2182,7 +2219,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     summary: passed ? "当前阶段可以确认。" : "等待有效审核结果。",
     items: [],
   };
-  const mandatory = mergeReviewItems(Array.isArray(reviewContent.mandatoryIssues) ? reviewContent.mandatoryIssues : []);
+  const mandatory = mergeReviewItems([...(Array.isArray(reviewContent.mandatoryIssues) ? reviewContent.mandatoryIssues : []), ...reviewGateIssues(reviewContent)]);
   const decisions = reviewDecisionGroups(reviewContent);
   const optional = mergeReviewItems([...(Array.isArray(reviewContent.recommendedIssues) ? reviewContent.recommendedIssues : []), ...(Array.isArray(reviewContent.independentIssues) ? reviewContent.independentIssues : [])]);
   const adjudications = Array.isArray(reviewContent.adjudications) ? reviewContent.adjudications : [];

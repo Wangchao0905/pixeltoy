@@ -30,6 +30,11 @@ const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
 const mergeReviewItemsForTest = Function(`${app.slice(app.indexOf("function reviewItemKey"), app.indexOf("function reviewIssueGroups"))}\nreturn mergeReviewItems;`)();
+const reviewIssueGroupsForTest = Function(
+  "reviewAdvisoryGate",
+  "creativeReviewDecisionGroups",
+  `${app.slice(app.indexOf("function isMandatoryReviewIssue"), app.indexOf("function reviewDecisionGroups"))}\nreturn reviewIssueGroups;`,
+)(() => ({ accepted: [] }), () => []);
 const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters, fixEpisodeTitles } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const duplicateDecisionItems = mergeReviewItemsForTest([
@@ -38,6 +43,19 @@ const duplicateDecisionItems = mergeReviewItemsForTest([
 ]);
 assert.equal(duplicateDecisionItems.length, 1, "页面决定区必须合并相同规则项，不能重复显示");
 assert.deepEqual(duplicateDecisionItems[0].decisionOptions, ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"], "页面决定区必须保留两个处理方案");
+
+const lowStructurePageIssues = reviewIssueGroupsForTest({
+  quality: 66,
+  dimensions: {
+    structure: { average: 58, feedback: "因果转折不足" },
+    plot: { average: 80 },
+    design: { average: 84 },
+    logic: { average: 79 },
+  },
+  decision: { kind: "revise", items: [] },
+});
+assert.ok(lowStructurePageIssues.some((item) => item.id === "dimension_floor_structure"), "结构低于 75 分必须进入页面定向修订清单");
+assert.ok(lowStructurePageIssues.some((item) => item.id === "quality_floor"), "整体质量低于 80 分必须进入页面定向修订清单");
 
 const durationInput = { durationValue: 90, durationUnit: "sec", openingImpactSeconds: 3, episodeCount: 30 };
 const sceneSystemPrompt = stageSystemPrompt("scenes", "tk_short_drama", durationInput);

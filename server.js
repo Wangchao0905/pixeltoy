@@ -30,7 +30,7 @@ const {
 } = require("./server/pixeltale-api.js");
 const { writeVisualAssetDocument: buildVisualAssetDocument } = require("./server/pixeltale-visual-assets.js");
 const { fixUnitIssue } = require("./server/pixeltale-unit-fix.js");
-const { markUnitPinned } = require("./server/pixeltale-agent.js");
+const { markUnitPinned, fixEpisodeTitles } = require("./server/pixeltale-agent.js");
 const { safeFileName: safeScriptFileName, writeScriptDocument: buildScriptDocument } = require("./server/pixeltale-script-document.js");
 const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
 const { ensureThumbnail } = require("./server/thumbnailer.js");

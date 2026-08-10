@@ -26977,14 +26977,14 @@ async function handleApi(req, res, url) {
       }
       const busy = [...activePixelTaleRuns.keys()].some((key) => String(key).startsWith(`${params.pixelTaleRoot}:`));
       if (busy) return fail(res, 409, "该创作任务正在处理中，请等待完成后重试。");
-      const state = readPixelTaleState(params);
+      const state = readPixelTaleState(params.pixelTaleRoot);
       const agentStatus = pixelTaleAgent.status(params);
       const route = agentStatus?.route || {};
       const writer = makeUnitFixAdapter(pixelTaleRouter, route.orchestration || "gpt-5.6-terra");
       const reviewer = makeUnitFixAdapter(pixelTaleRouter, route.seat_c || "deepseek-v4-pro");
       try {
         const result = await fixUnitIssue({ state, stage, unit, issue, writer, reviewer });
-        writePixelTaleState(params, state);
+        writePixelTaleState(params.pixelTaleRoot, state);
         return send(res, 200, { ok: true, status: result.status, reason: result.reason, state }, { "Cache-Control": "no-store" });
       } catch (error) {
         return fail(res, Number(error.statusCode) || 400, error.message || "单集修复失败", error.code);
@@ -27001,7 +27001,7 @@ async function handleApi(req, res, url) {
       }
       const busy = [...activePixelTaleRuns.keys()].some((key) => String(key).startsWith(`${params.pixelTaleRoot}:`));
       if (busy) return fail(res, 409, "该创作任务正在处理中，请等待完成后重试。");
-      const state = readPixelTaleState(params);
+      const state = readPixelTaleState(params.pixelTaleRoot);
       const unitLocks = state?.unitLocks?.[stage] || {};
       const lock = unitLocks[unit] || {};
       // P1 if-match 乐观锁：客户端携带 version，不匹配 → 409
@@ -27016,7 +27016,7 @@ async function handleApi(req, res, url) {
       state.artifacts[stage].units[unit] = patchedUnit;
       markUnitPinned(state, stage, unit, "human");
       state.unitLocks[stage][unit].version = Number(lock.version || 0) + 1;
-      writePixelTaleState(params, state);
+      writePixelTaleState(params.pixelTaleRoot, state);
       return send(res, 200, { ok: true, state }, { "Cache-Control": "no-store" });
     }
 
@@ -27026,11 +27026,11 @@ async function handleApi(req, res, url) {
       try {
         const busy = [...activePixelTaleRuns.keys()].some((key) => String(key).startsWith(`${params.pixelTaleRoot}:`));
         if (busy) return fail(res, 409, "该创作任务正在处理中，请等待完成后重试。");
-        const state = readPixelTaleState(params);
+        const state = readPixelTaleState(params.pixelTaleRoot);
         const agentStatus = pixelTaleAgent.status(params);
         const route = agentStatus?.route || {};
         const result = await fixEpisodeTitles({ state, modelRouter: pixelTaleRouter, writer: route.orchestration || "gpt-5.6-terra" });
-        writePixelTaleState(params, state);
+        writePixelTaleState(params.pixelTaleRoot, state);
         return send(res, 200, { ok: true, ...result }, { "Cache-Control": "no-store" });
       } catch (error) {
         console.error("[pixeltale] fix-titles 失败:", error?.stack || error?.message || error);

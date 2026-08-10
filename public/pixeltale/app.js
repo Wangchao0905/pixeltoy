@@ -2570,6 +2570,17 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "", overrid
 }
 
 async function runAutoRevision(stage = state.stage) {
+  // 2026-08-10：修订轮数上限——同阶段会话内超过 3 轮仍未收敛，强制转人工放行，
+  // 避免无限'修订 → 复审 → 再修订'。放行/确认后计数清除。
+  const revisionKey = `pixeltale.revision-rounds:${stage}`;
+  let revisionRounds = 0;
+  try { revisionRounds = Number(sessionStorage.getItem(revisionKey) || 0); } catch { /* storage unavailable */ }
+  if (revisionRounds >= 3) {
+    state.lastError = `本阶段已自动修订 ${revisionRounds} 轮仍未收敛；请点击「接受当前版本并继续」人工放行，或重新生成当前阶段。`;
+    showToast(state.lastError);
+    renderStage();
+    return;
+  }
   // Multi-pass revision must stay busy across every inner runCurrentStage
   // (whose finally releases buttons). The revising flag defers that release
   // to here so the user cannot click into a competing run between passes.
@@ -2592,6 +2603,14 @@ async function runAutoRevision(stage = state.stage) {
   const content = review?.content || {};
   const issues = reviewIssueGroups(content);
   if (!artifact || !issues.length) {
+    // 2026-08-10：服务端最新版本若已通过（旧界面残留的修订点击会先刷新 state 到这里），
+    // 直接提示确认，绝不重新生成——这是'反反复复修改很多轮'的根源。
+    if (artifact && content.pass === true && (content.decision?.kind === "approve" || Number(content.quality) >= 75)) {
+      showToast("当前版本已通过审核，请点击「确认进入下一步」完成确认（无需修订）");
+      state.lastError = "";
+      renderStage();
+      return;
+    }
     showToast("服务端最新状态没有可执行清单，正在重新生成并审核当前阶段");
     await runCurrentStage(stage);
     return;
@@ -2618,6 +2637,9 @@ async function runAutoRevision(stage = state.stage) {
   for (let pass = 1; pass <= maxPasses; pass += 1) {
     showToast(`正在执行第 ${pass} / ${maxPasses} 轮修订与复审 · ${currentIssues.length} 类问题`);
     const outcome = await runCurrentStage(stage, { revisionPlan: buildPlan(currentIssues, pass) });
+    // 2026-08-10：本轮修订已执行，会话内计数 +1（超上限后强制转人工放行）。
+    revisionRounds += 1;
+    try { sessionStorage.setItem(revisionKey, String(revisionRounds)); } catch { /* storage unavailable */ }
     if (outcome?.detached || state.lastError) return;
 
     const revisedArtifact = artifactForStage(stage);
@@ -2768,6 +2790,8 @@ function handleConfirmHumanOverride(button) {
   const choiceId = state.impactChoices[review?.id || `${stage}-decision`] || "option_1";
   const choice = creativeDecision?.decisionOptions?.[Number(choiceId.replace("option_", "")) - 1] || creativeDecision?.decisionOptions?.[0] || "";
   state.pendingHumanOverride = "";
+  // 2026-08-10：人工放行后清除本阶段修订轮数计数（重新计）。
+  try { sessionStorage.removeItem(`pixeltale.revision-rounds:${stage}`); } catch { /* storage unavailable */ }
   void approveArtifact(artifact?.id, { humanOverride: true, humanOverrideReason: `${choice ? `选择：${choice}\n` : ""}${reasonField.value.trim()}` });
 }
 

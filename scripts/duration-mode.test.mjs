@@ -79,6 +79,17 @@ assert.equal(
   "recommended screenplay duration metadata must survive free-mode planning",
 );
 const markdownTimedScript = `# 奶茶店\n\n**00:00-00:04　店门推开**\n\n傍晚，玻璃门被推开。\n\n**00:04-00:10　柜台前的停顿**\n\n她站在点单台前。\n\n**00:10-00:16　那句问题**\n\n她终于抬眼。\n\n**00:16-00:20　店里静下来**\n\n全店安静。\n\n**00:20-00:30　店员的回答**\n\n店员认真回应。\n\n**00:30-00:36　一杯被替换的选择**\n\n热牛奶注入茶汤。\n\n**00:36-00:41　传染**\n\n后面的人也要一杯。\n\n**00:41-00:45　收尾**\n\n她在窗边喝下奶茶。`;
+const shorthandTimedScript = `0—5秒：开场钩子\n黑屏，王野的声音响起。\n\n5—20秒：失业窘境\n王野看着相机。\n\n84—90秒：片尾反转\n电话响起，下一单找上门。`;
+assert.equal(
+  duration.scriptTimecodeTotalSeconds(shorthandTimedScript),
+  90,
+  "second-range screenplay timecodes such as 0—5秒 must determine the free-mode target",
+);
+assert.equal(
+  duration.freeTargetDuration({ script: shorthandTimedScript, beats: twentyBeats }),
+  90,
+  "free mode must not fall back to text estimation when the screenplay uses second-range timecodes",
+);
 assert.equal(
   duration.scriptTimecodeTotalSeconds(markdownTimedScript),
   45,

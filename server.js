@@ -20458,20 +20458,29 @@ function scriptTimecodeBeats(script) {
   // `**00:00-00:04　店门推开**`. Parse the heading line separately so the
   // following multiline action remains part of the same beat.
   const pattern = /^\s*(?:[*_`~>#]+\s*)?(?:\d{1,3}\s*[|｜]\s*)?(\d{1,3}):(\d{1,2}(?:\.\d+)?)\s*[—–-]\s*(\d{1,3}):(\d{1,2}(?:\.\d+)?)(?:\s*[|｜:：-]\s*|\s+|\u3000+)?(.*?)(?:\s*[*_`~]+)?\s*$/;
+  const shorthandPattern = /^\s*(?:[*_`~>#]+\s*)?(\d{1,3}(?:\.\d+)?)\s*[—–-]\s*(\d{1,3}(?:\.\d+)?)\s*秒(?:\s*[|｜:：-]\s*|\s+|\u3000+)?(.*?)(?:\s*[*_`~]+)?\s*$/;
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const match = lines[lineIndex].match(pattern);
-    if (!match) continue;
-    const start = parseScriptTimestamp(match[1], match[2]);
-    const end = parseScriptTimestamp(match[3], match[4]);
+    const line = lines[lineIndex];
+    const match = line.match(pattern);
+    const shorthandMatch = match ? null : line.match(shorthandPattern);
+    if (!match && !shorthandMatch) continue;
+    const start = match ? parseScriptTimestamp(match[1], match[2]) : Number(shorthandMatch[1]);
+    const end = match ? parseScriptTimestamp(match[3], match[4]) : Number(shorthandMatch[2]);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
-    entries.push({ lineIndex, start, end, inline: match[5] || "", minutes: match[1], startSeconds: match[2], endMinutes: match[3], endSeconds: match[4] });
+    entries.push({
+      lineIndex,
+      start,
+      end,
+      inline: match ? match[5] || "" : shorthandMatch[3] || "",
+      label: match ? `${match[1]}:${match[2]}-${match[3]}:${match[4]}` : `${shorthandMatch[1]}-${shorthandMatch[2]}秒`,
+    });
   }
   return entries.map((entry, index) => {
     const bodyLines = lines.slice(entry.lineIndex + 1, entries[index + 1]?.lineIndex);
     const text = compactLine(`${entry.inline} ${bodyLines.join(" ")}`)
       .replace(/^[|｜:：\s]+/, "")
       .replace(/[*_`~]+$/g, "")
-      .trim() || `时间码 ${entry.minutes}:${entry.startSeconds}-${entry.endMinutes}:${entry.endSeconds}`;
+      .trim() || `时间码 ${entry.label}`;
     return { index: index + 1, start: entry.start, end: entry.end, text };
   });
 }

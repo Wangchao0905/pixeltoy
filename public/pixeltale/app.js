@@ -2786,7 +2786,6 @@ async function syncAgentState({ silent = false, autoRestore = false } = {}) {
     const payload = await request("");
     updateAgentState(payload.agent);
     state.lastError = "";
-    renderStage();
     if (!silent) showToast("已同步独立编剧会话");
     // 2026-08-10：刷新后 session 无产物（无效/新会话）且存在历史项目 → 自动恢复最近项目。
     // 仅在初始加载（autoRestore）且非"新建项目"流程时触发，避免打断新建。
@@ -3147,8 +3146,8 @@ $$('[data-open-stage]').forEach((button) => button.addEventListener("click", () 
   renderStage();
 }));
 
-renderStage();
 syncAgentState({ silent: true, autoRestore: true }).finally(() => {
+  renderStage();
   if (state.activeRun) void monitorBackgroundRun(state.activeRun);
 });
 try {

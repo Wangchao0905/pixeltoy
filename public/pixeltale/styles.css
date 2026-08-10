@@ -1550,3 +1550,6 @@ button.decision-revise-btn:active { transform: scale(0.98); }
 
 /* 视觉资产 DOCX 主交付块 */
 .visual-asset-delivery { margin-top: 14px; }
+
+/* 决策卡人工放行按钮（2026-08-10）：与执行定向修订垂直排列，不并排 */
+.decision-override-btn { margin-top: 6px; }

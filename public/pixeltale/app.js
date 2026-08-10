@@ -118,6 +118,18 @@ function requiredReviewSeatsFor(stage = state.stage, reviewContent = {}, artifac
   return FAST_REVIEW_STAGES.has(stage) && !artifact?.revision ? 1 : 2;
 }
 
+// 2026-08-10 用户规则：不管哪个阶段，评分必须达标才能进入下一步。
+// 达标 = 综合 quality ≥ 75 且所有已评分维度 ≥ 75（未评分维度不算拦截）。
+function scoresMeetGate(reviewContent = {}) {
+  const quality = Number(reviewContent.quality);
+  if (!Number.isFinite(quality) || quality < 75) return false;
+  const dims = reviewContent.dimensions || {};
+  return Object.values(dims).every((entry) => {
+    const value = Number(entry && typeof entry === "object" ? entry.average : entry);
+    return !Number.isFinite(value) || value >= 75;
+  });
+}
+
 function reviewModeLabelFor(stage = state.stage, reviewContent = {}, artifact = null) {
   return requiredReviewSeatsFor(stage, reviewContent, artifact) === 1 ? "单席快速审读" : "双席审读";
 }
@@ -1062,7 +1074,7 @@ function nextStepMeta() {
     const failedSeats = techState.failedSeats;
     const techFailuresOnly = failedSeats.length > 0 && failedSeats.every((seat) => seat.failureReason === "network_error" || seat.failureReason === "timeout" || seat.failureReason === "api_error");
     const degradedOnly = techState.degraded === true && failedSeats.length === 0;
-    const qualityMet = Number.isFinite(Number(reviewContent.quality)) && Number(reviewContent.quality) >= 75;
+    const qualityMet = scoresMeetGate(reviewContent);
     if ((techFailuresOnly || degradedOnly) && qualityMet) {
       const failedNames = [...new Set(failedSeats.map((seat) => modelMeta[seat.model || seat.actualModel]?.name || seat.model || seat.actualModel || "审读席"))].join("、");
       return {
@@ -2113,7 +2125,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     : "";
   // 2026-08-10：必修项存在时，审核证据区提供人工放行出口（不在右侧 rail 与唯一按钮并排）。
   // 评分达标但必修项反复不收敛时，用户可确认接受当前版本继续进入下一步。
-  const mandatoryOverride = !ruleBlockedOverride && (mandatory.length || decisions.length) && !technical.blocked
+  const mandatoryOverride = !ruleBlockedOverride && (mandatory.length || decisions.length) && !technical.blocked && scoresMet
     ? `<button class="stage-primary agent-task-primary review-zone-override" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}" type="button">接受当前版本并继续</button><p class="review-technical-flags">存在必修项：可执行定向修订，或确认接受当前版本继续进入下一步（审核依据随版本保留）。</p>`
     : "";
   const decisionItems = reviewDecisionGroups(reviewContent);
@@ -2126,7 +2138,9 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     : "";
   // 2026-08-10：决策卡放行出口——任何未通过状态（revise/rerun/needs_decision）都常显，
   // 不依赖具体字段（必修项可能在 mandatoryIssues / decision.items / pendingClosures 任一来源）。
-  const decisionOverride = decision.kind && decision.kind !== "approve" && !decisionRuleBlocked
+  // 2026-08-10：评分必须达标才允许放行（低分只能修订/重跑）。
+  const scoresMet = scoresMeetGate(reviewContent);
+  const decisionOverride = decision.kind && decision.kind !== "approve" && !decisionRuleBlocked && scoresMet
     ? state.pendingHumanOverride === stage
       ? renderInlineHumanOverrideForm(stage)
       : `<button type="button" class="stage-secondary decision-override-btn" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}">接受当前版本并继续</button>`
@@ -2576,7 +2590,9 @@ async function runAutoRevision(stage = state.stage) {
   let revisionRounds = 0;
   try { revisionRounds = Number(sessionStorage.getItem(revisionKey) || 0); } catch { /* storage unavailable */ }
   if (revisionRounds >= 3) {
-    state.lastError = `本阶段已自动修订 ${revisionRounds} 轮仍未收敛；请点击「接受当前版本并继续」人工放行，或重新生成当前阶段。`;
+    // 2026-08-10 用户规则：评分必须达标才能进入下一步——修订达上限仍不达标时，
+    // 不放行低分，提示重新生成当前阶段（或先处理跨阶段必修项）。
+    state.lastError = `本阶段已自动修订 ${revisionRounds} 轮仍未达标；请重新生成当前阶段，或先前往必修项归属的阶段处理。评分达标后才能进入下一步。`;
     showToast(state.lastError);
     renderStage();
     return;

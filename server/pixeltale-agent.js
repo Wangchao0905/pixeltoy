@@ -627,7 +627,14 @@ function stageSystemPrompt(stage, mode, input = {}) {
     "确需新角色时，直接使用新的 C 编号让其自然出场/说话即可——引擎会把该角色补录进人物名单，但标记为待确认身份；正式设定仍需回到人物阶段补齐。",
     ...(stage === "dialogue" ? [
       "每条对白的 speaker 必须出现在该 line 的 scene_id 对应场景的人物名单（scenes 的 characters）中；如剧情需要该角色在此场景说话而名单未登记，直接使用新 C 编号（引擎会自动同步进场景名单），不要改动 scene_id。",
+      "不得为未设定角色自创显示名：speaker 的显示名必须来自 characters 已确认资产；确需新角色使用新 C 编号（引擎补录为'剧集新角色（自动补录）'），对白里不要自行给它起名，避免角色身份悬空（例如对白出现 Mara Pierce 但资产中对应角色仍是占位名）。",
     ] : []),
+  ] : [];
+  // 2026-08-10 对白结构要求：提升 structure 维度评分（对话连贯/推进/收束）。
+  const dialogueRules = stage === "dialogue" ? [
+    "每条对白服务于场景目标：开场建立意图 → 对话推进信息/冲突 → 收束留悬念；避免无目的寒暄、重复陈述、碎片化问答。",
+    "同一场景的对白按因果顺序连贯衔接，人物反应符合前情与人物动机；对白推进剧情而非复述已知信息。",
+    "语气（delivery_en）符合人物声线，潜台词（subtext_zh）表达言外之意而非直接翻译台词。",
   ] : [];
   const unitRules = UNIT_STAGES.has(stage) ? [
     "当前请求可能只是一个分批单元；严格只输出 userInput.unitScope 指定的集数，不得补写其他集，不得返回整季内容。",
@@ -651,6 +658,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
     ...unitRules,
     ...characterCompleteness,
     ...characterUsage,
+    ...dialogueRules,
     `输出契约：${stageOutputContract(stage, mode)}`,
   ].join("\n");
 }

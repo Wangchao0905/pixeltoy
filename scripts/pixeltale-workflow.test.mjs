@@ -1833,6 +1833,8 @@ console.log("pixeltale workflow contract ok");
   assert.equal(ruleFindings(aligned, "SCENE_SPEAKER_ROSTER_MISMATCH").length, 0, "名单对齐后不再产生跨阶段取舍 needs_decision");
   const diaPrompt = stageSystemPrompt("dialogue", "tk_short_drama", {});
   assert.match(diaPrompt, /speaker 必须出现在该 line 的 scene_id 对应场景的人物名单/, "dialogue prompt 必须约束说话人在场景名单内");
+  assert.match(diaPrompt, /开场建立意图/, "dialogue prompt 必须要求对话结构（推进/收束）");
+  assert.match(diaPrompt, /不要自行给它起名/, "dialogue prompt 必须禁止为未设定角色自创显示名");
 }
 
 // ---- 2026-08-10 预防验证：prompt 要求完整角色体系 + 角色使用约束 ----

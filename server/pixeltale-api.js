@@ -182,7 +182,9 @@ function fallbackModelsForSeat(seatId, model) {
   const current = clean(model, 120).toLowerCase();
   const seat = clean(seatId, 40);
   const preferred = seat === "seat_a" ? geminiModelId() : (FALLBACK_BY_SEAT[seat] || GROK_FALLBACK_MODEL);
-  return [...new Set([preferred, GROK_FALLBACK_MODEL])]
+  // 2026-08-10：DeepSeek 官方通道稳定，纳入兜底——Gemini 网关 network_error 时
+  // 自动降级 DeepSeek 完成审读，避免"席位持续网络失败 → 永远 rerun"的死循环。
+  return [...new Set([preferred, GROK_FALLBACK_MODEL, "deepseek-v4-pro"])]
     .filter((candidate) => candidate && candidate !== current && !!modelConfig(candidate)?.apiKey);
 }
 

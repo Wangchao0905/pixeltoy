@@ -1058,10 +1058,12 @@ function nextStepMeta() {
     };
   }
   if (refereeDecision.kind === "rerun") {
-    const failedSeats = technicalReviewState(reviewContent).failedSeats;
+    const techState = technicalReviewState(reviewContent);
+    const failedSeats = techState.failedSeats;
     const techFailuresOnly = failedSeats.length > 0 && failedSeats.every((seat) => seat.failureReason === "network_error" || seat.failureReason === "timeout" || seat.failureReason === "api_error");
+    const degradedOnly = techState.degraded === true && failedSeats.length === 0;
     const qualityMet = Number.isFinite(Number(reviewContent.quality)) && Number(reviewContent.quality) >= 75;
-    if (techFailuresOnly && qualityMet) {
+    if ((techFailuresOnly || degradedOnly) && qualityMet) {
       const failedNames = [...new Set(failedSeats.map((seat) => modelMeta[seat.model || seat.actualModel]?.name || seat.model || seat.actualModel || "审读席"))].join("、");
       return {
         kind: "human-override",

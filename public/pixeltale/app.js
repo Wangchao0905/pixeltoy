@@ -437,8 +437,8 @@ function renderHydrationShell() {
   $("#progressBar").style.width = "0%";
   $("#consensusScore").textContent = "—";
   $("#consensusAgreement").textContent = "—";
-  $("#reviewCompletion").textContent = "—";
-  $("#interactionCompletion").textContent = "—";
+  $("#consensusReviewCompletion").textContent = "—";
+  $("#consensusQuality").textContent = "—";
   $$(".mode-button").forEach((button) => { button.disabled = true; button.classList.remove("is-active"); });
   $$(".stage-link").forEach((button) => {
     button.disabled = true;
@@ -661,8 +661,8 @@ async function runDocumentAction(action) {
 }
 
 function updateAgentState(agent) {
-  state.agent = agent || null;
-  if (!agent) return;
+  if (!agent || typeof agent !== "object") return;
+  state.agent = agent;
   if (agent.mode === "long_form_drama") state.mode = "long"; else if (agent.mode === "cn_short_drama") state.mode = "cn"; else state.mode = "tk";
   state.stage = agent.stage === "script" ? "handoff" : agent.stage || "brief";
   const legacySeatDefaults = { seat_a: "gpt-5.6-terra", seat_b: "claude-opus-5", seat_c: "claude-haiku-4-5" };
@@ -2552,6 +2552,13 @@ async function monitorBackgroundRun(run) {
     }
     if (state.activeRun?.jobId !== run.jobId) return;
     persistActiveRun(null);
+    if (!result?.state) {
+      state.runPhase = "";
+      state.lastError = "";
+      showToast("后台任务已结束，当前项目状态保持不变");
+      renderStage();
+      return;
+    }
     updateAgentState(result?.state);
     state.stage = run.stage;
     state.lastError = "";
@@ -3239,11 +3246,7 @@ $$('[data-open-stage]').forEach((button) => button.addEventListener("click", () 
 
 renderStage();
 syncAgentState({ silent: true, autoRestore: true }).finally(() => {
-  renderStage();
-  // 2026-08-10：初始加载不恢复 stale activeRun——旧 run 的 monitor 完成后
-  // result?.state 为 undefined → updateAgentState(null) → state.agent=null → 空项目。
-  // 直接清除残留，保证 syncAgentState 加载的正确 agent 不被覆盖。
-  persistActiveRun(null);
+  if (state.activeRun) void monitorBackgroundRun(state.activeRun);
 });
 try {
   const notice = sessionStorage.getItem(PENDING_NOTICE_KEY);

@@ -395,6 +395,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .structured-list li { padding-left: 2px; line-height: 1.6; }
 .value-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .empty-artifact { border-style: dashed; background: rgba(255, 255, 255, 0.38); }
+.hydration-state { min-height: 280px; display: grid; place-items: center; align-content: center; gap: 10px; text-align: center; }
+.hydration-state h3, .hydration-state p { margin: 0; }
+.hydration-state p { max-width: 520px; color: var(--muted); }
+.hydration-state-mark { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid var(--pt-red, #e45c6f); border-radius: 50%; color: var(--pt-red, #e45c6f); font-weight: 800; }
+.hydration-state-mark.is-loading { border-color: var(--pt-blue, #2f76df); color: var(--pt-blue, #2f76df); animation: pixeltale-hydration-spin 1.2s linear infinite; }
+@keyframes pixeltale-hydration-spin { to { transform: rotate(360deg); } }
 .review-button.is-disabled { color: var(--faint); border-color: var(--line); background: rgba(255, 255, 255, 0.42); cursor: not-allowed; }
 .card-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--line); }
 .card-footer small { color: var(--faint); font: 9px var(--meta-font); }

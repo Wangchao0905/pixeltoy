@@ -720,7 +720,7 @@ async function handleEditUnitClick(btn, stage) {
   const input = document.getElementById("unitEditInput");
   const unit = Number(input?.value || 0);
   if (!Number.isInteger(unit) || unit <= 0) { alert("请输入有效的集号"); return; }
-  const res = await fetch("/api/pixeltale", { headers: { "x-pixeltale-session": sessionStorage.getItem("pixeltale.session") || localStorage.getItem("pw.session") || "" } });
+  const res = await fetch("/api/pixeltale", agentRequestHeaders());
   const data = await res.json().catch(() => ({}));
   const agent = data.agent;
   const unitContent = agent?.artifacts?.find((a) => a.stage === stage)?.content?.units?.[unit] || agent?.artifacts?.find((a) => a.stage === stage)?.content?.[String(unit)];
@@ -775,7 +775,7 @@ async function handleFixUnitClick(btn) {
 
 async function refreshPixelTaleState() {
   try {
-    const res = await fetch("/api/pixeltale", { headers: { "x-pixeltale-session": sessionStorage.getItem("pixeltale.session") || localStorage.getItem("pw.session") || "" } });
+    const res = await fetch("/api/pixeltale", agentRequestHeaders());
     const data = await res.json();
     if (data.ok && data.agent) { state.agent = data.agent; renderApp(); }
   } catch { /* 静默 */ }

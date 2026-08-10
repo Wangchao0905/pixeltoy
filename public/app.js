@@ -390,6 +390,17 @@ function toast(message) {
   node._timer = setTimeout(() => node.classList.add("hidden"), 3200);
 }
 
+function handleStudioActionError(error) {
+  const message = String(error?.message || "操作未完成");
+  if (/分镜草稿与当前剧本、时长模式或资产清单不一致/.test(message)) {
+    setWorkflowFocus("script");
+    requestAnimationFrame(() => $("#modernGenerateDraft")?.focus?.());
+    toast("当前剧本或时长已变化，请在剧本阶段点击「生成分镜草稿」后再生成视频配置");
+    return;
+  }
+  toast(message);
+}
+
 async function withStudioButtonFeedback(button, action) {
   if (!(button instanceof HTMLElement) || !document.body.classList.contains("is-studio")) return action();
   if (button.dataset.studioFeedbackBusy === "true") return undefined;
@@ -10987,7 +10998,7 @@ function bind() {
   $("#studioCommandButton")?.addEventListener("click", () => toast("命令面板会在下一阶段接入；当前可直接点击流程节点聚焦步骤"));
   $("#studioPrimaryRun")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
-    withStudioButtonFeedback(button, () => runStudioPrimaryAction()).catch((error) => toast(error.message));
+    withStudioButtonFeedback(button, () => runStudioPrimaryAction()).catch(handleStudioActionError);
   });
   $("#studioProjectsButton")?.addEventListener("click", goBackToProjects);
   $("#projectDisplayNameForm")?.addEventListener("submit", (event) => saveProjectDisplayName(event).catch((error) => toast(error.message)));
@@ -11327,7 +11338,7 @@ function bind() {
   $("#modernBuildConfig")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
     if (button.disabled) return;
-    withStudioButtonFeedback(button, () => buildConfig(button)).catch((error) => toast(error.message));
+    withStudioButtonFeedback(button, () => buildConfig(button)).catch(handleStudioActionError);
   });
   $("#modernAssetGenerateAssets")?.addEventListener("click", (event) => {
     const target = document.querySelector("[data-job='assets']");

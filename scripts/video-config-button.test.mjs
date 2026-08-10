@@ -121,6 +121,25 @@ for (const signature of [
 ]) {
   vm.runInContext(extractFunction(app, signature), context, { filename: "public/app.js" });
 }
+vm.runInContext(extractFunction(app, "function handleStudioActionError("), context, { filename: "public/app.js" });
+
+assert.match(
+  app,
+  /function handleStudioActionError\([\s\S]*分镜草稿与当前剧本、时长模式或资产清单不一致[\s\S]*setWorkflowFocus\("script"\)/,
+  "stale storyboard errors must have an actionable recovery handler",
+);
+vm.runInContext(
+  'handleStudioActionError(new Error("分镜草稿与当前剧本、时长模式或资产清单不一致，请回到剧本阶段重新生成分镜草稿。"))',
+  context,
+);
+assert.equal(workflowFocusLog.at(-1), "script", "stale storyboard errors must move the user to the script stage");
+assert.equal(
+  toastLog.at(-1),
+  "当前剧本或时长已变化，请在剧本阶段点击「生成分镜草稿」后再生成视频配置",
+  "stale storyboard errors must explain the immediate recovery action",
+);
+toastLog.length = 0;
+workflowFocusLog.length = 0;
 
 assert.match(
   app,

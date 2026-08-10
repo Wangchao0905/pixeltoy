@@ -58,6 +58,7 @@ const modelOptions = [...html.matchAll(/<select(?:\s[^>]*)?>[\s\S]*?<\/select>/g
   .map(([block]) => block)
   .find((block) => block.includes('value="seedance-2-0"')) || "";
 assert.doesNotMatch(modelOptions, /文生视频/, "video model options must not use the generic text-to-video prefix");
+assert.match(modelOptions, /<option value="seedance-2-5">Seedance 2\.5<\/option>/, "canvas must offer Seedance 2.5");
 assert.match(modelOptions, /<option value="seedance-2-0">Seedance 2\.0<\/option>/, "base Seedance option must use its short display name");
 assert.match(modelOptions, /<option value="seedance-2-0-person-reference">Seedance 2\.0 · 人物参考<\/option>/, "person-reference option must place the label after Seedance");
 const videoResolutionOptions = html.match(/<select data-node-field="resolution"(?:\s[^>]*)?>[\s\S]*?<\/select>/g)?.find((block) => block.includes('value="480p"')) || "";
@@ -109,8 +110,8 @@ assert.match(js, /supports4k/, "video resolution sync must account for 4k suppor
 assert.match(js, /const supports4k = model === "seedance-2-0";/, "only the main Seedance 2.0 model must expose 4k");
 assert.match(js, /option\.hidden = !enabled;/, "unsupported resolutions must be hidden from the model selector");
 assert.match(js, /\[PERSON_REFERENCE_MODEL\]: "Seedance 2\.0 · 人物参考"/, "video model summaries must use the updated person-reference label");
-assert.match(js, /<video src=\"\$\{escapeHtml\(node\.videoUrl\)\}\" controls playsinline preload=\"metadata\"/, "completed video previews must expose native controls without autoplay");
-assert.doesNotMatch(js, /<video src=\"\$\{escapeHtml\(node\.videoUrl\)\}\" controls playsinline autoplay/, "completed video previews must not request autoplay on refresh");
+assert.match(js, /<video src=\"\$\{escapeHtml\(previewSrc\)\}\" controls playsinline preload=\"metadata\"/, "completed video previews must expose native controls without autoplay");
+assert.doesNotMatch(js, /<video src=\"\$\{escapeHtml\(previewSrc\)\}\" controls playsinline autoplay/, "completed video previews must not request autoplay on refresh");
 assert.match(js, /CAMERA_ICON_SVG/, "completed video previews must expose a camera capture action");
 assert.match(js, /data-capture-tail-frame/, "completed video previews must render a tail-frame capture button");
 assert.match(js, /function captureVideoTailFrame\(nodeId, button\)/, "tail-frame capture must have a dedicated action handler");
@@ -128,9 +129,9 @@ assert.doesNotMatch(css, /asset-tray|tray-asset|asset-upload-badge|assetUploadPu
 assert.match(css, /\.canvas-node\.video-node\.is-composer-open\s*\{[^}]*min-width:\s*420px;[^}]*min-height:\s*420px;/s, "expanded video nodes must keep a minimum size while resizing");
 assert.match(css, /\.canvas-node\.video-node:not\(\.is-composer-open\)\s*\{[^}]*min-width:\s*260px;[^}]*min-height:\s*0;/s, "collapsed video nodes must not reserve the hidden composer height");
 assert.match(css, /\.canvas-node\.video-node\.is-composer-open\s*\{[^}]*height:\s*var\(--video-node-height\);/s, "video editors must keep the fixed 16:9 shell height");
-assert.match(css, /\.video-node \.video-prompt\s*\{[^}]*font-size:\s*22px;[^}]*line-height:\s*1\.5/s, "video prompt text must remain readable after canvas scaling");
+assert.match(css, /\.video-node \.video-prompt\s*\{[^}]*font-size:\s*25px;[^}]*line-height:\s*1\.38/s, "video prompt text must remain readable after canvas scaling");
 const videoPromptRules = [...css.matchAll(/\.video-node \.video-prompt\s*\{([^}]*)\}/g)];
-assert.match(videoPromptRules.at(-1)?.[1] || "", /font-size:\s*22px;[\s\S]*line-height:\s*1\.5/, "the final video prompt rule must keep the readable editor type size");
+assert.ok(videoPromptRules.some((rule) => /font-size:\s*25px;[\s\S]*line-height:\s*1\.38/.test(rule[1] || "")), "the desktop video prompt rule must keep the readable 25px editor type size");
 assert.match(css, /\.video-node \.video-titlebar,[\s\S]*?\.video-node \.video-preview-frame\s*\{[^}]*cursor:\s*grab/s, "video title and preview must clearly expose the drag surface");
 assert.match(css, /\.video-node,\s*\.video-node \.video-titlebar,[\s\S]*?cursor:\s*grab/s, "the whole video node must expose the grab cursor");
 const videoDragSurface = js.match(/function isVideoNodeDragSurface\(event, node\)\s*\{[\s\S]*?\n\}/)?.[0] || "";

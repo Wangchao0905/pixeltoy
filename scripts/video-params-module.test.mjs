@@ -15,7 +15,7 @@ assert.deepEqual(selectOptions("modernParamRatio"), ["9:16", "16:9", "1:1", "4:3
 assert.deepEqual(selectOptions("modernParamResolution"), ["480p", "720p", "1080p"], "the active workbench must expose its supported resolutions");
 assert.deepEqual(
   selectOptions("modernParamModel"),
-  ["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"],
+  ["seedance-2-5", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"],
   "the active workbench must expose the available video models",
 );
 for (const id of ["configModel", "configResolution", "configRatio", "configPromptMode", "configDialectEnabled", "configSfxEnabled"]) {

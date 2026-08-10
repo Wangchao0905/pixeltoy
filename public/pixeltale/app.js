@@ -2111,6 +2111,11 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   const ruleBlockedOverride = technicalFailures.some((item) => item?.status === "rule_blocked") && !creativeReviewDecisionGroups(reviewContent).length
     ? `<button class="stage-primary agent-task-primary is-next-action" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}" type="button">接受当前版本并继续</button><p class="review-technical-flags">规则拦截已阻断自动审核：只有你确认接受当前内容才能进入下一阶段。</p>`
     : "";
+  // 2026-08-10：必修项存在时，审核证据区提供人工放行出口（不在右侧 rail 与唯一按钮并排）。
+  // 评分达标但必修项反复不收敛时，用户可确认接受当前版本继续进入下一步。
+  const mandatoryOverride = !ruleBlockedOverride && mandatory.length && !technical.blocked
+    ? `<button class="stage-primary agent-task-primary review-zone-override" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}" type="button">接受当前版本并继续</button><p class="review-technical-flags">存在必修项：可执行定向修订，或确认接受当前版本继续进入下一步（审核依据随版本保留）。</p>`
+    : "";
   const decisionItems = reviewDecisionGroups(reviewContent);
   // 2026-08-10：把「执行定向修订」直接放到系统裁判决定卡上（用户在内容区先看到它，
   // 不再依赖右侧 rail 的下一步按钮才能发起修订）。
@@ -2127,7 +2132,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     ? `<button type="button" class="stage-primary agent-task-primary is-next-action decision-revise-btn" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}">选择方案并继续 →</button>`
     : "";
   const decisionCard = `<section class="review-decision-card is-${escapeHtml(decision.kind || "rerun")}"><span>系统裁判</span><div><h3>${escapeHtml(decision.title || "等待决定")}</h3><p>${escapeHtml(decision.summary || "等待审核结果")}</p></div>${decisionItems.length ? `<ol>${decisionItems.slice(0, 3).map((item) => `<li>${escapeHtml(item.tag || item.message || "待处理事项")}</li>`).join("")}</ol>` : ""}${decisionChoiceButton || decisionReviseButton}</section>`;
-  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}${renderReviewScoreBars(reviewContent)}${showDecisionWorkbench ? renderDecisionImpactWorkbench(reviewContent, { stage, reviewId }) : ""}<details id="reviewEvidence" class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${ruleBlockedOverride}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
+  return `<div class="review-summary ${passed ? "is-passed" : "is-needs-review"}">${decisionCard}${renderReviewScoreBars(reviewContent)}${showDecisionWorkbench ? renderDecisionImpactWorkbench(reviewContent, { stage, reviewId }) : ""}<details id="reviewEvidence" class="review-evidence"><summary>查看审核依据与可选建议</summary><section class="review-zone review-zone-mandatory"><h3>必须处理</h3>${issueMarkup(mandatory, "当前没有必须处理项。")}${mandatoryOverride}</section><section class="review-zone review-zone-decision"><h3>需要决定</h3>${issueMarkup(decisions, "当前没有需要决定项。")}</section><section class="review-zone review-zone-optional"><h3>可选优化</h3>${issueMarkup(optional, "当前没有可选优化项。")}</section><section class="review-zone review-zone-adjudication"><h3>系统记录</h3>${adjudicationMarkup}${failureMarkup}${ruleBlockedOverride}${technicalFlags.length ? `<p class="review-technical-flags">${technicalFlags.map((flag) => escapeHtml(flag)).join(" · ")}</p>` : ""}</section></details></div>`;
 }
 
 function renderTitleStage() {

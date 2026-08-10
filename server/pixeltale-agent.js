@@ -2201,12 +2201,16 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
   const disagreements = completed
     .filter((item) => item.pass !== true)
     .map((item) => ({ seatId: item.seatId || "", model: item.actualModel || item.model || "", issues: asArray(item.mandatoryIssues).slice(0, 5).map((issue) => issue.tag || issue.criterionId || "分歧意见") }));
+  const failedSeats = feedbacks.filter((item) => item.status === "failed");
+  const failedSeatSummary = failedSeats
+    .map((item) => `${item.actualModel || item.model || "审读席"}（${item.failureReason || "调用失败"}）`)
+    .join("、");
   const decision = !quorumMet
     ? {
       kind: "rerun",
       owner: "系统裁判",
       title: "审核未完成",
-      summary: "审读席位未满足独立复核条件，需要重新完成审核。",
+      summary: failedSeatSummary ? `审读席位未完成：${failedSeatSummary}，需要重新完成审核。` : "审读席位未满足独立复核条件，需要重新完成审核。",
       items: technicalFailures,
     }
       : decisionRequiredIssues.length

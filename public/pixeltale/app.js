@@ -56,6 +56,8 @@ function pendingMode() {
 const state = {
   mode: pendingMode(),
   stage: "brief",
+  hydrating: true,
+  hydrationError: "",
   approved: new Set(),
   busy: false,
   revising: false,
@@ -376,10 +378,26 @@ function userFacingError(error) {
 }
 
 async function request(suffix, options = {}) {
-  const response = await fetch(agentApiPath(suffix), {
-    ...options,
-    headers: { ...agentRequestHeaders(), ...(options.headers || {}) },
-  });
+  const { timeoutMs = 0, ...requestOptions } = options;
+  const controller = timeoutMs > 0 && typeof AbortController === "function" ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response;
+  try {
+    response = await fetch(agentApiPath(suffix), {
+      ...requestOptions,
+      ...(controller ? { signal: controller.signal } : {}),
+      headers: { ...agentRequestHeaders(), ...(requestOptions.headers || {}) },
+    });
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      const timeoutError = new Error(`项目状态读取超时（${Math.round(timeoutMs / 1000)} 秒）`);
+      timeoutError.code = "PIXELTALE_STATE_TIMEOUT";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) {
     const error = new Error(payload.message || `请求失败：${response.status}`);
@@ -387,6 +405,46 @@ async function request(suffix, options = {}) {
     throw error;
   }
   return payload;
+}
+
+function renderHydrationState() {
+  const content = $("#stageContent");
+  if (!content) return;
+  const error = state.hydrationError;
+  content.innerHTML = error
+    ? `<section class="artifact-card empty-artifact hydration-state" role="alert"><div class="hydration-state-mark">!</div><h3>当前项目暂时无法恢复</h3><p>${escapeHtml(error)}</p><button type="button" class="stage-primary" data-retry-hydration>重新读取当前项目</button></section>`
+    : `<section class="artifact-card empty-artifact hydration-state" role="status" aria-live="polite"><div class="hydration-state-mark is-loading">↻</div><h3>正在读取当前项目</h3><p>正在恢复项目内容、阶段进度和后台任务状态，请稍候。</p></section>`;
+  content.querySelector("[data-retry-hydration]")?.addEventListener("click", () => {
+    void syncAgentState({ silent: true, autoRestore: true });
+  });
+}
+
+function renderHydrationShell() {
+  const loading = !state.hydrationError;
+  $("#modeLabel").textContent = "正在恢复项目";
+  $("#agentTaskTitle").textContent = loading ? "正在读取当前项目" : "项目恢复失败";
+  $("#agentTaskCopy").textContent = loading ? "正在恢复项目内容、阶段进度和后台任务状态。" : state.hydrationError;
+  $("#agentTaskCopy").setAttribute("role", loading ? "status" : "alert");
+  $("#agentTaskAction").innerHTML = loading
+    ? '<span class="agent-task-busy" role="status">读取中 · 请稍候</span>'
+    : '<button class="stage-secondary agent-task-primary" data-retry-hydration type="button">重新读取当前项目</button>';
+  $("#agentTaskAction").querySelector("[data-retry-hydration]")?.addEventListener("click", () => {
+    void syncAgentState({ silent: true, autoRestore: true });
+  });
+  $("#flowStepCounter").textContent = "— / 07";
+  $("#agentStatus").textContent = loading ? "正在恢复项目" : "等待重新读取";
+  $("#approvedCount").textContent = "— / 07";
+  $("#progressBar").style.width = "0%";
+  $("#consensusScore").textContent = "—";
+  $("#consensusAgreement").textContent = "—";
+  $("#reviewCompletion").textContent = "—";
+  $("#interactionCompletion").textContent = "—";
+  $$(".mode-button").forEach((button) => { button.disabled = true; button.classList.remove("is-active"); });
+  $$(".stage-link").forEach((button) => {
+    button.disabled = true;
+    button.classList.remove("is-active", "is-done", "is-next-stage");
+    button.querySelector(".stage-status")?.replaceChildren(document.createTextNode(loading ? "读取中" : "暂不可用"));
+  });
 }
 
 function historyDate(value) {
@@ -2402,6 +2460,11 @@ function renderRiskNote() {
 }
 
 function renderStage() {
+  if (state.hydrating || !state.agent) {
+    renderHydrationState();
+    renderHydrationShell();
+    return;
+  }
   // 2026-08-10：当前查看的阶段已确认但主流程停在后面 → 自动跳到主流程阶段
   const flowStage = workflowStage();
   if (state.stage !== flowStage) {
@@ -2420,6 +2483,9 @@ function renderStage() {
 const RUN_POLL_INTERVAL_MS = 2_000;
 const RUN_POLL_TIMEOUT_MS = 4 * 60 * 1_000;
 const RUN_BACKGROUND_TIMEOUT_MS = 6 * 60 * 60 * 1_000;
+const PIXELTALE_STATE_TIMEOUT_MS = 10_000;
+const PIXELTALE_STATE_RETRY_LIMIT = 3;
+let hydrationRequest = null;
 
 async function waitForRunJob(jobId, { timeoutMs = RUN_POLL_TIMEOUT_MS } = {}) {
   if (!jobId) throw new Error("服务未返回运行任务号，请重新生成当前阶段");
@@ -2781,20 +2847,38 @@ async function createHandoff() {
   }
 }
 
-async function syncAgentState({ silent = false, autoRestore = false } = {}) {
-  try {
-    const payload = await request("");
+function syncAgentState({ silent = false, autoRestore = false } = {}) {
+  if (hydrationRequest) return hydrationRequest;
+  state.hydrating = true;
+  state.hydrationError = "";
+  renderStage();
+  hydrationRequest = (async () => {
+    let payload = null;
+    let lastError = null;
+    for (let attempt = 1; attempt <= PIXELTALE_STATE_RETRY_LIMIT; attempt++) {
+      try {
+        payload = await request("", { timeoutMs: PIXELTALE_STATE_TIMEOUT_MS });
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < PIXELTALE_STATE_RETRY_LIMIT) {
+          await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+        }
+      }
+    }
+    if (!payload?.agent) throw lastError || new Error("服务未返回当前项目");
+    state.hydrationError = "";
+    state.hydrating = false;
     updateAgentState(payload.agent);
     state.lastError = "";
     renderStage();
     if (!silent) showToast("已同步独立编剧会话");
     // 2026-08-10：刷新后 session 无产物（无效/新会话）且存在历史项目 → 自动恢复最近项目。
     // 仅在初始加载（autoRestore）且非"新建项目"流程时触发，避免打断新建。
-    const artifacts = Array.isArray(payload?.agent?.artifacts) ? payload.agent.artifacts : [];
+    const artifacts = Array.isArray(payload.agent.artifacts) ? payload.agent.artifacts : [];
     const pendingNew = (() => { try { return sessionStorage.getItem(PENDING_NOTICE_KEY); } catch { return ""; } })();
     if (autoRestore && !artifacts.length && !pendingNew) {
-      const historyRes = await fetch(agentApiPath("/history"), agentRequestHeaders()).catch(() => null);
-      const historyData = await historyRes?.json().catch(() => null);
+      const historyData = await request("/history", { timeoutMs: PIXELTALE_STATE_TIMEOUT_MS }).catch(() => null);
       const entries = (historyData?.history || []).filter((entry) =>
         entry.sessionId !== sessionId && Number(entry.artifactCount || 0) > 0
       );
@@ -2805,10 +2889,16 @@ async function syncAgentState({ silent = false, autoRestore = false } = {}) {
         window.location.assign(target.toString());
       }
     }
-  } catch (error) {
-    state.lastError = userFacingError(error);
-    if (!silent) showToast(state.lastError);
-  }
+  })().catch((error) => {
+    state.hydrating = false;
+    state.hydrationError = userFacingError(error);
+    state.lastError = "";
+    renderStage();
+    if (!silent) showToast(state.hydrationError);
+  }).finally(() => {
+    hydrationRequest = null;
+  });
+  return hydrationRequest;
 }
 
 function openRoutingDialog() {
@@ -3150,7 +3240,10 @@ $$('[data-open-stage]').forEach((button) => button.addEventListener("click", () 
 renderStage();
 syncAgentState({ silent: true, autoRestore: true }).finally(() => {
   renderStage();
-  if (state.activeRun) void monitorBackgroundRun(state.activeRun);
+  // 2026-08-10：初始加载不恢复 stale activeRun——旧 run 的 monitor 完成后
+  // result?.state 为 undefined → updateAgentState(null) → state.agent=null → 空项目。
+  // 直接清除残留，保证 syncAgentState 加载的正确 agent 不被覆盖。
+  persistActiveRun(null);
 });
 try {
   const notice = sessionStorage.getItem(PENDING_NOTICE_KEY);

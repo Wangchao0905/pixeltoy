@@ -382,12 +382,19 @@ async function request(suffix, options = {}) {
   const controller = timeoutMs > 0 && typeof AbortController === "function" ? new AbortController() : null;
   const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   let response;
+  let payload;
   try {
     response = await fetch(agentApiPath(suffix), {
       ...requestOptions,
       ...(controller ? { signal: controller.signal } : {}),
       headers: { ...agentRequestHeaders(), ...(requestOptions.headers || {}) },
     });
+    try {
+      payload = await response.json();
+    } catch (error) {
+      if (controller?.signal.aborted) throw error;
+      payload = {};
+    }
   } catch (error) {
     if (controller?.signal.aborted) {
       const timeoutError = new Error(`项目状态读取超时（${Math.round(timeoutMs / 1000)} 秒）`);
@@ -398,7 +405,6 @@ async function request(suffix, options = {}) {
   } finally {
     if (timeout) clearTimeout(timeout);
   }
-  const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) {
     const error = new Error(payload.message || `请求失败：${response.status}`);
     error.code = payload.code || `HTTP_${response.status}`;
@@ -2193,6 +2199,7 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     ? (technicalFailures.find((item) => item?.status === "degraded")?.message || `${reviewMode}不成立：有席位兜底到了同一模型`)
     : "";
   const technicalFlags = [degradedFlag, technical.stalled ? "自动修订已停止：stalled" : "", technical.budgetExhausted ? "自动修订已停止：budget_exhausted" : ""].filter(Boolean);
+  const scoresMet = scoresMeetGate(reviewContent);
   const ruleBlockedOverride = technicalFailures.some((item) => item?.status === "rule_blocked") && !creativeReviewDecisionGroups(reviewContent).length
     ? `<button class="stage-primary agent-task-primary is-next-action" data-flow-action="human-override" data-human-override="${escapeHtml(stage)}" type="button">接受当前版本并继续</button><p class="review-technical-flags">规则拦截已阻断自动审核：只有你确认接受当前内容才能进入下一阶段。</p>`
     : "";
@@ -2212,7 +2219,6 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
   // 2026-08-10：决策卡放行出口——任何未通过状态（revise/rerun/needs_decision）都常显，
   // 不依赖具体字段（必修项可能在 mandatoryIssues / decision.items / pendingClosures 任一来源）。
   // 2026-08-10：评分必须达标才允许放行（低分只能修订/重跑）。
-  const scoresMet = scoresMeetGate(reviewContent);
   const decisionOverride = decision.kind && decision.kind !== "approve" && !decisionRuleBlocked && scoresMet
     ? state.pendingHumanOverride === stage
       ? renderInlineHumanOverrideForm(stage)

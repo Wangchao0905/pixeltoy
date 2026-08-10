@@ -2573,9 +2573,10 @@ async function runAutoRevision(stage = state.stage) {
   }
   const crossStageIssues = issues.filter((issue) => issue.targetStage && issue.targetStage !== stage);
   if (crossStageIssues.length) {
+    // 2026-08-10：跨阶段问题不再强制拦截（目标阶段可能已确认、无修订入口 → 死路）。
+    // 提示存在跨阶段项，但允许在当前阶段按修订指引与已确认上游统一，或人工放行。
     const targets = [...new Set(crossStageIssues.map((issue) => stageMeta[issue.targetStage]?.title || issue.targetStage))];
-    showToast(`当前清单包含跨阶段问题，请先切换到${targets.join("、")}处理，避免在${stageMeta[stage]?.title || stage}中重复改写。`);
-    return;
+    showToast(`当前清单包含跨阶段问题（${crossStageIssues.length} 项，属于${targets.join("、")}）：可在该阶段处理，或在本阶段修订后人工放行；仍将执行本阶段修订。`);
   }
   const maxPasses = 1;
   const buildPlan = (items, pass) => [
@@ -2587,7 +2588,8 @@ async function runAutoRevision(stage = state.stage) {
     }),
   ].join("\n");
 
-  let currentIssues = issues;
+  // 跨阶段项不发给当前阶段修订 writer（归属其他阶段），保留在清单供人工处理
+  let currentIssues = issues.filter((issue) => !issue.targetStage || issue.targetStage === stage);
   for (let pass = 1; pass <= maxPasses; pass += 1) {
     showToast(`正在执行第 ${pass} / ${maxPasses} 轮修订与复审 · ${currentIssues.length} 类问题`);
     const outcome = await runCurrentStage(stage, { revisionPlan: buildPlan(currentIssues, pass) });

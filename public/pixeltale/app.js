@@ -638,10 +638,18 @@ function syncRoutingModelOptions(options) {
 
 function artifactForStage(stage) {
   const artifacts = state.agent?.artifacts || [];
+  // 2026-08-10：同一版本可能同时存在「内容产物」(needs_review/approved，含 lines/units)
+  // 与「审核产物」(failed，content 只有审核记录无内容)。同版本必须优先取内容产物，
+  // 否则 dialogue 等阶段会渲染成空项目。
+  const statusRank = { approved: 3, needs_review: 2, complete: 2, processing: 1, pending: 1, failed: 0 };
   return artifacts
     .filter((item) => item.stage === stage && item.type === `pixeltale_${stage}`)
     .filter((item) => stage !== "title" || (Array.isArray(item.content?.candidates) && item.content.candidates.length === 4 && item.content.candidates.every((candidate) => candidate?.title_en)))
-    .sort((a, b) => Number(a.version || 0) - Number(b.version || 0))
+    .sort((a, b) => {
+      const versionDelta = Number(a.version || 0) - Number(b.version || 0);
+      if (versionDelta !== 0) return versionDelta;
+      return (statusRank[a.status] ?? 0) - (statusRank[b.status] ?? 0);
+    })
     .at(-1) || null;
 }
 

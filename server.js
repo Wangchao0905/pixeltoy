@@ -27022,16 +27022,18 @@ async function handleApi(req, res, url) {
 
     // 2026-08-10：精准修标题——arc 代号/非中文标题批量改为中文（只改 title_zh，不重跑下游）
     if (req.method === "POST" && action === "arc/fix-titles") {
-      const busy = [...activePixelTaleRuns.keys()].some((key) => String(key).startsWith(`${params.pixelTaleRoot}:`));
-      if (busy) return fail(res, 409, "该创作任务正在处理中，请等待完成后重试。");
-      const state = readPixelTaleState(params);
-      const agentStatus = pixelTaleAgent.status(params);
-      const route = agentStatus?.route || {};
+      console.error("[pixeltale] fix-titles 请求进入:", params.pixelTaleRoot);
       try {
+        const busy = [...activePixelTaleRuns.keys()].some((key) => String(key).startsWith(`${params.pixelTaleRoot}:`));
+        if (busy) return fail(res, 409, "该创作任务正在处理中，请等待完成后重试。");
+        const state = readPixelTaleState(params);
+        const agentStatus = pixelTaleAgent.status(params);
+        const route = agentStatus?.route || {};
         const result = await fixEpisodeTitles({ state, modelRouter: pixelTaleRouter, writer: route.orchestration || "gpt-5.6-terra" });
         writePixelTaleState(params, state);
         return send(res, 200, { ok: true, ...result }, { "Cache-Control": "no-store" });
       } catch (error) {
+        console.error("[pixeltale] fix-titles 失败:", error?.stack || error?.message || error);
         return fail(res, Number(error.statusCode) || 400, error.message || "标题修正失败", error.code);
       }
     }

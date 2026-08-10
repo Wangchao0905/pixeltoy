@@ -3304,7 +3304,7 @@ async function fixEpisodeTitles({ state, modelRouter, writer = "gpt-5.6-terra", 
           if (unit && t && /[\u4e00-\u9fff]/.test(t) && !EPISODE_TITLE_CODENAME.test(t)) unit.title_zh = t;
         });
       }
-    } catch (error) { console.error("[pixeltale] fix-titles model call failed:", error?.message || error); }
+    } catch (error) { console.error("[pixeltale] fix-titles model call failed:", error?.stack || error?.message || error); }
   }
   arcArtifact.updatedAt = new Date(now()).toISOString();
   return { fixed: flaggedCount - units.filter(isBadTitle).length, flagged: units.filter(isBadTitle).length };

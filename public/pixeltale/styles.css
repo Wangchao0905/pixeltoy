@@ -1547,3 +1547,6 @@ button.decision-revise-btn:active { transform: scale(0.98); }
 .handoff-title-fix { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 14px; border: 1px solid rgba(255, 202, 40, 0.5); border-radius: 12px; background: rgba(255, 250, 240, 0.7); }
 .handoff-title-fix span { color: #7a4d00; font-size: 12px; }
 .handoff-title-fix .tool-button { border-radius: 9px; }
+
+/* 视觉资产 DOCX 主交付块 */
+.visual-asset-delivery { margin-top: 14px; }

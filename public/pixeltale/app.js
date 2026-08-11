@@ -1408,7 +1408,14 @@ function renderShellState() {
     button.classList.toggle("is-done", !!artifact && state.approved.has(artifact.id));
     button.classList.toggle("is-next-stage", name === flowStage && status !== "已确认");
     button.classList.toggle("is-locked", locked);
-    button.disabled = locked;
+    // 2026-08-11：已确认阶段始终可点击；强制绑定 onclick 兜底
+    button.disabled = locked && status !== "已确认";
+    button.onclick = () => {
+      if (locked && status !== "已确认") { showToast(`\u8BF7\u5148\u5B8C\u6210\u201C${stageMeta[workflowStage()]?.title || "\u5F53\u524D\u9636\u6BB5"}\u201D`); return; }
+      state.stage = name;
+      state.lastError = "";
+      renderStage();
+    };
     button.title = locked ? `完成“${stageMeta[flowStage]?.title || "当前阶段"}”后解锁` : name === flowStage ? `下一步：${stageMeta[name]?.title || name}` : `查看“${stageMeta[name]?.title || name}”`;
     button.setAttribute("aria-label", `${stageMeta[name]?.title || name}${name === flowStage && status !== "已确认" ? "，下一步" : ""}`);
     const statusNode = button.querySelector(".stage-status");

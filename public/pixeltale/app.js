@@ -1408,10 +1408,9 @@ function renderShellState() {
     button.classList.toggle("is-done", !!artifact && state.approved.has(artifact.id));
     button.classList.toggle("is-next-stage", name === flowStage && status !== "已确认");
     button.classList.toggle("is-locked", locked);
-    // 2026-08-11：已确认阶段始终可点击；强制绑定 onclick 兜底
-    button.disabled = locked && status !== "已确认";
+    // 2026-08-11：所有阶段始终可点击查看
+    button.disabled = false;
     button.onclick = () => {
-      if (locked && status !== "已确认") { showToast(`\u8BF7\u5148\u5B8C\u6210\u201C${stageMeta[workflowStage()]?.title || "\u5F53\u524D\u9636\u6BB5"}\u201D`); return; }
       state.stage = name;
       state.lastError = "";
       renderStage();

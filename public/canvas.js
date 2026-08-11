@@ -2137,8 +2137,7 @@ function renderVideoPreview(node) {
     return `
       <div class="video-node-status generation-status" aria-label="${hasProgress ? `生成中 ${progress}%` : "生成中"}">
         <div class="generation-status-row">
-          <strong>生成中</strong>
-          <em>${hasProgress ? `${progress}%` : ""}</em>
+          <strong>${hasProgress ? `生成中 · ${progress}%` : "生成中"}</strong>
         </div>
         <div class="generation-progress-track${hasProgress ? "" : " is-indeterminate"}" aria-hidden="true"><i style="width: ${progressWidth}%"></i></div>
         <span class="generation-model-label">${escapeHtml(modelLabel)}</span>
@@ -3247,8 +3246,8 @@ function syncRunningVideoPreview(preview, node) {
   if (!status) return false;
   const progress = videoProgressValue(node);
   const hasProgress = hasRealVideoProgress(node);
-  const progressLabel = status.querySelector(".generation-status-row em");
-  if (progressLabel) progressLabel.textContent = hasProgress ? `${progress}%` : "";
+  const progressLabel = status.querySelector(".generation-status-row strong");
+  if (progressLabel) progressLabel.textContent = hasProgress ? `生成中 · ${progress}%` : "生成中";
   const progressFill = status.querySelector(".generation-progress-track i");
   if (progressFill) progressFill.style.width = `${hasProgress ? progress : 24}%`;
   const progressTrack = status.querySelector(".generation-progress-track");
@@ -3626,7 +3625,7 @@ function renderImagePreview(node) {
   if (status === "running") {
     const settings = { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) };
     return `<div class="image-preview-state running generation-status" aria-label="生成中">
-      <div class="generation-status-row"><strong>生成中</strong><em></em></div>
+      <div class="generation-status-row"><strong>生成中</strong></div>
       <div class="generation-progress-track is-indeterminate" aria-hidden="true"><i style="width: 24%"></i></div>
       <span class="generation-model-label">${escapeHtml(settings.model || IMAGE_NODE_DEFAULTS.model)}</span>
       <span class="generation-status-message">${escapeHtml(node.statusMessage || "任务已提交")}</span>

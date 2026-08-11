@@ -7610,7 +7610,9 @@ body.canvas-page {
   justify-items: center;
   align-content: center;
   text-align: center;
-  min-width: min(270px, 84%);
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   gap: 9px;
   padding: 12px 14px;
   border: 1px solid rgba(166, 219, 255, 0.2);

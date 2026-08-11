@@ -1,6 +1,5 @@
-// 剧本格式硬规范测试（script-format-guardian）：
-// 场号 X-X 格式 / 纯名字无代号 / 无无关内容 / 剧情中文保留。
-// 2026-08-10 按用户格式参考图（场号/场景/时间/内外/人物/动作/角色名：台词）。
+// 剧本格式硬规范测试：严格对齐《Badass Nanny 铁拳俏保姆》对标 DOCX。
+// 一卡 + 人设 + 大纲 + 连续正文 / △动作 / 角色：对白。
 import assert from "node:assert/strict";
 import { writeScriptDocument } from "../server/pixeltale-script-document.js";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
@@ -30,19 +29,21 @@ try {
   execSync(`unzip -o ${JSON.stringify(out)} -d ${JSON.stringify(path.join(dir, "x"))} >/dev/null 2>&1`);
   const xml = readFileSync(path.join(dir, "x", "word", "document.xml"), "utf8");
 
-  assert.match(xml, /1-1 场景：/, "场号必须为 X-X 格式（第 1 集第 1 场）");
-  assert.match(xml, /场景：Blair House 客厅/, "场景必须用地点名");
-  assert.match(xml, /时间：夜晚/, "时间字段必须存在");
-  assert.match(xml, /内外：内/, "内外景字段必须存在");
+  assert.match(xml, /剧本正文：/, "必须有剧本正文标题");
+  assert.match(xml, /第一集/, "分集标题必须使用中文集数");
+  assert.match(xml, /Blair House 客厅 夜 内/, "首场必须为 [地点] [日夜] [内外]");
+  assert.match(xml, /△Iris 走进客厅，Ethan 站在窗边。/, "动作必须以 △ 开头");
+  assert.match(xml, /Iris Brooks：There is something outside\./, "角色名与对白必须处于同一段");
   assert.match(xml, /Iris Brooks/, "出场人物必须用角色名字");
   assert.match(xml, /Ethan Cole/, "出场人物必须列出全部角色名字");
-  assert.match(xml, /IRIS BROOKS/, "对白角色名必须用名字（大写 Character）");
   assert.ok(!xml.includes("S001"), "场景代号 S001 不得出现在导出剧本中");
   assert.ok(!xml.includes("C001"), "角色代号 C001 不得出现在导出剧本中");
-  assert.ok(!xml.includes("场景目的"), "不得输出创作依据（场景目的）");
-  assert.ok(!xml.includes("开头暴击"), "不得输出创作依据（开头暴击）");
-  assert.ok(!xml.includes("冲突"), "不得输出创作依据（冲突/选择/结果）");
-  assert.match(xml, /剧情意图/, "中文剧情意图（剧情恒中文）必须保留");
+  assert.ok(!xml.includes("场景："), "不得输出字段式场景标题");
+  assert.ok(!xml.includes("时间："), "不得输出字段式时间");
+  assert.ok(!xml.includes("内外："), "不得输出字段式内外景");
+  assert.ok(!xml.includes("Delivery:"), "不得输出 Delivery 说明");
+  assert.ok(!xml.includes("剧情意图"), "不得输出内部剧情意图");
+  assert.ok(!xml.includes("未标注"), "正式剧本不得出现未标注内外景");
 
   console.log("pixeltale-docx-format ok");
 } finally {

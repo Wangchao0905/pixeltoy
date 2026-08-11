@@ -25,13 +25,9 @@ ET.register_namespace("dc", DC_NS)
 ET.register_namespace("dcterms", DCT_NS)
 ET.register_namespace("xsi", XSI_NS)
 
-FONT = "PingFang SC"
+FONT = "黑体"
 LATIN_FONT = "Arial"
-INK = "17202A"
-MUTED = "66737D"
-BLUE = "1F5F85"
-LIGHT_BLUE = "E8F0F5"
-LIGHT_GRAY = "F4F6F8"
+INK = "000000"
 
 
 def node(tag, attrs=None, children=None, text=None):
@@ -130,6 +126,21 @@ def paragraph(text="", style="Normal", align=None, before=None, after=None, left
     return p
 
 
+def reference_paragraph(text="", bold=False, align=None, before=0, after=0, page_break=False, size=10.5):
+    """Build the plain paragraph shape used by the reference short-drama DOCX."""
+    p = paragraph(style="Normal", align=align, before=before, after=after, page_break=page_break)
+    if text:
+        p.append(run(text, size=size, color=INK, bold=bold, font=FONT))
+    return p
+
+
+def reference_labeled_paragraph(label, value, before=0, after=0):
+    p = paragraph(style="Normal", before=before, after=after)
+    p.append(run(label, size=10.5, color=INK, bold=True, font=FONT))
+    p.append(run(clean(value, ""), size=10.5, color=INK, font=FONT))
+    return p
+
+
 def labeled_paragraph(label, value, style="Normal"):
     p = paragraph(style=style)
     p.find(W + "pPr").append(node(W + "spacing", {W + "before": "0", W + "after": "100", W + "line": "280", W + "lineRule": "auto"}))
@@ -168,38 +179,60 @@ def styles_xml():
     p_default.append(node(W + "pPr", children=[node(W + "spacing", {W + "after": "120", W + "line": "280", W + "lineRule": "auto"})]))
     doc_defaults.append(p_default)
     root.append(doc_defaults)
-    root.append(style("Normal", "Normal", size=10, after=120))
-    root.append(style("Kicker", "Kicker", size=9, color=BLUE, bold=True, after=180, align="center"))
-    root.append(style("Title", "Title", size=26, color=INK, bold=True, after=120, align="center", keep_next=True))
-    root.append(style("Subtitle", "Subtitle", size=13, color=MUTED, after=360, align="center", keep_next=True))
-    root.append(style("Heading1", "Heading 1", size=16, color=BLUE, bold=True, before=360, after=160, keep_next=True))
-    root.append(style("Heading2", "Heading 2", size=13, color=BLUE, bold=True, before=240, after=100, keep_next=True))
-    root.append(style("Meta", "Meta", size=9, color=MUTED, after=80))
-    root.append(style("SceneHeading", "Scene Heading", size=11, color=INK, bold=True, before=240, after=80, keep_next=True, shading=LIGHT_BLUE))
-    root.append(style("Action", "Action", size=10, color=INK, after=100))
-    root.append(style("Character", "Character", size=10, color=INK, bold=True, before=170, after=20, align="center", keep_next=True))
-    root.append(style("Parenthetical", "Parenthetical", size=9, color=MUTED, italic=True, after=30, align="center", left=1080, right=1080, keep_next=True))
-    root.append(style("Dialogue", "Dialogue", size=10, color=INK, after=90, left=720, right=720))
-    root.append(style("DialogueNote", "Dialogue Note", size=9, color=MUTED, italic=True, after=100, left=720, right=720))
+    root.append(style("Normal", "Normal", size=10.5, color=INK, after=0))
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
-def header_xml():
-    root = node(W + "hdr")
-    root.append(paragraph("PIXELTALE  /  正式剧本", style="Meta", align="right", after=0))
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+def chinese_number(value):
+    number = int(value)
+    digits = "零一二三四五六七八九"
+    if number < 10:
+        return digits[number]
+    if number < 20:
+        return "十" if number == 10 else f"十{digits[number - 10]}"
+    if number < 100:
+        tens, ones = divmod(number, 10)
+        return f"{digits[tens]}十" if ones == 0 else f"{digits[tens]}十{digits[ones]}"
+    return str(number)
 
 
-def footer_xml():
-    root = node(W + "ftr")
-    p = paragraph(style="Meta", align="right", after=0)
-    p.append(run("第 ", size=9, color=MUTED))
-    field = node(W + "fldSimple", {W + "instr": "PAGE"})
-    field.append(run("1", size=9, color=MUTED))
-    p.append(field)
-    p.append(run(" 页", size=9, color=MUTED))
-    root.append(p)
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+def normalize_daypart(value):
+    value = clean(value, "")
+    if any(token in value for token in ("夜", "晚", "深夜")):
+        return "夜"
+    if any(token in value for token in ("日", "上午", "下午", "清晨", "白天", "早晨")):
+        return "日"
+    return value or "日"
+
+
+def normalize_indoor(value, location=""):
+    value = clean(value, "").lower()
+    if value in {"外", "外景", "室外", "outdoor", "exterior", "ext"}:
+        return "外"
+    if value in {"内", "内景", "室内", "indoor", "interior", "int"}:
+        return "内"
+    location = clean(location, "")
+    if any(token in location for token in ("前院", "院子", "庭院", "街", "公园", "停车场", "车道", "屋顶")):
+        return "外"
+    return "内"
+
+
+def character_summary(item):
+    role_map = {
+        "protagonist": "主角",
+        "antagonist": "反派",
+        "key_supporting": "重要配角",
+        "supporting": "配角",
+    }
+    parts = []
+    role = clean(item.get("role"), "")
+    if role_map.get(role):
+        parts.append(role_map[role])
+    for key in ("desire_zh", "fear_zh", "secret_zh", "arc_zh"):
+        value = clean(item.get(key), "")
+        if value and value not in {"无", "未设定"}:
+            parts.append(value)
+    return "。".join(parts).strip("。")
 
 
 def document_xml(payload):
@@ -212,47 +245,37 @@ def document_xml(payload):
     arc = source.get("arc") or {}
     scenes = source.get("scenes") or {}
     dialogue = source.get("dialogue") or {}
+    input_data = payload.get("input") or {}
 
     title = first(proposal.get("title_zh"), brief.get("title_zh"), payload.get("title"), fallback="PixelTale 正式剧本")
-    mode = first(payload.get("mode"), fallback="TK 短剧")
-    episode_scale = first(payload.get("episode_scale"), fallback="未设定")
-    duration = first(payload.get("duration"), fallback="未设定")
-    dialogue_mode = first(payload.get("dialogue_mode"), fallback="英文口语化本土化")
+    market = payload.get("market")
+    market_label = market.get("label") if isinstance(market, dict) else market
+    reference_title = first(input_data.get("referenceTitle"), input_data.get("reference_title_zh"), brief.get("reference_title_zh"), fallback="")
+    hook = first(proposal.get("logline_zh"), proposal.get("premise_zh"), brief.get("logline_zh"), brief.get("core_conflict_zh"), fallback="")
+    track = first(market_label, payload.get("mode"), fallback="")
+    synopsis = first(proposal.get("premise_zh"), proposal.get("logline_zh"), brief.get("core_conflict_zh"), brief.get("logline_zh"), fallback="")
 
-    body.append(paragraph("PIXELTALE STORY FORGE", style="Kicker", align="center", after=180))
-    body.append(paragraph(title, style="Title"))
-    body.append(paragraph("正式剧本", style="Subtitle"))
-    body.append(labeled_paragraph("剧作模式", mode, style="Meta"))
-    body.append(labeled_paragraph("计划规模", episode_scale, style="Meta"))
-    body.append(labeled_paragraph("单集时长", duration, style="Meta"))
-    body.append(labeled_paragraph("对白策略", dialogue_mode, style="Meta"))
-    body.append(paragraph("本文件由 PixelTale 编剧 Agent 根据已确认的故事结构生成。中文用于剧情、设定、动作与场景说明；英文用于人物对白，并遵循人物声线与本土化设定。", style="Meta", before=240, after=0))
-    body.append(paragraph("故事概览", style="Heading1", page_break=True))
-    body.append(labeled_paragraph("核心命题", proposal.get("premise_zh") or brief.get("core_conflict_zh")))
-    body.append(labeled_paragraph("一句话梗概", proposal.get("logline_zh") or brief.get("logline_zh")))
-    body.append(labeled_paragraph("观众追问", proposal.get("viewer_question_zh") or brief.get("viewer_question_zh")))
-    body.append(labeled_paragraph("主角目标", proposal.get("protagonist_goal_zh")))
-    body.append(labeled_paragraph("对抗力量", proposal.get("antagonistic_force_zh")))
-    body.append(labeled_paragraph("持续推进引擎", proposal.get("season_or_series_engine_zh")))
-    body.append(labeled_paragraph("开场承诺", proposal.get("first_impact_zh")))
-    body.append(labeled_paragraph("首个反转", proposal.get("reversal_zh")))
+    body.append(reference_paragraph(title, bold=True, align="center", size=16, after=120))
+    if reference_title:
+        body.append(reference_labeled_paragraph("对标剧：", reference_title))
+    if hook:
+        body.append(reference_labeled_paragraph("核心看点：", hook))
+    if track:
+        body.append(reference_labeled_paragraph("短剧赛道：", track))
+    if synopsis:
+        body.append(reference_paragraph("剧情简介：", bold=True, before=120))
+        body.append(reference_paragraph(synopsis))
 
     character_items = characters.get("characters") or []
     characters_by_id = {clean(item.get("id"), ""): item for item in character_items}
     if character_items:
-        body.append(paragraph("人物设定", style="Heading1"))
+        body.append(reference_paragraph("人物简介", bold=True, before=180))
         for item in character_items:
             name = first(item.get("name_zh"), item.get("name_en"), fallback="未命名人物")
-            body.append(paragraph(name, style="Heading2"))
-            body.append(labeled_paragraph("英文名", item.get("name_en")))
-            body.append(labeled_paragraph("人物身份", item.get("role")))
-            body.append(labeled_paragraph("人物欲望", item.get("desire_zh")))
-            body.append(labeled_paragraph("人物恐惧", item.get("fear_zh")))
-            body.append(labeled_paragraph("隐藏秘密", item.get("secret_zh")))
-            body.append(labeled_paragraph("人物弧线", item.get("arc_zh")))
-            voice = (item.get("voice_rules_en") or [])
-            if voice:
-                body.append(labeled_paragraph("英文声线", "；".join(clean(value) for value in voice)))
+            body.append(reference_paragraph(name, bold=True, before=120))
+            summary = character_summary(item)
+            if summary:
+                body.append(reference_paragraph(summary))
 
     scene_items = scenes.get("scenes") or []
     dialogue_items = dialogue.get("lines") or []
@@ -263,6 +286,7 @@ def document_xml(payload):
     dialogue_scene_ids = {clean(line.get("scene_id"), "") for line in dialogue_items if clean(line.get("scene_id"), "")}
     if not expected_count or len(units) != expected_count or len(scene_items) < expected_count or any(number not in covered_units for number in range(1, expected_count + 1)) or any(scene_id not in dialogue_scene_ids for scene_id in scene_ids):
         raise ValueError(f"正式剧本缺少逐集正文：期望 {expected_count or '计划'} 集，分集 {len(units)}，场景 {len(scene_items)}，对白 {len(dialogue_items)}")
+
     dialogue_by_scene = {}
     for line in dialogue_items:
         dialogue_by_scene.setdefault(clean(line.get("scene_id"), ""), []).append(line)
@@ -270,58 +294,47 @@ def document_xml(payload):
     for scene in scene_items:
         scenes_by_unit.setdefault(int(scene.get("unit_number")), []).append(scene)
 
-    body.append(paragraph("完整剧本正文", style="Heading1", page_break=True))
-    episode_label = "章" if mode == "普通长剧" else "集"
+    body.append(reference_paragraph("剧本正文：", bold=True, before=180))
     for unit in units:
-        number = clean(unit.get("number"), "")
-        body.append(paragraph(f"第{number}{episode_label}  {first(unit.get('title_zh'), fallback='未命名')}", style="Heading2"))
-        # 2026-08-10 严格投稿格式：每集以剧情概述开始（对应剧本大纲），不输出创作依据
-        body.append(paragraph(clean(unit.get("plot_zh"), "未设定剧情"), style="Action"))
-        for scene_index, scene in enumerate(scenes_by_unit.get(int(number), []), start=1):
-            # 2026-08-10 剧本格式（投稿规范）：场号 X-X + 场景/时间/内外，不用 S 编号代号
+        number = int(unit.get("number"))
+        body.append(reference_paragraph(f"第{chinese_number(number)}集", bold=True, before=120))
+        for scene_index, scene in enumerate(scenes_by_unit.get(number, []), start=1):
             scene_id = first(scene.get("id"), fallback="场景")
-            time_label = first(scene.get("time_zh"), fallback="时间未设定")
+            time_label = normalize_daypart(scene.get("time_zh"))
             location = first(scene.get("location_zh"), fallback="地点未设定")
-            indoor = clean(scene.get("indoor_outdoor"), "")
-            indoor_label = "内" if indoor == "内" else ("外" if indoor == "外" else (indoor or "未标注"))
-            heading_text = f"{number}-{scene_index} 场景：{location} 时间：{time_label} 内外：{indoor_label}"
-            body.append(paragraph(heading_text, style="SceneHeading", shading=LIGHT_BLUE))
-            # 人物：当集出场，用角色名字（不含 C 编号代号）
+            indoor_label = normalize_indoor(scene.get("indoor_outdoor"), location)
+            prefix = "" if scene_index == 1 else f"{number}-{scene_index} "
+            heading_text = f"{prefix}{location} {time_label} {indoor_label}"
+            body.append(reference_paragraph(heading_text, bold=True, before=120))
+
             roster = scene.get("characters") or []
             roster_names = []
             for cid in roster:
                 cid_s = clean(cid, "")
                 ch = characters_by_id.get(cid_s) or {}
-                roster_names.append(strip_codename(first(ch.get("name_zh"), ch.get("name_en"), cid_s, fallback="人物")))
-            body.append(labeled_paragraph("人物", "、".join(roster_names) if roster_names else "未设定", style="Action"))
-            body.append(paragraph(clean(scene.get("action_zh"), "未设定动作"), style="Action"))
+                name = strip_codename(first(ch.get("name_zh"), ch.get("name_en"), cid_s, fallback="人物"))
+                if name:
+                    roster_names.append(name)
+            if roster_names:
+                body.append(reference_labeled_paragraph("人物：", " ".join(roster_names)))
+
+            action = clean(scene.get("action_zh"), "")
+            if action:
+                body.append(reference_paragraph(action if action.startswith("△") else f"△{action}"))
+
             for line in dialogue_by_scene.get(scene_id, []):
                 speaker = clean(line.get("speaker"), "人物")
                 character = characters_by_id.get(speaker) or {}
-                speaker_name = strip_codename(first(character.get("name_en"), character.get("name_zh"), speaker, fallback="人物"))
-                body.append(paragraph(speaker_name.upper(), style="Character"))
-                delivery = clean(line.get("delivery_en"), "")
-                if delivery:
-                    body.append(paragraph(f"Delivery: {delivery}", style="Parenthetical"))
-                dialogue_text = clean(line.get("dialogue_en"), "")
+                speaker_name = strip_codename(first(character.get("name_zh"), character.get("name_en"), speaker, fallback="人物"))
+                if not speaker_name:
+                    speaker_name = "人物"
+                dialogue_text = clean(line.get("dialogue_en") or line.get("dialogue_zh") or line.get("dialogue"), "")
                 if dialogue_text:
-                    body.append(paragraph(dialogue_text, style="Dialogue"))
-                subtext = clean(line.get("intent_zh") or line.get("subtext_zh"), "")
-                if subtext:
-                    body.append(paragraph(f"剧情意图：{subtext}", style="DialogueNote"))
-        # 2026-08-10 严格投稿格式：集尾创作依据（反转/钩子/未答/推进）不输出到正文
-
-    checks = dialogue.get("localization_checks") or []
-    if checks:
-        body.append(paragraph("对白本土化检查", style="Heading1"))
-        for check in checks:
-            body.append(labeled_paragraph("检查项", check, style="Meta"))
+                    body.append(reference_paragraph(f"{speaker_name}：{dialogue_text}"))
 
     sect = node(W + "sectPr")
-    sect.append(node(W + "headerReference", {W + "type": "default", R + "id": "rId1"}))
-    sect.append(node(W + "footerReference", {W + "type": "default", R + "id": "rId2"}))
-    sect.append(node(W + "pgSz", {W + "w": "12240", W + "h": "15840"}))
-    sect.append(node(W + "pgMar", {W + "top": "1440", W + "right": "1440", W + "bottom": "1440", W + "left": "1440", W + "header": "708", W + "footer": "708", W + "gutter": "0"}))
+    sect.append(node(W + "pgSz", {W + "w": "11906", W + "h": "16838"}))
+    sect.append(node(W + "pgMar", {W + "top": "1440", W + "right": "1800", W + "bottom": "1440", W + "left": "1800", W + "header": "851", W + "footer": "992", W + "gutter": "0"}))
     body.append(sect)
     root.append(body)
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
@@ -338,9 +351,7 @@ def rels_xml():
 def document_rels_xml():
     ET.register_namespace("", PR_NS)
     root = node(f"{{{PR_NS}}}Relationships")
-    root.append(node(f"{{{PR_NS}}}Relationship", {"Id": "rId1", "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", "Target": "header1.xml"}))
-    root.append(node(f"{{{PR_NS}}}Relationship", {"Id": "rId2", "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer", "Target": "footer1.xml"}))
-    root.append(node(f"{{{PR_NS}}}Relationship", {"Id": "rId3", "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", "Target": "styles.xml"}))
+    root.append(node(f"{{{PR_NS}}}Relationship", {"Id": "rId1", "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", "Target": "styles.xml"}))
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
@@ -351,8 +362,6 @@ def content_types_xml():
     root.append(node(f"{{{CT_NS}}}Default", {"Extension": "xml", "ContentType": "application/xml"}))
     root.append(node(f"{{{CT_NS}}}Override", {"PartName": "/word/document.xml", "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"}))
     root.append(node(f"{{{CT_NS}}}Override", {"PartName": "/word/styles.xml", "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"}))
-    root.append(node(f"{{{CT_NS}}}Override", {"PartName": "/word/header1.xml", "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"}))
-    root.append(node(f"{{{CT_NS}}}Override", {"PartName": "/word/footer1.xml", "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"}))
     root.append(node(f"{{{CT_NS}}}Override", {"PartName": "/docProps/core.xml", "ContentType": "application/vnd.openxmlformats-package.core-properties+xml"}))
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
@@ -372,8 +381,6 @@ def write_docx(output, payload):
         "_rels/.rels": rels_xml(),
         "word/document.xml": document_xml(payload),
         "word/styles.xml": styles_xml(),
-        "word/header1.xml": header_xml(),
-        "word/footer1.xml": footer_xml(),
         "word/_rels/document.xml.rels": document_rels_xml(),
         "docProps/core.xml": core_xml(payload),
     }

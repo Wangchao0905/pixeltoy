@@ -86,10 +86,11 @@ try {
   assert.ok(fs.existsSync(outputFile), "the formal screenplay DOCX must be created from arc/scenes/dialogue");
   execFileSync("unzip", ["-t", outputFile], { stdio: "pipe" });
   const xml = execFileSync("unzip", ["-p", outputFile, "word/document.xml"], { encoding: "utf8" });
-  assert.match(xml, /完整剧本正文/, "the DOCX must contain the screenplay section");
-  assert.match(xml, /门外的警报突然响起/, "the DOCX must contain plot/action prose");
+  assert.match(xml, /剧本正文：/, "the DOCX must contain the screenplay section");
+  assert.match(xml, /△主角按住正在滑落的文件夹/, "the DOCX must contain reference-style action prose");
   assert.match(xml, /You can press that button/, "the DOCX must contain English dialogue");
-  assert.match(xml, /集尾强钩子/, "the DOCX must contain the episode hook as part of the screenplay");
+  assert.ok(!xml.includes("剧情意图"), "the formal DOCX must not contain internal dialogue notes");
+  assert.ok(!xml.includes("集尾强钩子"), "the formal DOCX must not contain structural review fields");
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }

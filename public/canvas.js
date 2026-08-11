@@ -1379,7 +1379,7 @@ function createNode(kind, point = canvasState.menuPoint, options = {}) {
     ...(kind === "video" ? { width: VIDEO_NODE_DEFAULT_WIDTH, height: VIDEO_NODE_DEFAULT_HEIGHT, ratioLayoutRatio: "", ratioManualSize: false, settings: { ...VIDEO_NODE_DEFAULTS, ...initialSettings }, liveness: { name: "真人A", description: "", status: "idle", assetUrl: "" }, status: "idle", statusMessage: "", videoUrl: "", taskId: "", taskProvider: "" } : {}),
   };
   clampNodePosition(node);
-  if (kind === "video" && moveVideoNodeAwayFromOverlaps(node, canvasState.nodes)) {
+  if (kind === "video" && !options.preserveDropPoint && moveVideoNodeAwayFromOverlaps(node, canvasState.nodes)) {
     canvasState.layoutChanged = true;
   }
   canvasState.nodes.push(node);
@@ -5079,6 +5079,7 @@ function createNodeFromConnectionMenu(kind, successMessage) {
   const targetNode = createNode(kind, pending.point, {
     render: false,
     silent: true,
+    preserveDropPoint: true,
     settings: kind === "video" ? { ratio: VIDEO_NODE_DEFAULTS.ratio } : {},
   });
   if (!canvasState.connections.some((connection) => connection.from === source.id && connection.to === targetNode.id)) {

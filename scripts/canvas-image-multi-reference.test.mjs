@@ -49,8 +49,8 @@ assert.match(
   /\.canvas-node\.is-connection-target > \.node-port\.input-port[\s\S]*?scale\(1\.55\)/,
   "接近输入点时必须显示明确的吸附反馈",
 );
-assert.match(html, /canvas\.css\?v=canvas-status-center-20260811-r3/, "画布样式变更必须更新长期缓存版本号");
-assert.match(html, /canvas\.js\?v=canvas-status-center-20260811-r3/, "画布交互变更必须更新长期缓存版本号");
+assert.match(html, /canvas\.css\?v=canvas-connection-drop-20260811-r4/, "画布样式变更必须更新长期缓存版本号");
+assert.match(html, /canvas\.js\?v=canvas-connection-drop-20260811-r4/, "画布交互变更必须更新长期缓存版本号");
 
 const targetContext = {
   Math,

@@ -16,9 +16,24 @@ const payload = {
   episode_scale: "1 episodes",
   sourceArtifacts: {
     arc: { units: [{ number: 1, title_zh: "直播里的好运绳结", plot_zh: "Iris 在直播中看见巨兽。" }] },
-    scenes: { scenes: [{ id: "S001", unit_number: 1, location_zh: "Blair House 客厅", time_zh: "夜晚", indoor_outdoor: "内", characters: ["C001", "C002"], action_zh: "Iris 走进客厅，Ethan 站在窗边。" }] },
+    scenes: { scenes: [{ id: "S001", unit_number: 1, location_zh: "Blair House 客厅", time_zh: "夜晚", indoor_outdoor: "内", characters: ["C001", "C002"], action_zh: "内部场景动作不应成为正式导出正文。" }] },
     dialogue: { lines: [{ id: "D1", scene_id: "S001", speaker: "C001", delivery_en: "urgent", dialogue_en: "There is something outside.", intent_zh: "Iris 感到不安。" }] },
     characters: { characters: [{ id: "C001", name_en: "Iris Brooks", name_zh: "Iris Brooks" }, { id: "C002", name_en: "Ethan Cole", name_zh: "Ethan Cole" }] },
+  },
+  screenplay: {
+    schemaVersion: 1,
+    episodes: [{
+      number: 1,
+      scenes: [{
+        number: "1-1",
+        location_zh: "Blair House 客厅",
+        time_zh: "夜晚",
+        indoor_outdoor: "内",
+        characters: ["Iris Brooks", "Ethan Cole"],
+        action_zh: "Iris 走进客厅，Ethan 站在窗边。",
+        dialogue: [{ speaker: "Iris Brooks", dialogue: "There is something outside." }],
+      }],
+    }],
   },
 };
 
@@ -31,8 +46,9 @@ try {
 
   assert.match(xml, /剧本正文：/, "必须有剧本正文标题");
   assert.match(xml, /第一集/, "分集标题必须使用中文集数");
-  assert.match(xml, /Blair House 客厅 夜 内/, "首场必须为 [地点] [日夜] [内外]");
+  assert.match(xml, /1-1 Blair House 客厅 夜 内/, "首场必须为 [集-场] [地点] [日夜] [内外]");
   assert.match(xml, /△Iris 走进客厅，Ethan 站在窗边。/, "动作必须以 △ 开头");
+  assert.doesNotMatch(xml, /内部场景动作不应成为正式导出正文/, "正式 DOCX 必须优先使用 screenplay 交付结构");
   assert.match(xml, /Iris Brooks：There is something outside\./, "角色名与对白必须处于同一段");
   assert.match(xml, /Iris Brooks/, "出场人物必须用角色名字");
   assert.match(xml, /Ethan Cole/, "出场人物必须列出全部角色名字");

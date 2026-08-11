@@ -144,6 +144,7 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
   scenes: {
     SCENE_REFERENCE_INTEGRITY: "人物、地点和事件引用有效",
     SCENE_STATE_CHANGE: "每场戏都改变信息、关系或行动状态",
+    SCENE_SCREENPLAY_BODY: "每场都有连续、可拍摄的正式剧本动作正文，不是镜头关键词或剧情摘要",
     SCENE_DURATION: "每集所有场景的 shot_plan[].duration_seconds 之和相对用户设定的单集目标秒数允许偏差不超过 ±25%（生成时按目标 ±10% 设计）",
     SCENE_DIRECTABILITY: "场面可拍摄、可表演且可制作",
   },
@@ -553,7 +554,7 @@ function stageOutputContract(stage, mode) {
     // deepseek-v4-pro returned invalid JSON at 256s, claude-haiku-4-5 returned an
     // empty scenes array. visual_profile keeps only the 3 fields a shot plan needs
     // for continuity; props keep identity and recurrence, not their look.
-    scenes: `{"scenes":[{"id":"S001","unit_number":1,"purpose_zh":"场景目的","time_zh":"时间","location_zh":"地点","characters":["C001"],"action_zh":"连续动作推进","conflict_zh":"场面冲突","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"indoor_outdoor":"室内外","lighting":"光线","palette":"色调"},"props":[{"id":"PR01","name_zh":"道具名","description_zh":"道具描述","recurring":true}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
+    scenes: `{"scenes":[{"id":"S001","unit_number":1,"purpose_zh":"场景目的","time_zh":"时间","location_zh":"地点","characters":["C001"],"action_zh":"连续动作推进","screenplay_zh":"正式剧本动作正文：连续、可拍摄的动作与反应，不写剧情摘要，不包含场次标题或对白标签。","conflict_zh":"场面冲突","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"indoor_outdoor":"室内外","lighting":"光线","palette":"色调"},"props":[{"id":"PR01","name_zh":"道具名","description_zh":"道具描述","recurring":true}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
     dialogue: `{"lines":[{"id":"D001","scene_id":"S001","speaker":"C001","intent_zh":"中文剧情意图","dialogue_en":"Natural localized English dialogue.","subtext_zh":"潜台词","delivery_en":"delivery note in English"}],"localization_checks":["口语化","人物声线一致","未泄露悬念"]}`,
   };
   if (normalized === "cn_short_drama") {
@@ -615,6 +616,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
   const sceneRules = stage === "scenes" ? [
     "场景与镜头必须覆盖每一个分集/章节编号，至少每集一个完整场次；不得只输出少量代表场景。",
     "每个场次必须把对应的剧情正文转换为可拍的动作、冲突、人物选择、选择结果和因果转折，不能只写视觉氛围或镜头关键词。",
+    "每个场次必须同时输出 screenplay_zh：这是正式剧本中的连续动作正文，写人物正在做什么、如何反应、动作如何改变局面；不要写‘剧情意图’、镜头编号、字段标签或摘要句。",
     ...(sceneDurationPrompt ? [sceneDurationPrompt] : []),
   ] : [];
   const characterCompleteness = stage === "characters" ? [
@@ -642,7 +644,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
     "arc 的 number 必须是全局集数；scenes 的 id 必须在全剧内唯一，不能每个批次都从同一个编号重新开始。",
   ] : [];
   return [
-    "你是 PixelTale 编剧 Agent 的阶段执行器。你只负责当前阶段，不能跳过结构化资产直接写散文。",
+    "你是 PixelTale 编剧 Agent 的阶段执行器。你只负责当前阶段，但所有阶段最终都必须服务于可拍摄的正式剧本；不能把分集摘要、镜头关键词或对白清单当成最终剧本。",
     "输出严格 JSON，不要 Markdown，不要代码围栏，不要解释，不要增加契约之外的顶层字段。",
     dialogueInstruction,
     `当前阶段：${stage}。当前模式：${modeLabel(mode)}。`,
@@ -691,6 +693,7 @@ function stageContextContent(artifact, { unitScope = [] } = {}) {
         location_zh: text(scene?.location_zh, 180),
         characters: asArray(scene?.characters).slice(0, 10),
         action_zh: text(scene?.action_zh, scope.size ? 1800 : 460),
+        screenplay_zh: text(scene?.screenplay_zh, scope.size ? 2600 : 700),
         purpose_zh: text(scene?.purpose_zh, 360),
       }));
     return { scenes, props: asArray(content.props).slice(0, 24) };
@@ -1553,6 +1556,7 @@ function validateContent(stage, content, input = {}) {
         || !text(item.time_zh, 120)
         || !text(item.location_zh, 300)
         || !text(item.action_zh, 5000)
+        || input.formalScreenplayRequired === true && !text(item.screenplay_zh, 8000)
         || !text(item.conflict_zh, 2000)
         || !text(item.choice_zh, 2000)
         || !text(item.result_zh, 2000)
@@ -1561,7 +1565,9 @@ function validateContent(stage, content, input = {}) {
     if (!expectedCount || scenes.length < expectedUnits.length || expectedUnits.some((number) => !coveredUnits.has(number)) || lockedOverlap.length && input.allowLockedUnitRevision !== true || invalidScene) {
       const error = new Error(lockedOverlap.length && input.allowLockedUnitRevision !== true
         ? `场景与镜头包含已锁定的第${lockedOverlap.join("、")}集，不能重复提交`
-        : `场景与镜头必须只覆盖当前批次的第${expectedUnits.join("、")}集，不能漏集或只生成少量代表场景`);
+        : input.formalScreenplayRequired === true
+          ? `场景与镜头必须只覆盖当前批次的第${expectedUnits.join("、")}集，并为每场提供完整剧本动作正文，不能漏集或只生成少量代表场景`
+          : `场景与镜头必须只覆盖当前批次的第${expectedUnits.join("、")}集，不能漏集或只生成少量代表场景`);
       error.code = "SCHEMA_INVALID";
       throw error;
     }
@@ -2897,6 +2903,7 @@ function stageBatchInput({ stage, totalUnits, unitScope, lockedUnits, allowLocke
     unitNumbers: normalizeUnitNumbers(unitScope, totalUnits),
     lockedUnitNumbers: normalizeUnitNumbers(lockedUnits, totalUnits),
     allowLockedUnitRevision,
+    formalScreenplayRequired: stage === "scenes",
   };
 }
 
@@ -3105,6 +3112,7 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
   const characters = approved.characters.content;
   const scenes = approved.scenes.content;
   const dialogue = approved.dialogue.content;
+  const characterItems = asArray(characters.characters);
   const creativeControls = normalizeCreativeControls(state.input);
   const timestamp = nowIso(now);
   const handoffId = id("handoff", randomUUID);
@@ -3118,6 +3126,75 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
     error.statusCode = 409;
     throw error;
   }
+  const charactersById = new Map(characterItems.map((item) => [text(item?.id, 120), item]));
+  const expectedEpisodeCount = plannedUnitCount(state.input);
+  const arcUnits = asArray(approved.arc.content.units);
+  const arcUnitNumbers = arcUnits.map((unit) => Number(unit?.number)).filter((number) => Number.isInteger(number));
+  const expectedUnitNumbers = expectedEpisodeCount ? [...Array(expectedEpisodeCount)].map((_, index) => index + 1) : [];
+  if (!expectedEpisodeCount || arcUnits.length !== expectedEpisodeCount || new Set(arcUnitNumbers).size !== arcUnitNumbers.length || expectedUnitNumbers.some((number) => !arcUnitNumbers.includes(number))) {
+    const error = new Error(`正式剧本分集不完整：期望 ${expectedEpisodeCount || "计划"} 集，实际 ${arcUnits.length} 集`);
+    error.code = "HANDOFF_INCOMPLETE";
+    error.statusCode = 409;
+    throw error;
+  }
+  const linesByScene = new Map();
+  asArray(dialogue.lines).forEach((line) => {
+    const sceneId = text(line?.scene_id, 120);
+    if (!sceneId) return;
+    if (!linesByScene.has(sceneId)) linesByScene.set(sceneId, []);
+    const speakerId = text(line?.speaker, 120);
+    const character = charactersById.get(speakerId);
+    const speaker = text(character?.name_zh || character?.name_en, 200) || speakerId;
+    const dialogueText = text(line?.dialogue_en || line?.dialogue_zh || line?.dialogue, 1600);
+    if (dialogueText) linesByScene.get(sceneId).push({
+      speaker,
+      dialogue: dialogueText,
+      delivery: text(line?.delivery_en, 500),
+    });
+  });
+  const screenplayEpisodes = arcUnits.map((unit) => {
+    const number = Number(unit?.number);
+    const episodeScenes = asArray(scenes.scenes)
+      .filter((scene) => Number(scene?.unit_number) === number)
+      .map((scene, index) => {
+        const sceneId = text(scene?.id, 120);
+        const sceneLines = linesByScene.get(sceneId) || [];
+        const roster = asArray(scene?.characters).map((id) => {
+          const character = charactersById.get(text(id, 120));
+          return text(character?.name_zh || character?.name_en, 200) || text(id, 120);
+        }).filter(Boolean);
+        const action = text(scene?.screenplay_zh || scene?.action_zh, 8000);
+        if (!action || !sceneLines.length) {
+          const error = new Error(`第${number}集 ${sceneId || `${number}-${index + 1}`} 缺少正式剧本动作或对白，不能导出`);
+          error.code = "HANDOFF_INCOMPLETE";
+          error.statusCode = 409;
+          throw error;
+        }
+        return {
+          number: `${number}-${index + 1}`,
+          location_zh: text(scene?.location_zh, 300),
+          time_zh: text(scene?.time_zh, 120),
+          indoor_outdoor: text(scene?.indoor_outdoor, 80),
+          characters: roster,
+          action_zh: action,
+          dialogue: sceneLines,
+        };
+      });
+    if (!episodeScenes.length) {
+      const error = new Error(`第${number}集缺少正式剧本场次，不能导出`);
+      error.code = "HANDOFF_INCOMPLETE";
+      error.statusCode = 409;
+      throw error;
+    }
+    return {
+      number,
+      title_zh: text(unit?.title_zh, 300),
+      scenes: episodeScenes,
+      hook_zh: text(unit?.hook_zh, 2000),
+      cliffhanger_question_zh: text(unit?.cliffhanger_question_zh, 2000),
+    };
+  });
+  const screenplay = { schemaVersion: 1, episodes: screenplayEpisodes };
   const storyTitle = text(state.input?.storyTitle || proposal.title_zh || "PixelTale 剧本", 200);
   const script = [
     `# ${storyTitle}`,
@@ -3131,17 +3208,16 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
     ...asArray(characters.characters).map((item) => `- ${text(item.name_zh || item.name_en, 100)}：${text(item.arc_zh || item.desire_zh, 500)}`),
     "",
     "## 完整剧本正文",
-    ...asArray(approved.arc.content.units).flatMap((unit) => [
-      `### 第${text(unit.number, 20)}集｜${text(unit.title_zh, 200)}`,
-      `开头暴击：${text(unit.impact_zh, 2000)}`,
-      text(unit.plot_zh, 8000),
-      ...asArray(scenes.scenes).filter((scene) => Number(scene.unit_number) === Number(unit.number)).flatMap((scene) => [
-        `#### ${text(scene.id, 60)}｜${text(scene.location_zh, 200)}`,
-        text(scene.action_zh || scene.purpose_zh, 5000),
-        ...asArray(dialogue.lines).filter((line) => text(line.scene_id, 80) === text(scene.id, 80)).map((line) => `${text(line.speaker, 100)}: ${text(line.dialogue_en, 1600)}`),
+    ...screenplayEpisodes.flatMap((episode) => [
+      `### 第${text(episode.number, 20)}集｜${text(episode.title_zh, 200)}`,
+      ...episode.scenes.flatMap((scene) => [
+        `#### ${scene.number} ${text(scene.location_zh, 200)} ${text(scene.time_zh, 120)} ${text(scene.indoor_outdoor, 80)}`,
+        `人物：${scene.characters.join(" ")}`,
+        `△${scene.action_zh}`,
+        ...scene.dialogue.map((line) => `${text(line.speaker, 200)}：${text(line.dialogue, 1600)}`),
       ]),
-      `集尾钩子：${text(unit.hook_zh, 2000)}`,
-      `未回答问题：${text(unit.cliffhanger_question_zh, 2000)}`,
+      `集尾钩子：${text(episode.hook_zh, 2000)}`,
+      `未回答问题：${text(episode.cliffhanger_question_zh, 2000)}`,
       "",
     ]),
     "",
@@ -3162,6 +3238,7 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
     episodeScale: text(state.input?.episodeScale || state.input?.episodeCount, 100),
     duration: text(state.input?.duration || state.input?.durationValue, 100),
     artifactIds: STAGES.map((stage) => approved[stage].id),
+    screenplay,
     script,
     assetManifest: { characters: asArray(characters.characters), relationships: asArray(characters.relationships), worldRules: asArray(characters.world_rules) },
     storyboard: { scenes: asArray(scenes.scenes) },
@@ -3484,7 +3561,7 @@ function createPixelTaleAgent(options = {}) {
           const recoveryContent = stage === "arc" && !text(previousBatchContent.arc_summary_zh, 2000)
             ? { ...previousBatchContent, arc_summary_zh: text(accumulatedContent.arc_summary_zh || sourceArtifact?.content?.arc_summary_zh || "本季故事围绕核心冲突持续推进，并在每集结尾留下下一集追问。", 2000) }
             : previousBatchContent;
-          batchContent = validateContent(stage, recoveryContent, { ...batchInput, unitScope: batchUnits, lockedUnitNumbers: lockedUnitNumbers(state, stage), allowLockedUnitRevision });
+          batchContent = validateContent(stage, recoveryContent, { ...batchInput, formalScreenplayRequired: false, unitScope: batchUnits, lockedUnitNumbers: lockedUnitNumbers(state, stage), allowLockedUnitRevision });
           mergedContent = mergeStageBatchContent(stage, accumulatedContent, batchContent, { unitNumbers: batchUnits, state, allowLockedUnitRevision });
           primary = {
             provider: "recovery",

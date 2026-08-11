@@ -66,6 +66,7 @@ const dialogue = { lines: [line(1), line(2)], localization_checks: ["口语化",
 assert.doesNotThrow(() => validateContent("arc", arc, { episodeCount: 2 }), "complete episode prose must pass the arc contract");
 assert.throws(() => validateContent("arc", { ...arc, units: [unit(1)] }, { episodeCount: 2 }), /当前批次.*完整剧情/, "an arc missing an episode must be rejected");
 assert.doesNotThrow(() => validateContent("scenes", scenes, { episodeCount: 2 }), "scene coverage must pass for every episode");
+assert.throws(() => validateContent("scenes", scenes, { episodeCount: 2, formalScreenplayRequired: true }), /完整剧本/, "new scene generation must include a formal screenplay body");
 assert.doesNotThrow(() => validateContent("dialogue", dialogue, { episodeCount: 2 }), "localized dialogue must pass the dialogue contract");
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixeltale-script-docx-"));

@@ -1081,6 +1081,7 @@ const testRouter = {
               location_zh: "公寓",
               characters: ["C001"],
               action_zh: "主角作出选择并触发即时威胁。",
+              screenplay_zh: "主角作出选择并触发即时威胁。她抓起原件冲向后门，门外的脚步声同时停在门前。",
               conflict_zh: "追捕者逼近，证据会暴露主角身份。",
               choice_zh: "主角带走原件并放弃安全路线。",
               result_zh: "逃生路线被锁定，但主角拿到了关键证据。",
@@ -1706,6 +1707,23 @@ assert.throws(
   (error) => error.code === "HANDOFF_INCOMPLETE",
   "handoff must reject dialogue that does not cover every scene",
 );
+
+const handoffReadyState = structuredClone(handoffIncompleteState);
+handoffReadyState.artifacts.find((item) => item.id === "h_scenes").content.scenes[0] = {
+  id: "S001",
+  unit_number: 1,
+  time_zh: "夜",
+  indoor_outdoor: "内",
+  location_zh: "急诊室后门",
+  characters: ["C001"],
+  action_zh: "旧动作字段不应覆盖正式剧本文本。",
+  screenplay_zh: "主角按住正在滑落的文件夹，听见门外脚步逼近。他翻出原始登记，发现时间戳比警方公布的时间早了十分钟，随即撕下登记页冲向后门。",
+};
+handoffReadyState.artifacts.find((item) => item.id === "h_dialogue").content.lines[0].scene_id = "S001";
+const formalHandoff = createHandoffPayload({ state: handoffReadyState, project: { id: "t", title: "t", episode: "DRAFT" }, now: () => new Date("2026-08-08T00:00:00Z"), randomUUID: () => "uuid-2" });
+assert.equal(formalHandoff.screenplay.episodes[0].scenes[0].number, "1-1", "handoff must assign a stable episode-scene number");
+assert.equal(formalHandoff.screenplay.episodes[0].scenes[0].action_zh, handoffReadyState.artifacts.find((item) => item.id === "h_scenes").content.scenes[0].screenplay_zh, "handoff must prefer the formal screenplay body over internal action notes");
+assert.match(formalHandoff.script, /1-1 急诊室后门 夜 内/, "handoff script must use screenplay scene headings");
 
 // 9. Streaming read must time out even when AbortController cannot interrupt
 //    reader.read() — a hung SSE body used to stall authoring for 30+ minutes.

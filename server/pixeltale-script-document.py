@@ -245,6 +245,7 @@ def document_xml(payload):
     arc = source.get("arc") or {}
     scenes = source.get("scenes") or {}
     dialogue = source.get("dialogue") or {}
+    screenplay = payload.get("screenplay") or {}
     input_data = payload.get("input") or {}
 
     title = first(proposal.get("title_zh"), brief.get("title_zh"), payload.get("title"), fallback="PixelTale 正式剧本")
@@ -295,7 +296,30 @@ def document_xml(payload):
         scenes_by_unit.setdefault(int(scene.get("unit_number")), []).append(scene)
 
     body.append(reference_paragraph("剧本正文：", bold=True, before=180))
-    for unit in units:
+    formal_episodes = screenplay.get("episodes") or []
+    if formal_episodes:
+        for episode in formal_episodes:
+            number = int(episode.get("number"))
+            body.append(reference_paragraph(f"第{chinese_number(number)}集", bold=True, before=120))
+            for scene in episode.get("scenes") or []:
+                scene_number = first(scene.get("number"), fallback=f"{number}-1")
+                time_label = normalize_daypart(scene.get("time_zh"))
+                location = first(scene.get("location_zh"), fallback="地点未设定")
+                indoor_label = normalize_indoor(scene.get("indoor_outdoor"), location)
+                body.append(reference_paragraph(f"{scene_number} {location} {time_label} {indoor_label}", bold=True, before=120))
+                roster_names = [clean(name, "") for name in scene.get("characters") or [] if clean(name, "")]
+                if roster_names:
+                    body.append(reference_labeled_paragraph("人物：", " ".join(roster_names)))
+                action = clean(scene.get("action_zh"), "")
+                if action:
+                    body.append(reference_paragraph(action if action.startswith("△") else f"△{action}"))
+                for line in scene.get("dialogue") or []:
+                    speaker_name = first(line.get("speaker"), fallback="人物")
+                    dialogue_text = clean(line.get("dialogue"), "")
+                    if dialogue_text:
+                        body.append(reference_paragraph(f"{speaker_name}：{dialogue_text}"))
+    else:
+      for unit in units:
         number = int(unit.get("number"))
         body.append(reference_paragraph(f"第{chinese_number(number)}集", bold=True, before=120))
         for scene_index, scene in enumerate(scenes_by_unit.get(number, []), start=1):
@@ -303,7 +327,7 @@ def document_xml(payload):
             time_label = normalize_daypart(scene.get("time_zh"))
             location = first(scene.get("location_zh"), fallback="地点未设定")
             indoor_label = normalize_indoor(scene.get("indoor_outdoor"), location)
-            prefix = "" if scene_index == 1 else f"{number}-{scene_index} "
+            prefix = f"{number}-{scene_index} "
             heading_text = f"{prefix}{location} {time_label} {indoor_label}"
             body.append(reference_paragraph(heading_text, bold=True, before=120))
 

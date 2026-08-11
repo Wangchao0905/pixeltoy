@@ -176,7 +176,7 @@ function requiredReviewSeatsFor(stage = state.stage, reviewContent = {}, artifac
 // 达标 = 综合 quality ≥ 75 且所有已评分维度 ≥ 75（未评分维度不算拦截）。
 function scoresMeetGate(reviewContent = {}) {
   const quality = Number(reviewContent.quality);
-  if (!Number.isFinite(quality) || quality < 75) return false;
+  if (!Number.isFinite(quality) || quality < 90) return false;
   const dims = reviewContent.dimensions || {};
   return Object.values(dims).every((entry) => {
     const value = Number(entry && typeof entry === "object" ? entry.average : entry);

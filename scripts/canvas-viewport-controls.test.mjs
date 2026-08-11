@@ -19,5 +19,15 @@ assert.match(js, /data-canvas-zoom/);
 assert.match(js, /event\.key === "0"/);
 assert.match(css, /\.canvas-zoom-controls\s*\{/);
 assert.match(css, /\.canvas-zoom-controls button:focus-visible\s*\{/);
+assert.match(
+  css,
+  /\.canvas-zoom-controls\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*28px 50px 28px 38px;/,
+  "缩放控件必须固定为减号、百分比、加号和重置四列",
+);
+assert.match(
+  css,
+  /\.canvas-zoom-readout\s*\{[\s\S]*?position:\s*static;[\s\S]*?inset:\s*auto;/,
+  "缩放百分比不得脱离控件流并遮挡加号",
+);
 
 console.log("canvas viewport controls tests passed");

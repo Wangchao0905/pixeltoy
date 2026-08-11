@@ -7485,7 +7485,8 @@ body.canvas-page {
   top: 16px;
   right: 16px;
   z-index: 8;
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 28px 50px 28px 38px;
   align-items: center;
   gap: 4px;
   padding: 4px;
@@ -7539,8 +7540,12 @@ body.canvas-page {
 }
 
 .canvas-zoom-readout {
+  position: static;
+  inset: auto;
+  z-index: auto;
   display: grid;
-  min-width: 50px;
+  width: 50px;
+  min-width: 0;
   place-items: center;
   pointer-events: none;
   color: rgba(239, 244, 247, 0.86);

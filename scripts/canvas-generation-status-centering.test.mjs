@@ -42,7 +42,7 @@ assert.match(
   /progressLabel\.textContent = hasProgress \? `生成中 · \$\{progress\}%` : "生成中";/,
   "轮询刷新时必须更新完整的居中生成标签",
 );
-assert.match(html, /canvas\.css\?v=canvas-connection-drop-20260811-r4/, "生成状态样式变更必须更新长期缓存版本号");
-assert.match(html, /canvas\.js\?v=canvas-connection-drop-20260811-r4/, "生成状态交互页面必须更新长期缓存版本号");
+assert.match(html, /canvas\.css\?v=canvas-zoom-layout-20260811-r5/, "生成状态样式变更必须更新长期缓存版本号");
+assert.match(html, /canvas\.js\?v=canvas-zoom-layout-20260811-r5/, "生成状态交互页面必须更新长期缓存版本号");
 
 console.log("canvas generation status centering tests passed");

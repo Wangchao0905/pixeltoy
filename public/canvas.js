@@ -1495,6 +1495,7 @@ function refreshConnectedNodeElements(...nodeIds) {
     const node = canvasState.nodes.find((item) => item.id === nodeId);
     if (!node) continue;
     if (node.kind === "video") refreshVideoNodeElement(nodeId);
+    else if (node.kind === "image") refreshImageNodeElement(nodeId);
     else refreshNodeConnectionClasses(nodeId);
   }
 }
@@ -4150,11 +4151,16 @@ function syncNodeControls(element, node) {
 }
 
 function upstreamSummary(node) {
-  if (!node || node.kind !== "video") return "输出到视频节点后，图片资产会作为视频参考图。";
+  if (!node || !["image", "video"].includes(node.kind)) return "输出到视频节点后，图片资产会作为视频参考图。";
   const sources = canvasState.connections
     .filter((connection) => connection.to === node.id)
     .map((connection) => canvasState.nodes.find((item) => item.id === connection.from))
     .filter(Boolean);
+  if (node.kind === "image") {
+    if (!sources.length) return "可接入多张图片作为出图参考。";
+    const assetCount = upstreamAssetsForNode(node).length;
+    return `已连接 ${sources.length} 张图片，自动引用 ${assetCount} 张参考图。`;
+  }
   const upstreamTailFrame = upstreamTailFrameForVideoNode(node);
   if (upstreamTailFrame?.tailFrameUrl) {
     const assetCount = upstreamAssetsForNode(node).length;

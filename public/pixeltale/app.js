@@ -21,6 +21,7 @@ function createSessionId() {
 
 const sessionId = createSessionId();
 const ACTIVE_RUN_KEY = `pixeltale.story-forge-active-run:${sessionId}`;
+const SESSION_SNAPSHOT_KEY = `pixeltale.story-forge-snapshot:${sessionId}`;
 
 function loadActiveRun() {
   try {
@@ -63,11 +64,22 @@ function consumePendingNewNotice() {
   }
 }
 
+function createEmptyAgent(mode = "tk") {
+  return {
+    mode: mode === "long" ? "long_form_drama" : mode === "cn" ? "cn_short_drama" : "tk_short_drama",
+    stage: "brief",
+    artifacts: [],
+    approvedArtifactIds: [],
+    input: {},
+    routes: {},
+    modelOptions: [],
+  };
+}
+
+const initialMode = pendingMode();
 const state = {
-  mode: pendingMode(),
+  mode: initialMode,
   stage: "brief",
-  hydrating: true,
-  hydrationError: "",
   approved: new Set(),
   busy: false,
   revising: false,
@@ -83,7 +95,7 @@ const state = {
   pendingRerun: null,
   pendingCrossStageRepair: null,
   historyDeletePending: null,
-  agent: null,
+  agent: createEmptyAgent(initialMode),
   routes: { orchestration: "gpt-5.6-terra", continuity: "gemini-3.1-pro", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
   input: {
     platform: "TikTok / TikTok Series",
@@ -108,6 +120,35 @@ const state = {
     idea: "",
   },
 };
+
+function persistSessionSnapshot() {
+  try {
+    sessionStorage.setItem(SESSION_SNAPSHOT_KEY, JSON.stringify({
+      agent: state.agent,
+      stage: state.stage,
+      input: state.input,
+      routes: state.routes,
+      approvedArtifactIds: [...state.approved],
+    }));
+  } catch {
+    // 当前页面仍可继续使用，下一次刷新将由服务端状态恢复。
+  }
+}
+
+function restoreSessionSnapshot() {
+  try {
+    const snapshot = JSON.parse(sessionStorage.getItem(SESSION_SNAPSHOT_KEY) || "null");
+    if (!snapshot?.agent || typeof snapshot.agent !== "object") return false;
+    updateAgentState(snapshot.agent);
+    if (stageOrder.includes(snapshot.stage)) state.stage = snapshot.stage;
+    state.input = { ...state.input, ...(snapshot.input || {}) };
+    state.routes = { ...state.routes, ...(snapshot.routes || {}) };
+    state.approved = new Set(snapshot.approvedArtifactIds || state.agent.approvedArtifactIds || []);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const modelMeta = {
   "gpt-5.6-terra": { name: "GPT 5.6 Terra", provider: "chatgpt", role: "总编排 / 结构", detail: "任务拆解、结构约束与最终复核" },
@@ -424,46 +465,6 @@ async function request(suffix, options = {}) {
   return payload;
 }
 
-function renderHydrationState() {
-  const content = $("#stageContent");
-  if (!content) return;
-  const error = state.hydrationError;
-  content.innerHTML = error
-    ? `<section class="artifact-card empty-artifact hydration-state" role="alert"><div class="hydration-state-mark">!</div><h3>当前项目暂时无法恢复</h3><p>${escapeHtml(error)}</p><button type="button" class="stage-primary" data-retry-hydration>重新读取当前项目</button></section>`
-    : `<section class="artifact-card empty-artifact hydration-state" role="status" aria-live="polite"><div class="hydration-state-mark is-loading">↻</div><h3>正在读取当前项目</h3><p>正在恢复项目内容、阶段进度和后台任务状态，请稍候。</p></section>`;
-  content.querySelector("[data-retry-hydration]")?.addEventListener("click", () => {
-    void syncAgentState({ silent: true, autoRestore: true });
-  });
-}
-
-function renderHydrationShell() {
-  const loading = !state.hydrationError;
-  $("#modeLabel").textContent = "正在恢复项目";
-  $("#agentTaskTitle").textContent = loading ? "正在读取当前项目" : "项目恢复失败";
-  $("#agentTaskCopy").textContent = loading ? "正在恢复项目内容、阶段进度和后台任务状态。" : state.hydrationError;
-  $("#agentTaskCopy").setAttribute("role", loading ? "status" : "alert");
-  $("#agentTaskAction").innerHTML = loading
-    ? '<span class="agent-task-busy" role="status">读取中 · 请稍候</span>'
-    : '<button class="stage-secondary agent-task-primary" data-retry-hydration type="button">重新读取当前项目</button>';
-  $("#agentTaskAction").querySelector("[data-retry-hydration]")?.addEventListener("click", () => {
-    void syncAgentState({ silent: true, autoRestore: true });
-  });
-  $("#flowStepCounter").textContent = "— / 07";
-  $("#agentStatus").textContent = loading ? "正在恢复项目" : "等待重新读取";
-  $("#approvedCount").textContent = "— / 07";
-  $("#progressBar").style.width = "0%";
-  $("#consensusScore").textContent = "—";
-  $("#consensusAgreement").textContent = "—";
-  $("#consensusReviewCompletion").textContent = "—";
-  $("#consensusQuality").textContent = "—";
-  $$(".mode-button").forEach((button) => { button.disabled = true; button.classList.remove("is-active"); });
-  $$(".stage-link").forEach((button) => {
-    button.disabled = true;
-    button.classList.remove("is-active", "is-done", "is-next-stage");
-    button.querySelector(".stage-status")?.replaceChildren(document.createTextNode(loading ? "读取中" : "暂不可用"));
-  });
-}
-
 function historyDate(value) {
   const timestamp = Date.parse(value || "");
   if (!Number.isFinite(timestamp)) return "时间未知";
@@ -688,6 +689,7 @@ function updateAgentState(agent) {
   state.input = { ...state.input, ...(agent.input || {}) };
   state.approved = new Set(agent.approvedArtifactIds || []);
   syncRoutingModelOptions(agent.modelOptions || []);
+  persistSessionSnapshot();
 }
 
 function modelInfo(id) {
@@ -2530,11 +2532,6 @@ function renderRiskNote() {
 }
 
 function renderStage() {
-  if (state.hydrating || !state.agent) {
-    renderHydrationState();
-    renderHydrationShell();
-    return;
-  }
   // 2026-08-10：当前查看的阶段已确认但主流程停在后面 → 自动跳到主流程阶段
   const flowStage = workflowStage();
   if (state.stage !== flowStage && !state.pendingCrossStageRepair?.stage) {
@@ -2548,6 +2545,7 @@ function renderStage() {
   bindStageActions();
   renderShellState();
   renderRiskNote();
+  persistSessionSnapshot();
 }
 
 const RUN_POLL_INTERVAL_MS = 2_000;
@@ -2925,11 +2923,8 @@ async function createHandoff() {
   }
 }
 
-function syncAgentState({ silent = false, autoRestore = false } = {}) {
+function syncAgentState({ silent = false } = {}) {
   if (hydrationRequest) return hydrationRequest;
-  state.hydrating = true;
-  state.hydrationError = "";
-  renderStage();
   hydrationRequest = (async () => {
     let payload = null;
     let lastError = null;
@@ -2945,35 +2940,18 @@ function syncAgentState({ silent = false, autoRestore = false } = {}) {
       }
     }
     if (!payload?.agent) throw lastError || new Error("服务未返回当前项目");
-    state.hydrationError = "";
-    state.hydrating = false;
     updateAgentState(payload.agent);
     state.lastError = "";
     renderStage();
     if (!silent) showToast("已同步独立编剧会话");
-    // 2026-08-10：刷新后 session 无产物（无效/新会话）且存在历史项目 → 自动恢复最近项目。
-    // 仅在初始加载（autoRestore）且非"新建项目"流程时触发，避免打断新建。
-    const artifacts = Array.isArray(payload.agent.artifacts) ? payload.agent.artifacts : [];
     const pendingNew = consumePendingNewNotice();
     if (pendingNew) showToast(pendingNew);
-    if (autoRestore && !artifacts.length && !pendingNew) {
-      const historyData = await request("/history", { timeoutMs: PIXELTALE_STATE_TIMEOUT_MS }).catch(() => null);
-      const entries = (historyData?.history || []).filter((entry) =>
-        entry.sessionId !== sessionId && Number(entry.artifactCount || 0) > 0
-      );
-      if (entries.length) {
-        const target = new URL(window.location.href);
-        target.searchParams.set("session", entries[0].sessionId);
-        target.hash = "brief";
-        window.location.assign(target.toString());
-      }
-    }
   })().catch((error) => {
-    state.hydrating = false;
-    state.hydrationError = userFacingError(error);
-    state.lastError = "";
-    renderStage();
-    if (!silent) showToast(state.hydrationError);
+    if (!silent) {
+      state.lastError = userFacingError(error);
+      renderStage();
+      showToast(state.lastError);
+    }
   }).finally(() => {
     hydrationRequest = null;
   });
@@ -3328,7 +3306,8 @@ $$('[data-open-stage]').forEach((button) => button.addEventListener("click", () 
   renderStage();
 }));
 
+const restoredSession = restoreSessionSnapshot();
 renderStage();
-syncAgentState({ silent: true, autoRestore: true }).finally(() => {
+syncAgentState({ silent: true }).finally(() => {
   if (state.activeRun) void monitorBackgroundRun(state.activeRun);
 });

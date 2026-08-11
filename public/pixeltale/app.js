@@ -2553,12 +2553,7 @@ function renderRiskNote() {
 }
 
 function renderStage() {
-  // 2026-08-10：当前查看的阶段已确认但主流程停在后面 → 自动跳到主流程阶段
   const flowStage = workflowStage();
-  if (state.stage !== flowStage && !state.pendingCrossStageRepair?.stage) {
-    const currentArt = artifactForStage(state.stage);
-    if (currentArt && state.approved.has(currentArt.id)) { state.stage = flowStage; }
-  }
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;
   const currentArtifact = artifactForStage(state.stage);
   const currentReview = reviewForArtifact(currentArtifact)?.content || {};

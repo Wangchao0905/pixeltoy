@@ -432,7 +432,8 @@ assert.match(app, /修正归属：/, "review cards must show the owning stage fo
 assert.match(app, /data-cross-stage-open/, "cross-stage review items must expose a direct navigation action to the owning stage");
 assert.match(app, /pendingCrossStageRepair/, "cross-stage navigation must retain the owning stage repair context");
 assert.match(app, /kind: "cross-stage-repair"/, "the owning stage must expose a concrete repair action instead of only a warning");
-assert.match(app, /state\.stage !== flowStage && !state\.pendingCrossStageRepair\?\.stage/, "cross-stage repair views must not be auto-reset to the main workflow stage");
+assert.doesNotMatch(app, /当前查看的阶段已确认但主流程停在后面/, "viewing a confirmed stage must not silently jump back to the main workflow stage");
+assert.doesNotMatch(app, /if \(state\.stage !== flowStage && !state\.pendingCrossStageRepair\?\.stage\)/, "stage navigation must preserve the explicitly selected stage");
 assert.match(app, /technicalState\.blocked && reviewForArtifact\(artifact\) && !creativeReviewDecisionGroups/, "a rule-blocked creative tradeoff must reach the decision workbench instead of the generic rerun action");
 assert.match(app, /const decisionItems = reviewDecisionGroups\(reviewContent\)/, "the decision card must use merged decision items");
 assert.match(app, /decisionOptions\.slice\(0, 2\)/, "the decision card must show the available repair options");

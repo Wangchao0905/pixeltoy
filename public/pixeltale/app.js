@@ -1161,6 +1161,17 @@ function nextStepMeta() {
   if (refereeDecision.kind === "revise") {
     const ruleBlocked = (Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [])
       .find((failure) => failure.status === "rule_blocked");
+    // 2026-08-11：评分达标（≥75）时不应强制修订，给人工放行出口
+    if (!ruleBlocked && scoresMeetGate(reviewContent)) {
+      return {
+        kind: "human-override",
+        stage: flowStage,
+        title: `${flowMeta.title}评分已达标`,
+        copy: `质量分 ${Math.round(Number(reviewContent.quality))} 达标（≥75）。系统建议定向修订，但你也可以接受当前版本继续。`,
+        label: "接受当前版本并继续（评分已达标）",
+        flowStage,
+      };
+    }
     return {
       kind: "auto-revise",
       stage: flowStage,

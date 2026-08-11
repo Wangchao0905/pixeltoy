@@ -119,6 +119,7 @@ const state = {
     stageGuidance: {},
     storyTitle: "",
     idea: "",
+    dnaKeywords: [],
   },
 };
 
@@ -1605,6 +1606,8 @@ function renderInspirationPool() {
 function addInspirationToIdea(keyword) {
   const field = $("#idea");
   if (!field || !keyword) return;
+  const dnaKeywords = Array.isArray(state.input.dnaKeywords) ? state.input.dnaKeywords.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  if (!dnaKeywords.includes(keyword)) state.input.dnaKeywords = [...dnaKeywords, keyword];
   const prefix = "灵感关键词：";
   const current = field.value.trim();
   const terms = current.startsWith(prefix) ? current.slice(prefix.length).split(/[、，,]/).map((item) => item.trim()).filter(Boolean) : [];

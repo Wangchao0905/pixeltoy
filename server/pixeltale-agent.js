@@ -111,6 +111,8 @@ const AUTO_REPAIR_TOKEN_BUDGET = 30_000;
 const STAGE_REVIEW_CRITERIA = Object.freeze({
   brief: {
     BRIEF_SPEC_MATCH: "创作规格与用户输入一致",
+    BRIEF_SOURCE_ANCHOR: "原始大纲中的主角、核心场景、核心威胁与主线谜团被准确保留",
+    DNA_SIGNAL_ALIGNMENT: "已选剧本 DNA 标签被转化为可见的剧情机制、人物选择或线索推进",
     BRIEF_PROJECT_ISOLATION: "没有混入其他项目或旧故事",
     BRIEF_CORE_CONFLICT: "核心冲突包含主角、目标、阻碍与代价",
     BRIEF_AUDIENCE_MARKET: "受众与目标市场方向成立",
@@ -124,17 +126,23 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     TITLE_MARKET_FIT: "符合目标市场与受众的传播语感",
   },
   proposal: {
+    SOURCE_STORY_ANCHOR: "故事提案继续承接用户原始大纲，不替换成无关故事",
+    DNA_SIGNAL_ALIGNMENT: "已选剧本 DNA 标签被转化为可见的剧情机制、人物选择或线索推进",
     PROPOSAL_CAUSAL_CHAIN: "目标、阻碍、代价和行动形成因果链",
     PROPOSAL_FIRST_IMPACT: "首个冲击可视且立即改变局面",
     PROPOSAL_PROMISED_PAYOFF: "故事承诺与首个反转可兑现",
   },
   characters: {
+    SOURCE_STORY_ANCHOR: "人物体系服务于用户原始大纲的主角、威胁与生存目标",
+    DNA_SIGNAL_ALIGNMENT: "已选剧本 DNA 标签被转化为人物关系、行为和选择",
     CHARACTER_LOCALIZATION: "姓名、身份和社会细节符合地区",
     CHARACTER_MOTIVATION: "欲望、恐惧、秘密和选择相互支撑",
     CHARACTER_RELATIONSHIP_ENGINE: "人物关系能够持续制造行动与冲突",
     CHARACTER_WORLD_CONSISTENCY: "人物设定不违反已确认世界规则",
   },
   arc: {
+    SOURCE_STORY_ANCHOR: "分集主线持续推进用户原始大纲的核心事件与谜团",
+    DNA_SIGNAL_ALIGNMENT: "已选剧本 DNA 标签被转化为逐集冲突、节奏、反转或回收",
     ARC_UNIT_COUNT: "单元数量与创作规格一致",
     ARC_CAUSAL_PROGRESS: "每个单元都推进主因果链",
     ARC_REVERSAL_HOOK: "反转与集尾钩子有证据且不重复",
@@ -142,6 +150,8 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     ARC_EPISODE_PLOT_COMPLETENESS: "每个单元都有完整剧情推进，不是审核摘要",
   },
   scenes: {
+    SOURCE_STORY_ANCHOR: "场景与动作具体呈现用户原始大纲的核心环境、威胁与行动",
+    DNA_SIGNAL_ALIGNMENT: "已选剧本 DNA 标签被转化为可拍摄的场面动作和视觉/听觉线索",
     SCENE_REFERENCE_INTEGRITY: "人物、地点和事件引用有效",
     SCENE_STATE_CHANGE: "每场戏都改变信息、关系或行动状态",
     SCENE_SCREENPLAY_BODY: "每场都有连续、可拍摄的正式剧本动作正文，不是镜头关键词或剧情摘要",
@@ -149,6 +159,8 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     SCENE_DIRECTABILITY: "场面可拍摄、可表演且可制作",
   },
   dialogue: {
+    SOURCE_STORY_ANCHOR: "对白服务于用户原始大纲中的人物目标、威胁与线索推进",
+    DNA_SIGNAL_ALIGNMENT: "已选剧本 DNA 标签被转化为对白中的冲突、潜台词或信息递进",
     DIALOGUE_REFERENCE_INTEGRITY: "说话人与场景引用有效",
     DIALOGUE_INTENT_MATCH: "英文对白准确兑现中文剧情意图",
     DIALOGUE_LOCALIZATION: "口语、身份、地区和关系语感自然",
@@ -298,6 +310,34 @@ function audiencePrompt(input = {}) {
       : "在目标驱动、人物关系、情感张力与悬念推进之间保持平衡，并以用户创作想法为最高优先级。";
   const label = { all: "全部受众", male: "男性受众", female: "女性受众" }[direction];
   return `目标受众偏好方向：${label}。${guidance} 此方向只决定选题、人物关系、爽点和钩子的优先级，不得把任何性别写成固定审美或刻板角色。`;
+}
+
+function sourceIdeaPrompt(input = {}) {
+  const idea = text(input.idea, 12000);
+  return [
+    `用户原始创作大纲（跨阶段最高优先级）：${idea || "未提供，不能自行补写一个完全不同的故事。"}`,
+    "故事锚点规则：必须保留原始大纲中的主角身份、核心环境、触发事件、主要威胁、主线谜团、逃生/行动目标与代价；后续阶段只能扩展因果、人物和场景，不得替换、改写成无关故事或用通用类型模板覆盖原始大纲。",
+    "如果原始大纲与默认模式、市场或示例冲突，以原始大纲的故事事实为准；市场规则只调整姓名、语言和社会细节，不改变故事核心。",
+  ].join("\n");
+}
+
+function selectedDnaKeywords(input = {}) {
+  const explicit = asArray(input.dnaKeywords).map((item) => typeof item === "object" ? item?.keyword : item).map((item) => text(item, 120)).filter(Boolean);
+  const legacy = [...text(input.idea, 12000).matchAll(/灵感关键词：([^\n]+)/gu)]
+    .flatMap((match) => String(match[1] || "").split(/[、，,；;]+/u))
+    .map((item) => text(item, 120))
+    .filter(Boolean);
+  return uniqueText([...explicit, ...legacy], 24);
+}
+
+function dnaSignalPrompt(input = {}) {
+  const keywords = selectedDnaKeywords(input);
+  if (!keywords.length) return "已选择的剧本 DNA：未选择标签；不要自行虚构用户的 DNA 偏好。";
+  return [
+    `已选择的剧本 DNA（必须采纳）：${keywords.join("、")}。`,
+    "DNA 落地规则：每个已选标签都必须落实到剧情机制、人物选择、冲突升级、线索推进、场面动作或对白潜台词中的至少一处；不能只在标题、标签或说明里复述，也不能用无关类型套路替代。",
+    "如果标签属于叙事逻辑，必须改变事件排列或信息释放；如果属于爽点/情绪关系，必须改变人物关系或选择；如果属于世界设定/视觉风格，必须形成可持续的环境规则、视觉线索或声音线索。",
+  ].join("\n");
 }
 
 function stageParticipationPrompt(stage, input = {}) {
@@ -538,7 +578,7 @@ function stageOutputContract(stage, mode) {
     ? `\n正式片名字段 title_en 必须使用英文；其余带 _zh 的解释字段使用中文。模式：${modeLabel(mode)}。`
     : `\n所有中文剧情字段必须使用中文；对白字段必须是自然、口语化、符合人物身份与语境的英文。不要逐字直译。模式：${modeLabel(mode)}。`;
   const contracts = {
-    brief: `{"title_zh":"故事名","logline_zh":"一句话梗概","core_conflict_zh":"核心冲突","viewer_question_zh":"观众要追问的问题","episode_promise_zh":"每集持续兑现的承诺","mode_rules":["模式约束"]}`,
+    brief: `{"title_zh":"故事名","source_anchor_zh":"用一句话准确复述用户原始大纲的不可替换故事锚点","dna_application_zh":"逐项说明已选 DNA 标签如何作用于剧情","logline_zh":"一句话梗概","core_conflict_zh":"核心冲突","viewer_question_zh":"观众要追问的问题","episode_promise_zh":"每集持续兑现的承诺","mode_rules":["模式约束"]}`,
     title: `{"candidates":[{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"},{"title_en":"English release title","explanation_zh":"中文释义","style_zh":"风格标签","tone_zh":"语气与气质","naming_gene_zh":"命名基因","reason_zh":"命名理由"}],"selection_note_zh":"选择建议"}`,
     proposal: `{"title_zh":"故事名","premise_zh":"核心命题","logline_zh":"一句话梗概","viewer_question_zh":"核心悬念","protagonist_goal_zh":"主角目标","antagonistic_force_zh":"对抗力量","season_or_series_engine_zh":"持续推进引擎","first_impact_zh":"开头暴击","episode_hook_zh":"集尾钩子","reversal_zh":"首个反转"}`,
     // visual_profile keeps only the 4 fields needed for scene continuity.
@@ -650,6 +690,8 @@ function stageSystemPrompt(stage, mode, input = {}) {
     `当前阶段：${stage}。当前模式：${modeLabel(mode)}。`,
     creativeControlPrompt(controls, mode),
     audiencePrompt(input),
+    sourceIdeaPrompt(input),
+    dnaSignalPrompt(input),
     marketPrompt(input, mode),
     stageParticipationPrompt(stage, input),
     ...tkRules,
@@ -778,6 +820,12 @@ function stageUserPrompt({ stage, mode, input, previousArtifacts, project, exclu
         ],
       },
     } : {}),
+    sourceStoryLabel: "用户原始创作大纲（跨阶段最高优先级）",
+    sourceStoryAnchor: text(input.idea, 12000),
+    sourceStoryRule: "不得替换、改写成无关故事；只允许在原始大纲之上扩展因果、人物和场景。",
+    dnaSignalLabel: "已选择的剧本 DNA（必须采纳）",
+    selectedDnaKeywords: selectedDnaKeywords(input),
+    dnaImplementationRule: "每个已选 DNA 标签必须落实到剧情机制、人物选择或线索推进，不能只复述标签。",
     userInput: stage === "scenes" ? scenePromptInput(input) : asObject(input),
     approvedContext: prior,
   }, null, 2).slice(0, 180000);
@@ -801,6 +849,8 @@ function reviewSystemPrompt(stage, mode, input = {}) {
     "只有 cross_validation、consistency、adversarial 三项均为 true，并且阶段专项检查均通过时，pass 才能为 true；发现任一硬伤必须 pass=false，并在 required_changes 中给出可执行修订意见。",
     creativeControlPrompt(input, mode),
     audiencePrompt(input),
+    sourceIdeaPrompt(input),
+    dnaSignalPrompt(input),
     marketPrompt(input, mode),
     stageParticipationPrompt(stage, input),
     "pass 只有在结构完整、因果清晰、可执行、符合模式节奏、没有把悬念提前解释，并且角色名、地名、社会细节和对白都符合目标市场时才为 true。",
@@ -868,6 +918,10 @@ function reviewUserPrompt({ stage, mode, artifact, previousArtifacts, input, rev
     mode,
     audience: normalizeAudience(input),
     creativeControls: normalizeCreativeControls(input),
+    sourceStoryAnchor: text(input.idea, 12000),
+    sourceStoryRule: "若当前产物与原始大纲的主角、核心环境、主要威胁或主线谜团脱离，必须按 SOURCE_STORY_ANCHOR / BRIEF_SOURCE_ANCHOR 记录为阻断问题。",
+    selectedDnaKeywords: selectedDnaKeywords(input),
+    dnaImplementationRule: "若已选 DNA 只被复述、未改变剧情机制、人物选择或线索推进，必须按 DNA_SIGNAL_ALIGNMENT 记录为阻断问题。",
     market: normalizeMarket(input, mode),
     stageParticipation: normalizeStageOptions(input),
     ...(UNIT_STAGES.has(stage) ? {

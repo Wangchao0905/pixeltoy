@@ -58,6 +58,30 @@ assert.ok(lowStructurePageIssues.some((item) => item.id === "dimension_floor_str
 assert.ok(lowStructurePageIssues.some((item) => item.id === "quality_floor"), "整体质量低于 80 分必须进入页面定向修订清单");
 
 const durationInput = { durationValue: 90, durationUnit: "sec", openingImpactSeconds: 3, episodeCount: 30 };
+const sourceIdeaInput = {
+  ...durationInput,
+  idea: "10 岁男孩在跨国航班失事坠落太平洋后孤身幸存于一座与世隔绝的荒岛；荒岛深处有神秘外星基地，能量泄漏催生巨型掠食巨兽，空难其实是外星文明用于观测的生物实验样本。关键词：开场暴击、线索递进、超自然信号。",
+};
+const sourceIdeaSystemPrompt = stageSystemPrompt("arc", "tk_short_drama", sourceIdeaInput);
+const sourceIdeaUserPrompt = stageUserPrompt({ stage: "arc", mode: "tk_short_drama", input: sourceIdeaInput, previousArtifacts: [], project: {} });
+for (const prompt of [sourceIdeaSystemPrompt, sourceIdeaUserPrompt]) {
+  assert.match(prompt, /用户原始创作大纲/u, "every stage prompt must label the raw idea as the source story anchor");
+  assert.match(prompt, /跨国航班.*太平洋.*荒岛.*外星基地.*巨型掠食巨兽/u, "every stage prompt must carry the user's concrete premise into generation");
+  assert.match(prompt, /不得替换|不得改写成无关故事/u, "every stage prompt must forbid replacing the source premise with a generic story");
+}
+assert.match(agent, /BRIEF_SOURCE_ANCHOR|SOURCE_STORY_ANCHOR/u, "review criteria must explicitly check source-story alignment");
+assert.match(agent, /source_anchor_zh/u, "stage output must preserve a compact source-story anchor for downstream stages");
+const dnaInput = { ...sourceIdeaInput, dnaKeywords: ["开场暴击", "线索递进", "超自然信号"] };
+const dnaSystemPrompt = stageSystemPrompt("arc", "tk_short_drama", dnaInput);
+const dnaUserPrompt = stageUserPrompt({ stage: "arc", mode: "tk_short_drama", input: dnaInput, previousArtifacts: [], project: {} });
+for (const prompt of [dnaSystemPrompt, dnaUserPrompt]) {
+  assert.match(prompt, /已选择的剧本 DNA/u, "selected DNA must be a first-class prompt input");
+  assert.match(prompt, /开场暴击.*线索递进.*超自然信号/u, "selected DNA keywords must reach every stage prompt");
+  assert.match(prompt, /落实到剧情机制|人物选择|线索推进/u, "selected DNA must be implemented in visible story behavior");
+}
+assert.match(agent, /DNA_SIGNAL_ALIGNMENT/u, "review criteria must check whether selected DNA signals are actually used");
+assert.match(agent, /dnaKeywords/u, "the server contract must carry selected DNA keywords separately from free-form idea text");
+assert.match(app, /dnaKeywords/u, "the PixelTale UI must persist selected DNA keywords as structured input");
 const sceneSystemPrompt = stageSystemPrompt("scenes", "tk_short_drama", durationInput);
 const sceneUserPrompt = stageUserPrompt({ stage: "scenes", mode: "tk_short_drama", input: durationInput, previousArtifacts: [], project: {}, unitScope: [1] });
 for (const prompt of [sceneSystemPrompt, sceneUserPrompt]) {

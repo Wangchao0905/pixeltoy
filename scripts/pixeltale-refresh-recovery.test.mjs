@@ -20,6 +20,9 @@ assert.doesNotMatch(app, /if \(!state\.agent\) location\.reload\(\)/, "刷新恢
 assert.match(app, /syncAgentState\(\{ silent: true, autoRestore: true \}\)\.finally\(\(\) => \{[\s\S]{0,180}if \(state\.activeRun\) void monitorBackgroundRun\(state\.activeRun\)/, "刷新后必须继续监控已持久化的后台任务");
 assert.match(app, /function updateAgentState\(agent\) \{\s*if \(!agent \|\| typeof agent !== "object"\) return;/, "后台任务缺少状态时不得清空已恢复的项目");
 assert.match(app, /if \(!result\?\.state\) \{[\s\S]{0,180}renderStage\(\)/, "后台任务缺少完整状态时必须保留当前页面内容");
+assert.match(app, /function consumePendingNewNotice\([\s\S]{0,300}sessionStorage\.removeItem\(PENDING_NOTICE_KEY\)/, "新建剧集标记必须在状态恢复流程内消费");
+assert.match(app, /const pendingNew = consumePendingNewNotice\(\);[\s\S]{0,220}if \(autoRestore && !artifacts\.length && !pendingNew\)/, "新建的空会话不得被自动恢复逻辑替换为旧项目");
+assert.doesNotMatch(app, /syncAgentState\(\{ silent: true, autoRestore: true \}\)\.finally\([\s\S]{0,400}sessionStorage\.removeItem\(PENDING_NOTICE_KEY\)/, "启动时不得在状态恢复前清除新建剧集标记");
 
 const scoreUse = app.indexOf("scoresMet");
 const scoreDeclaration = app.indexOf("const scoresMet = scoresMeetGate(reviewContent);");

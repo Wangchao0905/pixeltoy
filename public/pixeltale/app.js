@@ -53,6 +53,16 @@ function pendingMode() {
   }
 }
 
+function consumePendingNewNotice() {
+  try {
+    const notice = sessionStorage.getItem(PENDING_NOTICE_KEY) || "";
+    if (notice) sessionStorage.removeItem(PENDING_NOTICE_KEY);
+    return notice;
+  } catch {
+    return "";
+  }
+}
+
 const state = {
   mode: pendingMode(),
   stage: "brief",
@@ -2943,7 +2953,8 @@ function syncAgentState({ silent = false, autoRestore = false } = {}) {
     // 2026-08-10：刷新后 session 无产物（无效/新会话）且存在历史项目 → 自动恢复最近项目。
     // 仅在初始加载（autoRestore）且非"新建项目"流程时触发，避免打断新建。
     const artifacts = Array.isArray(payload.agent.artifacts) ? payload.agent.artifacts : [];
-    const pendingNew = (() => { try { return sessionStorage.getItem(PENDING_NOTICE_KEY); } catch { return ""; } })();
+    const pendingNew = consumePendingNewNotice();
+    if (pendingNew) showToast(pendingNew);
     if (autoRestore && !artifacts.length && !pendingNew) {
       const historyData = await request("/history", { timeoutMs: PIXELTALE_STATE_TIMEOUT_MS }).catch(() => null);
       const entries = (historyData?.history || []).filter((entry) =>
@@ -3320,12 +3331,3 @@ renderStage();
 syncAgentState({ silent: true, autoRestore: true }).finally(() => {
   if (state.activeRun) void monitorBackgroundRun(state.activeRun);
 });
-try {
-  const notice = sessionStorage.getItem(PENDING_NOTICE_KEY);
-  if (notice) {
-    sessionStorage.removeItem(PENDING_NOTICE_KEY);
-    showToast(notice);
-  }
-} catch {
-  // Ignore storage restrictions; the new session is still usable.
-}

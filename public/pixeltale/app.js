@@ -1311,7 +1311,7 @@ function renderInlineHumanOverrideForm(stage) {
     <p>自动修订已停止，不会再自动重复改稿。请在页面内查看依据、写下取舍理由后再确认。</p>
     ${choice ? `<small class="inline-decision-choice">当前选择：${escapeHtml(choice)}</small>` : ""}
     <pre class="inline-decision-evidence">${escapeHtml(buildHumanOverrideBrief(review?.content || {}))}</pre>
-    <label>请简要记录本次取舍理由<textarea data-human-override-reason required maxlength="600" placeholder="例如：当前版本符合核心创作目标，接受已知取舍后继续推进。"></textarea></label>
+    <label>请简要记录本次取舍理由<span class="optional">可选</span><textarea data-human-override-reason maxlength="600" placeholder="例如：当前版本符合核心创作目标，接受已知取舍后继续推进。"></textarea></label>
     <small>${escapeHtml(unitNote)}</small>
     <div class="inline-decision-actions"><button class="stage-primary" data-flow-action="confirm-human-override" data-human-override-stage="${escapeHtml(stage)}" type="button">确认记录并继续 →</button><button class="text-button" data-flow-action="cancel-human-override" type="button">暂不继续</button></div>
   </form>`;
@@ -1346,7 +1346,8 @@ function renderAgentTaskAction(action) {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="retry-failed" data-retry-stage="${escapeHtml(action.stage)}" data-retry-units="${escapeHtml((action.unitNumbers || []).join(","))}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
   if (action.kind === "human-override") {
-    return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
+    const inline = (action.label || "").includes("评分已达标") ? " decision-override-btn" : "";
+    return `<button class="stage-primary agent-task-primary${guidedClass}${inline}" data-flow-action="human-override" data-human-override="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
   }
   if (action.kind === "review-advisories") {
     return `<button class="stage-primary agent-task-primary${guidedClass}" data-flow-action="review-advisories" data-review-stage="${escapeHtml(action.stage)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(action.label)}</button>`;
@@ -3008,7 +3009,9 @@ function bindAgentTaskAction() {
   }));
 function handleConfirmHumanOverride(button) {
   const reasonField = $("[data-human-override-reason]");
-  if (!reasonField?.reportValidity()) return;
+  // 2026-08-11：评分达标时理由非必填（文案含"评分已达标"即跳过校验）
+  const requiresReason = reasonField?.hasAttribute("required") !== false;
+  if (requiresReason && !reasonField?.reportValidity()) return;
   const stage = button.dataset.humanOverrideStage || state.pendingHumanOverride || state.stage;
   const artifact = (state.agent?.artifacts || []).find((item) => item.stage === stage);
   const review = reviewForArtifact(artifact);

@@ -7606,6 +7606,10 @@ body.canvas-page {
 
 /* Image and video jobs share the same status geometry and active motion. */
 .generation-status {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  text-align: center;
   min-width: min(270px, 84%);
   gap: 9px;
   padding: 12px 14px;
@@ -7619,6 +7623,11 @@ body.canvas-page {
   color: #effaff;
   font-size: 12px;
   font-weight: 700;
+}
+
+.generation-status-row {
+  width: 100%;
+  justify-content: center;
 }
 
 .generation-status-row em {
@@ -7642,6 +7651,11 @@ body.canvas-page {
 .generation-status-message {
   color: rgba(193, 229, 247, 0.66);
   font-size: 10px;
+}
+
+.generation-status-message {
+  width: 100%;
+  text-align: center;
 }
 
 @media (max-width: 720px) {

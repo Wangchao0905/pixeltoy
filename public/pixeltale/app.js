@@ -681,9 +681,10 @@ async function runDocumentAction(action) {
 
 function updateAgentState(agent) {
   if (!agent || typeof agent !== "object") return;
+  const preserveStageSelection = state.stageSelectionVersion > 0;
   state.agent = agent;
   if (agent.mode === "long_form_drama") state.mode = "long"; else if (agent.mode === "cn_short_drama") state.mode = "cn"; else state.mode = "tk";
-  state.stage = agent.stage === "script" ? "handoff" : agent.stage || "brief";
+  if (!preserveStageSelection) state.stage = agent.stage === "script" ? "handoff" : agent.stage || "brief";
   const legacySeatDefaults = { seat_a: "gpt-5.6-terra", seat_b: "claude-opus-5", seat_c: "claude-haiku-4-5" };
   const migratedRoutes = Object.fromEntries(Object.entries(agent.routes || {}).map(([key, value]) => [key, value === "deepseek-v4-pro" ? (legacySeatDefaults[key] || "claude-haiku-4-5") : value]));
   state.routes = { ...state.routes, ...migratedRoutes };

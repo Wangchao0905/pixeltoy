@@ -1050,6 +1050,13 @@ function stageAccessible(stage) {
   return stageStatus(stage) !== "待解锁";
 }
 
+function navigateToStage(stage) {
+  if (!stageOrder.includes(stage)) return;
+  state.stage = stage;
+  state.lastError = "";
+  renderStage();
+}
+
 function technicalReviewState(reviewContent = {}) {
   const quorum = reviewContent.quorum || {};
   const feedbacks = Array.isArray(reviewContent.feedbacks) ? reviewContent.feedbacks : [];
@@ -1410,11 +1417,7 @@ function renderShellState() {
     button.classList.toggle("is-locked", locked);
     // 2026-08-11：所有阶段始终可点击查看
     button.disabled = false;
-    button.onclick = () => {
-      state.stage = name;
-      state.lastError = "";
-      renderStage();
-    };
+    button.onclick = () => navigateToStage(name);
     button.title = locked ? `完成“${stageMeta[flowStage]?.title || "当前阶段"}”后解锁` : name === flowStage ? `下一步：${stageMeta[name]?.title || name}` : `查看“${stageMeta[name]?.title || name}”`;
     button.setAttribute("aria-label", `${stageMeta[name]?.title || name}${name === flowStage && status !== "已确认" ? "，下一步" : ""}`);
     const statusNode = button.querySelector(".stage-status");
@@ -3259,16 +3262,6 @@ $$('[data-mode]').forEach((button) => button.addEventListener("click", async () 
     renderStage();
     showToast(userFacingError(error));
   }
-}));
-
-$$('[data-stage]').forEach((button) => button.addEventListener("click", () => {
-  if (!stageAccessible(button.dataset.stage)) {
-    showToast(`请先完成“${stageMeta[workflowStage()]?.title || "当前阶段"}”`);
-    return;
-  }
-  state.stage = button.dataset.stage;
-  state.lastError = "";
-  renderStage();
 }));
 
 $("#openModelRouting").addEventListener("click", openRoutingDialog);

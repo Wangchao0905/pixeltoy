@@ -352,6 +352,9 @@ assert.doesNotMatch(app, /review-auto-fix/, "review panel must not expose a dupl
 assert.match(html, /id="agentTaskAction"/, "the right rail must contain the canonical next-step action slot");
 assert.match(app, /function renderAgentTaskAction\(action\)/, "the right rail must render the current workflow action");
 assert.match(app, /function bindAgentTaskAction\(\)/, "the right rail action must have a dedicated event binding");
+assert.match(app, /function navigateToStage\(stage\)/, "stage navigation must use one shared handler");
+assert.match(app, /button\.onclick = \(\) => navigateToStage\(name\)/, "stage buttons must bind the shared navigation handler");
+assert.doesNotMatch(app, /\$\$\('\[data-stage\]'\)\.forEach\(\(button\) => button\.addEventListener/, "stage buttons must not retain a second stale click handler");
 assert.match(app, /const productionStageTotal = stageOrder\.length - 1/, "progress must use the seven confirmable production stages");
 assert.match(app, /function productionProgressLabel\(stage = workflowStage\(\)\)/, "all progress surfaces must share one stage counter");
 assert.match(app, /\$\("#flowStepCounter"\)\.textContent = productionProgressLabel\(flowStage\)/, "right-rail progress must use the shared counter");

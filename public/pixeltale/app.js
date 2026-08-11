@@ -80,6 +80,7 @@ const initialMode = pendingMode();
 const state = {
   mode: initialMode,
   stage: "brief",
+  stageSelectionVersion: 0,
   approved: new Set(),
   busy: false,
   revising: false,
@@ -1052,6 +1053,7 @@ function stageAccessible(stage) {
 
 function navigateToStage(stage) {
   if (!stageOrder.includes(stage)) return;
+  state.stageSelectionVersion += 1;
   state.stage = stage;
   state.lastError = "";
   renderStage();
@@ -2941,6 +2943,7 @@ async function createHandoff() {
 
 function syncAgentState({ silent = false } = {}) {
   if (hydrationRequest) return hydrationRequest;
+  const hydrationSelectionVersion = state.stageSelectionVersion;
   hydrationRequest = (async () => {
     let payload = null;
     let lastError = null;
@@ -2956,7 +2959,10 @@ function syncAgentState({ silent = false } = {}) {
       }
     }
     if (!payload?.agent) throw lastError || new Error("服务未返回当前项目");
+    const selectedStage = state.stage;
+    const preserveSelectedStage = state.stageSelectionVersion !== hydrationSelectionVersion;
     updateAgentState(payload.agent);
+    if (preserveSelectedStage && stageOrder.includes(selectedStage)) state.stage = selectedStage;
     state.lastError = "";
     renderStage();
     if (!silent) showToast("已同步独立编剧会话");

@@ -434,6 +434,8 @@ assert.match(app, /pendingCrossStageRepair/, "cross-stage navigation must retain
 assert.match(app, /kind: "cross-stage-repair"/, "the owning stage must expose a concrete repair action instead of only a warning");
 assert.doesNotMatch(app, /当前查看的阶段已确认但主流程停在后面/, "viewing a confirmed stage must not silently jump back to the main workflow stage");
 assert.doesNotMatch(app, /if \(state\.stage !== flowStage && !state\.pendingCrossStageRepair\?\.stage\)/, "stage navigation must preserve the explicitly selected stage");
+assert.match(app, /stageSelectionVersion/, "late session hydration must not overwrite a manually selected stage");
+assert.match(app, /selectedStage[\s\S]*stageSelectionVersion/, "stage hydration must restore the user's selection when it races with the API response");
 assert.match(app, /technicalState\.blocked && reviewForArtifact\(artifact\) && !creativeReviewDecisionGroups/, "a rule-blocked creative tradeoff must reach the decision workbench instead of the generic rerun action");
 assert.match(app, /const decisionItems = reviewDecisionGroups\(reviewContent\)/, "the decision card must use merged decision items");
 assert.match(app, /decisionOptions\.slice\(0, 2\)/, "the decision card must show the available repair options");

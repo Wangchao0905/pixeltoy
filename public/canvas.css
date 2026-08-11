@@ -7648,6 +7648,11 @@ body.canvas-page {
   background: rgba(165, 215, 240, 0.16);
 }
 
+.generation-status .generation-progress-track {
+  width: 100%;
+  min-width: 0;
+}
+
 .generation-progress-track i {
   border-radius: inherit;
   background: #bfeaff;

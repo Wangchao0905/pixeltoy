@@ -32,6 +32,11 @@ assert.match(
   "窄比例预览中的生成状态不得以最小宽度撑破容器",
 );
 assert.match(
+  css,
+  /\.generation-status \.generation-progress-track\s*\{[\s\S]*?width:\s*100%;/,
+  "图片和视频生成状态的动效轨道必须占满状态卡片宽度",
+);
+assert.match(
   videoPreview,
   /<strong>\$\{hasProgress \? `生成中 · \$\{progress\}%` : "生成中"\}<\/strong>/,
   "视频生成标题和进度必须作为一个居中标签输出",
@@ -42,7 +47,7 @@ assert.match(
   /progressLabel\.textContent = hasProgress \? `生成中 · \$\{progress\}%` : "生成中";/,
   "轮询刷新时必须更新完整的居中生成标签",
 );
-assert.match(html, /canvas\.css\?v=canvas-zoom-layout-20260811-r5/, "生成状态样式变更必须更新长期缓存版本号");
-assert.match(html, /canvas\.js\?v=canvas-zoom-layout-20260811-r5/, "生成状态交互页面必须更新长期缓存版本号");
+assert.match(html, /canvas\.css\?v=canvas-generation-track-20260811-r6/, "生成状态样式变更必须更新长期缓存版本号");
+assert.match(html, /canvas\.js\?v=canvas-generation-track-20260811-r6/, "生成状态交互页面必须更新长期缓存版本号");
 
 console.log("canvas generation status centering tests passed");

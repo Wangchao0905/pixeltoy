@@ -5792,6 +5792,15 @@ body.canvas-page .canvas-topbar {
   transform: translateY(-50%) !important;
 }
 
+.canvas-node.is-connection-target > .node-port.input-port {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  border-color: #ffffff !important;
+  background: #0d2b39 !important;
+  box-shadow: 0 0 0 4px rgba(116, 236, 247, 0.18), 0 0 22px rgba(116, 236, 247, 0.9) !important;
+  transform: translateY(-50%) scale(1.55) !important;
+}
+
 /* Video links terminate on the actual preview edges, not on the transparent
    editor shell around them. The JS writes these coordinates from the rendered
    preview slot so every ratio and zoom level stays aligned. */

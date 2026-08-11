@@ -118,6 +118,7 @@ const canvasState = {
   selectedNodeIds: new Set(),
   marquee: null,
   connectDrag: null,
+  connectionTargetId: "",
   pendingConnection: null,
   connectionMenu: null,
   nodeMenu: null,
@@ -242,6 +243,7 @@ const VIDEO_EDITOR_DEFAULT_HEIGHT = 650;
 const CANVAS_MIN_SCALE = 0.25;
 const CANVAS_MAX_SCALE = 2.5;
 const CANVAS_SNAP_DISTANCE = 16;
+const CONNECTION_TARGET_SNAP_RADIUS = 36;
 const CANVAS_ZOOM_SPEED = 0.0048;
 const ASSET_NODE_DEFAULT_WIDTH = 400;
 const ASSET_NODE_DEFAULT_HEIGHT = 280;
@@ -4874,7 +4876,9 @@ function connectionPath(source, target, index) {
 function draftConnectionPath() {
   const source = canvasState.nodes.find((node) => node.id === canvasState.connectDrag.from);
   if (!source) return "";
-  return typedBezierPath(nodePortPoint(source, "output"), canvasState.connectDrag.to, "draft-link", connectionToneFor(source));
+  const target = canvasState.nodes.find((node) => node.id === canvasState.connectionTargetId);
+  const point = target ? nodePortPoint(target, "input") : canvasState.connectDrag.to;
+  return typedBezierPath(nodePortPoint(source, "output"), point, "draft-link", connectionToneFor(source));
 }
 
 function pendingConnectionPath() {
@@ -4892,6 +4896,7 @@ function startConnectionDrag(event, nodeId, port) {
   hideContextMenu();
   hideConnectionMenu();
   canvasState.pendingConnection = null;
+  clearConnectionTarget();
   const start = stagePoint(event.clientX, event.clientY);
   canvasState.connectDrag = {
     from: nodeId,
@@ -4910,6 +4915,7 @@ function applyConnectionDragFrame() {
 function updateConnectionDrag(event) {
   if (!canvasState.connectDrag) return;
   canvasState.connectDrag.to = stagePoint(event.clientX, event.clientY);
+  updateConnectionTarget(event);
   if (!canvasState.connectionFrame) canvasState.connectionFrame = requestAnimationFrame(applyConnectionDragFrame);
 }
 
@@ -4962,13 +4968,44 @@ function connectNodes(source, target) {
   return true;
 }
 
-function videoNodeAtEvent(event) {
-  const element = event?.target?.closest?.(".canvas-node.video-node") || document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".canvas-node.video-node");
-  if (!element?.dataset?.nodeId) return null;
-  return canvasState.nodes.find((node) => node.id === element.dataset.nodeId && node.kind === "video") || null;
+function connectionInputTargetAtEvent(event, source) {
+  if (!event || !source) return null;
+  const point = stagePoint(event.clientX, event.clientY);
+  const radius = CONNECTION_TARGET_SNAP_RADIUS / Math.max(CANVAS_MIN_SCALE, Number(canvasState.viewport.scale) || 1);
+  let nearest = null;
+  let nearestDistance = radius;
+  for (const node of canvasState.nodes) {
+    const valid = ["image", "video"].includes(node.kind)
+      && node.id !== source.id
+      && !(source.kind === "video" && node.kind === "image");
+    if (!valid) continue;
+    const input = nodePortPoint(node, "input");
+    const distance = Math.hypot(point.x - input.x, point.y - input.y);
+    if (distance <= nearestDistance) {
+      nearest = node;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
 }
 
-function finishConnectionDrag(event, nodeId, port) {
+function clearConnectionTarget() {
+  canvasState.connectionTargetId = "";
+  qsa(".canvas-node.is-connection-target").forEach((element) => element.classList.remove("is-connection-target"));
+}
+
+function updateConnectionTarget(event) {
+  const source = canvasState.nodes.find((node) => node.id === canvasState.connectDrag?.from);
+  const target = connectionInputTargetAtEvent(event, source);
+  const targetId = target?.id || "";
+  if (canvasState.connectionTargetId === targetId) return target;
+  clearConnectionTarget();
+  canvasState.connectionTargetId = targetId;
+  if (targetId) qs(`[data-node-id="${targetId}"]`)?.classList.add("is-connection-target");
+  return target;
+}
+
+function finishConnectionDrag(event) {
   if (!canvasState.connectDrag) return;
   event.preventDefault();
   event.stopPropagation();
@@ -4979,10 +5016,10 @@ function finishConnectionDrag(event, nodeId, port) {
   }
   const drag = canvasState.connectDrag;
   const source = canvasState.nodes.find((node) => node.id === canvasState.connectDrag.from);
-  const target = canvasState.nodes.find((node) => node.id === nodeId);
+  const target = connectionInputTargetAtEvent(event, source);
   canvasState.connectDrag = null;
-  const valid = port === "input" && connectNodes(source, target);
-  if (valid) return;
+  clearConnectionTarget();
+  if (connectNodes(source, target)) return;
   if (shouldShowConnectionMenu(drag, event)) return showConnectionMenu(drag, event);
   renderLinks();
   return toast("请从图片或视频输出口连接到视频节点输入口");
@@ -4995,9 +5032,8 @@ function connectionDragDistance(drag) {
 
 function shouldShowConnectionMenu(drag, event) {
   if (!drag || connectionDragDistance(drag) < 32) return false;
-  if (event?.target?.closest?.(".canvas-node.video-node .input-port")) return false;
-  if (videoNodeAtEvent(event)) return false;
   const source = canvasState.nodes.find((node) => node.id === drag.from);
+  if (connectionInputTargetAtEvent(event, source)) return false;
   return ["image", "asset"].includes(source?.kind);
 }
 
@@ -5072,8 +5108,9 @@ function cancelConnectionDrag(event) {
   }
   const drag = canvasState.connectDrag;
   const source = canvasState.nodes.find((node) => node.id === drag.from);
-  const target = videoNodeAtEvent(event);
+  const target = connectionInputTargetAtEvent(event, source);
   canvasState.connectDrag = null;
+  clearConnectionTarget();
   if (connectNodes(source, target)) return;
   if (shouldShowConnectionMenu(drag, event)) return showConnectionMenu(drag, event);
   renderLinks();

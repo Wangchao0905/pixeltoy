@@ -3041,6 +3041,12 @@ function handleConfirmHumanOverride(button) {
   $$("#stageContent [data-flow-action]").forEach((button) => {
     button.addEventListener("click", () => {
       const action = button.dataset.flowAction;
+      if (action === "run") {
+        if (state.busy) return;
+        const stage = button.dataset.runStage || state.stage;
+        void runCurrentStage(stage);
+        return;
+      }
       if (action === "handoff") { void createHandoff(); return; }
       if (action === "auto-revise") { void runAutoRevision(button.dataset.autoRevise || state.stage); return; }
       if (action === "human-override") {

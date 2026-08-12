@@ -19375,6 +19375,45 @@ body.is-studio-modern .modern-video-mode-hint {
   font-size: 9px;
   line-height: 1.35;
 }
+body.is-studio-modern .modern-spatial-map-status {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 4px;
+  background: rgba(255,255,255,.025);
+  color: var(--mv-mut);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+body.is-studio-modern .modern-spatial-map-status.hidden { display: none; }
+body.is-studio-modern .modern-spatial-map-status b { color: var(--mv-tx); font-weight: 500; }
+body.is-studio-modern .modern-spatial-map-status em,
+body.is-studio-modern .modern-spatial-map-status i { font-style: normal; }
+body.is-studio-modern .modern-spatial-map-status i.is-locked { color: #8fe0b0; }
+body.is-studio-modern .modern-spatial-map-status i.is-draft,
+body.is-studio-modern .modern-spatial-map-status i.is-stale,
+body.is-studio-modern .modern-spatial-map-status .modern-spatial-map-warning { color: #f6ae75; }
+body.is-studio-modern .modern-spatial-map-status small { color: var(--mv-qt); }
+body.is-studio-modern .modern-spatial-map-editor {
+  flex: 1 0 100%;
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 4px;
+  background: rgba(0,0,0,.12);
+}
+body.is-studio-modern .modern-spatial-map-editor.hidden { display: none; }
+body.is-studio-modern .modern-spatial-map-editor-head { display: flex; justify-content: space-between; gap: 10px; color: var(--mv-mut); font-size: 9px; }
+body.is-studio-modern .modern-spatial-map-editor-head small { color: var(--mv-qt); }
+body.is-studio-modern .modern-spatial-map-editor textarea { min-height: 150px; width: 100%; resize: vertical; border: 1px solid var(--mv-line-2); border-radius: 3px; padding: 8px; background: var(--mv-s2); color: var(--mv-tx); font: 10px/1.45 var(--mono); }
+body.is-studio-modern .modern-spatial-map-editor-actions { display: flex; justify-content: flex-end; gap: 7px; }
+body.is-studio-modern .modern-spatial-map-editor-actions button { min-height: 27px; padding: 0 10px; border: 1px solid var(--mv-line-2); border-radius: 3px; background: var(--mv-s2); color: var(--mv-mut); font: 10px var(--mono); }
+body.is-studio-modern .modern-spatial-map-editor-actions button.is-primary { border-color: rgba(217,45,69,.5); background: rgba(217,45,69,.14); color: #ffd7da; }
 body.is-studio-modern .modern-dialect-controls {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

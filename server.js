@@ -4603,7 +4603,8 @@ function spatialPromptForShot(episodeRoot, shot = {}, config = {}, prompt = "") 
   if (isProductionBoardMode(config, shot)) return prompt;
   const map = spatialMapForShot(episodeRoot, shot, config);
   if (!map) return prompt;
-  return [prompt, spatialMapPromptText(map), spatialStatePromptText(shot.spatialState), spatialHandoffPromptText(shot.spatialState)]
+  const promptWithoutDraftGeo = String(prompt || "").replace(/(?:^|\n)GEO SPATIAL LAYOUT\n[^\n]*(?=\n|$)/, "").trim();
+  return [promptWithoutDraftGeo, spatialMapPromptText(map), spatialStatePromptText(shot.spatialState), spatialHandoffPromptText(shot.spatialState)]
     .filter(Boolean)
     .join("\n\n")
     .trim();
@@ -22260,8 +22261,8 @@ function storyboardPanelTimelineForPrompt(guidance = {}) {
 }
 
 // Production Board 提供构图和动作控制层；正式 Character/Scene/Prop/Insert
-// 资产同时作为独立图片引用提交，锁定人物、场景、道具和插入细节的身份。镜头
-// 语法仍完全复用模型导演 design，不能退化成“读板 + 剧情 + 对白”的薄提示词。
+// 资产同时作为独立图片引用提交，锁定人物、场景、道具和插入细节的身份。
+// 故事板模式保持原有的专用输出语法；网页分析中的完整镜头骨架只用于普通提示词模式。
 function storyboardSeedancePrompt(shot, index, dialogueLanguage, assetLookup = null) {
   const storyboardRefs = Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [];
   const officialRefs = [...new Set((Array.isArray(shot.refs) ? shot.refs : []).map(compactLine).filter(Boolean))]
@@ -22274,40 +22275,22 @@ function storyboardSeedancePrompt(shot, index, dialogueLanguage, assetLookup = n
   const duration = clampShotDuration(shot.duration || 8);
   const dialogue = Array.isArray(shot?.dialogues) && shot.dialogues.length ? seedanceDialogueText(shot) : "无";
   const boardExecution = "严格按 Production Board 编号面板执行构图、站位、动作方向、镜头节奏与剪辑出口；后续正式资产图片只锁定人物、场景、道具和插入细节的身份。";
- const boardDesign = [
-   ["SCENE CONTEXT", d.scene_context],
-    ["ACTIVE REFERENCES", d.active_references],
-    ["LOCATION MAP", d.location_map],
-    ["FIRST FRAME AND SPATIAL BLOCKING", d.first_frame_blocking],
-    ["FORMAT MODE", d.format_mode],
-    ["OPTICS", d.optics],
-    ["CAMERA", d.camera],
-    ["ACTION TIMING", `动作时间线：${seedanceTimelineForShot(d.action_timing || d.timeline, duration)}`],
-    ["PHYSICS", d.physics],
-    ["LIGHTING", d.lighting],
-    ["AUDIO", d.audio || `人声 OS：${d.voice_over}\n人物台词：${dialogue}\n音效：${d.sound}`],
-    ["CHARACTER ACTING", d.character_acting],
-    ["STYLE", d.style],
-    ["QUALITY", d.quality],
-    ["POSITIVE CONSTRAINTS", d.positive_constraints],
-  ].filter(([, value]) => value).flatMap(([heading, value]) => [heading, value]);
   const prompt = [
     `镜号 ${index + 1}（${duration} 秒）`,
     "镜头类型：Production Board 连续镜头单元；空间构图由故事板面板锁定",
-   ...boardDesign,
     `景别：${d.shot_size}`,
-   `摄像机 / 镜头：${d.camera_lens}`,
-   `运镜：${d.camera_movement}`,
-   `机位视角：${d.camera_angle}`,
-   `画面：${d.style} ${d.visual} ${boardExecution}`,
+    `摄像机 / 镜头：${d.camera_lens}`,
+    `运镜：${d.camera_movement}`,
+    `机位视角：${d.camera_angle}`,
+    `画面：${d.style} ${d.visual} ${boardExecution}`,
     `动作时间线：${seedanceTimelineForShot(d.action_timing || d.timeline, duration)}`,
-   `故事板面板节拍：${storyboardPanelTimelineForPrompt(shot.storyboardGuidance)}`,
-   `人声 OS：${d.voice_over}`,
-   `人物台词：${dialogue}`,
-   `音效：${d.sound}`,
+    `故事板面板节拍：${storyboardPanelTimelineForPrompt(shot.storyboardGuidance)}`,
+    `人声 OS：${d.voice_over}`,
+    `人物台词：${dialogue}`,
+    `音效：${d.sound}`,
     "SFX only. No music.",
     `Photoreal. NON-IP. 16:9. ${duration}s. SFX only. NO CGI. Cinematic.`,
- ].join("\n");
+  ].join("\n");
   return `${[...sbLines, ...assetLines].filter(Boolean).join("\n")}\n\n${prompt}`.trim();
 }
 

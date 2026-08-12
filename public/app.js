@@ -226,6 +226,8 @@ const state = {
     filmStudioSelection: [],
     filmStudioSelectionDirty: false,
     filmStudioBusy: false,
+    spatialMapEditorOpen: false,
+    spatialMapEditorMapId: "",
   },
 };
 localStorage.setItem("pixelToys.assetAnalyzerModel", state.assetAnalyzerModel);
@@ -1849,6 +1851,7 @@ function projectShellStateFromSummary(summary = {}) {
     assetSlots: [],
     storyboards: [],
     storyboardSlots: [],
+    spatialMaps: [],
     referenceKits: [],
     referenceKitShots: [],
     teamReferences: [],
@@ -1887,6 +1890,7 @@ function mergeProjectStatus(status = {}) {
     assetSlots: status.assetSlots !== undefined ? status.assetSlots : state.project.assetSlots,
     storyboards: status.storyboards !== undefined ? status.storyboards : state.project.storyboards,
     storyboardSlots: status.storyboardSlots !== undefined ? status.storyboardSlots : state.project.storyboardSlots,
+    spatialMaps: status.spatialMaps !== undefined ? status.spatialMaps : state.project.spatialMaps,
     referenceKits: status.referenceKits !== undefined ? status.referenceKits : state.project.referenceKits,
     referenceKitShots: status.referenceKitShots !== undefined ? status.referenceKitShots : state.project.referenceKitShots,
     teamReferences: status.teamReferences !== undefined ? status.teamReferences : state.project.teamReferences,
@@ -6917,6 +6921,45 @@ function renderModernSelectedShot(data, shot, index) {
   const modernModel = $("#modernParamModel");
   if (modernModel) modernModel.value = shotModel;
   const modernSettings = videoConfigDataFromProject()?.settings || {};
+  const promptMode = selectedVideoPromptMode();
+  const spatialMaps = Array.isArray(data?.spatialMaps) ? data.spatialMaps : [];
+  const shotSpatialMap = promptMode === "prompt"
+    ? spatialMaps.find((map) => map.id === configShot?.spatialMapId || map.sceneRef === configShot?.sceneRef)
+    : null;
+  const spatialStatus = $("#modernSpatialMapStatus");
+  const spatialEditor = $("#modernSpatialMapEditor");
+  if (spatialStatus) {
+    spatialStatus.classList.toggle("hidden", promptMode !== "prompt");
+    if (promptMode !== "prompt") {
+      spatialStatus.innerHTML = "";
+    } else if (!shot) {
+      spatialStatus.innerHTML = `<span class="modern-spatial-map-empty">选择镜头后显示空间地图绑定</span>`;
+    } else if (!shotSpatialMap) {
+      spatialStatus.innerHTML = `<span class="modern-spatial-map-warning">空间地图：未绑定 · 生成视频前请为场景锁定地图</span>`;
+    } else {
+      const stale = Number(configShot?.spatialMapVersion || 0) !== Number(shotSpatialMap.version || 0);
+      spatialStatus.innerHTML = `<span>空间地图</span><b>${escapeHtml(shotSpatialMap.title || shotSpatialMap.id)}</b><em>v${escapeHtml(String(shotSpatialMap.version))}</em><i class="${stale ? "is-stale" : shotSpatialMap.status === "locked" ? "is-locked" : "is-draft"}">${stale ? "版本过期" : shotSpatialMap.status === "locked" ? "已锁定" : "草稿"}</i>${stale ? `<small>请重新生成视频配置以同步当前地图</small>` : ""}`;
+    }
+  }
+  if (spatialEditor) {
+    const editorVisible = promptMode === "prompt" && !!shot && state.modernStudio.spatialMapEditorOpen === true;
+    spatialEditor.classList.toggle("hidden", !editorVisible);
+    if (editorVisible) {
+      const editorMap = shotSpatialMap || {
+        id: `MAP_${String(shot.number || index + 1).padStart(3, "0")}`,
+        sceneRef: configShot?.sceneRef || "",
+        title: configShot?.sceneRef || "",
+        status: "draft",
+        version: 1,
+        anchors: [],
+        axis: { cameraSide: "", line: "", crossing: "forbidden" },
+        lighting: { source: "", direction: "", shadowDirection: "" },
+        zones: [],
+      };
+      const textarea = $("#modernSpatialMapJson");
+      if (textarea && document.activeElement !== textarea) textarea.value = JSON.stringify(editorMap, null, 2);
+    }
+  }
   const modernRatio = $("#modernParamRatio");
   const modernResolution = $("#modernParamResolution");
   if (modernRatio && modernSettings.ratio) modernRatio.value = modernSettings.ratio;
@@ -11542,6 +11585,32 @@ function bind() {
     if (!button) return;
     setModernVideoPromptMode(button.dataset.videoPromptMode, { pending: true });
   });
+  $("#modernSpatialMapStatus")?.addEventListener("click", () => {
+    if (selectedVideoPromptMode() !== "prompt") return;
+    state.modernStudio.spatialMapEditorOpen = !state.modernStudio.spatialMapEditorOpen;
+    renderModernStudio(state.project);
+  });
+  async function saveModernSpatialMap(status) {
+    if (selectedVideoPromptMode() !== "prompt") return;
+    const textarea = $("#modernSpatialMapJson");
+    if (!textarea?.value.trim()) return toast("请先输入空间地图 JSON");
+    let map;
+    try {
+      map = JSON.parse(textarea.value);
+    } catch (error) {
+      return toast(`空间地图 JSON 无效：${error.message}`);
+    }
+    map.status = status;
+    const data = await api(`/api/project/${state.selectedId}/spatial-maps`, {
+      method: "POST",
+      body: JSON.stringify({ map }),
+    });
+    setProjectState(data.state);
+    renderWorkspace();
+    toast(status === "locked" ? "空间地图已锁定" : "空间地图草稿已保存");
+  }
+  $("#modernSpatialMapSaveDraft")?.addEventListener("click", () => saveModernSpatialMap("draft").catch((error) => toast(error.message)));
+  $("#modernSpatialMapSaveLocked")?.addEventListener("click", () => saveModernSpatialMap("locked").catch((error) => toast(error.message)));
   ["modernParamRatio", "modernParamResolution"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
       saveVideoSettings({

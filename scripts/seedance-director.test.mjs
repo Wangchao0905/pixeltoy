@@ -19,7 +19,7 @@ const completeDesign = {
   sound: "布料摩擦声延续，叠加野外底噪。",
 };
 
-// 模型返回只保留自然语言镜头单所需的八项；未知键和空值必须被清掉。
+// 旧草稿仍只保留八项兼容字段；未知键和空值必须被清掉。
 {
   const clean = director.sanitizeSeedanceDesign({
     ...completeDesign,
@@ -36,8 +36,32 @@ const completeDesign = {
   assert.deepEqual(director.sanitizeSeedanceDesign(["x"]), {});
 }
 
+const richDesign = Object.fromEntries([
+  ["scene_context", "EXACT 1 CHARACTERS — NO DUPLICATES: Vivienne 在马车旁压低视线。"],
+  ["active_references", "@C001_VIVIENNE 用于锁定人物身份；@S001_CARRIAGE 只提供空间与材质。"],
+  ["location_map", "马车位于画面右侧，草丛沿道路延伸，主光来自画面左上方。"],
+  ["geo_spatial_layout", "由制作台空间地图注入。"],
+  ["first_frame_blocking", "第一帧宽景固定 Vivienne 在马车左侧，视线朝下，马车轮位于画面右侧。"],
+  ["format_mode", "单一连续镜头，6 秒，实时速度，无切换。"],
+  ["optics", "约 40° 视场角，半身中近景，主体和车轮同层清晰。"],
+  ["camera", "机位位于道路外侧，胸口高度，向前缓慢移动 1 米，保持同一轴线。"],
+  ["action_timing", "起始：Vivienne 咬住下唇。\n推进：她随马车颠簸收紧肩膀。\n终点：她停住吞咽，视线仍向下。"],
+  ["physics", "车轮接触泥地并带动马车轻微颠簸，衣物跟随惯性，呼吸带动胸腔。"],
+  ["lighting", "唯一主光来自左上方天空，阴影投向右下方，整镜保持同一光比。"],
+  ["audio", "固定女声描述；所有角色只说引号内台词；没有台词的角色保持安静；SFX only. No music。"],
+  ["character_acting", "Vivienne 想隐藏身体不适；手指压住衣角，视线停在地面，先慢眨一次再快速双眨。"],
+  ["style", "项目锁定的 Style Prefix。"],
+  ["quality", "人物身份、服装、场景结构、车轮材质和帧间动作保持稳定。"],
+  ["positive_constraints", "画面内恰好一名人物和一辆马车；位置与朝向固定；16:9；6s；SFX only. NO CGI. Cinematic。"],
+]);
+
 {
-  assert.deepEqual(director.SEEDANCE_DESIGN_FIELDS, [
+  assert.equal(director.hasCompleteSeedanceDesign(richDesign), true, "仅完整 rich 字段也应通过导演设计校验");
+  assert.equal(director.hasCompleteSeedanceDesign({ ...richDesign, action_timing: "起始：只有一个节拍" }), false, "rich 时间线缺少三个节拍时必须拒绝");
+}
+
+{
+  assert.deepEqual(director.SEEDANCE_LEGACY_DESIGN_FIELDS, [
     "shot_size",
     "camera_lens",
     "camera_movement",
@@ -47,10 +71,13 @@ const completeDesign = {
     "voice_over",
     "sound",
   ]);
-  assert.match(director.SEEDANCE_DIRECTOR_SYSTEM_ZH, /以下 8 项必须全部存在/);
-  for (const field of director.SEEDANCE_DESIGN_FIELDS) {
+  assert.match(director.SEEDANCE_DIRECTOR_SYSTEM_ZH, /新草稿必须完整填写以下镜头骨架字段/);
+  assert.equal(director.SEEDANCE_RICH_DESIGN_FIELDS.length, 16);
+  for (const field of [...director.SEEDANCE_LEGACY_DESIGN_FIELDS, ...director.SEEDANCE_RICH_DESIGN_FIELDS]) {
     assert.match(director.SEEDANCE_DIRECTOR_SYSTEM_ZH, new RegExp(`- ${field}：`));
   }
+  assert.match(director.SEEDANCE_DIRECTOR_SYSTEM_ZH, /EXACT N CHARACTERS/);
+  assert.match(director.SEEDANCE_DIRECTOR_SYSTEM_ZH, /SFX only\. No music\./);
 }
 
 // server.js 接线：草稿保存模型计划，配置只读取它，最终提交保留中文镜头单。
@@ -120,6 +147,11 @@ const completeDesign = {
   };
   const prompt = promptApi.seedanceNaturalLanguagePromptForShot(shot, 0, "en");
   assert.match(prompt, /动作时间线：0-2 秒：Vivienne 咬住下唇/);
+  for (const heading of ["SCENE CONTEXT", "EXACT 1 CHARACTERS — NO DUPLICATES", "ACTIVE REFERENCES", "LOCATION MAP", "GEO SPATIAL LAYOUT", "FIRST FRAME AND SPATIAL BLOCKING", "FORMAT MODE", "OPTICS", "CAMERA", "ACTION TIMING", "PHYSICS", "LIGHTING", "AUDIO", "CHARACTER ACTING", "STYLE", "QUALITY", "POSITIVE CONSTRAINTS"]) {
+    assert.match(prompt, new RegExp(heading), `提示词模式必须输出 ${heading}`);
+  }
+  assert.match(prompt, /SFX only\. No music\./);
+  assert.match(prompt, /Photoreal\. NON-IP\. 16:9\. 6s\. SFX only\. NO CGI\. Cinematic\./);
   assert.match(prompt, /2-4 秒：两人随马车颠簸/);
   assert.match(prompt, /4-6 秒：Vivienne 停住吞咽/);
   assert.match(prompt, /恶搞之家式美式电视动画/, "资产文案风格必须写进最终视频提示词");
@@ -138,6 +170,10 @@ const completeDesign = {
   for (const field of ["景别：", "摄像机 / 镜头：", "运镜：", "机位视角：", "画面：", "动作时间线：", "人声 OS：", "人物台词：", "音效：", "故事板面板节拍："]) {
     assert.match(boardPrompt, new RegExp(field), `Production Board 提示词必须保留 ${field}`);
   }
+  for (const heading of ["SCENE CONTEXT", "ACTIVE REFERENCES", "LOCATION MAP", "GEO SPATIAL LAYOUT", "FIRST FRAME AND SPATIAL BLOCKING", "FORMAT MODE", "OPTICS", "CAMERA", "ACTION TIMING", "PHYSICS", "LIGHTING", "AUDIO", "CHARACTER ACTING", "QUALITY", "POSITIVE CONSTRAINTS"]) {
+    assert.doesNotMatch(boardPrompt, new RegExp(`(?:^|\\n)${heading}(?:\\n|$)`), `Production Board 不应注入 ${heading}`);
+  }
+  assert.doesNotMatch(boardPrompt, /GEO SPATIAL LAYOUT/);
   assert.equal(promptApi.cleanVideoPromptForSubmission(boardPrompt), boardPrompt, "清洗层不能压缩或改写已成型的故事板镜头语法");
 }
 

@@ -1225,6 +1225,12 @@
                   <div class="modern-video-param modern-video-param-verification"><span>真人验证</span><label class="modern-dialect-toggle" title="开启后，人物图会先通过火山私域素材认证，再提交视频模型"><input id="modernRealPersonVerification" type="checkbox" aria-label="启用人物图真人验证" /><span>启用</span></label></div>
                 </div>
                 <span id="modernVideoPromptModeHint" class="modern-video-mode-hint" aria-live="polite">按模型导演的镜头提示词生成；连续动作才使用上一段尾帧。</span>
+                <div id="modernSpatialMapStatus" class="modern-spatial-map-status hidden" aria-live="polite"></div>
+                <div id="modernSpatialMapEditor" class="modern-spatial-map-editor hidden" aria-label="空间地图编辑器">
+                  <div class="modern-spatial-map-editor-head"><span>场景空间地图</span><small>只在提示词模式生效 · 保存后重新生成视频配置以更新镜头版本</small></div>
+                  <textarea id="modernSpatialMapJson" spellcheck="false" aria-label="空间地图 JSON"></textarea>
+                  <div class="modern-spatial-map-editor-actions"><button id="modernSpatialMapSaveDraft" type="button">保存草稿</button><button id="modernSpatialMapSaveLocked" class="is-primary" type="button">保存并锁定</button></div>
+                </div>
                 <span id="modernSelectedShotSummary" class="modern-shot-summary-compat" aria-hidden="true"></span>
               </div>
               <div class="modern-shot-actions" aria-label="视频生成操作">

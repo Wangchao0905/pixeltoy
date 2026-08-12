@@ -8,8 +8,8 @@
 // API 返回可以是结构化对象，便于校验字段完整；最终交给 Seedance 的始终是中文自然语言镜头单。
 
 // 模型输出的字段会被编译为自然语言视频提示词。资产风格、时长和人物台词由后端锁定，
-// 不使用 JSON 作为最终提交提示词。
-const SEEDANCE_DESIGN_FIELDS = [
+// 不使用 JSON 作为最终提交提示词。旧八字段继续接受，用于兼容已有草稿；新草稿使用完整镜头骨架。
+const SEEDANCE_LEGACY_DESIGN_FIELDS = [
   "shot_size",
   "camera_lens",
   "camera_movement",
@@ -18,6 +18,30 @@ const SEEDANCE_DESIGN_FIELDS = [
   "timeline",
   "voice_over",
   "sound",
+];
+
+const SEEDANCE_RICH_DESIGN_FIELDS = [
+  "scene_context",
+  "active_references",
+  "location_map",
+  "geo_spatial_layout",
+  "first_frame_blocking",
+  "format_mode",
+  "optics",
+  "camera",
+  "action_timing",
+  "physics",
+  "lighting",
+  "audio",
+  "character_acting",
+  "style",
+  "quality",
+  "positive_constraints",
+];
+
+const SEEDANCE_DESIGN_FIELDS = [
+  ...SEEDANCE_LEGACY_DESIGN_FIELDS,
+  ...SEEDANCE_RICH_DESIGN_FIELDS,
 ];
 
 function compact(value) {
@@ -40,7 +64,7 @@ function sanitizeSeedanceDesign(design) {
   if (!design || typeof design !== "object" || Array.isArray(design)) return {};
   const out = {};
   for (const key of SEEDANCE_DESIGN_FIELDS) {
-    const value = key === "timeline" ? compactTimeline(design[key]) : compact(design[key]);
+    const value = ["timeline", "action_timing"].includes(key) ? compactTimeline(design[key]) : compact(design[key]);
     if (!value) continue;
     out[key] = value;
   }
@@ -49,8 +73,13 @@ function sanitizeSeedanceDesign(design) {
 
 function hasCompleteSeedanceDesign(design) {
   const clean = sanitizeSeedanceDesign(design);
-  return SEEDANCE_DESIGN_FIELDS.every((key) => !!clean[key]) &&
-    ["起始", "推进", "终点"].every((phase) => new RegExp(`(?:^|\\n)${phase}\\s*[：:]\\s*\\S`, "u").test(clean.timeline));
+  const legacyComplete = SEEDANCE_LEGACY_DESIGN_FIELDS.every((key) => !!clean[key]);
+  const richComplete = SEEDANCE_RICH_DESIGN_FIELDS.every((key) => !!clean[key]) &&
+    ["起始", "推进", "终点"].every((phase) => new RegExp(`(?:^|\\n)${phase}\\s*[：:]\\s*\\S`, "u").test(clean.action_timing));
+  const legacyTimelineComplete = ["起始", "推进", "终点"].every((phase) =>
+    new RegExp(`(?:^|\\n)${phase}\\s*[：:]\\s*\\S`, "u").test(clean.timeline || ""),
+  );
+  return (legacyComplete && legacyTimelineComplete) || richComplete;
 }
 
 // 注入 storyboard 系统提示词的导演引擎方法(中文)。指导模型对每个镜头做「导演式拆解」并输出 design。
@@ -78,7 +107,25 @@ const SEEDANCE_DIRECTOR_SYSTEM_ZH = `视频提示词拆解方法（Seedance 2.0 
 
 七、参考图与角色绑定：严格保留 @图片 等引用标签不改；每张参考各承担一个角色（人物=锁定主体身份，场景=场景氛围/空间，道具=形状颜色不变）；参考图已经展示的静态外观不要用文字重复描述，文字只写参考图承载不了的动作、运镜与变化。
 
-按上述方法，为每个镜头输出一个 design 对象。以下 8 项必须全部存在，字段值用具体中文、不用感觉词：
+按上述方法，为每个镜头输出一个 design 对象。新草稿必须完整填写以下镜头骨架字段，字段值用具体中文、不用感觉词。旧八字段只作为兼容输入，不要用旧的扁平字段替代新骨架：
+- scene_context：场景功能与剧情上下文。开头必须写「EXACT N CHARACTERS — NO DUPLICATES」，明确本镜人物数量、角色名和本镜发生的可见事件。
+- active_references：逐项声明引用资产的用途；人物锁定身份，场景只提供空间与材质，道具锁定形状、材质和互动关系。
+- location_map：只写地点的空间结构、地标、左右关系、距离和可信光源，不写人物动作。
+- geo_spatial_layout：若制作台已有空间地图，写「由制作台空间地图注入」；不得凭空改写地图。
+- first_frame_blocking：写第一帧的宽景、人物站位、朝向、视线、道具位置和光源；人物从第一帧就在画面内。
+- format_mode：写单一连续镜头或硬切、总时长、实时速度、是否允许切换。
+- optics：写视场角、景别、焦点计划和景深。
+- camera：写机位高度、运动方向、速度、幅度、持续时间和轴线；同时写镜头保持在哪一侧。
+- action_timing：严格写 3 行动作节拍，依次为「起始：…」「推进：…」「终点：…」。每行只写一个可拍摄的动作或状态变化。
+- physics：写重量、接触、惯性、呼吸、衣物和液体等可见物理反应。
+- lighting：写一个可信主光源、方向、阴影方向、光比和色温；整镜保持同一光线逻辑。
+- audio：写固定语音描述、精确对白、环境声和音效；所有对白只放在这里。
+- character_acting：逐角色写目标、隐藏信息、手部动作、视线、呼吸、眨眼和状态变化；写行为，不写空泛情绪词。
+- style：写本项目锁定的 Style Prefix；不得临时改变全片画风。
+- quality：写清晰度、身份稳定、材质稳定、帧间稳定和文字/道具可读性要求。
+- positive_constraints：用正向句写人物数量、资产数量、位置、朝向、道具数量、画幅、时长和技术标签。
+
+旧字段的兼容格式如下，只有在读取旧草稿时才使用：
 - shot_size：景别，例如「双人侧面半身中近景」或「单人面部近景特写」。
 - camera_lens：摄像机 / 镜头，例如「50mm 标准定焦」。
 - camera_movement：运镜，写清方向、速度、幅度、持续时间；固定机位明确写「固定镜头」。
@@ -86,9 +133,15 @@ const SEEDANCE_DIRECTOR_SYSTEM_ZH = `视频提示词拆解方法（Seedance 2.0 
 - visual：画面。必须包含可见空间、人物或道具位置、一个可见动作及终点、构图裁切、光源/光线与连续性；不要用抽象情绪词代替事实。
 - timeline：严格写 3 行动作节拍，依次为「起始：…」「推进：…」「终点：…」。每行只写一个可拍摄的动作或状态变化；终点必须是可见的落点，不要自行编造秒数，后端会按锁定时长换算为 0-X 秒时间线。
 - voice_over：人声 OS；没有时明确写「无」。
-- sound：具体音效与环境底噪；没有特殊音效时也要写保留的环境声。`;
+- sound：具体音效与环境底噪；没有特殊音效时也要写保留的环境声。
+
+模型必须把对话放在 audio 中，并在 audio 中明确「所有角色只说引号内台词；没有台词的角色保持安静；SFX only. No music.」。
+模型必须在 style 或 positive_constraints 末尾保留技术标签：Photoreal. NON-IP. [aspect ratio]. [duration]s. SFX only. NO CGI. Cinematic。
+模型必须用现在时、短句和正向表达。复杂动作拆成多个镜头，不把多个独立动作塞进同一个时间节拍。`;
 
 module.exports = {
+  SEEDANCE_LEGACY_DESIGN_FIELDS,
+  SEEDANCE_RICH_DESIGN_FIELDS,
   SEEDANCE_DESIGN_FIELDS,
   SEEDANCE_DIRECTOR_SYSTEM_ZH,
   sanitizeSeedanceDesign,

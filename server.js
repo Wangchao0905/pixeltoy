@@ -4362,11 +4362,237 @@ function defaultPaths(episodeRoot) {
     script: path.join(episodeRoot, "01_script", `${slug}_script.md`),
     storyboard: path.join(episodeRoot, "02_storyboard", `${slug}_storyboard.md`),
     modelShotPlan: path.join(episodeRoot, "02_storyboard", `${slug}_model_shot_plan.json`),
+    spatialMaps: path.join(episodeRoot, "02_storyboard", `${slug}_spatial_maps.json`),
     assetManifest: resolveSeriesAssetManifestPath(episodeRoot),
     assetPrompts: path.join(episodeRoot, "03_asset_prompts", `${slug}_asset_prompts.md`),
     seedancePrompts: path.join(episodeRoot, VIDEO_PROMPTS_DIR, `${slug}_seedance_prompts.md`),
     config: path.join(projectDirForEpisode(episodeRoot), "work", `${slug}_video_generation`, `${slug}_skill_config.json`),
   };
+}
+
+const SPATIAL_MAPS_VERSION = 1;
+
+function normalizeSpatialMap(raw = {}, index = 0) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const anchors = Array.isArray(source.anchors)
+    ? source.anchors
+        .map((anchor, anchorIndex) => ({
+          id: compactLine(anchor?.id || `anchor_${anchorIndex + 1}`),
+          label: compactLine(anchor?.label || ""),
+          screenPosition: compactLine(anchor?.screenPosition || "center"),
+          distanceM: Number.isFinite(Number(anchor?.distanceM)) ? Number(anchor.distanceM) : null,
+        }))
+        .filter((anchor) => anchor.id && anchor.label)
+    : [];
+  const zones = Array.isArray(source.zones)
+    ? source.zones
+        .map((zone, zoneIndex) => ({
+          id: compactLine(zone?.id || `zone_${zoneIndex + 1}`),
+          anchor: compactLine(zone?.anchor || ""),
+          purpose: compactLine(zone?.purpose || ""),
+        }))
+        .filter((zone) => zone.id)
+    : [];
+  return {
+    id: compactLine(source.id || `MAP_${String(index + 1).padStart(3, "0")}`),
+    sceneRef: compactLine(source.sceneRef || ""),
+    title: compactLine(source.title || ""),
+    status: source.status === "locked" ? "locked" : "draft",
+    version: Math.max(1, Number(source.version) || 1),
+    anchors,
+    axis: {
+      cameraSide: compactLine(source.axis?.cameraSide || ""),
+      line: compactLine(source.axis?.line || ""),
+      crossing: source.axis?.crossing === "allowed" ? "allowed" : "forbidden",
+    },
+    lighting: {
+      source: compactLine(source.lighting?.source || ""),
+      direction: compactLine(source.lighting?.direction || ""),
+      shadowDirection: compactLine(source.lighting?.shadowDirection || ""),
+    },
+    zones,
+    updatedAt: compactLine(source.updatedAt || ""),
+  };
+}
+
+function normalizeSpatialMapsDocument(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  return {
+    version: SPATIAL_MAPS_VERSION,
+    maps: (Array.isArray(source.maps) ? source.maps : []).map(normalizeSpatialMap).filter((map) => map.sceneRef || map.id),
+    updatedAt: compactLine(source.updatedAt || ""),
+  };
+}
+
+function spatialMapValidationErrors(map = {}) {
+  const normalized = normalizeSpatialMap(map);
+  const errors = [];
+  if (!normalized.sceneRef) errors.push("缺少场景引用");
+  if (!normalized.anchors.length) errors.push("至少需要一个地标");
+  if (!normalized.axis.cameraSide) errors.push("缺少摄影机所在侧");
+  if (!normalized.lighting.source) errors.push("缺少光源方向");
+  return errors;
+}
+
+function readSpatialMaps(episodeRoot) {
+  const file = defaultPaths(episodeRoot).spatialMaps;
+  if (!fs.existsSync(file)) return { file, version: SPATIAL_MAPS_VERSION, maps: [] };
+  try {
+    const document = normalizeSpatialMapsDocument(JSON.parse(readText(file)));
+    return { file, ...document };
+  } catch {
+    return { file, version: SPATIAL_MAPS_VERSION, maps: [] };
+  }
+}
+
+function spatialMapComparable(map = {}) {
+  const normalized = normalizeSpatialMap(map);
+  return {
+    ...normalized,
+    version: 0,
+    updatedAt: "",
+  };
+}
+
+function findSpatialMapForScene(maps = [], sceneRef = "") {
+  const cleanSceneRef = compactLine(sceneRef);
+  if (!cleanSceneRef) return null;
+  return (Array.isArray(maps) ? maps : [])
+    .map(normalizeSpatialMap)
+    .filter((map) => map.sceneRef === cleanSceneRef)
+    .sort((left, right) => right.version - left.version)[0] || null;
+}
+
+function writeSpatialMaps(episodeRoot, raw = {}) {
+  const file = defaultPaths(episodeRoot).spatialMaps;
+  const previous = readSpatialMaps(episodeRoot);
+  const incoming = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.maps)
+      ? raw.maps
+      : [raw?.map || raw];
+  const maps = [...previous.maps];
+  const now = new Date().toISOString();
+  for (const candidate of incoming) {
+    const normalized = normalizeSpatialMap(candidate, maps.length);
+    if (!normalized.sceneRef) {
+      const error = new Error("空间地图必须绑定场景");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (normalized.status === "locked") {
+      const errors = spatialMapValidationErrors(normalized);
+      if (errors.length) {
+        const error = new Error(`空间地图无法锁定：${errors.join("、")}`);
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+    const existingIndex = maps.findIndex((map) => map.id === normalized.id || map.sceneRef === normalized.sceneRef);
+    const previousMap = existingIndex >= 0 ? normalizeSpatialMap(maps[existingIndex]) : null;
+    const changed = !previousMap || JSON.stringify(spatialMapComparable(previousMap)) !== JSON.stringify(spatialMapComparable(normalized));
+    const next = {
+      ...normalized,
+      id: previousMap?.id || normalized.id,
+      version: previousMap ? previousMap.version + (changed ? 1 : 0) : 1,
+      updatedAt: changed ? now : previousMap.updatedAt,
+    };
+    if (existingIndex >= 0) maps[existingIndex] = next;
+    else maps.push(next);
+  }
+  const document = normalizeSpatialMapsDocument({ maps, updatedAt: now });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeText(file, `${JSON.stringify(document, null, 2)}\n`);
+  return { file, ...document };
+}
+
+function spatialMapForShot(episodeRoot, shot = {}, config = {}) {
+  if (isProductionBoardMode(config, shot)) return null;
+  const persistedMaps = episodeRoot ? readSpatialMaps(episodeRoot).maps : [];
+  const maps = persistedMaps.length ? persistedMaps : Array.isArray(config.spatialMaps) ? config.spatialMaps : [];
+  const mapId = compactLine(shot.spatialMapId || "");
+  const sceneRef = compactLine(shot.sceneRef || "");
+  const map = maps.find((item) => compactLine(item?.id) === mapId || (!mapId && sceneRef && compactLine(item?.sceneRef) === sceneRef));
+  if (!map) return null;
+  const normalized = normalizeSpatialMap(map);
+  if (normalized.status !== "locked") return null;
+  if (shot.spatialMapVersion && normalized.version !== Number(shot.spatialMapVersion)) return null;
+  if (sceneRef && normalized.sceneRef && normalized.sceneRef !== sceneRef) return null;
+  return normalized;
+}
+
+function bindSpatialMapToShot(shot = {}, maps = [], config = {}) {
+  if (isProductionBoardMode(config, shot)) {
+    const { spatialMapId, spatialMapVersion, spatialState, ...boardShot } = shot;
+    return boardShot;
+  }
+  const map = findSpatialMapForScene(maps, shot.sceneRef);
+  return {
+    ...shot,
+    spatialMapId: map?.id || "",
+    spatialMapVersion: map?.version || 0,
+    spatialState: shot.spatialState && typeof shot.spatialState === "object" ? shot.spatialState : {},
+  };
+}
+
+function spatialMapPromptText(map = {}) {
+  const normalized = normalizeSpatialMap(map);
+  const anchors = normalized.anchors.map((anchor) => {
+    const distance = anchor.distanceM == null ? "" : `, ${anchor.distanceM}m from scene center`;
+    return `— ${anchor.id.toUpperCase()} = ${anchor.label}, ${anchor.screenPosition}${distance}.`;
+  });
+  const zones = normalized.zones.map((zone) => `— ZONE ${zone.id} = anchored at ${zone.anchor || "the mapped space"}; purpose: ${zone.purpose || "staging"}.`);
+  const axis = normalized.axis.cameraSide
+    ? `— 180° AXIS: camera stays on the ${normalized.axis.cameraSide} side${normalized.axis.crossing === "forbidden" ? "; it never crosses the line" : ""}.`
+    : "";
+  const lighting = [normalized.lighting.source, normalized.lighting.direction, normalized.lighting.shadowDirection].filter(Boolean).join(", ");
+  return [
+    "GEO SPATIAL LAYOUT (locked across every prompt-mode shot):",
+    ...anchors,
+    ...zones,
+    normalized.axis.line ? `— AXIS LINE = ${normalized.axis.line}.` : "",
+    axis,
+    lighting ? `— LIGHTING LOGIC = one source: ${lighting}.` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function spatialStatePromptText(spatialState = {}) {
+  const state = spatialState && typeof spatialState === "object" ? spatialState : {};
+  const camera = [state.cameraSide && `camera side: ${state.cameraSide}`, state.cameraDistanceM && `camera distance: ${state.cameraDistanceM}m`].filter(Boolean);
+  const blocking = Array.isArray(state.blocking)
+    ? state.blocking.map((item) => {
+        const parts = [item.actor, item.zone, item.screenPosition, item.facing && `facing ${item.facing}`, item.gaze && `gaze ${item.gaze}`].filter(Boolean);
+        return parts.length ? `— ${parts.join("; ")}.` : "";
+      }).filter(Boolean)
+    : [];
+  const props = Array.isArray(state.propStates)
+    ? state.propStates.map((item) => `— prop ${item.asset || ""}: holder ${item.holder || ""}, hand ${item.hand || ""}, state ${item.state || "held"}.`).filter((line) => !/prop\s*:\s*/i.test(line))
+    : [];
+  return [
+    "SHOT SPATIAL BLOCKING:",
+    camera.join("; "),
+    ...blocking,
+    ...props,
+  ].filter(Boolean).join("\n");
+}
+
+function spatialHandoffPromptText(spatialState = {}) {
+  const state = spatialState && typeof spatialState === "object" ? spatialState : {};
+  return [
+    "CONTINUITY HANDOFF:",
+    state.entryState ? `ENTRY STATE: ${compactLine(state.entryState)}` : "",
+    state.exitState ? `EXIT STATE: ${compactLine(state.exitState)}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function spatialPromptForShot(episodeRoot, shot = {}, config = {}, prompt = "") {
+  if (isProductionBoardMode(config, shot)) return prompt;
+  const map = spatialMapForShot(episodeRoot, shot, config);
+  if (!map) return prompt;
+  return [prompt, spatialMapPromptText(map), spatialStatePromptText(shot.spatialState), spatialHandoffPromptText(shot.spatialState)]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
 }
 
 const MODEL_SHOT_PLAN_VERSION = 2;
@@ -4581,13 +4807,15 @@ function storyboardDraftStatus(episodeRoot) {
   };
 }
 
-function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPlan(episodeRoot), script, dialogueLanguage, assets, videoStylePreset, videoStyleDirective } = {}) {
+function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPlan(episodeRoot), script, dialogueLanguage, assets, videoStylePreset, videoStyleDirective, promptMode = "prompt" } = {}) {
   const plan = modelPlan;
   const currentScriptFingerprint = sha1Text(script);
   if (!plan || plan.scriptFingerprint !== currentScriptFingerprint || plan.dialogueLanguage !== dialogueLanguage) {
     throw new Error("模型导演设计缺失或已过期，请重新生成分镜草稿后再生成视频配置。");
   }
   const assetLookup = assetLookupFromAssets(assets);
+  const spatialMaps = episodeRoot && typeof readSpatialMaps === "function" ? readSpatialMaps(episodeRoot).maps : [];
+  const bindShot = typeof bindSpatialMapToShot === "function" ? bindSpatialMapToShot : (shot) => shot;
   const invalidShots = [];
   const shots = plan.shots.map((plannedShot, index) => {
     const videoDesign = sanitizeSeedanceDesign(plannedShot?.design);
@@ -4606,7 +4834,7 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
       invalidShots.push(plannedShot?.id || `镜头${index + 1}`);
       return null;
     }
-    return {
+    return bindShot({
       name: compactLine(plannedShot.id),
       promptSection: compactLine(plannedShot.id),
       duration: clampShotDuration(plannedShot.duration || 8),
@@ -4615,6 +4843,9 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
       refs: availableRefs,
       unavailableRefs: missingRefs,
       sceneRef: sceneRefForShotRefs(availableRefs, assetLookup),
+      spatialMapId: compactLine(plannedShot?.spatialMapId || ""),
+      spatialMapVersion: Number(plannedShot?.spatialMapVersion || 0) || 0,
+      spatialState: plannedShot?.spatialState && typeof plannedShot.spatialState === "object" ? plannedShot.spatialState : {},
       beat: compactLine(plannedShot.beat),
       title: compactLine(plannedShot.title || plannedShot.beat),
       dialogues: Array.isArray(plannedShot.dialogues) ? plannedShot.dialogues : [],
@@ -4623,7 +4854,7 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
       assetLookup,
       x: 120 + (index % 3) * 460,
       y: 620 + Math.floor(index / 3) * 320,
-    };
+    }, spatialMaps, { promptMode });
   });
   if (invalidShots.length || shots.some((shot) => !shot)) {
     throw new Error(`模型导演设计引用的资产或镜头无效：${invalidShots.join("、")}。请重新生成分镜草稿。`);
@@ -9958,6 +10189,8 @@ function configReadiness(episodeRoot, configData = null) {
       enableStoryboards: false,
       promptMode: "prompt",
       tailFrameContinuity: true,
+      spatialMaps: 0,
+      spatialMapWarnings: [],
       workflowGuide: "",
     };
   }
@@ -9967,6 +10200,7 @@ function configReadiness(episodeRoot, configData = null) {
   const productionAssets = assets.filter((asset) => asset.manifestType !== "Storyboard");
   const storyboards = Array.isArray(config.storyboardReferences) ? config.storyboardReferences : [];
   const shots = Array.isArray(config.shots) ? config.shots : [];
+  const spatialMapWarnings = [];
   const actualDuration = shots.reduce((sum, shot) => sum + Number(shot.duration || 0), 0);
   const durationMismatch = durationPlan && shots.length > 0 && (
     shots.length !== durationPlan.shotCount || actualDuration !== durationPlan.target
@@ -10009,6 +10243,21 @@ function configReadiness(episodeRoot, configData = null) {
     const officialAssetShotsWithoutRefs = shots.filter((shot) => !Array.isArray(shot.refs) || !shot.refs.length);
     if (officialAssetShotsWithoutRefs.length) missing.push(`${officialAssetShotsWithoutRefs.length} 个片段缺少人物、场景或道具绑定`);
   }
+  const spatialMapsRequired = !storyboardMode && config.spatialMapPolicy?.requireLockedMap === true;
+  if (spatialMapsRequired) {
+    const spatialMaps = readSpatialMaps(episodeRoot).maps;
+    shots.forEach((shot) => {
+      if (!shot || !shot.sceneRef) {
+        spatialMapWarnings.push(`${shot?.name || "未命名镜头"}：缺少场景引用，无法绑定空间地图`);
+        return;
+      }
+      const map = spatialMapForShot(episodeRoot, shot, { ...config, spatialMaps });
+      if (!map) {
+        spatialMapWarnings.push(`${shot.name || "未命名镜头"}：缺少已锁定或版本匹配的空间地图`);
+      }
+    });
+    if (spatialMapWarnings.length) missing.push(...spatialMapWarnings);
+  }
   const shotsWithoutRefs = shots.filter((shot) => {
     const references = projectShotVideoReferenceNames(config, shot);
     return !references.length;
@@ -10048,8 +10297,32 @@ function configReadiness(episodeRoot, configData = null) {
     enableStoryboards: config.settings?.enableStoryboards === true,
     promptMode,
     tailFrameContinuity: config.settings?.tailFrameContinuity !== false,
+    spatialMaps: spatialMapsRequired ? readSpatialMaps(episodeRoot).maps.length : 0,
+    spatialMapWarnings,
     workflowGuide: compactLine(config.workflowGuide?.phase || ""),
   };
+}
+
+function assertPromptSpatialMapsReady(episodeRoot, config = {}, selectedShots = null) {
+  if (isProductionBoardMode(config) || config.spatialMapPolicy?.requireLockedMap !== true) return;
+  const shots = Array.isArray(selectedShots) && selectedShots.length
+    ? selectedShots
+    : Array.isArray(config.shots) ? config.shots : [];
+  const warnings = [];
+  for (const shot of shots) {
+    if (!shot?.sceneRef) {
+      warnings.push(`${shot?.name || "未命名镜头"}：缺少场景引用，无法绑定空间地图`);
+      continue;
+    }
+    if (!spatialMapForShot(episodeRoot, shot, config)) {
+      warnings.push(`${shot.name || "未命名镜头"}：缺少已锁定或版本匹配的空间地图`);
+    }
+  }
+  if (warnings.length) {
+    const error = new Error(`提示词模式空间地图校验未通过：${warnings.join("；")}`);
+    error.statusCode = 422;
+    throw error;
+  }
 }
 
 function isGenericGroupName(groupName, episodeRoot) {
@@ -11399,6 +11672,7 @@ function fullProjectState(episodeRoot) {
     assetManifest: findProjectFile(episodeRoot, "assetManifest"),
     assetPrompts: findProjectFile(episodeRoot, "assetPrompts"),
     seedancePrompts: findProjectFile(episodeRoot, "seedancePrompts"),
+    spatialMaps: defaultPaths(episodeRoot).spatialMaps,
     config: findProjectFile(episodeRoot, "config"),
   };
   const localJobs = mergeJobs(episodeRoot, { runNamespace });
@@ -11474,6 +11748,7 @@ function fullProjectState(episodeRoot) {
       config: readText(files.config),
     },
     assetManifest: normalizedAssetManifest,
+    spatialMaps: readSpatialMaps(episodeRoot).maps,
     assets: visibleAssets,
     assetSlots,
     assetStyleReference: readAssetStyleReference(episodeRoot),
@@ -11563,6 +11838,7 @@ function projectStatusSnapshot(episodeRoot) {
   const referenceKitState = projectReferenceKitState(workflow, config?.data || {});
   const durationMode = projectDurationMode(episodeRoot);
   const dialogueLanguage = projectDialogueLanguage(episodeRoot, "en");
+  const spatialMaps = readSpatialMaps(episodeRoot).maps;
   return {
     ok: true,
     runtime: runtimeStatus(),
@@ -11582,6 +11858,7 @@ function projectStatusSnapshot(episodeRoot) {
     filmStudio: publicFilmStudioState(episodeRoot),
     jobs: localJobs.map(jobSummary),
     assetManifest: normalizedAssetManifest,
+    spatialMaps,
     assets: productionAssets,
     assetSlots,
     storyboards: storyboardAssets,
@@ -16297,13 +16574,14 @@ async function createCanvasImageGeneration(body = {}) {
         "--prompt", providerPrompt, "--size", providerSize,
         "--model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini",
         "--image-model", modelConfig.model,
+        "--base-url", process.env.PIXEL_TOYS_IMAGE_BASE_URL || "https://beefapi.com/v1",
         "--out", outPath, "--timeout", timeout,
       ];
       // 用 path.delimiter(冒号)拼接会把 https:// 切碎,第二张起静默丢失。
       // \n 不可能出现在 URL 或文件路径里,是安全的分隔符。
       if (referenceInputs.length > 1) args.push("--reference-image", referenceInputs.slice(1).join("\n"));
     } else {
-      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--out", outPath, "--timeout", timeout];
+      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--base-url", process.env.PIXEL_TOYS_IMAGE_BASE_URL || "https://beefapi.com/v1", "--out", outPath, "--timeout", timeout];
     }
   }
   const env = { ...process.env, OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "" };
@@ -17115,7 +17393,7 @@ function projectVideoPayloadForShot(episodeRoot, shot, config = {}) {
   const visualBudget = Math.max(0, SEEDANCE_MAX_IMAGE_REFERENCES - frameCount - refs.length);
   const boundedVisualReferences = visualReferences.slice(0, visualBudget);
   return {
-    prompt: compactLine(shot.prompt || shot.videoPrompt || ""),
+    prompt: compactLine(spatialPromptForShot(episodeRoot, shot, config, shot.prompt || shot.videoPrompt || "")),
     model: projectVideoModelForShot(config, shot),
     modelMode: projectVideoModelForShot(config, shot),
     ratio: config.settings?.ratio || "9:16",
@@ -18157,6 +18435,7 @@ async function generateProjectVideoShot(episodeRoot, body = {}) {
   config = { ...config, episodeRoot };
   const shot = (Array.isArray(config.shots) ? config.shots : []).find((item) => item.name === shotName) || fallback?.shot || null;
   if (!shot) throw new Error(`视频配置中找不到片段：${shotName}`);
+  assertPromptSpatialMapsReady(episodeRoot, config, [shot]);
   if (!Array.isArray(config.shots) || !config.shots.some((item) => item.name === shot.name)) {
     config = { ...(fallback?.config || config), shots: [shot] };
   }
@@ -18617,6 +18896,7 @@ async function generateProjectVideoShotsSequentially(episodeRoot, body = {}) {
   const config = { ...(configRecord?.data || {}), episodeRoot };
   const shots = Array.isArray(config.shots) ? config.shots : [];
   if (!shots.length) throw new Error("视频配置中没有可生成的片段");
+  assertPromptSpatialMapsReady(episodeRoot, config);
   assertVideoConfigAssetsReady(config, null, episodeRoot);
   const requested = Array.isArray(body.shotNames) ? new Set(body.shotNames.map(compactLine).filter(Boolean)) : null;
   const selected = requested?.size ? shots.filter((shot) => requested.has(shot.name)) : shots;
@@ -24738,6 +25018,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     assets: productionAssets,
     videoStylePreset,
     videoStyleDirective,
+    promptMode: videoPromptMode,
   });
   const referenceWarnings = [];
   modelShots.forEach((shot) => {
@@ -24842,6 +25123,12 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     sfxStyle: requestedSfxStyle,
     durationMode: requestedDurationMode,
     promptMode: videoPromptMode,
+    spatialMaps: videoPromptMode === "prompt" ? readSpatialMaps(episodeRoot).maps : [],
+    spatialMapPolicy: {
+      mode: "prompt_only",
+      requireLockedMap: true,
+      versioned: true,
+    },
     enableStoryboards: storyboardsActive,
     durationAuthority: storyboardsActive ? "storyboard" : "script_duration_plan",
     settings: {
@@ -25008,6 +25295,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     assets: configAssets,
     videoStylePreset,
     videoStyleDirective,
+    promptMode: storyboardsActive ? "production_board" : "prompt",
   });
   const modelShot = modelShots.find((shot) => shot.name === shotName);
   if (!modelShot) throw new Error(`模型导演设计中找不到片段：${shotName}`);
@@ -25065,6 +25353,12 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     ...previous,
     dialectStyle: requestedDialectStyle,
     sfxStyle: requestedSfxStyle,
+    spatialMaps: storyboardsActive ? [] : readSpatialMaps(episodeRoot).maps,
+    spatialMapPolicy: {
+      mode: "prompt_only",
+      requireLockedMap: true,
+      versioned: true,
+    },
     settings: {
       ...(previous.settings || {}),
       dialogueLanguage: resolvedDialogueLanguage,
@@ -27122,6 +27416,15 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, filmStudio: publicFilmStudioState(episodeRoot) });
   }
 
+  if (req.method === "GET" && action === "spatial-maps") {
+    return send(res, 200, { ok: true, ...readSpatialMaps(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "spatial-maps") {
+    const result = writeSpatialMaps(episodeRoot, await readBody(req));
+    return send(res, 200, { ok: true, ...result, state: fullProjectState(episodeRoot) });
+  }
+
   if (req.method === "POST" && action === "film-studio/discover") {
     await buildFilmStudioCandidates(episodeRoot, await readBody(req));
     return send(res, 200, { ok: true, filmStudio: publicFilmStudioState(episodeRoot), state: fullProjectState(episodeRoot) });
@@ -27966,6 +28269,7 @@ module.exports = {
       persistProjectDurationMode,
       freeDurationPlanForEpisode,
       configReadiness,
+      assertPromptSpatialMapsReady,
       modelPlanningScript,
       modelShotPlanNeedsRefresh,
       writeStoryboardModelPlan,
@@ -28107,6 +28411,18 @@ module.exports = {
       projectVideoModelForShot,
       projectVideoPayloadForShot,
       archiveShotVideoArtifactsForRegeneration,
+    },
+    spatialMap: {
+      normalize: normalizeSpatialMap,
+      normalizeDocument: normalizeSpatialMapsDocument,
+      read: readSpatialMaps,
+      write: writeSpatialMaps,
+      bind: bindSpatialMapToShot,
+      forShot: spatialMapForShot,
+      promptText: spatialMapPromptText,
+      statePromptText: spatialStatePromptText,
+      handoffPromptText: spatialHandoffPromptText,
+      promptForShot: spatialPromptForShot,
     },
     assetJobRetry: {
       shouldAutoRetryTransientAssetJob,

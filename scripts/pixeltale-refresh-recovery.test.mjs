@@ -21,6 +21,8 @@ assert.match(app, /syncAgentState\(\{ silent: true \}\)\.finally\(\(\) => \{[\s\
 assert.match(app, /function updateAgentState\(agent, \{ preserveStage = state\.stageSelectionVersion > 0 \} = \{\}\) \{\s*if \(!agent \|\| typeof agent !== "object"\) return;/, "后台任务缺少状态时不得清空已恢复的项目");
 assert.match(app, /function updateAgentState\(agent, \{ preserveStage = state\.stageSelectionVersion > 0 \} = \{\}/, "状态同步必须允许调用方明确选择是否保留当前页签");
 assert.match(app, /updateAgentState\(payload\.result\?\.state, \{ preserveStage: false \}\)/, "确认产物成功后必须切换到服务端返回的下一阶段");
+assert.match(app, /function navigateToStage\(stage\) \{[\s\S]{0,220}if \(!stageAccessible\(stage\)\)[\s\S]{0,180}showToast\([\s\S]{0,180}return;/, "未解锁阶段点击不得切换页面");
+assert.match(app, /const preserveStageSelection = preserveStage && state\.stageSelectionVersion > 0 && stageAccessible\(state\.stage\)/, "状态刷新不得恢复已失效的未来阶段页签");
 assert.match(app, /if \(!result\?\.state\) \{[\s\S]{0,180}renderStage\(\)/, "后台任务缺少完整状态时必须保留当前页面内容");
 assert.match(app, /function consumePendingNewNotice\([\s\S]{0,300}sessionStorage\.removeItem\(PENDING_NOTICE_KEY\)/, "新建剧集标记必须在状态恢复流程内消费");
 assert.match(app, /const pendingNew = consumePendingNewNotice\(\);/, "新建剧集提示必须在状态同步后消费");
@@ -92,6 +94,7 @@ const updateAgentStateContext = {
   },
   syncRoutingModelOptions: () => {},
   persistSessionSnapshot: () => {},
+  stageAccessible: (stage) => stage === "characters",
 };
 vm.createContext(updateAgentStateContext);
 vm.runInContext(extractFunction(app, "function updateAgentState("), updateAgentStateContext, { filename: "public/pixeltale/app.js" });
@@ -99,6 +102,21 @@ vm.runInContext('updateAgentState({ stage: "arc", mode: "tk_short_drama", routes
 assert.equal(updateAgentStateContext.state.stage, "characters", "普通后台同步必须保留用户当前查看的页签");
 vm.runInContext('updateAgentState({ stage: "arc", mode: "tk_short_drama", routes: {}, input: {}, approvedArtifactIds: [] }, { preserveStage: false })', updateAgentStateContext);
 assert.equal(updateAgentStateContext.state.stage, "arc", "确认成功后的状态同步必须进入服务端下一阶段");
+
+const navigateContext = {
+  stageOrder: ["brief", "title", "proposal", "characters", "arc"],
+  stageAccessible: (stage) => stage === "characters",
+  stageMeta: { characters: { title: "人物与世界" } },
+  workflowStage: () => "characters",
+  showToast: (message) => { navigateContext.toast = message; },
+  state: { stage: "characters", stageSelectionVersion: 0, lastError: "" },
+  renderStage: () => { navigateContext.rendered = true; },
+};
+vm.createContext(navigateContext);
+vm.runInContext(extractFunction(app, "function navigateToStage("), navigateContext, { filename: "public/pixeltale/app.js" });
+vm.runInContext('navigateToStage("arc")', navigateContext);
+assert.equal(navigateContext.state.stage, "characters", "点击未解锁阶段不得把当前页面切到未来阶段");
+assert.match(navigateContext.toast, /请先完成/u, "点击未解锁阶段必须说明先完成当前阶段");
 
 const requestContext = {
   AbortController,

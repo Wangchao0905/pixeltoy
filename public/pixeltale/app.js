@@ -682,15 +682,15 @@ async function runDocumentAction(action) {
 
 function updateAgentState(agent, { preserveStage = state.stageSelectionVersion > 0 } = {}) {
   if (!agent || typeof agent !== "object") return;
-  const preserveStageSelection = preserveStage && state.stageSelectionVersion > 0;
   state.agent = agent;
   if (agent.mode === "long_form_drama") state.mode = "long"; else if (agent.mode === "cn_short_drama") state.mode = "cn"; else state.mode = "tk";
-  if (!preserveStageSelection) state.stage = agent.stage === "script" ? "handoff" : agent.stage || "brief";
   const legacySeatDefaults = { seat_a: "gpt-5.6-terra", seat_b: "claude-opus-5", seat_c: "claude-haiku-4-5" };
   const migratedRoutes = Object.fromEntries(Object.entries(agent.routes || {}).map(([key, value]) => [key, value === "deepseek-v4-pro" ? (legacySeatDefaults[key] || "claude-haiku-4-5") : value]));
   state.routes = { ...state.routes, ...migratedRoutes };
   state.input = { ...state.input, ...(agent.input || {}) };
   state.approved = new Set(agent.approvedArtifactIds || []);
+  const preserveStageSelection = preserveStage && state.stageSelectionVersion > 0 && stageAccessible(state.stage);
+  if (!preserveStageSelection) state.stage = agent.stage === "script" ? "handoff" : agent.stage || "brief";
   syncRoutingModelOptions(agent.modelOptions || []);
   persistSessionSnapshot();
 }
@@ -1055,6 +1055,10 @@ function stageAccessible(stage) {
 
 function navigateToStage(stage) {
   if (!stageOrder.includes(stage)) return;
+  if (!stageAccessible(stage)) {
+    showToast(`请先完成“${stageMeta[workflowStage()]?.title || "当前阶段"}”`);
+    return;
+  }
   state.stageSelectionVersion += 1;
   state.stage = stage;
   state.lastError = "";

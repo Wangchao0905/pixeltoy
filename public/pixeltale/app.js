@@ -926,7 +926,7 @@ function reviewForArtifact(artifact) {
 // 而不是盲目跳过质量门。
 function buildHumanOverrideBrief(reviewContent = {}) {
   const lines = [];
-  const score = reviewContent.score;
+  const score = reviewContent.quality;
   if (Number.isFinite(score)) lines.push(`• 质量分：${Math.round(score)} / 100`);
   const dims = reviewContent.dimensions || {};
   const dimLabels = { structure: "结构", plot: "剧情", design: "设计", logic: "逻辑" };

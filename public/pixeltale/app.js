@@ -2673,6 +2673,8 @@ async function monitorBackgroundRun(run) {
 async function runCurrentStage(stage = state.stage, { revisionPlan = "", override = false } = {}) {
   if (stage === "brief") collectBriefInput();
   if (stage === "title") state.input.storyTitle = "";
+  // 2026-08-12：重新生成当前阶段时清除修订轮数计数
+  try { sessionStorage.removeItem(`pixeltale.revision-rounds:${stage}`); } catch { /* storage unavailable */ }
   const unitNumbers = collectUnitStageScope(stage);
   state.lastError = "";
   state.busy = true;

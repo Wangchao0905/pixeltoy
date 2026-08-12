@@ -18,7 +18,9 @@ assert.match(app, /response = await fetch\([\s\S]{0,500}payload = await response
 assert.match(app, /for \(let attempt = 1; attempt <= PIXELTALE_STATE_RETRY_LIMIT; attempt\+\+\)/, "刷新状态请求必须在短暂失败时自动重试");
 assert.match(app, /updateAgentState\(payload\.agent\)[\s\S]{0,180}renderStage\(\)/, "后台同步成功后必须用完整服务端状态校准页面");
 assert.match(app, /syncAgentState\(\{ silent: true \}\)\.finally\(\(\) => \{[\s\S]{0,180}if \(state\.activeRun\) void monitorBackgroundRun\(state\.activeRun\)/, "刷新后必须继续监控已持久化的后台任务");
-assert.match(app, /function updateAgentState\(agent\) \{\s*if \(!agent \|\| typeof agent !== "object"\) return;/, "后台任务缺少状态时不得清空已恢复的项目");
+assert.match(app, /function updateAgentState\(agent, \{ preserveStage = state\.stageSelectionVersion > 0 \} = \{\}\) \{\s*if \(!agent \|\| typeof agent !== "object"\) return;/, "后台任务缺少状态时不得清空已恢复的项目");
+assert.match(app, /function updateAgentState\(agent, \{ preserveStage = state\.stageSelectionVersion > 0 \} = \{\}/, "状态同步必须允许调用方明确选择是否保留当前页签");
+assert.match(app, /updateAgentState\(payload\.result\?\.state, \{ preserveStage: false \}\)/, "确认产物成功后必须切换到服务端返回的下一阶段");
 assert.match(app, /if \(!result\?\.state\) \{[\s\S]{0,180}renderStage\(\)/, "后台任务缺少完整状态时必须保留当前页面内容");
 assert.match(app, /function consumePendingNewNotice\([\s\S]{0,300}sessionStorage\.removeItem\(PENDING_NOTICE_KEY\)/, "新建剧集标记必须在状态恢复流程内消费");
 assert.match(app, /const pendingNew = consumePendingNewNotice\(\);/, "新建剧集提示必须在状态同步后消费");
@@ -32,7 +34,7 @@ assert.ok(scoreUse >= 0, "审核面板必须使用评分门槛");
 function extractFunction(source, signature) {
   const start = source.indexOf(signature);
   assert.notEqual(start, -1, `missing app function: ${signature}`);
-  const bodyStart = source.indexOf("{\n", start);
+  const bodyStart = source.indexOf(") {\n", start) + 2;
   assert.notEqual(bodyStart, -1, `missing function body: ${signature}`);
   let depth = 0;
   for (let index = bodyStart; index < source.length; index += 1) {
@@ -76,6 +78,27 @@ snapshotContext.state.approved = new Set();
 assert.equal(vm.runInContext("restoreSessionSnapshot()", snapshotContext), true, "刷新必须能恢复当前会话快照");
 assert.equal(snapshotContext.state.stage, "arc", "刷新后必须立即回到刷新前所在阶段");
 assert.equal(snapshotContext.state.agent.artifacts[0].id, "arc_1", "刷新后必须立即保留原阶段产物");
+
+const updateAgentStateContext = {
+  Set,
+  state: {
+    stageSelectionVersion: 1,
+    stage: "characters",
+    agent: {},
+    mode: "tk",
+    routes: {},
+    input: {},
+    approved: new Set(),
+  },
+  syncRoutingModelOptions: () => {},
+  persistSessionSnapshot: () => {},
+};
+vm.createContext(updateAgentStateContext);
+vm.runInContext(extractFunction(app, "function updateAgentState("), updateAgentStateContext, { filename: "public/pixeltale/app.js" });
+vm.runInContext('updateAgentState({ stage: "arc", mode: "tk_short_drama", routes: {}, input: {}, approvedArtifactIds: [] })', updateAgentStateContext);
+assert.equal(updateAgentStateContext.state.stage, "characters", "普通后台同步必须保留用户当前查看的页签");
+vm.runInContext('updateAgentState({ stage: "arc", mode: "tk_short_drama", routes: {}, input: {}, approvedArtifactIds: [] }, { preserveStage: false })', updateAgentStateContext);
+assert.equal(updateAgentStateContext.state.stage, "arc", "确认成功后的状态同步必须进入服务端下一阶段");
 
 const requestContext = {
   AbortController,

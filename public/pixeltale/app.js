@@ -680,9 +680,9 @@ async function runDocumentAction(action) {
   }
 }
 
-function updateAgentState(agent) {
+function updateAgentState(agent, { preserveStage = state.stageSelectionVersion > 0 } = {}) {
   if (!agent || typeof agent !== "object") return;
-  const preserveStageSelection = state.stageSelectionVersion > 0;
+  const preserveStageSelection = preserveStage && state.stageSelectionVersion > 0;
   state.agent = agent;
   if (agent.mode === "long_form_drama") state.mode = "long"; else if (agent.mode === "cn_short_drama") state.mode = "cn"; else state.mode = "tk";
   if (!preserveStageSelection) state.stage = agent.stage === "script" ? "handoff" : agent.stage || "brief";
@@ -2918,7 +2918,7 @@ async function approveArtifact(artifactId, { humanOverride = false, humanOverrid
   renderShellState();
   try {
     const payload = await request(`/artifacts/${encodeURIComponent(artifactId)}/approve`, { method: "POST", body: JSON.stringify({ selectedTitle: state.input.storyTitle || "", humanOverride, humanOverrideReason: humanOverride ? humanOverrideReason || "用户人工放行：接受当前版本继续" : "" }) });
-    updateAgentState(payload.result?.state);
+    updateAgentState(payload.result?.state, { preserveStage: false });
     showToast(humanOverride ? "已人工放行并确认，进入下一阶段" : "本阶段已确认，进入下一阶段");
   } catch (error) {
     state.lastError = userFacingError(error);

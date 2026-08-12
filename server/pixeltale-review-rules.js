@@ -191,12 +191,15 @@ function checkHooks(stage, mode, artifact, violations) {
   });
 }
 
-function checkShortDramaEngine(stage, mode, artifact, violations) {
+function checkShortDramaEngine(stage, mode, artifact, approvedContext, violations) {
   if (!SHORT_DRAMA_MODES.has(mode)) return;
+  const knownCharacterIds = new Set(array(contextValue(approvedContext, "artifacts"))
+    .map(object)
+    .filter((entry) => entry.stage === "characters")
+    .flatMap((entry) => array(object(entry.content).characters).map((character) => String(object(character).id || "")))
+    .filter(Boolean));
   if (stage === "characters") {
     const characters = array(artifact.characters);
-    const optedIn = characters.some((character) => ["desire_now_zh", "fear_trigger_zh", "core_contradiction_zh", "behavior_signature_zh"].some((key) => Object.hasOwn(object(character), key)));
-    if (!optedIn) return;
     characters.forEach((character, index) => {
       const item = object(character);
       const missing = ["desire_now_zh", "fear_trigger_zh", "core_contradiction_zh", "behavior_signature_zh", "voice_rules_en"]
@@ -206,33 +209,39 @@ function checkShortDramaEngine(stage, mode, artifact, violations) {
   }
   if (stage === "arc") {
     const units = array(artifact.units);
-    const optedIn = units.some((unit) => ["episode_goal_zh", "opposition_zh", "active_choice_zh", "choice_cost_zh", "audience_tension_zh"].some((key) => Object.hasOwn(object(unit), key)));
-    if (!optedIn) return;
     units.forEach((unit, index) => {
       const item = object(unit);
-      const missing = ["episode_goal_zh", "opposition_zh", "active_choice_zh", "choice_cost_zh", "audience_tension_zh"]
+      const missing = ["episode_goal_zh", "opposition_zh", "active_choice_zh", "choice_cost_zh", "audience_tension_zh", "character_engine_refs", "character_drive_zh", "character_choice_basis_zh"]
         .filter((key) => empty(item[key]));
       if (missing.length) add(violations, "ARC_DRAMATIC_ENGINE", "high", `units[${index}]`, `第 ${item.number || index + 1} 集缺少短剧戏剧发动机字段：${missing.join("、")}`);
+      if (!Array.isArray(item.character_engine_refs) || !item.character_engine_refs.length) return;
+      const unknown = item.character_engine_refs.map(String).filter((id) => knownCharacterIds.size && !knownCharacterIds.has(id));
+      if (unknown.length) add(violations, "CHARACTER_USAGE_EVIDENCE", "high", `units[${index}].character_engine_refs`, `第 ${item.number || index + 1} 集引用了未定义人物：${[...new Set(unknown)].join("、")}`);
     });
   }
   if (stage === "scenes") {
     const scenes = array(artifact.scenes);
-    const optedIn = scenes.some((scene) => ["dramatic_question_zh", "character_behavior_zh", "audience_reveal_zh"].some((key) => Object.hasOwn(object(scene), key)));
-    if (!optedIn) return;
     scenes.forEach((scene, index) => {
       const item = object(scene);
-      const missing = ["dramatic_question_zh", "character_behavior_zh", "audience_reveal_zh"]
+      const missing = ["dramatic_question_zh", "character_behavior_zh", "audience_reveal_zh", "character_engine_refs"]
         .filter((key) => empty(item[key]));
       if (missing.length) add(violations, "SCENE_CHARACTER_EXPRESSION", "high", `scenes[${index}]`, `第 ${item.unit_number || index + 1} 集场景缺少人物表达或观众揭示字段：${missing.join("、")}`);
+      if (Array.isArray(item.character_engine_refs) && item.character_engine_refs.length && Array.isArray(item.characters)) {
+        const missingRoster = item.character_engine_refs.map(String).filter((id) => !item.characters.map(String).includes(id));
+        if (missingRoster.length) add(violations, "CHARACTER_USAGE_EVIDENCE", "high", `scenes[${index}].character_engine_refs`, `场景人物使用证明引用了未出现在本场的人物：${[...new Set(missingRoster)].join("、")}`);
+      }
+      const unknown = array(item.character_engine_refs).map(String).filter((id) => knownCharacterIds.size && !knownCharacterIds.has(id));
+      if (unknown.length) add(violations, "CHARACTER_USAGE_EVIDENCE", "high", `scenes[${index}].character_engine_refs`, `场景人物使用证明引用了未定义人物：${[...new Set(unknown)].join("、")}`);
     });
   }
   if (stage === "dialogue") {
     const lines = array(artifact.lines);
-    const optedIn = lines.some((line) => Object.hasOwn(object(line), "subtext_zh") || Object.hasOwn(object(line), "delivery_en"));
-    if (!optedIn) return;
     lines.forEach((line, index) => {
       const item = object(line);
-      if (empty(item.subtext_zh) || empty(item.delivery_en)) add(violations, "DIALOGUE_CHARACTER_VOICE", "high", `lines[${index}]`, `对白缺少潜台词或角色化演绎说明，不能证明人物在表达自己的欲望与关系压力`);
+      if (empty(item.subtext_zh) || empty(item.delivery_en) || empty(item.character_voice_applied_zh) || empty(item.character_engine_refs)) add(violations, "DIALOGUE_CHARACTER_VOICE", "high", `lines[${index}]`, `对白缺少潜台词、角色化演绎或人物声线使用证明，不能证明人物在表达自己的欲望与关系压力`);
+      const unknown = array(item.character_engine_refs).map(String).filter((id) => knownCharacterIds.size && !knownCharacterIds.has(id));
+      if (unknown.length) add(violations, "CHARACTER_USAGE_EVIDENCE", "high", `lines[${index}].character_engine_refs`, `对白人物使用证明引用了未定义人物：${[...new Set(unknown)].join("、")}`);
+      if (item.speaker && array(item.character_engine_refs).map(String).includes(String(item.speaker)) === false) add(violations, "CHARACTER_USAGE_EVIDENCE", "high", `lines[${index}].character_engine_refs`, `对白人物使用证明必须包含实际发言人：${item.speaker}`);
     });
   }
 }
@@ -394,7 +403,7 @@ function runStageRules({ stage = "", mode = "", artifact = {}, approvedContext =
   checkCrossStageRefs(normalizedStage, object(artifact), approvedContext, violations);
   checkEpisodeTitles(normalizedStage, object(artifact), violations);
   checkDisplayNames(normalizedStage, object(artifact), violations);
-  checkShortDramaEngine(normalizedStage, normalizedMode, object(artifact), violations);
+  checkShortDramaEngine(normalizedStage, normalizedMode, object(artifact), approvedContext, violations);
   return {
     violations,
     checked: [

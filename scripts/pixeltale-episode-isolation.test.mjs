@@ -37,6 +37,14 @@ function arcUnit(number, suffix = "") {
     hook_zh: "集尾出现新的危险",
     cliffhanger_question_zh: "主角能否活着揭开下一层真相？",
     payoff_zh: "兑现前一集留下的线索",
+    episode_goal_zh: "拿到下一条证据",
+    opposition_zh: "追捕者封锁出口",
+    active_choice_zh: "主角主动闯入禁区",
+    choice_cost_zh: "暴露自己的位置",
+    audience_tension_zh: "观众知道追捕者已到门外，却不知道主角能否拿到证据",
+    character_engine_refs: ["C001"],
+    character_drive_zh: "主角为了救家人，必须继续追查证据",
+    character_choice_basis_zh: "他害怕暴露身份，却选择闯入禁区",
   };
 }
 

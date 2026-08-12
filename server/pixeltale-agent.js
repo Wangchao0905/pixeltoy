@@ -15,6 +15,7 @@ const { fallbackVisualAssets } = require("./pixeltale-visual-assets.js");
 const { runStageRules, EPISODE_TITLE_CODENAME, DISPLAY_NAME_CODE } = require("./pixeltale-review-rules.js");
 
 const STAGES = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"];
+const SHORT_DRAMA_MODES = new Set(["tk_short_drama", "cn_short_drama"]);
 const STAGE_LABELS = Object.freeze({ brief: "故事架构", title: "剧名选择", proposal: "故事提案", characters: "人物与世界", arc: "分集与章节", scenes: "场景与镜头", dialogue: "对白本土化" });
 const DEFAULT_ROUTES = {
   orchestration: "gpt-5.6-terra",
@@ -66,6 +67,8 @@ const REVIEW_PASS_QUORUM = 2;
 // 自动放行：多数通过 + 意见一致 ≥ 90% 时，无需人工确认，自动进入下一步。
 const AUTO_APPROVE_AGREEMENT = 90;
 const REVIEW_DIMENSIONS = ["structure", "plot", "design", "logic"];
+const RELEASE_QUALITY_FLOOR = 80;
+const RELEASE_DIMENSION_FLOOR = 75;
 const EPISODE_BATCH_SIZE = 5;
 const UNIT_STAGES = new Set(["arc", "scenes"]);
 const FAST_REVIEW_STAGES = new Set(["brief", "proposal", "characters", "dialogue"]);
@@ -139,6 +142,7 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     CHARACTER_MOTIVATION: "欲望、恐惧、秘密和选择相互支撑",
     CHARACTER_PERSONA_ENGINE: "角色具有可持续驱动剧情的即时欲望、触发恐惧与核心矛盾",
     CHARACTER_EXPRESSIVE_BEHAVIOR: "角色有可被拍摄和听见的行为标志与可区分声线",
+    CHARACTER_USAGE_EVIDENCE: "后续产物明确引用人物契约，并能证明人物设定实际驱动本阶段动作与对白",
     CHARACTER_RELATIONSHIP_ENGINE: "人物关系能够持续制造行动与冲突",
     CHARACTER_WORLD_CONSISTENCY: "人物设定不违反已确认世界规则",
   },
@@ -152,6 +156,7 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     ARC_EPISODE_PLOT_COMPLETENESS: "每个单元都有完整剧情推进，不是审核摘要",
     ARC_ACTIVE_CHOICE_COST: "每个单元都有主角主动选择及明确代价，选择改变后续行动空间",
     ARC_AUDIENCE_TENSION: "每个单元持续制造信息缺口、升级压力与集尾行动问题",
+    CHARACTER_USAGE_EVIDENCE: "每集明确引用人物契约，并说明人物欲望、恐惧与矛盾如何导致本集选择",
   },
   scenes: {
     SOURCE_STORY_ANCHOR: "场景与动作具体呈现用户原始大纲的核心环境、威胁与行动",
@@ -162,6 +167,7 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     SCENE_DURATION: "每集所有场景的 shot_plan[].duration_seconds 之和相对用户设定的单集目标秒数允许偏差不超过 ±25%（生成时按目标 ±10% 设计）",
     SCENE_DIRECTABILITY: "场面可拍摄、可表演且可制作",
     SCENE_CHARACTER_EXPRESSION: "场面通过角色独有行为、反应和潜台词表达人物，而不是只讲述事件",
+    CHARACTER_USAGE_EVIDENCE: "每场明确引用人物契约，并把人物设定落实为可拍摄行为",
   },
   dialogue: {
     SOURCE_STORY_ANCHOR: "对白服务于用户原始大纲中的人物目标、威胁与线索推进",
@@ -171,6 +177,7 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     DIALOGUE_LOCALIZATION: "口语、身份、地区和关系语感自然",
     DIALOGUE_VOICE_TIMING: "人物声线可区分且时长可执行",
     DIALOGUE_SUBTEXT_CONFLICT: "对白有潜台词、关系压力和信息递进，不是剧情说明",
+    CHARACTER_USAGE_EVIDENCE: "每条对白明确引用人物契约并说明声线规则如何生效",
   },
 });
 const SHORT_DRAMA_THEORY_RULES = Object.freeze([
@@ -239,6 +246,10 @@ function asObject(value) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function empty(value) {
+  return value === undefined || value === null || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && value.length === 0);
 }
 
 function normalizeCreativeControls(input = {}) {
@@ -600,15 +611,15 @@ function stageOutputContract(stage, mode) {
     // Removing them from the characters call cuts output from ~8 kB to ~3.5 kB,
     // which eliminates INVALID_JSON / TIMEOUT on every seat for this stage.
     characters: `{"characters":[{"id":"C001","name_zh":"真实可读的人物名，不得填写 C001 等内部编号或代号","name_en":"Real English or romanized display name","role":"protagonist","desire_zh":"长期欲望","desire_now_zh":"当前阶段最想得到的具体东西","fear_zh":"深层恐惧","fear_trigger_zh":"会让角色失控的具体触发点","core_contradiction_zh":"口头信念与真实行为的矛盾","secret_zh":"秘密","arc_zh":"人物弧线","behavior_signature_zh":["紧张、撒谎或愤怒时可被拍摄的独有动作"],"voice_rules_en":["英文声线规则：可区分的句式、语气、口头禅和情绪表达规则"],"visual_profile":{"gender":"性别","age_phase":"年龄相","hair_color":"发型发色","palette":"识别色"}}],"relationships":[{"from":"C001","to":"C002","dynamic_zh":"关系变化与施压方式"}],"world_rules":["不可违反的世界规则"]}`,
-    arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","episode_goal_zh":"主角本集要得到什么","opposition_zh":"谁或什么阻止他","plot_zh":"本集完整剧情推进，包含可见行动、冲突升级、主动选择、选择代价、结果与下一集动力，不是审核摘要","active_choice_zh":"主角主动做出的不可逆选择","choice_cost_zh":"选择立即造成的代价","audience_tension_zh":"观众此刻知道什么、还不知道什么、为什么必须继续看","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
+    arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","episode_goal_zh":"主角本集要得到什么","opposition_zh":"谁或什么阻止他","plot_zh":"本集完整剧情推进，包含可见行动、冲突升级、主动选择、选择代价、结果与下一集动力，不是审核摘要","active_choice_zh":"主角主动做出的不可逆选择","choice_cost_zh":"选择立即造成的代价","audience_tension_zh":"观众此刻知道什么、还不知道什么、为什么必须继续看","character_engine_refs":["C001"],"character_drive_zh":"哪个人物欲望、恐惧或矛盾正在推动本集","character_choice_basis_zh":"该人物设定如何导致本集主动选择","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
     // Same trim as characters: the visual-assets stage regenerates every scene and
     // prop visual field independently, so asking for them here doubled the payload
     // for nothing. Measured at full payload: claude-opus-5 timed out at 300s,
     // deepseek-v4-pro returned invalid JSON at 256s, claude-haiku-4-5 returned an
     // empty scenes array. visual_profile keeps only the 3 fields a shot plan needs
     // for continuity; props keep identity and recurrence, not their look.
-    scenes: `{"scenes":[{"id":"S001","unit_number":1,"name_zh":"真实可读的场景名，不得填写 S001 等内部编号或代号","purpose_zh":"场景目的","dramatic_question_zh":"本场观众要等什么答案","time_zh":"时间","location_zh":"地点","characters":["C001"],"action_zh":"连续动作推进","screenplay_zh":"正式剧本动作正文：连续、可拍摄的动作与反应，不写剧情摘要，不包含场次标题或对白标签。","conflict_zh":"场面冲突","character_behavior_zh":"角色独有的可见行为与反应","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","audience_reveal_zh":"本场给观众的新信息或新危险","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"indoor_outdoor":"室内外","lighting":"光线","palette":"色调"},"props":[{"id":"PR01","name_zh":"真实可读的道具名，不得填写 PR01 等内部编号或代号","description_zh":"道具描述","recurring":true}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
-    dialogue: `{"lines":[{"id":"D001","scene_id":"S001","speaker":"C001","intent_zh":"中文剧情意图","dialogue_en":"Natural localized English dialogue.","subtext_zh":"没有直接说出的欲望、威胁或关系压力","delivery_en":"符合该角色声线的演绎说明"}],"localization_checks":["口语化","人物声线一致","潜台词有冲突","未泄露悬念"]}`,
+    scenes: `{"scenes":[{"id":"S001","unit_number":1,"name_zh":"真实可读的场景名，不得填写 S001 等内部编号或代号","purpose_zh":"场景目的","dramatic_question_zh":"本场观众要等什么答案","time_zh":"时间","location_zh":"地点","characters":["C001"],"character_engine_refs":["C001"],"action_zh":"连续动作推进","screenplay_zh":"正式剧本动作正文：连续、可拍摄的动作与反应，不写剧情摘要，不包含场次标题或对白标签。","conflict_zh":"场面冲突","character_behavior_zh":"角色独有的可见行为与反应，以及人物设定如何导致该行为","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","audience_reveal_zh":"本场给观众的新信息或新危险","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"indoor_outdoor":"室内外","lighting":"光线","palette":"色调"},"props":[{"id":"PR01","name_zh":"真实可读的道具名，不得填写 PR01 等内部编号或代号","description_zh":"道具描述","recurring":true}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
+    dialogue: `{"lines":[{"id":"D001","scene_id":"S001","speaker":"C001","character_engine_refs":["C001"],"character_voice_applied_zh":"本句如何落实该人物的声线规则","intent_zh":"中文剧情意图","dialogue_en":"Natural localized English dialogue.","subtext_zh":"没有直接说出的欲望、威胁或关系压力","delivery_en":"符合该角色声线的演绎说明"}],"localization_checks":["口语化","人物声线一致","潜台词有冲突","未泄露悬念"]}`,
   };
   if (normalized === "cn_short_drama") {
     common = stage === "title"
@@ -740,6 +751,9 @@ function stageContextContent(artifact, { unitScope = [] } = {}) {
     active_choice_zh: text(unit?.active_choice_zh, 520),
     choice_cost_zh: text(unit?.choice_cost_zh, 520),
     audience_tension_zh: text(unit?.audience_tension_zh, 700),
+    character_engine_refs: asArray(unit?.character_engine_refs).map((value) => text(value, 80)).slice(0, 8),
+    character_drive_zh: text(unit?.character_drive_zh, 520),
+    character_choice_basis_zh: text(unit?.character_choice_basis_zh, 520),
     causal_turn_zh: text(unit?.causal_turn_zh, 360),
     hook_zh: text(unit?.hook_zh, 320),
     cliffhanger_question_zh: text(unit?.cliffhanger_question_zh, 240),
@@ -759,6 +773,7 @@ function stageContextContent(artifact, { unitScope = [] } = {}) {
         unit_number: Number(scene?.unit_number || 0),
         location_zh: text(scene?.location_zh, 180),
         characters: asArray(scene?.characters).slice(0, 10),
+        character_engine_refs: asArray(scene?.character_engine_refs).map((value) => text(value, 80)).slice(0, 10),
         action_zh: text(scene?.action_zh, scope.size ? 1800 : 460),
         screenplay_zh: text(scene?.screenplay_zh, scope.size ? 2600 : 700),
         purpose_zh: text(scene?.purpose_zh, 360), dramatic_question_zh: text(scene?.dramatic_question_zh, 420), character_behavior_zh: text(scene?.character_behavior_zh, 520), audience_reveal_zh: text(scene?.audience_reveal_zh, 520),
@@ -774,6 +789,21 @@ function stageContextContent(artifact, { unitScope = [] } = {}) {
       })),
       relationships: asArray(content.relationships).slice(0, 36),
       world_rules: asArray(content.world_rules).slice(0, 24),
+    };
+  }
+  if (artifact?.stage === "dialogue") {
+    return {
+      lines: asArray(content.lines).slice(0, 120).map((line) => ({
+        id: text(line?.id, 100),
+        scene_id: text(line?.scene_id, 100),
+        speaker: text(line?.speaker, 80),
+        character_engine_refs: asArray(line?.character_engine_refs).map((value) => text(value, 80)).slice(0, 8),
+        character_voice_applied_zh: text(line?.character_voice_applied_zh, 520),
+        intent_zh: text(line?.intent_zh, 420),
+        subtext_zh: text(line?.subtext_zh, 420),
+        delivery_en: text(line?.delivery_en, 420),
+      })),
+      localization_checks: asArray(content.localization_checks).slice(0, 12),
     };
   }
   const compact = {};
@@ -1494,7 +1524,7 @@ function mergeRevisionContent(stage, content, sourceContent) {
 
 function validateContent(stage, content, input = {}) {
   const value = asObject(content);
-  const normalizedMode = normalizeMode(input.mode);
+  const normalizedMode = input.mode ? normalizeMode(input.mode) : "";
   const required = requiredContentFields(stage);
   const missing = required.filter((key) => value[key] === undefined || value[key] === null || (typeof value[key] === "string" && !value[key].trim()) || (Array.isArray(value[key]) && value[key].length === 0));
   if (missing.length) {
@@ -1589,10 +1619,14 @@ function validateContent(stage, content, input = {}) {
     const invalid = value.lines.some((line) => {
       const dialogue = text(line?.dialogue_en, 1000);
       const chineseModeInvalid = normalizedMode === "cn_short_drama" && (!/[\u3400-\u9fff]/u.test(dialogue) || /[A-Za-z]/u.test(dialogue));
-      return !text(line?.speaker, 120) || !dialogue || !text(line?.intent_zh, 1000) || chineseModeInvalid;
+      const missingCharacterUse = SHORT_DRAMA_MODES.has(normalizedMode)
+        && (empty(line?.character_engine_refs) || empty(line?.character_voice_applied_zh));
+      return !text(line?.speaker, 120) || !dialogue || !text(line?.intent_zh, 1000) || chineseModeInvalid || missingCharacterUse;
     });
     if (invalid) {
-      const error = new Error(normalizedMode === "cn_short_drama" ? "国内短剧对白必须包含 speaker、intent_zh 和纯中文 dialogue_en" : "对白产物必须同时包含 speaker、intent_zh 和 dialogue_en");
+      const error = new Error(SHORT_DRAMA_MODES.has(normalizedMode)
+        ? "短剧对白必须包含 speaker、intent_zh、character_engine_refs、character_voice_applied_zh 和符合模式的 dialogue_en"
+        : normalizedMode === "cn_short_drama" ? "国内短剧对白必须包含 speaker、intent_zh 和纯中文 dialogue_en" : "对白产物必须同时包含 speaker、intent_zh 和 dialogue_en");
       error.code = "SCHEMA_INVALID";
       throw error;
     }
@@ -1601,10 +1635,15 @@ function validateContent(stage, content, input = {}) {
     const invalid = asArray(value.characters).some((item) => {
       const entry = asObject(item);
       const name = text(entry.name_zh || entry.name_en, 200);
-      return !name || DISPLAY_NAME_CODE.test(name);
+      const missingContract = SHORT_DRAMA_MODES.has(normalizedMode)
+        && ["desire_now_zh", "fear_trigger_zh", "core_contradiction_zh", "behavior_signature_zh", "voice_rules_en"]
+          .some((key) => empty(entry[key]));
+      return !name || DISPLAY_NAME_CODE.test(name) || missingContract;
     });
     if (invalid) {
-      const error = new Error("人物产物必须为每个人物填写真实名称，不能使用 C001 等编号或代号");
+      const error = new Error(SHORT_DRAMA_MODES.has(normalizedMode)
+        ? "短剧人物产物必须为每个人物填写真实名称及人物契约：desire_now_zh、fear_trigger_zh、core_contradiction_zh、behavior_signature_zh、voice_rules_en"
+        : "人物产物必须为每个人物填写真实名称，不能使用 C001 等编号或代号");
       error.code = "SCHEMA_INVALID";
       throw error;
     }
@@ -1619,16 +1658,23 @@ function validateContent(stage, content, input = {}) {
     const lockedOverlap = actualUnits.filter((number) => locked.includes(number));
     const invalidUnit = units.find((unit, index) => {
       const item = asObject(unit);
+      const missingDramaticEngine = SHORT_DRAMA_MODES.has(normalizedMode) && [
+        "episode_goal_zh", "opposition_zh", "active_choice_zh", "choice_cost_zh", "audience_tension_zh",
+        "character_engine_refs", "character_drive_zh", "character_choice_basis_zh",
+      ].some((key) => empty(item[key]));
       return !expectedUnits.includes(Number(item.number))
         || !text(item.title_zh, 300)
         || !text(item.plot_zh, 8000)
         || !text(item.impact_zh, 2000)
         || !text(item.hook_zh, 2000)
-        || !text(item.cliffhanger_question_zh, 2000);
+        || !text(item.cliffhanger_question_zh, 2000)
+        || missingDramaticEngine;
     });
     if (!expectedCount || units.length !== expectedUnits.length || new Set(actualUnits).size !== actualUnits.length || expectedUnits.some((number) => !actualUnits.includes(number)) || lockedOverlap.length && input.allowLockedUnitRevision !== true || invalidUnit) {
       const error = new Error(lockedOverlap.length && input.allowLockedUnitRevision !== true
         ? `分集与章节包含已锁定的第${[...new Set(lockedOverlap)].join("、")}集，不能重复提交`
+        : SHORT_DRAMA_MODES.has(normalizedMode) && invalidUnit
+          ? "短剧分集必须完整填写戏剧发动机与人物使用证明：character_engine_refs、character_drive_zh、character_choice_basis_zh"
         : `分集与章节必须只返回当前批次的第${expectedUnits.join("、")}集完整剧情，不能漏集或返回结构摘要`);
       error.code = "SCHEMA_INVALID";
       throw error;
@@ -1644,6 +1690,9 @@ function validateContent(stage, content, input = {}) {
     const lockedOverlap = [...coveredUnits].filter((number) => locked.has(number));
     const invalidScene = scenes.find((scene) => {
       const item = asObject(scene);
+      const missingCharacterUse = SHORT_DRAMA_MODES.has(normalizedMode) && [
+        "dramatic_question_zh", "character_behavior_zh", "audience_reveal_zh", "character_engine_refs",
+      ].some((key) => empty(item[key]));
       return !text(item.id, 120)
         || !text(item.name_zh || item.location_zh, 300)
         || DISPLAY_NAME_CODE.test(text(item.name_zh || item.location_zh, 300))
@@ -1655,11 +1704,14 @@ function validateContent(stage, content, input = {}) {
         || !text(item.conflict_zh, 2000)
         || !text(item.choice_zh, 2000)
         || !text(item.result_zh, 2000)
-        || !text(item.turn_zh, 2000);
+        || !text(item.turn_zh, 2000)
+        || missingCharacterUse;
     });
     if (!expectedCount || scenes.length < expectedUnits.length || expectedUnits.some((number) => !coveredUnits.has(number)) || lockedOverlap.length && input.allowLockedUnitRevision !== true || invalidScene) {
       const error = new Error(lockedOverlap.length && input.allowLockedUnitRevision !== true
         ? `场景与镜头包含已锁定的第${lockedOverlap.join("、")}集，不能重复提交`
+        : SHORT_DRAMA_MODES.has(normalizedMode) && invalidScene
+          ? "短剧场景必须完整填写人物表达与使用证明：dramatic_question_zh、character_behavior_zh、audience_reveal_zh、character_engine_refs"
         : input.formalScreenplayRequired === true
           ? `场景与镜头必须只覆盖当前批次的第${expectedUnits.join("、")}集，并为每场提供完整剧本动作正文，不能漏集或只生成少量代表场景`
           : `场景与镜头必须只覆盖当前批次的第${expectedUnits.join("、")}集，不能漏集或只生成少量代表场景`);
@@ -2303,9 +2355,9 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
   const KEY_DIMENSIONS = ["structure", "plot", "design", "logic"];
   const dimensionFloorMiss = KEY_DIMENSIONS.filter((key) => {
     const avg = dimensions[key]?.average;
-    return Number.isFinite(avg) && avg < 75;
+    return Number.isFinite(avg) && avg < RELEASE_DIMENSION_FLOOR;
   });
-  const belowQualityFloor = Number.isFinite(quality) && quality < 80;
+  const belowQualityFloor = Number.isFinite(quality) && quality < RELEASE_QUALITY_FLOOR;
   const dimensionGateFailed = dimensionFloorMiss.length > 0 || belowQualityFloor;
   const disagreements = completed
     .filter((item) => item.pass !== true)

@@ -30,6 +30,7 @@ const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function reviewQuality"), app.indexOf("function scoresMeetGate"))}\n${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
 const reviewQuality = Function(`${app.slice(app.indexOf("function reviewQuality"), app.indexOf("function scoresMeetGate"))}\nreturn reviewQuality;`)();
+const scoresMeetGate = Function(`${app.slice(app.indexOf("function reviewQuality"), app.indexOf("function reviewModeLabelFor"))}\nreturn scoresMeetGate;`)();
 const mergeReviewItemsForTest = Function(`${app.slice(app.indexOf("function reviewItemKey"), app.indexOf("function reviewIssueGroups"))}\nreturn mergeReviewItems;`)();
 const reviewIssueGroupsForTest = Function(
   "reviewAdvisoryGate",
@@ -156,9 +157,35 @@ assert.ok(ruleFindings(runStageRules({ stage: "arc", mode: "cn_short_drama", art
 const dramaticCharacter = runStageRules({ stage: "characters", mode: "tk_short_drama", artifact: { characters: [{ id: "C001", desire_now_zh: "拿回弟弟的救命药", fear_trigger_zh: "听见急救警报就失控", core_contradiction_zh: "嘴上说不需要任何人，危急时却保护陌生人", behavior_signature_zh: ["撒谎时反复擦拭手表"], voice_rules_en: ["只用短句，不解释第二遍"] }] } });
 assert.equal(ruleFindings(dramaticCharacter, "CHARACTER_DRAMATIC_CONTRACT").length, 0, "完整人物戏剧契约不得被拦截");
 assert.equal(ruleFindings(runStageRules({ stage: "characters", mode: "tk_short_drama", artifact: { characters: [{ id: "C001", desire_now_zh: "查明真相" }] } }), "CHARACTER_DRAMATIC_CONTRACT").length, 1, "短剧人物缺少可表达契约必须被拦截");
-const dramaticArcUnit = { number: 1, episode_goal_zh: "拿到药", opposition_zh: "药房封锁", active_choice_zh: "撬门取药", choice_cost_zh: "暴露身份", audience_tension_zh: "观众知道警察将到，但不知道药是否真实", hook_zh: "他必须在警察赶到前打开药盒" };
+const dramaticArcUnit = { number: 1, episode_goal_zh: "拿到药", opposition_zh: "药房封锁", active_choice_zh: "撬门取药", choice_cost_zh: "暴露身份", audience_tension_zh: "观众知道警察将到，但不知道药是否真实", character_engine_refs: ["C001"], character_drive_zh: "林岚必须拿到药才能救弟弟", character_choice_basis_zh: "她害怕警报，却选择撬门", hook_zh: "他必须在警察赶到前打开药盒" };
 assert.equal(ruleFindings(runStageRules({ stage: "arc", mode: "tk_short_drama", artifact: { units: [dramaticArcUnit] } }), "ARC_DRAMATIC_ENGINE").length, 0, "完整分集戏剧发动机不得被拦截");
 assert.equal(ruleFindings(runStageRules({ stage: "arc", mode: "tk_short_drama", artifact: { units: [{ number: 1, episode_goal_zh: "拿到药", hook_zh: "他必须继续行动" }] } }), "ARC_DRAMATIC_ENGINE").length, 1, "分集缺少主动选择与代价必须被拦截");
+assert.throws(() => validateContent("characters", {
+  characters: [{ id: "C001", name_zh: "林岚", name_en: "Lin Lan" }], relationships: [{ from: "C001", to: "C001", dynamic_zh: "互相依赖" }], world_rules: ["警报会触发封锁"],
+}, { mode: "cn_short_drama" }), /人物契约|desire_now_zh|fear_trigger_zh/u, "短剧人物契约必须是结构化必填字段");
+assert.throws(() => validateContent("arc", {
+  units: [{ number: 1, title_zh: "开场", plot_zh: "主角决定行动。", impact_zh: "警报响起", hook_zh: "他必须继续行动", cliffhanger_question_zh: "他能逃出去吗？", episode_goal_zh: "拿到药", opposition_zh: "封锁", active_choice_zh: "撬门", choice_cost_zh: "暴露身份", audience_tension_zh: "观众不知道药是否真实" }], arc_summary_zh: "推进",
+}, { mode: "cn_short_drama", episodeCount: 1 }), /人物使用证明|character_engine_refs|character_drive_zh/u, "分集必须留下人物设定使用证明");
+assert.throws(() => validateContent("scenes", {
+  scenes: [{ id: "S001", unit_number: 1, name_zh: "仓库", location_zh: "仓库", time_zh: "夜", action_zh: "主角行动", conflict_zh: "有人阻拦", choice_zh: "主角继续", result_zh: "门被打开", turn_zh: "局面改变", screenplay_zh: "主角推门。", characters: ["C001"], props: [] }],
+}, { mode: "cn_short_drama", episodeCount: 1, formalScreenplayRequired: true }), /人物使用证明|character_engine_refs|character_behavior_zh/u, "场景必须留下人物设定使用证明");
+assert.throws(() => validateContent("dialogue", {
+  lines: [{ id: "D001", scene_id: "S001", speaker: "C001", intent_zh: "施压", dialogue_en: "你必须回答。", subtext_zh: "威胁", delivery_en: "冷硬" }], localization_checks: ["口语化"],
+}, { mode: "cn_short_drama" }), /人物声线使用证明|character_voice_applied_zh/u, "对白必须留下声线使用证明");
+const characterUsageContext = { artifacts: [{ stage: "characters", content: { characters: [{ id: "C001", name_zh: "林岚", desire_now_zh: "拿到药", fear_trigger_zh: "听见警报", core_contradiction_zh: "嘴硬却救人", behavior_signature_zh: ["反复擦表"], voice_rules_en: ["只说短句"] }] } }] };
+const usedCharacter = { id: "C001", character_engine_refs: ["C001"], character_drive_zh: "林岚为了拿到药，冒险闯入封锁区", character_choice_basis_zh: "她害怕警报却仍选择撬门", episode_goal_zh: "拿到药", opposition_zh: "封锁", active_choice_zh: "撬门", choice_cost_zh: "暴露身份", audience_tension_zh: "观众不知道药是否真实" };
+assert.equal(ruleFindings(runStageRules({ stage: "arc", mode: "cn_short_drama", artifact: { units: [{ number: 1, ...usedCharacter }] }, approvedContext: characterUsageContext }), "CHARACTER_USAGE_EVIDENCE").length, 0, "有效的人物使用证明不得被拦截");
+assert.ok(ruleFindings(runStageRules({ stage: "arc", mode: "cn_short_drama", artifact: { units: [{ number: 1, character_engine_refs: ["C999"], character_drive_zh: "推动", character_choice_basis_zh: "选择" }] }, approvedContext: characterUsageContext }), "CHARACTER_USAGE_EVIDENCE").length, "分集引用未知人物必须被拦截");
+const characterArtifactForPrompt = { stage: "characters", version: 1, status: "approved", content: { characters: [{ id: "C001", name_zh: "林岚", desire_now_zh: "拿到药", fear_trigger_zh: "听见警报", core_contradiction_zh: "嘴硬却救人", behavior_signature_zh: ["反复擦表"], voice_rules_en: ["只说短句"] }] } };
+const arcArtifactForPrompt = { stage: "arc", version: 1, status: "approved", content: { units: [{ number: 1, character_engine_refs: ["C001"], character_drive_zh: "为了救弟弟拿到药", character_choice_basis_zh: "害怕警报仍撬门" }] } };
+const sceneContextPrompt = stageUserPrompt({ stage: "scenes", mode: "cn_short_drama", input: { episodeCount: 1 }, previousArtifacts: [characterArtifactForPrompt, arcArtifactForPrompt], project: {}, unitScope: [1] });
+assert.match(sceneContextPrompt, /desire_now_zh|拿到药/u, "场景阶段必须收到人物即时欲望上下文");
+assert.match(sceneContextPrompt, /character_drive_zh|为了救弟弟拿到药/u, "场景阶段必须收到分集人物驱动证明");
+const dialogueContextPrompt = stageUserPrompt({ stage: "dialogue", mode: "cn_short_drama", input: { episodeCount: 1 }, previousArtifacts: [characterArtifactForPrompt, arcArtifactForPrompt], project: {} });
+assert.match(dialogueContextPrompt, /voice_rules_en|只说短句/u, "对白阶段必须收到人物声线规则上下文");
+assert.equal(scoresMeetGate({ quality: 79, dimensions: { structure: { average: 90 }, plot: { average: 90 }, design: { average: 90 }, logic: { average: 90 } }}), false, "综合质量 79 不得放行");
+assert.equal(scoresMeetGate({ quality: 80, dimensions: { structure: { average: 75 }, plot: { average: 75 }, design: { average: 75 }, logic: { average: 75 } }}), true, "综合质量 80 且维度均不低于 75 才能放行");
+assert.equal(scoresMeetGate({ quality: 80, dimensions: { structure: { average: 74 }, plot: { average: 90 }, design: { average: 90 }, logic: { average: 90 } }}), false, "任一维度低于 75 不得放行");
 assert.match(stageSystemPrompt("arc", "tk_short_drama", {}), /即时冲击.*明确欲望.*阻力升级.*主动选择.*选择代价.*新问题/u, "短剧 prompt 必须包含观众反馈链");
 assert.match(stageSystemPrompt("characters", "tk_short_drama", {}), /人物吸引力来自可预测的性格规则与不可预测的选择/u, "人物 prompt 必须融合观众心理与人物表达");
 
@@ -1141,12 +1168,16 @@ const testRouter = {
               time_zh: "夜",
               location_zh: "公寓",
               characters: ["C001"],
+              character_engine_refs: ["C001"],
               action_zh: "主角作出选择并触发即时威胁。",
               screenplay_zh: "主角作出选择并触发即时威胁。她抓起原件冲向后门，门外的脚步声同时停在门前。",
               conflict_zh: "追捕者逼近，证据会暴露主角身份。",
               choice_zh: "主角带走原件并放弃安全路线。",
               result_zh: "逃生路线被锁定，但主角拿到了关键证据。",
               turn_zh: "主角从逃亡转为追查篡改者。",
+              dramatic_question_zh: "她能否在追捕者破门前逃出？",
+              character_behavior_zh: "她听见警报就反复擦表，却仍把原件攥在手里冲向后门。",
+              audience_reveal_zh: "观众得知原件会暴露她的身份。",
               visual_intent_zh: "紧迫",
               recurring: false,
               visual_profile: { aliases: "公寓", indoor_outdoor: "室内", lighting: "冷光", palette: "蓝灰", materials: "水泥", layout: "单间", atmosphere: "压迫", prompt_zh: "冷光公寓" },
@@ -1298,7 +1329,7 @@ const ruleGateRouter = {
       provider: testModels.find((item) => item.id === model)?.provider || "chatgpt",
       model,
       content: {
-        characters: [{ id: "C001", name_en: "李明", role: "protagonist", desire_zh: "查明真相" }],
+        characters: [{ id: "C001", name_en: "李明", role: "protagonist", desire_zh: "查明真相", desire_now_zh: "查明真相", fear_trigger_zh: "听见警报", core_contradiction_zh: "嘴硬心软", behavior_signature_zh: ["反复擦表"], voice_rules_en: ["只说短句"] }],
         relationships: [{ from: "C001", to: "C001", dynamic_zh: "自我对抗" }],
         world_rules: ["真相必须付出代价"],
       },

@@ -165,6 +165,8 @@ const modelMeta = {
 
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];
 const productionStageTotal = stageOrder.length - 1;
+const RELEASE_QUALITY_FLOOR = 80;
+const RELEASE_DIMENSION_FLOOR = 75;
 const UNIT_STAGES = new Set(["arc", "scenes"]);
 const FAST_REVIEW_STAGES = new Set(["brief", "proposal", "characters", "dialogue"]);
 
@@ -184,12 +186,14 @@ function reviewQuality(reviewContent = {}) {
 }
 
 function scoresMeetGate(reviewContent = {}) {
+  const qualityFloor = 80;
+  const dimensionFloor = 75;
   const quality = reviewQuality(reviewContent);
-  if (quality === null || quality < 75) return false;
+  if (quality === null || quality < qualityFloor) return false;
   const dims = reviewContent.dimensions || {};
   return Object.values(dims).every((entry) => {
     const value = Number(entry && typeof entry === "object" ? entry.average : entry);
-    return !Number.isFinite(value) || value >= 75;
+    return !Number.isFinite(value) || value >= dimensionFloor;
   });
 }
 
@@ -1188,7 +1192,7 @@ function nextStepMeta() {
         kind: "human-override",
         stage: flowStage,
         title: `${flowMeta.title}评分已达标`,
-      copy: `放行质量分 ${Math.round(reviewQuality(reviewContent))} 达标（≥75）。系统建议定向修订，但你也可以接受当前版本继续。`,
+        copy: `放行质量分 ${Math.round(reviewQuality(reviewContent))} 达标（≥${RELEASE_QUALITY_FLOOR}）。系统建议定向修订，但你也可以接受当前版本继续。`,
         label: "接受当前版本并继续（评分已达标）",
         flowStage,
       };
@@ -1217,7 +1221,7 @@ function nextStepMeta() {
         kind: "human-override",
         stage: flowStage,
         title: `${flowMeta.title}评分已达标`,
-        copy: `另一审读席（${failedNames}）网络调用失败，当前放行质量分 ${Math.round(reviewQuality(reviewContent))} 已达标（≥75）。接受当前版本并继续，或重新审核。`,
+        copy: `另一审读席（${failedNames}）网络调用失败，当前放行质量分 ${Math.round(reviewQuality(reviewContent))} 已达标（≥${RELEASE_QUALITY_FLOOR}）。接受当前版本并继续，或重新审核。`,
         label: "接受当前版本并继续（评分已达标）",
         flowStage,
       };

@@ -18,12 +18,12 @@ function safeFileName(value, fallback = "pixel-tale") {
 }
 
 function firstValue(...values) {
-  return values.find((value) => value !== undefined && value !== null && String(value).trim()) || "未设定";
+  return values.find((value) => value !== undefined && value !== null && String(value).trim()) || "";
 }
 
 function fallbackCharacter(item, index) {
   const visual = item.visual_profile || item.visualProfile || {};
-  const name = firstValue(item.name_zh, item.name_en, `人物${index + 1}`);
+  const name = firstValue(item.name_zh, item.name_en);
   const promptParts = [
     name,
     firstValue(visual.age_phase, item.age_phase, item.age),
@@ -32,7 +32,7 @@ function fallbackCharacter(item, index) {
     firstValue(visual.facial_features, item.facial_features),
     firstValue(visual.costume_accessories, item.costume_accessories),
     firstValue(visual.posture, item.posture, item.arc_zh, item.desire_zh),
-  ].filter((value) => value !== "未设定");
+  ].filter(Boolean);
   return {
     id: item.id || `P${String(index + 1).padStart(2, "0")}`,
     name_zh: name,
@@ -54,7 +54,7 @@ function fallbackCharacter(item, index) {
 
 function fallbackScene(item, index) {
   const visual = item.visual_profile || item.visualProfile || {};
-  const name = firstValue(item.name_zh, item.location_zh, `场景${index + 1}`);
+  const name = firstValue(item.name_zh, item.location_zh, item.name_en);
   return {
     id: item.id || `S${String(index + 1).padStart(2, "0")}`,
     name_zh: name,
@@ -72,7 +72,7 @@ function fallbackScene(item, index) {
 }
 
 function fallbackProp(item, index) {
-  const name = firstValue(item.name_zh, item.name, `道具${index + 1}`);
+  const name = firstValue(item.name_zh, item.name, item.name_en);
   return {
     id: item.id || `PR${String(index + 1).padStart(2, "0")}`,
     name_zh: name,

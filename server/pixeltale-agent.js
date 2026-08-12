@@ -12,7 +12,7 @@ const LEGACY_ROUTE_MODELS = new Set([...LEGACY_MODEL_IDS, ...RETIRED_SEAT_MODELS
 // the vestigial route keys are not rewritten just because a model lost its seat.
 const RETIRED_MODEL_IDS = new Set(LEGACY_MODEL_IDS);
 const { fallbackVisualAssets } = require("./pixeltale-visual-assets.js");
-const { runStageRules, EPISODE_TITLE_CODENAME } = require("./pixeltale-review-rules.js");
+const { runStageRules, EPISODE_TITLE_CODENAME, DISPLAY_NAME_CODE } = require("./pixeltale-review-rules.js");
 
 const STAGES = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"];
 const STAGE_LABELS = Object.freeze({ brief: "故事架构", title: "剧名选择", proposal: "故事提案", characters: "人物与世界", arc: "分集与章节", scenes: "场景与镜头", dialogue: "对白本土化" });
@@ -137,6 +137,8 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     DNA_SIGNAL_ALIGNMENT: "已选剧本 DNA 标签被转化为人物关系、行为和选择",
     CHARACTER_LOCALIZATION: "姓名、身份和社会细节符合地区",
     CHARACTER_MOTIVATION: "欲望、恐惧、秘密和选择相互支撑",
+    CHARACTER_PERSONA_ENGINE: "角色具有可持续驱动剧情的即时欲望、触发恐惧与核心矛盾",
+    CHARACTER_EXPRESSIVE_BEHAVIOR: "角色有可被拍摄和听见的行为标志与可区分声线",
     CHARACTER_RELATIONSHIP_ENGINE: "人物关系能够持续制造行动与冲突",
     CHARACTER_WORLD_CONSISTENCY: "人物设定不违反已确认世界规则",
   },
@@ -148,6 +150,8 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     ARC_REVERSAL_HOOK: "反转与集尾钩子有证据且不重复",
     ARC_PAYOFF_LEDGER: "伏笔、承诺和回收位置可追踪",
     ARC_EPISODE_PLOT_COMPLETENESS: "每个单元都有完整剧情推进，不是审核摘要",
+    ARC_ACTIVE_CHOICE_COST: "每个单元都有主角主动选择及明确代价，选择改变后续行动空间",
+    ARC_AUDIENCE_TENSION: "每个单元持续制造信息缺口、升级压力与集尾行动问题",
   },
   scenes: {
     SOURCE_STORY_ANCHOR: "场景与动作具体呈现用户原始大纲的核心环境、威胁与行动",
@@ -157,6 +161,7 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     SCENE_SCREENPLAY_BODY: "每场都有连续、可拍摄的正式剧本动作正文，不是镜头关键词或剧情摘要",
     SCENE_DURATION: "每集所有场景的 shot_plan[].duration_seconds 之和相对用户设定的单集目标秒数允许偏差不超过 ±25%（生成时按目标 ±10% 设计）",
     SCENE_DIRECTABILITY: "场面可拍摄、可表演且可制作",
+    SCENE_CHARACTER_EXPRESSION: "场面通过角色独有行为、反应和潜台词表达人物，而不是只讲述事件",
   },
   dialogue: {
     SOURCE_STORY_ANCHOR: "对白服务于用户原始大纲中的人物目标、威胁与线索推进",
@@ -165,8 +170,16 @@ const STAGE_REVIEW_CRITERIA = Object.freeze({
     DIALOGUE_INTENT_MATCH: "英文对白准确兑现中文剧情意图",
     DIALOGUE_LOCALIZATION: "口语、身份、地区和关系语感自然",
     DIALOGUE_VOICE_TIMING: "人物声线可区分且时长可执行",
+    DIALOGUE_SUBTEXT_CONFLICT: "对白有潜台词、关系压力和信息递进，不是剧情说明",
   },
 });
+const SHORT_DRAMA_THEORY_RULES = Object.freeze([
+  "短剧叙事必须遵循‘即时冲击—明确欲望—阻力升级—主动选择—选择代价—新问题’的连续反馈链；每集都要让观众得到一个局部回报，同时产生一个更具体的新问题。",
+  "使用观众心理中的信息差与未完结效应：不要一次解释完谜底，要让观众知道足够多以理解危险，却保留一个必须通过下一集行动才能回答的问题。",
+  "使用递进式升级而非重复受阻：每次冲突都必须提高代价、缩短时间、改变关系或重新解释线索中的至少一项。",
+  "人物吸引力来自可预测的性格规则与不可预测的选择：先建立角色一贯的欲望、恐惧和行为标志，再让角色在压力下做出符合其矛盾但改变局面的选择。",
+  "禁止把‘发现、意识到、决定、感到害怕’当作戏剧动作；必须写出可见行为、关系压力、信息揭示和不可逆后果。",
+]);
 const DEFAULT_DIALOGUE_POLICY = "zh_story_en_localized_dialogue";
 const DEFAULT_CREATIVE_CONTROLS = {
   openingImpactSeconds: 3,
@@ -586,16 +599,16 @@ function stageOutputContract(stage, mode) {
     // are moved to the visual-assets stage which already generates them independently.
     // Removing them from the characters call cuts output from ~8 kB to ~3.5 kB,
     // which eliminates INVALID_JSON / TIMEOUT on every seat for this stage.
-    characters: `{"characters":[{"id":"C001","name_zh":"按目标市场生成的角色显示名，不得翻译为中文名","name_en":"English or romanized display name","role":"protagonist","desire_zh":"欲望","fear_zh":"恐惧","secret_zh":"秘密","arc_zh":"人物弧线","voice_rules_en":["英文声线规则"],"visual_profile":{"gender":"性别","age_phase":"年龄相","hair_color":"发型发色","palette":"识别色"}}],"relationships":[{"from":"C001","to":"C002","dynamic_zh":"关系变化"}],"world_rules":["不可违反的世界规则"]}`,
-    arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","plot_zh":"本集完整剧情推进，包含人物行动、冲突、选择、结果与下一集动力，不是审核摘要","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
+    characters: `{"characters":[{"id":"C001","name_zh":"真实可读的人物名，不得填写 C001 等内部编号或代号","name_en":"Real English or romanized display name","role":"protagonist","desire_zh":"长期欲望","desire_now_zh":"当前阶段最想得到的具体东西","fear_zh":"深层恐惧","fear_trigger_zh":"会让角色失控的具体触发点","core_contradiction_zh":"口头信念与真实行为的矛盾","secret_zh":"秘密","arc_zh":"人物弧线","behavior_signature_zh":["紧张、撒谎或愤怒时可被拍摄的独有动作"],"voice_rules_en":["英文声线规则：可区分的句式、语气、口头禅和情绪表达规则"],"visual_profile":{"gender":"性别","age_phase":"年龄相","hair_color":"发型发色","palette":"识别色"}}],"relationships":[{"from":"C001","to":"C002","dynamic_zh":"关系变化与施压方式"}],"world_rules":["不可违反的世界规则"]}`,
+    arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","episode_goal_zh":"主角本集要得到什么","opposition_zh":"谁或什么阻止他","plot_zh":"本集完整剧情推进，包含可见行动、冲突升级、主动选择、选择代价、结果与下一集动力，不是审核摘要","active_choice_zh":"主角主动做出的不可逆选择","choice_cost_zh":"选择立即造成的代价","audience_tension_zh":"观众此刻知道什么、还不知道什么、为什么必须继续看","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
     // Same trim as characters: the visual-assets stage regenerates every scene and
     // prop visual field independently, so asking for them here doubled the payload
     // for nothing. Measured at full payload: claude-opus-5 timed out at 300s,
     // deepseek-v4-pro returned invalid JSON at 256s, claude-haiku-4-5 returned an
     // empty scenes array. visual_profile keeps only the 3 fields a shot plan needs
     // for continuity; props keep identity and recurrence, not their look.
-    scenes: `{"scenes":[{"id":"S001","unit_number":1,"purpose_zh":"场景目的","time_zh":"时间","location_zh":"地点","characters":["C001"],"action_zh":"连续动作推进","screenplay_zh":"正式剧本动作正文：连续、可拍摄的动作与反应，不写剧情摘要，不包含场次标题或对白标签。","conflict_zh":"场面冲突","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"indoor_outdoor":"室内外","lighting":"光线","palette":"色调"},"props":[{"id":"PR01","name_zh":"道具名","description_zh":"道具描述","recurring":true}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
-    dialogue: `{"lines":[{"id":"D001","scene_id":"S001","speaker":"C001","intent_zh":"中文剧情意图","dialogue_en":"Natural localized English dialogue.","subtext_zh":"潜台词","delivery_en":"delivery note in English"}],"localization_checks":["口语化","人物声线一致","未泄露悬念"]}`,
+    scenes: `{"scenes":[{"id":"S001","unit_number":1,"name_zh":"真实可读的场景名，不得填写 S001 等内部编号或代号","purpose_zh":"场景目的","dramatic_question_zh":"本场观众要等什么答案","time_zh":"时间","location_zh":"地点","characters":["C001"],"action_zh":"连续动作推进","screenplay_zh":"正式剧本动作正文：连续、可拍摄的动作与反应，不写剧情摘要，不包含场次标题或对白标签。","conflict_zh":"场面冲突","character_behavior_zh":"角色独有的可见行为与反应","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","audience_reveal_zh":"本场给观众的新信息或新危险","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"indoor_outdoor":"室内外","lighting":"光线","palette":"色调"},"props":[{"id":"PR01","name_zh":"真实可读的道具名，不得填写 PR01 等内部编号或代号","description_zh":"道具描述","recurring":true}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
+    dialogue: `{"lines":[{"id":"D001","scene_id":"S001","speaker":"C001","intent_zh":"中文剧情意图","dialogue_en":"Natural localized English dialogue.","subtext_zh":"没有直接说出的欲望、威胁或关系压力","delivery_en":"符合该角色声线的演绎说明"}],"localization_checks":["口语化","人物声线一致","潜台词有冲突","未泄露悬念"]}`,
   };
   if (normalized === "cn_short_drama") {
     common = stage === "title"
@@ -607,7 +620,7 @@ function stageOutputContract(stage, mode) {
     // 国内短剧：voice_rules_en 键名保持通用（对白阶段仍按此字段引用声线），
     // 但内容必须是中文——角色说话方式用中文描写，与 dialogue_en 中文对白同模式。
     contracts.characters = contracts.characters.replace(
-      '"voice_rules_en":["英文声线规则"]',
+      '"voice_rules_en":["英文声线规则：可区分的句式、语气、口头禅和情绪表达规则"]',
       '"voice_rules_en":["中文声线规则（用中文描写角色说话方式：句式长短、语气、口头禅、情绪表达习惯）"]',
     );
   }
@@ -652,24 +665,29 @@ function stageSystemPrompt(stage, mode, input = {}) {
     "分集与章节必须写出每集完整剧情正文，不是只列反转、钩子、未回答问题和推进与回收四个摘要字段。",
     "units 数量必须严格等于用户计划集数；每集 plot_zh 必须写清人物正在做什么、冲突如何升级、人物做了什么选择、选择造成什么结果，以及如何把下一集推出来。",
     "每集 title_zh 必须是完整中文短语标题（4-10 字），概括该集核心事件或冲突；禁止使用英文代号、字母数字组合（如 A-01、B-02、Witness C、Anchor A）、禁止直接用人物英文名或代码作标题。",
+    "短剧戏剧发动机：每集必须明确 episode_goal_zh、opposition_zh、active_choice_zh、choice_cost_zh、audience_tension_zh；没有人物主动选择或没有选择代价，不能视为完成。",
+    "观众心理节奏：先给可感知的即时冲击，再让观众形成一个明确问题；通过阻力升级、信息差和因果反转制造期待，集尾必须留下带行动压力的未回答问题，禁止用‘真相即将揭晓’等空泛句子。",
   ] : [];
   const sceneRules = stage === "scenes" ? [
     "场景与镜头必须覆盖每一个分集/章节编号，至少每集一个完整场次；不得只输出少量代表场景。",
     "每个场次必须把对应的剧情正文转换为可拍的动作、冲突、人物选择、选择结果和因果转折，不能只写视觉氛围或镜头关键词。",
     "每个场次必须同时输出 screenplay_zh：这是正式剧本中的连续动作正文，写人物正在做什么、如何反应、动作如何改变局面；不要写‘剧情意图’、镜头编号、字段标签或摘要句。",
+    "每个场次必须明确 character_behavior_zh、dramatic_question_zh、audience_reveal_zh，让人物个性和观众获得的新信息都能被拍摄或检视。",
     ...(sceneDurationPrompt ? [sceneDurationPrompt] : []),
   ] : [];
   const characterCompleteness = stage === "characters" ? [
     "一次性定义本剧全生命周期所需的角色体系：主角团、关键配角、反派/对抗方，以及后续集数必然出场的重要角色。",
     "不要只生成两三个主角：把剧情推进中必然需要的角色（家人、同事、对手、服务角色等）一并定义，避免后续阶段临时引入未定义角色。",
-    "每个角色都必须有 id（C001 起）与 role；次要角色可精简设定，但必须有 ID 和一句话定位。",
+    "每个角色都必须有内部 id（C001 起）与 role；id 只用于机器关联，必须同时填写真实可读的 name_zh/name_en，页面和正式剧本不得显示 id。",
+    "每个主要角色必须写出 desire_now_zh、fear_trigger_zh、core_contradiction_zh、behavior_signature_zh 和 voice_rules_en；避免只用勇敢、聪明、善良等抽象形容词。",
+    "人物设计要服务观众代入：欲望要具体，恐惧要可触发，矛盾要能制造选择，行为和语言要让观众不看名字也能辨认角色。",
   ] : [];
   const characterUsage = ["scenes", "dialogue"].includes(stage) ? [
     "场景/对白只引用 characters 阶段已确认的人物 ID；优先复用已定义角色。",
-    "确需新角色时，直接使用新的 C 编号让其自然出场/说话即可——引擎会把该角色补录进人物名单，但标记为待确认身份；正式设定仍需回到人物阶段补齐。",
+    "确需新角色时，使用新的内部 ID 维持关联，同时提供真实可读的 name_zh/name_en；内部 ID 只用于机器关联，不得作为页面或正式剧本名称。",
     ...(stage === "dialogue" ? [
-      "每条对白的 speaker 必须出现在该 line 的 scene_id 对应场景的人物名单（scenes 的 characters）中；如剧情需要该角色在此场景说话而名单未登记，直接使用新 C 编号（引擎会自动同步进场景名单），不要改动 scene_id。",
-      "不得为未设定角色自创显示名：speaker 的显示名必须来自 characters 已确认资产；确需新角色使用新 C 编号（引擎补录为'剧集新角色（自动补录）'），对白里不要自行给它起名，避免角色身份悬空（例如对白出现 Mara Pierce 但资产中对应角色仍是占位名）。",
+      "每条对白的 speaker 必须出现在该 line 的 scene_id 对应场景的人物名单（scenes 的 characters）中；speaker 使用内部 ID 关联，但显示名必须来自人物资产的真实 name_zh/name_en。",
+      "不得为未设定角色自创显示名或使用 C001 这类编号；不要自行给它起名。确需新角色时必须同时提交真实人物名，不能生成‘剧集新角色（自动补录）’之类占位名。",
     ] : []),
   ] : [];
   // 2026-08-10 对白结构要求：提升 structure 维度评分（对话连贯/推进/收束）。
@@ -677,6 +695,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
     "每条对白服务于场景目标：开场建立意图 → 对话推进信息/冲突 → 收束留悬念；避免无目的寒暄、重复陈述、碎片化问答。",
     "同一场景的对白按因果顺序连贯衔接，人物反应符合前情与人物动机；对白推进剧情而非复述已知信息。",
     "语气（delivery_en）符合人物声线，潜台词（subtext_zh）表达言外之意而非直接翻译台词。",
+    "每场对白至少包含一次关系压力、隐藏目的或信息不对称；如果台词只是解释背景或复述剧情，必须改写为冲突中的行动。",
   ] : [];
   const unitRules = UNIT_STAGES.has(stage) ? [
     "当前请求可能只是一个分批单元；严格只输出 userInput.unitScope 指定的集数，不得补写其他集，不得返回整季内容。",
@@ -694,6 +713,7 @@ function stageSystemPrompt(stage, mode, input = {}) {
     dnaSignalPrompt(input),
     marketPrompt(input, mode),
     stageParticipationPrompt(stage, input),
+    ...(new Set(["tk_short_drama", "cn_short_drama"]).has(normalized) ? SHORT_DRAMA_THEORY_RULES : []),
     ...tkRules,
     ...titleRules,
     ...selectedTitleRule,
@@ -715,6 +735,11 @@ function stageContextContent(artifact, { unitScope = [] } = {}) {
     title_zh: text(unit?.title_zh, 160),
     promise_zh: text(unit?.promise_zh, 300),
     plot_zh: text(unit?.plot_zh || unit?.action_zh, scope.size ? 2200 : 520),
+    episode_goal_zh: text(unit?.episode_goal_zh, 420),
+    opposition_zh: text(unit?.opposition_zh, 420),
+    active_choice_zh: text(unit?.active_choice_zh, 520),
+    choice_cost_zh: text(unit?.choice_cost_zh, 520),
+    audience_tension_zh: text(unit?.audience_tension_zh, 700),
     causal_turn_zh: text(unit?.causal_turn_zh, 360),
     hook_zh: text(unit?.hook_zh, 320),
     cliffhanger_question_zh: text(unit?.cliffhanger_question_zh, 240),
@@ -736,7 +761,7 @@ function stageContextContent(artifact, { unitScope = [] } = {}) {
         characters: asArray(scene?.characters).slice(0, 10),
         action_zh: text(scene?.action_zh, scope.size ? 1800 : 460),
         screenplay_zh: text(scene?.screenplay_zh, scope.size ? 2600 : 700),
-        purpose_zh: text(scene?.purpose_zh, 360),
+        purpose_zh: text(scene?.purpose_zh, 360), dramatic_question_zh: text(scene?.dramatic_question_zh, 420), character_behavior_zh: text(scene?.character_behavior_zh, 520), audience_reveal_zh: text(scene?.audience_reveal_zh, 520),
       }));
     return { scenes, props: asArray(content.props).slice(0, 24) };
   }
@@ -745,7 +770,7 @@ function stageContextContent(artifact, { unitScope = [] } = {}) {
       characters: asArray(content.characters).slice(0, 24).map((character) => ({
         id: text(character?.id, 80), name_zh: text(character?.name_zh, 120), name_en: text(character?.name_en, 120),
         role: text(character?.role, 180), desire_zh: text(character?.desire_zh, 360), fear_zh: text(character?.fear_zh, 300),
-        secret_zh: text(character?.secret_zh, 360), arc_zh: text(character?.arc_zh, 520), voice_rules_en: text(character?.voice_rules_en, 520),
+        secret_zh: text(character?.secret_zh, 360), desire_now_zh: text(character?.desire_now_zh, 420), fear_trigger_zh: text(character?.fear_trigger_zh, 420), core_contradiction_zh: text(character?.core_contradiction_zh, 520), behavior_signature_zh: asArray(character?.behavior_signature_zh).slice(0, 5), arc_zh: text(character?.arc_zh, 520), voice_rules_en: asArray(character?.voice_rules_en).slice(0, 6),
       })),
       relationships: asArray(content.relationships).slice(0, 36),
       world_rules: asArray(content.world_rules).slice(0, 24),
@@ -952,10 +977,11 @@ function visualAssetSystemPrompt(mode, input = {}) {
     "你是 PixelTale 的视觉资产设计 Agent。根据已确认的全剧结构，整理供大模型解析与文生图使用的主要重复资产。",
     "只收在全剧中重复出现或明确需要保持连续性的主要人物、场景、道具，不收一次性背景和临时群众。",
     "输出严格 JSON，不要 Markdown、代码围栏或解释。字段值使用中文；name_en 可使用英文；prompt_zh 必须是可直接用于文生图的完整中文画面描述，不含剧情台词。",
+    "人物、场景、道具的 name_zh/name_en 必须是真实可读名称；id 仅供内部关联，禁止把 P01、S01、PR01、人物1、场景1、道具1 或 Anchor A 等编号/代号写入名称。",
     `当前模式：${modeLabel(mode)}。人物要锁定外观、服装、识别色与姿态；场景要锁定光线、色调、材质、空间布局与氛围；道具要锁定材质、形态、尺寸与特殊质感。`,
     audiencePrompt(input),
     marketPrompt(input, mode),
-    '输出契约：{"characters":[{"id":"P01","name_zh":"中文名","name_en":"English name","type":"人物","aliases":"别名","gender":"性别","age_phase":"年龄相","body":"体型","hair_color":"发型发色","facial_features":"面部特征","eye_color":"瞳色","costume_accessories":"服装配饰","palette":"识别色","posture":"气质姿态","prompt_zh":"中文文生图提示词"}],"scenes":[{"id":"S01","name_zh":"场景名","name_en":"English name","type":"场景","aliases":"别名","indoor_outdoor":"室内外","lighting":"光线","palette":"色调","materials":"建筑材质","layout":"空间布局","atmosphere":"氛围气味","prompt_zh":"中文文生图提示词"}],"props":[{"id":"PR01","name_zh":"道具名","name_en":"English name","type":"道具","aliases":"别名","materials":"材质","appearance":"颜色形态","size":"尺寸","texture":"特殊质感","prompt_zh":"中文文生图提示词"}],"consistency_notes":["全剧统一视觉规则"]}',
+    '输出契约：{"characters":[{"id":"P01","name_zh":"真实可读的人物名，不得填写 P01 等内部编号或代号","name_en":"Real English name","type":"人物","aliases":"别名","gender":"性别","age_phase":"年龄相","body":"体型","hair_color":"发型发色","facial_features":"面部特征","eye_color":"瞳色","costume_accessories":"服装配饰","palette":"识别色","posture":"气质姿态","prompt_zh":"中文文生图提示词"}],"scenes":[{"id":"S01","name_zh":"真实可读的场景名，不得填写 S01 等内部编号或代号","name_en":"Real English name","type":"场景","aliases":"别名","indoor_outdoor":"室内外","lighting":"光线","palette":"色调","materials":"建筑材质","layout":"空间布局","atmosphere":"氛围气味","prompt_zh":"中文文生图提示词"}],"props":[{"id":"PR01","name_zh":"真实可读的道具名，不得填写 PR01 等内部编号或代号","name_en":"Real English name","type":"道具","aliases":"别名","materials":"材质","appearance":"颜色形态","size":"尺寸","texture":"特殊质感","prompt_zh":"中文文生图提示词"}],"consistency_notes":["全剧统一视觉规则"]}',
   ].join("\n");
 }
 
@@ -999,10 +1025,10 @@ function validateVisualAssets(value) {
   const seen = new Set();
   for (const item of sections.flatMap((section) => output[section].map((entry) => ({ section, entry: asObject(entry) })))) {
     const assetId = text(item.entry.id, 80);
-    const name = text(item.entry.name_zh, 200);
+    const name = text(item.entry.name_zh || item.entry.name_en, 200);
     const prompt = text(item.entry.prompt_zh, 5000);
-    if (!assetId || !name || !prompt || seen.has(assetId)) {
-      const error = new Error("视觉资产产物存在重复编号或缺少名称、提示词");
+    if (!assetId || !name || !prompt || DISPLAY_NAME_CODE.test(name) || seen.has(assetId)) {
+      const error = new Error("视觉资产产物必须使用真实名称，不能使用编号、代号、占位名或缺少提示词");
       error.code = "SCHEMA_INVALID";
       throw error;
     }
@@ -1571,6 +1597,18 @@ function validateContent(stage, content, input = {}) {
       throw error;
     }
   }
+  if (stage === "characters") {
+    const invalid = asArray(value.characters).some((item) => {
+      const entry = asObject(item);
+      const name = text(entry.name_zh || entry.name_en, 200);
+      return !name || DISPLAY_NAME_CODE.test(name);
+    });
+    if (invalid) {
+      const error = new Error("人物产物必须为每个人物填写真实名称，不能使用 C001 等编号或代号");
+      error.code = "SCHEMA_INVALID";
+      throw error;
+    }
+  }
   if (stage === "arc") {
     const units = asArray(value.units);
     const expectedCount = plannedUnitCount(input);
@@ -1607,6 +1645,9 @@ function validateContent(stage, content, input = {}) {
     const invalidScene = scenes.find((scene) => {
       const item = asObject(scene);
       return !text(item.id, 120)
+        || !text(item.name_zh || item.location_zh, 300)
+        || DISPLAY_NAME_CODE.test(text(item.name_zh || item.location_zh, 300))
+        || asArray(item.props).some((prop) => !text(asObject(prop).name_zh || asObject(prop).name_en, 200) || DISPLAY_NAME_CODE.test(text(asObject(prop).name_zh || asObject(prop).name_en, 200)))
         || !text(item.time_zh, 120)
         || !text(item.location_zh, 300)
         || !text(item.action_zh, 5000)
@@ -3167,6 +3208,30 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
   const scenes = approved.scenes.content;
   const dialogue = approved.dialogue.content;
   const characterItems = asArray(characters.characters);
+  const invalidCharacter = characterItems.find((item) => {
+    const name = text(item?.name_zh || item?.name_en, 200);
+    return !name || DISPLAY_NAME_CODE.test(name);
+  });
+  if (invalidCharacter) {
+    const error = new Error(`正式剧本仍有未命名人物（${text(invalidCharacter.id, 80) || "未知人物"}），必须补充真实名称后才能导出`);
+    error.code = "HANDOFF_INCOMPLETE";
+    error.statusCode = 409;
+    throw error;
+  }
+  const sceneEntries = asArray(scenes.scenes);
+  const invalidProp = [
+    ...asArray(scenes.props),
+    ...sceneEntries.flatMap((scene) => asArray(scene?.props || scene?.recurring_props)),
+  ].find((item) => {
+    const name = text(item?.name_zh || item?.name_en, 200);
+    return !name || DISPLAY_NAME_CODE.test(name);
+  });
+  if (invalidProp) {
+    const error = new Error(`正式剧本仍有未命名道具（${text(invalidProp.id, 80) || "未知道具"}），必须补充真实名称后才能导出`);
+    error.code = "HANDOFF_INCOMPLETE";
+    error.statusCode = 409;
+    throw error;
+  }
   const creativeControls = normalizeCreativeControls(state.input);
   const timestamp = nowIso(now);
   const handoffId = id("handoff", randomUUID);
@@ -3212,6 +3277,13 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
       .filter((scene) => Number(scene?.unit_number) === number)
       .map((scene, index) => {
         const sceneId = text(scene?.id, 120);
+        const sceneName = text(scene?.name_zh || scene?.location_zh || scene?.name_en, 300);
+        if (!sceneName || DISPLAY_NAME_CODE.test(sceneName)) {
+          const error = new Error(`第${number}集 ${sceneId || `${number}-${index + 1}`} 缺少真实场景名称，不能导出`);
+          error.code = "HANDOFF_INCOMPLETE";
+          error.statusCode = 409;
+          throw error;
+        }
         const sceneLines = linesByScene.get(sceneId) || [];
         const roster = asArray(scene?.characters).map((id) => {
           const character = charactersById.get(text(id, 120));
@@ -3226,7 +3298,7 @@ function createHandoffPayload({ state, project, now, randomUUID }) {
         }
         return {
           number: `${number}-${index + 1}`,
-          location_zh: text(scene?.location_zh, 300),
+          location_zh: sceneName,
           time_zh: text(scene?.time_zh, 120),
           indoor_outdoor: text(scene?.indoor_outdoor, 80),
           characters: roster,
@@ -3399,15 +3471,15 @@ function autoRegisterEpisodeCharacters(state, stage, artifactContent, now = () =
   if (!missing.length) return 0;
   const additions = missing.map((id) => ({
     id,
-    // 2026-08-10：剧本中一律使用名字，不出现 C001 类代号
-    name_en: "Episode character (auto)",
-    name_zh: "剧集新角色（自动补录）",
+    // 未知人物不再伪造可见名称；新生成必须在人物阶段提交真实名称。
+    name_en: "",
+    name_zh: "",
     role: "supporting",
     source: "episode_auto_registered",
     identityStatus: "pending_confirmation",
     requiresConfirmation: true,
     introduced_in_stage: stage,
-    note_zh: "由后续剧集阶段自动补录；如需正式设定（欲望/恐惧/声线），请在人物与世界阶段补充。",
+    note_zh: "由后续剧集阶段自动补录；必须回到人物与世界阶段补充真实姓名及完整设定后，才能进入正式交付。",
   }));
   charArtifact.content = { ...(charArtifact.content || {}), characters: [...chars, ...additions] };
   charArtifact.updatedAt = new Date(now()).toISOString();
@@ -4373,6 +4445,7 @@ module.exports = {
   normalizeRoutes,
   validateContent,
   validateReview,
+  validateVisualAssets,
   mergeRevisionContent,
   mergeStageBatchContent,
   normalizeUnitNumbers,

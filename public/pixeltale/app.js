@@ -1891,18 +1891,51 @@ const fieldLabelMap = {
   consistency_notes: "一致性说明",
 };
 
+function displayNameContext() {
+  const artifacts = Array.isArray(state.agent?.artifacts) ? state.agent.artifacts : [];
+  const latest = (stage) => artifacts.filter((item) => item?.stage === stage).sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0]?.content || {};
+  const characters = latest("characters").characters || [];
+  const scenes = latest("scenes").scenes || [];
+  return {
+    characters: new Map(characters.map((item) => [String(item?.id || ""), String(item?.name_zh || item?.name_en || "").trim()]).filter(([, name]) => name)),
+    scenes: new Map(scenes.map((item) => [String(item?.id || ""), String(item?.name_zh || item?.location_zh || item?.name_en || "").trim()]).filter(([, name]) => name)),
+  };
+}
+
+function displayReference(key, value, context) {
+  if (key === "speaker" || key === "from" || key === "to") return context.characters.get(String(value)) || "";
+  if (key === "scene_id") return context.scenes.get(String(value)) || "";
+  if (key === "characters" && Array.isArray(value)) return value.map((item) => context.characters.get(String(item)) || "").filter(Boolean);
+  return value;
+}
+
+function visibleSnapshot(value, context, key = "") {
+  const mapped = displayReference(key, value, context);
+  if (mapped !== value) return visibleSnapshot(mapped, context, "");
+  if (Array.isArray(value)) return value.map((item) => visibleSnapshot(item, context, key));
+  if (!value || typeof value !== "object") return value;
+  return Object.entries(value).reduce((result, [entryKey, entryValue]) => {
+    if (["id", "scene_id", "dialogue_refs", "shot_id"].includes(entryKey)) return result;
+    result[entryKey] = visibleSnapshot(entryValue, context, entryKey);
+    return result;
+  }, {});
+}
+
 function fieldLabel(key) {
   const raw = String(key || "");
   if (fieldLabelMap[raw]) return fieldLabelMap[raw];
   return raw.replace(/_(?:zh|en)$/i, "").replaceAll("_", " ");
 }
 
-function renderValue(value, depth = 0) {
+function renderValue(value, depth = 0, context = displayNameContext()) {
   if (value === null || value === undefined || value === "") return "";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return `<span class="value-text">${escapeHtml(value)}</span>`;
-  if (Array.isArray(value)) return `<ul class="structured-list">${value.map((item) => `<li>${renderValue(item, depth + 1)}</li>`).join("")}</ul>`;
-  if (depth > 4) return `<span class="value-text">${escapeHtml(JSON.stringify(value))}</span>`;
-  return `<dl class="structured-data">${Object.entries(value).map(([key, item]) => `<div><dt>${escapeHtml(fieldLabel(key))}</dt><dd>${renderValue(item, depth + 1)}</dd></div>`).join("")}</dl>`;
+  if (Array.isArray(value)) return `<ul class="structured-list">${value.map((item) => `<li>${renderValue(item, depth + 1, context)}</li>`).join("")}</ul>`;
+  if (depth > 4) return `<span class="value-text">${escapeHtml(JSON.stringify(visibleSnapshot(value, context)))}</span>`;
+  return `<dl class="structured-data">${Object.entries(value).filter(([key]) => !["id", "scene_id", "dialogue_refs", "shot_id"].includes(key)).map(([key, item]) => {
+    const displayValue = displayReference(key, item, context);
+    return displayValue === "" || (Array.isArray(displayValue) && !displayValue.length) ? "" : `<div><dt>${escapeHtml(fieldLabel(key))}</dt><dd>${renderValue(displayValue, depth + 1, context)}</dd></div>`;
+  }).join("")}</dl>`;
 }
 
 function advisoryItemId(kind, item = {}, index = 0) {

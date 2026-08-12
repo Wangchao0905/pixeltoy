@@ -37,7 +37,7 @@ const reviewIssueGroupsForTest = Function(
   "reviewQuality",
   `${app.slice(app.indexOf("function isMandatoryReviewIssue"), app.indexOf("function reviewDecisionGroups"))}\nreturn reviewIssueGroups;`,
 )(() => ({ accepted: [] }), () => [], reviewQuality);
-const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters, fixEpisodeTitles } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
+const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateVisualAssets, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters, fixEpisodeTitles } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const duplicateDecisionItems = mergeReviewItemsForTest([
   { id: "rule_scene_speaker_roster_mismatch", tag: "SCENE_SPEAKER_ROSTER_MISMATCH", severity: "high", requiresCreatorDecision: true, decisionOptions: ["将说话人加入该场景人物名单", "改用该场景已登记人物发言"] },
@@ -153,6 +153,14 @@ assert.ok(ruleFindings(runStageRules({ stage: "brief", artifact: { locked: "chan
 assert.ok(ruleFindings(runStageRules({ stage: "review", artifact: { dimensions: { structure: {}, plot: {}, design: {}, } } }), "DIMENSION_KEY_MISSING").length, "rules must detect missing review dimensions");
 assert.ok(ruleFindings(runStageRules({ stage: "arc", mode: "tk_short_drama", artifact: { units: [{ number: 1, hook_zh: "月光洒在空房间" }] } }), "EMPTY_HOOK").length, "TK rules must detect empty or atmospheric hooks");
 assert.ok(ruleFindings(runStageRules({ stage: "arc", mode: "cn_short_drama", artifact: { units: [{ number: 1, hook_zh: "月光洒在空房间" }] } }), "EMPTY_HOOK").length, "CN rules must detect empty or atmospheric hooks");
+const dramaticCharacter = runStageRules({ stage: "characters", mode: "tk_short_drama", artifact: { characters: [{ id: "C001", desire_now_zh: "拿回弟弟的救命药", fear_trigger_zh: "听见急救警报就失控", core_contradiction_zh: "嘴上说不需要任何人，危急时却保护陌生人", behavior_signature_zh: ["撒谎时反复擦拭手表"], voice_rules_en: ["只用短句，不解释第二遍"] }] } });
+assert.equal(ruleFindings(dramaticCharacter, "CHARACTER_DRAMATIC_CONTRACT").length, 0, "完整人物戏剧契约不得被拦截");
+assert.equal(ruleFindings(runStageRules({ stage: "characters", mode: "tk_short_drama", artifact: { characters: [{ id: "C001", desire_now_zh: "查明真相" }] } }), "CHARACTER_DRAMATIC_CONTRACT").length, 1, "短剧人物缺少可表达契约必须被拦截");
+const dramaticArcUnit = { number: 1, episode_goal_zh: "拿到药", opposition_zh: "药房封锁", active_choice_zh: "撬门取药", choice_cost_zh: "暴露身份", audience_tension_zh: "观众知道警察将到，但不知道药是否真实", hook_zh: "他必须在警察赶到前打开药盒" };
+assert.equal(ruleFindings(runStageRules({ stage: "arc", mode: "tk_short_drama", artifact: { units: [dramaticArcUnit] } }), "ARC_DRAMATIC_ENGINE").length, 0, "完整分集戏剧发动机不得被拦截");
+assert.equal(ruleFindings(runStageRules({ stage: "arc", mode: "tk_short_drama", artifact: { units: [{ number: 1, episode_goal_zh: "拿到药", hook_zh: "他必须继续行动" }] } }), "ARC_DRAMATIC_ENGINE").length, 1, "分集缺少主动选择与代价必须被拦截");
+assert.match(stageSystemPrompt("arc", "tk_short_drama", {}), /即时冲击.*明确欲望.*阻力升级.*主动选择.*选择代价.*新问题/u, "短剧 prompt 必须包含观众反馈链");
+assert.match(stageSystemPrompt("characters", "tk_short_drama", {}), /人物吸引力来自可预测的性格规则与不可预测的选择/u, "人物 prompt 必须融合观众心理与人物表达");
 
 const sceneWithDurations = (unitNumber, durations) => ({
   unit_number: unitNumber,
@@ -217,6 +225,26 @@ assert.equal(ruleFindings(chinesePlot, "NAME_LOCALIZATION").length, 0, "Chinese 
 const localizedCharacterFields = runStageRules({ stage: "characters", artifact: { characters: [{ name_zh: "李明", plot_zh: "李明在雨夜追查真相。" }] }, approvedContext: { marketCountry: "united_states" } });
 assert.equal(ruleFindings(localizedCharacterFields, "NAME_LOCALIZATION").length, 1, "NAME_LOCALIZATION must inspect characters[].name_zh in the characters stage");
 assert.equal(ruleFindings(runStageRules({ stage: "brief", artifact: { title_zh: "雾镇", logline_zh: "中文剧情叙述：主角在雨夜追查真相。" }, approvedContext: { marketCountry: "united_states" } }), "NAME_LOCALIZATION").length, 0, "NAME_LOCALIZATION must not inspect non-character stages");
+
+// 2026-08-12：内部 ID 只能用于机器关联，人物/场景/道具的可见名称必须是真实名称。
+const realDisplayNames = runStageRules({
+  stage: "scenes",
+  artifact: {
+    scenes: [{ id: "S001", name_zh: "太平洋荒岛北岸", location_zh: "太平洋荒岛北岸", characters: ["C001"], props: [{ id: "PR01", name_zh: "应急定位信标" }] }],
+  },
+  approvedContext: { artifacts: [{ stage: "characters", content: { characters: [{ id: "C001", name_zh: "诺亚·贝内特", name_en: "Noah Bennett" }] } }] },
+});
+assert.equal(ruleFindings(realDisplayNames, "DISPLAY_NAME_CODE").length, 0, "真实人物、场景和道具名称不得被误判");
+const codedDisplayNames = runStageRules({
+  stage: "scenes",
+  artifact: {
+    scenes: [{ id: "S001", name_zh: "S001", location_zh: "S001", characters: ["C001"], props: [{ id: "PR01", name_zh: "PR01" }] }],
+  },
+  approvedContext: { artifacts: [{ stage: "characters", content: { characters: [{ id: "C001", name_zh: "C001", name_en: "C001" }] } }] },
+});
+assert.ok(ruleFindings(codedDisplayNames, "DISPLAY_NAME_CODE").length >= 2, "场景、道具和人物的编号名称必须被确定性拦截");
+assert.throws(() => validateContent("characters", { characters: [{ id: "C001", name_zh: "C001", name_en: "C001" }], relationships: [{ from: "C001", to: "C001", dynamic_zh: "测试关系" }], world_rules: ["测试规则"] }), /真实名称|编号|代号/u, "人物产物不得用内部编号作为显示名");
+assert.throws(() => validateVisualAssets({ characters: [{ id: "P01", name_zh: "P01", prompt_zh: "人物" }], scenes: [], props: [] }), /真实名称|编号|代号/u, "视觉资产产物不得用内部编号作为显示名");
 
 // Roster measured on a real trimmed scenes payload (10 scenes over 5 episodes):
 // gpt-5.6-terra 122s, gpt-5.6-sol 108s, deepseek-v4-pro 166s, grok-4.5 99s.
@@ -1808,6 +1836,9 @@ assert.doesNotMatch(buildHumanOverrideBrief({ quality: 70, score: 82, dimensions
 // turning the workspace into another long report. The right rail has exactly
 // one next action; creator judgment remains a distinct, explicit state.
 assert.match(app, /function renderStageTaskCard\(/, "every stage must render a compact execution card");
+assert.match(app, /function displayNameContext\(/, "页面必须建立真实名称映射");
+assert.match(app, /filter\(\(\[key\]\) => !\["id", "scene_id", "dialogue_refs", "shot_id"\]\.includes\(key\)\)/, "页面不得显示内部 ID、场景引用、对白引用或镜头 ID");
+assert.match(app, /context\.characters\.get\(String\(value\)\) \|\| ""/, "页面人物引用必须转换为真实人物名，未知引用不得回退显示编号");
 assert.match(app, /阶段目标/, "the execution card must show the stage goal");
 assert.match(app, /责任人/, "the execution card must name the accountable role");
 assert.match(app, /完成条件/, "the execution card must show the acceptance condition");
@@ -1925,5 +1956,5 @@ console.log("pixeltale workflow contract ok");
   const scenesPrompt = stageSystemPrompt("scenes", "tk_short_drama", {});
   assert.match(scenesPrompt, /只引用 characters 阶段已确认的人物 ID/, "scenes 必须约束角色引用");
   const dialoguePrompt = stageSystemPrompt("dialogue", "tk_short_drama", {});
-  assert.match(dialoguePrompt, /补录进人物名单，但标记为待确认身份/, "dialogue 必须说明新角色补录后仍待确认");
+  assert.match(dialoguePrompt, /必须同时提交真实人物名|不能生成.*占位名/, "dialogue 必须禁止新角色使用占位名");
 }

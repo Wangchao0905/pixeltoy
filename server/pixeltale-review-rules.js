@@ -10,6 +10,8 @@ const REQUIRED_FIELDS = Object.freeze({
 const DIMENSIONS = ["structure", "plot", "design", "logic"];
 const CJK = /[一-鿿]/u;
 const WESTERN_MARKETS = new Set(["united_states", "united_kingdom", "canada", "mexico", "brazil", "germany", "france"]);
+const SHORT_DRAMA_MODES = new Set(["tk_short_drama", "cn_short_drama"]);
+const DISPLAY_NAME_CODE = /^(?:[A-Z]{1,4}[-_]?\d{1,4}|(?:Anchor|Witness|Suspect|Target|Subject|Agent|Code|File)\s+[A-Z0-9]+|(?:人物|场景|道具|角色|地点|道具名)(?:\s*\d+)?|Episode character(?: \(auto\))?|待命名(?:人物|角色|场景|道具)?|剧集新角色(?:（自动补录）)?)[.!。]?$/iu;
 
 function object(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -189,6 +191,81 @@ function checkHooks(stage, mode, artifact, violations) {
   });
 }
 
+function checkShortDramaEngine(stage, mode, artifact, violations) {
+  if (!SHORT_DRAMA_MODES.has(mode)) return;
+  if (stage === "characters") {
+    const characters = array(artifact.characters);
+    const optedIn = characters.some((character) => ["desire_now_zh", "fear_trigger_zh", "core_contradiction_zh", "behavior_signature_zh"].some((key) => Object.hasOwn(object(character), key)));
+    if (!optedIn) return;
+    characters.forEach((character, index) => {
+      const item = object(character);
+      const missing = ["desire_now_zh", "fear_trigger_zh", "core_contradiction_zh", "behavior_signature_zh", "voice_rules_en"]
+        .filter((key) => empty(item[key]));
+      if (missing.length) add(violations, "CHARACTER_DRAMATIC_CONTRACT", "high", `characters[${index}]`, `角色 ${item.id || index + 1} 缺少短剧人物契约字段：${missing.join("、")}`);
+    });
+  }
+  if (stage === "arc") {
+    const units = array(artifact.units);
+    const optedIn = units.some((unit) => ["episode_goal_zh", "opposition_zh", "active_choice_zh", "choice_cost_zh", "audience_tension_zh"].some((key) => Object.hasOwn(object(unit), key)));
+    if (!optedIn) return;
+    units.forEach((unit, index) => {
+      const item = object(unit);
+      const missing = ["episode_goal_zh", "opposition_zh", "active_choice_zh", "choice_cost_zh", "audience_tension_zh"]
+        .filter((key) => empty(item[key]));
+      if (missing.length) add(violations, "ARC_DRAMATIC_ENGINE", "high", `units[${index}]`, `第 ${item.number || index + 1} 集缺少短剧戏剧发动机字段：${missing.join("、")}`);
+    });
+  }
+  if (stage === "scenes") {
+    const scenes = array(artifact.scenes);
+    const optedIn = scenes.some((scene) => ["dramatic_question_zh", "character_behavior_zh", "audience_reveal_zh"].some((key) => Object.hasOwn(object(scene), key)));
+    if (!optedIn) return;
+    scenes.forEach((scene, index) => {
+      const item = object(scene);
+      const missing = ["dramatic_question_zh", "character_behavior_zh", "audience_reveal_zh"]
+        .filter((key) => empty(item[key]));
+      if (missing.length) add(violations, "SCENE_CHARACTER_EXPRESSION", "high", `scenes[${index}]`, `第 ${item.unit_number || index + 1} 集场景缺少人物表达或观众揭示字段：${missing.join("、")}`);
+    });
+  }
+  if (stage === "dialogue") {
+    const lines = array(artifact.lines);
+    const optedIn = lines.some((line) => Object.hasOwn(object(line), "subtext_zh") || Object.hasOwn(object(line), "delivery_en"));
+    if (!optedIn) return;
+    lines.forEach((line, index) => {
+      const item = object(line);
+      if (empty(item.subtext_zh) || empty(item.delivery_en)) add(violations, "DIALOGUE_CHARACTER_VOICE", "high", `lines[${index}]`, `对白缺少潜台词或角色化演绎说明，不能证明人物在表达自己的欲望与关系压力`);
+    });
+  }
+}
+
+function checkDisplayNames(stage, artifact, violations) {
+  const check = (value, fieldPath, label) => {
+    const name = String(value ?? "").trim();
+    if (!name || DISPLAY_NAME_CODE.test(name)) {
+      add(violations, "DISPLAY_NAME_CODE", "high", fieldPath, `${label}必须使用真实可读名称，不能缺失、使用编号或技术代号：${name || "（空）"}`);
+    }
+  };
+  if (stage === "characters") {
+    array(object(artifact).characters).forEach((item, index) => {
+      const entry = object(item);
+      check(entry.name_zh || entry.name_en, `characters[${index}].name_zh`, `人物 ${entry.id || index + 1}`);
+    });
+  }
+  if (stage === "scenes") {
+    array(object(artifact).scenes).forEach((item, index) => {
+      const entry = object(item);
+      check(entry.name_zh || entry.location_zh, `scenes[${index}].name_zh`, `场景 ${entry.id || index + 1}`);
+      array(entry.props).forEach((prop, propIndex) => {
+        const propEntry = object(prop);
+        check(propEntry.name_zh || propEntry.name_en, `scenes[${index}].props[${propIndex}].name_zh`, `场景 ${entry.name_zh || entry.id || index + 1} 的道具`);
+      });
+    });
+    array(object(artifact).props).forEach((prop, index) => {
+      const entry = object(prop);
+      check(entry.name_zh || entry.name_en, `props[${index}].name_zh`, "道具");
+    });
+  }
+}
+
 function checkLocalization(stage, artifact, approvedContext, violations) {
   const market = contextValue(approvedContext, "marketCountry") || contextValue(approvedContext, "targetMarket") || artifact.marketCountry;
   if (!WESTERN_MARKETS.has(String(market || "").toLowerCase())) return;
@@ -316,15 +393,18 @@ function runStageRules({ stage = "", mode = "", artifact = {}, approvedContext =
   checkLocalization(normalizedStage, object(artifact), approvedContext, violations);
   checkCrossStageRefs(normalizedStage, object(artifact), approvedContext, violations);
   checkEpisodeTitles(normalizedStage, object(artifact), violations);
+  checkDisplayNames(normalizedStage, object(artifact), violations);
+  checkShortDramaEngine(normalizedStage, normalizedMode, object(artifact), violations);
   return {
     violations,
     checked: [
       "SCHEMA_INCOMPLETE", "UNIT_COUNT_MISMATCH", "LOCKED_PATH_TOUCHED",
-      "DURATION_BUDGET_MISMATCH", "UNIT_CONTINUITY_BROKEN", "DIMENSION_KEY_MISSING", "EMPTY_HOOK", "NAME_LOCALIZATION",
+      "DURATION_BUDGET_MISMATCH", "UNIT_CONTINUITY_BROKEN", "DIMENSION_KEY_MISSING", "EMPTY_HOOK", "NAME_LOCALIZATION", "DISPLAY_NAME_CODE",
       "UNKNOWN_CHARACTER_REF", "UNKNOWN_SCENE_REF", "UNKNOWN_SPEAKER_REF",
       "SCENE_SPEAKER_ROSTER_MISMATCH", "EPISODE_TITLE_NOT_ZH", "EPISODE_TITLE_CODENAME",
+      "CHARACTER_DRAMATIC_CONTRACT", "ARC_DRAMATIC_ENGINE", "SCENE_CHARACTER_EXPRESSION", "DIALOGUE_CHARACTER_VOICE",
     ],
   };
 }
 
-module.exports = { runStageRules, EPISODE_TITLE_CODENAME };
+module.exports = { runStageRules, EPISODE_TITLE_CODENAME, DISPLAY_NAME_CODE };

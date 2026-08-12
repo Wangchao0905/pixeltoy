@@ -28,13 +28,15 @@ const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.h
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public/pixeltale/styles.css"), "utf8");
 const agent = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
-const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
+const buildHumanOverrideBrief = Function(`${app.slice(app.indexOf("function reviewQuality"), app.indexOf("function scoresMeetGate"))}\n${app.slice(app.indexOf("function buildHumanOverrideBrief"), app.indexOf("function approvedStageCount"))}\nreturn buildHumanOverrideBrief;`)();
+const reviewQuality = Function(`${app.slice(app.indexOf("function reviewQuality"), app.indexOf("function scoresMeetGate"))}\nreturn reviewQuality;`)();
 const mergeReviewItemsForTest = Function(`${app.slice(app.indexOf("function reviewItemKey"), app.indexOf("function reviewIssueGroups"))}\nreturn mergeReviewItems;`)();
 const reviewIssueGroupsForTest = Function(
   "reviewAdvisoryGate",
   "creativeReviewDecisionGroups",
+  "reviewQuality",
   `${app.slice(app.indexOf("function isMandatoryReviewIssue"), app.indexOf("function reviewDecisionGroups"))}\nreturn reviewIssueGroups;`,
-)(() => ({ accepted: [] }), () => []);
+)(() => ({ accepted: [] }), () => [], reviewQuality);
 const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters, fixEpisodeTitles } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const duplicateDecisionItems = mergeReviewItemsForTest([
@@ -424,6 +426,7 @@ assert.match(app, /data-pulse-node/, "story pulse events must expose clickable i
 assert.match(app, /尚未生成剧情脉冲/, "story pulse must have an honest empty state when no episode data exists");
 assert.match(app, /function renderReviewScoreBars\(/, "review output must expose a multidimensional score bar renderer");
 assert.match(app, /评分门槛 75/, "review score bars must show the explicit release threshold");
+assert.match(app, /function handleConfirmHumanOverride\(button\)/, "manual release confirmation must be a top-level handler");
 assert.match(app, /未评分/, "review score bars must distinguish unmeasured dimensions from zero");
 assert.doesNotMatch(app, /CURRENT UNIT/, "the stage cockpit must not repeat the passive CURRENT UNIT label");
 assert.doesNotMatch(app, /stage-cockpit-brief/, "the stage cockpit must not render a redundant four-column explanation block");
@@ -1706,6 +1709,8 @@ assert.match(tkCharactersContract, /英文声线规则/, "tk mode characters con
 // 7. Human override must be informed: the confirm dialog shows review
 //    evidence (score / issue counts / revision state) before releasing.
 assert.match(app, /function buildHumanOverrideBrief/, "app.js must expose the human-override evidence builder");
+assert.match(app, /function reviewQuality\(reviewContent = \{\}\)/, "app.js must define one canonical release-score helper");
+assert.match(app, /唯一放行依据/, "the review panel must explain which score controls release");
 assert.match(app, /unit\/fix-issue/, "app.js 必须接入单集定向修复 API");
 assert.match(app, /unit\/update/, "app.js 必须接入编辑保存 API（改内容→pinned）");
 assert.match(app, /data-fix-unit/, "审核建议必须提供『修复此集』按钮");
@@ -1792,6 +1797,12 @@ assert.match(formalHandoff.script, /1-1 急诊室后门 夜 内/, "handoff scrip
   assert.equal(autoConfirmState.artifacts.find((item) => item.id === "a_proposal").status, "approved", "upstream approvals must survive");
 assert.equal(autoConfirmState.stage, "arc", "auto-confirm must advance to the next stage");
 }
+
+// 放行分必须只有一个口径：quality 优先，旧数据才回退 score；维度分不能替代综合分。
+assert.equal(reviewQuality({ quality: 70, score: 82 }), 70, "quality must be the canonical release score when present");
+assert.equal(reviewQuality({ score: 82 }), 82, "legacy reviews may fall back to score");
+assert.match(buildHumanOverrideBrief({ quality: 70, score: 82, dimensions: { structure: { average: 82 } } }), /放行质量分：70 \/ 100/u, "human override evidence must show the canonical release score");
+assert.doesNotMatch(buildHumanOverrideBrief({ quality: 70, score: 82, dimensions: { structure: { average: 82 } } }), /放行质量分：82 \/ 100/u, "human override evidence must not display the legacy score as release score");
 
 // 11. Every stage must make responsibility and acceptance visible without
 // turning the workspace into another long report. The right rail has exactly

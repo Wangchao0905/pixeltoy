@@ -175,10 +175,17 @@ function requiredReviewSeatsFor(stage = state.stage, reviewContent = {}, artifac
 }
 
 // 2026-08-10 用户规则：不管哪个阶段，评分必须达标才能进入下一步。
-// 达标 = 综合 quality ≥ 75 且所有已评分维度 ≥ 75（未评分维度不算拦截）。
+// 放行质量分是唯一综合分：优先使用审核汇总 quality，旧数据才回退 score；
+// 维度分仍需逐项达到 75（未评分维度不算拦截）。
+function reviewQuality(reviewContent = {}) {
+  const raw = reviewContent.quality ?? reviewContent.score;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
+}
+
 function scoresMeetGate(reviewContent = {}) {
-  const quality = Number(reviewContent.quality);
-  if (!Number.isFinite(quality) || quality < 75) return false;
+  const quality = reviewQuality(reviewContent);
+  if (quality === null || quality < 75) return false;
   const dims = reviewContent.dimensions || {};
   return Object.values(dims).every((entry) => {
     const value = Number(entry && typeof entry === "object" ? entry.average : entry);
@@ -926,8 +933,8 @@ function reviewForArtifact(artifact) {
 // 而不是盲目跳过质量门。
 function buildHumanOverrideBrief(reviewContent = {}) {
   const lines = [];
-  const score = reviewContent.quality;
-  if (Number.isFinite(score)) lines.push(`• 质量分：${Math.round(score)} / 100`);
+  const quality = reviewQuality(reviewContent);
+  if (quality !== null) lines.push(`• 放行质量分：${Math.round(quality)} / 100（唯一放行依据）`);
   const dims = reviewContent.dimensions || {};
   const dimLabels = { structure: "结构", plot: "剧情", design: "设计", logic: "逻辑" };
   const dimLine = Object.entries(dims)
@@ -996,8 +1003,7 @@ function consensusMetrics() {
     : Number.isFinite(Number(rawReviewCompletion)) ? Number(rawReviewCompletion) : null;
   const rawAgreement = content.agreement;
   const agreement = rawAgreement === null || rawAgreement === undefined || rawAgreement === "" ? null : Number(rawAgreement);
-  const rawQuality = content.quality;
-  const quality = rawQuality === null || rawQuality === undefined || rawQuality === "" ? null : Number(rawQuality);
+  const quality = reviewQuality(content);
   const index = Number.isFinite(quality) ? Math.max(0, Math.min(100, Math.round(quality))) : null;
   const quorum = content.quorum || {};
   return { index, agreement, quality: Number.isFinite(quality) ? quality : null, reviewCompletion, interactionCompletion, completedReviews: Number(quorum.completedSeats ?? quorum.completed ?? 0), requiredReviews: Number(quorum.required || 3), quorumMet: quorum.met === true, releaseReady: content.pass === true, content };
@@ -1182,7 +1188,7 @@ function nextStepMeta() {
         kind: "human-override",
         stage: flowStage,
         title: `${flowMeta.title}评分已达标`,
-        copy: `质量分 ${Math.round(Number(reviewContent.quality))} 达标（≥75）。系统建议定向修订，但你也可以接受当前版本继续。`,
+      copy: `放行质量分 ${Math.round(reviewQuality(reviewContent))} 达标（≥75）。系统建议定向修订，但你也可以接受当前版本继续。`,
         label: "接受当前版本并继续（评分已达标）",
         flowStage,
       };
@@ -1211,7 +1217,7 @@ function nextStepMeta() {
         kind: "human-override",
         stage: flowStage,
         title: `${flowMeta.title}评分已达标`,
-        copy: `另一审读席（${failedNames}）网络调用失败，当前质量分 ${Math.round(Number(reviewContent.quality))} 已达标（≥75）。接受当前版本并继续，或重新审核。`,
+        copy: `另一审读席（${failedNames}）网络调用失败，当前放行质量分 ${Math.round(reviewQuality(reviewContent))} 已达标（≥75）。接受当前版本并继续，或重新审核。`,
         label: "接受当前版本并继续（评分已达标）",
         flowStage,
       };
@@ -1313,7 +1319,7 @@ function nextStepMeta() {
 }
 
 function renderInlineHumanOverrideForm(stage) {
-  const artifact = (state.agent?.artifacts || []).find((item) => item.stage === stage);
+  const artifact = artifactForStage(stage);
   const review = reviewForArtifact(artifact);
   const creativeDecision = creativeReviewDecisionGroups(review?.content || {})[0];
   const choiceId = state.impactChoices[review?.id || `${stage}-decision`] || "option_1";
@@ -2019,8 +2025,8 @@ function reviewGateIssues(reviewContent = {}) {
       evidence: entry && typeof entry === "object" && entry.feedback ? [entry.feedback] : [],
     }];
   });
-  const quality = Number(reviewContent.quality ?? reviewContent.score);
-  if (Number.isFinite(quality) && quality < 80) {
+  const quality = reviewQuality(reviewContent);
+  if (quality !== null && quality < 80) {
     issues.push({
       id: "quality_floor",
       criterionId: "QUALITY_FLOOR",
@@ -2028,7 +2034,7 @@ function reviewGateIssues(reviewContent = {}) {
       severity: "high",
       dimension: "logic",
       modelCount: Number(reviewContent.reviewPolicy?.requiredSeats) || 2,
-      suggestions: [`整体质量分 ${Math.round(quality)} < 80，需提升后重新审核`],
+      suggestions: [`放行质量分 ${Math.round(quality)} < 80，需提升后重新审核`],
       evidence: [],
     });
   }
@@ -2268,7 +2274,10 @@ function renderReviewScoreBars(reviewContent = {}) {
     const status = score === null ? "未评分" : score >= 75 ? "达标" : "低于门槛";
     return `<div class="review-score-row is-${score === null ? "unmeasured" : score >= 75 ? "pass" : "needs-review"}"><span class="review-score-label">${label}</span><div class="review-score-track" aria-label="${label}${score === null ? "未评分" : `${score} 分`}"><i style="width:${score === null ? 0 : score}%"></i><b style="left:75%"></b></div><strong>${score === null ? "—" : score}</strong><em>${status}</em></div>`;
   }).join("");
-  return `<section class="review-score-bars" aria-labelledby="reviewScoreTitle"><div class="review-score-head"><div><span class="card-label"><i></i>QUALITY GATE</span><h3 id="reviewScoreTitle">多维评分</h3></div><span class="review-score-threshold">评分门槛 75</span></div><div class="review-score-list">${rows}</div><p class="review-score-note">未评分表示该维度没有有效测量，不等同于 0 分。</p></section>`;
+  const quality = reviewQuality(reviewContent);
+  const qualityLabel = quality === null ? "未评分" : `${Math.round(quality)} / 100`;
+  const qualityStatus = quality === null ? "未评分" : quality >= 75 ? "达标" : "低于门槛";
+  return `<section class="review-score-bars" aria-labelledby="reviewScoreTitle"><div class="review-score-head"><div><span class="card-label"><i></i>QUALITY GATE</span><h3 id="reviewScoreTitle">放行评分</h3></div><span class="review-score-threshold">唯一放行分 · 评分门槛 75</span></div><div class="review-score-overall"><span>放行质量分</span><strong>${qualityLabel}</strong><em>${qualityStatus}</em><small>优先读取审核汇总 quality；旧版本才回退 score。四项维度分用于解释质量，不替代放行质量分。</small></div><div class="review-score-list">${rows}</div><p class="review-score-note">未评分表示该维度没有有效测量，不等同于 0 分。</p></section>`;
 }
 
 function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage, reviewId = "", showDecisionWorkbench = true } = {}) {
@@ -2553,8 +2562,8 @@ function renderRiskNote() {
     riskCount = feedbacks.length;
   } else {
     const agreed = feedbacks.every((item) => item.pass === true);
-    const score = Number.isFinite(Number(content.quality)) ? content.quality : content.score;
-    const scoreTxt = Number.isFinite(Number(score)) ? `（质量分 ${Math.round(Number(score))}）` : "";
+    const quality = reviewQuality(content);
+    const scoreTxt = quality === null ? "" : `（放行质量分 ${Math.round(quality)}）`;
     html = `<span class="risk-dot"></span><span>双席审读意见一致：${agreed ? `通过${scoreTxt}，确认后进入下一阶段` : `要求修订${scoreTxt}，按右侧修订清单处理`}。</span>`;
     riskCount = 1;
   }
@@ -2818,7 +2827,7 @@ async function runAutoRevision(stage = state.stage) {
   if (!artifact || !issues.length) {
     // 2026-08-10：服务端最新版本若已通过（旧界面残留的修订点击会先刷新 state 到这里），
     // 直接提示确认，绝不重新生成——这是'反反复复修改很多轮'的根源。
-    if (artifact && content.pass === true && (content.decision?.kind === "approve" || Number(content.quality) >= 75)) {
+    if (artifact && content.pass === true && (content.decision?.kind === "approve" || scoresMeetGate(content))) {
       showToast("当前版本已通过审核，请点击「确认进入下一步」完成确认（无需修订）");
       state.lastError = "";
       renderStage();
@@ -3012,6 +3021,22 @@ async function saveRouting(event) {
   showToast("创作分工已保存到 PixelTale");
 }
 
+function handleConfirmHumanOverride(button) {
+  const reasonField = $("[data-human-override-reason]");
+  // 2026-08-11：评分达标时理由非必填。
+  const requiresReason = reasonField?.hasAttribute("required") !== false;
+  if (requiresReason && !reasonField?.reportValidity()) return;
+  const stage = button.dataset.humanOverrideStage || state.pendingHumanOverride || state.stage;
+  const artifact = artifactForStage(stage);
+  const review = reviewForArtifact(artifact);
+  const creativeDecision = creativeReviewDecisionGroups(review?.content || {})[0];
+  const choiceId = state.impactChoices[review?.id || `${stage}-decision`] || "option_1";
+  const choice = creativeDecision?.decisionOptions?.[Number(choiceId.replace("option_", "")) - 1] || creativeDecision?.decisionOptions?.[0] || "";
+  state.pendingHumanOverride = "";
+  try { sessionStorage.removeItem(`pixeltale.revision-rounds:${stage}`); } catch { /* storage unavailable */ }
+  void approveArtifact(artifact?.id, { humanOverride: true, humanOverrideReason: `${choice ? `选择：${choice}\n` : ""}${reasonField?.value?.trim() || ""}` });
+}
+
 function bindAgentTaskAction() {
   // 2026-08-10：内容区（stageContent）内的动作按钮（系统裁判决定卡上的定向修订、
   // 导出页的生成正式文件）也需要响应点击——它们不在右侧 #agentTaskAction 内。
@@ -3027,22 +3052,6 @@ function bindAgentTaskAction() {
       await refreshPixelTaleState();
     } catch (error) { alert("网络错误，请重试"); } finally { button.disabled = false; button.textContent = original; }
   }));
-function handleConfirmHumanOverride(button) {
-  const reasonField = $("[data-human-override-reason]");
-  // 2026-08-11：评分达标时理由非必填（文案含"评分已达标"即跳过校验）
-  const requiresReason = reasonField?.hasAttribute("required") !== false;
-  if (requiresReason && !reasonField?.reportValidity()) return;
-  const stage = button.dataset.humanOverrideStage || state.pendingHumanOverride || state.stage;
-  const artifact = (state.agent?.artifacts || []).find((item) => item.stage === stage);
-  const review = reviewForArtifact(artifact);
-  const creativeDecision = creativeReviewDecisionGroups(review?.content || {})[0];
-  const choiceId = state.impactChoices[review?.id || `${stage}-decision`] || "option_1";
-  const choice = creativeDecision?.decisionOptions?.[Number(choiceId.replace("option_", "")) - 1] || creativeDecision?.decisionOptions?.[0] || "";
-  state.pendingHumanOverride = "";
-  // 2026-08-10：人工放行后清除本阶段修订轮数计数（重新计）。
-  try { sessionStorage.removeItem(`pixeltale.revision-rounds:${stage}`); } catch { /* storage unavailable */ }
-  void approveArtifact(artifact?.id, { humanOverride: true, humanOverrideReason: `${choice ? `选择：${choice}\n` : ""}${reasonField.value.trim()}` });
-}
 
   $$("#stageContent [data-flow-action]").forEach((button) => {
     button.addEventListener("click", () => {

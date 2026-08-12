@@ -45,7 +45,7 @@ const { writeVisualAssetDocument: buildVisualAssetDocument } = require("./server
 const { fixUnitIssue } = require("./server/pixeltale-unit-fix.js");
 const { markUnitPinned, fixEpisodeTitles } = require("./server/pixeltale-agent.js");
 const { safeFileName: safeScriptFileName, writeScriptDocument: buildScriptDocument } = require("./server/pixeltale-script-document.js");
-const { SEEDANCE_DIRECTOR_SYSTEM_ZH, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
+const { SEEDANCE_DIRECTOR_SYSTEM_ZH, SEEDANCE_RICH_DESIGN_FIELDS, sanitizeSeedanceDesign, hasCompleteSeedanceDesign } = require("./server/seedance-director.js");
 const { ensureThumbnail } = require("./server/thumbnailer.js");
 const fsRequestCache = require("./server/fs-request-cache.js");
 const { createCanvasStateScanCache } = require("./server/canvas-state-scan-cache.js");
@@ -16597,7 +16597,7 @@ async function createCanvasImageGeneration(body = {}) {
       args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--base-url", process.env.PIXEL_TOYS_IMAGE_BASE_URL || "https://beefapi.com/v1", "--out", outPath, "--timeout", timeout];
     }
   }
-  const env = { ...process.env, OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "" };
+  const env = { ...process.env, OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "", OPENAI_BASE_URL: process.env.PIXEL_TOYS_IMAGE_BASE_URL || "https://beefapi.com/v1" };
   canvasImageJobs.set(taskId, {
     taskId, // fix:image_undefined — finalize 用 entry.taskId 生成库 id,缺此字段会导致 id 恒为 image_undefined,每次覆盖同一条
     status: "running",
@@ -22173,16 +22173,37 @@ function seedancePromptDesignForShot(shot, index) {
     throw new Error(`模型导演设计缺失：${shot?.name || shot?.id || `镜头 ${Number(index || 0) + 1}`}。请重新生成分镜草稿。`);
   }
   const stylePreset = compactLine(shot.videoStylePreset || "") ? normalizeAssetStylePreset(shot.videoStylePreset) : "";
+  const rich = Object.fromEntries(SEEDANCE_RICH_DESIGN_FIELDS.map((key) => [key, design[key] || ""]));
+  const styleLaw = seedanceStyleLawForShot(stylePreset, shot?.videoStyleDirective);
+  const duration = clampShotDuration(shot?.duration || 8);
+  const characterCount = (Array.isArray(shot?.refs) ? shot.refs : []).filter((ref) => assetTypeForLookupRecord(shot?.assetLookup?.get?.(ref), ref) === "Character").length;
+  const references = (Array.isArray(shot?.refs) ? shot.refs : []).map((ref, refIndex) => seedanceReferenceLine(ref, refIndex, shot.assetLookup)).join("\n");
   return {
-    style: seedanceStyleLawForShot(stylePreset, shot?.videoStyleDirective),
-    shot_size: design.shot_size,
-    camera_lens: design.camera_lens,
-    camera_movement: design.camera_movement,
-    camera_angle: design.camera_angle,
-    visual: design.visual,
-    timeline: design.timeline,
-    voice_over: design.voice_over,
-    sound: design.sound,
+    ...rich,
+    scene_context: rich.scene_context || `EXACT ${Math.max(1, characterCount)} CHARACTERS — NO DUPLICATES: ${compactLine(shot?.beat || shot?.title || "当前镜头剧情动作")}.`,
+    active_references: rich.active_references || references || "按当前镜头绑定的正式资产执行。",
+    location_map: rich.location_map || design.visual || "保留场景资产的空间结构、地标关系和可信光源。",
+    geo_spatial_layout: rich.geo_spatial_layout || "由制作台空间地图注入；锁定摄影机侧、地标位置和光线轴线。",
+    first_frame_blocking: rich.first_frame_blocking || design.visual || "第一帧先固定人物、道具、地标和光源位置。",
+    format_mode: rich.format_mode || `单一连续镜头，${duration} 秒，实时速度。`,
+    optics: rich.optics || `${design.shot_size || "中景"}；${design.camera_lens || "物理电影镜头"}；焦点保持在主体和关键道具。`,
+    camera: rich.camera || `${design.camera_angle || "平视机位"}；${design.camera_movement || "固定镜头"}；保持同一摄影机轴线。`,
+    action_timing: rich.action_timing || design.timeline,
+    physics: rich.physics || "人物、道具、衣物和环境遵守重量、接触和惯性；呼吸带动胸腔和肩部。",
+    lighting: rich.lighting || "使用绑定场景的可信主光源；光源方向和阴影方向在整镜保持一致。",
+    audio: rich.audio || `固定语音描述由角色资产和对白锁定。环境声：${design.sound || "保留场景底噪"}。所有角色只说引号内台词；没有台词的角色保持安静；SFX only. No music。`,
+    character_acting: rich.character_acting || design.visual || "角色通过手部动作、视线、呼吸和可见肌肉变化完成表演。",
+    quality: rich.quality || "人物身份、服装、场景结构、道具材质和帧间动作保持稳定；眼睛保留 catch-light。",
+    positive_constraints: rich.positive_constraints || `画面内人物数量与资产数量固定；人物位置、朝向和道具状态连续；16:9；${duration}s；Photoreal. NON-IP. 16:9. ${duration}s. SFX only. NO CGI. Cinematic。`,
+    style: [design.style, styleLaw].filter(Boolean).join(" "),
+    shot_size: design.shot_size || design.optics,
+    camera_lens: design.camera_lens || design.optics,
+    camera_movement: design.camera_movement || design.camera,
+    camera_angle: design.camera_angle || design.camera,
+    visual: design.visual || design.first_frame_blocking || design.scene_context,
+    timeline: design.timeline || design.action_timing,
+    voice_over: design.voice_over || design.audio,
+    sound: design.sound || design.audio,
   };
 }
 
@@ -22193,16 +22214,31 @@ function seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage) {
   const duration = clampShotDuration(shot.duration || 8);
   const prompt = [
     `镜号 ${index + 1}（${duration} 秒）`,
+    "SCENE CONTEXT", d.scene_context,
+    "ACTIVE REFERENCES", d.active_references,
+    "LOCATION MAP", d.location_map,
+    "GEO SPATIAL LAYOUT", d.geo_spatial_layout,
+    "FIRST FRAME AND SPATIAL BLOCKING", d.first_frame_blocking,
+    "FORMAT MODE", d.format_mode,
+    "OPTICS", d.optics,
+    "CAMERA", d.camera,
+    "ACTION TIMING", `动作时间线：${seedanceTimelineForShot(d.action_timing || d.timeline, duration)}`,
+    "PHYSICS", d.physics,
+    "LIGHTING", d.lighting,
+    "AUDIO", d.audio || `人声 OS：${d.voice_over}\n人物台词：${dialogue}\n音效：${d.sound}`,
+    "CHARACTER ACTING", d.character_acting,
+    "STYLE", d.style,
+    "QUALITY", d.quality,
+    "POSITIVE CONSTRAINTS", d.positive_constraints,
     `景别：${d.shot_size}`,
     `摄像机 / 镜头：${d.camera_lens}`,
     `运镜：${d.camera_movement}`,
     `机位视角：${d.camera_angle}`,
     `画面：${d.style} ${d.visual}`,
-    `动作时间线：${seedanceTimelineForShot(d.timeline, duration)}`,
-    `人声 OS：${d.voice_over}`,
     `人物台词：${dialogue}`,
-    `音效：${d.sound}`,
-  ].join("\n");
+    "SFX only. No music.",
+    `Photoreal. NON-IP. 16:9. ${duration}s. SFX only. NO CGI. Cinematic.`,
+  ].filter(Boolean).join("\n");
   return `${refs ? `${refs}\n\n` : ""}${prompt}`.trim();
 }
 
@@ -22236,11 +22272,29 @@ function storyboardSeedancePrompt(shot, index, dialogueLanguage, assetLookup = n
   const d = seedancePromptDesignForShot(shot, index);
   const duration = clampShotDuration(shot.duration || 8);
   const dialogue = Array.isArray(shot?.dialogues) && shot.dialogues.length ? seedanceDialogueText(shot) : "无";
-  const boardExecution = "严格按 Production Board 编号面板执行构图、站位、动作方向、镜头节奏与剪辑出口；后续正式资产图片只锁定人物、场景、道具和插入细节的身份。";
-  const prompt = [
-    `镜号 ${index + 1}（${duration} 秒）`,
-    "镜头类型：Production Board 连续镜头单元",
-    `景别：${d.shot_size}`,
+ const boardExecution = "严格按 Production Board 编号面板执行构图、站位、动作方向、镜头节奏与剪辑出口；后续正式资产图片只锁定人物、场景、道具和插入细节的身份。";
+  const boardDesign = [
+    ["SCENE CONTEXT", d.scene_context],
+    ["ACTIVE REFERENCES", d.active_references],
+    ["LOCATION MAP", d.location_map],
+    ["FIRST FRAME AND SPATIAL BLOCKING", d.first_frame_blocking],
+    ["FORMAT MODE", d.format_mode],
+    ["OPTICS", d.optics],
+    ["CAMERA", d.camera],
+    ["ACTION TIMING", `动作时间线：${seedanceTimelineForShot(d.action_timing || d.timeline, duration)}`],
+    ["PHYSICS", d.physics],
+    ["LIGHTING", d.lighting],
+    ["AUDIO", d.audio || `人声 OS：${d.voice_over}\n人物台词：${dialogue}\n音效：${d.sound}`],
+    ["CHARACTER ACTING", d.character_acting],
+    ["STYLE", d.style],
+    ["QUALITY", d.quality],
+    ["POSITIVE CONSTRAINTS", d.positive_constraints],
+  ].filter(([, value]) => value).flatMap(([heading, value]) => [heading, value]);
+ const prompt = [
+   `镜号 ${index + 1}（${duration} 秒）`,
+   "镜头类型：Production Board 连续镜头单元",
+    ...boardDesign,
+   `景别：${d.shot_size}`,
     `摄像机 / 镜头：${d.camera_lens}`,
     `运镜：${d.camera_movement}`,
     `机位视角：${d.camera_angle}`,
@@ -22249,8 +22303,10 @@ function storyboardSeedancePrompt(shot, index, dialogueLanguage, assetLookup = n
     `故事板面板节拍：${storyboardPanelTimelineForPrompt(shot.storyboardGuidance)}`,
     `人声 OS：${d.voice_over}`,
     `人物台词：${dialogue}`,
-    `音效：${d.sound}`,
-  ].join("\n");
+   `音效：${d.sound}`,
+    "SFX only. No music.",
+    `Photoreal. NON-IP. 16:9. ${duration}s. SFX only. NO CGI. Cinematic.`,
+ ].join("\n");
   return `${[...sbLines, ...assetLines].filter(Boolean).join("\n")}\n\n${prompt}`.trim();
 }
 
@@ -22398,8 +22454,24 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
         "shot_size": "双人侧面半身中近景",
         "camera_lens": "50mm 标准定焦",
         "camera_movement": "具体运镜、速度、幅度和持续时间",
-        "camera_angle": "侧前方微仰 15° 视角",
-        "visual": "空间、站位、一个可见动作及终点、构图裁切和可信光源",
+       "camera_angle": "侧前方微仰 15° 视角",
+        "scene_context": "EXACT N CHARACTERS — NO DUPLICATES：明确人数、角色名、场景功能和可见事件",
+        "active_references": "逐项写明 @图片 的角色用途：人物、场景、道具或插入细节",
+        "location_map": "只写空间地标、frame-left/frame-right、距离、摄影机侧和光源，不写动作",
+        "geo_spatial_layout": "提示词模式写由制作台空间地图注入；故事板模式写不适用",
+        "first_frame_blocking": "第一帧宽景固定所有人物、道具、地标、朝向、视线和光源",
+        "format_mode": "单一连续镜头或硬切、实时速度、总时长和切换规则",
+        "optics": "视场角、景别、焦点计划和景深",
+        "camera": "机位高度、运动方向、速度、幅度、持续时间和摄影机轴线",
+        "action_timing": "起始：一个动作\n推进：一个动作变化\n终点：一个可见落点",
+        "physics": "重量、接触、惯性、呼吸、衣物和液体的可见物理反应",
+        "lighting": "一个可信主光源、光向、阴影方向、光比和色温",
+        "audio": "固定语音描述、精确对白、环境声、音效；SFX only. No music.",
+        "character_acting": "逐角色写目标、隐藏信息、手部动作、视线、呼吸、眨眼和变化",
+        "style": "项目锁定的 Style Prefix 和技术标签",
+        "quality": "身份、材质、帧间动作、眼睛高光和文字/道具可读性",
+        "positive_constraints": "正向写人数、资产数量、位置、朝向、画幅、时长和技术标签",
+       "visual": "空间、站位、一个可见动作及终点、构图裁切和可信光源",
         "voice_over": "人声 OS；没有时写 无",
         "sound": "具体音效、环境底噪与声音延续"
       }

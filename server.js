@@ -1,3 +1,16 @@
+// Auto-load .env.local
+(function() {
+  var fs = require("node:fs"), path = require("node:path");
+  var envFile = path.join(__dirname, ".env.local");
+  if (!fs.existsSync(envFile)) return;
+  var text = fs.readFileSync(envFile, "utf8");
+  var lines = text.split(/[\r\n]+/);
+  lines.forEach(function(line) {
+    var m = line.match(/^\s*([^#=]+?)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  });
+})();
+
 const http = require("node:http");
 const dns = require("node:dns");
 const net = require("node:net");

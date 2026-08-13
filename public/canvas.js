@@ -208,8 +208,11 @@ const CANVAS_VIDEO_FILE_RE = /\.(mp4|mov|webm|m4v)$/i;
 const VIDEO_PREVIEW_RATIOS = {
   "9:16": "9 / 16",
   "16:9": "16 / 9",
+  "3:2": "3 / 2",
   "3:4": "3 / 4",
   "4:3": "4 / 3",
+  "4:5": "4 / 5",
+  "2:3": "2 / 3",
   "1:1": "1 / 1",
   "21:9": "21 / 9",
   adaptive: "9 / 16",
@@ -226,8 +229,11 @@ const VIDEO_PREVIEW_WIDTHS = Object.freeze({
 const CANVAS_NODE_RATIO_DIMENSIONS = Object.freeze({
   "9:16": { width: 9, height: 16, preferredWidth: 420 },
   "16:9": { width: 16, height: 9, preferredWidth: 620 },
+  "3:2": { width: 3, height: 2, preferredWidth: 580 },
   "3:4": { width: 3, height: 4, preferredWidth: 460 },
   "4:3": { width: 4, height: 3, preferredWidth: 580 },
+  "4:5": { width: 4, height: 5, preferredWidth: 460 },
+  "2:3": { width: 2, height: 3, preferredWidth: 440 },
   "1:1": { width: 1, height: 1, preferredWidth: 520 },
   "21:9": { width: 21, height: 9, preferredWidth: 700 },
   adaptive: { width: 9, height: 16, preferredWidth: 520 },

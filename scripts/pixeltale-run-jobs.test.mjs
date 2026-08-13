@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 process.env.ASSET_ANALYZER_API_KEY ||= "sk-test-asset-analyzer-000000000000";
 process.env.STORYBOARD_API_KEY ||= "sk-test-storyboard-0000000000000000";
 process.env.XAI_API_KEY ||= "sk-test-grok-00000000000000000000000";
-process.env.DEEPSEEK_API_KEY ||= "sk-test-deepseek-0000000000000000000";
+process.env.PIXELTALE_CLAUDE_API_KEY ||= "sk-test-pixeltale-claude-000000000000";
 
 const require = createRequire(import.meta.url);
 const server = require("../server.js");
@@ -78,7 +78,7 @@ try {
   assert.equal(requestedPurposes.filter((purpose) => purpose === "review").length, 1, "a first-draft brief must use one fast review seat");
   assert.equal(requestedTokenBudgets.length, 2, "one writer and one fast reviewer must stay bounded");
   assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget === 1_200).length, 1, "the fast reviewer must retain the compact review token budget");
-  assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget > 1_200).length, 0, "no deepseek reviewer remains after the 2-seat speed pass");
+  assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget > 1_200).length, 0, "the fast reviewer must keep the compact Claude budget");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");
   const persistedJob = JSON.parse(fs.readFileSync(path.join(root, "run-jobs", `${first.jobId}.json`), "utf8"));
   assert.ok(persistedJob.updatedAt > persistedJob.createdAt, "phase progress must refresh updatedAt so the watchdog never misjudges an advancing multi-round revision as stalled");

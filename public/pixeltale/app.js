@@ -97,7 +97,7 @@ const state = {
   pendingCrossStageRepair: null,
   historyDeletePending: null,
   agent: createEmptyAgent(initialMode),
-  routes: { orchestration: "gpt-5.6-terra", continuity: "gemini-3.1-pro", hooks: "deepseek-v4-pro", dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna" },
+  routes: { orchestration: "gpt-5.6-terra", continuity: "gemini-3.1-pro", hooks: "claude-opus-5", dialogueReview: "claude-opus-5", consistency: "gpt-5.6-luna" },
   input: {
     platform: "TikTok / TikTok Series",
     audience: "18-34 · English-speaking audience",
@@ -159,7 +159,6 @@ const modelMeta = {
   "claude-opus-5": { name: "Claude Opus 5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "claude-sonnet-5": { name: "Claude Sonnet 5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "claude-haiku-4-5": { name: "Claude Haiku 4.5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
-  "deepseek-v4-pro": { name: "DeepSeek V4 Pro", provider: "deepseek", role: "TK 钩子 / 受众对抗", detail: "开头暴击、反转、探索欲与目标受众追更动力" },
   "gemini-3.1-pro": { name: "Gemini 3.1 Pro", provider: "gemini", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
 };
 
@@ -695,8 +694,7 @@ function updateAgentState(agent, { preserveStage = state.stageSelectionVersion >
   if (!agent || typeof agent !== "object") return;
   state.agent = agent;
   if (agent.mode === "long_form_drama") state.mode = "long"; else if (agent.mode === "cn_short_drama") state.mode = "cn"; else state.mode = "tk";
-  const legacySeatDefaults = { seat_a: "gpt-5.6-terra", seat_b: "claude-opus-5", seat_c: "claude-haiku-4-5" };
-  const migratedRoutes = Object.fromEntries(Object.entries(agent.routes || {}).map(([key, value]) => [key, value === "deepseek-v4-pro" ? (legacySeatDefaults[key] || "claude-haiku-4-5") : value]));
+  const migratedRoutes = Object.fromEntries(Object.entries(agent.routes || {}).map(([key, value]) => [key, value === "deepseek-v4-pro" ? "claude-opus-5" : value]));
   state.routes = { ...state.routes, ...migratedRoutes };
   state.input = { ...state.input, ...(agent.input || {}) };
   state.approved = new Set(agent.approvedArtifactIds || []);
@@ -707,7 +705,7 @@ function updateAgentState(agent, { preserveStage = state.stageSelectionVersion >
 }
 
 function modelInfo(id) {
-  const fallback = { name: id, provider: id.startsWith("claude-") ? "claude" : id.startsWith("deepseek-") ? "deepseek" : id.startsWith("grok-") ? "grok" : "chatgpt", role: "创作模型", detail: "由独立 PixelTale API 接入与路由" };
+  const fallback = { name: id, provider: id.startsWith("claude-") ? "claude" : id.startsWith("grok-") ? "grok" : "chatgpt", role: "创作模型", detail: "由独立 PixelTale API 接入与路由" };
   return modelMeta[id] || fallback;
 }
 

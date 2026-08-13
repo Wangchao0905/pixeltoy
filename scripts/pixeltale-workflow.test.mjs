@@ -10,7 +10,8 @@ const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const pixeltaleAgentSource = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 process.env.PIXELTALE_GPT_API_KEY ||= "sk-test-pixeltale-gpt-000000000000";
 process.env.PIXELTALE_GEMINI_API_KEY ||= "sk-test-pixeltale-gemini-000000000000";
-process.env.PIXELTALE_DEEPSEEK_API_KEY ||= "sk-test-pixeltale-deepseek-000000000000";
+process.env.PIXELTALE_CLAUDE_API_KEY ||= "sk-test-pixeltale-claude-000000000000";
+process.env.PIXELTALE_CLAUDE_BASE_URL ||= "https://api.apikey.fun/v1";
 process.env.PIXELTALE_GROK_API_KEY ||= "sk-test-pixeltale-grok-000000000000";
 const { callPixelTaleApiModel, readStreamPayload, reviewModels, checkReviewFallbackProviders, models, MODEL_DEFINITIONS, GROK_FALLBACK_MODEL, GEMINI_FALLBACK_MODEL } = createRequire(import.meta.url)("../server/pixeltale-api.js");
 const apiTemperatures = [];
@@ -23,6 +24,14 @@ await callPixelTaleApiModel({ model: "gpt-5.6-terra", system: "test", user: "tes
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }), { status: 200 });
 } });
 assert.deepEqual(apiTemperatures, [0.6, 0.25], "the API temperature override and compatibility default must be preserved");
+const claudeRequests = [];
+await callPixelTaleApiModel({ model: "claude-opus-5", system: "test", user: "test", fetchImpl: async (url, options) => {
+  claudeRequests.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+  return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }), { status: 200 });
+} });
+assert.equal(claudeRequests[0].url, "https://api.apikey.fun/v1/chat/completions", "Claude Opus 5 must use the configured apikey.fun gateway");
+assert.equal(claudeRequests[0].body.model, "claude-opus-5", "the replacement review request must retain the Claude Opus 5 model id");
+assert.ok(!MODEL_DEFINITIONS.some((model) => model.provider === "deepseek"), "PixelTale must not register DeepSeek as an executable model");
 const html = fs.readFileSync(path.join(root, "public/pixeltale.html"), "utf8");
 const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
@@ -273,12 +282,8 @@ assert.ok(ruleFindings(codedDisplayNames, "DISPLAY_NAME_CODE").length >= 2, "场
 assert.throws(() => validateContent("characters", { characters: [{ id: "C001", name_zh: "C001", name_en: "C001" }], relationships: [{ from: "C001", to: "C001", dynamic_zh: "测试关系" }], world_rules: ["测试规则"] }), /真实名称|编号|代号/u, "人物产物不得用内部编号作为显示名");
 assert.throws(() => validateVisualAssets({ characters: [{ id: "P01", name_zh: "P01", prompt_zh: "人物" }], scenes: [], props: [] }), /真实名称|编号|代号/u, "视觉资产产物不得用内部编号作为显示名");
 
-// Roster measured on a real trimmed scenes payload (10 scenes over 5 episodes):
-// gpt-5.6-terra 122s, gpt-5.6-sol 108s, deepseek-v4-pro 166s, grok-4.5 99s.
-// claude-opus-5 was replaced after timing out at 300s and claude-haiku-4-5 after
-// returning a valid-but-empty scenes array.
 // 审核固定保留 structure/logic owner，并选择第一个已配置的异构 provider。
-const ROSTER = [["seat_a", "gpt-5.6-terra"], ["seat_c", "deepseek-v4-pro"]];
+const ROSTER = [["seat_a", "gpt-5.6-terra"], ["seat_c", "claude-opus-5"]];
 const fixedReviewSeats = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"]
   .map((stage) => ({ stage, models: reviewModels({ stage }) }));
 assert.deepEqual(
@@ -316,13 +321,13 @@ assert.match(agent, /routesNeedMigration\(storedRoutes\)/, "a migrated route mus
 assert.match(agent, /persistState\(params, state\)/, "a migrated route must be written back, not just fixed in memory");
 const unknownRouteStore = new Map([["route-fallback", { projectId: "route-fallback", routes: { seat_c: "model-that-was-removed" } }]]);
 const fallbackAgent = createPixelTaleAgent({
-  modelRouter: { models: () => ROSTER.map(([, id]) => ({ id, provider: id.startsWith("gpt-") ? "chatgpt" : "deepseek" })), status: () => ({}), call: async () => ({ content: {} }) },
+  modelRouter: { models: () => ROSTER.map(([, id]) => ({ id, provider: id.startsWith("gpt-") ? "chatgpt" : "claude" })), status: () => ({}), call: async () => ({ content: {} }) },
   readPixelTaleState: (rootPath) => unknownRouteStore.get(rootPath) || {},
   writePixelTaleState: (rootPath, state) => unknownRouteStore.set(rootPath, structuredClone(state)),
 });
 assert.equal(
   fallbackAgent.status({ pixelTaleRoot: "route-fallback", projectId: "route-fallback" }).routes.seat_c,
-  "deepseek-v4-pro",
+  "claude-opus-5",
   "a route naming an unavailable model must fall back to the seat default",
 );
 
@@ -331,23 +336,20 @@ assert.equal(
 // a retired-seat migration a roster change silently applies to new sessions only.
 // This was live: both production projects kept running the previous roster after a
 // reseat because their state files still named it.
-const storedOldRoster = {
-  orchestration: "gpt-5.6-terra", continuity: "claude-opus-5", hooks: "claude-haiku-4-5",
-  dialogueReview: "claude-sonnet-5", consistency: "gpt-5.6-luna",
-  seat_a: "gpt-5.6-terra", seat_b: "claude-opus-5", seat_c: "claude-haiku-4-5",
+const storedDeepSeekRoutes = {
+  orchestration: "deepseek-v4-pro", continuity: "deepseek-v4-pro", hooks: "deepseek-v4-pro",
+  dialogueReview: "deepseek-v4-pro", consistency: "deepseek-v4-pro",
+  seat_a: "gpt-5.6-terra", seat_b: "gpt-5.6-sol", seat_c: "deepseek-v4-pro",
 };
-const reseated = normalizeRoutes(storedOldRoster, models());
+const reseated = normalizeRoutes(storedDeepSeekRoutes, models());
 assert.deepEqual(
   ROSTER.map(([seatId]) => reseated[seatId]),
   ROSTER.map(([, model]) => model),
   "a stored session pinning a replaced roster must migrate to the current seats",
 );
-// claude-* 已从网关不可用（beefapi /models 无 claude，实测 404 model_not_found）。
-// 任何槽位保存了 claude 都必须重写为当前默认——否则存量项目旧 hooks/dialogueReview
-// 值会在 arc/dialogue 阶段持续 404。此断言从"vestigial 槽位不迁移"更新为"不可用模型必迁移"。
-assert.equal(reseated.continuity, "gemini-3.1-pro", "continuity=claude-opus-5 必须迁移到默认 gemini-3.1-pro");
-assert.equal(reseated.hooks, "gpt-5.5", "hooks=claude-haiku-4-5 必须迁移到默认 gpt-5.5");
-assert.equal(reseated.dialogueReview, "deepseek-v4-pro", "dialogueReview=claude-sonnet-5 必须迁移到默认 deepseek-v4-pro（异厂）");
+assert.equal(reseated.continuity, "claude-opus-5", "存量阶段路由必须迁移到 Claude Opus 5");
+assert.equal(reseated.hooks, "claude-opus-5", "存量钩子路由必须迁移到 Claude Opus 5");
+assert.equal(reseated.dialogueReview, "claude-opus-5", "存量复审路由必须迁移到 Claude Opus 5");
 assert.deepEqual(normalizeRoutes(reseated, models()), reseated, "route normalization must be idempotent, or every read rewrites the session");
 
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
@@ -593,7 +595,7 @@ const aggregated = aggregateCrossReview([
   },
   {
     result: {
-      provider: "deepseek",
+      provider: "claude",
       model: "review-c",
       content: {
         pass: false,
@@ -648,7 +650,7 @@ const advisoryOnly = aggregateCrossReview([
       },
     },
   },
-  { route: "deepseek-v4-pro", model: "deepseek-v4-pro", error: "upstream timeout" },
+  { route: "claude-opus-5", model: "claude-opus-5", error: "upstream timeout" },
 ]);
 assert.equal(advisoryOnly.pass, true, "two independent completed review seats may release an advisory-only stage");
 assert.equal(advisoryOnly.required_changes.length, 0, "advisory-only feedback must not create a mandatory revision contract");
@@ -775,7 +777,7 @@ assert.deepEqual(duplicateLegacyAdvisories.items.map((item) => item.id), ["advis
 assert.equal(duplicateLegacyAdvisories.accepted.length, 1, "a legacy decision must apply only to the first duplicate advisory");
 const recommendationOnly = aggregateCrossReview([
   { result: { provider: "chatgpt", model: "review-a", content: { pass: true, score: 82, findings: [], required_changes: [], issues: [{ tag: "节奏优化", dimension: "structure", severity: "medium", feedback: "可进一步压缩", fix: "压缩中段重复信息" }], dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 82, feedback: "可优化" }])), checks: { adversarial: true } } } },
-  { result: { provider: "deepseek", model: "review-b", content: { pass: true, score: 80, findings: [], required_changes: [], issues: [{ tag: "节奏优化", dimension: "structure", severity: "medium", feedback: "中段略松", fix: "压缩重复信息" }], dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 80, feedback: "可优化" }])), checks: { adversarial: true } } } },
+  { result: { provider: "claude", model: "review-b", content: { pass: true, score: 80, findings: [], required_changes: [], issues: [{ tag: "节奏优化", dimension: "structure", severity: "medium", feedback: "中段略松", fix: "压缩重复信息" }], dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 80, feedback: "可优化" }])), checks: { adversarial: true } } } },
   { result: { provider: "claude", model: "review-c", content: { pass: true, score: 81, findings: [], required_changes: [], issues: [], dimensions: Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 81, feedback: "可优化" }])), checks: { adversarial: true } } } },
 ]);
 assert.equal(recommendationOnly.pass, true, "medium-severity consensus recommendations must not block confirmation");
@@ -793,7 +795,7 @@ const mediumConsensusContract = buildRevisionContract({
 assert.equal(mediumConsensusContract.items.length, 0, "medium consensus recommendations must not enter the mandatory revision contract");
 const resolvedReview = (model) => ({
   result: {
-    provider: ({ "review-a": "chatgpt", "review-b": "claude", "review-c": "deepseek" })[model] || "chatgpt",
+    provider: ({ "review-a": "chatgpt", "review-b": "claude", "review-c": "grok" })[model] || "chatgpt",
     model,
     content: {
       pass: true,
@@ -814,7 +816,7 @@ assert.equal(closed.revision.closure.allResolved, true, "closure evidence must b
 const quorumPass = aggregateCrossReview([
   resolvedReview("review-a"),
   resolvedReview("review-b"),
-  { route: "deepseek-v4-pro", model: "deepseek-v4-pro", error: "upstream timeout" },
+  { route: "claude-opus-5", model: "claude-opus-5", error: "upstream timeout" },
 ]);
 assert.equal(quorumPass.pass, true, "two completed review seats release the stage (2-seat speed pass; the third legacy seat is ignored)");
 assert.deepEqual(quorumPass.quorum, { required: 2, completedSeats: 2, completed: 2, passing: 2, distinctActualModels: 2, distinctProviders: 2, met: true, degraded: false, independenceUnavailable: false }, "the canonical review result must expose the two-seat completion gate");
@@ -822,7 +824,7 @@ assert.deepEqual(quorumPass.quorum, { required: 2, completedSeats: 2, completed:
 const reviewCase = ({ model, seatId, ownedDimensions = [], score = 90, pass = true, issues = [], confidence = 90, dimensions: dimensionValues } = {}) => ({
   route: { seatId, role: seatId === "seat_c" ? "audience_pacing_visual" : "structure_causality", requiredModel: model, model, ownedDimensions },
   result: {
-    provider: model.startsWith("claude") ? "claude" : model.startsWith("grok") ? "grok" : model.startsWith("deepseek") ? "deepseek" : ({ "review-a": "chatgpt", "review-b": "claude", "review-c": "deepseek" })[model] || "chatgpt",
+    provider: model.startsWith("claude") ? "claude" : model.startsWith("grok") ? "grok" : ({ "review-a": "chatgpt", "review-b": "claude", "review-c": "grok" })[model] || "chatgpt",
     model,
     actualModel: model,
     content: {
@@ -904,7 +906,7 @@ assert.equal(sameProviderQuorum.pass, false, "a same-provider fallback remains b
 assert.equal(sameProviderQuorum.decision.kind, "rerun", "a same-provider fallback must retain the rerun decision");
 const heterogeneousQuorum = aggregateCrossReview([
   reviewCase({ model: "gpt-5.6-terra", seatId: "seat_a" }),
-  reviewCase({ model: "deepseek-v4-pro", seatId: "seat_c" }),
+  reviewCase({ model: "claude-opus-5", seatId: "seat_c" }),
 ]);
 assert.equal(heterogeneousQuorum.quorum.degraded, false, "two completed providers must not degrade the quorum");
 assert.equal(heterogeneousQuorum.quorum.met, true, "two completed providers must meet the quorum");
@@ -1007,7 +1009,7 @@ assert.equal(batchConflictReview.basePass && !ignoredBatchConflict.blockingPendi
 const noQuorum = aggregateCrossReview([
   resolvedReview("review-a"),
   { route: "claude-opus-5", model: "claude-opus-5", error: "upstream timeout" },
-  { route: "deepseek-v4-pro", model: "deepseek-v4-pro", error: "upstream timeout" },
+  { route: "claude-opus-5", model: "claude-opus-5", error: "upstream timeout" },
 ]);
 assert.equal(noQuorum.pass, false, "one reviewer can never release a stage");
 
@@ -1085,7 +1087,7 @@ const fakeFetch = async (_url, options) => {
 const testModels = [
   { id: "gpt-5.6-terra", provider: "chatgpt", configured: true },
   { id: "claude-opus-5", provider: "claude", configured: true },
-  { id: "deepseek-v4-pro", provider: "deepseek", configured: true },
+  { id: "claude-sonnet-5", provider: "claude", configured: true },
 ];
 const titleSets = [
   ["The Last Tenant", "Room Zero", "Borrowed Silence", "On Hold"],
@@ -1146,7 +1148,7 @@ let reviewModelSelections = 0;
 let generatedTitleSets = 0;
 const testRouter = {
   models: () => testModels,
-  status: () => Object.fromEntries(["chatgpt", "claude", "deepseek"].map((provider) => [provider, { provider, configured: true }])),
+  status: () => Object.fromEntries(["chatgpt", "claude"].map((provider) => [provider, { provider, configured: true }])),
   stageModels: (route) => [route.primary, route.reviewer, route.consistency],
   reviewModels: () => {
     reviewModelSelections += 1;
@@ -1293,7 +1295,7 @@ const reviewRetryStore = new Map([["review-retry-e2e", {
 const reviewRetryAgent = createPixelTaleAgent({
   modelRouter: {
     models: () => testModels,
-    status: () => Object.fromEntries(["chatgpt", "claude", "deepseek"].map((provider) => [provider, { provider, configured: true }])),
+    status: () => Object.fromEntries(["chatgpt", "claude"].map((provider) => [provider, { provider, configured: true }])),
     reviewModels: () => testModels.slice(0, 2).map(({ id: model, provider }, index) => ({ seatId: `seat_${index}`, model, provider, configured: true, fallbackModels: [] })),
     call: async ({ model, system, purpose }) => {
       reviewRetryCalls.push({ model, purpose });
@@ -1423,7 +1425,7 @@ assert.doesNotThrow(() => runAgent.approve({ ...titleParams, artifactId: rerunAf
 let gptCalls = 0;
 const councilTemperatures = [];
 const councilRun = await callStageCouncil({
-  route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "deepseek-v4-pro" },
+  route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "claude-sonnet-5" },
   system: "stage generation",
   user: "{}",
   modelRouter: {
@@ -1440,13 +1442,13 @@ const councilRun = await callStageCouncil({
           throw error;
         }
       }
-      return { provider: model.startsWith("gpt-") ? "chatgpt" : model.startsWith("claude-") ? "claude" : model.startsWith("deepseek-") ? "deepseek" : "grok", model, content: { ok: true, purpose }, attempts: 0, trace: [{ model }] };
+      return { provider: model.startsWith("gpt-") ? "chatgpt" : model.startsWith("claude-") ? "claude" : "grok", model, content: { ok: true, purpose }, attempts: 0, trace: [{ model }] };
     },
   },
 });
 assert.equal(councilRun.creativeCouncil.requiredModels, 3, "a stage must require all three author models");
 assert.equal(councilRun.creativeCouncil.completedModels, 3, "a stage may merge only after all three authors complete");
-assert.deepEqual(councilRun.creativeCouncil.contributors.map((item) => item.model), ["gpt-5.6-terra", "claude-opus-5", "deepseek-v4-pro"]);
+assert.deepEqual(councilRun.creativeCouncil.contributors.map((item) => item.model), ["gpt-5.6-terra", "claude-opus-5", "claude-sonnet-5"]);
 assert.equal(councilRun.creativeCouncil.synthesizer.requiredModel, "gpt-5.6-terra", "the configured primary model is the explicit synthesizer, not a silent winner");
 assert.equal(councilRun.creativeCouncil.contributors[0].actualModel, "grok-4.5", "a failed author seat must recover through its same-seat Grok fallback");
 assert.deepEqual(councilTemperatures.filter((item) => item.purpose.endsWith(":author")).map((item) => item.temperature), [0.3, 0.7, 1.0, 0.3], "creative seats must use differentiated temperatures, including same-seat retry");
@@ -1456,7 +1458,7 @@ const timedCalls = [];
 let timedClock = 0;
 await assert.rejects(
   () => callStageCouncil({
-    route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "deepseek-v4-pro" },
+    route: { primary: "gpt-5.6-terra", reviewer: "claude-opus-5", consistency: "claude-sonnet-5" },
     system: "stage generation",
     user: "{}",
     totalTimeoutMs: 15_000,
@@ -1480,7 +1482,7 @@ await assert.rejects(
 assert.equal(timedCalls.length, 6, "each author role gets one bounded retry while the three roles remain concurrent");
 assert.equal(new Set(timedCalls.map((item) => item.model)).size, 4, "the author fallback may share Grok while retaining three independent seat identities");
 assert.ok(timedCalls.every((item) => item.timeoutMs === 14_000), "each concurrent author candidate must receive its full bounded timeout");
-assert.deepEqual(timedCalls.map((item) => item.model), ["gpt-5.6-terra", "claude-opus-5", "deepseek-v4-pro", "grok-4.5", "grok-4.5", "grok-4.5"], "retries must use the same role's Grok fallback");
+assert.deepEqual(timedCalls.map((item) => item.model), ["gpt-5.6-terra", "claude-opus-5", "claude-sonnet-5", "grok-4.5", "grok-4.5", "grok-4.5"], "retries must use the same role's Grok fallback");
 // Sized from measured seat latency on the real prompts, not guessed: the slowest
 // seat (claude-opus-5) needed 208s for the characters payload, so a 210s model
 // window left no headroom and a 240s total left the fallback round only 30s.

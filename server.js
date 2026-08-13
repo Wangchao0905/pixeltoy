@@ -27415,7 +27415,7 @@ async function handleApi(req, res, url) {
       const agentStatus = pixelTaleAgent.status(params);
       const route = agentStatus?.route || {};
       const writer = makeUnitFixAdapter(pixelTaleRouter, route.orchestration || "gpt-5.6-terra");
-      const reviewer = makeUnitFixAdapter(pixelTaleRouter, route.seat_c || "deepseek-v4-pro");
+      const reviewer = makeUnitFixAdapter(pixelTaleRouter, route.seat_c || "claude-opus-5");
       try {
         const result = await fixUnitIssue({ state, stage, unit, issue, writer, reviewer });
         writePixelTaleState(params.pixelTaleRoot, state);

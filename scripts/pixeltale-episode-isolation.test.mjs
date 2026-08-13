@@ -7,8 +7,8 @@ const models = [
   { id: "gpt-5.6-luna", provider: "chatgpt" },
   { id: "gpt-5.5", provider: "chatgpt" },
   { id: "gemini-3.1-pro", provider: "gemini" },
-  { id: "deepseek-v4-pro", provider: "deepseek" },
   { id: "claude-opus-5", provider: "claude" },
+  { id: "claude-sonnet-5", provider: "claude" },
   { id: "claude-haiku-4-5", provider: "claude" },
 ];
 
@@ -94,9 +94,12 @@ function makeRouter({ failBatch = false, omitSummary = false, failAuthorScopeAbo
   const router = {
     calls,
     models: () => models,
-    status: () => Object.fromEntries(["chatgpt", "claude", "deepseek"].map((provider) => [provider, { provider, configured: true }])),
+    status: () => Object.fromEntries(["chatgpt", "claude"].map((provider) => [provider, { provider, configured: true }])),
     stageModels: (route) => [route.primary, route.reviewer, route.consistency],
-    reviewModels: (route) => [route.primary, route.reviewer, route.consistency].map((model) => ({ model, fallbackModels: [] })),
+    reviewModels: () => [
+      { seatId: "seat_a", model: "gpt-5.6-terra", provider: "chatgpt", configured: true, fallbackModels: [] },
+      { seatId: "seat_c", model: "claude-opus-5", provider: "claude", configured: true, fallbackModels: [] },
+    ],
     call: async ({ model, system, user, purpose }) => {
     const payload = JSON.parse(user);
     calls.push({ model, system, purpose, payload });

@@ -11,23 +11,13 @@ function geminiModelId() {
 }
 const FALLBACK_BY_SEAT = Object.freeze({
   seat_a: GEMINI_FALLBACK_MODEL,
-  // 2026-08-09：seat_b/seat_c 的 fallback 从 grok 改为 Claude（用户决定，同 apikey.fun 网关）。
-  // Claude key（PIXELTALE_CLAUDE_API_KEY）实测可用：claude-sonnet-5 / claude-haiku-4-5 @ apikey.fun 均 200。
-  // seat_b 用 sonnet-5（质量），seat_c 用 haiku-4-5（轻量）；grok 仍保留为通用第二候选（key 无效时被过滤）。
   seat_b: "claude-sonnet-5",
-  // seat_c 原 fallback claude-opus-5 走 apikey.fun 网关，实测 300s 超时
-  // （2026-08-07 事故：DeepSeek TRUNCATED_OUTPUT 后 fallback 到它再次失败，提案卡死）。
-  // 现改 claude-haiku-4-5（轻量快速）；gemini 已由 seat_a 占用
-  // （审核独立性：seat_a 与 seat_c 的 fallback 不得相同）。
   seat_c: "claude-haiku-4-5",
 });
 const REVIEW_SEATS = Object.freeze([
   Object.freeze({ id: "seat_a", role: "structure_causality", model: "gpt-5.6-terra", ownedDimensions: Object.freeze(["structure", "logic"]) }),
-  // seat_b moved off claude-opus-5: measured 300s TIMEOUT on a full scenes payload
-  // (gpt-5.6-terra 171s, grok-4.5 124s on the same load).
   Object.freeze({ id: "seat_b", role: "character_continuity", model: "gpt-5.6-sol", ownedDimensions: Object.freeze(["plot"]) }),
-  // seat_c remains available as the first configured heterogeneous review seat.
-  Object.freeze({ id: "seat_c", role: "audience_pacing_visual", model: "deepseek-v4-pro", ownedDimensions: Object.freeze(["design"]) }),
+  Object.freeze({ id: "seat_c", role: "audience_pacing_visual", model: "claude-opus-5", ownedDimensions: Object.freeze(["design"]) }),
 ]);
 const REVIEW_DIMENSIONS = Object.freeze(["structure", "plot", "design", "logic"]);
 
@@ -75,12 +65,6 @@ const MODEL_DEFINITIONS = Object.freeze([
     baseNames: ["PIXELTALE_CLAUDE_BASE_URL", "ASSET_ANALYZER_BASE_URL", "OPENAI_BASE_URL"],
   },
   {
-    id: "deepseek-v4-pro",
-    provider: "deepseek",
-    keyNames: ["PIXELTALE_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY"],
-    baseNames: ["PIXELTALE_DEEPSEEK_BASE_URL", "DEEPSEEK_API_BASE_URL", "OPENAI_BASE_URL"],
-  },
-  {
     id: GROK_FALLBACK_MODEL,
     provider: "grok",
     fallbackOnly: true,
@@ -111,7 +95,7 @@ const LEGACY_MODEL_IDS = Object.freeze(MODEL_DEFINITIONS.filter((item) => item.l
 // seat must move to the current roster, otherwise changing REVIEW_SEATS silently
 // has no effect on existing projects. This is a separate concept from `legacy`:
 // these models are not retired, they just lost their seat.
-const RETIRED_SEAT_MODELS = Object.freeze(["claude-opus-5", "claude-haiku-4-5"]);
+const RETIRED_SEAT_MODELS = Object.freeze(["deepseek-v4-pro", "claude-haiku-4-5"]);
 
 function clean(value, max = 1200) {
   return String(value ?? "").trim().slice(0, max);
@@ -182,9 +166,7 @@ function fallbackModelsForSeat(seatId, model) {
   const current = clean(model, 120).toLowerCase();
   const seat = clean(seatId, 40);
   const preferred = seat === "seat_a" ? geminiModelId() : (FALLBACK_BY_SEAT[seat] || GROK_FALLBACK_MODEL);
-  // 2026-08-10：DeepSeek 官方通道稳定，纳入兜底——Gemini 网关 network_error 时
-  // 自动降级 DeepSeek 完成审读，避免"席位持续网络失败 → 永远 rerun"的死循环。
-  return [...new Set([preferred, GROK_FALLBACK_MODEL, "deepseek-v4-pro"])]
+  return [...new Set([preferred, GROK_FALLBACK_MODEL])]
     .filter((candidate) => candidate && candidate !== current && !!modelConfig(candidate)?.apiKey);
 }
 

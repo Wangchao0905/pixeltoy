@@ -20,19 +20,14 @@ const STAGE_LABELS = Object.freeze({ brief: "故事架构", title: "剧名选择
 const DEFAULT_ROUTES = {
   orchestration: "gpt-5.6-terra",
   continuity: "gemini-3.1-pro",
-  // 网关（beefapi）不提供 claude-* 模型（实测 /models 只有 GPT 系列），
-  // claude-haiku-4-5/claude-sonnet-5 会 404 model_not_found——hooks/dialogueReview
-  // 改用 beefapi 确认存在的模型，保证新项目默认路由可用。
-  hooks: "gpt-5.5",
-  dialogueReview: "deepseek-v4-pro",
+  hooks: "claude-opus-5",
+  dialogueReview: "claude-opus-5",
   consistency: "gpt-5.6-luna",
   seat_a: "gpt-5.6-terra",
   seat_b: "gpt-5.6-sol",
-  seat_c: "deepseek-v4-pro",
+  seat_c: "claude-opus-5",
 };
-// 网关确定不提供的模型（claude 全家）——任何槽位保存了它们都必须重写为当前默认，
-// 否则存量项目 state 里的旧 hooks/dialogueReview 值会一直 404。
-const UNUSABLE_ROUTE_MODELS = new Set(["claude-opus-5", "claude-haiku-4-5", "claude-sonnet-5"]);
+const REPLACED_ROUTE_MODELS = new Set(["deepseek-v4-pro"]);
 // The three authors run concurrently, so round 1 consumes about `model` ms of the
 // shared `total` budget. The fallback round then gets only `total - model`, which
 // must still be large enough to regenerate the whole stage payload — otherwise the
@@ -92,21 +87,12 @@ const REVIEW_OUTPUT_TOKEN_BUDGETS = Object.freeze({
   dialogue: 4_000,
 });
 
-// DeepSeek 官方端点严格按 max_tokens 截断（OpenAI 兼容网关不截断 maxTokens）。中文审核输出
-// token 密度高，且 deepseek 的 max_tokens 预算包含 reasoning_tokens（推理 token，实测单次审核
-// 推理可达 1800+）；1800 的 proposal 审核预算曾被截断（TRUNCATED_OUTPUT，2026-08-07 提案卡死
-// 事故，×3=5400 在含 revisionContract 的真实长 prompt 下仍可能不够）。这里仅对 deepseek provider
-// 放大到接近官方上限，其余模型保持紧凑审核设计。
-function reviewTokenBudget(stage, provider) {
-  const base = REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000;
-  return String(provider).startsWith("deepseek") ? Math.min(8_000, Math.max(base * 4, 4_800)) : base;
+function reviewTokenBudget(stage) {
+  return REVIEW_OUTPUT_TOKEN_BUDGETS[stage] || 3_000;
 }
 
-// 生成阶段（council author / synthesis）预算：deepseek 的 max_tokens 含 reasoning_tokens，
-// proposal 生成预算 2800 曾被 seat_c 推理(实测 2834)耗尽而 TRUNCATED（2026-08-07 提案卡死根因）。
-function stageTokenBudget(stage, provider) {
-  const base = STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal;
-  return String(provider).startsWith("deepseek") ? Math.min(8_000, Math.max(base * 4, 4_800)) : base;
+function stageTokenBudget(stage) {
+  return STAGE_OUTPUT_TOKEN_BUDGETS[stage] || STAGE_OUTPUT_TOKEN_BUDGETS.proposal;
 }
 // 2026-08-08 提速：自动修复轮 2 → 1（每批省一整轮 主笔+审核 ≈ 19 分钟）。
 const UNIT_AUTO_REPAIR_MAX_PASSES = 1;
@@ -500,8 +486,7 @@ function normalizeRoutes(value = {}, availableModels = []) {
 function migratedRouteValue(key, raw) {
   const seat = REVIEW_SEATS.find((item) => item.id === key);
   if (seat) return LEGACY_ROUTE_MODELS.has(raw) ? seat.model : raw;
-  // 网关不可用模型：任何非 seat 槽保存了它都必须重写为当前默认（否则存量项目持续 404）。
-  if (UNUSABLE_ROUTE_MODELS.has(raw)) return DEFAULT_ROUTES[key];
+  if (REPLACED_ROUTE_MODELS.has(raw)) return "claude-opus-5";
   return RETIRED_MODEL_IDS.has(raw) ? DEFAULT_ROUTES[key] : raw;
 }
 
@@ -614,9 +599,7 @@ function stageOutputContract(stage, mode) {
     arc: `{"unit":"episode_or_chapter","units":[{"number":1,"title_zh":"标题","promise_zh":"本集承诺","episode_goal_zh":"主角本集要得到什么","opposition_zh":"谁或什么阻止他","plot_zh":"本集完整剧情推进，包含可见行动、冲突升级、主动选择、选择代价、结果与下一集动力，不是审核摘要","active_choice_zh":"主角主动做出的不可逆选择","choice_cost_zh":"选择立即造成的代价","audience_tension_zh":"观众此刻知道什么、还不知道什么、为什么必须继续看","character_engine_refs":["C001"],"character_drive_zh":"哪个人物欲望、恐惧或矛盾正在推动本集","character_choice_basis_zh":"该人物设定如何导致本集主动选择","impact_zh":"开头暴击","causal_turn_zh":"因果转折","reversal_zh":"反转","hook_zh":"集尾强钩子","cliffhanger_question_zh":"未回答问题","payoff_zh":"推进或回收"}],"arc_summary_zh":"整体推进"}`,
     // Same trim as characters: the visual-assets stage regenerates every scene and
     // prop visual field independently, so asking for them here doubled the payload
-    // for nothing. Measured at full payload: claude-opus-5 timed out at 300s,
-    // deepseek-v4-pro returned invalid JSON at 256s, claude-haiku-4-5 returned an
-    // empty scenes array. visual_profile keeps only the 3 fields a shot plan needs
+    // for nothing. visual_profile keeps only the 3 fields a shot plan needs
     // for continuity; props keep identity and recurrence, not their look.
     scenes: `{"scenes":[{"id":"S001","unit_number":1,"name_zh":"真实可读的场景名，不得填写 S001 等内部编号或代号","purpose_zh":"场景目的","dramatic_question_zh":"本场观众要等什么答案","time_zh":"时间","location_zh":"地点","characters":["C001"],"character_engine_refs":["C001"],"action_zh":"连续动作推进","screenplay_zh":"正式剧本动作正文：连续、可拍摄的动作与反应，不写剧情摘要，不包含场次标题或对白标签。","conflict_zh":"场面冲突","character_behavior_zh":"角色独有的可见行为与反应，以及人物设定如何导致该行为","choice_zh":"人物主动选择","result_zh":"选择结果","turn_zh":"因果转折","audience_reveal_zh":"本场给观众的新信息或新危险","visual_intent_zh":"画面意图","recurring":true,"visual_profile":{"indoor_outdoor":"室内外","lighting":"光线","palette":"色调"},"props":[{"id":"PR01","name_zh":"真实可读的道具名，不得填写 PR01 等内部编号或代号","description_zh":"道具描述","recurring":true}],"shot_plan":[{"shot_id":"SH001","type":"impact","duration_seconds":3,"description_zh":"镜头描述","dialogue_refs":["D001"]}]}]}`,
     dialogue: `{"lines":[{"id":"D001","scene_id":"S001","speaker":"C001","character_engine_refs":["C001"],"character_voice_applied_zh":"本句如何落实该人物的声线规则","intent_zh":"中文剧情意图","dialogue_en":"Natural localized English dialogue.","subtext_zh":"没有直接说出的欲望、威胁或关系压力","delivery_en":"符合该角色声线的演绎说明"}],"localization_checks":["口语化","人物声线一致","潜台词有冲突","未泄露悬念"]}`,
@@ -1808,7 +1791,6 @@ function providerForRoute(route) {
   const raw = text(route, 100).toLowerCase();
   if (raw.startsWith("gpt-")) return "chatgpt";
   if (raw.startsWith("claude-")) return "claude";
-  if (raw.startsWith("deepseek-")) return "deepseek";
   if (raw.startsWith("grok-")) return "grok";
   return "superpixel";
 }
@@ -3829,8 +3811,7 @@ function createPixelTaleAgent(options = {}) {
               if (!canFallbackFrom(error)) break;
             }
           }
-          // Name the model that actually failed. Using the last candidate reported
-          // "grok-4.5: deepseek truncated" for a seat where grok was never called.
+          // Name the model that actually failed rather than a fallback that was not called.
           return { route: reviewRoute, model: lastAttempted || reviewModel, selectedModel: reviewModel, role, error: lastError?.message || "审核模型请求失败", errorCode: lastError?.code || "NETWORK_ERROR" };
         } });
         reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));
@@ -4152,8 +4133,7 @@ function createPixelTaleAgent(options = {}) {
             if (!canFallbackFrom(error)) break;
           }
         }
-        // Name the model that actually failed. Using the last candidate reported
-          // "grok-4.5: deepseek truncated" for a seat where grok was never called.
+        // Name the model that actually failed rather than a fallback that was not called.
           return { route: reviewRoute, model: lastAttempted || reviewModel, selectedModel: reviewModel, role, error: lastError?.message || "审核模型请求失败", errorCode: lastError?.code || "NETWORK_ERROR" };
       } });
       reviews.filter((item) => !item.result).forEach((item) => errors.push({ code: "CROSS_REVIEW_FAILED", message: `${item.model}：${item.error}` }));

@@ -175,6 +175,8 @@ const DEFAULT_SEEDANCE_MODEL_MAP = {
 };
 // BytePlus ModelArk(国际版)模型 ID:dreamina- 前缀,可用 env 覆盖。
 const DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP = {
+  // 已通过当前生产 BytePlus 账号的 /models 实际验证：Dreamina Seedance 2.5 支持 30 秒扩展生成。
+  "seedance-2-5": "dreamina-seedance-2-5-260628",
   "seedance-2-0": "dreamina-seedance-2-0-260128",
   "seedance-2-0-fast": "dreamina-seedance-2-0-260128",
   "seedance-2-0-mini": "dreamina-seedance-2-0-260128",
@@ -3057,7 +3059,7 @@ function canvasVideoProviderForBody(body = {}) {
   const modelMode = compactLine(body.modelMode || body.model || "");
   if (modelMode === "grok-imagine-video") return "grok";
   // 显式选择「海外火山」模型选项时,本次生成走 BytePlus ModelArk(ap-southeast 区),优先于全局默认与自动路由。
-  if (/^seedance-2-0-byteplus$/i.test(modelMode)) return "byteplus";
+  if (/^seedance-2-(?:0|5)-byteplus$/i.test(modelMode)) return "byteplus";
   const sourceAssets = Array.isArray(body.assets) ? body.assets : [];
   if (isArkPersonTargetModel(modelMode) && sourceAssets.some((asset) => asset?.arkPersonAsset?.enabled === true)) return "ark";
   // 走配置的 provider(CANVAS_VIDEO_PROVIDER,默认 ark 火山方舟)。
@@ -13439,6 +13441,8 @@ function normalizeSeedanceModel(value, provider = "") {
   const raw = compactLine(value || "seedance-2-0");
   if (provider === "byteplus") {
     const bp = {
+      "seedance-2-5": process.env.BYTEPLUS_SEEDANCE_25_MODEL || DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP["seedance-2-5"],
+      "seedance-2-5-byteplus": process.env.BYTEPLUS_SEEDANCE_25_MODEL || DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP["seedance-2-5"],
       "seedance-2-0": process.env.BYTEPLUS_SEEDANCE_MODEL || DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP["seedance-2-0"],
       "seedance-2-0-fast": process.env.BYTEPLUS_SEEDANCE_FAST_MODEL || DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP["seedance-2-0-fast"],
       "seedance-2-0-mini": process.env.BYTEPLUS_SEEDANCE_MINI_MODEL || DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP["seedance-2-0-mini"],
@@ -13468,9 +13472,10 @@ function normalizeGravitexSeedanceModel(value) {
 function normalizeVideoConfigModelName(value = "") {
   const raw = compactLine(value || DEFAULT_VIDEO_CONFIG_MODEL);
   const lower = raw.toLowerCase();
-  if (["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
+  if (["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
   if (/grok|xai/.test(lower)) return "grok-imagine-video";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0-person-reference";
+  if (/(?:byteplus|海外|modelark|ap-southeast)/.test(lower) && /(?:2[.-]?5)/.test(lower)) return "seedance-2-5-byteplus";
   if (/byteplus|海外|modelark|ap-southeast/.test(lower)) return "seedance-2-0-byteplus";
   if (/mini|迷你/.test(lower)) return "seedance-2-0-mini";
   if (/fast|快速/.test(lower)) return "seedance-2-0-fast";
@@ -23553,7 +23558,7 @@ function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
 function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
   const name = compactLine(shotName || "");
   const requestedModel = compactLine(modelName || "");
-  const supportedModels = new Set(["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"]);
+  const supportedModels = new Set(["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"]);
   if (!name) throw new Error("缺少视频片段");
   if (!supportedModels.has(requestedModel)) throw new Error("不支持的视频模型");
   const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];
@@ -26157,7 +26162,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The video description." },
-          videoModel: { type: "string", enum: ["seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
+          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
           duration: { type: "number", minimum: 1, default: 5 },
           ratio: { type: "string", default: "9:16" },
           firstFrameUrl: { type: "string" },

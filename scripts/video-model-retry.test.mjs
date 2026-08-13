@@ -39,6 +39,9 @@ assert.equal(__test.videoRetry.projectVideoModelForShot(next, next.shots[0]), "s
 const completedModelChange = __test.videoRetry.updateVideoModelForShotInConfig(original, "E01_V01", "seedance-2-0-mini");
 assert.equal(completedModelChange.shots[0].modelOverride, "seedance-2-0-mini", "a completed shot can switch model for explicit regeneration");
 assert.deepEqual(completedModelChange.shots[1], original.shots[1], "switching one shot model must not reset other shot state");
+const overseas25Change = __test.videoRetry.updateVideoModelForShotInConfig(original, "E01_V02", "seedance-2-5-byteplus");
+assert.equal(overseas25Change.shots[1].modelOverride, "seedance-2-5-byteplus", "a shot can select overseas Seedance 2.5");
+assert.equal(__test.videoRetry.projectVideoModelForShot(overseas25Change, overseas25Change.shots[1]), "seedance-2-5-byteplus", "the selected shot must retain the overseas Seedance 2.5 override");
 assert.throws(
   () => __test.videoRetry.updateVideoModelForShotInConfig(original, "missing", "seedance-2-0-mini"),
   /视频片段不存在/,

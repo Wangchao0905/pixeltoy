@@ -178,8 +178,9 @@ const VIDEO_NODE_DEFAULTS = {
 
 const PERSON_REFERENCE_MODEL = "seedance-2-0-person-reference";
 const LIVENESS_MODEL = "seedance-2-0-liveness-face";
-// 海外火山(BytePlus ModelArk)通道:选它这次生成走 ap-southeast 区,底层同 Seedance 2.0。
+// 海外火山(BytePlus ModelArk)通道:选它这次生成走 ap-southeast 区。
 const BYTEPLUS_MODEL = "seedance-2-0-byteplus";
+const BYTEPLUS_25_MODEL = "seedance-2-5-byteplus";
 const ARK_PERSON_VERIFY_URL = "https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-260128";
 const ARK_PERSON_TARGET_MODELS = new Set([
   "seedance-2-0",
@@ -191,6 +192,7 @@ const LEGACY_MODEL_MIGRATIONS = {
 };
 const VIDEO_MODEL_LABELS = {
   "seedance-2-5": "Seedance 2.5",
+  [BYTEPLUS_25_MODEL]: "Seedance 2.5(海外火山)",
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",
@@ -2423,7 +2425,11 @@ function videoNodePayload(node, { forceNoAudio = false } = {}) {
     source: node.source || "",
     projectShotName: node.projectShotName || "",
     prompt: nodePrompt(node),
-    model: modelMode === PERSON_REFERENCE_MODEL || modelMode === BYTEPLUS_MODEL ? "seedance-2-0" : modelMode,
+    model: modelMode === PERSON_REFERENCE_MODEL || modelMode === BYTEPLUS_MODEL
+      ? "seedance-2-0"
+      : modelMode === BYTEPLUS_25_MODEL
+        ? "seedance-2-5"
+        : modelMode,
     modelMode,
     ratio: settings.ratio,
     duration: Number(settings.duration || VIDEO_NODE_DEFAULTS.duration),

@@ -12,7 +12,7 @@ assert.match(
   "Mini must default to the currently available Ark model ID",
 );
 
-const { canvasVideoProviderForBody, buildSeedanceGenerationPayload, normalizeVideoResolution } = __test.canvasVideo;
+const { canvasVideoProviderForBody, buildSeedanceGenerationPayload, normalizeVideoResolution, normalizeSeedanceDuration } = __test.canvasVideo;
 const ARK_MODELS = [
   "seedance-2-0",
   "seedance-2-0-fast",
@@ -48,6 +48,15 @@ assert.equal(normalizeVideoResolution("4k", "doubao-seedance-2-0-260128"), "4k")
 assert.equal(normalizeVideoResolution("1080p", "doubao-seedance-2-0-fast-260128"), "720p");
 assert.equal(normalizeVideoResolution("4k", "doubao-seedance-2-0-fast-260128"), "720p");
 assert.equal(normalizeVideoResolution("4k", "doubao-seedance-2-0-mini-260615"), "720p");
+assert.equal(normalizeVideoResolution("1080p", "dreamina-seedance-2-5-260628"), "720p");
+assert.equal(normalizeSeedanceDuration(30, "dreamina-seedance-2-5-260628"), 30);
+assert.equal(normalizeSeedanceDuration(31, "dreamina-seedance-2-5-260628"), 30);
+
+assert.equal(
+  canvasVideoProviderForBody({ model: "seedance-2-5-byteplus", modelMode: "seedance-2-5-byteplus", assets: [] }),
+  "byteplus",
+  "overseas Seedance 2.5 must route to BytePlus ModelArk",
+);
 
 assert.equal(
   canvasVideoProviderForBody({ model: "seedance-2-0-fast", modelMode: "seedance-2-0-fast", assets: [aiPhotoreal] }),
@@ -108,6 +117,17 @@ process.env.CANVAS_VIDEO_PROVIDER = "ark";
   });
   assert.deepEqual(payload.content.map((item) => item.role || item.type), ["text", "first_frame", "last_frame", "reference_image"]);
   assert.equal(payload.content[3].image_url.url, "asset://person-1");
+  const byteplus25Payload = await buildSeedanceGenerationPayload({
+    prompt: "剧情动作：飞船穿过云层。",
+    model: "seedance-2-5",
+    modelMode: "seedance-2-5-byteplus",
+    duration: 30,
+    resolution: "1080p",
+    __provider: "byteplus",
+  });
+  assert.equal(byteplus25Payload.model, "dreamina-seedance-2-5-260628", "overseas Seedance 2.5 must use the model ID returned by the configured BytePlus account");
+  assert.equal(byteplus25Payload.duration, 30, "overseas Seedance 2.5 must preserve 30-second requests");
+  assert.equal(byteplus25Payload.resolution, "720p", "overseas Seedance 2.5 must reject unsupported 1080p requests");
   for (const model of ARK_MODELS) {
     const modelPayload = await buildSeedanceGenerationPayload({
       prompt: "剧情动作：人物向前走。",

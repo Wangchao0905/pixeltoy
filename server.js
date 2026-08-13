@@ -145,6 +145,8 @@ const PROJECT_VIDEO_RANGE_CONCURRENCY = Math.max(1, Math.min(16, Number(process.
 const CANVAS_STATE_DIR = path.join(APP_ROOT, ".pixel-toys-canvas-states");
 const canvasStateScanCache = createCanvasStateScanCache({ fs, path, resolveEpisodeRoot: episodeRootFromCanvasProjectId });
 const CANVAS_PUBLIC_ASSET_DIR = path.join(APP_ROOT, ".pixel-toys-public-assets");
+const DEFAULT_CANVAS_PUBLIC_ASSET_BASE_URL = "https://pixeltoy.cn";
+const PUBLIC_ASSET_S3_UPLOAD_TIMEOUT_MS = Math.max(5_000, Number(process.env.PUBLIC_ASSET_S3_UPLOAD_TIMEOUT_MS || 30_000));
 const HIDDEN_SCENE_REFERENCE_DIR = path.join(APP_ROOT, ".pixel-toys-hidden-scene-references");
 const PIXELTALE_SESSION_ROOT = path.join(APP_ROOT, ".pixel-tale-sessions");
 const CANVAS_VIDEO_DEFAULT_WIDTH = 780;
@@ -13623,6 +13625,17 @@ function publicAssetBaseUrl() {
   ).replace(/\/+$/, "");
 }
 
+function canvasPublicAssetBaseUrl() {
+  return publicAssetBaseUrl() || DEFAULT_CANVAS_PUBLIC_ASSET_BASE_URL;
+}
+
+function publicAssetUrlForLocalUrl(localUrl = "", baseUrl = canvasPublicAssetBaseUrl()) {
+  const local = compactLine(localUrl);
+  const origin = compactLine(baseUrl).replace(/\/+$/, "");
+  if (!/^https:\/\//i.test(origin) || !/^\/public-assets\//.test(local)) return "";
+  return `${origin}${local}`;
+}
+
 function publicAssetStorageConfig() {
   const endpoint = compactLine(readLocalEnvValue("PUBLIC_ASSET_S3_ENDPOINT") || process.env.PUBLIC_ASSET_S3_ENDPOINT || "").replace(/\/+$/, "");
   const bucket = compactLine(readLocalEnvValue("PUBLIC_ASSET_S3_BUCKET") || process.env.PUBLIC_ASSET_S3_BUCKET || "");
@@ -13839,16 +13852,27 @@ async function uploadPublicAssetToS3({ buffer, mime, fileName }) {
   const kService = hmac(kRegion, "s3");
   const kSigning = hmac(kService, "aws4_request");
   const signature = hmac(kSigning, stringToSign, "hex");
-  const response = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      Authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
-      "Content-Type": mime,
-      "x-amz-content-sha256": payloadHash,
-      "x-amz-date": amzDate,
-    },
-    body: buffer,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PUBLIC_ASSET_S3_UPLOAD_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        Authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+        "Content-Type": mime,
+        "x-amz-content-sha256": payloadHash,
+        "x-amz-date": amzDate,
+      },
+      body: buffer,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error(`对象存储上传超时（${Math.round(PUBLIC_ASSET_S3_UPLOAD_TIMEOUT_MS / 1000)} 秒）`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     appendVideoApiLog({
@@ -13861,6 +13885,20 @@ async function uploadPublicAssetToS3({ buffer, mime, fileName }) {
     throw new Error(`对象存储上传失败：HTTP ${response.status}`);
   }
   return objectPublicUrl(config.publicBaseUrl, objectKey);
+}
+
+function queuePublicAssetUpload({ buffer, mime, fileName }) {
+  if (!publicAssetStorageConfig()) return;
+  setTimeout(() => {
+    uploadPublicAssetToS3({ buffer, mime, fileName }).catch((error) => {
+      appendVideoApiLog({
+        provider: "public-asset-s3",
+        method: "PUT",
+        status: 0,
+        message: `对象存储后台上传失败：${compactLine(error?.message || "未知错误")}`,
+      });
+    });
+  }, 0);
 }
 
 function decodeDataImageUrl(dataUrl = "") {
@@ -13917,14 +13955,10 @@ async function createPublicCanvasAsset(body = {}) {
   const localUrl = persistDecodedPublicAsset(decoded, body.name || "portrait");
   const fileName = decodeURIComponent(localUrl.replace(/^\/public-assets\/+/, ""));
   const localOnly = body.localOnly === true;
-  const storageUrl = localOnly
-    ? null
-    : await uploadPublicAssetToS3({ buffer: decoded.buffer, mime: decoded.mime, fileName });
-  const baseUrl = publicAssetBaseUrl();
-  const hasPublicBaseUrl = !!baseUrl && /^https:\/\//i.test(baseUrl);
-  const publicUrl = localOnly ? "" : storageUrl || (hasPublicBaseUrl ? `${baseUrl}${localUrl}` : "");
+  const publicUrl = localOnly ? "" : publicAssetUrlForLocalUrl(localUrl);
+  if (!localOnly) queuePublicAssetUpload({ buffer: decoded.buffer, mime: decoded.mime, fileName });
   return {
-    url: publicUrl,
+    url: publicUrl || localUrl,
     localUrl,
     fileName,
     size: decoded.buffer.length,

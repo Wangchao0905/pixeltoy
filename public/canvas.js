@@ -2124,6 +2124,7 @@ function videoPreviewSrc(node) {
   if (!raw || !version || /^(?:blob|data):/i.test(raw)) return raw;
   try {
     const url = new URL(raw, window.location.origin);
+    if (url.origin !== window.location.origin) return raw;
     url.searchParams.set("canvasVideoGeneration", version);
     return url.href;
   } catch {

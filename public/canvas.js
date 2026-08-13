@@ -2262,6 +2262,18 @@ function videoModeSummary(node) {
   return "文生视频模式：无需图片连接，可直接用提示词生成。";
 }
 
+function videoNodeHasReferenceInputs(node) {
+  if (!node || node.kind !== "video") return false;
+  const frameAssets = selectedFrameAssetsForVideoNode(node);
+  const hasFrameControl = (node.settings?.frameControl || VIDEO_NODE_DEFAULTS.frameControl) === "first_last";
+  return hasFrameControl
+    || !!node.startFrameUrl
+    || !!frameAssets.first
+    || !!frameAssets.last
+    || effectiveNodeAssetIds(node).length > 0
+    || canvasState.connections.some((connection) => connection.to === node.id);
+}
+
 function syncVideoNodeShell(element, node) {
   if (!element || node?.kind !== "video") return;
   syncVideoNodeDimensions(element, node);
@@ -3975,12 +3987,15 @@ async function generateVideoNode(nodeId, options = {}) {
     return;
   }
   if (syncVideoModelForReferences(node)) renderNodes();
-  const readiness = await ensurePhotorealReferencesReady([node]);
-  if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
-  if (readiness.pending) {
-    renderNodes();
-    scheduleCanvasSave();
-    return toast(`还有 ${readiness.pending} 个超写实素材未 active，等素材库处理完成后再生成`);
+  const hasReferenceInputs = videoNodeHasReferenceInputs(node);
+  if (hasReferenceInputs) {
+    const readiness = await ensurePhotorealReferencesReady([node]);
+    if (!videoOperationIsCurrent(nodeId, { generationToken })) return;
+    if (readiness.pending) {
+      renderNodes();
+      scheduleCanvasSave();
+      return toast(`还有 ${readiness.pending} 个超写实素材未 active，等素材库处理完成后再生成`);
+    }
   }
   if (!validateVideoNode(nodeId)) return;
   clearVideoPoll(nodeId);
@@ -4152,7 +4167,11 @@ function syncNodeControls(element, node) {
   if (generate) {
     generate.disabled = node.status === "running";
     generate.textContent = node.status === "running" ? "生成中" : "生成视频";
-    generate.addEventListener("click", () => generateVideoNode(node.id).catch((error) => markVideoNodeFailed(node.id, error.message)));
+    generate.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      generateVideoNode(node.id).catch((error) => markVideoNodeFailed(node.id, error.message));
+    });
   }
   syncArkVideoControls(element, node);
 }
@@ -4174,7 +4193,7 @@ function upstreamSummary(node) {
     const imageText = assetCount ? `，另有 ${assetCount} 张参考图` : "";
     return `首帧来自上一段尾帧${imageText}。`;
   }
-  if (!sources.length) return "等待图片连接。";
+  if (!sources.length) return "文生视频模式：无需连接素材，可直接用提示词生成。";
   const assetCount = upstreamAssetsForNode(node).length;
   return `已连接 ${sources.length} 张图片，自动引用 ${assetCount} 张参考图。`;
 }

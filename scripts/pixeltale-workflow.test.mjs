@@ -743,7 +743,7 @@ const advisoryOnly = aggregateCrossReview([
   },
   { route: "claude-opus-5", model: "claude-opus-5", error: "upstream timeout" },
 ]);
-assert.equal(advisoryOnly.pass, true, "two independent completed review seats may release an advisory-only stage");
+assert.equal(advisoryOnly.pass, false, "a completed reviewer with pass=false must keep the stage behind the review gate");
 assert.equal(advisoryOnly.required_changes.length, 0, "advisory-only feedback must not create a mandatory revision contract");
 assert.equal(advisoryOnly.independentIssueCount, 1, "the independent opinion must remain visible to the user");
 
@@ -937,8 +937,8 @@ const allReviewsFailed = aggregateCrossReview([
 ]);
 assert.equal(allReviewsFailed.quorum.passing, 0, "the quorum must report zero passing reviews");
 assert.equal(allReviewsFailed.checks.reviews_passed, false, "all review seats must pass before release");
-assert.equal(allReviewsFailed.pass, true, "reviewer pass flags alone cannot block the system referee without a hard finding");
-assert.equal(allReviewsFailed.decision.kind, "approve", "the system referee must publish the only release decision");
+assert.equal(allReviewsFailed.pass, false, "reviewer pass flags must block release even when no structured hard issue was returned");
+assert.equal(allReviewsFailed.decision.kind, "revise", "the system referee must convert failed reviewer votes into a revision decision");
 // 共识降级：三席全部完成（quorumMet 仍严格），但 2/3 多数通过即可放行；
 // 分歧席不阻断，记录到 disagreements 供追溯/导出标注。
 const majorityRelease = aggregateCrossReview([
@@ -1366,8 +1366,12 @@ const runParams = { pixelTaleRoot: "revision-e2e", projectId: "revision-e2e", pr
 const phaseEvents = [];
 phaseEvents.length = 0;
 const initialRun = await runAgent.run(runParams);
-assert.deepEqual(phaseEvents, ["authoring", "validating", "reviewing", "refereeing"], "a stage run must report authoring, validation, review, and referee phases in order");
+assert.deepEqual(phaseEvents, ["authoring", "synthesizing", "validating", "reviewing", "refereeing"], "a stage run must report authoring, synthesis, validation, review, and referee phases in order");
 assert.equal(initialRun.status, "needs_review", "initial review must retain a failed source version");
+assert.equal(routedCalls.filter((item) => item.purpose.endsWith(":author")).length, 3, "normal stage generation must execute all three creative author seats");
+assert.equal(routedCalls.filter((item) => item.purpose.endsWith(":synthesis")).length, 1, "normal stage generation must synthesize the three author contributions");
+assert.equal(new Set(routedCalls.filter((item) => item.purpose.endsWith(":author")).map((item) => item.model)).size, 3, "each creative author seat must call its assigned model");
+assert.equal(initialRun.artifacts[0].creativeCouncil?.completedModels, 3, "the released artifact must retain the three-seat creative council provenance");
 assert.ok(routedCalls.filter((item) => item.purpose.endsWith(":review")).every((item) => item.temperature === 0.2), "every review seat must use stable temperature 0.2");
 
 // A retry caused only by an incomplete review must not regenerate an already

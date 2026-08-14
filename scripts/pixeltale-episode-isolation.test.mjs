@@ -95,7 +95,7 @@ function makeRouter({ failBatch = false, omitSummary = false, failAuthorScopeAbo
     calls,
     models: () => models,
     status: () => Object.fromEntries(["chatgpt", "claude"].map((provider) => [provider, { provider, configured: true }])),
-    stageModels: (route) => [route.primary, route.reviewer, route.consistency],
+    stageModels: (route) => [route.seat_a, route.seat_b, route.seat_c],
     reviewModels: () => [
       { seatId: "seat_a", model: "gpt-5.6-terra", provider: "chatgpt", configured: true, fallbackModels: [] },
       { seatId: "seat_c", model: "claude-opus-5", provider: "claude", configured: true, fallbackModels: [] },
@@ -176,10 +176,11 @@ const authorPayloads = router.calls.filter((call) => call.purpose === "pixeltale
 assert.deepEqual(uniqueAuthorScopes(authorPayloads), [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]], "arc must be generated in isolated batches");
 for (const scope of uniqueAuthorScopes(authorPayloads)) {
   const modelsForScope = new Set(authorPayloads.filter((call) => JSON.stringify(call.payload.unitScope || []) === JSON.stringify(scope)).map((call) => call.model));
-  assert.equal(modelsForScope.size, 1, "every isolated batch must have one accountable primary writer");
+  assert.equal(modelsForScope.size, 3, "every isolated batch must execute all three accountable creative seats");
   const reviewCalls = router.calls.filter((call) => call.purpose === "pixeltale:arc:review" && JSON.stringify(call.payload.unitScope || []) === JSON.stringify(scope));
   assert.equal(reviewCalls.length, 2, "episode batches must retain dual review despite the fast first-draft policy");
 }
+assert.equal(router.calls.filter((call) => call.purpose === "pixeltale:arc:synthesis").length, 2, "every isolated batch must have one explicit synthesis pass");
 assert.ok(authorPayloads.every((call) => !call.payload.approvedContext.some((item) => item.stage === "arc" && item.content?.units?.length > 5)), "a batch must not receive the full season as approved context");
 assert.ok(authorPayloads.find((call) => call.payload.unitScope.includes(6)).payload.lockedUnitContext.every((item) => !item.plot_zh && !item.content), "locked episodes must be represented only by compressed continuity state");
 

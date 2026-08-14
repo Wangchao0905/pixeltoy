@@ -3,9 +3,9 @@ import { aggregateCrossReview, buildRevisionContract, callStagePrimary, isMandat
 
 const dimensions = Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 90, feedback: "通过" }]));
 
-function review(model, { issues = [], revisionClosures = [], pass = true, score = 90, provider } = {}) {
+function review(model, { issues = [], revisionClosures = [], pass = true, score = 90, provider, ownedDimensions = [], dimensions: dimensionValues } = {}) {
   return {
-    route: { seatId: model },
+    route: { seatId: model, ownedDimensions },
     result: {
       provider: provider || (model === "review-b" ? "claude" : "chatgpt"),
       model,
@@ -16,7 +16,7 @@ function review(model, { issues = [], revisionClosures = [], pass = true, score 
         required_changes: [],
         issues,
         revisionClosures,
-        dimensions,
+        dimensions: dimensionValues || dimensions,
         checks: { cross_validation: true, consistency: true, adversarial: true },
       },
     },
@@ -33,6 +33,32 @@ assert.equal(stageReviewPolicy("arc").requiredSeats, 2, "episode architecture mu
 assert.equal(stageReviewPolicy("brief", { revisionContract: { id: "revision" } }).requiredSeats, 2, "targeted revisions must restore two-seat confirmation");
 const fastIssue = { tag: "快速审读硬问题", dimension: "structure", severity: "high", feedback: "开场承诺缺失", fix: "补足开场改变" };
 assert.equal(aggregateCrossReview([review("review-a", { issues: [fastIssue], pass: false })], null, fastPolicy).decision.kind, "revise", "a single fast-review hard finding must still produce a bounded revision decision");
+
+// 审核席明确返回 pass=false 时，不能因为没有结构化 high issue 就被系统裁判放行。
+// 否则模型只返回“未通过 + 文字意见”即可绕过质量门槛。
+const failedWithoutStructuredIssue = aggregateCrossReview([
+  review("review-a", { pass: false }),
+  review("review-b", { pass: true }),
+]);
+assert.equal(failedWithoutStructuredIssue.decision.kind, "revise", "a completed reviewer with pass=false must block release");
+
+// 每个席位只对自己的维度负责；未分配维度的分数不能污染该维度聚合。
+const scopedDimensionAggregate = aggregateCrossReview([
+  review("review-a", {
+    ownedDimensions: ["structure", "logic"],
+    score: 90,
+    dimensions: { structure: { score: 90 }, logic: { score: 90 }, plot: { score: 10 }, design: { score: 10 } },
+  }),
+  review("review-b", {
+    ownedDimensions: ["plot", "design"],
+    score: 80,
+    dimensions: { structure: { score: 10 }, logic: { score: 10 }, plot: { score: 80 }, design: { score: 80 } },
+  }),
+]);
+assert.equal(scopedDimensionAggregate.dimensions.structure.average, 90, "structure must use the structure owner score");
+assert.equal(scopedDimensionAggregate.dimensions.logic.average, 90, "logic must use the logic owner score");
+assert.equal(scopedDimensionAggregate.dimensions.plot.average, 80, "plot must use the plot owner score");
+assert.equal(scopedDimensionAggregate.dimensions.design.average, 80, "design must use the design owner score");
 
 const shared = { tag: "两席共同问题", dimension: "plot", severity: "high", feedback: "缺少触发", fix: "补足触发", modelCount: 2 };
 assert.equal(aggregateCrossReview([review("review-a", { issues: [shared], pass: false }), review("review-b", { issues: [shared], pass: false })]).mandatoryIssueCount, 1, "两席共同确认的高风险问题必须阻断阶段");

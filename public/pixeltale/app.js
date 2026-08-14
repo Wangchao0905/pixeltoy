@@ -1546,15 +1546,19 @@ function renderModelTeam() {
   const status = state.agent?.providerStatus || {};
   const currentArtifact = artifactForStage(state.stage);
   const primaryExecution = currentArtifact?.primaryExecution || {};
+  const creativeCouncil = currentArtifact?.creativeCouncil || {};
+  const creativeContributors = Array.isArray(creativeCouncil.contributors) ? creativeCouncil.contributors : [];
   const currentReview = reviewForArtifact(currentArtifact);
   const reviewFeedbacks = Array.isArray(currentReview?.content?.feedbacks) ? currentReview.content.feedbacks : [];
   const storedReviewPolicy = currentReview?.content?.reviewPolicy || {};
   const requiredReviewSeats = requiredReviewSeatsFor(state.stage, storedReviewPolicy, currentArtifact);
   const activeSeats = reviewSeatsForDisplay(seatDefaults, reviewFeedbacks, requiredReviewSeats);
   const roleLabels = { structure_causality: "结构与因果审查", character_continuity: "人物与连续性审查", audience_pacing_visual: "受众节奏与视觉审查" };
-  const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则 · 视觉设计", seat_c: "首屏冲击 · 节奏钩子 · 镜头可拍性" };
+  const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则", seat_c: "首屏冲击 · 节奏钩子 · 镜头可拍性" };
+  const dimensionLabels = { structure: "结构", plot: "剧情", design: "设计", logic: "逻辑" };
   const phases = [
-    { id: "authoring", label: "主笔生成" },
+    { id: "authoring", label: "三席主创生成" },
+    { id: "synthesizing", label: "合并编排" },
     { id: "validating", label: "规则校验" },
     { id: "reviewing", label: requiredReviewSeats === 1 ? "单席快速审读" : "双席审读" },
     { id: "refereeing", label: "系统裁判决定" },
@@ -1576,8 +1580,16 @@ function renderModelTeam() {
   $("#modelTeamCards")?.parentElement?.querySelector(".phase-rail")?.remove();
   $("#modelTeamCards")?.insertAdjacentHTML("beforebegin", phaseRail);
   $("#modelTeamCards").className = `model-team-cards${state.runPhase === "authoring" || state.runPhase === "reviewing" ? " is-breathing" : ""}`;
-  const authorCard = `<div class="model-card is-primary" aria-label="主笔执行状态"><i></i><span><strong>主笔</strong><small>完整产物 · 只负责写作</small></span><em>${escapeHtml(primaryExecution.actualModel ? "已完成" : state.runPhase === "authoring" ? "执行中" : "待执行")}</em></div>`;
-  $("#modelTeamCards").innerHTML = authorCard + reviewTeam.map((entry) => {
+  const authorCards = creativeContributors.length
+    ? creativeContributors.map((entry) => {
+      const seatId = entry.seatId || "";
+      const lane = roleLabels[entry.role] || "主创席";
+      const statusLabel = entry.status === "completed" ? "已完成" : state.runPhase === "authoring" ? "执行中" : "待执行";
+      const fallbackLabel = entry.fallbackUsed ? " · 已启用同席备用" : "";
+      return `<div class="model-card is-primary" aria-label="${escapeHtml(lane)}主创状态"><i></i><span><strong>${escapeHtml(lane)}</strong><small>独立创作贡献${fallbackLabel}</small></span><em>${escapeHtml(statusLabel)}</em></div>`;
+    }).join("")
+    : `<div class="model-card is-primary" aria-label="主笔执行状态"><i></i><span><strong>主笔</strong><small>完整产物 · 只负责写作</small></span><em>${escapeHtml(primaryExecution.actualModel ? "已完成" : state.runPhase === "authoring" ? "执行中" : "待执行")}</em></div>`;
+  $("#modelTeamCards").innerHTML = authorCards + reviewTeam.map((entry) => {
     const modelId = entry.actualModel || entry.requiredModel || "";
     const meta = modelInfo(modelId);
     const provider = entry.provider || meta.provider;
@@ -1596,7 +1608,10 @@ function renderModelTeam() {
     const fallbackLabel = entry.actualModel && entry.requiredModel && entry.actualModel !== entry.requiredModel ? " · 已启用备用模型" : "";
     const seatId = entry.seatId || activeSeats.find((seat) => seat.role === entry.role)?.seatId || "";
     const reviewMode = requiredReviewSeats === 1 ? "规则校验后快速审读" : "阶段职责 · 独立交叉审查";
-    return `<button class="model-card ${provider === "chatgpt" ? "is-primary" : provider === "claude" || provider === "grok" ? "is-reviewer" : ""}" type="button" data-model-detail="${escapeHtml(seatId)}" title="${escapeHtml(lane)}"><i></i><span><strong>${escapeHtml(lane)}</strong><small>${escapeHtml(roleDescriptions[seatId] || reviewMode)}${fallbackLabel}</small></span><em>${escapeHtml(scoreLabel)}<br>${escapeHtml(stateLabel)}</em></button>`;
+    const scopeLabel = Array.isArray(entry.ownedDimensions) && entry.ownedDimensions.length
+      ? `责任维度：${entry.ownedDimensions.map((key) => dimensionLabels[key] || key).join("、")}`
+      : roleDescriptions[seatId] || reviewMode;
+    return `<button class="model-card ${provider === "chatgpt" ? "is-primary" : provider === "claude" || provider === "grok" ? "is-reviewer" : ""}" type="button" data-model-detail="${escapeHtml(seatId)}" title="${escapeHtml(lane)}"><i></i><span><strong>${escapeHtml(lane)}</strong><small>${escapeHtml(scopeLabel)}${fallbackLabel}</small></span><em>${escapeHtml(scoreLabel)}<br>${escapeHtml(stateLabel)}</em></button>`;
   }).join("");
   $("#modelTeamCards")?.parentElement?.querySelector(".model-team-degraded")?.remove();
   if (currentReview?.content?.quorum?.degraded) {

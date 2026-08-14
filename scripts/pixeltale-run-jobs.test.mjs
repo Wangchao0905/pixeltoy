@@ -72,10 +72,10 @@ try {
   assert.equal(job.status, "completed", `background run must complete: ${JSON.stringify(job)}`);
   assert.equal(job.result.status, "completed", "a completed fast review must release the generated brief");
   assert.equal(job.result.state.runs.length, 1, "duplicate starts must not create duplicate Agent runs");
-  assert.equal(requestedPurposes.filter((purpose) => purpose === "author").length, 1, "one accountable primary writer must generate the stage draft");
-  assert.equal(requestedPurposes.filter((purpose) => purpose === "synthesis").length, 0, "the single-writer flow must not run a synthesis pass");
+  assert.equal(requestedPurposes.filter((purpose) => purpose === "author").length, 3, "all three accountable creative seats must generate the stage draft");
+  assert.equal(requestedPurposes.filter((purpose) => purpose === "synthesis").length, 1, "the three creative contributions must run one explicit synthesis pass");
   assert.equal(requestedPurposes.filter((purpose) => purpose === "review").length, 1, "a first-draft brief must use one fast review seat");
-  assert.equal(requestedTokenBudgets.length, 2, "one writer and one fast reviewer must stay bounded");
+  assert.equal(requestedTokenBudgets.length, 5, "three writers, one synthesis pass, and one fast reviewer must stay bounded");
   assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget === 1_200).length, 1, "the fast reviewer must retain the compact review token budget");
   assert.equal(requestedTokenBudgets.filter((budget, index) => requestedPurposes[index] === "review" && budget > 1_200).length, 0, "the fast reviewer must keep the compact review budget");
   assert.ok(fs.existsSync(path.join(root, "run-jobs", `${first.jobId}.json`)), "run status must be persisted beside the story session");

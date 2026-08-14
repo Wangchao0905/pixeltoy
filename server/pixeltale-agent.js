@@ -2293,9 +2293,10 @@ function aggregateCrossReview(reviews = [], revisionContract = null, reviewPolic
   const passingReviews = completed.filter((item) => item.pass).length;
   const allReviewSeatsCompleted = feedbacks.length >= requiredSeats && feedbacks.every((item) => item.status === "completed");
   const independenceUnavailable = !heterogeneityAvailable;
+  // 非独立复核是证据等级降级，不是席位未完成。低分仍由质量/维度门槛拦截，
+  // 但不能因为低分把已经返回的两席误判成“审核未完成”并反复重跑。
   const nonIndependentPass = independenceUnavailable
-    && allReviewSeatsCompleted
-    && passingReviews >= requiredSeats;
+    && allReviewSeatsCompleted;
   const quorumMet = completed.length >= requiredSeats
     && (distinctProviders >= requiredSeats || nonIndependentPass);
   const degraded = completed.length >= requiredSeats

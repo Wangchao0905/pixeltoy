@@ -62,6 +62,9 @@ const reviewRetryUnits = Function(
 const reviewRetryScope = Function(
   `const UNIT_STAGES = new Set(["arc", "scenes"]);\n${app.slice(app.indexOf("function reviewRetryUnits"), app.indexOf("function nextStepMeta"))}\nreturn reviewRetryScope;`,
 )();
+const technicalReviewState = Function(
+  `${app.slice(app.indexOf("function technicalReviewState"), app.indexOf("function reviewSeatsForDisplay"))}\nreturn technicalReviewState;`,
+)();
 
 assert.deepEqual(
   reviewSeatsForDisplay(
@@ -109,6 +112,15 @@ assert.equal(
   "a partial retry scope must remain a failed-batch rerun",
 );
 assert.deepEqual(reviewRetryUnits("dialogue", { retryUnits: [3] }, { pending: [3] }), [], "non-unit stages must not receive episode retry scope");
+assert.equal(
+  technicalReviewState({
+    quorum: { required: 2, completedSeats: 2, met: true },
+    feedbacks: [{ status: "completed" }, { status: "completed" }],
+    technicalFailures: [{ status: "independence_unavailable", message: "同一 provider" }],
+  }).blocked,
+  false,
+  "a completed non-independent review must remain a warning, not a technical rerun blocker",
+);
 const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateVisualAssets, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters, fixEpisodeTitles } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const duplicateDecisionItems = mergeReviewItemsForTest([

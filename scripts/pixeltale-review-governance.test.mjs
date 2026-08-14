@@ -3,15 +3,15 @@ import { aggregateCrossReview, buildRevisionContract, callStagePrimary, isMandat
 
 const dimensions = Object.fromEntries(["structure", "plot", "design", "logic"].map((key) => [key, { score: 90, feedback: "通过" }]));
 
-function review(model, { issues = [], revisionClosures = [], pass = true } = {}) {
+function review(model, { issues = [], revisionClosures = [], pass = true, score = 90, provider } = {}) {
   return {
     route: { seatId: model },
     result: {
-      provider: model === "review-b" ? "claude" : "chatgpt",
+      provider: provider || (model === "review-b" ? "claude" : "chatgpt"),
       model,
       content: {
         pass,
-        score: 90,
+        score,
         findings: [],
         required_changes: [],
         issues,
@@ -36,6 +36,15 @@ assert.equal(aggregateCrossReview([review("review-a", { issues: [fastIssue], pas
 
 const shared = { tag: "两席共同问题", dimension: "plot", severity: "high", feedback: "缺少触发", fix: "补足触发", modelCount: 2 };
 assert.equal(aggregateCrossReview([review("review-a", { issues: [shared], pass: false }), review("review-b", { issues: [shared], pass: false })]).mandatoryIssueCount, 1, "两席共同确认的高风险问题必须阻断阶段");
+
+// 非独立复核仍然是“席位已完成但证据降级”，不能把低评分误判成“审核未完成”。
+// 否则场景/分集批次会一直走 rerun，永远到不了评分修订路径，也无法锁定。
+const nonIndependentLowScore = aggregateCrossReview([
+  review("review-a", { provider: "chatgpt", score: 72, pass: false }),
+  review("review-b", { provider: "chatgpt", score: 72, pass: false }),
+], null, { mode: "dual", requiredSeats: 2, issueSupport: 2, heterogeneityAvailable: false });
+assert.equal(nonIndependentLowScore.quorum.met, true, "同一 provider 的双席只应标记非独立，不应丢失席位完成状态");
+assert.equal(nonIndependentLowScore.decision.kind, "revise", "非独立复核的低分应进入定向修订，而不是反复重跑");
 
 const explicitTradeoff = {
   criterionId: "ARC_OPENING_TRADEOFF",

@@ -1087,7 +1087,11 @@ function technicalReviewState(reviewContent = {}) {
   const stalled = reviewContent.stalled === true || reviewContent.status === "stalled";
   const budgetExhausted = reviewContent.budget_exhausted === true || reviewContent.status === "budget_exhausted";
   const notConfigured = [...failedSeats, ...failures].some((item) => item.failureReason === "not_configured");
-  return { blocked: completedSeats < Number(quorum.required || 3) || quorum.degraded === true || notConfigured || failures.length > 0 || failedSeats.length > 0 || stalled || budgetExhausted, failedSeats, failures, degraded: quorum.degraded === true, stalled, budgetExhausted };
+  // independence_unavailable is an audit annotation: the seats returned, but
+  // they were served by one provider. It must not turn a completed low-score
+  // review into a fake technical rerun loop.
+  const blockingFailures = failures.filter((item) => item?.status !== "independence_unavailable");
+  return { blocked: completedSeats < Number(quorum.required || 3) || quorum.degraded === true || notConfigured || blockingFailures.length > 0 || failedSeats.length > 0 || stalled || budgetExhausted, failedSeats, failures, blockingFailures, degraded: quorum.degraded === true, stalled, budgetExhausted };
 }
 
 function reviewSeatsForDisplay(seatDefaults = [], reviewFeedbacks = [], requiredSeats = 2) {

@@ -1,7 +1,7 @@
 const { jsonrepair } = require("jsonrepair");
 
 const DEFAULT_BASE_URL = "https://api.apikey.fun/v1";
-const GROK_FALLBACK_MODEL = "grok-4.5";
+const GROK_FALLBACK_MODEL = "grok-4.6";
 const GEMINI_FALLBACK_MODEL = "gemini-2.5-pro";
 // The Gemini model id must be read lazily: server.js loads .env.local only after
 // this module is required, so a module-top read would freeze the fallback
@@ -11,13 +11,13 @@ function geminiModelId() {
 }
 const FALLBACK_BY_SEAT = Object.freeze({
   seat_a: GEMINI_FALLBACK_MODEL,
-  seat_b: "claude-sonnet-5",
-  seat_c: "claude-haiku-4-5",
+  seat_b: GROK_FALLBACK_MODEL,
+  seat_c: "gpt-5.6-sol",
 });
 const REVIEW_SEATS = Object.freeze([
   Object.freeze({ id: "seat_a", role: "structure_causality", model: "gpt-5.6-terra", ownedDimensions: Object.freeze(["structure", "logic"]) }),
   Object.freeze({ id: "seat_b", role: "character_continuity", model: "gpt-5.6-sol", ownedDimensions: Object.freeze(["plot"]) }),
-  Object.freeze({ id: "seat_c", role: "audience_pacing_visual", model: "claude-opus-5", ownedDimensions: Object.freeze(["design"]) }),
+  Object.freeze({ id: "seat_c", role: "audience_pacing_visual", model: GROK_FALLBACK_MODEL, ownedDimensions: Object.freeze(["design"]) }),
 ]);
 const REVIEW_DIMENSIONS = Object.freeze(["structure", "plot", "design", "logic"]);
 
@@ -47,27 +47,8 @@ const MODEL_DEFINITIONS = Object.freeze([
     baseNames: ["PIXELTALE_GPT_BASE_URL", "STORYBOARD_BASE_URL", "OPENAI_BASE_URL"],
   },
   {
-    id: "claude-opus-5",
-    provider: "claude",
-    keyNames: ["PIXELTALE_CLAUDE_API_KEY", "ASSET_ANALYZER_API_KEY"],
-    baseNames: ["PIXELTALE_CLAUDE_BASE_URL", "ASSET_ANALYZER_BASE_URL", "OPENAI_BASE_URL"],
-  },
-  {
-    id: "claude-sonnet-5",
-    provider: "claude",
-    keyNames: ["PIXELTALE_CLAUDE_API_KEY", "ASSET_ANALYZER_API_KEY"],
-    baseNames: ["PIXELTALE_CLAUDE_BASE_URL", "ASSET_ANALYZER_BASE_URL", "OPENAI_BASE_URL"],
-  },
-  {
-    id: "claude-haiku-4-5",
-    provider: "claude",
-    keyNames: ["PIXELTALE_CLAUDE_API_KEY", "ASSET_ANALYZER_API_KEY"],
-    baseNames: ["PIXELTALE_CLAUDE_BASE_URL", "ASSET_ANALYZER_BASE_URL", "OPENAI_BASE_URL"],
-  },
-  {
     id: GROK_FALLBACK_MODEL,
     provider: "grok",
-    fallbackOnly: true,
     keyNames: ["PIXELTALE_GROK_API_KEY", "XAI_API_KEY"],
     baseNames: ["PIXELTALE_GROK_BASE_URL", "XAI_BASE_URL", "GROK_API_BASE_URL", "OPENAI_BASE_URL"],
   },
@@ -87,15 +68,12 @@ function primaryModelIds() {
   return getModelDefinitions().filter((item) => !item.fallbackOnly && !item.legacy).map((item) => item.id);
 }
 
-// Retired models stay loadable so historical review records keep showing a real
-// model name, but they must never win a seat or reach the model picker again.
-const LEGACY_MODEL_IDS = Object.freeze(MODEL_DEFINITIONS.filter((item) => item.legacy).map((item) => item.id));
-// Models that used to hold a seat and no longer do. They stay fully usable — the
-// user can still pick them by hand — but a stored session that pinned them as a
-// seat must move to the current roster, otherwise changing REVIEW_SEATS silently
-// has no effect on existing projects. This is a separate concept from `legacy`:
-// these models are not retired, they just lost their seat.
-const RETIRED_SEAT_MODELS = Object.freeze(["deepseek-v4-pro", "claude-haiku-4-5"]);
+// Retired ids are kept separately for stored-route migration. Historical review
+// records retain their original display strings, but these ids are not executable.
+const LEGACY_MODEL_IDS = Object.freeze(["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
+// Models that must be removed from stored seat assignments. A saved project that
+// still pins one of these ids must move to the current roster on its next read.
+const RETIRED_SEAT_MODELS = Object.freeze(["deepseek-v4-pro", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
 
 function clean(value, max = 1200) {
   return String(value ?? "").trim().slice(0, max);

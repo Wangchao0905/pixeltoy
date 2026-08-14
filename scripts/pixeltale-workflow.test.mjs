@@ -10,8 +10,6 @@ const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const pixeltaleAgentSource = fs.readFileSync(path.join(root, "server/pixeltale-agent.js"), "utf8");
 process.env.PIXELTALE_GPT_API_KEY ||= "sk-test-pixeltale-gpt-000000000000";
 process.env.PIXELTALE_GEMINI_API_KEY ||= "sk-test-pixeltale-gemini-000000000000";
-process.env.PIXELTALE_CLAUDE_API_KEY ||= "sk-test-pixeltale-claude-000000000000";
-process.env.PIXELTALE_CLAUDE_BASE_URL ||= "https://api.apikey.fun/v1";
 process.env.PIXELTALE_GROK_API_KEY ||= "sk-test-pixeltale-grok-000000000000";
 const { callPixelTaleApiModel, readStreamPayload, reviewModels, checkReviewFallbackProviders, models, MODEL_DEFINITIONS, GROK_FALLBACK_MODEL, GEMINI_FALLBACK_MODEL } = createRequire(import.meta.url)("../server/pixeltale-api.js");
 const apiTemperatures = [];
@@ -24,13 +22,21 @@ await callPixelTaleApiModel({ model: "gpt-5.6-terra", system: "test", user: "tes
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }), { status: 200 });
 } });
 assert.deepEqual(apiTemperatures, [0.6, 0.25], "the API temperature override and compatibility default must be preserved");
-const claudeRequests = [];
-await callPixelTaleApiModel({ model: "claude-opus-5", system: "test", user: "test", fetchImpl: async (url, options) => {
-  claudeRequests.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+const grokRequests = [];
+await callPixelTaleApiModel({ model: "grok-4.6", system: "test", user: "test", fetchImpl: async (url, options) => {
+  grokRequests.push({ url, headers: options.headers, body: JSON.parse(options.body) });
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }), { status: 200 });
 } });
-assert.equal(claudeRequests[0].url, "https://api.apikey.fun/v1/chat/completions", "Claude Opus 5 must use the configured apikey.fun gateway");
-assert.equal(claudeRequests[0].body.model, "claude-opus-5", "the replacement review request must retain the Claude Opus 5 model id");
+assert.equal(grokRequests[0].url, "https://api.apikey.fun/v1/chat/completions", "Grok 4.6 must use the configured apikey.fun gateway");
+assert.equal(grokRequests[0].body.model, "grok-4.6", "the replacement review request must use the Grok 4.6 model id");
+assert.equal(GROK_FALLBACK_MODEL, "grok-4.6", "PixelTale's Grok route must be pinned to Grok 4.6");
+assert.ok(models().some((model) => model.id === "grok-4.6" && model.provider === "grok"), "Grok 4.6 must be a selectable PixelTale model");
+assert.ok(!models().some((model) => model.provider === "claude"), "Claude must not remain an executable PixelTale model");
+await assert.rejects(
+  callPixelTaleApiModel({ model: "claude-opus-5", system: "test", user: "test" }),
+  (error) => error?.code === "MODEL_UNSUPPORTED",
+  "retired Claude routes must fail closed instead of reaching the gateway",
+);
 assert.ok(!MODEL_DEFINITIONS.some((model) => model.provider === "deepseek"), "PixelTale must not register DeepSeek as an executable model");
 const html = fs.readFileSync(path.join(root, "public/pixeltale.html"), "utf8");
 const nestedHtml = fs.readFileSync(path.join(root, "public/pixeltale/pixeltale.html"), "utf8");
@@ -47,6 +53,37 @@ const reviewIssueGroupsForTest = Function(
   "reviewQuality",
   `${app.slice(app.indexOf("function isMandatoryReviewIssue"), app.indexOf("function reviewDecisionGroups"))}\nreturn reviewIssueGroups;`,
 )(() => ({ accepted: [] }), () => [], reviewQuality);
+const reviewSeatsForDisplay = Function(
+  `${app.slice(app.indexOf("function reviewSeatsForDisplay"), app.indexOf("function renderModelTeam"))}\nreturn reviewSeatsForDisplay;`,
+)();
+const reviewRetryUnits = Function(
+  `const UNIT_STAGES = new Set(["arc", "scenes"]);\n${app.slice(app.indexOf("function reviewRetryUnits"), app.indexOf("function nextStepMeta"))}\nreturn reviewRetryUnits;`,
+)();
+
+assert.deepEqual(
+  reviewSeatsForDisplay(
+    [
+      { seatId: "seat_a", role: "structure_causality" },
+      { seatId: "seat_b", role: "character_continuity" },
+      { seatId: "seat_c", role: "audience_pacing_visual" },
+    ],
+    [{ seatId: "seat_a", status: "completed" }, { seatId: "seat_c", status: "completed" }],
+    2,
+  ).map((seat) => seat.seatId),
+  ["seat_a", "seat_c"],
+  "the review rail must show the actual dynamic second seat instead of hardcoding seat_b",
+);
+assert.deepEqual(
+  reviewRetryUnits("scenes", { retryUnits: [3, 4] }, { pending: [1, 2, 3, 4, 5] }),
+  [3, 4],
+  "unit review retries must preserve the server-provided failed batch scope",
+);
+assert.deepEqual(
+  reviewRetryUnits("scenes", {}, { pending: [6, 7] }),
+  [6, 7],
+  "unit review retries must fall back to pending units when no batch scope is recorded",
+);
+assert.deepEqual(reviewRetryUnits("dialogue", { retryUnits: [3] }, { pending: [3] }), [], "non-unit stages must not receive episode retry scope");
 const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateVisualAssets, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters, fixEpisodeTitles } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);
 
 const duplicateDecisionItems = mergeReviewItemsForTest([
@@ -283,7 +320,7 @@ assert.throws(() => validateContent("characters", { characters: [{ id: "C001", n
 assert.throws(() => validateVisualAssets({ characters: [{ id: "P01", name_zh: "P01", prompt_zh: "人物" }], scenes: [], props: [] }), /真实名称|编号|代号/u, "视觉资产产物不得用内部编号作为显示名");
 
 // 审核固定保留 structure/logic owner，并选择第一个已配置的异构 provider。
-const ROSTER = [["seat_a", "gpt-5.6-terra"], ["seat_c", "claude-opus-5"]];
+const ROSTER = [["seat_a", "gpt-5.6-terra"], ["seat_c", "grok-4.6"]];
 const fixedReviewSeats = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"]
   .map((stage) => ({ stage, models: reviewModels({ stage }) }));
 assert.deepEqual(
@@ -306,7 +343,7 @@ const singleProviderReviewSeats = reviewModels({}, {
 });
 assert.deepEqual(singleProviderReviewSeats.map((item) => [item.seatId, item.model]), [["seat_a", "gpt-5.6-terra"], ["seat_b", "gpt-5.6-sol"]], "a single configured provider must retain two review seats on its channel");
 assert.ok(singleProviderReviewSeats.every((item) => item.heterogeneous === false), "a single configured provider must report independent review as unavailable");
-assert.ok(!rosterModels.includes(GROK_FALLBACK_MODEL), "the shared fallback model must not also hold a seat, or a single failure would fake a quorum");
+assert.ok(rosterModels.includes(GROK_FALLBACK_MODEL), "Grok 4.6 must hold the heterogeneous review seat");
 assert.equal(fixedReviewSeats[0].models[0].fallbackModels[0], GEMINI_FALLBACK_MODEL, "seat_a must prefer the configured Gemini fallback");
 assert.notEqual(fixedReviewSeats[0].models[0].fallbackModels[0], fixedReviewSeats[0].models[1].fallbackModels[0], "the active review seats must not collapse onto the same fallback");
 const fallbackProviderCheck = checkReviewFallbackProviders();
@@ -321,13 +358,13 @@ assert.match(agent, /routesNeedMigration\(storedRoutes\)/, "a migrated route mus
 assert.match(agent, /persistState\(params, state\)/, "a migrated route must be written back, not just fixed in memory");
 const unknownRouteStore = new Map([["route-fallback", { projectId: "route-fallback", routes: { seat_c: "model-that-was-removed" } }]]);
 const fallbackAgent = createPixelTaleAgent({
-  modelRouter: { models: () => ROSTER.map(([, id]) => ({ id, provider: id.startsWith("gpt-") ? "chatgpt" : "claude" })), status: () => ({}), call: async () => ({ content: {} }) },
+  modelRouter: { models: () => ROSTER.map(([, id]) => ({ id, provider: id.startsWith("gpt-") ? "chatgpt" : "grok" })), status: () => ({}), call: async () => ({ content: {} }) },
   readPixelTaleState: (rootPath) => unknownRouteStore.get(rootPath) || {},
   writePixelTaleState: (rootPath, state) => unknownRouteStore.set(rootPath, structuredClone(state)),
 });
 assert.equal(
   fallbackAgent.status({ pixelTaleRoot: "route-fallback", projectId: "route-fallback" }).routes.seat_c,
-  "claude-opus-5",
+  "grok-4.6",
   "a route naming an unavailable model must fall back to the seat default",
 );
 
@@ -347,10 +384,27 @@ assert.deepEqual(
   ROSTER.map(([, model]) => model),
   "a stored session pinning a replaced roster must migrate to the current seats",
 );
-assert.equal(reseated.continuity, "claude-opus-5", "存量阶段路由必须迁移到 Claude Opus 5");
-assert.equal(reseated.hooks, "claude-opus-5", "存量钩子路由必须迁移到 Claude Opus 5");
-assert.equal(reseated.dialogueReview, "claude-opus-5", "存量复审路由必须迁移到 Claude Opus 5");
+assert.equal(reseated.continuity, "grok-4.6", "存量阶段路由必须迁移到 Grok 4.6");
+assert.equal(reseated.hooks, "grok-4.6", "存量钩子路由必须迁移到 Grok 4.6");
+assert.equal(reseated.dialogueReview, "grok-4.6", "存量复审路由必须迁移到 Grok 4.6");
 assert.deepEqual(normalizeRoutes(reseated, models()), reseated, "route normalization must be idempotent, or every read rewrites the session");
+const storedClaudeRoutes = {
+  continuity: "claude-opus-5",
+  hooks: "claude-sonnet-5",
+  dialogueReview: "claude-haiku-4-5",
+  seat_a: "claude-opus-5",
+  seat_b: "claude-sonnet-5",
+  seat_c: "claude-haiku-4-5",
+};
+const migratedClaudeRoutes = normalizeRoutes(storedClaudeRoutes, models());
+assert.equal(migratedClaudeRoutes.continuity, "grok-4.6", "存量 Claude 连续性路由必须迁移到 Grok 4.6");
+assert.equal(migratedClaudeRoutes.hooks, "grok-4.6", "存量 Claude 钩子路由必须迁移到 Grok 4.6");
+assert.equal(migratedClaudeRoutes.dialogueReview, "grok-4.6", "存量 Claude 复审路由必须迁移到 Grok 4.6");
+assert.deepEqual(
+  [migratedClaudeRoutes.seat_a, migratedClaudeRoutes.seat_b, migratedClaudeRoutes.seat_c],
+  ["gpt-5.6-terra", "gpt-5.6-sol", "grok-4.6"],
+  "存量 Claude 席位必须迁移到当前席位模型",
+);
 
 assert.match(agent, /modelRouter\.call/, "PixelTale must delegate text execution to an injected model router");
 assert.match(agent, /modelRouter\.reviewModels\(route\)/, "cross-review must be selected by the independent PixelTale router");
@@ -369,13 +423,13 @@ assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*model-team
 assert.match(app, /seat_b[\s\S]*roleDescriptions/, "review UI must render the two-seat roster");
 
 assert.match(html, /id="newDraft"[^>]*>[^<]*<span[^>]*>\+<\/span>\s*新建剧集/, "new story action must be explicit");
-assert.match(html, /<optgroup label="Gemini"><option value="gemini-3\.1-pro">Gemini 3\.1 Pro<\/option><\/optgroup>/, "every creative-routing select must offer Gemini 3.1 Pro as the Claude replacement");
+assert.match(html, /<optgroup label="Grok"><option value="grok-4\.6">Grok 4\.6<\/option><\/optgroup>/, "every creative-routing select must offer Grok 4.6 as the Claude replacement");
 assert.match(app, /continuity: "gemini-3\.1-pro"/, "the default continuity route must be Gemini 3.1 Pro, not Claude");
 assert.match(app, /"gemini-3\.1-pro": \{ name: "Gemini 3\.1 Pro", provider: "gemini"/, "the model meta table must describe Gemini 3.1 Pro");
-assert.match(app, /groups = \{ chatgpt: \[\], claude: \[\], gemini: \[\] \}/, "routing sync must accept Gemini providers");
-assert.match(app, /labels = \{ chatgpt: "GPT", claude: "Claude", gemini: "Gemini" \}/, "routing sync must label Gemini as a first-class provider");
+assert.match(app, /groups = \{ chatgpt: \[\], gemini: \[\], grok: \[\] \}/, "routing sync must accept Grok providers");
+assert.match(app, /labels = \{ chatgpt: "GPT", gemini: "Gemini", grok: "Grok" \}/, "routing sync must label Grok as a first-class provider");
 assert.doesNotMatch(pixeltaleApi, /id: GEMINI_FALLBACK_MODEL,[\s\S]*?fallbackOnly: true/, "Gemini must be a primary (selectable) model, not fallback-only");
-assert.match(pixeltaleAgentSource, /const DEFAULT_ROUTES = \{[\s\S]*?continuity: "gemini-3\.1-pro"/, "the server default continuity route must be Gemini 3.1 Pro");
+assert.match(pixeltaleAgentSource, /const DEFAULT_ROUTES = \{[\s\S]*?hooks: "grok-4\.6"[\s\S]*?dialogueReview: "grok-4\.6"/, "the server review routes must use Grok 4.6");
 const pixelTaleStylesStamp = html.match(/pixeltale\/styles\.css\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
 const pixelTaleAppStamp = html.match(/pixeltale\/app\.js\?v=([0-9a-zA-Z._-]+)/)?.[1] || "";
 assert.ok(pixelTaleStylesStamp && pixelTaleAppStamp, "PixelTale static assets must carry cache stamps");
@@ -482,7 +536,7 @@ assert.match(app, /rhythm_signals/, "story pulse must read the shared rhythm sig
 assert.match(app, /data-pulse-node/, "story pulse events must expose clickable inspection nodes");
 assert.match(app, /尚未生成剧情脉冲/, "story pulse must have an honest empty state when no episode data exists");
 assert.match(app, /function renderReviewScoreBars\(/, "review output must expose a multidimensional score bar renderer");
-assert.match(app, /评分门槛 75/, "review score bars must show the explicit release threshold");
+assert.match(app, /质量门槛 \$\{RELEASE_QUALITY_FLOOR\} · 维度底线 \$\{RELEASE_DIMENSION_FLOOR\}/, "review score bars must show the actual quality gate and dimension floor");
 assert.match(app, /function handleConfirmHumanOverride\(button\)/, "manual release confirmation must be a top-level handler");
 assert.match(app, /未评分/, "review score bars must distinguish unmeasured dimensions from zero");
 assert.doesNotMatch(app, /CURRENT UNIT/, "the stage cockpit must not repeat the passive CURRENT UNIT label");
@@ -879,8 +933,8 @@ const realZero = aggregateCrossReview([reviewCase({ model: "gpt-5.6-terra", seat
 assert.equal(realZero.feedbacks[0].score, 0, "a valid zero score must be preserved");
 assert.equal(realZero.feedbacks[0].status, "completed", "a valid zero score must remain completed");
 const degradedQuorum = aggregateCrossReview([
-  { ...reviewCase({ model: "grok-4.5", seatId: "seat_a" }), result: { ...reviewCase({ model: "grok-4.5", seatId: "seat_a" }).result, fallbackUsed: true } },
-  { ...reviewCase({ model: "grok-4.5", seatId: "seat_b" }), result: { ...reviewCase({ model: "grok-4.5", seatId: "seat_b" }).result, fallbackUsed: true } },
+  { ...reviewCase({ model: "grok-4.6", seatId: "seat_a" }), result: { ...reviewCase({ model: "grok-4.6", seatId: "seat_a" }).result, fallbackUsed: true } },
+  { ...reviewCase({ model: "grok-4.6", seatId: "seat_b" }), result: { ...reviewCase({ model: "grok-4.6", seatId: "seat_b" }).result, fallbackUsed: true } },
 ]);
 assert.equal(degradedQuorum.quorum.degraded, true, "same-model fallback must mark quorum as degraded");
 assert.equal(degradedQuorum.quorum.met, false, "degraded quorum must not be met");
@@ -1430,7 +1484,7 @@ const councilRun = await callStageCouncil({
   user: "{}",
   modelRouter: {
     stageModels: (route) => [route.primary, route.reviewer, route.consistency],
-    fallbackModelFor: (model) => model === "gpt-5.6-terra" ? "grok-4.5" : "",
+    fallbackModelFor: (model) => model === "gpt-5.6-terra" ? "grok-4.6" : "",
     call: async ({ model, purpose, temperature }) => {
       councilTemperatures.push({ model, purpose, temperature });
       if (model === "gpt-5.6-terra") {
@@ -1450,7 +1504,7 @@ assert.equal(councilRun.creativeCouncil.requiredModels, 3, "a stage must require
 assert.equal(councilRun.creativeCouncil.completedModels, 3, "a stage may merge only after all three authors complete");
 assert.deepEqual(councilRun.creativeCouncil.contributors.map((item) => item.model), ["gpt-5.6-terra", "claude-opus-5", "claude-sonnet-5"]);
 assert.equal(councilRun.creativeCouncil.synthesizer.requiredModel, "gpt-5.6-terra", "the configured primary model is the explicit synthesizer, not a silent winner");
-assert.equal(councilRun.creativeCouncil.contributors[0].actualModel, "grok-4.5", "a failed author seat must recover through its same-seat Grok fallback");
+assert.equal(councilRun.creativeCouncil.contributors[0].actualModel, "grok-4.6", "a failed author seat must recover through its same-seat Grok fallback");
 assert.deepEqual(councilTemperatures.filter((item) => item.purpose.endsWith(":author")).map((item) => item.temperature), [0.3, 0.7, 1.0, 0.3], "creative seats must use differentiated temperatures, including same-seat retry");
 assert.equal(councilTemperatures.find((item) => item.purpose.endsWith(":synthesis"))?.temperature, 0.35, "the synthesis call must use its dedicated temperature");
 
@@ -1466,7 +1520,7 @@ await assert.rejects(
     nowMs: () => timedClock,
     modelRouter: {
       stageModels: (route) => [route.primary, route.reviewer, route.consistency, "gpt-5.6-sol"],
-      fallbackModelFor: () => "grok-4.5",
+      fallbackModelFor: () => "grok-4.6",
       call: async ({ model, timeoutMs }) => {
         timedCalls.push({ model, timeoutMs });
         const error = new Error("upstream request timed out");
@@ -1482,7 +1536,7 @@ await assert.rejects(
 assert.equal(timedCalls.length, 6, "each author role gets one bounded retry while the three roles remain concurrent");
 assert.equal(new Set(timedCalls.map((item) => item.model)).size, 4, "the author fallback may share Grok while retaining three independent seat identities");
 assert.ok(timedCalls.every((item) => item.timeoutMs === 14_000), "each concurrent author candidate must receive its full bounded timeout");
-assert.deepEqual(timedCalls.map((item) => item.model), ["gpt-5.6-terra", "claude-opus-5", "claude-sonnet-5", "grok-4.5", "grok-4.5", "grok-4.5"], "retries must use the same role's Grok fallback");
+assert.deepEqual(timedCalls.map((item) => item.model), ["gpt-5.6-terra", "claude-opus-5", "claude-sonnet-5", "grok-4.6", "grok-4.6", "grok-4.6"], "retries must use the same role's Grok fallback");
 // Sized from measured seat latency on the real prompts, not guessed: the slowest
 // seat (claude-opus-5) needed 208s for the characters payload, so a 210s model
 // window left no headroom and a 240s total left the fallback round only 30s.
@@ -1580,7 +1634,7 @@ assert.equal(
   "both review paths must track the model actually attempted",
 );
 // The failure record named reviewCandidates.at(-1), so a seat that failed on its
-// own model was reported as "grok-4.5: <other model> truncated" with grok never called.
+// own model was reported as "grok-4.6: <other model> truncated" with grok never called.
 assert.doesNotMatch(agent, /model: reviewCandidates\.at\(-1\)/, "a review failure must name the model that actually failed");
 // tokenUsage() reads result.usage, so the call layer has to return it or the
 // revision token circuit breaker can never fire.
@@ -1714,8 +1768,8 @@ const seatDraft = (seatId, model, score = 70) => ({
   route: { seatId, role: seatId, ownedDimensions: [], requiredModel: model },
   result: { provider: model.startsWith("gpt-") ? "chatgpt" : "grok", model, actualModel: model, content: { pass: true, score, confidence: 90, findings: [], required_changes: [], checks: { adversarial: true }, dimensions: seatDims(score), issues: [], revisionClosures: [] } },
 });
-const healthyBatch = aggregateCrossReview([seatDraft("seat_a", "gpt-5.6-terra"), seatDraft("seat_c", "grok-4.5")]);
-const collapsedBatch = aggregateCrossReview([seatDraft("seat_a", "grok-4.5"), seatDraft("seat_b", "grok-4.5")]);
+const healthyBatch = aggregateCrossReview([seatDraft("seat_a", "gpt-5.6-terra"), seatDraft("seat_c", "grok-4.6")]);
+const collapsedBatch = aggregateCrossReview([seatDraft("seat_a", "grok-4.6"), seatDraft("seat_b", "grok-4.6")]);
 const withUnrunBatch = batchReviewSummary("scenes", [healthyBatch, healthyBatch, {}], 15, {});
 assert.equal(withUnrunBatch.quorum.completedSeats, 2, "a batch that has not run must not drag completedSeats to zero");
 assert.equal(withUnrunBatch.quorum.distinctActualModels, 2, "a batch that has not run must not drag distinctActualModels to zero");
@@ -1738,10 +1792,9 @@ const routableModels = models().map((item) => item.id);
 for (const [seatId, model] of ROSTER) {
   assert.ok(routableModels.includes(model), `${seatId}'s model (${model}) must be routable`);
 }
-// Models the seats replaced remain defined: old artifacts reference them by id and
-// would otherwise render as an unnamed model.
+// Replaced models stay in the migration list but never re-enter the executable roster.
 for (const retired of ["claude-opus-5", "claude-haiku-4-5"]) {
-  assert.ok(MODEL_DEFINITIONS.some((item) => item.id === retired), `${retired} must stay defined so historical reviews keep a real model name`);
+  assert.ok(!routableModels.includes(retired), `${retired} must not remain executable after the Grok migration`);
 }
 
 // 4. Review seats must stay at a reproducible low temperature on every review

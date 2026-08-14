@@ -20,21 +20,21 @@ const STAGE_LABELS = Object.freeze({ brief: "故事架构", title: "剧名选择
 const DEFAULT_ROUTES = {
   orchestration: "gpt-5.6-terra",
   continuity: "gemini-3.1-pro",
-  hooks: "claude-opus-5",
-  dialogueReview: "claude-opus-5",
+  hooks: "grok-4.6",
+  dialogueReview: "grok-4.6",
   consistency: "gpt-5.6-luna",
   seat_a: "gpt-5.6-terra",
   seat_b: "gpt-5.6-sol",
-  seat_c: "claude-opus-5",
+  seat_c: "grok-4.6",
 };
-const REPLACED_ROUTE_MODELS = new Set(["deepseek-v4-pro"]);
+const REPLACED_ROUTE_MODELS = new Set(["deepseek-v4-pro", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
 // The three authors run concurrently, so round 1 consumes about `model` ms of the
 // shared `total` budget. The fallback round then gets only `total - model`, which
 // must still be large enough to regenerate the whole stage payload — otherwise the
 // retry is structurally dead. Keep `total >= 2 * model + margin`.
-// Measured on the real characters prompt (7000-token payload):
-// claude-haiku-4-5 70s, gpt-5.6-terra 93-108s, claude-opus-5 208s.
-// `model` is sized at roughly 1.3x the slowest observed seat.
+// Measured on the real characters prompt (7000-token payload) across the
+// configured writing roster; `model` is sized at roughly 1.3x the slowest
+// observed seat.
 const STAGE_PRIMARY_TIMINGS = Object.freeze({
   brief: { total: 270_000, model: 120_000 },
   title: { total: 200_000, model: 90_000 },
@@ -47,11 +47,8 @@ const STAGE_PRIMARY_TIMINGS = Object.freeze({
 const MIN_STAGE_PRIMARY_ATTEMPT_MS = 3_000;
 const STAGE_PRIMARY_RETRY_ROUNDS = 2;
 // A review seat must read the whole stage artifact before it can answer, so this
-// budget scales with artifact size, not with review output size. Measured on a
-// 13-character (13.9 kB) characters artifact: gpt-5.6-terra 44s, claude-opus-5
-// exceeded 120s, and its grok fallback then burned another 120s — leaving only one
-// of three seats completed and blocking release. 240s covers the slowest seat on
-// the largest artifacts with headroom for its fallback.
+// budget scales with artifact size, not with review output size. 240s covers the
+// slowest configured seat on the largest artifacts with headroom for its fallback.
 const REVIEW_MODEL_TIMEOUT_MS = 240_000;
 // Two matching findings are enough to classify a shared issue. Stage release
 // requires the review seats to finish (2 seats since 2026-08-08 speed pass).
@@ -486,7 +483,7 @@ function normalizeRoutes(value = {}, availableModels = []) {
 function migratedRouteValue(key, raw) {
   const seat = REVIEW_SEATS.find((item) => item.id === key);
   if (seat) return LEGACY_ROUTE_MODELS.has(raw) ? seat.model : raw;
-  if (REPLACED_ROUTE_MODELS.has(raw)) return "claude-opus-5";
+  if (REPLACED_ROUTE_MODELS.has(raw)) return "grok-4.6";
   return RETIRED_MODEL_IDS.has(raw) ? DEFAULT_ROUTES[key] : raw;
 }
 

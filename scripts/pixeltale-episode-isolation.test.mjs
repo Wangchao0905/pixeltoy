@@ -253,7 +253,7 @@ const primaryRetry = await callStageCouncil({
   user: "user",
   modelRouter: {
     stageModels: () => models.map((model) => model.id),
-    fallbackModelFor: (model) => model === models[0].id ? "grok-4.5" : "",
+    fallbackModelFor: (model) => model === models[0].id ? "grok-4.6" : "",
     call: async ({ model, timeoutMs }) => {
       primaryAttempts.push({ model, timeoutMs });
       if (primaryFailures++ < 1) {
@@ -262,7 +262,7 @@ const primaryRetry = await callStageCouncil({
         error.retryable = true;
         throw error;
       }
-      return { provider: model === "grok-4.5" ? "grok" : "chatgpt", model, content: { units: [arcUnit(1)], arc_summary_zh: "ok" }, attempts: 0 };
+      return { provider: model === "grok-4.6" ? "grok" : "chatgpt", model, content: { units: [arcUnit(1)], arc_summary_zh: "ok" }, attempts: 0 };
     },
   },
   nowMs: () => logicalNow,

@@ -97,7 +97,7 @@ const state = {
   pendingCrossStageRepair: null,
   historyDeletePending: null,
   agent: createEmptyAgent(initialMode),
-  routes: { orchestration: "gpt-5.6-terra", continuity: "gemini-3.1-pro", hooks: "claude-opus-5", dialogueReview: "claude-opus-5", consistency: "gpt-5.6-luna" },
+  routes: { orchestration: "gpt-5.6-terra", continuity: "gemini-3.1-pro", hooks: "grok-4.6", dialogueReview: "grok-4.6", consistency: "gpt-5.6-luna" },
   input: {
     platform: "TikTok / TikTok Series",
     audience: "18-34 · English-speaking audience",
@@ -156,9 +156,11 @@ const modelMeta = {
   "gpt-5.6-terra": { name: "GPT 5.6 Terra", provider: "chatgpt", role: "总编排 / 结构", detail: "任务拆解、结构约束与最终复核" },
   "gpt-5.6-sol": { name: "GPT 5.6 Sol", provider: "chatgpt", role: "总编排 / 结构", detail: "任务拆解、结构约束与最终复核" },
   "gpt-5.6-luna": { name: "GPT 5.6 Luna", provider: "chatgpt", role: "总编排 / 结构", detail: "任务拆解、结构约束与最终复核" },
+  // Historical review records only; these ids are no longer executable or selectable.
   "claude-opus-5": { name: "Claude Opus 5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "claude-sonnet-5": { name: "Claude Sonnet 5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
   "claude-haiku-4-5": { name: "Claude Haiku 4.5", provider: "claude", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
+  "grok-4.6": { name: "Grok 4.6", provider: "grok", role: "受众节奏 / 反转", detail: "开场冲击、节奏钩子、反转与镜头可拍性" },
   "gemini-3.1-pro": { name: "Gemini 3.1 Pro", provider: "gemini", role: "故事圣经 / 连续性", detail: "人物、世界规则、长剧弧线与伏笔连续性" },
 };
 
@@ -694,7 +696,9 @@ function updateAgentState(agent, { preserveStage = state.stageSelectionVersion >
   if (!agent || typeof agent !== "object") return;
   state.agent = agent;
   if (agent.mode === "long_form_drama") state.mode = "long"; else if (agent.mode === "cn_short_drama") state.mode = "cn"; else state.mode = "tk";
-  const migratedRoutes = Object.fromEntries(Object.entries(agent.routes || {}).map(([key, value]) => [key, value === "deepseek-v4-pro" ? "claude-opus-5" : value]));
+  const retiredRouteIds = new Set(["deepseek-v4-pro", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]);
+  const legacySeatDefaults = { seat_a: "gpt-5.6-terra", seat_b: "gpt-5.6-sol", seat_c: "grok-4.6" };
+  const migratedRoutes = Object.fromEntries(Object.entries(agent.routes || {}).map(([key, value]) => [key, retiredRouteIds.has(value) ? (legacySeatDefaults[key] || "grok-4.6") : value]));
   state.routes = { ...state.routes, ...migratedRoutes };
   state.input = { ...state.input, ...(agent.input || {}) };
   state.approved = new Set(agent.approvedArtifactIds || []);
@@ -711,11 +715,11 @@ function modelInfo(id) {
 
 function syncRoutingModelOptions(options) {
   if (!Array.isArray(options) || !options.length) return;
-  const groups = { chatgpt: [], claude: [], gemini: [] };
+  const groups = { chatgpt: [], gemini: [], grok: [] };
   options.forEach((option) => {
     if (groups[option?.provider]) groups[option.provider].push(option);
   });
-  const labels = { chatgpt: "GPT", claude: "Claude", gemini: "Gemini" };
+  const labels = { chatgpt: "GPT", gemini: "Gemini", grok: "Grok" };
   $$('[data-route]').forEach((select) => {
     const selected = state.routes[select.dataset.route] || select.value;
     select.innerHTML = Object.entries(groups).map(([provider, entries]) => entries.length
@@ -1022,7 +1026,7 @@ function renderConsensusMeter() {
   const interactionCompletion = document.querySelector("#consensusQuality");
   if (!score || !value || !fill || !label || !agreement || !reviewCompletion || !interactionCompletion) return;
   const decision = metrics.content?.decision || {};
-  const tone = metrics.quality === null ? "等待质量评分" : metrics.quality >= 90 ? "质量良好" : metrics.quality >= 75 ? "质量可接受" : "需要修订";
+  const tone = metrics.quality === null ? "等待质量评分" : metrics.quality >= RELEASE_QUALITY_FLOOR ? "质量良好" : "需要修订";
   score.textContent = decision.kind === "approve" ? "通过" : decision.kind === "revise" ? "修订" : decision.kind === "needs_decision" ? "决定" : decision.kind === "rerun" ? "重试" : "—";
   value.textContent = decision.title || `质量分 · ${tone}`;
   const advisoryGate = reviewAdvisoryGate(metrics.content);
@@ -1085,6 +1089,24 @@ function technicalReviewState(reviewContent = {}) {
   return { blocked: completedSeats < Number(quorum.required || 3) || quorum.degraded === true || notConfigured || failures.length > 0 || failedSeats.length > 0 || stalled || budgetExhausted, failedSeats, failures, degraded: quorum.degraded === true, stalled, budgetExhausted };
 }
 
+function reviewSeatsForDisplay(seatDefaults = [], reviewFeedbacks = [], requiredSeats = 2) {
+  const roster = Array.isArray(seatDefaults) ? seatDefaults : [];
+  const feedbackSeatIds = [...new Set((Array.isArray(reviewFeedbacks) ? reviewFeedbacks : [])
+    .map((entry) => String(entry?.seatId || "").trim())
+    .filter(Boolean))];
+  const matched = feedbackSeatIds.map((seatId) => roster.find((seat) => seat.seatId === seatId)).filter(Boolean);
+  const fallback = roster.filter((seat) => !matched.some((item) => item.seatId === seat.seatId));
+  return [...matched, ...fallback].slice(0, Math.max(1, Number(requiredSeats) || 1));
+}
+
+function reviewRetryUnits(stage, reviewContent = {}, progress = {}) {
+  if (!UNIT_STAGES.has(stage)) return [];
+  const source = Array.isArray(reviewContent.retryUnits) && reviewContent.retryUnits.length
+    ? reviewContent.retryUnits
+    : Array.isArray(progress?.pending) ? progress.pending : [];
+  return [...new Set(source.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0))].sort((a, b) => a - b);
+}
+
 function nextStepMeta() {
   const flowStage = workflowStage();
   const flowMeta = stageMeta[flowStage];
@@ -1145,7 +1167,13 @@ function nextStepMeta() {
   }
   const reviewContent = reviewForArtifact(artifact)?.content || {};
   const technicalState = technicalReviewState(reviewContent);
+  const refereeDecision = reviewContent.decision || {};
   if (technicalState.blocked && reviewForArtifact(artifact) && !creativeReviewDecisionGroups(reviewContent).length) {
+    // Unit-stage review results carry the exact failed batch scope. Keep the
+    // retry action below so a missing seat does not resubmit every pending unit.
+    if (refereeDecision.kind === "rerun" && UNIT_STAGES.has(flowStage)) {
+      // Continue into the rerun branch, which preserves retryUnits.
+    } else {
     return {
       kind: "run",
       stage: flowStage,
@@ -1154,8 +1182,8 @@ function nextStepMeta() {
       label: `重新提交${flowMeta.title}并审核 →`,
       flowStage,
     };
+    }
   }
-  const refereeDecision = reviewContent.decision || {};
   const creativeDecisions = creativeReviewDecisionGroups(reviewContent);
   if (refereeDecision.kind === "needs_decision" && creativeDecisions.length) {
     return {
@@ -1184,7 +1212,7 @@ function nextStepMeta() {
   if (refereeDecision.kind === "revise") {
     const ruleBlocked = (Array.isArray(reviewContent.technicalFailures) ? reviewContent.technicalFailures : [])
       .find((failure) => failure.status === "rule_blocked");
-    // 2026-08-11：评分达标（≥75）时不应强制修订，给人工放行出口
+    // 2026-08-11：综合评分达标时不应强制修订，给人工放行出口
     if (!ruleBlocked && scoresMeetGate(reviewContent)) {
       return {
         kind: "human-override",
@@ -1221,6 +1249,18 @@ function nextStepMeta() {
         title: `${flowMeta.title}评分已达标`,
         copy: `另一审读席（${failedNames}）网络调用失败，当前放行质量分 ${Math.round(reviewQuality(reviewContent))} 已达标（≥${RELEASE_QUALITY_FLOOR}）。接受当前版本并继续，或重新审核。`,
         label: "接受当前版本并继续（评分已达标）",
+        flowStage,
+      };
+    }
+    const retryUnits = reviewRetryUnits(flowStage, reviewContent, unitStageProgress(flowStage));
+    if (UNIT_STAGES.has(flowStage) && retryUnits.length) {
+      return {
+        kind: "retry-failed",
+        stage: flowStage,
+        unitNumbers: retryUnits,
+        title: "只重跑未通过批次",
+        copy: refereeDecision.summary || `仅重跑第 ${retryUnits.join("、")} 集所在的失败批次；已锁定集不会再次提交。`,
+        label: `只重跑第 ${retryUnits.join("、")} 集并审核 →`,
         flowStage,
       };
     }
@@ -1453,6 +1493,7 @@ function renderModelTeam() {
   const seatDefaults = [
     { seatId: "seat_a", role: "structure_causality", requiredModel: "gpt-5.6-terra" },
     { seatId: "seat_b", role: "character_continuity", requiredModel: "gpt-5.6-sol" },
+    { seatId: "seat_c", role: "audience_pacing_visual", requiredModel: "grok-4.6" },
   ];
   const status = state.agent?.providerStatus || {};
   const currentArtifact = artifactForStage(state.stage);
@@ -1461,9 +1502,9 @@ function renderModelTeam() {
   const reviewFeedbacks = Array.isArray(currentReview?.content?.feedbacks) ? currentReview.content.feedbacks : [];
   const storedReviewPolicy = currentReview?.content?.reviewPolicy || {};
   const requiredReviewSeats = requiredReviewSeatsFor(state.stage, storedReviewPolicy, currentArtifact);
-  const activeSeats = seatDefaults.slice(0, requiredReviewSeats);
+  const activeSeats = reviewSeatsForDisplay(seatDefaults, reviewFeedbacks, requiredReviewSeats);
   const roleLabels = { structure_causality: "结构与因果审查", character_continuity: "人物与连续性审查", audience_pacing_visual: "受众节奏与视觉审查" };
-  const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则 · 视觉设计" };
+  const roleDescriptions = { seat_a: "阶段契约 · 因果链 · 时间线自洽", seat_b: "人物动机 · 关系演进 · 世界规则 · 视觉设计", seat_c: "首屏冲击 · 节奏钩子 · 镜头可拍性" };
   const phases = [
     { id: "authoring", label: "主笔生成" },
     { id: "validating", label: "规则校验" },
@@ -1507,7 +1548,7 @@ function renderModelTeam() {
     const fallbackLabel = entry.actualModel && entry.requiredModel && entry.actualModel !== entry.requiredModel ? " · 已启用备用模型" : "";
     const seatId = entry.seatId || activeSeats.find((seat) => seat.role === entry.role)?.seatId || "";
     const reviewMode = requiredReviewSeats === 1 ? "规则校验后快速审读" : "阶段职责 · 独立交叉审查";
-    return `<button class="model-card ${provider === "chatgpt" ? "is-primary" : provider === "claude" ? "is-reviewer" : ""}" type="button" data-model-detail="${escapeHtml(seatId)}" title="${escapeHtml(lane)}"><i></i><span><strong>${escapeHtml(lane)}</strong><small>${escapeHtml(roleDescriptions[seatId] || reviewMode)}${fallbackLabel}</small></span><em>${escapeHtml(scoreLabel)}<br>${escapeHtml(stateLabel)}</em></button>`;
+    return `<button class="model-card ${provider === "chatgpt" ? "is-primary" : provider === "claude" || provider === "grok" ? "is-reviewer" : ""}" type="button" data-model-detail="${escapeHtml(seatId)}" title="${escapeHtml(lane)}"><i></i><span><strong>${escapeHtml(lane)}</strong><small>${escapeHtml(roleDescriptions[seatId] || reviewMode)}${fallbackLabel}</small></span><em>${escapeHtml(scoreLabel)}<br>${escapeHtml(stateLabel)}</em></button>`;
   }).join("");
   $("#modelTeamCards")?.parentElement?.querySelector(".model-team-degraded")?.remove();
   if (currentReview?.content?.quorum?.degraded) {
@@ -2311,8 +2352,8 @@ function renderReviewScoreBars(reviewContent = {}) {
   }).join("");
   const quality = reviewQuality(reviewContent);
   const qualityLabel = quality === null ? "未评分" : `${Math.round(quality)} / 100`;
-  const qualityStatus = quality === null ? "未评分" : quality >= 75 ? "达标" : "低于门槛";
-  return `<section class="review-score-bars" aria-labelledby="reviewScoreTitle"><div class="review-score-head"><div><span class="card-label"><i></i>QUALITY GATE</span><h3 id="reviewScoreTitle">放行评分</h3></div><span class="review-score-threshold">唯一放行分 · 评分门槛 75</span></div><div class="review-score-overall"><span>放行质量分</span><strong>${qualityLabel}</strong><em>${qualityStatus}</em><small>优先读取审核汇总 quality；旧版本才回退 score。四项维度分用于解释质量，不替代放行质量分。</small></div><div class="review-score-list">${rows}</div><p class="review-score-note">未评分表示该维度没有有效测量，不等同于 0 分。</p></section>`;
+  const qualityStatus = quality === null ? "未评分" : quality >= RELEASE_QUALITY_FLOOR ? "达标" : "低于门槛";
+  return `<section class="review-score-bars" aria-labelledby="reviewScoreTitle"><div class="review-score-head"><div><span class="card-label"><i></i>QUALITY GATE</span><h3 id="reviewScoreTitle">放行评分</h3></div><span class="review-score-threshold">唯一放行分 · 质量门槛 ${RELEASE_QUALITY_FLOOR} · 维度底线 ${RELEASE_DIMENSION_FLOOR}</span></div><div class="review-score-overall"><span>放行质量分</span><strong>${qualityLabel}</strong><em>${qualityStatus}</em><small>优先读取审核汇总 quality；旧版本才回退 score。四项维度分用于解释质量，不替代放行质量分。</small></div><div class="review-score-list">${rows}</div><p class="review-score-note">未评分表示该维度没有有效测量，不等同于 0 分。</p></section>`;
 }
 
 function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.stage, reviewId = "", showDecisionWorkbench = true } = {}) {
@@ -2367,8 +2408,11 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     : "";
   // 2026-08-10：重新生成当前阶段（runCurrentStage，用最新生成 prompt 覆盖重跑）。
   // 非通过的任何状态都可重跑——低分时用户可放弃当前版本重新生成。
+  const retryUnits = reviewRetryUnits(stage, reviewContent, unitStageProgress(stage));
   const regenerateButton = decision.kind && decision.kind !== "approve" && !passed
-    ? `<button type="button" class="stage-secondary decision-regenerate-btn" data-flow-action="run" data-run-stage="${escapeHtml(stage)}">重新生成当前阶段 →</button>`
+    ? decision.kind === "rerun" && UNIT_STAGES.has(stage) && retryUnits.length
+      ? `<button type="button" class="stage-secondary decision-regenerate-btn" data-flow-action="retry-failed" data-retry-stage="${escapeHtml(stage)}" data-retry-units="${escapeHtml(retryUnits.join(","))}">只重跑第 ${escapeHtml(retryUnits.join("、"))} 集并审核 →</button>`
+      : `<button type="button" class="stage-secondary decision-regenerate-btn" data-flow-action="run" data-run-stage="${escapeHtml(stage)}">重新生成当前阶段 →</button>`
     : "";
   // 2026-08-10：needs_decision（跨阶段取舍，如场景名单与对白发言人不一致）时，
   // 在决定卡上直接给"选择方案并继续"，不再让用户误点"定向修订"（后者会被
@@ -2718,12 +2762,12 @@ async function monitorBackgroundRun(run) {
   }
 }
 
-async function runCurrentStage(stage = state.stage, { revisionPlan = "", override = false } = {}) {
+async function runCurrentStage(stage = state.stage, { revisionPlan = "", override = false, unitNumbers: requestedUnitNumbers = "" } = {}) {
   if (stage === "brief") collectBriefInput();
   if (stage === "title") state.input.storyTitle = "";
   // 2026-08-12：重新生成当前阶段时清除修订轮数计数
   try { sessionStorage.removeItem(`pixeltale.revision-rounds:${stage}`); } catch { /* storage unavailable */ }
-  const unitNumbers = collectUnitStageScope(stage);
+  const unitNumbers = requestedUnitNumbers || collectUnitStageScope(stage);
   state.lastError = "";
   state.busy = true;
   renderStage();
@@ -2824,7 +2868,7 @@ async function runCurrentStage(stage = state.stage, { revisionPlan = "", overrid
   }
 }
 
-async function runAutoRevision(stage = state.stage) {
+async function runAutoRevision(stage = state.stage, requestedUnitNumbers = "") {
   // 2026-08-10：修订轮数上限——同阶段会话内超过 3 轮仍未收敛，强制转人工放行，
   // 避免无限'修订 → 复审 → 再修订'。放行/确认后计数清除。
   const revisionKey = `pixeltale.revision-rounds:${stage}`;
@@ -2844,11 +2888,15 @@ async function runAutoRevision(stage = state.stage) {
   state.revising = true;
   state.busy = true;
   state.lastError = "";
+  const retryScope = String(requestedUnitNumbers || state.input.revisionUnitNumbers || "").trim();
   renderStage();
   try {
     try {
       const payload = await request("");
       updateAgentState(payload.agent);
+      // Hydrating the latest server state can erase a retry scope selected on
+      // this page. Reapply it before sending the scoped run request.
+      if (retryScope) state.input.revisionUnitNumbers = retryScope;
     } catch (error) {
       state.lastError = userFacingError(error);
       showToast(state.lastError);
@@ -2869,7 +2917,7 @@ async function runAutoRevision(stage = state.stage) {
       return;
     }
     showToast("服务端最新状态没有可执行清单，正在重新生成并审核当前阶段");
-    await runCurrentStage(stage);
+    await runCurrentStage(stage, { unitNumbers: retryScope });
     return;
   }
   const crossStageIssues = issues.filter((issue) => issue.targetStage && issue.targetStage !== stage);
@@ -2901,7 +2949,7 @@ async function runAutoRevision(stage = state.stage) {
   }
   for (let pass = 1; pass <= maxPasses; pass += 1) {
     showToast(`正在执行第 ${pass} / ${maxPasses} 轮修订与复审 · ${currentIssues.length} 类问题`);
-    const outcome = await runCurrentStage(stage, { revisionPlan: buildPlan(currentIssues, pass) });
+    const outcome = await runCurrentStage(stage, { revisionPlan: buildPlan(currentIssues, pass), unitNumbers: retryScope });
     // 2026-08-10：本轮修订已执行，会话内计数 +1（超上限后强制转人工放行）。
     revisionRounds += 1;
     try { sessionStorage.setItem(revisionKey, String(revisionRounds)); } catch { /* storage unavailable */ }
@@ -3146,7 +3194,7 @@ function bindAgentTaskAction() {
     if (action === "retry-failed") {
       const stage = button.dataset.retryStage || state.stage;
       state.input.revisionUnitNumbers = button.dataset.retryUnits || "";
-      void runAutoRevision(stage);
+      void runAutoRevision(stage, button.dataset.retryUnits || "");
       return;
     }
     if (action === "human-override") {

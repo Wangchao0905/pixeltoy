@@ -16600,10 +16600,9 @@ async function createCanvasImageGeneration(body = {}) {
     const providerLocalPath = modelConfig.provider === "gpt"
       ? normalizeCanvasImageReferenceForProvider(localPath, providerSize, taskId, index)
       : localPath;
-    // The upstream Responses gateway accepts public URLs reliably. Keep a
-    // local copy for task recovery, while uploading local-only references
-    // through the existing public-asset storage path before submission.
-    if (/^https:\/\//i.test(source) && providerLocalPath === localPath) return { input: source, localPath };
+    // Always submit a first-party public asset URL. The gateway may time out
+    // while fetching an otherwise valid third-party URL, especially after
+    // reference normalization falls back to the original local copy.
     try {
       const publicAsset = await localAssetFileToPublicUrl(providerLocalPath, `canvas-image-ref-${index + 1}${path.extname(providerLocalPath)}`);
       const publicUrl = compactLine(publicAsset?.url || "");

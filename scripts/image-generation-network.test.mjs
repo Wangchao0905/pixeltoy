@@ -46,6 +46,9 @@ if (!imageGen.includes("return image;") || !imageGen.includes('Accept: "text/eve
 if (!server.includes("const referenceRecords = await Promise.all") || !server.includes("localAssetFileToPublicUrl(providerLocalPath")) {
   throw new Error("canvas reference images must be normalized and publicized before the upstream image request");
 }
+if (/providerLocalPath === localPath[\s\S]{0,240}return \{ input: source, localPath \}/.test(server)) {
+  throw new Error("canvas reference images must not bypass first-party publicization with the original remote URL");
+}
 const referenceContext = {};
 vm.createContext(referenceContext);
 vm.runInContext(`${extractAsyncFunction(imageGen, "imageToInputUrl")}; globalThis.imageToInputUrl = imageToInputUrl;`, referenceContext);

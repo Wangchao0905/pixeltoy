@@ -794,7 +794,8 @@ function unitStageProgress(stage) {
   if (!generated.length) generated = locked;
   const pending = Array.isArray(progress.pendingUnits) ? progress.pendingUnits : [...Array(total)].map((_, index) => index + 1).filter((number) => !locked.includes(number));
   const current = Array.isArray(progress.currentBatch) ? progress.currentBatch : [];
-  return { total, locked, generated, pending, current, complete: !!total && locked.length >= total };
+  const batches = Array.isArray(progress.batches) ? progress.batches : [];
+  return { total, locked, generated, pending, current, batches, complete: !!total && locked.length >= total };
 }
 
 function unitStageScopeInput(stage) {
@@ -1101,10 +1102,33 @@ function reviewSeatsForDisplay(seatDefaults = [], reviewFeedbacks = [], required
 
 function reviewRetryUnits(stage, reviewContent = {}, progress = {}) {
   if (!UNIT_STAGES.has(stage)) return [];
-  const source = Array.isArray(reviewContent.retryUnits) && reviewContent.retryUnits.length
+  const explicit = Array.isArray(reviewContent.retryUnits) && reviewContent.retryUnits.length
     ? reviewContent.retryUnits
-    : Array.isArray(progress?.pending) ? progress.pending : [];
+    : null;
+  if (explicit) return [...new Set(explicit.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0))].sort((a, b) => a - b);
+  const latestBatchStatuses = new Map();
+  for (const batch of Array.isArray(progress?.batches) ? progress.batches : []) {
+    const status = String(batch?.status || "").trim().toLowerCase();
+    for (const value of Array.isArray(batch?.units) ? batch.units : []) {
+      const number = Number(value);
+      if (Number.isInteger(number) && number > 0) latestBatchStatuses.set(number, status);
+    }
+  }
+  const source = [...latestBatchStatuses.entries()]
+    .filter(([, status]) => ["needs_review", "failed"].includes(status))
+    .map(([number]) => number);
   return [...new Set(source.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0))].sort((a, b) => a - b);
+}
+
+function reviewRetryScope(stage, reviewContent = {}, progress = {}) {
+  const units = reviewRetryUnits(stage, reviewContent, progress);
+  const pending = [...new Set((Array.isArray(progress?.pending) ? progress.pending : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0))].sort((a, b) => a - b);
+  const allPending = units.length > 0
+    && units.length === pending.length
+    && units.every((value, index) => value === pending[index]);
+  return { units, allPending };
 }
 
 function nextStepMeta() {
@@ -1196,16 +1220,26 @@ function nextStepMeta() {
     };
   }
   if (refereeDecision.kind === "retry_failed" || (refereeDecision.kind === "needs_decision" && UNIT_STAGES.has(flowStage))) {
-    const retryUnits = Array.isArray(reviewContent.retryUnits) && reviewContent.retryUnits.length
-      ? reviewContent.retryUnits
-      : unitStageProgress(flowStage)?.pending || [];
+    const retryScope = reviewRetryScope(flowStage, reviewContent, unitStageProgress(flowStage));
+    if (retryScope.units.length && !retryScope.allPending) {
+      return {
+        kind: "retry-failed",
+        stage: flowStage,
+        unitNumbers: retryScope.units,
+        title: "只重跑未通过批次",
+        copy: refereeDecision.summary || "仅处理未锁定且未通过的批次；已锁定集不会再次提交。",
+        label: `只重跑第 ${retryScope.units.join("、")} 集并审核 →`,
+        flowStage,
+      };
+    }
     return {
-      kind: "retry-failed",
+      kind: "run",
       stage: flowStage,
-      unitNumbers: retryUnits,
-      title: "只重跑未通过批次",
-      copy: refereeDecision.summary || "仅处理未锁定且未通过的批次；已锁定集不会再次提交。",
-      label: retryUnits.length ? `重跑第 ${retryUnits.join("、")} 集 →` : "重跑未通过批次 →",
+      title: retryScope.allPending ? "重跑全部未锁定集" : "审核范围未确定",
+      copy: retryScope.allPending
+        ? "当前失败范围覆盖全部未锁定集；将重跑全部未锁定集，已锁定集不会再次提交。"
+        : "当前没有可识别的失败批次范围，将重跑全部未锁定集；已锁定集不会再次提交。",
+      label: "重跑全部未锁定集并审核 →",
       flowStage,
     };
   }
@@ -1252,15 +1286,25 @@ function nextStepMeta() {
         flowStage,
       };
     }
-    const retryUnits = reviewRetryUnits(flowStage, reviewContent, unitStageProgress(flowStage));
-    if (UNIT_STAGES.has(flowStage) && retryUnits.length) {
+    const retryScope = reviewRetryScope(flowStage, reviewContent, unitStageProgress(flowStage));
+    if (UNIT_STAGES.has(flowStage) && retryScope.units.length && !retryScope.allPending) {
       return {
         kind: "retry-failed",
         stage: flowStage,
-        unitNumbers: retryUnits,
+        unitNumbers: retryScope.units,
         title: "只重跑未通过批次",
-        copy: refereeDecision.summary || `仅重跑第 ${retryUnits.join("、")} 集所在的失败批次；已锁定集不会再次提交。`,
-        label: `只重跑第 ${retryUnits.join("、")} 集并审核 →`,
+        copy: refereeDecision.summary || `仅重跑第 ${retryScope.units.join("、")} 集所在的失败批次；已锁定集不会再次提交。`,
+        label: `只重跑第 ${retryScope.units.join("、")} 集并审核 →`,
+        flowStage,
+      };
+    }
+    if (UNIT_STAGES.has(flowStage) && retryScope.allPending) {
+      return {
+        kind: "run",
+        stage: flowStage,
+        title: "重跑全部未锁定集",
+        copy: "当前失败范围覆盖全部未锁定集；将重跑全部未锁定集，已锁定集不会再次提交。",
+        label: "重跑全部未锁定集并审核 →",
         flowStage,
       };
     }
@@ -2408,10 +2452,13 @@ function renderReviewPanel(reviewContent = {}, { passed = false, stage = state.s
     : "";
   // 2026-08-10：重新生成当前阶段（runCurrentStage，用最新生成 prompt 覆盖重跑）。
   // 非通过的任何状态都可重跑——低分时用户可放弃当前版本重新生成。
-  const retryUnits = reviewRetryUnits(stage, reviewContent, unitStageProgress(stage));
+  const retryScope = reviewRetryScope(stage, reviewContent, unitStageProgress(stage));
+  const canRetryByBatch = UNIT_STAGES.has(stage) && ["rerun", "retry_failed"].includes(decision.kind) && retryScope.units.length;
   const regenerateButton = decision.kind && decision.kind !== "approve" && !passed
-    ? decision.kind === "rerun" && UNIT_STAGES.has(stage) && retryUnits.length
-      ? `<button type="button" class="stage-secondary decision-regenerate-btn" data-flow-action="retry-failed" data-retry-stage="${escapeHtml(stage)}" data-retry-units="${escapeHtml(retryUnits.join(","))}">只重跑第 ${escapeHtml(retryUnits.join("、"))} 集并审核 →</button>`
+    ? canRetryByBatch && !retryScope.allPending
+      ? `<button type="button" class="stage-secondary decision-regenerate-btn" data-flow-action="retry-failed" data-retry-stage="${escapeHtml(stage)}" data-retry-units="${escapeHtml(retryScope.units.join(","))}">只重跑第 ${escapeHtml(retryScope.units.join("、"))} 集并审核 →</button>`
+      : canRetryByBatch && retryScope.allPending
+        ? `<button type="button" class="stage-secondary decision-regenerate-btn" data-flow-action="run" data-run-stage="${escapeHtml(stage)}">重跑全部未锁定集并审核 →</button>`
       : `<button type="button" class="stage-secondary decision-regenerate-btn" data-flow-action="run" data-run-stage="${escapeHtml(stage)}">重新生成当前阶段 →</button>`
     : "";
   // 2026-08-10：needs_decision（跨阶段取舍，如场景名单与对白发言人不一致）时，

@@ -59,6 +59,9 @@ const reviewSeatsForDisplay = Function(
 const reviewRetryUnits = Function(
   `const UNIT_STAGES = new Set(["arc", "scenes"]);\n${app.slice(app.indexOf("function reviewRetryUnits"), app.indexOf("function nextStepMeta"))}\nreturn reviewRetryUnits;`,
 )();
+const reviewRetryScope = Function(
+  `const UNIT_STAGES = new Set(["arc", "scenes"]);\n${app.slice(app.indexOf("function reviewRetryUnits"), app.indexOf("function nextStepMeta"))}\nreturn reviewRetryScope;`,
+)();
 
 assert.deepEqual(
   reviewSeatsForDisplay(
@@ -80,8 +83,30 @@ assert.deepEqual(
 );
 assert.deepEqual(
   reviewRetryUnits("scenes", {}, { pending: [6, 7] }),
-  [6, 7],
-  "unit review retries must fall back to pending units when no batch scope is recorded",
+  [],
+  "unit review retries must not treat every pending unit as a failed batch",
+);
+assert.deepEqual(
+  reviewRetryUnits("scenes", {}, {
+    pending: [1, 2, 3, 4, 5],
+    batches: [
+      { units: [1, 2], status: "completed" },
+      { units: [3, 4], status: "needs_review" },
+      { units: [5], status: "completed" },
+    ],
+  }),
+  [3, 4],
+  "unit review retries must derive failed units from the latest failed batch status",
+);
+assert.equal(
+  reviewRetryScope("scenes", { retryUnits: [1, 2, 3] }, { pending: [1, 2, 3] }).allPending,
+  true,
+  "a retry scope covering every pending unit must be presented as a full pending rerun",
+);
+assert.equal(
+  reviewRetryScope("scenes", { retryUnits: [2] }, { pending: [1, 2, 3] }).allPending,
+  false,
+  "a partial retry scope must remain a failed-batch rerun",
 );
 assert.deepEqual(reviewRetryUnits("dialogue", { retryUnits: [3] }, { pending: [3] }), [], "non-unit stages must not receive episode retry scope");
 const { createPixelTaleAgent, callStageCouncil, collectCrossReviewQuorum, aggregateCrossReview, batchReviewSummary, buildRevisionContract, isMandatoryReviewIssue, mergeRevisionContent, reviewAdvisoryGate, titleStylePrompt, validateContent, validateVisualAssets, validateReview, runStageRules, computeMergeAudit, normalizeRoutes, stageOutputContract, stageSystemPrompt, stageUserPrompt, durationBudgetPrompt, suggestedShotCountRange, automaticUnitRepairPlan, createHandoffPayload, confirmArtifact, normalizeAutoRegisteredCharacters, autoRegisterEpisodeCharacters, fixEpisodeTitles } = await import(pathToFileURL(path.join(root, "server/pixeltale-agent.js")).href);

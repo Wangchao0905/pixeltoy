@@ -582,10 +582,12 @@ function openHistoryDialog() {
 function resumeHistorySession(nextSessionId) {
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(nextSessionId || ""))) return;
   const currentSession = new URLSearchParams(window.location.search).get("session");
-  if (nextSessionId === currentSession) {
-    // 2026-08-10：当前会话点「继续当前创作」——URL 相同，assign 不会触发跳转（没反应）。
-    // 强制刷新以恢复服务端最新状态（stage 从 API 恢复，停在当前阶段）。
-    window.location.reload();
+  const sameSession = nextSessionId === currentSession || nextSessionId === sessionId;
+  if (sameSession) {
+    $("#historyDialog")?.close();
+    state.lastError = "";
+    showToast("正在恢复当前项目…");
+    void syncAgentState({ silent: false });
     return;
   }
   const target = new URL(window.location.href);

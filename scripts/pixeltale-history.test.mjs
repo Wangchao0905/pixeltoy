@@ -20,6 +20,8 @@ assert.match(app, /async function loadCreativeHistory\(\)[\s\S]*request\("\/hist
 assert.match(app, /async function deleteHistorySession\(targetSessionId[\s\S]*method: "DELETE"/, "history items must expose a delete action backed by the API");
 assert.match(app, /data-history-delete/, "history items must expose a delete control");
 assert.match(app, /function resumeHistorySession\(nextSessionId\)[\s\S]*searchParams\.set\("session", nextSessionId\)/, "history items must restore their original session");
+assert.match(app, /const sameSession = nextSessionId === currentSession \|\| nextSessionId === sessionId[\s\S]*syncAgentState\(\{ silent: false \}\)/, "the current history session must hydrate in place instead of relying on a no-op reload");
+assert.doesNotMatch(app, /function resumeHistorySession\(nextSessionId\)[\s\S]*window\.location\.reload\(\)/, "resuming the current session must not depend on a full-page reload");
 assert.match(app, /function createSessionId\(\)[\s\S]*localStorage\.setItem\(SESSION_STORAGE_KEY, querySession\)/, "URL session recovery must persist the selected session");
 assert.match(app, /function startNewDraft\(\)[\s\S]*searchParams\.set\("session", freshSession\)[\s\S]*window\.location\.assign/, "new drafts must not be captured by an old session query");
 assert.match(serverSource, /action === "history"[\s\S]*pixelTaleHistorySummaries/, "server must expose the read-only history endpoint");

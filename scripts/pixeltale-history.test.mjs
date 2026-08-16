@@ -13,6 +13,7 @@ const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const require = createRequire(import.meta.url);
 const { __test: testApi } = require(path.join(root, "server.js"));
+const { createPixelTaleAgent } = require(path.join(root, "server/pixeltale-agent.js"));
 
 assert.match(html, /id="openHistory"[^>]*>[^<]*<span[^>]*>↺<\/span>\s*创作历史/, "PixelTale must expose a visible creative history entry");
 assert.match(html, /id="historyDialog"/, "PixelTale must provide a history dialog");
@@ -103,6 +104,35 @@ vm.runInContext(`resumeHistorySession("${firstSession}")`, resumeContext);
 assert.equal(resumeContext.saved.value, firstSession, "history resume must persist the selected session before navigation");
 assert.match(resumeContext.assigned, new RegExp(`session=${firstSession}`), "history resume must navigate with the selected session");
 assert.match(resumeContext.assigned, /resume=/, "history resume must invalidate the stale page context");
+
+const payloadState = {
+  mode: "tk_short_drama",
+  stage: "scenes",
+  input: { storyTitle: "The Returned Heir", idea: "A saved project" },
+  artifacts: [
+    ...Array.from({ length: 24 }, (_, index) => ({
+      id: `old_${index}`,
+      type: "pixeltale_stage_review",
+      stage: "scenes",
+      version: index + 1,
+      status: "failed",
+      content: { issues: [{ message: "old review".repeat(80) }] },
+    })),
+    { id: "current_scenes", type: "pixeltale_scenes", stage: "scenes", version: 25, status: "needs_review", reviewId: "current_review", content: { scenes: [{ unit_number: 1, name_zh: "码头" }] } },
+    { id: "current_review", type: "pixeltale_stage_review", stage: "scenes", version: 25, status: "failed", content: { pass: false, issues: [] } },
+  ],
+  approvedArtifactIds: [],
+  handoffs: [],
+};
+const payloadAgent = createPixelTaleAgent({
+  modelRouter: { call: async () => ({}), models: () => [], status: () => ({}) },
+  readPixelTaleState: () => payloadState,
+  writePixelTaleState: () => payloadState,
+});
+const compactPayload = payloadAgent.status({ pixelTaleRoot: "payload-test", projectId: "standalone:payload-test" });
+assert.equal(compactPayload.artifactHistoryCount, 26, "state response must expose how many historical artifacts were compacted");
+assert.deepEqual(compactPayload.artifacts.map((artifact) => artifact.id).sort(), ["current_review", "current_scenes"], "state response must keep only the latest content and review artifacts needed by the current UI");
+assert.ok(JSON.stringify(compactPayload).length < 100_000, "state response must stay small enough to hydrate before the client timeout");
 
 fs.rmSync(historyRoot, { recursive: true, force: true });
 console.log("pixeltale history ok");

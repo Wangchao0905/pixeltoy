@@ -3191,6 +3191,41 @@ function publicArtifact(artifact) {
   return safeArtifact;
 }
 
+function latestPublicArtifacts(state) {
+  const artifacts = asArray(state.artifacts);
+  const byId = new Map(artifacts.map((artifact) => [artifact?.id, artifact]));
+  const latestContent = new Map();
+  const latestReview = new Map();
+  const isNewer = (candidate, current) => {
+    if (!current) return true;
+    const versionDelta = Number(candidate?.version || 0) - Number(current?.version || 0);
+    if (versionDelta !== 0) return versionDelta > 0;
+    return String(candidate?.updatedAt || candidate?.createdAt || "") >= String(current?.updatedAt || current?.createdAt || "");
+  };
+  artifacts.forEach((artifact) => {
+    if (STAGES.includes(artifact?.stage) && artifact?.type === `pixeltale_${artifact.stage}` && isNewer(artifact, latestContent.get(artifact.stage))) {
+      latestContent.set(artifact.stage, artifact);
+    }
+    if (artifact?.type === "pixeltale_stage_review" && STAGES.includes(artifact?.stage) && isNewer(artifact, latestReview.get(artifact.stage))) {
+      latestReview.set(artifact.stage, artifact);
+    }
+  });
+
+  const selected = [];
+  const selectedIds = new Set();
+  const add = (artifact) => {
+    if (!artifact || selectedIds.has(artifact.id)) return;
+    selectedIds.add(artifact.id);
+    selected.push(artifact);
+  };
+  STAGES.forEach((stage) => {
+    const content = latestContent.get(stage);
+    add(content);
+    add(byId.get(content?.reviewId) || latestReview.get(stage));
+  });
+  return selected;
+}
+
 function publicRun(run) {
   if (!run || typeof run !== "object") return run;
   const { primaryModel, reviewModel, ...safeRun } = run;
@@ -3199,9 +3234,13 @@ function publicRun(run) {
 
 function publicState(state, modelRouter) {
   const publicProviderStatus = typeof modelRouter?.status === "function" ? modelRouter.status() : {};
+  const artifactHistoryCount = asArray(state.artifacts).length;
   return {
     ...state,
-    artifacts: asArray(state.artifacts).map(publicArtifact),
+    // 历史产物可能包含数百轮完整分集内容；客户端只需要每阶段最新内容和对应审核，
+    // 否则状态响应会大到超过前端恢复超时，页面会停留在空白初始项目。
+    artifactHistoryCount,
+    artifacts: latestPublicArtifacts(state).map(publicArtifact),
     runs: asArray(state.runs).map(publicRun),
     providerStatus: publicProviderStatus,
     modelOptions: typeof modelRouter?.models === "function" ? modelRouter.models() : [],

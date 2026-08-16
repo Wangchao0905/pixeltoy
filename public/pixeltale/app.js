@@ -581,17 +581,12 @@ function openHistoryDialog() {
 
 function resumeHistorySession(nextSessionId) {
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(nextSessionId || ""))) return;
-  const currentSession = new URLSearchParams(window.location.search).get("session");
-  const sameSession = nextSessionId === currentSession || nextSessionId === sessionId;
-  if (sameSession) {
-    $("#historyDialog")?.close();
-    state.lastError = "";
-    showToast("正在恢复当前项目…");
-    void syncAgentState({ silent: false });
-    return;
-  }
+  // 历史卡片可能来自当前页面已经初始化出的空壳状态。即使 session 相同，
+  // 也必须重建页面上下文，避免复用进行中的空状态请求或旧快照。
+  try { localStorage.setItem(SESSION_STORAGE_KEY, nextSessionId); } catch { /* URL 仍是可靠回退 */ }
   const target = new URL(window.location.href);
   target.searchParams.set("session", nextSessionId);
+  target.searchParams.set("resume", String(Date.now()));
   target.hash = "brief";
   window.location.assign(target.toString());
 }

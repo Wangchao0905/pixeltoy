@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,12 +17,14 @@ const { __test: testApi } = require(path.join(root, "server.js"));
 assert.match(html, /id="openHistory"[^>]*>[^<]*<span[^>]*>↺<\/span>\s*创作历史/, "PixelTale must expose a visible creative history entry");
 assert.match(html, /id="historyDialog"/, "PixelTale must provide a history dialog");
 assert.match(nestedHtml, /id="openHistory"/, "the nested PixelTale page must keep the history entry");
+assert.match(html, /pixeltale-runtime-20260816-r73/, "the public PixelTale entry must bust the history-resume script cache");
+assert.match(nestedHtml, /pixeltale-runtime-20260816-r73/, "the nested PixelTale entry must bust the history-resume script cache");
 assert.match(app, /async function loadCreativeHistory\(\)[\s\S]*request\("\/history"\)/, "history must load from the server session index");
 assert.match(app, /async function deleteHistorySession\(targetSessionId[\s\S]*method: "DELETE"/, "history items must expose a delete action backed by the API");
 assert.match(app, /data-history-delete/, "history items must expose a delete control");
 assert.match(app, /function resumeHistorySession\(nextSessionId\)[\s\S]*searchParams\.set\("session", nextSessionId\)/, "history items must restore their original session");
-assert.match(app, /const sameSession = nextSessionId === currentSession \|\| nextSessionId === sessionId[\s\S]*syncAgentState\(\{ silent: false \}\)/, "the current history session must hydrate in place instead of relying on a no-op reload");
-assert.doesNotMatch(app, /function resumeHistorySession\(nextSessionId\)[\s\S]*window\.location\.reload\(\)/, "resuming the current session must not depend on a full-page reload");
+assert.match(app, /function resumeHistorySession\(nextSessionId\)[\s\S]*searchParams\.set\("resume",/, "resuming history must force a fresh page context");
+assert.doesNotMatch(app, /function resumeHistorySession\(nextSessionId\)[\s\S]*const sameSession =/, "resuming history must not short-circuit on a stale current-session check");
 assert.match(app, /function createSessionId\(\)[\s\S]*localStorage\.setItem\(SESSION_STORAGE_KEY, querySession\)/, "URL session recovery must persist the selected session");
 assert.match(app, /function startNewDraft\(\)[\s\S]*searchParams\.set\("session", freshSession\)[\s\S]*window\.location\.assign/, "new drafts must not be captured by an old session query");
 assert.match(serverSource, /action === "history"[\s\S]*pixelTaleHistorySummaries/, "server must expose the read-only history endpoint");
@@ -68,6 +71,38 @@ assert.equal(typeof testApi.pixelTaleHistory.remove, "function", "history deleti
 const removed = testApi.pixelTaleHistory.remove({ root: historyRoot, sessionId: secondSession });
 assert.equal(removed.sessionId, secondSession, "history deletion must identify the removed session");
 assert.equal(fs.existsSync(path.join(historyRoot, secondSession)), false, "history deletion must remove the session directory");
+
+function extractFunction(source, signature) {
+  const start = source.indexOf(signature);
+  assert.notEqual(start, -1, `missing app function: ${signature}`);
+  const bodyStart = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}" && --depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`unterminated app function: ${signature}`);
+}
+
+const resumeContext = {
+  URL,
+  URLSearchParams,
+  window: {
+    location: {
+      href: "https://pixeltoy.cn/pixeltale.html?session=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa#scenes",
+      assign: (value) => { resumeContext.assigned = value; },
+    },
+  },
+  sessionId: firstSession,
+  SESSION_STORAGE_KEY: "pixeltale.story-forge-session",
+  localStorage: { setItem: (key, value) => { resumeContext.saved = { key, value }; } },
+};
+vm.createContext(resumeContext);
+vm.runInContext(extractFunction(app, "function resumeHistorySession(nextSessionId)"), resumeContext, { filename: "public/pixeltale/app.js" });
+vm.runInContext(`resumeHistorySession("${firstSession}")`, resumeContext);
+assert.equal(resumeContext.saved.value, firstSession, "history resume must persist the selected session before navigation");
+assert.match(resumeContext.assigned, new RegExp(`session=${firstSession}`), "history resume must navigate with the selected session");
+assert.match(resumeContext.assigned, /resume=/, "history resume must invalidate the stale page context");
 
 fs.rmSync(historyRoot, { recursive: true, force: true });
 console.log("pixeltale history ok");

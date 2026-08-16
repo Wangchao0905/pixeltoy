@@ -74,7 +74,7 @@ assert(viteConfig.includes("@vitejs/plugin-react"), "Vite must use the official 
 assert(viteConfig.includes('entryFileNames: "dist/[name].js"'), "Vite admin build must emit a stable public/dist/admin.js bundle");
 assert(adminHtml.includes('<div id="adminRoot"></div>'), "admin.html must mount the React admin island");
 assert(adminHtml.includes('type="module" src="/dist/admin.js"'), "admin.html must load the Vite-built React admin bundle");
-assert(adminBundle.includes("Pixel Toys Admin"), "Vite admin bundle must be built before test/deploy");
+assert(adminBundle.includes("用户与权限"), "Vite admin bundle must be built before test/deploy");
 assert(adminReact.includes("import React") && adminReact.includes("useEffect") && adminReact.includes("useState"), "admin page must be implemented as a React component");
 assert(adminReact.includes("function AdminApp"), "React admin page must expose an AdminApp component");
 assert(server.includes("function projectDisplayNameForSummary"), "project summary must resolve a real display name instead of raw folder slug");
@@ -488,7 +488,7 @@ assert(server.includes("未开启画布权限，请联系管理员"), "canvas AP
 assert(server.includes('if (url.pathname === "/" || url.pathname === "/index.html") return true;'), "home/index login gate must stay separate from the canvas permission gate");
 assert(!server.includes('url.pathname === "/index.html" || url.pathname === "/canvas.html"'), "canvas.html must not remain in the login-only gate");
 assert(server.includes('if (typeof body.canvasEnabled === "boolean") user.canvasEnabled = body.canvasEnabled;'), "admin user API must let admins toggle per-user canvas permission");
-assert(adminReact.includes("<th>画布</th>"), "admin user table must expose a canvas permission column");
+assert(adminReact.includes("admin-capability") && adminReact.includes("canvasEnabled ? \"已开启\" : \"未开启\""), "admin user rows must expose a canvas permission state");
 assert(adminReact.includes('action === "toggle-canvas"'), "admin UI must expose a per-user canvas toggle control");
 assert(adminReact.includes("canvasEnabled: !user.canvasEnabled"), "admin canvas toggle must post the inverted canvas permission");
 assert(app.includes('canvasCard?.classList.toggle("hidden", !data.user?.canvasEnabled)'), "home page must hide the canvas entry for users without canvas permission");

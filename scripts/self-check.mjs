@@ -697,7 +697,8 @@ assert(
   /const ARK_PERSON_TARGET_MODELS = new Set\(\[\s*"seedance-2-0",\s*"seedance-2-0-fast",\s*"seedance-2-0-mini",\s*\]\)/.test(server),
   "Ark private-library routing must target Seedance 2.0, Fast, and Mini",
 );
-assert(canvas.includes('PERSON_REFERENCE_MODEL'), "canvas must keep the explicit person-reference mode separate from AI photoreal assets");
+assert(!canvas.includes('PERSON_REFERENCE_MODEL'), "canvas must not retain the removed person-reference model branch");
+assert(canvas.includes('"seedance-2-0-person-reference": "seedance-2-0"'), "canvas must migrate legacy person-reference nodes to ordinary Seedance 2.0");
 
 assert(server.includes("referencedStoryboardNodeIds") && server.includes("剪除") , "画布同步必须剪除未被当前镜头引用的故事板孤儿节点");
 

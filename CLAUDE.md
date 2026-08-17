@@ -9,7 +9,7 @@
 相关改动应保持以下约束：
 
 - 方舟人物绑定使用独立的 `arkPersonAsset` 状态；不要与 Gravitex 的 `assetUrl` 或 `validationStatus` 混用。
-- 仅 `seedance-2-0`、`seedance-2-0-fast`、`seedance-2-0-mini` 使用方舟 `asset://` 人物素材；`seedance-2-0-person-reference` 继续走 Gravitex。
+- 仅 `seedance-2-0`、`seedance-2-0-fast`、`seedance-2-0-mini` 使用方舟 `asset://` 人物素材；旧的 `seedance-2-0-person-reference` 只允许在读取历史画布时迁移到普通 `seedance-2-0`，不得作为现行模型暴露或提交。
 - 画布生成的 AI 写实人物图可自动认证；普通手动导入图片不要自动认证。
 - 提交批量视频前必须完成参考图预检，缺图或验证失败时阻止提交，不能静默删除引用后继续生成。
 

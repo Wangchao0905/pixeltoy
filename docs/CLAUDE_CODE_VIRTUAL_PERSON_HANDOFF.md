@@ -16,7 +16,7 @@
 ## 模型边界
 
 - `seedance-2-0`、`seedance-2-0-fast`、`seedance-2-0-mini`：方舟人物素材绑定流程。
-- `seedance-2-0-person-reference`：保留原有 Gravitex 人物参考素材库流程，不读取 `arkPersonAsset`。
+- 历史值 `seedance-2-0-person-reference`：读取旧画布时迁移为普通 `seedance-2-0`，不再作为现行模型提交，也不再走独立 Gravitex 模型链路。
 - `seedance-2-0-byteplus`：走 BytePlus ModelArk，不改变上述人物参考模型边界。
 - 不要根据“图片看起来像人物”自动切换模型，也不要把普通写实图片自动改成 `person-reference`。
 

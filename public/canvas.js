@@ -176,7 +176,6 @@ const VIDEO_NODE_DEFAULTS = {
   lastFrameAssetId: "",
 };
 
-const PERSON_REFERENCE_MODEL = "seedance-2-0-person-reference";
 const LIVENESS_MODEL = "seedance-2-0-liveness-face";
 // 海外火山(BytePlus ModelArk)通道:选它这次生成走 ap-southeast 区。
 const BYTEPLUS_MODEL = "seedance-2-0-byteplus";
@@ -188,7 +187,8 @@ const ARK_PERSON_TARGET_MODELS = new Set([
   "seedance-2-0-mini",
 ]);
 const LEGACY_MODEL_MIGRATIONS = {
-  [LIVENESS_MODEL]: PERSON_REFERENCE_MODEL,
+  [LIVENESS_MODEL]: "seedance-2-0",
+  "seedance-2-0-person-reference": "seedance-2-0",
 };
 const VIDEO_MODEL_LABELS = {
   "seedance-2-5": "Seedance 2.5",
@@ -198,7 +198,6 @@ const VIDEO_MODEL_LABELS = {
   "seedance-2-0-mini": "Seedance 2.0 Mini",
   "sd3-480p": "sd3-480p",
   "sd3-720p": "sd3-720p",
-  [PERSON_REFERENCE_MODEL]: "Seedance 2.0 · 人物参考",
   [BYTEPLUS_MODEL]: "Seedance 2.0(海外火山)",
 };
 // 海外火山(BytePlus)会对生成的音频做内容审核,判定敏感就整段失败。命中这个错误时自动关音频重试一次。
@@ -2236,10 +2235,6 @@ function isLivenessVideoNode(node) {
   return (node?.settings?.model || VIDEO_NODE_DEFAULTS.model) === LIVENESS_MODEL;
 }
 
-function isPersonReferenceVideoNode(node) {
-  return (node?.settings?.model || VIDEO_NODE_DEFAULTS.model) === PERSON_REFERENCE_MODEL;
-}
-
 function syncVideoDurationOptions(element, node = {}) {
   const field = element?.querySelector('input[data-node-field="duration"]');
   if (!field) return;
@@ -2439,14 +2434,14 @@ function videoNodePayload(node, { forceNoAudio = false } = {}) {
         source: asset.source,
       };
     });
-  const modelMode = settings.model === LIVENESS_MODEL ? PERSON_REFERENCE_MODEL : settings.model;
+  const modelMode = settings.model === LIVENESS_MODEL ? "seedance-2-0" : settings.model;
   return {
     projectId: canvasState.selectedId || "",
     nodeId: node.id,
     source: node.source || "",
     projectShotName: node.projectShotName || "",
     prompt: nodePrompt(node),
-    model: modelMode === PERSON_REFERENCE_MODEL || modelMode === BYTEPLUS_MODEL
+    model: modelMode === BYTEPLUS_MODEL
       ? "seedance-2-0"
       : modelMode === BYTEPLUS_25_MODEL
         ? "seedance-2-5"
@@ -3130,7 +3125,7 @@ function renderInlineLivenessAssetList(node) {
 function syncInlineLivenessLibrary(element, node) {
   const section = element.querySelector("[data-video-liveness-library]");
   if (!section || node?.kind !== "video") return;
-  const active = isPersonReferenceVideoNode(node) || isLivenessVideoNode(node);
+  const active = isLivenessVideoNode(node);
   section.classList.toggle("hidden", !active);
   if (!active) return;
   const collapsed = !!canvasState.livenessLibrary.collapsed;

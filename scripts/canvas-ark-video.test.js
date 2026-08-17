@@ -92,15 +92,6 @@ for (const model of ARK_MODELS) {
     `${model} must use Ark when a private-library asset is bound`,
   );
 }
-assert.equal(
-  canvasVideoProviderForBody({
-    model: "seedance-2-0-person-reference",
-    modelMode: "seedance-2-0-person-reference",
-    assets: [arkPerson],
-  }),
-  "gravitex",
-  "the separate person-reference model must not be forced into the three-model Ark library route",
-);
 process.env.CANVAS_VIDEO_PROVIDER = "ark";
 
 (async () => {

@@ -23,7 +23,7 @@ const { spawn, execFileSync } = require("node:child_process");
 const { pipeline } = require("node:stream/promises");
 const { pathToFileURL, fileURLToPath } = require("node:url");
 const { jsonrepair } = require("jsonrepair");
-const { collectReferencedAssetNames, classifyReferenceAssets, evaluateReferenceReadiness, runWithConcurrency, runWithDependencies } = require("./scripts/video-ref-prep.js");
+const { collectReferencedAssetNames, evaluateReferenceReadiness, runWithConcurrency, runWithDependencies } = require("./scripts/video-ref-prep.js");
 const { analyzeSeriesPreflight } = require("./scripts/series-preflight.js");
 const { createTeamStore } = require("./server/team-store.js");
 const { canAccessResource, canDeleteResource, resourceScope } = require("./server/team-access.js");
@@ -199,7 +199,7 @@ const DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP = {
 };
 const SEEDANCE_MAX_IMAGE_REFERENCES = 9;
 // 标准 2.0 / Fast / Mini 绑定方舟私域人物素材后使用 Ark asset:// 契约。
-// 未绑定素材时保持当前视频通道；人物参考模型继续使用自己的独立链路。
+// 未绑定素材时保持当前视频通道；人物素材统一按普通 Seedance 参考链路处理。
 const ARK_PERSON_TARGET_MODELS = new Set([
   "seedance-2-0",
   "seedance-2-0-fast",
@@ -13510,7 +13510,6 @@ function normalizeSeedanceModel(value, provider = "") {
       "seedance-2-0-fast": process.env.BYTEPLUS_SEEDANCE_FAST_MODEL || DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP["seedance-2-0-fast"],
       "seedance-2-0-mini": process.env.BYTEPLUS_SEEDANCE_MINI_MODEL || DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP["seedance-2-0-mini"],
       "seedance-2-0-liveness-face": process.env.BYTEPLUS_SEEDANCE_MODEL || DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP["seedance-2-0"],
-      "seedance-2-0-person-reference": process.env.BYTEPLUS_SEEDANCE_MODEL || DEFAULT_BYTEPLUS_SEEDANCE_MODEL_MAP["seedance-2-0"],
     };
     return bp[raw] || raw;
   }
@@ -13520,7 +13519,6 @@ function normalizeSeedanceModel(value, provider = "") {
     "seedance-2-0-fast": process.env.SEEDANCE_FAST_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0-fast"],
     "seedance-2-0-mini": process.env.SEEDANCE_MINI_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0-mini"],
     "seedance-2-0-liveness-face": process.env.SEEDANCE_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0"],
-    "seedance-2-0-person-reference": process.env.SEEDANCE_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0"],
   };
   return map[raw] || raw;
 }
@@ -13535,9 +13533,9 @@ function normalizeGravitexSeedanceModel(value) {
 function normalizeVideoConfigModelName(value = "") {
   const raw = compactLine(value || DEFAULT_VIDEO_CONFIG_MODEL);
   const lower = raw.toLowerCase();
-  if (["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
+  if (["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
   if (/grok|xai/.test(lower)) return "grok-imagine-video";
-  if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0-person-reference";
+  if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0";
   if (/(?:byteplus|海外|modelark|ap-southeast)/.test(lower) && /(?:2[.-]?5)/.test(lower)) return "seedance-2-5-byteplus";
   if (/byteplus|海外|modelark|ap-southeast/.test(lower)) return "seedance-2-0-byteplus";
   if (/mini|迷你/.test(lower)) return "seedance-2-0-mini";
@@ -17373,17 +17371,13 @@ async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, opt
   const timeoutMs = Number(options.timeoutMs || PREPARE_REFS_TIMEOUT_MS);
   let config = configRecord && configRecord.data ? configRecord.data : {};
   const names = videoSubmissionReferenceNames(config, shots);
-  const classified = classifyReferenceAssets(names);
   const assetByName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
-  const usesGravitexPersonRef = normalizeVideoConfigModelName(config.modelName || DEFAULT_VIDEO_CONFIG_MODEL) === "seedance-2-0-person-reference";
   // 超写实素材、或角色类素材(含被平台误判真人的风格化角色):统一走火山虚拟人像库,
   // 认证成 asset:// 后作为人物参考,绕过视频接口真人/隐私审核;其余素材走公网 HTTPS 直传。
   // 项目资产均为管线 AI 生成,认证阶段强制 aiGenerated;道具/场景非角色不纳入。
-  // person-reference 模型保留 Gravitex 人物素材库流程(交接文档边界)。
   const arkPersonNames = arkPersonReferenceNames(episodeRoot, config, names);
   const arkPersonSet = new Set(arkPersonNames);
-  const personTrack = usesGravitexPersonRef ? classified.personTrack : [];
-  const publicTrack = usesGravitexPersonRef ? classified.publicTrack : names.filter((n) => !arkPersonSet.has(n));
+  const publicTrack = names.filter((n) => !arkPersonSet.has(n));
 
   // 非人物轨:确保稳定公网 https;结果(含错误)写回 config。无论本批是否含人物轨都立即落盘,
   // 否则后续 generateProjectVideoShot 重读旧 config 会丢失刚备好的 publicUrl(修 #1)。
@@ -17409,44 +17403,6 @@ async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, opt
   // 写入 arkPersonAsset.status(failed/processing),由就绪校验停止对应片段(不静默删引用)。
   if (arkPersonNames.length) config = await ensureArkPersonAssetsForNames(episodeRoot, configRecord, arkPersonNames, Date.now() + timeoutMs);
 
-  // 人物轨:先把引用名补种进 config.assets(修 #3:磁盘有、config 无的资产验证结果才回写得进去),再验证 + 轮询 active。
-  const personAssets = [];
-  for (const name of personTrack) {
-    const asset = referenceAssetSource(episodeRoot, assetByName, name);
-    if (!asset || !compactLine(asset.assetUrl || asset.url || "")) {
-      mergeConfigAssetPatch(config, name, { validationStatus: "failed", validationError: "找不到图源" });
-      continue;
-    }
-    mergeConfigAssetPatch(config, name, { name });
-    personAssets.push(asset);
-  }
-  if (personAssets.length) {
-    const validation = await validateCanvasPhotorealAssets({
-      groupId: projectPhotorealGroupId(config),
-      name: config.groupName || "参考素材组",
-      channelId: (config.settings && config.settings.channelId) || (config.assetLibrary && config.assetLibrary.channelId) || "",
-      assets: personAssets,
-    });
-    config = mergeValidatedProjectAssets({ ...config, ...projectAssetLibraryPatch(validation.group, projectPhotorealGroupId(config)) }, validation.assets || []).config;
-    writeVideoConfigRecord(configRecord, config);
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const refreshed = await refreshConfigAssetLibraryStatuses(config);
-      config = refreshed.config;
-      writeVideoConfigRecord(configRecord, config);
-      const cur = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
-      const pendingPerson = personTrack.filter((n) => {
-        const a = cur.get(n) || {};
-        const st = compactLine(a.validationStatus || "").toLowerCase();
-        return !(st === "active" && /^asset:\/\//i.test(compactLine(a.assetUrl || "")));
-      });
-      const failed = personTrack.filter((n) => compactLine((cur.get(n) || {}).validationStatus || "").toLowerCase() === "failed");
-      if (!pendingPerson.length) break;
-      if (failed.length) break;
-      await new Promise((r) => setTimeout(r, PREPARE_REFS_POLL_MS));
-    }
-  }
-
   const cur = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
   const items = names.map((name) => {
     const a = cur.get(name) || {};
@@ -17455,10 +17411,9 @@ async function prepareBatchVideoReferences(episodeRoot, configRecord, shots, opt
       // 火山虚拟人像轨:就绪 = status active 且 asset://(evaluateReferenceReadiness 对 person 轨的判定)。
       return { name, track: "person", status: compactLine(ap.status || ""), assetUrl: compactLine(ap.assetUrl || ""), publicUrl: "", error: compactLine(ap.error || "") };
     }
-    const track = personTrack.includes(name) ? "person" : "public";
     return {
       name,
-      track,
+      track: "public",
       status: compactLine(a.validationStatus || (a.publicReady ? "public" : "")),
       assetUrl: compactLine(a.assetUrl || ""),
       publicUrl: compactLine(a.publicUrl || ""),
@@ -17484,14 +17439,12 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
   if (hydrated.changed) writeVideoConfigRecord(configRecord, config);
   const names = videoSubmissionReferenceNames(config, [shot]);
   if (!names.length) return { config, ready: true, summary: { total: 0, active: 0, pending: 0, failed: 0, skipped: 0 } };
-  const usesGravitexPersonRef = projectVideoModelForShot(config, shot) === "seedance-2-0-person-reference";
   const byName = new Map((Array.isArray(config.assets) ? config.assets : []).map((a) => [compactLine(a.name || a.assetName || ""), a]));
-  // 超写实素材走火山虚拟人像轨(读 arkPersonAsset);person-reference 模型走 Gravitex 人物轨;其余公网轨。
-  const arkPersonSet = new Set(usesGravitexPersonRef ? [] : names.filter((n) => {
+  // 超写实素材走火山虚拟人像轨(读 arkPersonAsset);其余素材走公网轨。
+  const arkPersonSet = new Set(names.filter((n) => {
     const a = referenceAssetSource(episodeRoot, byName, n);
     return a && isWorkflowArkPersonAutoCertificationAsset(a, { workflowContext: true });
   }));
-  const personTrack = usesGravitexPersonRef ? classifyReferenceAssets(names).personTrack : [];
   const items = names.map((name) => {
     const a = byName.get(name) || {};
     if (arkPersonSet.has(name)) {
@@ -17500,7 +17453,7 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
     }
     return {
       name,
-      track: personTrack.includes(name) ? "person" : "public",
+      track: "public",
       status: compactLine(a.validationStatus || (a.publicReady ? "public" : "")),
       assetUrl: compactLine(a.assetUrl || ""),
       publicUrl: compactLine(a.publicUrl || ""),
@@ -17530,7 +17483,6 @@ async function ensureProjectPhotorealReferencesReady(episodeRoot, configRecord, 
 }
 
 function projectTailFrameNeedsArkPersonPreparation(episodeRoot, config = {}, shot = {}) {
-  if (projectVideoModelForShot(config, shot) === "seedance-2-0-person-reference") return false;
   if (isProductionBoardMode(config, shot) || shot?.useTailFrame !== true || !shot.tailFrameSource) return false;
   const tailFrame = tailFrameSnapshotForShot(episodeRoot, shot.tailFrameSource, currentRunNamespace(episodeRoot, config));
   if (!tailFrame?.localFile || !fs.existsSync(tailFrame.localFile) || /\.(mp4|mov|webm|m4v)$/i.test(tailFrame.localFile)) return false;
@@ -17545,13 +17497,12 @@ async function ensureTailFrameAssetReference(episodeRoot, config = {}, shot = {}
   if (!shot?.useTailFrame || !shot.tailFrameSource) return { url: cleanStartFrameUrl, config, ready: true, message: "" };
   const localFile = localFilePathFromUrl(cleanStartFrameUrl) || localMediaPathFromUrl(cleanStartFrameUrl) || (cleanStartFrameUrl.startsWith("file:") ? fileURLToPath(cleanStartFrameUrl) : "");
   if (!localFile || !fs.existsSync(localFile)) return { url: cleanStartFrameUrl, config, ready: true, message: "" };
-  const modelName = projectVideoModelForShot(config, shot);
   const id = `${compactLine(shot.name || "shot")}_START_FRAME`;
   const previous = config.tailFrameAssets?.[id] || {};
 
   // Ark 的 asset:// 必须来自方舟私域虚拟人像素材库,与角色参考图使用同一认证通道。
   // 整帧图若被方舟审核拒绝,保持 waiting,绝不把原图继续交给视频接口。
-  if (modelName !== "seedance-2-0-person-reference") {
+  {
     const arkGroupId = arkVirtualPersonConfig().groupId;
     if (!arkGroupId) return { url: cleanStartFrameUrl, config, ready: false, message: "上一段尾帧需要先有方舟私域虚拟人像素材组，才能转为 asset:// 首帧引用。" };
     if (/^asset:\/\//i.test(compactLine(previous.assetUrl || "")) && compactLine(previous.status || previous.validationStatus || "").toLowerCase() === "active") {
@@ -17606,63 +17557,6 @@ async function ensureTailFrameAssetReference(episodeRoot, config = {}, shot = {}
       message: result.error || "上一段尾帧正在进行方舟虚拟人像认证，待 active 后再提交视频，避免被真实人物/隐私拦截。",
     };
   }
-
-  const groupId = projectPhotorealGroupId(config);
-  if (!groupId) return { url: cleanStartFrameUrl, config, ready: false, message: "上一段尾帧包含人物时需要先有素材库 group_id，才能转为 asset:// 首帧引用。" };
-  if (/^asset:\/\//i.test(compactLine(previous.assetUrl || "")) && compactLine(previous.status || previous.validationStatus || "").toLowerCase() === "active") {
-    return { url: previous.assetUrl, config, ready: true, message: "已复用尾帧 asset:// 引用" };
-  }
-  const validation = await validateCanvasPhotorealAssets({
-    groupId,
-    name: config.groupName || "超写实素材组",
-    description: "Pixel Toys tail frame references",
-    channelId: config.settings?.channelId || config.assetLibrary?.channelId || "",
-    assets: [
-      {
-        id,
-        name: id,
-        type: "TailFrame",
-        assetStylePreset: "photoreal",
-        url: `/media?path=${encodeURIComponent(localFile)}`,
-        previewUrl: `/media?path=${encodeURIComponent(localFile)}`,
-        publicUrl: previous.publicUrl || "",
-        assetUrl: previous.assetUrl || "",
-        virtualId: previous.virtualId || "",
-        groupId,
-      },
-    ],
-  });
-  const asset = (validation.assets || [])[0] || {};
-  const nextConfig = {
-    ...config,
-    ...projectAssetLibraryPatch(validation.group, groupId),
-    tailFrameAssets: {
-      ...(config.tailFrameAssets || {}),
-      [id]: {
-        sourceShot: shot.tailFrameSource || "",
-        targetShot: shot.name || "",
-        localFile: path.relative(episodeRoot, localFile),
-        publicUrl: asset.publicUrl || previous.publicUrl || "",
-        assetUrl: asset.assetUrl || previous.assetUrl || "",
-        virtualId: asset.virtualId || previous.virtualId || "",
-        groupId: asset.groupId || groupId,
-        status: asset.validationStatus || "pending",
-        message: asset.message || asset.validationError || "",
-        updatedAt: new Date().toISOString(),
-      },
-    },
-  };
-  const status = compactLine(asset.validationStatus || "").toLowerCase();
-  const assetUrl = compactLine(asset.assetUrl || "");
-  if (status === "active" && /^asset:\/\//i.test(assetUrl)) {
-    return { url: assetUrl, config: nextConfig, ready: true, message: "尾帧已转为素材库 asset:// 首帧引用" };
-  }
-  return {
-    url: cleanStartFrameUrl,
-    config: nextConfig,
-    ready: false,
-    message: asset.validationError || asset.message || "上一段尾帧正在进入素材库，待 active 后再提交视频，避免被真实人物/隐私拦截。",
-  };
 }
 
 function projectVideoPayloadForShot(episodeRoot, shot, config = {}) {
@@ -23860,7 +23754,7 @@ function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
 function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
   const name = compactLine(shotName || "");
   const requestedModel = compactLine(modelName || "");
-  const supportedModels = new Set(["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"]);
+  const supportedModels = new Set(["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-byteplus", "grok-imagine-video"]);
   if (!name) throw new Error("缺少视频片段");
   if (!supportedModels.has(requestedModel)) throw new Error("不支持的视频模型");
   const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];
@@ -26465,7 +26359,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The video description." },
-          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
+          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
           duration: { type: "number", minimum: 1, default: 5 },
           ratio: { type: "string", default: "9:16" },
           firstFrameUrl: { type: "string" },

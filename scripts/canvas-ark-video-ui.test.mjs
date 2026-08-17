@@ -35,7 +35,8 @@ assert.match(html, /方舟私域虚拟人像（2\.0 \/ Fast \/ Mini）/, "the bi
 assert.match(js, /firstFrameAssetId/, "canvas state must persist a first-frame selection");
 assert.match(js, /lastFrameAssetId/, "canvas state must persist a last-frame selection");
 assert.match(js, /frameControl === "first_last"/, "manual first/last frames must take precedence over continuity");
-assert.match(js, /PERSON_REFERENCE_MODEL/, "person-reference mode must retain an explicit branch");
+assert.doesNotMatch(js, /PERSON_REFERENCE_MODEL/, "removed person-reference mode must not retain a dedicated branch");
+assert.match(js, /"seedance-2-0-person-reference": "seedance-2-0"/, "legacy person-reference nodes must migrate to ordinary Seedance 2.0");
 assert.match(html, /video-selection-handle handle-top-left/, "video node must expose the top-left selection handle");
 assert.match(html, /video-selection-handle handle-top-left[^>]*data-resize-handle/, "top-left video handle must be draggable");
 assert.match(html, /video-selection-handle handle-top-right[^>]*data-resize-handle/, "top-right video handle must be draggable");
@@ -63,7 +64,7 @@ assert.match(modelOptions, /<option value="seedance-2-5-byteplus">Seedance 2\.5\
 assert.match(modelOptions, /<option value="seedance-2-0">Seedance 2\.0<\/option>/, "base Seedance option must use its short display name");
 assert.match(modelOptions, /<option value="sd3-480p">sd3-480p<\/option>/, "canvas must offer Paisio sd3-480p");
 assert.match(modelOptions, /<option value="sd3-720p">sd3-720p<\/option>/, "canvas must offer Paisio sd3-720p");
-assert.match(modelOptions, /<option value="seedance-2-0-person-reference">Seedance 2\.0 · 人物参考<\/option>/, "person-reference option must place the label after Seedance");
+assert.doesNotMatch(modelOptions, /seedance-2-0-person-reference|人物参考/, "removed person-reference model must not remain selectable");
 assert.match(html, /<input[^>]*max="30"[^>]*data-node-field="duration"/, "video duration control must expose the 30-second Seedance 2.5 range");
 const videoResolutionOptions = html.match(/<select data-node-field="resolution"(?:\s[^>]*)?>[\s\S]*?<\/select>/g)?.find((block) => block.includes('value="480p"')) || "";
 assert.match(videoResolutionOptions, /value="480p"/, "video resolution must offer 480p");
@@ -117,7 +118,7 @@ assert.match(js, /data-connection-create='image'/, "image generation connection 
 assert.match(js, /supports4k/, "video resolution sync must account for 4k support");
 assert.match(js, /const supports4k = model === "seedance-2-0";/, "only the main Seedance 2.0 model must expose 4k");
 assert.match(js, /option\.hidden = !enabled;/, "unsupported resolutions must be hidden from the model selector");
-assert.match(js, /\[PERSON_REFERENCE_MODEL\]: "Seedance 2\.0 · 人物参考"/, "video model summaries must use the updated person-reference label");
+assert.doesNotMatch(js, /\[PERSON_REFERENCE_MODEL\]|Seedance 2\.0 · 人物参考/, "video model summaries must not expose the removed person-reference label");
 assert.match(js, /<video src=\"\$\{escapeHtml\(previewSrc\)\}\" controls playsinline preload=\"metadata\"/, "completed video previews must expose native controls without autoplay");
 assert.doesNotMatch(js, /<video src=\"\$\{escapeHtml\(previewSrc\)\}\" controls playsinline autoplay/, "completed video previews must not request autoplay on refresh");
 assert.match(js, /CAMERA_ICON_SVG/, "completed video previews must expose a camera capture action");

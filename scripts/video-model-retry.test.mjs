@@ -50,6 +50,11 @@ assert.throws(
   () => __test.videoRetry.updateVideoModelForShotInConfig(original, "E01_V02", "unsupported-model"),
   /不支持的视频模型/,
 );
+assert.throws(
+  () => __test.videoRetry.updateVideoModelForShotInConfig(original, "E01_V02", "seedance-2-0-person-reference"),
+  /不支持的视频模型/,
+  "the removed person-reference model must not be accepted for new shot overrides",
+);
 
 const episodeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pixel-toy-video-model-retry-"));
 const rawDir = path.join(episodeRoot, "06_videos", "raw");

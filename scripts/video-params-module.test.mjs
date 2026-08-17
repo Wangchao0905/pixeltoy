@@ -15,7 +15,7 @@ assert.deepEqual(selectOptions("modernParamRatio"), ["9:16", "16:9", "1:1", "4:3
 assert.deepEqual(selectOptions("modernParamResolution"), ["480p", "720p", "1080p"], "the active workbench must expose its supported resolutions");
 assert.deepEqual(
   selectOptions("modernParamModel"),
-  ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"],
+  ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-byteplus", "grok-imagine-video"],
   "the active workbench must expose the available video models",
 );
 for (const id of ["configModel", "configResolution", "configRatio", "configPromptMode", "configDialectEnabled", "configSfxEnabled"]) {
@@ -79,7 +79,6 @@ const context = {
     "seedance-2-0-mini": "Seedance 2.0 Mini",
     "sd3-480p": "sd3-480p",
     "sd3-720p": "sd3-720p",
-    "seedance-2-0-person-reference": "Seedance 2.0 人物素材参考",
     "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
   },
   document: {
@@ -132,7 +131,7 @@ vm.runInContext(
   'hydrateConfigInputs(JSON.stringify({ modelName: "seedance-2-0-person-reference", settings: { resolution: "1080p", ratio: "16:9", promptMode: "production_board", storyboardWorkflowExplicit: true, dialectStyle: "cantonese", sfxStyle: "搞笑无厘头" } }))',
   context,
 );
-assert.equal(elements.get("modernParamModel").value, "seedance-2-0-person-reference", "saved model must hydrate the active model control");
+assert.equal(elements.get("modernParamModel").value, "seedance-2-0", "legacy person-reference config must hydrate as ordinary Seedance 2.0");
 assert.equal(elements.get("modernParamResolution").value, "1080p", "saved resolution must hydrate the active resolution control");
 assert.equal(elements.get("modernParamRatio").value, "16:9", "saved ratio must hydrate the active ratio control");
 assert.equal(elements.get("modernVideoPromptMode").dataset.value, "production_board", "saved board mode must hydrate the visible selector");

@@ -246,6 +246,19 @@ const IMAGE_NODE_DEFAULTS = {
   ratio: "16:9",
   resolution: "1k",
 };
+
+const IMAGE_MODEL_LABELS = {
+  "gpt-image2-high": "GPT Image 2 High",
+  "gpt-image2-medium": "GPT Image 2 Medium",
+  "gemini-3-pro-image-preview": "Nano banana pro",
+  "gemini-3.1-flash-image-preview": "Nano banana 2",
+  "seedream-5-0-pro": "Seedream 5.0 Pro",
+  "seedream-5-0-lite": "Seedream 5.0 Lite",
+  "grok-imagine-image": "Grok Imagine Image",
+};
+function imageModelLabel(model) {
+  return IMAGE_MODEL_LABELS[model] || model || "GPT Image 2 Medium";
+}
 // 视频编辑器外壳以桌面端 16:9 布局为基准固定尺寸；所选比例只影响槽内画面。
 const VIDEO_EDITOR_DEFAULT_WIDTH = 620;
 const VIDEO_EDITOR_DEFAULT_HEIGHT = 650;
@@ -3668,7 +3681,7 @@ function renderImagePreview(node) {
     return `<div class="image-preview-state running generation-status" aria-label="生成中">
       <div class="generation-status-row"><strong>生成中</strong></div>
       <div class="generation-progress-track is-indeterminate" aria-hidden="true"><i style="width: 24%"></i></div>
-      <span class="generation-model-label">${escapeHtml(settings.model || IMAGE_NODE_DEFAULTS.model)}</span>
+      <span class="generation-model-label">${escapeHtml(imageModelLabel(settings.model))}</span>
       <span class="generation-status-message">${escapeHtml(node.statusMessage || "任务已提交")}</span>
     </div>`;
   }

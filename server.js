@@ -16335,6 +16335,10 @@ function normalizeCanvasImageModel(value) {
   // GPT Image 2 分档：gpt-image2-high / gpt-image2-medium（paisio 网关模型 ID）
   if (["gpt-image2-high", "gpt-image-2-high", "gptimage2high", "gpt-image2-high"].includes(raw)) return "gpt-image2-high";
   if (["gpt-image2-medium", "gpt-image-2-medium", "gptimage2medium", "gpt-image2-medium"].includes(raw)) return "gpt-image2-medium";
+  // Nano banana（paisio gemini 图片模型）：
+  // gemini-3-pro-image-preview = Nano banana pro；gemini-3.1-flash-image-preview = Nano banana 2
+  if (["gemini-3-pro-image-preview", "nanobanana-pro", "nanobanana-pro-1k", "firefly-nano-banana-pro"].includes(raw)) return "gemini-3-pro-image-preview";
+  if (["gemini-3.1-flash-image-preview", "gemini-3-1-flash-image-preview", "nanobanana2", "nanobanana-2", "firefly-nano-banana2"].includes(raw)) return "gemini-3.1-flash-image-preview";
   return "gpt-image2-medium";
 }
 
@@ -16362,6 +16366,12 @@ function canvasImageModelConfig(value) {
   }
   if (key === "gpt-image2-medium") {
     return { key, provider: "gpt", model: "gpt-image2-medium", supportsSize: true };
+  }
+  if (key === "gemini-3-pro-image-preview") {
+    return { key, provider: "gpt", model: "gemini-3-pro-image-preview", supportsSize: true };
+  }
+  if (key === "gemini-3.1-flash-image-preview") {
+    return { key, provider: "gpt", model: "gemini-3.1-flash-image-preview", supportsSize: true };
   }
   return { key, provider: "gpt", model: GPT_IMAGE_MODEL, supportsSize: true };
 }
@@ -26555,7 +26565,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The image description." },
-          imageModel: { type: "string", enum: ["gpt-image2-high", "gpt-image2-medium", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image2-medium" },
+          imageModel: { type: "string", enum: ["gpt-image2-high", "gpt-image2-medium", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image2-medium" },
           ratio: { type: "string", enum: Object.keys(CANVAS_IMAGE_SIZE_TABLE), default: "16:9" },
           resolution: { type: "string", enum: ["1k", "2k", "4k"], default: "1k" },
           referenceImages: { type: "array", items: { type: "string" }, maxItems: 4 },

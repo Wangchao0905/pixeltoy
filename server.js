@@ -207,7 +207,8 @@ const ARK_PERSON_TARGET_MODELS = new Set([
 ]);
 const DEFAULT_VIDEO_CONFIG_MODEL = "seedance-2-0-fast";
 const DEFAULT_PAISIO_MODEL_ID = "sd3-720p";
-const PAISIO_SD3_MODELS = new Set(["sd3-480p", "sd3-720p"]);
+const PAISIO_SEEDANCE_M_MODEL = "seedance-2-0-m";
+const PAISIO_SD3_MODELS = new Set([PAISIO_SEEDANCE_M_MODEL, "sd3-480p", "sd3-720p"]);
 const FALLBACK_ASSET_ANALYZER_MODEL = "claude-opus-4-8";
 const FALLBACK_STORYBOARD_MODEL = "gpt-5.6-sol"; // storyboard 用独立的 STORYBOARD_API_KEY(GPT 组);analyzer 才用 Claude key
 const ASSET_ANALYZER_MODEL_ALIASES = {
@@ -13577,7 +13578,8 @@ function normalizeGravitexSeedanceModel(value) {
 function normalizeVideoConfigModelName(value = "") {
   const raw = compactLine(value || DEFAULT_VIDEO_CONFIG_MODEL);
   const lower = raw.toLowerCase();
-  if (["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
+  if (raw === "sd3-480p" || raw === "sd3-720p") return PAISIO_SEEDANCE_M_MODEL;
+  if (["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
   if (/grok|xai/.test(lower)) return "grok-imagine-video";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0";
   if (/(?:byteplus|海外|modelark|ap-southeast)/.test(lower) && /(?:2[.-]?5)/.test(lower)) return "seedance-2-5-byteplus";
@@ -13609,9 +13611,10 @@ function normalizeVideoResolution(value, model = "") {
   const isFastOrMini = /(?:fast|mini)/i.test(String(model || ""));
   // Seedance 2.5 仅支持 480p/720p（无 1080p/4k）
   const is25 = /(?:2-5|2\.5)/i.test(String(model || ""));
+  const isPaisioSd3 = PAISIO_SD3_MODELS.has(compactLine(model));
   if (["480p", "720p"].includes(lower)) return lower;
-  if (lower === "1080p" && !isFastOrMini && !is25) return lower;
-  if (lower === "4k" && !isFastOrMini && !is25) return "4k";
+  if (lower === "1080p" && !isFastOrMini && !is25 && !isPaisioSd3) return lower;
+  if (lower === "4k" && !isFastOrMini && !is25 && !isPaisioSd3) return "4k";
   return "720p";
 }
 
@@ -16084,8 +16087,12 @@ async function buildPaisioVideoGenerationPayload(body = {}, options = {}) {
   const prompt = cleanSeedancePromptForSubmission(body.prompt);
   if (!prompt) throw new Error("缺少视频提示词");
   const requestedModel = compactLine(body.modelMode || body.model || "");
-  const paisioModel = PAISIO_SD3_MODELS.has(requestedModel)
-    ? requestedModel
+  const requestedResolution = compactLine(
+    body.resolution || (requestedModel === "sd3-480p" ? "480p" : requestedModel === "sd3-720p" ? "720p" : "720p"),
+  ).toLowerCase();
+  const paisioResolution = ["480p", "720p"].includes(requestedResolution) ? requestedResolution : "720p";
+  const paisioModel = requestedModel === PAISIO_SEEDANCE_M_MODEL || PAISIO_SD3_MODELS.has(requestedModel)
+    ? `sd3-${paisioResolution}`
     : DEFAULT_PAISIO_MODEL_ID;
   const imageReferences = [];
   const videoReferences = [];
@@ -16969,6 +16976,8 @@ async function createCanvasImageGeneration(body = {}) {
     }
   }
   const env = { ...process.env, OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "", OPENAI_BASE_URL: canvasImageBaseUrl() };
+  // 2026-08-18 调试：确认 pm2 运行时 key/baseUrl/模型（定位鉴权失败）
+  console.log(`[image-gen] task=${taskId.slice(0, 8)} model=${modelConfig.model} key=${(imageApiKey() || "").slice(0, 10) || "EMPTY"} base=${canvasImageBaseUrl()} args=${JSON.stringify(args).slice(0, 300)}`);
   canvasImageJobs.set(taskId, {
     taskId, // fix:image_undefined — finalize 用 entry.taskId 生成库 id,缺此字段会导致 id 恒为 image_undefined,每次覆盖同一条
     status: "running",
@@ -23916,7 +23925,7 @@ function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
 function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
   const name = compactLine(shotName || "");
   const requestedModel = compactLine(modelName || "");
-  const supportedModels = new Set(["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-byteplus", "grok-imagine-video"]);
+  const supportedModels = new Set(["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, "sd3-480p", "sd3-720p", "seedance-2-0-byteplus", "grok-imagine-video"]);
   if (!name) throw new Error("缺少视频片段");
   if (!supportedModels.has(requestedModel)) throw new Error("不支持的视频模型");
   const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];
@@ -26585,7 +26594,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The video description." },
-          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "sd3-480p", "sd3-720p", "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
+          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
           duration: { type: "number", minimum: 1, default: 5 },
           ratio: { type: "string", default: "9:16" },
           firstFrameUrl: { type: "string" },

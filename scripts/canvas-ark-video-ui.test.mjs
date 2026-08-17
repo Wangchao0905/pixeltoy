@@ -62,8 +62,8 @@ assert.doesNotMatch(modelOptions, /文生视频/, "video model options must not 
 assert.match(modelOptions, /<option value="seedance-2-5">Seedance 2\.5<\/option>/, "canvas must offer Seedance 2.5");
 assert.match(modelOptions, /<option value="seedance-2-5-byteplus">Seedance 2\.5\(海外火山\)<\/option>/, "canvas must offer overseas Seedance 2.5");
 assert.match(modelOptions, /<option value="seedance-2-0">Seedance 2\.0<\/option>/, "base Seedance option must use its short display name");
-assert.match(modelOptions, /<option value="sd3-480p">sd3-480p<\/option>/, "canvas must offer Paisio sd3-480p");
-assert.match(modelOptions, /<option value="sd3-720p">sd3-720p<\/option>/, "canvas must offer Paisio sd3-720p");
+assert.match(modelOptions, /<option value="seedance-2-0-m">Seedance 2\.0 M<\/option>/, "canvas must offer the merged Paisio Seedance 2.0 M model");
+assert.doesNotMatch(modelOptions, /value="sd3-(?:480p|720p)"/, "canvas must not expose Paisio resolutions as separate models");
 assert.doesNotMatch(modelOptions, /seedance-2-0-person-reference|人物参考/, "removed person-reference model must not remain selectable");
 assert.match(html, /<input[^>]*max="30"[^>]*data-node-field="duration"/, "video duration control must expose the 30-second Seedance 2.5 range");
 const videoResolutionOptions = html.match(/<select data-node-field="resolution"(?:\s[^>]*)?>[\s\S]*?<\/select>/g)?.find((block) => block.includes('value="480p"')) || "";

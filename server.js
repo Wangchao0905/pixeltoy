@@ -25386,6 +25386,9 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   const requestedSfxStyle = normalizeVideoSfxStyle(
     body.sfxStyle || currentConfig.sfxStyle || currentConfig.settings?.sfxStyle || "none",
   );
+  const requestedModelName = normalizeVideoConfigModelName(
+    body.modelName || currentConfig.modelName || currentConfig.settings?.modelName || DEFAULT_VIDEO_CONFIG_MODEL,
+  );
   const requestedDurationMode = persistProjectDurationMode(
     episodeRoot,
     body.durationMode || projectDurationMode(episodeRoot),
@@ -25613,7 +25616,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     }),
     isolatedFromLegacy: !previousHadIsolation,
     promptsPath: path.relative(episodeRoot, promptPath),
-    modelName: normalizeVideoConfigModelName(body.modelName || previous.modelName || DEFAULT_VIDEO_CONFIG_MODEL),
+    modelName: requestedModelName,
     modelAliases: previous.modelAliases || [DEFAULT_VIDEO_CONFIG_MODEL],
     dialogueLanguage,
     dialectStyle: requestedDialectStyle,
@@ -25630,7 +25633,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     durationAuthority: storyboardsActive ? "storyboard" : "script_duration_plan",
     settings: {
       ratio: body.ratio || previous.settings?.ratio || "9:16",
-      resolution: body.resolution || previous.settings?.resolution || "480p",
+      resolution: normalizeVideoResolution(body.resolution || previous.settings?.resolution || "480p", requestedModelName),
       dialogueLanguage,
       dialectStyle: requestedDialectStyle,
       sfxStyle: requestedSfxStyle,

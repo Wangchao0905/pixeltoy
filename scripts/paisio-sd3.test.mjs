@@ -8,15 +8,21 @@ const moduleNamespace = await import(path.join(root, "server.js"));
 const { __test } = moduleNamespace.default?.__test ? moduleNamespace.default : moduleNamespace;
 const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, normalizePaisioDuration, normalizePaisioStatus } = __test.canvasVideo;
 
-for (const model of ["sd3-480p", "sd3-720p"]) {
-  assert.equal(canvasVideoProviderForBody({ model, modelMode: model }), "paisio", `${model} must route through Paisio`);
-  const payload = await buildPaisioVideoGenerationPayload({ model, prompt: "sd3 模型路由测试", duration: 8, ratio: "16:9" });
-  assert.equal(payload.model, model, `${model} must be sent as the Paisio model ID`);
+for (const resolution of ["480p", "720p"]) {
+  assert.equal(canvasVideoProviderForBody({ model: "seedance-2-0-m", modelMode: "seedance-2-0-m" }), "paisio", "Seedance 2.0 M must route through Paisio");
+  const payload = await buildPaisioVideoGenerationPayload({ model: "seedance-2-0-m", prompt: "sd3 模型路由测试", duration: 8, resolution, ratio: "16:9" });
+  assert.equal(payload.model, `sd3-${resolution}`, `${resolution} must select the matching Paisio model ID`);
   assert.equal(payload.duration, 8);
 }
+for (const [model, resolution] of [["sd3-480p", "480p"], ["sd3-720p", "720p"]]) {
+  const payload = await buildPaisioVideoGenerationPayload({ model, prompt: "旧配置兼容测试", duration: 8 });
+  assert.equal(payload.model, model);
+  assert.equal(payload.aspect_ratio, "9:16");
+  assert.equal(resolution, model.endsWith("480p") ? "480p" : "720p");
+}
 assert.notEqual(canvasVideoProviderForBody({ model: "seedance-2-0-super", modelMode: "seedance-2-0-super" }), "paisio", "removed super model must not route through Paisio");
-assert.equal(normalizePaisioDuration(1, "sd3-480p"), 4, "sd3 models require at least four seconds");
-assert.equal(normalizePaisioDuration(99, "sd3-720p"), 15, "sd3 models are capped at fifteen seconds");
+assert.equal(normalizePaisioDuration(1, "seedance-2-0-m"), 4, "Seedance 2.0 M requires at least four seconds");
+assert.equal(normalizePaisioDuration(99, "seedance-2-0-m"), 15, "Seedance 2.0 M is capped at fifteen seconds");
 assert.equal(
   normalizePaisioStatus({ task_id: "task-1", status: "completed", video_url: "https://cdn.example/video?id=1" }).videoUrl,
   "https://cdn.example/video?id=1",
@@ -24,7 +30,8 @@ assert.equal(
 );
 
 const referencePayload = await buildPaisioVideoGenerationPayload({
-  model: "sd3-720p",
+  model: "seedance-2-0-m",
+  resolution: "720p",
   prompt: "@图片1 与@视频1 配合@音频1",
   firstFrameUrl: "https://cdn.example/first.png",
   lastFrameUrl: "https://cdn.example/last.png",
@@ -42,7 +49,8 @@ assert.equal(referencePayload.end_image_url, "https://cdn.example/last.png");
 
 await assert.rejects(
   () => buildPaisioVideoGenerationPayload({
-    model: "sd3-720p",
+    model: "seedance-2-0-m",
+    resolution: "720p",
     prompt: "禁止使用虚拟资产 URI",
     assets: [{ id: "asset-1", name: "人物.png", url: "asset://asset-1", mediaType: "image" }],
   }),
@@ -57,15 +65,16 @@ const index = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const canvasHtml = fs.readFileSync(path.join(root, "public", "canvas.html"), "utf8");
 
 assert.match(server, /PAISIO_SD3_MODELS/);
+assert.match(server, /PAISIO_SEEDANCE_M_MODEL/);
 assert.match(server, /callPaisioJson\("\/v1\/videos"/);
 assert.doesNotMatch(server, /PAISIO_SEEDANCE_SUPER_MODEL|seedance-2-0-super/);
 assert.doesNotMatch(app, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.doesNotMatch(canvas, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.doesNotMatch(index, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.doesNotMatch(canvasHtml, /seedance-2-0-super|Seedance 2\.0 super/);
-assert.match(index, /value="sd3-480p">sd3-480p/);
-assert.match(index, /value="sd3-720p">sd3-720p/);
-assert.match(canvasHtml, /value="sd3-480p">sd3-480p/);
-assert.match(canvasHtml, /value="sd3-720p">sd3-720p/);
+assert.match(index, /value="seedance-2-0-m">Seedance 2\.0 M/);
+assert.match(canvasHtml, /value="seedance-2-0-m">Seedance 2\.0 M/);
+assert.doesNotMatch(index, /value="sd3-(?:480p|720p)"/);
+assert.doesNotMatch(canvasHtml, /value="sd3-(?:480p|720p)"/);
 
 console.log("paisio sd3 tests passed");

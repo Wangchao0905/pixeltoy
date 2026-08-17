@@ -189,6 +189,8 @@ const ARK_PERSON_TARGET_MODELS = new Set([
 const LEGACY_MODEL_MIGRATIONS = {
   [LIVENESS_MODEL]: "seedance-2-0",
   "seedance-2-0-person-reference": "seedance-2-0",
+  "sd3-480p": "seedance-2-0-m",
+  "sd3-720p": "seedance-2-0-m",
 };
 const VIDEO_MODEL_LABELS = {
   "seedance-2-5": "Seedance 2.5",
@@ -196,8 +198,7 @@ const VIDEO_MODEL_LABELS = {
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",
-  "sd3-480p": "sd3-480p",
-  "sd3-720p": "sd3-720p",
+  "seedance-2-0-m": "Seedance 2.0 M",
   [BYTEPLUS_MODEL]: "Seedance 2.0(海外火山)",
 };
 // 海外火山(BytePlus)会对生成的音频做内容审核,判定敏感就整段失败。命中这个错误时自动关音频重试一次。
@@ -2267,7 +2268,8 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
   const model = settings.model || VIDEO_NODE_DEFAULTS.model;
   const isFastOrMini = /(?:fast|mini)/i.test(model);
   const is25 = /(?:2-5|2\.5)/i.test(model);
-  const supports1080p = !isFastOrMini && !is25;
+  const isPaisioSd3 = model === "seedance-2-0-m" || model === "sd3-480p" || model === "sd3-720p";
+  const supports1080p = !isFastOrMini && !is25 && !isPaisioSd3;
   const supports4k = model === "seedance-2-0";
   const supported = new Set(["480p", "720p"]);
   if (supports1080p) supported.add("1080p");

@@ -636,7 +636,19 @@ async function api(path, options = {}) {
   } finally {
     clearTimeout(timer);
   }
-  const data = await res.json();
+  const responseText = await res.text();
+  let data;
+  try {
+    data = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    const contentType = res.headers.get("content-type") || "";
+    const isHtml = /text\/html/i.test(contentType) || /^\s*</.test(responseText);
+    const error = new Error(
+      `${path} 返回了非 JSON 响应（HTTP ${res.status}${isHtml ? "，可能是登录页或错误网关" : ""}）。请刷新页面并确认已登录 pixeltoy.cn。`,
+    );
+    error.status = res.status;
+    throw error;
+  }
   if (!res.ok || data.ok === false) throw new Error(data.message || `HTTP ${res.status}`);
   return data;
 }
@@ -2101,6 +2113,13 @@ function friendlyVideoError(message = "") {
     return {
       title: "接口鉴权失败",
       detail: "请检查视频生成 API Key 或服务配置。",
+      meta: raw,
+    };
+  }
+  if (/非 JSON|登录页|错误网关|Unexpected token/i.test(raw)) {
+    return {
+      title: "接口返回了网页",
+      detail: "视频请求没有返回 JSON，通常是登录状态失效或页面缓存指向了错误网关。请刷新页面并重新登录后重试。",
       meta: raw,
     };
   }

@@ -71,6 +71,8 @@ assert.match(videoResolutionOptions, /value="720p"/, "video resolution must offe
 assert.match(videoResolutionOptions, /value="1080p"/, "video resolution must offer 1080p");
 assert.match(videoResolutionOptions, /value="4k"/, "video resolution must offer 4k");
 assert.match(js, /data-video-action="toggle-settings"/, "video settings toggle must be wired in the canvas controller");
+assert.match(js, /const responseText = await res\.text\(\)/, "canvas API must inspect response text before JSON parsing");
+assert.match(js, /可能是登录页或错误网关/, "canvas API must explain HTML responses instead of surfacing JSON parse errors");
 assert.match(css, /\.video-node\.is-selected \.video-selection-handle/, "selected video nodes must show square selection handles");
 assert.match(css, /\.video-selection-handles\s*\{[^}]*pointer-events:\s*none/s, "video selection overlay must not block controls when its corner handles are hidden");
 assert.match(css, /\.video-selection-handle\s*\{[^}]*pointer-events:\s*auto/s, "visible video resize handles must still accept pointer input");

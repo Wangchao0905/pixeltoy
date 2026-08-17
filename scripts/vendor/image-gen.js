@@ -87,6 +87,10 @@ function buildApiUrl(baseUrl, pathWithV1) {
   return `${base}${apiPath}`;
 }
 
+function isPaisioGateway(baseUrl) {
+  return /(^|:\/\/)(?:www\.)?api\.paisio\.online(?::\d+)?(?:\/|$)/i.test(String(baseUrl || ""));
+}
+
 function isXibApiGateway(baseUrl) {
   return /(^|:\/\/)(?:www\.)?xibapi\.com(?:\/|$)/i.test(String(baseUrl || ""));
 }
@@ -408,6 +412,30 @@ async function buildRequest(args, mode) {
   }
 
   const image = requireArg(args, "image");
+  if (mode === "image" && isPaisioGateway(args["base-url"])) {
+    // paisio 的 /v1/responses 图片生成未启用（403 Image generation is not enabled for this group），
+    // 必须走 /v1/images/edits（multipart form），否则被误报为鉴权失败。
+    const source = await imageToFormFile(image);
+    const form = new FormData();
+    form.append("image", source.blob, source.name);
+    form.append("prompt", prompt);
+    form.append("model", args["image-model"] || "gpt-image2-medium");
+    form.append("n", String(n));
+    form.append("quality", args.quality || "auto");
+    form.append("size", args.size || "1024x1024");
+    form.append("response_format", "url");
+    return {
+      url: buildApiUrl(args["base-url"], "/v1/images/edits"),
+      defaultOut: "edited-image.png",
+      options: {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
+        },
+        body: form,
+      },
+    };
+  }
   if (mode === "image") {
     // 主图 + 附加参考图（--reference-image，多张用平台分隔符隔开）全部作为 input_image 传入，
     // gpt-image-2 会直接看到这些像素作为参考。此前只发主图，--reference-image 被静默丢弃。

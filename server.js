@@ -16910,6 +16910,12 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
   const status = Number(detail.status || 0);
   const upstreamMessage = detail.upstreamMessage || detail.message || "";
   if (status === 401 || status === 403) {
+    // 2026-08-18：403 不一定是 key 问题（paisio 的 responses 接口返回
+    // "Image generation is not enabled for this group" / 402 余额不足）。
+    // 有可读上游消息时优先展示真实原因，避免误导用户以为是鉴权。
+    if (upstreamMessage && !/invalid.*api.?key|authentication|unauthorized/i.test(upstreamMessage)) {
+      return `上游拒绝图片请求：${String(upstreamMessage).slice(0, 200)}`;
+    }
     return provider === "ark"
       ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
       : provider === "grok"
@@ -16917,6 +16923,9 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
       : "出图鉴权失败：请检查图片生成 API Key 配置。";
   }
   if (status === 429) return "生图接口限流（HTTP 429），请稍后重试。";
+  if (status === 402 || /insufficient_balance|余额不足/i.test(upstreamMessage)) {
+    return "图片生成余额不足：请到网关控制台充值后重试。";
+  }
   if (isCanvasImagePolicyFailure(`${upstreamMessage} ${text}`)) return "提示词被安全审核拦截，请调整后重试。";
   if (/aspect[\s_-]*ratio|宽高比|画幅比例/i.test(`${upstreamMessage} ${text}`)) {
     return provider === "gpt"

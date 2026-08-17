@@ -150,6 +150,10 @@ const DEFAULT_PAISIO_VIDEO_BASE_URL = "https://api.paisio.online/v1";
 const PAISIO_SEEDANCE_SUPER_ASSET_UPLOAD_ENV = "PAISIO_SEEDANCE_SUPER_ASSET_UPLOAD";
 const PAISIO_SEEDANCE_SUPER_ASSET_SYNC_INTERVAL_MS = 2500;
 const PAISIO_SEEDANCE_SUPER_ASSET_SYNC_TIMEOUT_MS = 120000;
+const PAISIO_VIDEO_REQUEST_TIMEOUT_MS = Math.max(15_000, Number(process.env.PAISIO_VIDEO_REQUEST_TIMEOUT_MS || 45_000));
+const PAISIO_REFERENCE_FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.PAISIO_REFERENCE_FETCH_TIMEOUT_MS || 20_000));
+const paisioReferenceUrlCache = new Map();
+let paisioVirtualAssetRouteUnavailable = false;
 const GROK_API_BASE_URL = "https://apikey.fun/v1";
 const VIDEO_API_LOG_PATH = path.join(APP_ROOT, ".pixel-toys-video-api.log");
 const VIDEO_API_REQUEST_TIMEOUT_MS = Math.max(10_000, Number(process.env.VIDEO_API_REQUEST_TIMEOUT_MS || 120_000));
@@ -1287,6 +1291,30 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = VIDEO_API_REQUEST
       ...options,
       signal: options.signal || controller.signal,
     });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      const timeoutError = new Error(`视频网关请求超时（${Math.round(timeoutMs / 1000)} 秒）：${url}`);
+      timeoutError.code = "VIDEO_API_TIMEOUT";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// fetch() resolves when headers arrive; providers can still leave response.text()/arrayBuffer()
+// pending indefinitely. Keep the same abort signal alive until the body is consumed.
+async function fetchWithBodyTimeout(url, options = {}, timeoutMs = VIDEO_API_REQUEST_TIMEOUT_MS, bodyType = "text") {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal,
+    });
+    const body = bodyType === "arrayBuffer" ? await response.arrayBuffer() : await response.text();
+    return { response, body };
   } catch (error) {
     if (error?.name === "AbortError") {
       const timeoutError = new Error(`视频网关请求超时（${Math.round(timeoutMs / 1000)} 秒）：${url}`);
@@ -15301,20 +15329,29 @@ function normalizeVideoGenerationErrorMessage(message = "") {
   return nested;
 }
 
-async function callVideoJson(url, options = {}, missingKeyMessage = "缺少视频生成 API Key", provider = canvasVideoProvider()) {
+async function callVideoJson(
+  url,
+  options = {},
+  missingKeyMessage = "缺少视频生成 API Key",
+  provider = canvasVideoProvider(),
+  timeoutMs = VIDEO_API_REQUEST_TIMEOUT_MS,
+) {
   const key = videoApiKey(provider);
   if (!key) throw new Error(missingKeyMessage);
   const method = options.method || "GET";
   let response;
+  let text;
   try {
-    response = await fetchWithTimeout(url, {
+    const result = await fetchWithBodyTimeout(url, {
       ...options,
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
         ...(options.headers || {}),
       },
-    });
+    }, timeoutMs);
+    response = result.response;
+    text = result.body;
   } catch (error) {
     const message = normalizeVideoGenerationErrorMessage(error.message || "视频网关请求失败");
     appendVideoApiLog({
@@ -15326,7 +15363,6 @@ async function callVideoJson(url, options = {}, missingKeyMessage = "缺少视�
     });
     throw new Error(message);
   }
-  const text = await response.text();
   let data = {};
   try {
     data = text ? JSON.parse(text) : {};
@@ -15419,6 +15455,7 @@ async function callPaisioJson(pathname, options = {}) {
     options,
     "缺少 Paisio 视频 API Key：请在 .env.local 配置 PAISIO_API_KEY 后重启服务。",
     "paisio",
+    PAISIO_VIDEO_REQUEST_TIMEOUT_MS,
   );
 }
 
@@ -15431,18 +15468,20 @@ async function callPaisioMultipart(pathname, { buffer, fileName, mime, type } = 
   form.append("type", type || "image");
   const url = paisioVideoUrl(pathname);
   let response;
+  let text;
   try {
-    response = await fetchWithTimeout(url, {
+    const result = await fetchWithBodyTimeout(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}` },
       body: form,
-    });
+    }, PAISIO_VIDEO_REQUEST_TIMEOUT_MS);
+    response = result.response;
+    text = result.body;
   } catch (error) {
     const message = normalizeVideoGenerationErrorMessage(error.message || "Paisio 素材上传请求失败");
     appendVideoApiLog({ provider: "paisio", method: "POST", url, status: error.code || error.name || "NETWORK_ERROR", message });
     throw new Error(message);
   }
-  const text = await response.text();
   let data = {};
   try {
     data = text ? JSON.parse(text) : {};
@@ -16000,8 +16039,28 @@ function paisioReferenceMime(url, kind, responseMime = "") {
   return MIME[extension] || limits.fallbackMime;
 }
 
+async function paisioLocalReferenceUrl(source, name) {
+  const raw = compactLine(source);
+  if (paisioReferenceUrlCache.has(raw)) return paisioReferenceUrlCache.get(raw);
+  const localFile = localMediaPathFromUrl(raw) || localFilePathFromUrl(raw) || localPublicAssetPathFromUrl(raw);
+  if (!localFile || !fs.existsSync(localFile) || !fs.statSync(localFile).isFile()) return "";
+  if (!publicAssetStorageConfig()) {
+    throw new Error(`Paisio 参考素材「${name || "未命名素材"}」缺少对象存储公网配置，无法提交给上游。`);
+  }
+  const fileName = path.basename(localFile);
+  const storageUrl = await uploadPublicAssetToS3({
+    buffer: fs.readFileSync(localFile),
+    mime: MIME[path.extname(localFile).toLowerCase()] || "application/octet-stream",
+    fileName,
+  });
+  if (!storageUrl) throw new Error(`Paisio 参考素材「${name || "未命名素材"}」未能生成对象存储公网地址。`);
+  paisioReferenceUrlCache.set(raw, storageUrl);
+  return storageUrl;
+}
+
 async function paisioPublicReferenceUrl(source, name) {
-  const url = await assetUrlToReferenceUrl(source, { allowAssetUrl: false });
+  const storageUrl = await paisioLocalReferenceUrl(source, name);
+  const url = storageUrl || await assetUrlToReferenceUrl(source, { allowAssetUrl: false });
   if (!/^https?:\/\//i.test(url)) {
     throw new Error(`Paisio 参考素材「${name || "未命名素材"}」无法解析为公网 URL。`);
   }
@@ -16011,13 +16070,18 @@ async function paisioPublicReferenceUrl(source, name) {
 async function fetchPaisioVirtualAssetInput(source, name, kind) {
   const url = await paisioPublicReferenceUrl(source, name);
   const limits = paisioVirtualAssetLimits(kind);
-  const response = await fetchWithTimeout(url, { method: "GET", redirect: "follow" });
+  const { response, body } = await fetchWithBodyTimeout(
+    url,
+    { method: "GET", redirect: "follow" },
+    PAISIO_REFERENCE_FETCH_TIMEOUT_MS,
+    "arrayBuffer",
+  );
   if (!response.ok) throw new Error(`Paisio 参考素材「${name || "未命名素材"}」下载失败：HTTP ${response.status}`);
   const contentLength = Number(response.headers.get("content-length") || 0);
   if (contentLength > limits.maxBytes) {
     throw new Error(`Paisio ${kind} 素材「${name || "未命名素材"}」超过 ${Math.round(limits.maxBytes / 1024 / 1024)}MB 限制。`);
   }
-  const buffer = Buffer.from(await response.arrayBuffer());
+  const buffer = Buffer.from(body);
   if (!buffer.length) throw new Error(`Paisio 参考素材「${name || "未命名素材"}」为空。`);
   if (buffer.length > limits.maxBytes) {
     throw new Error(`Paisio ${kind} 素材「${name || "未命名素材"}」超过 ${Math.round(limits.maxBytes / 1024 / 1024)}MB 限制。`);
@@ -16071,7 +16135,11 @@ async function paisioVideoReference(source, name, kind, options = {}) {
   const cleanSource = compactLine(source);
   if (!cleanSource) return null;
   if (/^asset:\/\//i.test(cleanSource)) return { url: cleanSource, assetId: cleanSource.slice("asset://".length), uploaded: false };
-  if (process.env[PAISIO_SEEDANCE_SUPER_ASSET_UPLOAD_ENV] === "0" || options.useVirtualAssets === false) {
+  if (
+    process.env[PAISIO_SEEDANCE_SUPER_ASSET_UPLOAD_ENV] === "0"
+    || options.useVirtualAssets === false
+    || paisioVirtualAssetRouteUnavailable
+  ) {
     return { url: await paisioPublicReferenceUrl(cleanSource, name), uploaded: false };
   }
   const uploader = options.uploadVirtualAsset || uploadPaisioVirtualAsset;
@@ -16080,6 +16148,7 @@ async function paisioVideoReference(source, name, kind, options = {}) {
     result = await uploader(cleanSource, name, kind);
   } catch (error) {
     if (error?.code !== "PAISIO_VIRTUAL_ASSET_ROUTE_UNAVAILABLE" && error?.statusCode !== 404) throw error;
+    paisioVirtualAssetRouteUnavailable = true;
     const publicUrl = await paisioPublicReferenceUrl(cleanSource, name);
     appendVideoApiLog({
       provider: "paisio",

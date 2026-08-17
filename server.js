@@ -16081,12 +16081,17 @@ function paisioPublicAssetFileFromRequest(url) {
 
 async function paisioLocalReferenceUrl(source, name) {
   const raw = compactLine(source);
-  if (paisioReferenceUrlCache.has(raw)) return paisioReferenceUrlCache.get(raw);
+  const cached = paisioReferenceUrlCache.get(raw);
+  if (cached?.expiresAt > Date.now()) return cached.url;
+  if (cached) paisioReferenceUrlCache.delete(raw);
   const localFile = localMediaPathFromUrl(raw) || localFilePathFromUrl(raw) || localPublicAssetPathFromUrl(raw);
   if (!localFile || !fs.existsSync(localFile) || !fs.statSync(localFile).isFile()) return "";
   const publicUrl = createPaisioPublicAssetUrl(localFile);
   if (!publicUrl) throw new Error(`Paisio 参考素材「${name || "未命名素材"}」无法生成临时公网地址。`);
-  paisioReferenceUrlCache.set(raw, publicUrl);
+  paisioReferenceUrlCache.set(raw, {
+    url: publicUrl,
+    expiresAt: Date.now() + PAISIO_PUBLIC_ASSET_TOKEN_TTL_MS,
+  });
   return publicUrl;
 }
 

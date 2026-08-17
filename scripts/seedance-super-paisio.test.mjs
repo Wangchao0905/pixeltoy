@@ -13,8 +13,13 @@ assert.equal(
   "paisio",
   "Seedance 2.0 super must route through Paisio",
 );
+for (const model of ["sd3-480p", "sd3-720p"]) {
+  assert.equal(canvasVideoProviderForBody({ model, modelMode: model }), "paisio", `${model} must route through Paisio`);
+}
 assert.equal(normalizePaisioDuration(0), 6, "Paisio duration defaults to six seconds");
 assert.equal(normalizePaisioDuration(99), 30, "Paisio duration is capped at thirty seconds");
+assert.equal(normalizePaisioDuration(1, "sd3-480p"), 4, "sd3 models require at least four seconds");
+assert.equal(normalizePaisioDuration(99, "sd3-720p"), 15, "sd3 models are capped at fifteen seconds");
 assert.equal(
   normalizePaisioStatus({ task_id: "task-1", status: "completed", video_url: "https://cdn.example/video?id=1" }).videoUrl,
   "https://cdn.example/video?id=1",
@@ -32,6 +37,12 @@ assert.match(payload.prompt, /@Image1 在街道上向镜头走来$/);
 assert.equal(payload.duration, 8);
 assert.equal(payload.aspect_ratio, "9:16");
 assert.equal(payload.image_url, undefined);
+
+for (const model of ["sd3-480p", "sd3-720p"]) {
+  const sd3Payload = await buildPaisioVideoGenerationPayload({ model, prompt: "sd3 模型路由测试", duration: 8, ratio: "16:9" });
+  assert.equal(sd3Payload.model, model, `${model} must be sent as the Paisio model ID`);
+  assert.equal(sd3Payload.duration, 8);
+}
 
 const uploaded = [];
 const virtualPayload = await buildPaisioVideoGenerationPayload(
@@ -94,6 +105,7 @@ const canvasHtml = fs.readFileSync(path.join(root, "public", "canvas.html"), "ut
 
 assert.match(server, /PAISIO_VIDEO_BASE_URL/);
 assert.match(server, /PAISIO_SEEDANCE_SUPER_MODEL/);
+assert.match(server, /PAISIO_SD3_MODELS/);
 assert.match(server, /callPaisioJson\("\/v1\/videos"/);
 assert.match(server, /不能使用 asset:\/\/ 引用/);
 assert.match(server, /paisioLocalReferenceUrl/);
@@ -106,5 +118,9 @@ assert.match(app, /"seedance-2-0-super": "Seedance 2\.0 super"/);
 assert.match(canvas, /"seedance-2-0-super": "Seedance 2\.0 super"/);
 assert.match(index, /value="seedance-2-0-super">Seedance 2\.0 super/);
 assert.match(canvasHtml, /value="seedance-2-0-super">Seedance 2\.0 super/);
+assert.match(index, /value="sd3-480p">sd3-480p/);
+assert.match(index, /value="sd3-720p">sd3-720p/);
+assert.match(canvasHtml, /value="sd3-480p">sd3-480p/);
+assert.match(canvasHtml, /value="sd3-720p">sd3-720p/);
 
 console.log("seedance-super-paisio ok");

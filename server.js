@@ -208,6 +208,7 @@ const ARK_PERSON_TARGET_MODELS = new Set([
 const DEFAULT_VIDEO_CONFIG_MODEL = "seedance-2-0-fast";
 const PAISIO_SEEDANCE_SUPER_MODEL = "seedance-2-0-super";
 const DEFAULT_PAISIO_SEEDANCE_MODEL_ID = "sd2-720p";
+const PAISIO_SD3_MODELS = new Set(["sd3-480p", "sd3-720p"]);
 const FALLBACK_ASSET_ANALYZER_MODEL = "claude-opus-4-8";
 const FALLBACK_STORYBOARD_MODEL = "gpt-5.6-sol"; // storyboard 用独立的 STORYBOARD_API_KEY(GPT 组);analyzer 才用 Claude key
 const ASSET_ANALYZER_MODEL_ALIASES = {
@@ -3102,7 +3103,7 @@ function canvasVideoProvider() {
 function canvasVideoProviderForBody(body = {}) {
   const modelMode = compactLine(body.modelMode || body.model || "");
   if (modelMode === "grok-imagine-video") return "grok";
-  if (modelMode === PAISIO_SEEDANCE_SUPER_MODEL) return "paisio";
+  if (modelMode === PAISIO_SEEDANCE_SUPER_MODEL || PAISIO_SD3_MODELS.has(modelMode)) return "paisio";
   // 显式选择「海外火山」模型选项时,本次生成走 BytePlus ModelArk(ap-southeast 区),优先于全局默认与自动路由。
   if (/^seedance-2-(?:0|5)-byteplus$/i.test(modelMode)) return "byteplus";
   const sourceAssets = Array.isArray(body.assets) ? body.assets : [];
@@ -13535,7 +13536,7 @@ function normalizeGravitexSeedanceModel(value) {
 function normalizeVideoConfigModelName(value = "") {
   const raw = compactLine(value || DEFAULT_VIDEO_CONFIG_MODEL);
   const lower = raw.toLowerCase();
-  if (["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_SUPER_MODEL, "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
+  if (["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_SUPER_MODEL, "sd3-480p", "sd3-720p", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
   if (/grok|xai/.test(lower)) return "grok-imagine-video";
   if (/super|超级/.test(lower)) return PAISIO_SEEDANCE_SUPER_MODEL;
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0-person-reference";
@@ -15931,10 +15932,11 @@ async function getGravitexCanvasVideoGeneration(taskId) {
   return { ...normalizeGravitexGenerationStatus(raw), provider: "gravitex" };
 }
 
-function normalizePaisioDuration(value) {
+function normalizePaisioDuration(value, model = "") {
   const number = Math.round(Number(value || 6));
+  const isSd3 = PAISIO_SD3_MODELS.has(compactLine(model));
   if (!Number.isFinite(number)) return 6;
-  return Math.max(1, Math.min(30, number));
+  return Math.max(isSd3 ? 4 : 1, Math.min(isSd3 ? 15 : 30, number));
 }
 
 function normalizePaisioStatus(raw = {}) {
@@ -16041,6 +16043,10 @@ async function paisioVideoReference(source, name, kind, options = {}) {
 async function buildPaisioVideoGenerationPayload(body = {}, options = {}) {
   const prompt = cleanSeedancePromptForSubmission(body.prompt);
   if (!prompt) throw new Error("缺少视频提示词");
+  const requestedModel = compactLine(body.modelMode || body.model || "");
+  const paisioModel = PAISIO_SD3_MODELS.has(requestedModel)
+    ? requestedModel
+    : process.env.PAISIO_SEEDANCE_SUPER_MODEL || DEFAULT_PAISIO_SEEDANCE_MODEL_ID;
   const imageReferences = [];
   const videoReferences = [];
   const audioReferences = [];
@@ -16070,12 +16076,12 @@ async function buildPaisioVideoGenerationPayload(body = {}, options = {}) {
     );
   }
   const payload = {
-    model: process.env.PAISIO_SEEDANCE_SUPER_MODEL || DEFAULT_PAISIO_SEEDANCE_MODEL_ID,
+    model: paisioModel,
     prompt: String(prompt)
       .replace(/@图片/gi, "@Image")
       .replace(/@视频/gi, "@Video")
       .replace(/@音频/gi, "@Audio"),
-    duration: normalizePaisioDuration(body.duration),
+    duration: normalizePaisioDuration(body.duration, paisioModel),
     aspect_ratio: normalizeVideoRatio(body.ratio || body.aspect_ratio) === "adaptive" ? "9:16" : normalizeVideoRatio(body.ratio || body.aspect_ratio),
   };
   if (imageReferences.length) {
@@ -23856,7 +23862,7 @@ function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
 function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
   const name = compactLine(shotName || "");
   const requestedModel = compactLine(modelName || "");
-  const supportedModels = new Set(["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_SUPER_MODEL, "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"]);
+  const supportedModels = new Set(["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_SUPER_MODEL, "sd3-480p", "sd3-720p", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"]);
   if (!name) throw new Error("缺少视频片段");
   if (!supportedModels.has(requestedModel)) throw new Error("不支持的视频模型");
   const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];
@@ -26461,7 +26467,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The video description." },
-          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_SUPER_MODEL, "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
+          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_SUPER_MODEL, "sd3-480p", "sd3-720p", "seedance-2-0-person-reference", "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
           duration: { type: "number", minimum: 1, default: 5 },
           ratio: { type: "string", default: "9:16" },
           firstFrameUrl: { type: "string" },

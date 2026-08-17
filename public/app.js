@@ -344,6 +344,8 @@ const VIDEO_MODEL_OPTIONS = {
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",
   "seedance-2-0-super": "Seedance 2.0 super",
+  "sd3-480p": "sd3-480p",
+  "sd3-720p": "sd3-720p",
   "seedance-2-0-person-reference": "Seedance 2.0 人物素材参考",
   "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
   "grok-imagine-video": "Grok Imagine Video",

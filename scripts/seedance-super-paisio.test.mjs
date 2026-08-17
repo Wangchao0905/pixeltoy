@@ -60,6 +60,22 @@ assert.deepEqual(virtualPayload.extra_videos, ["asset://va-4"]);
 assert.deepEqual(virtualPayload.extra_audios, ["asset://va-5"]);
 assert.equal(virtualPayload.end_image_url, "asset://va-2");
 
+const fallbackPayload = await buildPaisioVideoGenerationPayload(
+  {
+    model: "seedance-2-0-super",
+    prompt: "公网素材回退测试",
+    assets: [{ id: "image-404", name: "fallback.png", url: "https://cdn.example/fallback.png", mediaType: "image" }],
+  },
+  {
+    uploadVirtualAsset: async () => {
+      const error = new Error("Invalid URL (POST /v1/virtual-assets)");
+      error.code = "PAISIO_VIRTUAL_ASSET_ROUTE_UNAVAILABLE";
+      throw error;
+    },
+  },
+);
+assert.equal(fallbackPayload.image_url, "https://cdn.example/fallback.png");
+
 const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const app = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const canvas = fs.readFileSync(path.join(root, "public", "canvas.js"), "utf8");
@@ -71,6 +87,7 @@ assert.match(server, /PAISIO_SEEDANCE_SUPER_MODEL/);
 assert.match(server, /callPaisioJson\("\/v1\/videos"/);
 assert.match(server, /callPaisioMultipart\("\/v1\/virtual-assets"/);
 assert.match(server, /virtual-assets\/\$\{encodeURIComponent\(uploaded\.assetId\)\}\/sync/);
+assert.match(server, /uploadFallback: "public-url"/);
 assert.match(server, /getPaisioCanvasVideoGeneration/);
 assert.match(app, /"seedance-2-0-super": "Seedance 2\.0 super"/);
 assert.match(canvas, /"seedance-2-0-super": "Seedance 2\.0 super"/);

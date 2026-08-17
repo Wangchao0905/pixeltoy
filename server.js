@@ -15452,7 +15452,10 @@ async function callPaisioMultipart(pathname, { buffer, fileName, mime, type } = 
   if (!response.ok || data.success === false || data.ok === false) {
     const message = normalizeVideoGenerationErrorMessage(extractVideoApiError(data) || `Paisio 素材上传失败：HTTP ${response.status}`);
     appendVideoApiLog({ provider: "paisio", method: "POST", url, status: response.status, message, response: data });
-    throw new Error(message || "Paisio 素材上传失败");
+    const error = new Error(message || "Paisio 素材上传失败");
+    error.statusCode = response.status;
+    if (response.status === 404 && /Invalid URL|virtual-assets/i.test(message)) error.code = "PAISIO_VIRTUAL_ASSET_ROUTE_UNAVAILABLE";
+    throw error;
   }
   return data;
 }
@@ -16072,7 +16075,21 @@ async function paisioVideoReference(source, name, kind, options = {}) {
     return { url: await paisioPublicReferenceUrl(cleanSource, name), uploaded: false };
   }
   const uploader = options.uploadVirtualAsset || uploadPaisioVirtualAsset;
-  const result = await uploader(cleanSource, name, kind);
+  let result;
+  try {
+    result = await uploader(cleanSource, name, kind);
+  } catch (error) {
+    if (error?.code !== "PAISIO_VIRTUAL_ASSET_ROUTE_UNAVAILABLE" && error?.statusCode !== 404) throw error;
+    const publicUrl = await paisioPublicReferenceUrl(cleanSource, name);
+    appendVideoApiLog({
+      provider: "paisio",
+      method: "POST",
+      url: paisioVideoUrl("/v1/virtual-assets"),
+      status: "FALLBACK_PUBLIC_URL",
+      message: "当前网关未部署虚拟资产路由，Seedance super 回退到公网素材 URL",
+    });
+    return { url: publicUrl, uploaded: false, uploadFallback: "public-url" };
+  }
   const url = typeof result === "string" ? result : compactLine(result?.url || result?.assetUrl || result?.asset_url || "");
   if (!url) throw new Error(`Paisio 素材「${name || "未命名素材"}」上传后未返回可引用地址。`);
   return { ...result, url };

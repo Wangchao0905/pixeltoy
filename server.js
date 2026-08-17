@@ -16844,7 +16844,7 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
       ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
       : provider === "grok"
         ? "Grok 出图鉴权失败：请检查 XAI_API_KEY。"
-      : "出图鉴权失败：请检查 OPENAI_API_KEY（apikey.fun 网关）。";
+      : "出图鉴权失败：请检查图片生成 API Key 配置。";
   }
   if (status === 429) return "生图接口限流（HTTP 429），请稍后重试。";
   if (isCanvasImagePolicyFailure(`${upstreamMessage} ${text}`)) return "提示词被安全审核拦截，请调整后重试。";
@@ -16861,7 +16861,7 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
       ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
       : provider === "grok"
         ? "Grok 出图鉴权失败：请检查 XAI_API_KEY。"
-      : "出图鉴权失败：请检查 OPENAI_API_KEY（apikey.fun 网关）。";
+      : "出图鉴权失败：请检查图片生成 API Key 配置。";
   }
   if (/timeout|timed out|ETIMEDOUT/i.test(text)) return "出图超时，请重试或降低分辨率。";
   if (isCanvasImagePolicyFailure(text)) return "提示词被安全审核拦截，请调整后重试。";
@@ -16873,7 +16873,7 @@ async function createCanvasImageGeneration(body = {}) {
   if (!prompt) throw new Error("请先填写图片描述（prompt）");
   const modelConfig = canvasImageModelConfig(body.imageModel || body.model);
   if (modelConfig.provider === "gpt") {
-    if (!imageApiKey()) throw new Error("缺少 OPENAI_API_KEY：GPT Image 2 出图需要 api.apikey.fun 的生图 Key，请在 .env.local 配置后重启服务。");
+    if (!imageApiKey()) throw new Error("缺少图片生成 API Key：请在 .env.local 配置 PIXEL_TOYS_IMAGE_API_KEY 后重启服务。");
     if (!IMAGE_GEN_SKILL_SCRIPT || !fs.existsSync(IMAGE_GEN_SKILL_SCRIPT)) throw new Error("缺少 image-gen 脚本：请先安装 apikey.fun 的 image-gen skill。");
   } else if (modelConfig.provider === "grok") {
     if (!process.env.XAI_API_KEY) throw new Error("缺少 XAI_API_KEY：Grok 出图需要在 .env.local 配置后重启服务。");
@@ -26131,7 +26131,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
     if (!manifest?.items?.length) throw new Error("还没有资产解析结果，请先提取资产再生成");
     if (!manifest.confirmed) throw new Error("资产解析尚未确认，请先确认分类再生图");
     if (!isDryRun && !imageApiKey()) {
-      throw new Error("缺少 OPENAI_API_KEY：请在启动 Pixel Toys 的终端或项目 .env.local 中配置 api.apikey.fun 的 OpenAI 兼容 API Key，然后重启服务。");
+      throw new Error("缺少图片生成 API Key：请在项目 .env.local 中配置 PIXEL_TOYS_IMAGE_API_KEY，然后重启服务。");
     }
     // The asset document's text-to-image blocks are the source of truth. Keep
     // the optional style-reference image as a separate input; never inject a
@@ -26245,7 +26245,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
     const isDryRun = type === "storyboards-dry-run" || type === "storyboard-regenerate-dry-run";
     const isRegenerate = type === "storyboard-regenerate" || type === "storyboard-regenerate-dry-run";
     if (!isDryRun && !imageApiKey()) {
-      throw new Error("缺少 OPENAI_API_KEY：Production Board 需要通过 api.apikey.fun / gpt-image-2 生图模型生成，请在项目 .env.local 或启动终端配置可用 Key 后重启服务。");
+      throw new Error("缺少图片生成 API Key：Production Board 需要通过 gpt-image-2 生图模型生成，请在项目 .env.local 配置 PIXEL_TOYS_IMAGE_API_KEY 后重启服务。");
     }
     const size = IMAGE_SIZE_BY_QUALITY_16_9[String(body.quality || "1k").toLowerCase()] || DEFAULT_IMAGE_SIZE_16_9;
     persistProjectDialogueLanguage(

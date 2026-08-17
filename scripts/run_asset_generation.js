@@ -2317,7 +2317,7 @@ async function main() {
   }
   const requiresRemoteImageGen = assets.some((asset) => ["Character", "Scene", "Prop", "Insert", "Storyboard"].includes(asset.type));
   if (!args.dryRun && requiresRemoteImageGen && !IMAGE_API_KEY_ENV_NAMES.some((name) => process.env[name])) {
-    throw new Error("missing OPENAI_API_KEY for api.apikey.fun image generation");
+    throw new Error("missing PIXEL_TOYS_IMAGE_API_KEY for image generation");
   }
   console.log(`${new Date().toISOString()} generation order: characters first, scenes second, props/inserts last`);
   if (args.assetName) console.log(`${new Date().toISOString()} selected asset: ${args.assetName}`);

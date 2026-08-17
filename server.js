@@ -152,7 +152,9 @@ const PAISIO_SEEDANCE_SUPER_ASSET_SYNC_INTERVAL_MS = 2500;
 const PAISIO_SEEDANCE_SUPER_ASSET_SYNC_TIMEOUT_MS = 120000;
 const PAISIO_VIDEO_REQUEST_TIMEOUT_MS = Math.max(15_000, Number(process.env.PAISIO_VIDEO_REQUEST_TIMEOUT_MS || 45_000));
 const PAISIO_REFERENCE_FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.PAISIO_REFERENCE_FETCH_TIMEOUT_MS || 20_000));
+const PAISIO_PUBLIC_ASSET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const paisioReferenceUrlCache = new Map();
+const paisioPublicAssetTokens = new Map();
 let paisioVirtualAssetRouteUnavailable = false;
 const GROK_API_BASE_URL = "https://apikey.fun/v1";
 const VIDEO_API_LOG_PATH = path.join(APP_ROOT, ".pixel-toys-video-api.log");
@@ -16039,23 +16041,53 @@ function paisioReferenceMime(url, kind, responseMime = "") {
   return MIME[extension] || limits.fallbackMime;
 }
 
+function createPaisioPublicAssetUrl(localFile) {
+  if (!localFile || !fs.existsSync(localFile) || !fs.statSync(localFile).isFile()) return "";
+  const baseUrl = canvasPublicAssetBaseUrl();
+  if (!/^https:\/\//i.test(baseUrl)) throw new Error("Paisio 参考素材需要 HTTPS 公网地址，请配置 PUBLIC_ASSET_BASE_URL。");
+  const fingerprint = crypto
+    .createHash("sha1")
+    .update(`${localFile}:${fs.statSync(localFile).size}:${fs.statSync(localFile).mtimeMs}`)
+    .digest("hex")
+    .slice(0, 20);
+  const fileName = `paisio-${fingerprint}${path.extname(localFile).toLowerCase() || ".bin"}`;
+  const target = path.join(CANVAS_PUBLIC_ASSET_DIR, fileName);
+  if (!fs.existsSync(target)) fs.copyFileSync(localFile, target);
+  const token = crypto.randomBytes(24).toString("base64url");
+  paisioPublicAssetTokens.set(token, {
+    file: target,
+    fileName,
+    expiresAt: Date.now() + PAISIO_PUBLIC_ASSET_TOKEN_TTL_MS,
+  });
+  return `${baseUrl}/api/paisio-assets/${token}/${encodeURIComponent(fileName)}`;
+}
+
+function paisioPublicAssetFileFromRequest(url) {
+  const match = String(url?.pathname || "").match(/^\/api\/paisio-assets\/([A-Za-z0-9_-]+)\/([^/]+)$/);
+  if (!match) return "";
+  const record = paisioPublicAssetTokens.get(match[1]);
+  if (!record || record.expiresAt <= Date.now()) {
+    paisioPublicAssetTokens.delete(match[1]);
+    return "";
+  }
+  let requestedName = "";
+  try {
+    requestedName = path.basename(decodeURIComponent(match[2]));
+  } catch {
+    return "";
+  }
+  return requestedName === record.fileName ? record.file : "";
+}
+
 async function paisioLocalReferenceUrl(source, name) {
   const raw = compactLine(source);
   if (paisioReferenceUrlCache.has(raw)) return paisioReferenceUrlCache.get(raw);
   const localFile = localMediaPathFromUrl(raw) || localFilePathFromUrl(raw) || localPublicAssetPathFromUrl(raw);
   if (!localFile || !fs.existsSync(localFile) || !fs.statSync(localFile).isFile()) return "";
-  if (!publicAssetStorageConfig()) {
-    throw new Error(`Paisio 参考素材「${name || "未命名素材"}」缺少对象存储公网配置，无法提交给上游。`);
-  }
-  const fileName = path.basename(localFile);
-  const storageUrl = await uploadPublicAssetToS3({
-    buffer: fs.readFileSync(localFile),
-    mime: MIME[path.extname(localFile).toLowerCase()] || "application/octet-stream",
-    fileName,
-  });
-  if (!storageUrl) throw new Error(`Paisio 参考素材「${name || "未命名素材"}」未能生成对象存储公网地址。`);
-  paisioReferenceUrlCache.set(raw, storageUrl);
-  return storageUrl;
+  const publicUrl = createPaisioPublicAssetUrl(localFile);
+  if (!publicUrl) throw new Error(`Paisio 参考素材「${name || "未命名素材"}」无法生成临时公网地址。`);
+  paisioReferenceUrlCache.set(raw, publicUrl);
+  return publicUrl;
 }
 
 async function paisioPublicReferenceUrl(source, name) {
@@ -28617,6 +28649,11 @@ const handleRequest = async (req, res) => {
   try {
     if (isAuthApiPath(url.pathname)) return await handleAuthApi(req, res, url);
     if (url.pathname === "/api/super-pixel/chat") return await handleSuperPixelChat(req, res, url);
+    if (url.pathname.startsWith("/api/paisio-assets/")) {
+      const file = paisioPublicAssetFileFromRequest(url);
+      if (!file) return fail(res, 404, "Paisio asset not found or expired");
+      return serveMedia(req, res, file, { cacheSeconds: 300 });
+    }
     if (!requireAuth(req, res, url)) return;
     if (url.pathname.startsWith("/pixel-writer/") || url.pathname === "/pixel-writer") {
       return await proxyPixelWriter(req, res, url);

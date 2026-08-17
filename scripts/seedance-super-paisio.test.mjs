@@ -89,6 +89,8 @@ assert.match(server, /callPaisioMultipart\("\/v1\/virtual-assets"/);
 assert.match(server, /virtual-assets\/\$\{encodeURIComponent\(uploaded\.assetId\)\}\/sync/);
 assert.match(server, /uploadFallback: "public-url"/);
 assert.match(server, /paisioLocalReferenceUrl/);
+assert.match(server, /createPaisioPublicAssetUrl/);
+assert.match(server, /api\/paisio-assets/);
 assert.match(server, /paisioVirtualAssetRouteUnavailable/);
 assert.match(server, /fetchWithBodyTimeout/);
 assert.match(server, /PAISIO_VIDEO_REQUEST_TIMEOUT_MS/);

@@ -33,6 +33,33 @@ assert.equal(payload.duration, 8);
 assert.equal(payload.aspect_ratio, "9:16");
 assert.equal(payload.image_url, undefined);
 
+const uploaded = [];
+const virtualPayload = await buildPaisioVideoGenerationPayload(
+  {
+    model: "seedance-2-0-super",
+    prompt: "@图片1 与@视频1 配合@音频1",
+    firstFrameUrl: "https://cdn.example/first.png",
+    lastFrameUrl: "https://cdn.example/last.png",
+    assets: [
+      { id: "image-1", name: "人物.png", url: "https://cdn.example/person.png", mediaType: "image" },
+      { id: "video-1", name: "动作.mp4", url: "https://cdn.example/motion.mp4", mediaType: "video" },
+      { id: "audio-1", name: "对白.mp3", url: "https://cdn.example/dialogue.mp3", mediaType: "audio" },
+    ],
+  },
+  {
+    uploadVirtualAsset: async (source, name, kind) => {
+      uploaded.push({ source, name, kind });
+      return { url: `asset://va-${uploaded.length}`, assetId: `va-${uploaded.length}`, status: "active" };
+    },
+  },
+);
+assert.deepEqual(uploaded.map((item) => item.kind), ["image", "image", "image", "video", "audio"]);
+assert.equal(virtualPayload.image_url, "asset://va-1");
+assert.deepEqual(virtualPayload.extra_images, ["asset://va-3"]);
+assert.deepEqual(virtualPayload.extra_videos, ["asset://va-4"]);
+assert.deepEqual(virtualPayload.extra_audios, ["asset://va-5"]);
+assert.equal(virtualPayload.end_image_url, "asset://va-2");
+
 const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const app = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const canvas = fs.readFileSync(path.join(root, "public", "canvas.js"), "utf8");
@@ -42,6 +69,8 @@ const canvasHtml = fs.readFileSync(path.join(root, "public", "canvas.html"), "ut
 assert.match(server, /PAISIO_VIDEO_BASE_URL/);
 assert.match(server, /PAISIO_SEEDANCE_SUPER_MODEL/);
 assert.match(server, /callPaisioJson\("\/v1\/videos"/);
+assert.match(server, /callPaisioMultipart\("\/v1\/virtual-assets"/);
+assert.match(server, /virtual-assets\/\$\{encodeURIComponent\(uploaded\.assetId\)\}\/sync/);
 assert.match(server, /getPaisioCanvasVideoGeneration/);
 assert.match(app, /"seedance-2-0-super": "Seedance 2\.0 super"/);
 assert.match(canvas, /"seedance-2-0-super": "Seedance 2\.0 super"/);

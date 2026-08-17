@@ -27,7 +27,7 @@ const IMAGE_API_KEY_ENV_NAMES = [
 ];
 const IMAGE_GEN_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || process.env.IMAGE_GEN_IMAGE_MODEL || "gpt-image-2";
 const IMAGE_GEN_ORCHESTRATION_MODEL = process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_MODEL || "gpt-5.4-mini";
-const IMAGE_GEN_BASE_URL = (process.env.PIXEL_TOYS_IMAGE_BASE_URL || "https://api.apikey.fun/v1").replace(/\/+$/, "");
+const IMAGE_GEN_BASE_URL = (process.env.PIXEL_TOYS_IMAGE_BASE_URL || "https://beefapi.com/v1").replace(/\/+$/, "");
 const DEFAULT_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10);
 // 生产实测:同一张 Production Board 成功耗时横跨 31s ~ 430s,失败的 7 次全部是
 // 180s 上限砍断(日志里 payload 明写 "timeout": 180)。故事板是**最慢**的资产类型

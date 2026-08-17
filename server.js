@@ -1445,6 +1445,7 @@ const VIDEO_DEFAULT_EPISODE_SECONDS = 75;
 const VIDEO_TARGET_SECONDS = VIDEO_DEFAULT_EPISODE_SECONDS;
 const DURATION_MODE_TK = "tk";
 const DURATION_MODE_FREE = "free";
+const DURATION_MODE_SHORT_DRAMA_15 = "short_drama_15s";
 
 function normalizeAssetType(type, fallback = "Prop") {
   const raw = compactLine(type || "");
@@ -4679,7 +4680,7 @@ const MODEL_SHOT_PLAN_VERSION = 2;
 
 function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage, durationMode = "tk", assetManifestFingerprint = "", shots } = {}) {
   const path = defaultPaths(episodeRoot).modelShotPlan;
-  const normalizedDurationMode = durationMode === "free" ? "free" : "tk";
+  const normalizedDurationMode = normalizeDurationMode(durationMode);
   const plannedShots = (Array.isArray(shots) ? shots : []).map((shot) => ({
     id: compactLine(shot?.id),
     title: compactLine(shot?.title),
@@ -4688,11 +4689,17 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
     refs: [...new Set((Array.isArray(shot?.refs) ? shot.refs : []).map(compactLine).filter(Boolean))],
     dialogues: Array.isArray(shot?.dialogues) ? shot.dialogues : [],
     design: sanitizeSeedanceDesign(shot?.videoDesign),
+    startState: compactLine(shot?.startState || shot?.start_state || shot?.videoDesign?.first_frame_blocking || ""),
+    action: compactLine(shot?.action || shot?.videoDesign?.action_timing || shot?.videoDesign?.timeline || ""),
+    endState: compactLine(shot?.endState || shot?.end_state || shot?.videoDesign?.timeline || ""),
+    lighting: compactLine(shot?.lighting || shot?.videoDesign?.lighting || ""),
+    transitionIn: compactLine(shot?.transitionIn || shot?.transition_in || ""),
+    transitionOut: compactLine(shot?.transitionOut || shot?.transition_out || ""),
   }));
   if (!plannedShots.length || plannedShots.some((shot) => !shot.id || !shot.beat || !shot.refs.length || !hasCompleteSeedanceDesign(shot.design))) {
     throw new Error("视频分镜模型返回的导演设计不完整，未写入草稿，请重新生成分镜草稿。");
   }
-  if (normalizedDurationMode === "free") {
+  if ([DURATION_MODE_FREE, DURATION_MODE_SHORT_DRAMA_15].includes(normalizedDurationMode)) {
     const planningScript = modelPlanningScript(script);
     const sourceBeats = freeDurationSourceBeats(planningScript, scriptBeatCandidates(planningScript));
     const durationPlan = planEpisodeDuration({
@@ -4703,7 +4710,7 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
     });
     const totalDuration = plannedShots.reduce((sum, shot) => sum + shot.duration, 0);
     if (plannedShots.length !== durationPlan.shotCount || totalDuration !== durationPlan.target) {
-      throw new Error(`自由模式计划写入被拒绝：要求 ${durationPlan.shotCount} 镜头 / ${durationPlan.target} 秒，实际 ${plannedShots.length} 镜头 / ${totalDuration} 秒`);
+      throw new Error(`${normalizedDurationMode === DURATION_MODE_SHORT_DRAMA_15 ? "15 秒短剧模式" : "自由模式"}计划写入被拒绝：要求 ${durationPlan.shotCount} 镜头 / ${durationPlan.target} 秒，实际 ${plannedShots.length} 镜头 / ${totalDuration} 秒`);
     }
   }
   writeText(
@@ -4716,9 +4723,9 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
         scriptFingerprint: sha1Text(script),
         assetManifestFingerprint: compactLine(assetManifestFingerprint),
         dialogueLanguage: dialogueLanguage === "zh" ? "zh" : "en",
-        durationMode: normalizedDurationMode,
-        createdAt: new Date().toISOString(),
-        shots: plannedShots,
+      durationMode: normalizedDurationMode,
+      createdAt: new Date().toISOString(),
+      shots: plannedShots,
       },
       null,
       2,
@@ -4747,8 +4754,8 @@ function modelPlanDialogueLanguageForConfig(modelPlan, script, requestedLanguage
 }
 
 function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk", assetManifestFingerprint = "") {
-  const expectedMode = durationMode === "free" ? "free" : "tk";
-  const plannedMode = plan?.durationMode === "free" ? "free" : "tk";
+  const expectedMode = normalizeDurationMode(durationMode);
+  const plannedMode = normalizeDurationMode(plan?.durationMode);
   const expectedAssetManifestFingerprint = compactLine(assetManifestFingerprint);
   if (
     !plan ||
@@ -4756,7 +4763,7 @@ function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk", assetManif
     plannedMode !== expectedMode ||
     (expectedAssetManifestFingerprint && compactLine(plan.assetManifestFingerprint) !== expectedAssetManifestFingerprint)
   ) return true;
-  if (expectedMode !== "free") return false;
+  if (![DURATION_MODE_FREE, DURATION_MODE_SHORT_DRAMA_15].includes(expectedMode)) return false;
   const planningScript = modelPlanningScript(script);
   const sourceBeats = freeDurationSourceBeats(planningScript, scriptBeatCandidates(planningScript));
   const durationPlan = planEpisodeDuration({
@@ -4929,6 +4936,12 @@ function modelShotPlanForConfig({ episodeRoot, modelPlan = readStoryboardModelPl
       beat: compactLine(plannedShot.beat),
       title: compactLine(plannedShot.title || plannedShot.beat),
       dialogues: Array.isArray(plannedShot.dialogues) ? plannedShot.dialogues : [],
+      startState: compactLine(plannedShot.startState || plannedShot.start_state || videoDesign.first_frame_blocking || ""),
+      action: compactLine(plannedShot.action || plannedShot.action_timing || videoDesign.action_timing || videoDesign.timeline || ""),
+      endState: compactLine(plannedShot.endState || plannedShot.end_state || videoDesign.timeline || ""),
+      lighting: compactLine(plannedShot.lighting || videoDesign.lighting || ""),
+      transitionIn: compactLine(plannedShot.transitionIn || plannedShot.transition_in || ""),
+      transitionOut: compactLine(plannedShot.transitionOut || plannedShot.transition_out || ""),
       dialogueLanguage,
       videoDesign,
       assetLookup,
@@ -7713,7 +7726,9 @@ function projectDialogueLanguage(episodeRoot, fallback = "en") {
 
 function normalizeDurationMode(value, fallback = DURATION_MODE_TK) {
   if (value === DURATION_MODE_FREE || value === "自由模式") return DURATION_MODE_FREE;
+  if (value === DURATION_MODE_SHORT_DRAMA_15 || value === "15 秒短剧模式" || value === "固定15秒") return DURATION_MODE_SHORT_DRAMA_15;
   if (value === DURATION_MODE_TK || value === "TK 模式") return DURATION_MODE_TK;
+  if (fallback === DURATION_MODE_SHORT_DRAMA_15) return DURATION_MODE_SHORT_DRAMA_15;
   return fallback === DURATION_MODE_FREE ? DURATION_MODE_FREE : DURATION_MODE_TK;
 }
 
@@ -7746,6 +7761,19 @@ function freeDurationPlanForEpisode(episodeRoot) {
     beats,
     durationMode: DURATION_MODE_FREE,
     script: videoScript,
+  });
+}
+
+function shortDramaDurationPlanForEpisode(episodeRoot) {
+  const rawScript = readText(findProjectFile(episodeRoot, "script"));
+  const script = modelPlanningScript(rawScript);
+  if (!script.trim()) return null;
+  const beats = consolidateContinuousBeats(scriptBeatCandidates(script));
+  return planEpisodeDuration({
+    shotCount: beats.length || 1,
+    beats,
+    durationMode: DURATION_MODE_SHORT_DRAMA_15,
+    script,
   });
 }
 
@@ -10241,7 +10269,11 @@ function configReadiness(episodeRoot, configData = null) {
   const config = configData || readVideoConfig(episodeRoot)?.data || null;
   const dialogueLanguage = projectDialogueLanguage(episodeRoot, "en");
   const durationMode = normalizeDurationMode(config?.durationMode || config?.settings?.durationMode || projectDurationMode(episodeRoot));
-  const durationPlan = durationMode === DURATION_MODE_FREE ? freeDurationPlanForEpisode(episodeRoot) : null;
+  const durationPlan = durationMode === DURATION_MODE_FREE
+    ? freeDurationPlanForEpisode(episodeRoot)
+    : durationMode === DURATION_MODE_SHORT_DRAMA_15
+      ? shortDramaDurationPlanForEpisode(episodeRoot)
+      : null;
   const runStart = currentRunStartMs(episodeRoot, config);
   const missing = [];
   if (!config) {
@@ -10282,8 +10314,9 @@ function configReadiness(episodeRoot, configData = null) {
   const shots = Array.isArray(config.shots) ? config.shots : [];
   const spatialMapWarnings = [];
   const actualDuration = shots.reduce((sum, shot) => sum + Number(shot.duration || 0), 0);
+  const fixed15Mismatch = durationMode === DURATION_MODE_SHORT_DRAMA_15 && shots.some((shot) => Number(shot.duration || 0) !== PRODUCTION_BOARD_MAX_SECONDS);
   const durationMismatch = durationPlan && shots.length > 0 && (
-    shots.length !== durationPlan.shotCount || actualDuration !== durationPlan.target
+    shots.length !== durationPlan.shotCount || actualDuration !== durationPlan.target || fixed15Mismatch
   )
     ? {
         actual: { shotCount: shots.length, target: actualDuration },
@@ -10292,7 +10325,7 @@ function configReadiness(episodeRoot, configData = null) {
     : null;
   if (durationMismatch) {
     missing.push(
-      `自由模式配置已过期：当前 ${durationMismatch.actual.shotCount} 镜头 / ${durationMismatch.actual.target}s，剧本要求 ${durationMismatch.expected.shotCount} 镜头 / ${durationMismatch.expected.target}s；请重新生成分镜草稿和视频配置`,
+        `${durationMode === DURATION_MODE_SHORT_DRAMA_15 ? "15 秒短剧模式" : "自由模式"}配置已过期：当前 ${durationMismatch.actual.shotCount} 镜头 / ${durationMismatch.actual.target}s，剧本要求 ${durationMismatch.expected.shotCount} 镜头 / ${durationMismatch.expected.target}s${fixed15Mismatch ? "，且存在非 15 秒片段" : ""}；请重新生成分镜草稿和视频配置`,
     );
   }
   const allAssetNames = new Set(assets.map((asset) => compactLine(asset.name || asset.assetName || "")).filter(Boolean));
@@ -16278,7 +16311,7 @@ const CANVAS_IMAGE_SIZE_TABLE = {
   "1:1": { "1k": "1024x1024", "2k": "2048x2048", "4k": "2880x2880" },
 };
 const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
-const DEFAULT_CANVAS_IMAGE_BASE_URL = "https://api.apikey.fun/v1";
+const DEFAULT_CANVAS_IMAGE_BASE_URL = "https://beefapi.com/v1";
 const DEFAULT_SEEDREAM_5_PRO_MODEL = "doubao-seedream-5-0-260128";
 const DEFAULT_SEEDREAM_5_LITE_MODEL = "doubao-seedream-5-0-lite-260128";
 const SEEDREAM_MIN_IMAGE_PIXELS = 3_686_400;
@@ -20917,7 +20950,11 @@ function fitBeatsToCount(beats, targetCount) {
 }
 
 function preferredShotCount(script, beats, durationMode = DURATION_MODE_TK) {
-  if (normalizeDurationMode(durationMode) === DURATION_MODE_FREE) {
+  const mode = normalizeDurationMode(durationMode);
+  if (mode === DURATION_MODE_SHORT_DRAMA_15) {
+    return Math.max(1, Math.min(8, Math.ceil(shortDramaTargetDuration({ script, beats }) / PRODUCTION_BOARD_MAX_SECONDS)));
+  }
+  if (mode === DURATION_MODE_FREE) {
     const target = freeTargetDuration({ script, beats });
     return Math.max(1, Math.min(8, Math.ceil(target / VIDEO_MAX_SECONDS)));
   }
@@ -21101,7 +21138,11 @@ function lockFreeDurationsFromCuts({ targetDuration, shotCount, sourceBeats = []
 }
 
 function targetDurationForBeats(count, beats = [], requestedTarget = 0, durationMode = DURATION_MODE_TK, script = "") {
-  if (normalizeDurationMode(durationMode) === DURATION_MODE_FREE) {
+  const mode = normalizeDurationMode(durationMode);
+  if (mode === DURATION_MODE_SHORT_DRAMA_15) {
+    return Math.max(1, Number(count) || 1) * PRODUCTION_BOARD_MAX_SECONDS;
+  }
+  if (mode === DURATION_MODE_FREE) {
     const target = freeTargetDuration({ script, beats, requestedTarget });
     return Math.max(count * VIDEO_MIN_SECONDS, Math.min(count * VIDEO_MAX_SECONDS, target));
   }
@@ -21142,6 +21183,17 @@ function episodeTargetDurationForBeats(beats = []) {
   if (complexity >= 9) return 80;
   if (complexity >= 5) return 75;
   return VIDEO_MIN_EPISODE_SECONDS;
+}
+
+function shortDramaTargetDuration({ script = "", beats = [], requestedTarget = 0 } = {}) {
+  const requested = Number(requestedTarget);
+  const declared = Math.max(scriptDeclaredDurationSeconds(script), scriptTimecodeTotalSeconds(script));
+  const inferred = episodeTargetDurationForBeats(beats);
+  const source = Number.isFinite(requested) && requested > 0 ? requested : declared || inferred;
+  return Math.max(
+    PRODUCTION_BOARD_MAX_SECONDS,
+    Math.min(VIDEO_MAX_EPISODE_SECONDS, Math.ceil(source / PRODUCTION_BOARD_MAX_SECONDS) * PRODUCTION_BOARD_MAX_SECONDS),
+  );
 }
 
 function beatDurationWeight(beat, index = 0, beats = [], rawDuration = 0) {
@@ -21229,6 +21281,17 @@ function preferLongShotDurations(durations = [], weights = [], target = 0) {
 
 function planEpisodeDuration({ shotCount, beats = [], targetDuration = 0, rawDurations = [], durationMode = DURATION_MODE_TK, script = "" } = {}) {
   const mode = normalizeDurationMode(durationMode);
+  if (mode === DURATION_MODE_SHORT_DRAMA_15) {
+    const target = shortDramaTargetDuration({ script, beats, requestedTarget: targetDuration });
+    const count = Math.max(1, Math.min(8, Math.ceil(target / PRODUCTION_BOARD_MAX_SECONDS)));
+    return {
+      target: count * PRODUCTION_BOARD_MAX_SECONDS,
+      shotCount: count,
+      durations: Array.from({ length: count }, () => PRODUCTION_BOARD_MAX_SECONDS),
+      weights: Array.from({ length: count }, () => 1),
+      durationMode: mode,
+    };
+  }
   if (mode === DURATION_MODE_FREE) {
     const target = freeTargetDuration({ script, beats, requestedTarget: targetDuration });
     const count = Math.max(1, Math.min(8, Math.ceil(target / VIDEO_MAX_SECONDS)));
@@ -22445,6 +22508,37 @@ function seedanceNaturalLanguagePromptForShot(shot, index, dialogueLanguage) {
   return `${refs ? `${refs}\n\n` : ""}${prompt}`.trim();
 }
 
+function videoAssetReferenceContract(shot = {}) {
+  const lookup = shot.assetLookup instanceof Map ? shot.assetLookup : new Map();
+  const storyboardRefs = Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : [];
+  const refs = [...new Set([
+    ...storyboardRefs,
+    ...(Array.isArray(shot.refs) ? shot.refs : []),
+  ].map(compactLine).filter(Boolean))];
+  if (!refs.length) return "无可用资产图；仅允许使用文本提示词，不得凭空新增角色或场景。";
+  return refs.map((ref) => {
+    const asset = lookup.get(ref) || {};
+    const type = normalizeAssetType(asset.type || asset.manifestType, "Prop");
+    const role = type === "Character" ? "人物身份与服装" : type === "Scene" ? "场景空间与地标" : type === "Storyboard" ? "构图、站位、动作节奏与剪辑出口" : type === "Insert" ? "插入细节" : "道具身份、材质与位置";
+    return `@${ref}：${role}`;
+  }).join("；");
+}
+
+function applyVideoPromptContinuityContract(prompt = "", shot = {}, index = 0) {
+  const base = String(prompt || "").split("\n\nVIDEO PRODUCTION CONTRACT")[0].trim();
+  const design = seedancePromptDesignForShot(shot, index);
+  const startState = compactLine(shot.startState || design.first_frame_blocking || shot.beat || "本段第一帧保持已锁定人物、场景和道具状态");
+  const action = compactLine(shot.action || design.action_timing || design.timeline || shot.beat || "按剧本完成本段主动作");
+  const endState = compactLine(shot.endState || design.timeline || shot.beat || "本段动作完成后保持可交接的静止状态");
+  const lighting = compactLine(shot.lighting || design.lighting || "沿用上一段主光源方向、色温、光比和阴影方向");
+  const continuity = shot.useTailFrame
+    ? `尾帧续接：从片段「${shot.tailFrameSource || "上一片段"}」的最后一帧起始，保留人物朝向、屏幕方向、视线、道具状态、光线和运动方向。`
+    : compactLine(shot.transitionIn || shot.continuityNote || (index === 0 ? "开场建立：无上一片段，先锁定空间和人物站位。" : "正常切镜：从上一片段的结束状态切入，不复制上一段动作。"));
+  const exit = compactLine(shot.transitionOut || `结束时保留：${endState}；把人物朝向、道具位置、视线、光源方向和运动方向作为下一片段的入口状态。`);
+  const mode = shot.videoPromptMode === "production_board" ? "Production Board 控制构图和节奏，正式资产图控制身份与材质。" : "正式资产图控制人物、场景、道具身份；空间地图控制地标和摄影机轴线。";
+  return `${base}\n\nVIDEO PRODUCTION CONTRACT\n资产引用：${videoAssetReferenceContract(shot)}\n引用策略：${mode}\n起始状态：${startState}\n主动作与物理结果：${action}\n结束状态：${endState}\n进入衔接：${continuity}\n退出衔接：${exit}\n光影连续性：${lighting}\n一致性约束：不得新增人物、道具、地标或光源；保持角色脸部、发型、服装、材质、场景结构、屏幕方向、视线和道具状态连续。`.trim();
+}
+
 function storyboardPanelTimelineForPrompt(guidance = {}) {
   const panels = Array.isArray(guidance?.panels) ? guidance.panels : [];
   const entries = panels
@@ -22633,6 +22727,12 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
       "title": "镜头中文标题",
       "beat": "对应 sourceBeats 范围内的剧本依据",
       "purpose": "分镜目标",
+      "startState": "本段第一帧的人物、道具、站位、朝向、视线和光线状态",
+      "action": "本段主动作、接触关系、物理结果和动作落点",
+      "endState": "本段最后一帧的人物、道具、站位、朝向、视线和情绪状态",
+      "lighting": "主光源、光向、色温、阴影方向和光比",
+      "transitionIn": "本段如何从上一段进入",
+      "transitionOut": "本段末帧交给下一段的状态",
       "refs": ["S001_example", "C001_example"],
       "dialogueLines": ["SPEAKER：目标语言台词"],
       "design": {
@@ -22664,18 +22764,19 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
   ]
 }`;
   }
+  const fixed15 = normalizeDurationMode(durationMode) === DURATION_MODE_SHORT_DRAMA_15;
   return `你是短剧视频分镜和 Seedance 2.0 提示词拆解模型。你的任务是根据剧本和已确认资产解析，输出可直接进入视频生成配置的镜头列表。
 
 必须遵守：
 - 只返回服务端可读取的结构化镜头计划，不输出 Markdown、散文提示词或解释；这个返回仅用于校验和保存，绝不能作为 Seedance 视频提示词提交。
 - 结构化字段内容使用中文；dialogueLines 每条必须严格按「说话人：目标语言台词」格式返回，说话人必须使用剧本中的角色名或代号，不得省略；英文模式台词用英文，中文模式台词用中文。
 - 严格根据剧本拆解，不得添加剧本没有的人物、地点、道具、怪物、武器或事件。
-- 每一集剧情视频总时长允许 ${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS} 秒，由剧本内容复杂度决定；不得为了凑时长增补剧情，镜头数量和秒数必须服务原剧本节拍。
+- ${fixed15 ? "当前为固定 15 秒短剧模式：必须严格返回后端指定数量的 shots，每个 shot 的 duration 必须为 15 秒；总时长由后端按 15 秒向上取整，不得自行增减。" : `每一集剧情视频总时长允许 ${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS} 秒，由剧本内容复杂度决定；不得为了凑时长增补剧情，镜头数量和秒数必须服务原剧本节拍。`}
 - 每个镜头必须有明确剧情依据、推荐时长、参考资产 refs、中文标题、中文分镜目的。
 - refs 只能使用给定 assets 中的 name，不得编造不存在的资产名。
-- 分镜规划优先把同一场景、同一连续动作、同一情绪/物件状态的相邻节拍合并到一个镜头里生成，单个镜头时长必须在 4-15 秒之间；切镜、换场、建立镜头、节奏重置、时间跳跃应拆成独立镜头。
-- 不要平均分配镜头时长，不要把所有镜头都设为 12 秒。推荐时长必须根据剧情节拍决定，并优先把完整剧情段落设计成接近 15 秒：建立镜头/插入/转场 4-8 秒，普通对白或反应 8-12 秒，同场景连续动作、危机升级、关键表演、需要尾帧承接的剧情 12-15 秒。
-- 一集通常优先规划约 5 个 15 秒级视频片段；剧情复杂、切镜明确、换场较多或对白密集时增加到 6-8 个片段，最高不超过 ${VIDEO_MAX_EPISODE_SECONDS} 秒。
+- ${fixed15 ? "每个 15 秒片段内部可以包含多个有明确起止的镜头节拍，但必须写清起始状态、主动作、结束状态和下一段入口；切镜、换场、建立镜头、节奏重置和时间跳跃仍应写在 15 秒单元内的节拍中。" : "分镜规划优先把同一场景、同一连续动作、同一情绪/物件状态的相邻节拍合并到一个镜头里生成，单个镜头时长必须在 4-15 秒之间；切镜、换场、建立镜头、节奏重置、时间跳跃应拆成独立镜头。"}
+- ${fixed15 ? "不要修改后端分配的 15 秒；把完整剧情段落编排成固定 15 秒单元，不能为了凑时长增补剧情。" : "不要平均分配镜头时长，不要把所有镜头都设为 12 秒。推荐时长必须根据剧情节拍决定，并优先把完整剧情段落设计成接近 15 秒：建立镜头/插入/转场 4-8 秒，普通对白或反应 8-12 秒，同场景连续动作、危机升级、关键表演、需要尾帧承接的剧情 12-15 秒。"}
+- ${fixed15 ? "片段数量由后端固定 15 秒规划决定。" : `一集通常优先规划约 5 个 15 秒级视频片段；剧情复杂、切镜明确、换场较多或对白密集时增加到 6-8 个片段，最高不超过 ${VIDEO_MAX_EPISODE_SECONDS} 秒。`}
 - 如果相邻镜头发生在同一场景，应保持同一个场景资产引用和空间方向；尾帧续接由后端配置层判断，videoPrompt 中不要写尾帧规则。
 - Production Board 衔接流程：先用正式资产图锁定人物、场景、道具身份；再把同一连续场景或动作段落渲染成一张 16:9 横版、4×3 十二个编号面板的 Production Board。每个面板必须把实际人物、场景和道具的最终视觉身份烘焙进画面；视频阶段先提交这张 Production Board，再提交同一片段绑定的正式资产图。
 - 当使用 Production Board 时，videoPrompt 需要明确本段读取哪些实际面板的节奏来源，说明动作方向、演员站位、构图、切换点和同场景衔接；整张制作板与每个面板都服务当前视频配置的成片构图。
@@ -22693,9 +22794,15 @@ ${SEEDANCE_DIRECTOR_SYSTEM_ZH}
   "shots": [
     {
       "title": "镜头中文标题",
-      "duration": 8,
+      "duration": ${fixed15 ? 15 : 8},
       "beat": "对应剧本依据",
       "purpose": "分镜目标",
+      "startState": "本段第一帧的人物、道具、站位、朝向、视线和光线状态",
+      "action": "本段主动作、接触关系、物理结果和动作落点",
+      "endState": "本段最后一帧的人物、道具、站位、朝向、视线和情绪状态",
+      "lighting": "主光源、光向、色温、阴影方向和光比",
+      "transitionIn": "本段如何从上一段进入",
+      "transitionOut": "本段末帧交给下一段的状态",
       "refs": ["S001_example", "C001_example"],
       "dialogueLines": ["SPEAKER：目标语言台词（每条必须带说话人前缀；英文模式用英文，中文模式用中文）"],
       "design": {
@@ -22781,6 +22888,7 @@ function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCoun
       screenplay,
     }, null, 2);
   }
+  const fixed15 = durationMode === DURATION_MODE_SHORT_DRAMA_15;
   return JSON.stringify(
     {
       task: "根据剧本和资产解析拆解视频分镜，并为 Seedance 2.0 生成中文视频提示词。",
@@ -22791,7 +22899,9 @@ function storyboardUserPrompt({ script, assets, dialogueLanguage, targetShotCoun
             targetDuration: durationPlan.target,
             suggestedDurations: durationPlan.durations,
             allowedTotalRange: `${VIDEO_MIN_EPISODE_SECONDS}-${VIDEO_MAX_EPISODE_SECONDS}s`,
-            rule: "这是后端按剧情复杂度和剧情权重计算的参考时长。可以在 70-90 秒内微调，但不要平均分配，不要全部 12 秒；优先把完整剧情段落设计成接近 15 秒，每段必须 4-15 秒。只允许使用剧本已有剧情，信息不足时不要为了凑时长增补事件。",
+            rule: fixed15
+              ? `这是固定 15 秒短剧模式：必须恰好返回 ${durationPlan.shotCount} 个片段，每个片段 duration 都写 15，总时长 ${durationPlan.target} 秒。只允许使用剧本已有剧情，不得为了凑时长增补事件；请把切点、动作落点和下一段入口设计在 15 秒单元内。`
+              : "这是后端按剧情复杂度和剧情权重计算的参考时长。可以在 70-90 秒内微调，但不要平均分配，不要全部 12 秒；优先把完整剧情段落设计成接近 15 秒，每段必须 4-15 秒。只允许使用剧本已有剧情，信息不足时不要为了凑时长增补事件。",
           }
         : undefined,
       assets: promptAssets,
@@ -22806,7 +22916,9 @@ function normalizeStoryboardShot(raw, index, context) {
   if (!raw || typeof raw !== "object") return null;
   const durationMode = normalizeDurationMode(context.durationMode || context.durationPlan?.durationMode);
   const plannedDuration = context.durationPlan.durations[index] || 9;
-  const duration = durationMode === DURATION_MODE_FREE
+  const duration = durationMode === DURATION_MODE_SHORT_DRAMA_15
+    ? PRODUCTION_BOARD_MAX_SECONDS
+    : durationMode === DURATION_MODE_FREE
     ? plannedDuration
     : clampShotDuration(Number(raw.duration || 0) || plannedDuration, plannedDuration);
   const title = compactLine(raw.title || raw.name || raw.beat || `分镜 ${index + 1}`).slice(0, 80);
@@ -22829,6 +22941,12 @@ function normalizeStoryboardShot(raw, index, context) {
     dialogueLanguage: context.dialogueLanguage,
   });
   const videoDesign = sanitizeSeedanceDesign(raw.design);
+  const startState = compactLine(raw.startState || raw.start_state || videoDesign.first_frame_blocking || `本段开始：${beat}`).slice(0, 1200);
+  const action = compactLine(raw.action || raw.action_timing || videoDesign.action_timing || videoDesign.timeline || beat).slice(0, 1400);
+  const endState = compactLine(raw.endState || raw.end_state || videoDesign.timeline || `本段结束：${beat}`).slice(0, 1200);
+  const lighting = compactLine(raw.lighting || videoDesign.lighting || "可信主光源保持方向、色温和阴影连续").slice(0, 600);
+  const transitionIn = compactLine(raw.transitionIn || raw.transition_in || "").slice(0, 500);
+  const transitionOut = compactLine(raw.transitionOut || raw.transition_out || "").slice(0, 500);
   if (!title || !beat || !finalRefs.length || !hasCompleteSeedanceDesign(videoDesign)) {
     throw new Error(`视频分镜模型第 ${index + 1} 镜缺少有效资产引用或完整导演设计`);
   }
@@ -22841,6 +22959,12 @@ function normalizeStoryboardShot(raw, index, context) {
     dialogues: dialogueLines,
     beat,
     videoDesign,
+    startState,
+    action,
+    endState,
+    lighting,
+    transitionIn,
+    transitionOut,
     assetLookup,
     endBeatIndex: Math.round(Number(raw.endBeatIndex || 0)) || 0,
   };
@@ -22930,8 +23054,8 @@ function removeTailFrameContinuityFromStoryboardPrompt(prompt) {
 function normalizeStoryboardPlan(data, context) {
   const durationMode = normalizeDurationMode(context.durationMode || context.durationPlan?.durationMode);
   const rawShots = Array.isArray(data?.shots) ? data.shots : [];
-  if (durationMode === DURATION_MODE_FREE && rawShots.length !== context.durationPlan.shotCount) {
-    throw new Error(`自由模式镜头数量异常：模型返回 ${rawShots.length}，要求 ${context.durationPlan.shotCount}`);
+  if ([DURATION_MODE_FREE, DURATION_MODE_SHORT_DRAMA_15].includes(durationMode) && rawShots.length !== context.durationPlan.shotCount) {
+    throw new Error(`${durationMode === DURATION_MODE_SHORT_DRAMA_15 ? "15 秒短剧模式" : "自由模式"}镜头数量异常：模型返回 ${rawShots.length}，要求 ${context.durationPlan.shotCount}`);
   }
   let shots = rawShots.map((shot, index) => normalizeStoryboardShot(shot, index, context)).filter(Boolean);
   if (!shots.length) throw new Error("视频分镜模型没有返回有效 shots");
@@ -22947,18 +23071,18 @@ function normalizeStoryboardPlan(data, context) {
       duration: durations[index],
       durationReason: "自由模式：大模型标记转场，后端锁定秒数",
     }));
-  } else if (shouldRebalanceShotDurations(shots)) {
+  } else if (durationMode !== DURATION_MODE_SHORT_DRAMA_15 && shouldRebalanceShotDurations(shots)) {
     shots = rebalanceShotDurations(shots, {
       durationPlan: context.durationPlan,
       targetDuration: Number(data?.targetDuration || 0),
     });
   }
   const total = shots.reduce((sum, shot) => sum + shot.duration, 0);
-  if (durationMode === DURATION_MODE_FREE && total !== context.durationPlan.target) {
-    throw new Error(`自由模式后端时长分配异常：${total}s，目标 ${context.durationPlan.target}s`);
+  if ([DURATION_MODE_FREE, DURATION_MODE_SHORT_DRAMA_15].includes(durationMode) && total !== context.durationPlan.target) {
+    throw new Error(`${durationMode === DURATION_MODE_SHORT_DRAMA_15 ? "15 秒短剧模式" : "自由模式"}后端时长分配异常：${total}s，目标 ${context.durationPlan.target}s`);
   }
   const maxAllowed = Math.min(VIDEO_MAX_EPISODE_SECONDS, shots.length * VIDEO_MAX_SECONDS);
-  if (durationMode !== DURATION_MODE_FREE && (total < VIDEO_MIN_EPISODE_SECONDS || total > maxAllowed)) {
+  if (![DURATION_MODE_FREE, DURATION_MODE_SHORT_DRAMA_15].includes(durationMode) && (total < VIDEO_MIN_EPISODE_SECONDS || total > maxAllowed)) {
     throw new Error(`视频分镜模型返回总时长异常：${total}s，要求 ${VIDEO_MIN_EPISODE_SECONDS}-${maxAllowed}s`);
   }
   return {
@@ -25384,6 +25508,32 @@ async function buildVideoConfig(episodeRoot, body = {}) {
         shot.continuityNote = continuityDecision.reason;
       }
     }
+    if (usesStoryboardReference) {
+      const board = shot.storyboardRefs[0];
+      shot.transitionIn = index === 0
+        ? `从 Production Board「${board}」首格建立空间、人物站位和光源。`
+        : `从 Production Board「${board}」对应面板切入，沿用板面规定的屏幕方向、视线和动作节奏。`;
+      shot.transitionOut = `保留 Production Board「${board}」末格的${shot.endState || "人物、道具、站位和光线状态"}作为下一片段入口。`;
+    } else if (shot.useTailFrame) {
+      shot.transitionIn = `从「${shot.tailFrameSource}」最后一帧尾帧续接，保持动作方向和物理状态不跳变。`;
+      shot.transitionOut = `动作落在${shot.endState || "明确的可见状态"}，保留人物朝向、道具位置和光线供下一段继续。`;
+    } else if (index === 0) {
+      shot.transitionIn = "开场建立：无上一段，先锁定场景地标、人物站位、视线和主光源。";
+      shot.transitionOut = `正常切出并保留${shot.endState || "本段最后一帧状态"}。`;
+    } else if (continuityDecision.sharedScene) {
+      shot.transitionIn = "同场景正常切镜：从上一段结束状态切入，保持轴线、地标、光向和人物身份，但不复制上一段动作。";
+      shot.transitionOut = `正常切出并保留${shot.endState || "本段最后一帧状态"}。`;
+    } else {
+      shot.transitionIn = "换场正常切镜：用新的场景资产首帧建立新地标和光源，不带入上一场景的背景结构。";
+      shot.transitionOut = `以${shot.endState || "本段最后一帧状态"}收尾，交给下一段。`;
+    }
+    shot.prompt = cleanVideoPromptForSubmission(
+      applyVideoPromptDirectives(
+        applyVideoPromptContinuityContract(shot.prompt, shot, index),
+        requestedDialectStyle,
+        requestedSfxStyle,
+      ),
+    );
   });
   const shotsWithoutRefs = shots.filter((shot) => !shot.refs.length);
   if (shotsWithoutRefs.length) {
@@ -25508,6 +25658,10 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
 
   const configRecord = ensureVideoConfigIsolation(episodeRoot);
   const previous = configRecord?.data || {};
+  const requestedDurationMode = persistProjectDurationMode(
+    episodeRoot,
+    body.durationMode || previous.durationMode || previous.settings?.durationMode || projectDurationMode(episodeRoot),
+  );
   const previousShots = Array.isArray(previous.shots) ? previous.shots : [];
   const shotIndex = previousShots.findIndex((shot) => compactLine(shot?.name || "") === shotName);
   if (shotIndex < 0) throw new Error(`视频配置中找不到片段：${shotName}`);
@@ -25530,7 +25684,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
   );
   const modelPlan = storyboardDraftForConfig(episodeRoot, {
     script,
-    durationMode: previous.durationMode || previous.settings?.durationMode || projectDurationMode(episodeRoot),
+    durationMode: requestedDurationMode,
   });
   const resolvedDialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, dialogueLanguage);
   const manifestNames = new Set((manifest.items || []).map((item) => compactLine(item?.id || "")).filter(Boolean));
@@ -25604,6 +25758,11 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     delete nextShot.tailFrameSource;
     delete nextShot.startFrameUrl;
     nextShot.continuityNote = "已启用 Production Board：按当前片段故事板参考生成";
+    const board = nextShot.storyboardRefs?.[0] || nextShot.storyboardGuidance?.referenceAssetName || "当前 Production Board";
+    nextShot.transitionIn = shotIndex === 0
+      ? `从 Production Board「${board}」首格建立空间、人物站位和光源。`
+      : `从 Production Board「${board}」对应面板切入，沿用板面规定的屏幕方向、视线和动作节奏。`;
+    nextShot.transitionOut = `保留 Production Board「${board}」末格的${nextShot.endState || "人物、道具、站位和光线状态"}作为下一片段入口。`;
   } else {
     nextShot.videoPromptMode = "prompt";
     nextShot.prompt = cleanVideoPromptForSubmission(seedanceNaturalLanguagePromptForShot(nextShot, shotIndex, resolvedDialogueLanguage));
@@ -25619,12 +25778,24 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     if (nextShot.useTailFrame && previousShotForContinuity) {
       nextShot.tailFrameSource = previousShotForContinuity.name;
       nextShot.continuityNote = continuityDecision.reason;
+      nextShot.transitionIn = `从「${previousShotForContinuity.name}」最后一帧尾帧续接，保持动作方向和物理状态不跳变。`;
+      nextShot.transitionOut = `动作落在${nextShot.endState || "明确的可见状态"}，保留人物朝向、道具位置和光线供下一段继续。`;
     } else {
       delete nextShot.tailFrameSource;
       nextShot.continuityNote = continuityDecision.reason;
+      nextShot.transitionIn = shotIndex === 0
+        ? "开场建立：无上一段，先锁定场景地标、人物站位、视线和主光源。"
+        : continuityDecision.sharedScene
+          ? "同场景正常切镜：从上一段结束状态切入，保持轴线、地标、光向和人物身份，但不复制上一段动作。"
+          : "换场正常切镜：用新的场景资产首帧建立新地标和光源，不带入上一场景的背景结构。";
+      nextShot.transitionOut = `正常切出并保留${nextShot.endState || "本段最后一帧状态"}。`;
     }
   }
-  nextShot.prompt = applyVideoPromptDirectives(nextShot.prompt, requestedDialectStyle, requestedSfxStyle);
+  nextShot.prompt = applyVideoPromptDirectives(
+    applyVideoPromptContinuityContract(nextShot.prompt, nextShot, shotIndex),
+    requestedDialectStyle,
+    requestedSfxStyle,
+  );
 
   const filmStudio = readFilmStudio(episodeRoot);
   if (filmStudio.videoConfigEnabled && filmStudio.selectedReferenceIds.length) {
@@ -25637,6 +25808,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
 
   const config = {
     ...previous,
+    durationMode: requestedDurationMode,
     dialectStyle: requestedDialectStyle,
     sfxStyle: requestedSfxStyle,
     spatialMaps: storyboardsActive ? [] : readSpatialMaps(episodeRoot).maps,
@@ -25648,6 +25820,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     settings: {
       ...(previous.settings || {}),
       dialogueLanguage: resolvedDialogueLanguage,
+      durationMode: requestedDurationMode,
       dialectStyle: requestedDialectStyle,
       sfxStyle: requestedSfxStyle,
     },
@@ -25805,6 +25978,7 @@ function startProcessJob({ episodeRoot, type, command, args, cwd, meta = {} }) {
       .filter(Boolean)
       .join(":"),
     OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "",
+    OPENAI_BASE_URL: canvasImageBaseUrl(),
     PIXEL_TOYS_RUN_NAMESPACE: runNamespace,
     PIXEL_TOYS_ASSET_STYLE_PRESET: compactLine(meta.assetStylePreset || ""),
     PIXEL_TOYS_ASSET_STYLE_LABEL: compactLine(meta.assetStyleLabel || ""),
@@ -27508,6 +27682,22 @@ async function handleApi(req, res, url) {
       });
     }
 
+    if (req.method === "GET" && action === "video-prompt-pack") {
+      const agent = pixelTaleAgent.status(params);
+      if (!agent.videoPromptPack) return fail(res, 404, "视频提示词包尚未生成");
+      return send(res, 200, { ok: true, videoPromptPack: agent.videoPromptPack }, { "Cache-Control": "no-store" });
+    }
+
+    if (req.method === "GET" && action === "video-prompt-pack/download") {
+      const agent = pixelTaleAgent.status(params);
+      if (!agent.videoPromptPack) return fail(res, 404, "视频提示词包尚未生成");
+      return send(res, 200, JSON.stringify(agent.videoPromptPack, null, 2), {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="PixelTale_video_prompt_pack.json"',
+        "Cache-Control": "no-store",
+      });
+    }
+
     if (req.method === "GET" && action === "script/download") {
       const agent = pixelTaleAgent.status(params);
       const fileName = path.basename(agent.scriptDocument?.fileName || "");
@@ -28558,10 +28748,12 @@ module.exports = {
     durationMode: {
       DURATION_MODE_TK,
       DURATION_MODE_FREE,
+      DURATION_MODE_SHORT_DRAMA_15,
       normalizeDurationMode,
       projectDurationMode,
       persistProjectDurationMode,
       freeDurationPlanForEpisode,
+      shortDramaDurationPlanForEpisode,
       configReadiness,
       assertPromptSpatialMapsReady,
       modelPlanningScript,
@@ -28575,6 +28767,7 @@ module.exports = {
       lockFreeDurationsFromCuts,
       preferredShotCount,
       freeTargetDuration,
+      shortDramaTargetDuration,
       targetDurationForBeats,
       planEpisodeDuration,
       shouldRebalanceShotDurations,
@@ -28670,6 +28863,8 @@ module.exports = {
       updateVideoPromptInConfig,
       cleanVideoPromptForSubmission,
       seedanceNaturalLanguagePromptForShot,
+      applyVideoPromptContinuityContract,
+      videoAssetReferenceContract,
       storyboardSeedancePrompt,
       videoStyleDirectiveFromProductionAssets,
       stripInvalidLegacyVideoStyleLock,

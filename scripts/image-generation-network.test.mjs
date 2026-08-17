@@ -40,6 +40,12 @@ if (!server.includes('PIXEL_TOYS_IMAGE_CONCURRENCY || "4"') || !server.includes(
 if (!imageGen.includes('Accept: "application/json"') || !imageGen.includes("stream: false")) {
   throw new Error("text image generation must support the standard non-streaming JSON response");
 }
+if (!imageGen.includes("function isXibApiGateway") || !imageGen.includes("function buildXibApiChatUrl") || !imageGen.includes('`${base}/v1/chat/completions`') || !imageGen.includes('messages: [{ role: "user", content: prompt }]') || !imageGen.includes("temperature: 0.7")) {
+  throw new Error("xibapi image generation must use the documented chat completions request contract");
+}
+if (!imageGen.includes('isXibApiGateway(args["base-url"]) || !shouldFallbackToResponses(error)')) {
+  throw new Error("xibapi image errors must not fall back to the Responses image route");
+}
 if (!imageGen.includes("return image;") || !imageGen.includes('Accept: "text/event-stream"')) {
   throw new Error("reference image generation must pass public HTTPS URLs through the streaming Responses request");
 }

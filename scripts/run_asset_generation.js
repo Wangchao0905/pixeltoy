@@ -27,6 +27,7 @@ const IMAGE_API_KEY_ENV_NAMES = [
 ];
 const IMAGE_GEN_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || process.env.IMAGE_GEN_IMAGE_MODEL || "gpt-image-2";
 const IMAGE_GEN_ORCHESTRATION_MODEL = process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_MODEL || "gpt-5.4-mini";
+const IMAGE_GEN_BASE_URL = (process.env.PIXEL_TOYS_IMAGE_BASE_URL || "https://api.apikey.fun/v1").replace(/\/+$/, "");
 const DEFAULT_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10);
 // 生产实测:同一张 Production Board 成功耗时横跨 31s ~ 430s,失败的 7 次全部是
 // 180s 上限砍断(日志里 payload 明写 "timeout": 180)。故事板是**最慢**的资产类型
@@ -2064,6 +2065,8 @@ async function runStoryboardReferenceBoardRoute(asset, outPath, size, referenceI
     size,
     "--model",
     IMAGE_GEN_IMAGE_MODEL,
+    "--base-url",
+    IMAGE_GEN_BASE_URL,
     "--out",
     outPath,
     "--timeout",
@@ -2118,6 +2121,8 @@ async function runOne(asset, outPath, size, referenceImages = [], logsDir = os.t
           IMAGE_GEN_ORCHESTRATION_MODEL,
           "--image-model",
           IMAGE_GEN_IMAGE_MODEL,
+          "--base-url",
+          IMAGE_GEN_BASE_URL,
           "--out",
           outPath,
           "--timeout",
@@ -2127,7 +2132,7 @@ async function runOne(asset, outPath, size, referenceImages = [], logsDir = os.t
           "--image-role",
           styleReferenceImage ? styleReferenceRole() : primaryImageRoleFor(asset, "generate", { hiddenSceneReference: primaryIsHiddenSceneReference }),
         ]
-      : [IMAGE_GEN, "--mode", "text", "--prompt", prompt, "--size", size, "--model", IMAGE_GEN_IMAGE_MODEL, "--out", outPath, "--timeout", String(primaryTimeoutSeconds)];
+      : [IMAGE_GEN, "--mode", "text", "--prompt", prompt, "--size", size, "--model", IMAGE_GEN_IMAGE_MODEL, "--base-url", IMAGE_GEN_BASE_URL, "--out", outPath, "--timeout", String(primaryTimeoutSeconds)];
     const extraImages = imageInputs.slice(1);
     if (extraImages.length) {
       const extraRoles = [
@@ -2212,6 +2217,8 @@ async function runEdit(asset, outPath, size, editInstruction, logsDir, reference
           IMAGE_GEN_ORCHESTRATION_MODEL,
           "--image-model",
           IMAGE_GEN_IMAGE_MODEL,
+          "--base-url",
+          IMAGE_GEN_BASE_URL,
           "--out",
           tmpOut,
           "--timeout",
@@ -2223,7 +2230,7 @@ async function runEdit(asset, outPath, size, editInstruction, logsDir, reference
           "--image-role",
           targetImageRoleFor(asset, "edit"),
         ]
-      : [IMAGE_GEN, "--mode", "edit", "--image", outPath, "--prompt", prompt, "--size", size, "--model", IMAGE_GEN_IMAGE_MODEL, "--out", tmpOut, "--timeout", String(primaryTimeoutSeconds)];
+      : [IMAGE_GEN, "--mode", "edit", "--image", outPath, "--prompt", prompt, "--size", size, "--model", IMAGE_GEN_IMAGE_MODEL, "--base-url", IMAGE_GEN_BASE_URL, "--out", tmpOut, "--timeout", String(primaryTimeoutSeconds)];
     for (const role of extraReferenceRoles) {
       imageArgs.push("--reference-role", role);
     }
@@ -2239,7 +2246,7 @@ async function runEdit(asset, outPath, size, editInstruction, logsDir, reference
       );
     } catch (error) {
       if (!shouldFallbackToImageMode(error)) throw error;
-      const fallbackArgs = [IMAGE_GEN, "--mode", "image", "--image", outPath, "--prompt", prompt, "--size", size, "--model", IMAGE_GEN_ORCHESTRATION_MODEL, "--image-model", IMAGE_GEN_IMAGE_MODEL, "--out", tmpOut, "--timeout", String(primaryTimeoutSeconds)];
+      const fallbackArgs = [IMAGE_GEN, "--mode", "image", "--image", outPath, "--prompt", prompt, "--size", size, "--model", IMAGE_GEN_ORCHESTRATION_MODEL, "--image-model", IMAGE_GEN_IMAGE_MODEL, "--base-url", IMAGE_GEN_BASE_URL, "--out", tmpOut, "--timeout", String(primaryTimeoutSeconds)];
       output = await runImageGenWithRetry(
         fallbackArgs,
         env,

@@ -61,6 +61,7 @@ assert.doesNotMatch(modelOptions, /文生视频/, "video model options must not 
 assert.match(modelOptions, /<option value="seedance-2-5">Seedance 2\.5<\/option>/, "canvas must offer Seedance 2.5");
 assert.match(modelOptions, /<option value="seedance-2-5-byteplus">Seedance 2\.5\(海外火山\)<\/option>/, "canvas must offer overseas Seedance 2.5");
 assert.match(modelOptions, /<option value="seedance-2-0">Seedance 2\.0<\/option>/, "base Seedance option must use its short display name");
+assert.match(modelOptions, /<option value="seedance-2-0-super">Seedance 2\.0 super<\/option>/, "canvas must offer Seedance 2.0 super");
 assert.match(modelOptions, /<option value="seedance-2-0-person-reference">Seedance 2\.0 · 人物参考<\/option>/, "person-reference option must place the label after Seedance");
 assert.match(html, /<input[^>]*max="30"[^>]*data-node-field="duration"/, "video duration control must expose the 30-second Seedance 2.5 range");
 const videoResolutionOptions = html.match(/<select data-node-field="resolution"(?:\s[^>]*)?>[\s\S]*?<\/select>/g)?.find((block) => block.includes('value="480p"')) || "";

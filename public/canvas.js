@@ -196,6 +196,7 @@ const VIDEO_MODEL_LABELS = {
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",
+  "seedance-2-0-super": "Seedance 2.0 super",
   [PERSON_REFERENCE_MODEL]: "Seedance 2.0 · 人物参考",
   [BYTEPLUS_MODEL]: "Seedance 2.0(海外火山)",
 };

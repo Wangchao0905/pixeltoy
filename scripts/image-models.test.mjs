@@ -10,6 +10,7 @@ const app = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const canvas = fs.readFileSync(path.join(root, "public/canvas.js"), "utf8");
 const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const imageGen = fs.readFileSync(path.join(root, "scripts", "vendor", "image-gen.js"), "utf8");
+const assetGenerator = fs.readFileSync(path.join(root, "scripts", "run_asset_generation.js"), "utf8");
 
 assert.match(html, /value="gpt-image-2">GPT Image 2/);
 assert.match(html, /value="seedream-5-0-pro">Seedream 5\.0 Pro/);
@@ -22,6 +23,8 @@ assert.match(server, /POST.*images\/generations|images\/generations/);
 assert.match(server, /VOLC_ARK_IMAGE_PRO_MODEL/);
 assert.match(server, /VOLC_ARK_IMAGE_LITE_MODEL/);
 assert.match(server, /runSeedreamCanvasImageJob/);
+assert.match(assetGenerator, /const IMAGE_GEN_BASE_URL = \(process\.env\.PIXEL_TOYS_IMAGE_BASE_URL \|\| "https:\/\/api\.apikey\.fun\/v1"\)/, "Image asset generation must share the configured gateway");
+assert.match(assetGenerator, /"--base-url",\s*IMAGE_GEN_BASE_URL/, "Image asset generation must pass the shared gateway to image-gen");
 assert.match(imageGen, /const allImages = \[image, \.\.\.extraReferences\]/, "GPT Image requests must include the primary and additional reference images");
 assert.match(imageGen, /type: "input_image", image_url: await imageToInputUrl\(item\)/, "GPT Image requests must send every reference as image input, not prompt text");
 
@@ -34,6 +37,11 @@ assert.equal(image.normalizeCanvasImageModel("seedream-5-0-lite"), "seedream-5-0
 assert.equal(image.canvasImageModelConfig("seedream-5-0-pro").provider, "ark");
 assert.equal(image.canvasImageModelConfig("seedream-5-0-lite").provider, "ark");
 assert.equal(image.canvasImageModelConfig("gpt-image-2").provider, "gpt");
+assert.equal(
+  image.canvasImageBaseUrl(),
+  process.env.PIXEL_TOYS_IMAGE_BASE_URL || "https://api.apikey.fun/v1",
+  "Canvas GPT Image must use the configured image gateway",
+);
 assert.equal(image.canvasImageProviderSizeFor("16:9"), "1536x1024");
 assert.equal(image.canvasImageProviderSizeFor("9:16"), "1024x1536");
 assert.equal(image.canvasImageProviderSizeFor("1:1"), "1024x1024");

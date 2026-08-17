@@ -343,6 +343,7 @@ const VIDEO_MODEL_OPTIONS = {
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",
+  "seedance-2-0-super": "Seedance 2.0 super",
   "seedance-2-0-person-reference": "Seedance 2.0 人物素材参考",
   "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
   "grok-imagine-video": "Grok Imagine Video",
@@ -372,6 +373,7 @@ function normalizeVideoModelName(value) {
   if (VIDEO_MODEL_OPTIONS[raw]) return raw;
   if (/(?:byteplus|海外|modelark|ap-southeast)/.test(lower) && /2\.5|2-5/.test(lower)) return "seedance-2-5-byteplus";
   if (/2\.5|2-5/.test(lower)) return "seedance-2-5";
+  if (/super|超级/.test(lower)) return "seedance-2-0-super";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0-person-reference";
   if (/mini|迷你/.test(lower)) return "seedance-2-0-mini";
   if (/fast|快速/.test(lower)) return "seedance-2-0-fast";

@@ -87,6 +87,15 @@ function buildApiUrl(baseUrl, pathWithV1) {
   return `${base}${apiPath}`;
 }
 
+function isXibApiGateway(baseUrl) {
+  return /(^|:\/\/)(?:www\.)?xibapi\.com(?:\/|$)/i.test(String(baseUrl || ""));
+}
+
+function buildXibApiChatUrl(baseUrl) {
+  const base = String(baseUrl || "https://xibapi.com").replace(/\/+$/, "");
+  return base.endsWith("/v1") ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
+}
+
 function contentTypeFromPath(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
@@ -343,6 +352,29 @@ async function buildRequest(args, mode) {
   const prompt = requireArg(args, "prompt");
   const n = intArg(args, "n", 1);
   if (mode === "text") {
+    if (isXibApiGateway(args["base-url"])) {
+      return {
+        url: buildXibApiChatUrl(args["base-url"]),
+        defaultOut: "generated-image.png",
+        options: {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            model: args.model || "gpt-image-2",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.7,
+            size: args.size || "1024x1024",
+            quality: args.quality === "auto" ? "standard" : (args.quality || "standard"),
+            style: args.style || "vivid",
+            n,
+          }),
+        },
+      };
+    }
     return {
       url: buildApiUrl(args["base-url"], "/v1/images/generations"),
       defaultOut: "generated-image.png",
@@ -483,7 +515,7 @@ async function main() {
     await ensureOkResponse(activeRequest.response, request.url);
   } catch (error) {
     activeRequest?.clear();
-    if (mode !== "text" || !shouldFallbackToResponses(error)) throw error;
+    if (mode !== "text" || isXibApiGateway(args["base-url"]) || !shouldFallbackToResponses(error)) throw error;
     const fallback = buildTextResponsesRequest(args);
     activeRequest = await fetchWithTimeout(fallback.url, fallback.options, timeout);
     await ensureOkResponse(activeRequest.response, fallback.url);

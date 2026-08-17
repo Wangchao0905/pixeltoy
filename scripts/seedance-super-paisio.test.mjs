@@ -53,12 +53,22 @@ const virtualPayload = await buildPaisioVideoGenerationPayload(
     },
   },
 );
-assert.deepEqual(uploaded.map((item) => item.kind), ["image", "image", "image", "video", "audio"]);
-assert.equal(virtualPayload.image_url, "asset://va-1");
-assert.deepEqual(virtualPayload.extra_images, ["asset://va-3"]);
-assert.deepEqual(virtualPayload.extra_videos, ["asset://va-4"]);
-assert.deepEqual(virtualPayload.extra_audios, ["asset://va-5"]);
-assert.equal(virtualPayload.end_image_url, "asset://va-2");
+assert.deepEqual(uploaded, [], "Paisio video requests must use public URLs instead of virtual asset IDs");
+assert.equal(virtualPayload.image_url, "https://cdn.example/first.png");
+assert.deepEqual(virtualPayload.extra_images, ["https://cdn.example/person.png"]);
+assert.deepEqual(virtualPayload.extra_videos, ["https://cdn.example/motion.mp4"]);
+assert.deepEqual(virtualPayload.extra_audios, ["https://cdn.example/dialogue.mp3"]);
+assert.equal(virtualPayload.end_image_url, "https://cdn.example/last.png");
+
+await assert.rejects(
+  () => buildPaisioVideoGenerationPayload({
+    model: "seedance-2-0-super",
+    prompt: "禁止使用虚拟资产 URI",
+    assets: [{ id: "asset-1", name: "人物.png", url: "asset://asset-1", mediaType: "image" }],
+  }),
+  /不能使用 asset:\/\/ 引用/,
+  "Paisio must reject asset:// references before submitting a paid request",
+);
 
 const fallbackPayload = await buildPaisioVideoGenerationPayload(
   {
@@ -85,13 +95,10 @@ const canvasHtml = fs.readFileSync(path.join(root, "public", "canvas.html"), "ut
 assert.match(server, /PAISIO_VIDEO_BASE_URL/);
 assert.match(server, /PAISIO_SEEDANCE_SUPER_MODEL/);
 assert.match(server, /callPaisioJson\("\/v1\/videos"/);
-assert.match(server, /callPaisioMultipart\("\/v1\/virtual-assets"/);
-assert.match(server, /virtual-assets\/\$\{encodeURIComponent\(uploaded\.assetId\)\}\/sync/);
-assert.match(server, /uploadFallback: "public-url"/);
+assert.match(server, /不能使用 asset:\/\/ 引用/);
 assert.match(server, /paisioLocalReferenceUrl/);
 assert.match(server, /createPaisioPublicAssetUrl/);
 assert.match(server, /api\/paisio-assets/);
-assert.match(server, /paisioVirtualAssetRouteUnavailable/);
 assert.match(server, /fetchWithBodyTimeout/);
 assert.match(server, /PAISIO_VIDEO_REQUEST_TIMEOUT_MS/);
 assert.match(server, /getPaisioCanvasVideoGeneration/);

@@ -147,15 +147,10 @@ const DEFAULT_VOLC_ARK_VIDEO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v
 const DEFAULT_BYTEPLUS_ARK_VIDEO_BASE_URL = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_GRAVITEX_VIDEO_BASE_URL = "https://api.gravitex.ai/v1";
 const DEFAULT_PAISIO_VIDEO_BASE_URL = "https://api.paisio.online/v1";
-const PAISIO_SEEDANCE_SUPER_ASSET_UPLOAD_ENV = "PAISIO_SEEDANCE_SUPER_ASSET_UPLOAD";
-const PAISIO_SEEDANCE_SUPER_ASSET_SYNC_INTERVAL_MS = 2500;
-const PAISIO_SEEDANCE_SUPER_ASSET_SYNC_TIMEOUT_MS = 120000;
 const PAISIO_VIDEO_REQUEST_TIMEOUT_MS = Math.max(15_000, Number(process.env.PAISIO_VIDEO_REQUEST_TIMEOUT_MS || 45_000));
-const PAISIO_REFERENCE_FETCH_TIMEOUT_MS = Math.max(5_000, Number(process.env.PAISIO_REFERENCE_FETCH_TIMEOUT_MS || 20_000));
 const PAISIO_PUBLIC_ASSET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const paisioReferenceUrlCache = new Map();
 const paisioPublicAssetTokens = new Map();
-let paisioVirtualAssetRouteUnavailable = false;
 const GROK_API_BASE_URL = "https://apikey.fun/v1";
 const VIDEO_API_LOG_PATH = path.join(APP_ROOT, ".pixel-toys-video-api.log");
 const VIDEO_API_REQUEST_TIMEOUT_MS = Math.max(10_000, Number(process.env.VIDEO_API_REQUEST_TIMEOUT_MS || 120_000));
@@ -15461,46 +15456,6 @@ async function callPaisioJson(pathname, options = {}) {
   );
 }
 
-async function callPaisioMultipart(pathname, { buffer, fileName, mime, type } = {}) {
-  const key = videoApiKey("paisio");
-  if (!key) throw new Error("缺少 Paisio 视频 API Key：请在 .env.local 配置 PAISIO_API_KEY 后重启服务。");
-  if (!Buffer.isBuffer(buffer) || !buffer.length) throw new Error("Paisio 参考素材文件为空。");
-  const form = new FormData();
-  form.append("file", new Blob([buffer], { type: mime || "application/octet-stream" }), fileName || "reference");
-  form.append("type", type || "image");
-  const url = paisioVideoUrl(pathname);
-  let response;
-  let text;
-  try {
-    const result = await fetchWithBodyTimeout(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}` },
-      body: form,
-    }, PAISIO_VIDEO_REQUEST_TIMEOUT_MS);
-    response = result.response;
-    text = result.body;
-  } catch (error) {
-    const message = normalizeVideoGenerationErrorMessage(error.message || "Paisio 素材上传请求失败");
-    appendVideoApiLog({ provider: "paisio", method: "POST", url, status: error.code || error.name || "NETWORK_ERROR", message });
-    throw new Error(message);
-  }
-  let data = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { message: text };
-  }
-  if (!response.ok || data.success === false || data.ok === false) {
-    const message = normalizeVideoGenerationErrorMessage(extractVideoApiError(data) || `Paisio 素材上传失败：HTTP ${response.status}`);
-    appendVideoApiLog({ provider: "paisio", method: "POST", url, status: response.status, message, response: data });
-    const error = new Error(message || "Paisio 素材上传失败");
-    error.statusCode = response.status;
-    if (response.status === 404 && /Invalid URL|virtual-assets/i.test(message)) error.code = "PAISIO_VIRTUAL_ASSET_ROUTE_UNAVAILABLE";
-    throw error;
-  }
-  return data;
-}
-
 // 火山把「明显不含真人」的图也判成真人时的自救路径。
 // 背景:审核结果由火山自己的分类器决定,我们无法预测哪张会被误判——
 // 卡通风景照实测同样会中招。而 isArkPersonReferenceAsset 只放行
@@ -16008,39 +15963,6 @@ function paisioReferenceKind(asset = {}) {
   return "image";
 }
 
-function paisioVirtualAssetLimits(kind) {
-  if (kind === "video") return { maxBytes: 100 * 1024 * 1024, extensions: [".mp4"], mimePrefix: "video/", fallbackMime: "video/mp4" };
-  if (kind === "audio") return { maxBytes: 20 * 1024 * 1024, extensions: [".mp3", ".wav"], mimePrefix: "audio/", fallbackMime: "audio/mpeg" };
-  return { maxBytes: 10 * 1024 * 1024, extensions: [".jpg", ".jpeg", ".png", ".webp"], mimePrefix: "image/", fallbackMime: "image/png" };
-}
-
-function paisioReferenceExtension(url, kind, mime = "") {
-  const limits = paisioVirtualAssetLimits(kind);
-  let extension = "";
-  try {
-    extension = path.extname(new URL(url).pathname).toLowerCase();
-  } catch {
-    extension = path.extname(String(url || "")).toLowerCase();
-  }
-  if (limits.extensions.includes(extension)) return extension === ".jpeg" ? ".jpg" : extension;
-  const mimeExtension = Object.entries(MIME).find(([candidate, value]) => value === mime)?.[0] || "";
-  if (limits.extensions.includes(mimeExtension)) return mimeExtension === ".jpeg" ? ".jpg" : mimeExtension;
-  return limits.extensions[0];
-}
-
-function paisioReferenceMime(url, kind, responseMime = "") {
-  const limits = paisioVirtualAssetLimits(kind);
-  const mime = compactLine(responseMime).split(";", 1)[0].toLowerCase();
-  if (mime.startsWith(limits.mimePrefix)) {
-    if (kind === "image" && !["image/jpeg", "image/png", "image/webp"].includes(mime)) return limits.fallbackMime;
-    if (kind === "video" && mime !== "video/mp4") return limits.fallbackMime;
-    if (kind === "audio" && !["audio/mpeg", "audio/wav", "audio/x-wav"].includes(mime)) return limits.fallbackMime;
-    return mime === "audio/x-wav" ? "audio/wav" : mime;
-  }
-  const extension = paisioReferenceExtension(url, kind, mime);
-  return MIME[extension] || limits.fallbackMime;
-}
-
 function createPaisioPublicAssetUrl(localFile) {
   if (!localFile || !fs.existsSync(localFile) || !fs.statSync(localFile).isFile()) return "";
   const baseUrl = canvasPublicAssetBaseUrl();
@@ -16104,101 +16026,16 @@ async function paisioPublicReferenceUrl(source, name) {
   return url;
 }
 
-async function fetchPaisioVirtualAssetInput(source, name, kind) {
-  const url = await paisioPublicReferenceUrl(source, name);
-  const limits = paisioVirtualAssetLimits(kind);
-  const { response, body } = await fetchWithBodyTimeout(
-    url,
-    { method: "GET", redirect: "follow" },
-    PAISIO_REFERENCE_FETCH_TIMEOUT_MS,
-    "arrayBuffer",
-  );
-  if (!response.ok) throw new Error(`Paisio 参考素材「${name || "未命名素材"}」下载失败：HTTP ${response.status}`);
-  const contentLength = Number(response.headers.get("content-length") || 0);
-  if (contentLength > limits.maxBytes) {
-    throw new Error(`Paisio ${kind} 素材「${name || "未命名素材"}」超过 ${Math.round(limits.maxBytes / 1024 / 1024)}MB 限制。`);
-  }
-  const buffer = Buffer.from(body);
-  if (!buffer.length) throw new Error(`Paisio 参考素材「${name || "未命名素材"}」为空。`);
-  if (buffer.length > limits.maxBytes) {
-    throw new Error(`Paisio ${kind} 素材「${name || "未命名素材"}」超过 ${Math.round(limits.maxBytes / 1024 / 1024)}MB 限制。`);
-  }
-  const mime = paisioReferenceMime(url, kind, response.headers.get("content-type") || "");
-  const extension = paisioReferenceExtension(url, kind, mime);
-  const baseName = safeSlug(path.basename(name || "reference", path.extname(name || "")), "reference");
-  return { buffer, mime, fileName: `${baseName}${extension}` };
-}
-
-function normalizePaisioVirtualAsset(raw = {}) {
-  const data = raw?.data && typeof raw.data === "object" ? raw.data : raw?.result && typeof raw.result === "object" ? raw.result : raw;
-  return {
-    assetId: compactLine(data?.asset_id || data?.assetId || data?.id || ""),
-    status: compactLine(data?.status || "").toLowerCase(),
-    errorMessage: compactLine(data?.error_message || data?.errorMessage || data?.message || ""),
-    raw,
-  };
-}
-
-async function uploadPaisioVirtualAsset(source, name, kind) {
-  if (/^asset:\/\//i.test(compactLine(source))) {
-    const assetId = compactLine(source).replace(/^asset:\/\//i, "");
-    if (assetId) return { url: `asset://${assetId}`, assetId, status: "active", uploaded: false };
-  }
-  const input = await fetchPaisioVirtualAssetInput(source, name, kind);
-  const uploaded = normalizePaisioVirtualAsset(await callPaisioMultipart("/v1/virtual-assets", { ...input, type: kind }));
-  if (!uploaded.assetId) throw new Error(`Paisio 上传素材「${name || "未命名素材"}」未返回 asset_id。`);
-  if (["active", "completed"].includes(uploaded.status)) {
-    return { url: `asset://${uploaded.assetId}`, assetId: uploaded.assetId, status: "active", uploaded: true };
-  }
-  if (["failed", "error"].includes(uploaded.status)) {
-    throw new Error(`Paisio 素材「${name || "未命名素材"}」上传失败：${uploaded.errorMessage || "未知错误"}`);
-  }
-  const deadline = Date.now() + PAISIO_SEEDANCE_SUPER_ASSET_SYNC_TIMEOUT_MS;
-  let current = uploaded;
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, PAISIO_SEEDANCE_SUPER_ASSET_SYNC_INTERVAL_MS));
-    current = normalizePaisioVirtualAsset(await callPaisioJson(`/v1/virtual-assets/${encodeURIComponent(uploaded.assetId)}/sync`, { method: "POST" }));
-    if (["active", "completed"].includes(current.status)) {
-      return { url: `asset://${uploaded.assetId}`, assetId: uploaded.assetId, status: "active", uploaded: true };
-    }
-    if (["failed", "error"].includes(current.status)) {
-      throw new Error(`Paisio 素材「${name || "未命名素材"}」处理失败：${current.errorMessage || "未知错误"}`);
-    }
-  }
-  throw new Error(`Paisio 素材「${name || "未命名素材"}」处理超时（超过 ${Math.round(PAISIO_SEEDANCE_SUPER_ASSET_SYNC_TIMEOUT_MS / 1000)} 秒）。`);
-}
-
 async function paisioVideoReference(source, name, kind, options = {}) {
   const cleanSource = compactLine(source);
   if (!cleanSource) return null;
-  if (/^asset:\/\//i.test(cleanSource)) return { url: cleanSource, assetId: cleanSource.slice("asset://".length), uploaded: false };
-  if (
-    process.env[PAISIO_SEEDANCE_SUPER_ASSET_UPLOAD_ENV] === "0"
-    || options.useVirtualAssets === false
-    || paisioVirtualAssetRouteUnavailable
-  ) {
-    return { url: await paisioPublicReferenceUrl(cleanSource, name), uploaded: false };
+  if (/^asset:\/\//i.test(cleanSource)) {
+    throw new Error(`Paisio 素材「${name || "未命名素材"}」不能使用 asset:// 引用；请提供可公开访问的 http/https 素材地址。`);
   }
-  const uploader = options.uploadVirtualAsset || uploadPaisioVirtualAsset;
-  let result;
-  try {
-    result = await uploader(cleanSource, name, kind);
-  } catch (error) {
-    if (error?.code !== "PAISIO_VIRTUAL_ASSET_ROUTE_UNAVAILABLE" && error?.statusCode !== 404) throw error;
-    paisioVirtualAssetRouteUnavailable = true;
-    const publicUrl = await paisioPublicReferenceUrl(cleanSource, name);
-    appendVideoApiLog({
-      provider: "paisio",
-      method: "POST",
-      url: paisioVideoUrl("/v1/virtual-assets"),
-      status: "FALLBACK_PUBLIC_URL",
-      message: "当前网关未部署虚拟资产路由，Seedance super 回退到公网素材 URL",
-    });
-    return { url: publicUrl, uploaded: false, uploadFallback: "public-url" };
-  }
-  const url = typeof result === "string" ? result : compactLine(result?.url || result?.assetUrl || result?.asset_url || "");
-  if (!url) throw new Error(`Paisio 素材「${name || "未命名素材"}」上传后未返回可引用地址。`);
-  return { ...result, url };
+  // Paisio /v1/videos 文档只定义公网 URL 字段，没有 asset_id 或 asset:// 的视频请求字段。
+  // 虚拟资产上传接口即使可用，也不能把返回的 asset_id 直接放入该请求，因此这里始终
+  // 生成短时公网 URL，并由 prompt 中的 @Image/@Video/@Audio 与数组位置对应。
+  return { url: await paisioPublicReferenceUrl(cleanSource, name), uploaded: false };
 }
 
 async function buildPaisioVideoGenerationPayload(body = {}, options = {}) {

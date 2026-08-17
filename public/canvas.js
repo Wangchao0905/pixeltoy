@@ -242,7 +242,7 @@ const CANVAS_NODE_RATIO_DIMENSIONS = Object.freeze({
   adaptive: { width: 9, height: 16, preferredWidth: 520 },
 });
 const IMAGE_NODE_DEFAULTS = {
-  model: "gpt-image-2",
+  model: "gpt-image2-medium",
   ratio: "16:9",
   resolution: "1k",
 };

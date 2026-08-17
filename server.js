@@ -4680,7 +4680,11 @@ const MODEL_SHOT_PLAN_VERSION = 2;
 
 function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage, durationMode = "tk", assetManifestFingerprint = "", shots } = {}) {
   const path = defaultPaths(episodeRoot).modelShotPlan;
-  const normalizedDurationMode = normalizeDurationMode(durationMode);
+  const normalizedDurationMode = durationMode === "free" || durationMode === "自由模式"
+    ? "free"
+    : durationMode === "short_drama_15s" || durationMode === "15 秒短剧模式" || durationMode === "固定15秒"
+      ? "short_drama_15s"
+      : "tk";
   const plannedShots = (Array.isArray(shots) ? shots : []).map((shot) => ({
     id: compactLine(shot?.id),
     title: compactLine(shot?.title),
@@ -4699,7 +4703,7 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
   if (!plannedShots.length || plannedShots.some((shot) => !shot.id || !shot.beat || !shot.refs.length || !hasCompleteSeedanceDesign(shot.design))) {
     throw new Error("视频分镜模型返回的导演设计不完整，未写入草稿，请重新生成分镜草稿。");
   }
-  if ([DURATION_MODE_FREE, DURATION_MODE_SHORT_DRAMA_15].includes(normalizedDurationMode)) {
+  if (["free", "short_drama_15s"].includes(normalizedDurationMode)) {
     const planningScript = modelPlanningScript(script);
     const sourceBeats = freeDurationSourceBeats(planningScript, scriptBeatCandidates(planningScript));
     const durationPlan = planEpisodeDuration({
@@ -4710,7 +4714,7 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
     });
     const totalDuration = plannedShots.reduce((sum, shot) => sum + shot.duration, 0);
     if (plannedShots.length !== durationPlan.shotCount || totalDuration !== durationPlan.target) {
-      throw new Error(`${normalizedDurationMode === DURATION_MODE_SHORT_DRAMA_15 ? "15 秒短剧模式" : "自由模式"}计划写入被拒绝：要求 ${durationPlan.shotCount} 镜头 / ${durationPlan.target} 秒，实际 ${plannedShots.length} 镜头 / ${totalDuration} 秒`);
+      throw new Error(`${normalizedDurationMode === "short_drama_15s" ? "15 秒短剧模式" : "自由模式"}计划写入被拒绝：要求 ${durationPlan.shotCount} 镜头 / ${durationPlan.target} 秒，实际 ${plannedShots.length} 镜头 / ${totalDuration} 秒`);
     }
   }
   writeText(
@@ -4723,9 +4727,9 @@ function writeStoryboardModelPlan(episodeRoot, { model, script, dialogueLanguage
         scriptFingerprint: sha1Text(script),
         assetManifestFingerprint: compactLine(assetManifestFingerprint),
         dialogueLanguage: dialogueLanguage === "zh" ? "zh" : "en",
-      durationMode: normalizedDurationMode,
-      createdAt: new Date().toISOString(),
-      shots: plannedShots,
+        durationMode: normalizedDurationMode,
+        createdAt: new Date().toISOString(),
+        shots: plannedShots,
       },
       null,
       2,
@@ -4754,8 +4758,15 @@ function modelPlanDialogueLanguageForConfig(modelPlan, script, requestedLanguage
 }
 
 function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk", assetManifestFingerprint = "") {
-  const expectedMode = normalizeDurationMode(durationMode);
-  const plannedMode = normalizeDurationMode(plan?.durationMode);
+  // Keep this helper self-contained: several validation paths execute it without
+  // loading the full server module scope.
+  const normalizePlanMode = (value) => {
+    if (value === "free" || value === "自由模式") return "free";
+    if (value === "short_drama_15s" || value === "15 秒短剧模式" || value === "固定15秒") return "short_drama_15s";
+    return "tk";
+  };
+  const expectedMode = normalizePlanMode(durationMode);
+  const plannedMode = normalizePlanMode(plan?.durationMode);
   const expectedAssetManifestFingerprint = compactLine(assetManifestFingerprint);
   if (
     !plan ||
@@ -4763,7 +4774,7 @@ function modelShotPlanNeedsRefresh(plan, script, durationMode = "tk", assetManif
     plannedMode !== expectedMode ||
     (expectedAssetManifestFingerprint && compactLine(plan.assetManifestFingerprint) !== expectedAssetManifestFingerprint)
   ) return true;
-  if (![DURATION_MODE_FREE, DURATION_MODE_SHORT_DRAMA_15].includes(expectedMode)) return false;
+  if (!["free", "short_drama_15s"].includes(expectedMode)) return false;
   const planningScript = modelPlanningScript(script);
   const sourceBeats = freeDurationSourceBeats(planningScript, scriptBeatCandidates(planningScript));
   const durationPlan = planEpisodeDuration({
@@ -16310,18 +16321,21 @@ const CANVAS_IMAGE_SIZE_TABLE = {
   "2:3": { "1k": "1024x1536", "2k": "2048x3072", "4k": "2304x3456" },
   "1:1": { "1k": "1024x1024", "2k": "2048x2048", "4k": "2880x2880" },
 };
-const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
+const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image2-medium";
 const DEFAULT_CANVAS_IMAGE_BASE_URL = "https://beefapi.com/v1";
 const DEFAULT_SEEDREAM_5_PRO_MODEL = "doubao-seedream-5-0-260128";
 const DEFAULT_SEEDREAM_5_LITE_MODEL = "doubao-seedream-5-0-lite-260128";
 const SEEDREAM_MIN_IMAGE_PIXELS = 3_686_400;
 
 function normalizeCanvasImageModel(value) {
-  const raw = compactLine(value || "gpt-image-2").toLowerCase();
+  const raw = compactLine(value || "gpt-image2-medium").toLowerCase();
   if (["grok-imagine-image", "grok-imagine"].includes(raw)) return "grok-imagine-image";
   if (["seedream-5-0-pro", "seedream-5.0-pro", "seedream-5-pro", "doubao-seedream-5-0-260128"].includes(raw)) return "seedream-5-0-pro";
   if (["seedream-5-0-lite", "seedream-5.0-lite", "seedream-5-lite", "doubao-seedream-5-0-lite-260128"].includes(raw)) return "seedream-5-0-lite";
-  return "gpt-image-2";
+  // GPT Image 2 分档：gpt-image2-high / gpt-image2-medium（paisio 网关模型 ID）
+  if (["gpt-image2-high", "gpt-image-2-high", "gptimage2high", "gpt-image2-high"].includes(raw)) return "gpt-image2-high";
+  if (["gpt-image2-medium", "gpt-image-2-medium", "gptimage2medium", "gpt-image2-medium"].includes(raw)) return "gpt-image2-medium";
+  return "gpt-image2-medium";
 }
 
 function canvasImageModelConfig(value) {
@@ -16342,6 +16356,12 @@ function canvasImageModelConfig(value) {
       provider: "ark",
       model: process.env.VOLC_ARK_IMAGE_LITE_MODEL || process.env.SEEDREAM_5_LITE_MODEL || DEFAULT_SEEDREAM_5_LITE_MODEL,
     };
+  }
+  if (key === "gpt-image2-high") {
+    return { key, provider: "gpt", model: "gpt-image2-high", supportsSize: true };
+  }
+  if (key === "gpt-image2-medium") {
+    return { key, provider: "gpt", model: "gpt-image2-medium", supportsSize: true };
   }
   return { key, provider: "gpt", model: GPT_IMAGE_MODEL, supportsSize: true };
 }
@@ -16547,7 +16567,7 @@ function recoverCanvasImageJobFromOutput(taskId = "") {
     status: "completed",
     url: `/public-assets/${encodeURIComponent(fileName)}?v=${version}`,
     message: "生成完成（已从本地图片恢复）",
-    imageModel: "gpt-image-2",
+    imageModel: "gpt-image2-medium",
     provider: "gpt",
   };
 }
@@ -16991,7 +17011,7 @@ function getCanvasImageGeneration(taskId) {
     size: job.size,
     ratio: job.ratio,
     resolution: job.resolution,
-    imageModel: job.imageModel || "gpt-image-2",
+    imageModel: job.imageModel || "gpt-image2-medium",
     provider: job.provider || "gpt",
     referenceImageCount: Number(job.referenceImageCount) || 0,
     libraryAssetId: job.libraryAssetId || "",
@@ -22526,7 +22546,12 @@ function videoAssetReferenceContract(shot = {}) {
 
 function applyVideoPromptContinuityContract(prompt = "", shot = {}, index = 0) {
   const base = String(prompt || "").split("\n\nVIDEO PRODUCTION CONTRACT")[0].trim();
-  const design = seedancePromptDesignForShot(shot, index);
+  let design = {};
+  try {
+    design = seedancePromptDesignForShot(shot, index);
+  } catch {
+    design = sanitizeSeedanceDesign(shot?.videoDesign || {});
+  }
   const startState = compactLine(shot.startState || design.first_frame_blocking || shot.beat || "本段第一帧保持已锁定人物、场景和道具状态");
   const action = compactLine(shot.action || design.action_timing || design.timeline || shot.beat || "按剧本完成本段主动作");
   const endState = compactLine(shot.endState || design.timeline || shot.beat || "本段动作完成后保持可交接的静止状态");
@@ -22635,7 +22660,7 @@ function storyboardGuidanceForShot(shot = {}, slot = {}, assetLookup = new Map()
 // Production Board 模式的一个视频片段严格对应一张故事板。模型导演仍负责按剧本
 // 规划原始剧情镜头和时长，故事板槽位再把同一张板覆盖的连续镜头合并；视频阶段
 // 只读取板面时长，避免把提示词模式的镜头时长带进故事板队列。
-function productionBoardShotsFromSlots(sourceShots = [], slots = [], dialogueLanguage = "en", assetLookup = new Map()) {
+function productionBoardShotsFromSlots(sourceShots = [], slots = [], dialogueLanguage = "en", assetLookup = new Map(), durationMode = DURATION_MODE_TK) {
   const shotsByName = new Map((Array.isArray(sourceShots) ? sourceShots : []).map((shot) => [compactLine(shot?.name), shot]));
   return (Array.isArray(slots) ? slots : []).map((slot, index) => {
     const sourceNames = [...new Set((slot?.sourceShotNames || []).map(compactLine).filter(Boolean))];
@@ -22657,7 +22682,9 @@ function productionBoardShotsFromSlots(sourceShots = [], slots = [], dialogueLan
         dialogueKeys.add(key);
         dialogues.push(normalized);
       });
-    const duration = Number(slot?.duration || 0);
+    const duration = normalizeDurationMode(durationMode) === DURATION_MODE_SHORT_DRAMA_15
+      ? PRODUCTION_BOARD_MAX_SECONDS
+      : Number(slot?.duration || 0);
     if (!Number.isFinite(duration) || duration < VIDEO_MIN_SECONDS || duration > VIDEO_MAX_SECONDS) {
       throw new Error(`故事板「${slot?.label || slot?.id || `第 ${index + 1} 张`}」时长 ${duration || 0}s 不在视频模型支持的 ${VIDEO_MIN_SECONDS}-${VIDEO_MAX_SECONDS}s 范围内`);
     }
@@ -24109,7 +24136,7 @@ function readCoverDesignState(episodeRoot) {
     status: compactLine(state.status || "idle") || "idle",
     runId: compactLine(state.runId || ""),
     title: compactLine(state.title || ""),
-    model: compactLine(state.model || "gpt-image-2") || "gpt-image-2",
+    model: compactLine(state.model || "gpt-image2-medium") || "gpt-image2-medium",
     ratio: compactLine(state.ratio || "9:16") || "9:16",
     createdAt: compactLine(state.createdAt || ""),
     updatedAt: compactLine(state.updatedAt || ""),
@@ -24237,7 +24264,7 @@ async function generateProjectCoverDesigns(episodeRoot, { ownerUserId = "" } = {
     runId,
     status: "running",
     title,
-    model: "gpt-image-2",
+    model: "gpt-image2-medium",
     ratio: "9:16",
     createdAt: new Date().toISOString(),
     message: "正在生成 4 个封面方向",
@@ -24258,7 +24285,7 @@ async function generateProjectCoverDesigns(episodeRoot, { ownerUserId = "" } = {
         prompt: promptForCoverStyle(style, { title, referenceNames }),
         ratio: "9:16",
         resolution: "1k",
-        imageModel: "gpt-image-2",
+        imageModel: "gpt-image2-medium",
         referenceImages,
         ownerUserId,
       });
@@ -25467,7 +25494,21 @@ async function buildVideoConfig(episodeRoot, body = {}) {
         `以下故事板尚未生成或覆盖不全，对应片段暂无 Production Board 绑定：${missingStoryboardSlots.map((slot) => slot.label || slot.id).join("、")}`,
       );
     }
-    shots = productionBoardShotsFromSlots(modelShots, storyboardSlots, dialogueLanguage, assetLookup);
+    if (requestedDurationMode === DURATION_MODE_SHORT_DRAMA_15) {
+      let cursor = 0;
+      storyboardSlots = storyboardSlots.map((slot) => {
+        const startSecond = cursor;
+        cursor += PRODUCTION_BOARD_MAX_SECONDS;
+        return {
+          ...slot,
+          startSecond,
+          duration: PRODUCTION_BOARD_MAX_SECONDS,
+          endSecond: cursor,
+          maxDuration: PRODUCTION_BOARD_MAX_SECONDS,
+        };
+      });
+    }
+    shots = productionBoardShotsFromSlots(modelShots, storyboardSlots, dialogueLanguage, assetLookup, requestedDurationMode);
     shots.forEach((shot) => {
       const storyboardWarnings = storyboardAssetBindingWarnings(shot, shot.storyboardGuidance?.assetBinding || {});
       if (storyboardWarnings.length) referenceWarnings.push(...storyboardWarnings);
@@ -26233,7 +26274,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
       recordUserImageTask(body.authUser, {
         kind: isEdit ? "asset-edit" : isRegenerate ? "asset-regenerate" : "asset",
         projectId: encodeId(episodeRoot),
-        model: "gpt-image-2",
+        model: "gpt-image2-medium",
         provider: "gpt",
         count: targetAssetNames.length,
       });
@@ -26297,7 +26338,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
       recordUserImageTask(body.authUser, {
         kind: isRegenerate ? "storyboard-regenerate" : "storyboard",
         projectId: encodeId(episodeRoot),
-        model: "gpt-image-2",
+        model: "gpt-image2-medium",
         provider: "gpt",
         count: selectedStoryboardNames.length,
       });
@@ -26514,7 +26555,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The image description." },
-          imageModel: { type: "string", enum: ["gpt-image-2", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image-2" },
+          imageModel: { type: "string", enum: ["gpt-image2-high", "gpt-image2-medium", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image2-medium" },
           ratio: { type: "string", enum: Object.keys(CANVAS_IMAGE_SIZE_TABLE), default: "16:9" },
           resolution: { type: "string", enum: ["1k", "2k", "4k"], default: "1k" },
           referenceImages: { type: "array", items: { type: "string" }, maxItems: 4 },
@@ -26705,7 +26746,7 @@ async function executeSuperPixelTool({ req, context, callId, name, rawArguments,
       });
       const meta = {
         prompt,
-        imageModel: result.imageModel || compactLine(args.imageModel || "gpt-image-2"),
+        imageModel: result.imageModel || compactLine(args.imageModel || "gpt-image2-medium"),
         ratio: result.ratio || compactLine(args.ratio || "16:9"),
         resolution: result.resolution || compactLine(args.resolution || "1k"),
         referenceImages,

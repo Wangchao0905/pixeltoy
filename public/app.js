@@ -1,6 +1,7 @@
 const DEFAULT_ASSET_ANALYZER_MODEL = "claude-opus-4-8";
 const DURATION_MODE_TK = "tk";
 const DURATION_MODE_FREE = "free";
+const DURATION_MODE_SHORT_DRAMA_15 = "short_drama_15s";
 const WORKSPACE_LAYOUT_VERSION = "green-flow-v5-no-map";
 const WORKSPACE_SCALE_KEY = `pixelToys.workspaceScale.${WORKSPACE_LAYOUT_VERSION}`;
 const STUDIO_TAB_KEY = `pixelToys.activeStudioTab.${WORKSPACE_LAYOUT_VERSION}`;
@@ -151,7 +152,7 @@ const state = {
     history: readImageExploreHistory(),
     storyboardHistory: readImageExploreStoryboardHistory(),
     prompt: "",
-    model: "gpt-image-2",
+    model: "gpt-image2-medium",
     ratio: "16:9",
     resolution: "1k",
     count: 1,
@@ -186,7 +187,7 @@ const state = {
   selectedAssetIds: new Set(),
   optimisticAssetJobs: new Map(),
   dialogueLanguage: localStorage.getItem("pixelToys.dialogueLanguage") || "en",
-  durationMode: DURATION_MODE_TK,
+  durationMode: DURATION_MODE_SHORT_DRAMA_15,
   assumeEnglishDialogue: localStorage.getItem("pixelToys.assumeEnglishDialogue") === "1",
   workspaceScale: initialWorkspaceScale(),
   assetUploadTargetId: "",
@@ -1773,7 +1774,9 @@ function projectDialogueLanguageFrom(data) {
 
 function normalizeDurationMode(value, fallback = DURATION_MODE_TK) {
   if (value === DURATION_MODE_FREE || value === "自由模式") return DURATION_MODE_FREE;
+  if (value === DURATION_MODE_SHORT_DRAMA_15 || value === "15 秒短剧模式" || value === "固定15秒") return DURATION_MODE_SHORT_DRAMA_15;
   if (value === DURATION_MODE_TK || value === "TK 模式") return DURATION_MODE_TK;
+  if (fallback === DURATION_MODE_SHORT_DRAMA_15) return DURATION_MODE_SHORT_DRAMA_15;
   return fallback === DURATION_MODE_FREE ? DURATION_MODE_FREE : DURATION_MODE_TK;
 }
 
@@ -1784,18 +1787,27 @@ function projectDurationModeFrom(data) {
     data?.assetManifest?.production?.durationMode ||
     data?.videoConfigStatus?.durationMode ||
     "";
-  return value === DURATION_MODE_FREE || value === DURATION_MODE_TK ? value : "";
+  return [DURATION_MODE_FREE, DURATION_MODE_TK, DURATION_MODE_SHORT_DRAMA_15].includes(value) ? value : "";
+}
+
+function modernDurationModeFrom(data = state.project) {
+  const persisted = projectDurationModeFrom(data);
+  const hasCompiledShots = Number(data?.videoConfigStatus?.shots || 0) > 0 || data?.storyboardDraftStatus?.ready === true;
+  if (!hasCompiledShots && state.durationMode === DURATION_MODE_SHORT_DRAMA_15) return DURATION_MODE_SHORT_DRAMA_15;
+  return normalizeDurationMode(persisted || state.durationMode);
 }
 
 function modernVideoParameterPolicy(data, ratio = "9:16") {
-  const mode = normalizeDurationMode(projectDurationModeFrom(data) || state.durationMode);
+  const mode = modernDurationModeFrom(data);
   const selectedRatio = String(ratio || "9:16");
   const free = mode === DURATION_MODE_FREE;
+  const fixed15 = mode === DURATION_MODE_SHORT_DRAMA_15;
   return {
     free,
-    heroRatio: free ? `${selectedRatio} 自由可选` : `${selectedRatio} 已锁定`,
+    fixed15,
+    heroRatio: free ? `${selectedRatio} 自由可选` : fixed15 ? `${selectedRatio} · 15秒固定` : `${selectedRatio} 已锁定`,
     ratioAriaLabel: free ? "自由选择视频比例" : "视频比例",
-    parameterHint: free ? "自由模式：模型、比例、规格可调" : "用于当前片段",
+    parameterHint: free ? "自由模式：模型、比例、规格可调" : fixed15 ? "短剧模式：每个视频片段固定 15 秒" : "用于当前片段",
   };
 }
 
@@ -1862,7 +1874,7 @@ function projectShellStateFromSummary(summary = {}) {
     videoProgress: { total: 0, completed: 0, items: [] },
     videoConfigStatus: {},
     finalCut: null,
-    coverDesign: { status: "idle", items: [], model: "gpt-image-2", ratio: "9:16" },
+    coverDesign: { status: "idle", items: [], model: "gpt-image2-medium", ratio: "9:16" },
     jobs: [],
     summary: null,
   };
@@ -1982,7 +1994,7 @@ function openProjectFromState(data) {
 
 function resetProjectScopedUiState() {
   state.activeJobId = "";
-  state.durationMode = DURATION_MODE_TK;
+  state.durationMode = DURATION_MODE_SHORT_DRAMA_15;
   state.referenceKitEditingId = "";
   state.referenceKitDraft = null;
   state.modernStudio.assetManageMode = false;
@@ -2624,7 +2636,7 @@ function renderImageExploreView() {
   const view = $("#imageExploreView");
   if (!view) return;
   $("#imageExplorePrompt").value = state.imageStudio.prompt;
-  $("#imageExploreModel").value = state.imageStudio.model || "gpt-image-2";
+  $("#imageExploreModel").value = state.imageStudio.model || "gpt-image2-medium";
   $("#imageExploreRatio").value = state.imageStudio.ratio;
   $("#imageExploreResolution").value = state.imageStudio.resolution;
   const grokImageSelected = state.imageStudio.model === "grok-imagine-image";
@@ -3051,7 +3063,7 @@ function renderSuperPixelImageCard(message) {
   const details = document.createElement("div");
   details.className = "super-pixel-tool-card-details";
   appendSuperPixelCardMeta(details, "提示词", meta.prompt || "");
-  appendSuperPixelCardMeta(details, "模型", meta.imageModel || "gpt-image-2");
+  appendSuperPixelCardMeta(details, "模型", meta.imageModel || "gpt-image2-medium");
   appendSuperPixelCardMeta(details, "画幅", [meta.ratio, meta.resolution].filter(Boolean).join(" · "));
   card.appendChild(details);
   return card;
@@ -3340,7 +3352,7 @@ async function retrySuperPixelImageCard(card) {
       method: "POST",
       body: JSON.stringify({
         prompt,
-        imageModel: meta.imageModel || "gpt-image-2",
+        imageModel: meta.imageModel || "gpt-image2-medium",
         ratio: meta.ratio || "16:9",
         resolution: meta.resolution || "1k",
         referenceImages,
@@ -4042,7 +4054,7 @@ async function runImageExploreGeneration(item) {
           prompt: item.prompt,
           ratio: item.ratio,
           resolution: item.resolution,
-          imageModel: item.model || "gpt-image-2",
+          imageModel: item.model || "gpt-image2-medium",
           referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
         }),
       });
@@ -4086,7 +4098,7 @@ async function runImageExploreStoryboardGeneration(item) {
           prompt: item.prompt,
           ratio: "16:9",
           resolution: item.resolution,
-          imageModel: item.model || "gpt-image-2",
+          imageModel: item.model || "gpt-image2-medium",
           referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
         }),
       });
@@ -4233,7 +4245,7 @@ async function submitImageExploreStoryboard(event) {
     .filter((reference) => !reference.uploading)
     .map((reference) => reference.url || reference.localUrl)
     .filter(Boolean);
-  const model = state.imageStudio.model || "gpt-image-2";
+  const model = state.imageStudio.model || "gpt-image2-medium";
   const batchId = `storyboard-batch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
   const items = Array.from({ length: boardCount }, (_, index) => ({
@@ -4300,7 +4312,7 @@ async function submitImageExploreGeneration(event) {
     .filter((reference) => !reference.uploading)
     .map((reference) => reference.localUrl || reference.url)
     .filter(Boolean);
-  const model = state.imageStudio.model || "gpt-image-2";
+  const model = state.imageStudio.model || "gpt-image2-medium";
   const items = Array.from({ length: count }, (_, index) => ({
     id: `image-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
     status: "running",
@@ -5098,7 +5110,14 @@ function setModernProjectMenu(open) {
 }
 
 function renderModernDurationMode(data = state.project) {
-  const mode = normalizeDurationMode(projectDurationModeFrom(data) || state.durationMode);
+  const explicitMode = Object.prototype.hasOwnProperty.call(data || {}, "durationMode") && Object.keys(data || {}).length === 1;
+  const persisted = projectDurationModeFrom(data);
+  const hasCompiledShots = Number(data?.videoConfigStatus?.shots || 0) > 0 || data?.storyboardDraftStatus?.ready === true;
+  const mode = explicitMode
+    ? normalizeDurationMode(data.durationMode)
+    : hasCompiledShots
+      ? normalizeDurationMode(persisted || state.durationMode)
+      : DURATION_MODE_SHORT_DRAMA_15;
   state.durationMode = mode;
   document.querySelectorAll("[data-duration-mode]").forEach((button) => {
     const selected = button.dataset.durationMode === mode;
@@ -5289,6 +5308,32 @@ function modernStatusLabel(status = "") {
   return labels[String(status || "").toLowerCase()] || "待生成";
 }
 
+function modernShotTimeRange(shot = {}, index = 0) {
+  const duration = Math.max(0, Number(shot.duration) || 0);
+  const start = Math.max(0, Number(shot.startSecond) || index * duration);
+  const end = Number(shot.endSecond) > start ? Number(shot.endSecond) : start + duration;
+  const format = (seconds) => {
+    const total = Math.max(0, Math.round(seconds));
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  };
+  return `${format(start)}-${format(end)}`;
+}
+
+function modernShotTransitionLabel(shot = {}, index = 0) {
+  if (Array.isArray(shot.storyboardRefs) && shot.storyboardRefs.length) return "Production Board";
+  if (shot.useTailFrame === true || shot.tailFrameSource) return "尾帧续接";
+  if (index === 0) return "开场建立";
+  if (shot.sharedSceneContinuity) return "同场景切镜";
+  return "换场切镜";
+}
+
+function modernShotReferenceCount(shot = {}) {
+  return new Set([
+    ...(Array.isArray(shot.refs) ? shot.refs : []),
+    ...(Array.isArray(shot.storyboardRefs) ? shot.storyboardRefs : []),
+  ].filter(Boolean)).size;
+}
+
 function modernVideoQueueCount(progress = {}) {
   const items = Array.isArray(progress.items) ? progress.items : [];
   const activeItems = items.filter((item) => {
@@ -5331,10 +5376,22 @@ function modernShotRecords(data = state.project) {
       story: shot.story || shot.plot || shot.production?.action || shot.production?.visual || "",
       dialogue: shot.dialogue || shot.production?.dialogue || "",
       voice: shot.voice || shot.production?.voice || shot.production?.os || "",
-      assets: Array.isArray(shot.assets) ? shot.assets : [],
+      assets: Array.isArray(shot.refs) ? shot.refs : Array.isArray(shot.assets) ? shot.assets : [],
+      refs: Array.isArray(shot.refs) ? shot.refs : [],
       model: videoModelLabel(videoModelForShot(shot)),
       file: item.file || item.url || "",
       storyboardRefs: item.storyboardRefs || shot.storyboardRefs || [],
+      useTailFrame: shot.useTailFrame === true,
+      tailFrameSource: shot.tailFrameSource || "",
+      sharedSceneContinuity: shot.sharedSceneContinuity === true,
+      continuityNote: shot.continuityNote || "",
+      transitionIn: shot.transitionIn || "",
+      transitionOut: shot.transitionOut || "",
+      startState: shot.startState || "",
+      endState: shot.endState || "",
+      lighting: shot.lighting || shot.videoDesign?.lighting || "",
+      startSecond: Number(shot.startSecond) || index * (Number(shot.duration) || 0),
+      endSecond: Number(shot.endSecond) || (index + 1) * (Number(shot.duration) || 0),
       failedReason: item.failedReason || item.error || item.message || "",
     };
   });
@@ -6687,6 +6744,9 @@ function modernVideoQueueCardSignature(data, shot, index, status) {
     shot.name || index,
     shot.number || index + 1,
     shot.duration || "",
+    modernShotTimeRange(shot, index),
+    modernShotReferenceCount(shot),
+    modernShotTransitionLabel(shot, index),
     shot.model || "",
     status,
     modernMediaForShot(data, shot, index, "video"),
@@ -6714,17 +6774,18 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
   const progressLabel = $("#modernVideoQueueProgressLabel");
   const progressBar = $("#modernVideoQueueProgress span");
   const summary = $("#modernVideoQueueSummary");
+  const fixed15 = modernDurationModeFrom(data) === DURATION_MODE_SHORT_DRAMA_15;
   if (countNode) countNode.textContent = `${counts.complete}/${counts.all} 个片段完成`;
   if (progressLabel) progressLabel.textContent = `${progress}%`;
   if (progressBar) progressBar.style.width = `${progress}%`;
   if (summary) {
     summary.textContent = counts.all
       ? counts.active
-        ? `${counts.active} 个片段正在队列中，已完成片段不会被重新提交。`
+        ? `${counts.active} 个${fixed15 ? "15秒" : ""}片段正在队列中，已完成片段不会被重新提交。`
         : counts.failed
-          ? `${counts.failed} 个片段需要处理，其余结果保持不变。`
-          : "所有片段都已生成，可继续检查或组装成片。"
-      : "生成视频配置后，所有镜头会按顺序显示在这里。";
+          ? `${counts.failed} 个${fixed15 ? "15秒" : ""}片段需要处理，其余结果保持不变。`
+          : `所有${fixed15 ? "15秒" : ""}片段都已生成，可继续检查或组装成片。`
+      : `生成视频配置后，所有${fixed15 ? "15秒" : ""}片段会按顺序显示在这里。`;
   }
   $("#modernVideoQueueFilters")?.querySelectorAll("[data-modern-queue-filter]").forEach((button) => {
     const key = button.dataset.modernQueueFilter || "all";
@@ -6740,7 +6801,7 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
     queue?.classList.add("is-empty");
     if (node.dataset.queueState !== "empty") {
       node.dataset.queueState = "empty";
-      node.innerHTML = '<div class="modern-video-queue-empty"><span class="modern-video-queue-empty-mark">04</span><strong>生成视频配置后显示片段</strong><small>配置会把每个镜头拆成独立 Take，生成状态和预览都会保留在这里。</small></div>';
+      node.innerHTML = `<div class="modern-video-queue-empty"><span class="modern-video-queue-empty-mark">04</span><strong>生成视频配置后显示片段</strong><small>配置会把每个${fixed15 ? "15秒" : "镜头"}拆成独立 Take，生成状态和预览都会保留在这里。</small></div>`;
     }
     renderModernVideoQueueInspector(data);
     return;
@@ -6761,6 +6822,8 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
     card.setAttribute("role", "listitem");
     const videoUrl = modernMediaForShot(data, shot, index, "video");
     const segmentNumber = String(shot.number || index + 1).padStart(2, "0");
+    const lineage = modernShotTransitionLabel(shot, index);
+    const referenceCount = modernShotReferenceCount(shot);
     const download = status === "complete" && videoUrl
       ? `<a class="modern-video-queue-download" href="${escapeAttr(videoUrl)}" download="pixel-toy-segment-${segmentNumber}.mp4" aria-label="下载片段 ${segmentNumber}" title="下载片段 ${segmentNumber}">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
@@ -6769,7 +6832,7 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
     card.innerHTML = `
       <button class="modern-video-queue-select" type="button" data-modern-queue-index="${index}" aria-label="查看镜头 ${escapeAttr(String(shot.number).padStart(2, "0"))} ${escapeAttr(shot.name)}" aria-pressed="false">
         <span class="modern-video-queue-frame">${modernVideoQueueMediaMarkup(data, shot, index, status)}<b class="modern-video-queue-number">${String(shot.number).padStart(2, "0")}</b><em class="modern-video-queue-status"><i></i>${escapeHtml(modernStatusLabel(status))}</em><small class="modern-video-queue-duration">${escapeHtml(String(shot.duration))}s</small>${status === "complete" ? '<span class="modern-video-queue-play" aria-hidden="true">▶</span>' : ""}<span class="modern-video-queue-progress"><i></i></span></span>
-        <span class="modern-video-queue-copy"><strong>${escapeHtml(shot.name)}</strong><small>${escapeHtml(shot.model || "模型未配置")}</small></span>
+        <span class="modern-video-queue-copy"><strong>${escapeHtml(shot.name)}</strong><small>${escapeHtml(modernShotTimeRange(shot, index))} · ${escapeHtml(String(shot.duration))}秒 · 资产 ${referenceCount} 个</small><small class="modern-video-queue-lineage">${escapeHtml(lineage)} · ${escapeHtml(shot.model || "模型未配置")}</small></span>
       </button>
       ${download}
       ${status === "failed" && shot.failedReason ? `<p class="modern-video-queue-error" title="${escapeAttr(shot.failedReason)}">${escapeHtml(shot.failedReason)}</p>` : ""}
@@ -6829,13 +6892,22 @@ function renderModernVideoQueueInspector(data = state.project) {
   const progressItem = (data?.videoProgress?.items || []).find((item) => item.name === shotName) || {};
   const status = modernVideoQueueStatus(record || progressItem);
   const mediaIndex = record ? Math.max(0, record.number - 1) : 0;
+  const inspectorShot = { ...shot, ...(record || {}), number: record?.number || 1 };
   const videoUrl = modernMediaForShot(data, record || shot, mediaIndex, "video");
   const stillUrl = modernMediaForShot(data, record || shot, mediaIndex, "storyboard");
   const video = $("#modernVideoQueueInspectorVideo");
   const poster = $("#modernVideoQueueInspectorPoster");
   const empty = $("#modernVideoQueueInspectorEmpty");
   $("#modernVideoQueueInspectorName").textContent = shotName;
-  $("#modernVideoQueueInspectorMeta").textContent = `${shot.duration || record?.duration || "-"}s · ${videoModelLabel(videoModelForShot(shot))} · ${modernStatusLabel(status)}`;
+  $("#modernVideoQueueInspectorMeta").textContent = `${modernShotTimeRange(inspectorShot, mediaIndex)} · ${inspectorShot.duration || "-"}秒 · 资产 ${modernShotReferenceCount(inspectorShot)} 个 · ${modernShotTransitionLabel(inspectorShot, mediaIndex)} · ${videoModelLabel(videoModelForShot(shot))} · ${modernStatusLabel(status)}`;
+  const lineage = $("#modernVideoQueueInspectorLineage");
+  if (lineage) {
+    const refs = [...new Set([
+      ...(Array.isArray(inspectorShot.storyboardRefs) ? inspectorShot.storyboardRefs : []),
+      ...(Array.isArray(inspectorShot.refs) ? inspectorShot.refs : []),
+    ].filter(Boolean))];
+    lineage.textContent = `资产图：${refs.join("、") || "无"} · 进入：${inspectorShot.transitionIn || "按上一段结束状态进入"} · 光影：${inspectorShot.lighting || "沿用场景主光源"}`;
+  }
   if (video) {
     video.classList.toggle("hidden", !videoUrl);
     if (videoUrl && video.src !== new URL(videoUrl, window.location.href).href) video.src = videoUrl;
@@ -9610,6 +9682,7 @@ async function generateVideoConfigForSegment(shotName = "") {
     body: JSON.stringify({
       shotName: cleanShotName,
       dialogueLanguage: state.dialogueLanguage,
+      durationMode: state.durationMode,
       assetAnalyzerModel: state.assetAnalyzerModel,
       dialectStyle: selectedVideoDialectStyle(),
       sfxStyle: selectedVideoSfxStyle(),
@@ -9728,7 +9801,7 @@ function coverDesignStatusLabel(status = "") {
 
 function coverDesignState(data = state.project) {
   const cover = data?.coverDesign;
-  return cover && typeof cover === "object" ? cover : { status: "idle", items: [], model: "gpt-image-2", ratio: "9:16" };
+  return cover && typeof cover === "object" ? cover : { status: "idle", items: [], model: "gpt-image2-medium", ratio: "9:16" };
 }
 
 function renderCoverDesign(data = state.project) {
@@ -9742,7 +9815,7 @@ function renderCoverDesign(data = state.project) {
   const meta = $("#modernCoverDesignMeta");
   if (meta) {
     const title = cover.title || displayProjectTitle(data?.project || {});
-    meta.textContent = title ? `${title} · 人物 / 场景 / 道具 · ${cover.model || "gpt-image-2"}` : "使用人物、场景、道具与剧名生成四个封面方向";
+    meta.textContent = title ? `${title} · 人物 / 场景 / 道具 · ${cover.model || "gpt-image2-medium"}` : "使用人物、场景、道具与剧名生成四个封面方向";
   }
   const button = $("#modernCoverGenerate");
   if (button) {
@@ -9755,7 +9828,7 @@ function renderCoverDesign(data = state.project) {
   if (statusNode) {
     statusNode.className = `cover-design-status is-${cover.status || "idle"}`;
     statusNode.innerHTML = running
-      ? `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>正在生成封面</strong><small>${complete}/4 完成 · ${escapeHtml(cover.model || "gpt-image-2")} · ${escapeHtml(cover.ratio || "9:16")}</small>`
+      ? `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>正在生成封面</strong><small>${complete}/4 完成 · ${escapeHtml(cover.model || "gpt-image2-medium")} · ${escapeHtml(cover.ratio || "9:16")}</small>`
       : failed
         ? `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>${complete}/4 可用</strong><small>${failed} 张失败，可点击重新生成</small>`
         : complete === 4
@@ -10691,7 +10764,7 @@ function bind() {
     state.imageStudio.prompt = event.currentTarget.value;
   });
   $("#imageExploreModel")?.addEventListener("change", (event) => {
-    state.imageStudio.model = event.currentTarget.value || "gpt-image-2";
+    state.imageStudio.model = event.currentTarget.value || "gpt-image2-medium";
   });
   $("#imageExploreStoryboardToggle")?.addEventListener("click", () => {
     state.imageStudio.storyboardMode = !state.imageStudio.storyboardMode;
@@ -10766,7 +10839,7 @@ function bind() {
           .filter(Boolean);
         runImageExploreStoryboardGeneration({
           ...storyboardTarget,
-          model: storyboardTarget.model || state.imageStudio.model || "gpt-image-2",
+          model: storyboardTarget.model || state.imageStudio.model || "gpt-image2-medium",
           referenceImages: Array.isArray(storyboardTarget.referenceImages) ? storyboardTarget.referenceImages : fallbackReferences,
         }).finally(() => {
           endImageExploreGeneration();
@@ -10786,7 +10859,7 @@ function bind() {
         .filter(Boolean);
       runImageExploreGeneration({
         ...target,
-        model: target.model || state.imageStudio.model || "gpt-image-2",
+        model: target.model || state.imageStudio.model || "gpt-image2-medium",
         referenceImages: Array.isArray(target.referenceImages) ? target.referenceImages : fallbackReferences,
       }).finally(() => {
         endImageExploreGeneration();

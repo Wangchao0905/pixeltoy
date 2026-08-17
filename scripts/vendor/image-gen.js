@@ -373,7 +373,7 @@ async function buildRequest(args, mode) {
             Accept: "application/json",
           },
           body: JSON.stringify({
-            model: args.model || "gpt-image-2",
+            model: args.model || "gpt-image2-medium",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.7,
             size: args.size || "1024x1024",
@@ -395,7 +395,7 @@ async function buildRequest(args, mode) {
           Accept: "application/json",
         },
         body: JSON.stringify({
-          model: args.model || "gpt-image-2",
+          model: args.model || "gpt-image2-medium",
           prompt,
           n,
           size: args.size || "1024x1024",
@@ -444,7 +444,7 @@ async function buildRequest(args, mode) {
           }],
           tools: [{
             type: "image_generation",
-            model: args["image-model"] || "gpt-image-2",
+            model: args["image-model"] || "gpt-image2-medium",
             size: args.size || "1024x1024",
             quality: args.quality || "auto",
             output_format: args["output-format"] || "png",
@@ -459,7 +459,7 @@ async function buildRequest(args, mode) {
   const form = new FormData();
   form.append("image", source.blob, source.name);
   form.append("prompt", prompt);
-  form.append("model", args.model || "gpt-image-2");
+  form.append("model", args.model || "gpt-image2-medium");
   form.append("n", String(n));
   form.append("quality", args.quality || "auto");
   form.append("size", args.size || "1024x1024");
@@ -496,7 +496,7 @@ function buildTextResponsesRequest(args) {
         input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
         tools: [{
           type: "image_generation",
-          model: args.model || "gpt-image-2",
+          model: args.model || "gpt-image2-medium",
           size: args.size || "1024x1024",
           quality: args.quality || "auto",
           output_format: args["output-format"] || "png",

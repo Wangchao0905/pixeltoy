@@ -118,7 +118,8 @@
               <label class="image-explore-control image-explore-model">
                 <span>模型</span>
                 <select id="imageExploreModel">
-                  <option value="gpt-image-2">GPT Image 2</option>
+                  <option value="gpt-image2-high">GPT Image 2 High</option>
+                  <option value="gpt-image2-medium" selected>GPT Image 2 Medium</option>
                   <option value="seedream-5-0-pro">Seedream 5.0 Pro</option>
                   <option value="seedream-5-0-lite">Seedream 5.0 Lite</option>
                   <option value="grok-imagine-image">Grok Imagine Image</option>
@@ -942,7 +943,8 @@
               <button id="modernRenameProject" type="button" role="menuitem"><span aria-hidden="true">✎</span><span>修改项目名</span></button>
               <div class="modern-project-menu-divider" role="separator"></div>
               <div class="modern-project-menu-label">时长模式</div>
-              <button id="modernDurationModeTk" type="button" role="menuitemradio" data-duration-mode="tk" aria-checked="true"><span class="modern-duration-mode-icon" aria-hidden="true"></span><span>TK 模式</span></button>
+              <button id="modernDurationModeShortDrama15" type="button" role="menuitemradio" data-duration-mode="short_drama_15s" aria-checked="true"><span class="modern-duration-mode-icon" aria-hidden="true"></span><span>15 秒短剧模式</span></button>
+              <button id="modernDurationModeTk" type="button" role="menuitemradio" data-duration-mode="tk" aria-checked="false"><span class="modern-duration-mode-icon" aria-hidden="true"></span><span>TK 模式</span></button>
               <button id="modernDurationModeFree" type="button" role="menuitemradio" data-duration-mode="free" aria-checked="false"><span class="modern-duration-mode-icon" aria-hidden="true"></span><span>自由模式</span></button>
             </div>
             <form id="modernProjectRenameForm" class="modern-project-rename-form hidden">
@@ -1262,7 +1264,7 @@
               <div id="modernVideoQueueGrid" class="modern-video-queue-grid" role="list" aria-live="polite"></div>
               <aside id="modernVideoQueueInspector" class="modern-video-queue-inspector hidden" aria-label="视频片段编辑" aria-live="polite">
                 <header>
-                  <div><span class="modern-eyebrow">TAKE INSPECTOR</span><strong id="modernVideoQueueInspectorName">未选择片段</strong><small id="modernVideoQueueInspectorMeta"></small></div>
+                  <div><span class="modern-eyebrow">TAKE INSPECTOR</span><strong id="modernVideoQueueInspectorName">未选择片段</strong><small id="modernVideoQueueInspectorMeta"></small><p id="modernVideoQueueInspectorLineage" class="modern-video-queue-inspector-lineage"></p></div>
                   <button id="modernVideoQueueInspectorClose" type="button" aria-label="关闭片段编辑">关闭</button>
                 </header>
                 <div class="modern-video-queue-inspector-body">

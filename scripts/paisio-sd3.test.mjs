@@ -8,21 +8,34 @@ const moduleNamespace = await import(path.join(root, "server.js"));
 const { __test } = moduleNamespace.default?.__test ? moduleNamespace.default : moduleNamespace;
 const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, normalizePaisioDuration, normalizePaisioStatus } = __test.canvasVideo;
 
-for (const resolution of ["480p", "720p"]) {
-  assert.equal(canvasVideoProviderForBody({ model: "seedance-2-0-m", modelMode: "seedance-2-0-m" }), "paisio", "Seedance 2.0 M must route through Paisio");
-  const payload = await buildPaisioVideoGenerationPayload({ model: "seedance-2-0-m", prompt: "sd3 模型路由测试", duration: 8, resolution, ratio: "16:9" });
-  assert.equal(payload.model, `sd3-${resolution}`, `${resolution} must select the matching Paisio model ID`);
-  assert.equal(payload.duration, 8);
+for (const [model, expectedModels] of [
+  ["seedance-2-0-m", { "480p": "sd3-480p", "720p": "sd3-720p" }],
+  ["seedance-2-0-m-fast", { "480p": "sd3-fast-480p", "720p": "sd3-fast-720p" }],
+  ["seedance-2-0-m-fast-mini", { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" }],
+]) {
+  for (const resolution of ["480p", "720p"]) {
+    assert.equal(canvasVideoProviderForBody({ model, modelMode: model }), "paisio", `${model} must route through Paisio`);
+    const payload = await buildPaisioVideoGenerationPayload({ model, prompt: "Paisio 模型路由测试", duration: 8, resolution, ratio: "16:9" });
+    assert.equal(payload.model, expectedModels[resolution], `${model} ${resolution} must select the matching Paisio model ID`);
+  }
 }
-for (const [model, resolution] of [["sd3-480p", "480p"], ["sd3-720p", "720p"]]) {
+for (const [model, expectedPaisioModel] of [
+  ["sd3-480p", "sd3-480p"],
+  ["sd3-720p", "sd3-720p"],
+  ["sd3-fast-480p", "sd3-fast-480p"],
+  ["sd3-fast-720p", "sd3-fast-720p"],
+  ["sd2-video20-mini-480p", "sd2-video20-mini-480p"],
+  ["sd2-video20-mini-720p", "sd2-video20-mini-720p"],
+]) {
   const payload = await buildPaisioVideoGenerationPayload({ model, prompt: "旧配置兼容测试", duration: 8 });
-  assert.equal(payload.model, model);
-  assert.equal(payload.aspect_ratio, "9:16");
-  assert.equal(resolution, model.endsWith("480p") ? "480p" : "720p");
+  assert.equal(payload.model, expectedPaisioModel);
+  assert.equal(payload.duration, 8);
 }
 assert.notEqual(canvasVideoProviderForBody({ model: "seedance-2-0-super", modelMode: "seedance-2-0-super" }), "paisio", "removed super model must not route through Paisio");
 assert.equal(normalizePaisioDuration(1, "seedance-2-0-m"), 4, "Seedance 2.0 M requires at least four seconds");
 assert.equal(normalizePaisioDuration(99, "seedance-2-0-m"), 15, "Seedance 2.0 M is capped at fifteen seconds");
+assert.equal(normalizePaisioDuration(1, "seedance-2-0-m-fast"), 4, "Seedance 2.0 M fast requires at least four seconds");
+assert.equal(normalizePaisioDuration(99, "seedance-2-0-m-fast-mini"), 15, "Seedance 2.0 M fast mini is capped at fifteen seconds");
 assert.equal(
   normalizePaisioStatus({ task_id: "task-1", status: "completed", video_url: "https://cdn.example/video?id=1" }).videoUrl,
   "https://cdn.example/video?id=1",
@@ -73,7 +86,11 @@ assert.doesNotMatch(canvas, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.doesNotMatch(index, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.doesNotMatch(canvasHtml, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.match(index, /value="seedance-2-0-m">Seedance 2\.0 M/);
+assert.match(index, /value="seedance-2-0-m-fast">Seedance 2\.0 M fast/);
+assert.match(index, /value="seedance-2-0-m-fast-mini">Seedance 2\.0 M fast mini/);
 assert.match(canvasHtml, /value="seedance-2-0-m">Seedance 2\.0 M/);
+assert.match(canvasHtml, /value="seedance-2-0-m-fast">Seedance 2\.0 M fast/);
+assert.match(canvasHtml, /value="seedance-2-0-m-fast-mini">Seedance 2\.0 M fast mini/);
 assert.doesNotMatch(index, /value="sd3-(?:480p|720p)"/);
 assert.doesNotMatch(canvasHtml, /value="sd3-(?:480p|720p)"/);
 

@@ -345,6 +345,8 @@ const VIDEO_MODEL_OPTIONS = {
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",
   "seedance-2-0-m": "Seedance 2.0 M",
+  "seedance-2-0-m-fast": "Seedance 2.0 M fast",
+  "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini",
   "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
   "grok-imagine-video": "Grok Imagine Video",
 };
@@ -370,11 +372,15 @@ function normalizeVideoModelName(value) {
   const raw = String(value || "").trim();
   const lower = raw.toLowerCase();
   if (!raw) return "seedance-2-0-fast";
-  if (raw === "sd3-480p" || raw === "sd3-720p") return "seedance-2-0-m";
+  if (["sd3-480p", "sd3-720p"].includes(raw)) return "seedance-2-0-m";
+  if (["sd3-fast-480p", "sd3-fast-720p"].includes(raw)) return "seedance-2-0-m-fast";
+  if (["sd2-video20-mini-480p", "sd2-video20-mini-720p"].includes(raw)) return "seedance-2-0-m-fast-mini";
   if (VIDEO_MODEL_OPTIONS[raw]) return raw;
   if (/(?:byteplus|海外|modelark|ap-southeast)/.test(lower) && /2\.5|2-5/.test(lower)) return "seedance-2-5-byteplus";
   if (/2\.5|2-5/.test(lower)) return "seedance-2-5";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0";
+  if (/2[.\- ]?0.*m.*fast.*mini|m.*fast.*mini/.test(lower)) return "seedance-2-0-m-fast-mini";
+  if (/2[.\- ]?0.*m.*fast|m.*fast/.test(lower)) return "seedance-2-0-m-fast";
   if (/mini|迷你/.test(lower)) return "seedance-2-0-mini";
   if (/fast|快速/.test(lower)) return "seedance-2-0-fast";
   return "seedance-2-0";

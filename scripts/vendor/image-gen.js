@@ -268,6 +268,8 @@ function collectImages(event, images = []) {
   for (const key of ["b64_json", "base64", "image_base64", "partial_image_b64"]) {
     if (typeof event?.[key] === "string" && event[key]) images.push(event[key]);
   }
+  // 部分网关（paisio）返回 https URL 而非 base64
+  if (typeof event?.url === "string" && /^https?:\/\//i.test(event.url)) images.push(event.url);
   if (typeof event?.result === "string" && event.result.length > 100) images.push(event.result);
   for (const key of ["data", "output", "content", "item", "response", "result", "image", "images", "choices", "delta"]) {
     const nested = event?.[key];
@@ -342,8 +344,15 @@ async function saveImages(base64Images, out, defaultName) {
   for (let i = 0; i < base64Images.length; i += 1) {
     const filePath = outputPathFor(out, i, base64Images.length, defaultName);
     await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, Buffer.from(base64Images[i], "base64"));
-    paths.push(filePath);
+    const item = base64Images[i];
+    if (/^https?:\/\//i.test(item)) {
+      const { bytes, name } = await fetchImageUrl(item);
+      await writeFile(filePath, Buffer.from(bytes));
+      paths.push(filePath);
+    } else {
+      await writeFile(filePath, Buffer.from(item, "base64"));
+      paths.push(filePath);
+    }
   }
   return paths;
 }

@@ -91,6 +91,25 @@ function isPaisioGateway(baseUrl) {
   return /(^|:\/\/)(?:www\.)?api\.paisio\.online(?::\d+)?(?:\/|$)/i.test(String(baseUrl || ""));
 }
 
+// paisio 图片生成尺寸档位（文档：imageSize 1K/2K/4K）
+function paisioImageSize(resolution) {
+  const raw = String(resolution || "").toLowerCase();
+  if (raw === "2k") return "2K";
+  if (raw === "4k") return "4K";
+  return "1K";
+}
+
+// paisio 支持的比例枚举：1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9 / 9:21
+// 画布 4:5 / 3:2 / 2:3 等做就近映射，避免生成比例与槽位不符。
+function paisioAspectRatio(ratio) {
+  const supported = new Set(["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"]);
+  const raw = String(ratio || "");
+  if (supported.has(raw)) return raw;
+  const map = { "4:5": "3:4", "2:3": "2:3", "5:4": "4:3", "3:4": "3:4" };
+  if (map[raw]) return map[raw];
+  return "";
+}
+
 function isXibApiGateway(baseUrl) {
   return /(^|:\/\/)(?:www\.)?xibapi\.com(?:\/|$)/i.test(String(baseUrl || ""));
 }
@@ -388,6 +407,36 @@ async function buildRequest(args, mode) {
         },
       };
     }
+    if (mode === "text" && isPaisioGateway(args["base-url"])) {
+      // paisio 文生图：imageSize+aspectRatio 控制尺寸，返回 URL（不传 b64_json）
+      const imageSize = paisioImageSize(args["resolution"]);
+      const aspectRatio = paisioAspectRatio(args["ratio"]);
+      const body = {
+        model: args.model || "gpt-image2-medium",
+        prompt,
+        n,
+        quality: args.quality || "auto",
+      };
+      if (aspectRatio) {
+        body.imageSize = imageSize;
+        body.aspectRatio = aspectRatio;
+      } else {
+        body.size = args.size || "1024x1024";
+      }
+      return {
+        url: buildApiUrl(args["base-url"], "/v1/images/generations"),
+        defaultOut: "generated-image.png",
+        options: {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(body),
+        },
+      };
+    }
     return {
       url: buildApiUrl(args["base-url"], "/v1/images/generations"),
       defaultOut: "generated-image.png",
@@ -415,8 +464,23 @@ async function buildRequest(args, mode) {
   if (mode === "image" && isPaisioGateway(args["base-url"])) {
     // paisio 官方图生图格式：POST /v1/images/generations，JSON body 的 image 字段
     // 传参考图（URL / Base64 / data-URI），model 支持 gpt-image2 与 nano banana 系列。
-    // （edits multipart 对 gpt-image2 返回 500；responses 未启用；此格式实测 200）
+    // 尺寸控制推荐 imageSize+aspectRatio（size 像素会被 paisio 处理异常/忽略）。
     const imageRef = await imageToInputUrl(image);
+    const imageSize = paisioImageSize(args["resolution"]);
+    const aspectRatio = paisioAspectRatio(args["ratio"]);
+    const body = {
+      model: args["image-model"] || "gpt-image2-medium",
+      prompt,
+      image: imageRef,
+      n,
+      quality: args.quality || "auto",
+    };
+    if (aspectRatio) {
+      body.imageSize = imageSize;
+      body.aspectRatio = aspectRatio;
+    } else {
+      body.size = args.size || "1024x1024";
+    }
     return {
       url: buildApiUrl(args["base-url"], "/v1/images/generations"),
       defaultOut: "generated-image.png",
@@ -426,14 +490,7 @@ async function buildRequest(args, mode) {
           Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: args["image-model"] || "gpt-image2-medium",
-          prompt,
-          image: imageRef,
-          size: args.size || "1024x1024",
-          quality: args.quality || "auto",
-          n,
-        }),
+        body: JSON.stringify(body),
       },
     };
   }

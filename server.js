@@ -17004,6 +17004,7 @@ async function createCanvasImageGeneration(body = {}) {
         IMAGE_GEN_SKILL_SCRIPT, "--mode", "image",
         "--image", referenceInputs[0],
         "--prompt", providerPrompt, "--size", providerSize,
+        "--ratio", ratio, "--resolution", resolution,
         "--model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini",
         "--image-model", modelConfig.model,
         "--api-key", imageApiKey(),
@@ -17014,7 +17015,7 @@ async function createCanvasImageGeneration(body = {}) {
       // \n 不可能出现在 URL 或文件路径里,是安全的分隔符。
       if (referenceInputs.length > 1) args.push("--reference-image", referenceInputs.slice(1).join("\n"));
     } else {
-      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--api-key", imageApiKey(), "--base-url", canvasImageBaseUrl(), "--out", outPath, "--timeout", timeout];
+      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--ratio", ratio, "--resolution", resolution, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--api-key", imageApiKey(), "--base-url", canvasImageBaseUrl(), "--out", outPath, "--timeout", timeout];
     }
   }
   const env = { ...process.env, OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "", OPENAI_BASE_URL: canvasImageBaseUrl() };

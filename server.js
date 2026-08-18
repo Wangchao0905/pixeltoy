@@ -210,6 +210,7 @@ const DEFAULT_PAISIO_MODEL_ID = "sd3-720p";
 const PAISIO_SEEDANCE_M_MODEL = "seedance-2-0-m";
 const PAISIO_SEEDANCE_M_FAST_MODEL = "seedance-2-0-m-fast";
 const PAISIO_SEEDANCE_M_FAST_MINI_MODEL = "seedance-2-0-m-fast-mini";
+const PAISIO_MINIMAX_H3_MODEL = "minimax-h3";
 const PAISIO_MODEL_RESOLUTION_MAP = {
   [PAISIO_SEEDANCE_M_MODEL]: { "480p": "sd3-480p", "720p": "sd3-720p" },
   [PAISIO_SEEDANCE_M_FAST_MODEL]: { "480p": "sd3-fast-480p", "720p": "sd3-fast-720p" },
@@ -220,6 +221,8 @@ const PAISIO_SD3_MODELS = new Set([
   ...Object.keys(PAISIO_MODEL_RESOLUTION_MAP),
   ...PAISIO_MODEL_IDS,
 ]);
+const PAISIO_VIDEO_MODELS = new Set([...PAISIO_SD3_MODELS, PAISIO_MINIMAX_H3_MODEL]);
+const PAISIO_4_15_VIDEO_MODELS = new Set([...PAISIO_SD3_MODELS, PAISIO_MINIMAX_H3_MODEL]);
 const FALLBACK_ASSET_ANALYZER_MODEL = "claude-opus-4-8";
 const FALLBACK_STORYBOARD_MODEL = "gpt-5.6-sol"; // storyboard 用独立的 STORYBOARD_API_KEY(GPT 组);analyzer 才用 Claude key
 const ASSET_ANALYZER_MODEL_ALIASES = {
@@ -3115,7 +3118,7 @@ function canvasVideoProvider() {
 function canvasVideoProviderForBody(body = {}) {
   const modelMode = compactLine(body.modelMode || body.model || "");
   if (modelMode === "grok-imagine-video") return "grok";
-  if (PAISIO_SD3_MODELS.has(modelMode)) return "paisio";
+  if (PAISIO_VIDEO_MODELS.has(modelMode)) return "paisio";
   // 显式选择「海外火山」模型选项时,本次生成走 BytePlus ModelArk(ap-southeast 区),优先于全局默认与自动路由。
   if (/^seedance-2-(?:0|5)-byteplus$/i.test(modelMode)) return "byteplus";
   const sourceAssets = Array.isArray(body.assets) ? body.assets : [];
@@ -13588,6 +13591,7 @@ function normalizeGravitexSeedanceModel(value) {
 
 function paisioModelFamilyForRequest(value = "") {
   const raw = compactLine(value);
+  if (raw === PAISIO_MINIMAX_H3_MODEL) return raw;
   if (PAISIO_MODEL_RESOLUTION_MAP[raw]) return raw;
   for (const [family, resolutions] of Object.entries(PAISIO_MODEL_RESOLUTION_MAP)) {
     if (Object.values(resolutions).includes(raw)) return family;
@@ -13612,7 +13616,7 @@ function normalizeVideoConfigModelName(value = "") {
   const lower = raw.toLowerCase();
   const paisioModelFamily = paisioModelFamilyForRequest(raw);
   if (paisioModelFamily) return paisioModelFamily;
-  if (["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
+  if (["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MINIMAX_H3_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
   if (/grok|xai/.test(lower)) return "grok-imagine-video";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0";
   if (/(?:byteplus|海外|modelark|ap-southeast)/.test(lower) && /(?:2[.-]?5)/.test(lower)) return "seedance-2-5-byteplus";
@@ -13644,6 +13648,7 @@ function normalizeVideoResolution(value, model = "") {
   const raw = compactLine(value || "720p");
   const lower = raw.toLowerCase();
   const isFastOrMini = /(?:fast|mini)/i.test(String(model || ""));
+  if (compactLine(model) === PAISIO_MINIMAX_H3_MODEL) return "2k";
   // Seedance 2.5 仅支持 480p/720p（无 1080p/4k）
   const is25 = /(?:2-5|2\.5)/i.test(String(model || ""));
   const isPaisioSd3 = PAISIO_SD3_MODELS.has(compactLine(model));
@@ -16012,7 +16017,7 @@ async function getGravitexCanvasVideoGeneration(taskId) {
 
 function normalizePaisioDuration(value, model = "") {
   const number = Math.round(Number(value || 6));
-  const isSd3 = PAISIO_SD3_MODELS.has(compactLine(model));
+  const isSd3 = PAISIO_4_15_VIDEO_MODELS.has(compactLine(model));
   if (!Number.isFinite(number)) return 6;
   return Math.max(isSd3 ? 4 : 1, Math.min(isSd3 ? 15 : 30, number));
 }
@@ -16124,8 +16129,10 @@ async function buildPaisioVideoGenerationPayload(body = {}, options = {}) {
   const requestedModel = compactLine(body.modelMode || body.model || "");
   const paisioModelFamily = paisioModelFamilyForRequest(requestedModel);
   const paisioResolution = paisioResolutionForRequest(requestedModel, body.resolution);
-  const paisioModel = paisioModelFamily
-    ? PAISIO_MODEL_RESOLUTION_MAP[paisioModelFamily][paisioResolution]
+  const paisioModel = paisioModelFamily === PAISIO_MINIMAX_H3_MODEL
+    ? PAISIO_MINIMAX_H3_MODEL
+    : paisioModelFamily
+      ? PAISIO_MODEL_RESOLUTION_MAP[paisioModelFamily][paisioResolution]
     : DEFAULT_PAISIO_MODEL_ID;
   const imageReferences = [];
   const videoReferences = [];
@@ -16172,6 +16179,103 @@ async function buildPaisioVideoGenerationPayload(body = {}, options = {}) {
   if (audioReferences.length) payload.extra_audios = audioReferences.map((item) => item.url);
   if (lastFrameReference?.url) payload.end_image_url = lastFrameReference.url;
   return payload;
+}
+
+function paisioChatContentItem(url, kind) {
+  if (kind === "video") return { type: "video_url", video_url: { url } };
+  if (kind === "audio") return { type: "audio_url", audio_url: { url } };
+  return { type: "image_url", image_url: { url } };
+}
+
+async function buildPaisioMiniMaxH3ChatPayload(body = {}, options = {}) {
+  const prompt = cleanSeedancePromptForSubmission(body.prompt);
+  if (!prompt) throw new Error("缺少视频提示词");
+  const imageReferences = [];
+  const videoReferences = [];
+  const audioReferences = [];
+  const addReference = async (source, name, kind) => {
+    const cleanSource = compactLine(source);
+    if (!cleanSource) return;
+    const reference = await paisioVideoReference(cleanSource, name, kind, options);
+    if (kind === "video") videoReferences.push(reference);
+    else if (kind === "audio") audioReferences.push(reference);
+    else imageReferences.push(reference);
+  };
+  const firstFrameSource = compactLine(body.firstFrameUrl || body.startFrameUrl || body.first_frame_url || body.start_image_url || "");
+  if (firstFrameSource) await addReference(firstFrameSource, "首帧", "image");
+  const assets = canvasVideoSubmitCapableAssets(body.assets);
+  for (const asset of assets) {
+    await addReference(
+      asset.url || asset.publicUrl || asset.previewUrl || asset.localUrl,
+      asset.name || asset.id,
+      paisioReferenceKind(asset),
+    );
+  }
+  if (!imageReferences.length) throw new Error("minimax-h3 至少需要一张参考图");
+  const content = [
+    { type: "text", text: String(prompt) },
+    ...imageReferences.map((reference) => paisioChatContentItem(reference.url, "image")),
+    ...videoReferences.map((reference) => paisioChatContentItem(reference.url, "video")),
+    ...audioReferences.map((reference) => paisioChatContentItem(reference.url, "audio")),
+  ];
+  return {
+    model: PAISIO_MINIMAX_H3_MODEL,
+    messages: [{ role: "user", content }],
+    duration: normalizePaisioDuration(body.duration, PAISIO_MINIMAX_H3_MODEL),
+    resolution: "2k",
+    aspect_ratio: normalizeVideoRatio(body.ratio || body.aspect_ratio) === "adaptive" ? "9:16" : normalizeVideoRatio(body.ratio || body.aspect_ratio),
+  };
+}
+
+function normalizePaisioMiniMaxH3Status(raw = {}) {
+  const direct = findVideoUrlDeep(raw);
+  if (direct) {
+    return {
+      ...normalizePaisioStatus({ ...raw, video_url: direct }),
+      status: "completed",
+      videoUrl: direct,
+      progress: 100,
+      message: "生成完成",
+    };
+  }
+  const content = raw?.choices?.[0]?.message?.content;
+  const text = Array.isArray(content)
+    ? content.map((item) => typeof item === "string" ? item : item?.text || item?.video_url?.url || "").join("\n")
+    : compactLine(content || "");
+  const textUrl = (text.match(/https?:\/\/[^\s\]})"'<>]+/gi) || []).find((url) => isLikelyVideoUrl(url)) || "";
+  if (textUrl) {
+    return {
+      ...normalizePaisioStatus({ ...raw, video_url: textUrl }),
+      status: "completed",
+      videoUrl: textUrl,
+      progress: 100,
+      message: "生成完成",
+    };
+  }
+  return {
+    status: "failed",
+    statusRaw: "failed",
+    taskId: findFirstStringDeep(raw, ["id", "task_id", "taskId", "request_id", "requestId"]),
+    videoUrl: "",
+    progress: 100,
+    message: "minimax-h3 返回中没有可下载的视频地址",
+    raw,
+  };
+}
+
+async function createPaisioMiniMaxH3CanvasVideoGeneration(body = {}) {
+  const payload = await buildPaisioMiniMaxH3ChatPayload(body);
+  const raw = await callPaisioJson("/v1/chat/completions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const result = normalizePaisioMiniMaxH3Status(raw);
+  if (!result.videoUrl) throw new Error(result.message || "minimax-h3 未返回视频地址");
+  return {
+    ...result,
+    provider: "paisio",
+    request: { ...payload, messages: "[multimodal messages]" },
+  };
 }
 
 async function createPaisioCanvasVideoGeneration(body = {}) {
@@ -16328,7 +16432,11 @@ async function getGrokCanvasVideoGeneration(taskId) {
 
 async function createCanvasVideoGeneration(body = {}) {
   const provider = canvasVideoProviderForBody(body);
-  if (provider === "paisio") return createPaisioCanvasVideoGeneration(body);
+  if (provider === "paisio") {
+    return compactLine(body.modelMode || body.model) === PAISIO_MINIMAX_H3_MODEL
+      ? createPaisioMiniMaxH3CanvasVideoGeneration(body)
+      : createPaisioCanvasVideoGeneration(body);
+  }
   if (provider === "gravitex") return createGravitexCanvasVideoGeneration(body);
   if (provider === "byteplus") return createBytePlusArkCanvasVideoGeneration(body);
   if (provider === "grok") return createGrokCanvasVideoGeneration(body);
@@ -23968,7 +24076,7 @@ function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
 function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
   const name = compactLine(shotName || "");
   const requestedModel = compactLine(modelName || "");
-  const supportedModels = new Set(["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, ...PAISIO_MODEL_IDS, "seedance-2-0-byteplus", "grok-imagine-video"]);
+  const supportedModels = new Set(["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MINIMAX_H3_MODEL, ...PAISIO_MODEL_IDS, "seedance-2-0-byteplus", "grok-imagine-video"]);
   if (!name) throw new Error("缺少视频片段");
   if (!supportedModels.has(requestedModel)) throw new Error("不支持的视频模型");
   const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];
@@ -26640,7 +26748,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The video description." },
-          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
+          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MINIMAX_H3_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
           duration: { type: "number", minimum: 1, default: 5 },
           ratio: { type: "string", default: "9:16" },
           firstFrameUrl: { type: "string" },
@@ -27521,7 +27629,9 @@ async function handleApi(req, res, url) {
     }
     const provider = canvasVideoProviderForBody(body);
     const payload = provider === "paisio"
-      ? await buildPaisioVideoGenerationPayload(body)
+      ? compactLine(body.modelMode || body.model) === PAISIO_MINIMAX_H3_MODEL
+        ? await buildPaisioMiniMaxH3ChatPayload(body)
+        : await buildPaisioVideoGenerationPayload(body)
       : provider === "gravitex"
         ? await buildGravitexVideoGenerationPayload(body)
       : provider === "byteplus"
@@ -27534,6 +27644,7 @@ async function handleApi(req, res, url) {
       provider,
       payload: {
         ...payload,
+        messages: Array.isArray(payload.messages) ? "[multimodal messages]" : payload.messages,
         content: Array.isArray(payload.content)
           ? payload.content.map((item) => {
               const url = item.image_url?.url || item.video_url?.url || item.audio_url?.url || "";
@@ -29054,6 +29165,8 @@ module.exports = {
       canvasVideoProviderForBody,
       buildSeedanceGenerationPayload,
       buildPaisioVideoGenerationPayload,
+      buildPaisioMiniMaxH3ChatPayload,
+      normalizePaisioMiniMaxH3Status,
       grokVideoPayload,
       normalizeVideoResolution,
       normalizeSeedanceDuration,

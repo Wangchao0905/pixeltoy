@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const moduleNamespace = await import(path.join(root, "server.js"));
 const { __test } = moduleNamespace.default?.__test ? moduleNamespace.default : moduleNamespace;
-const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, normalizePaisioDuration, normalizePaisioStatus } = __test.canvasVideo;
+const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus } = __test.canvasVideo;
 
 for (const [model, expectedModels] of [
   ["seedance-2-0-m", { "480p": "sd3-480p", "720p": "sd3-720p" }],
@@ -31,6 +31,29 @@ for (const [model, expectedPaisioModel] of [
   assert.equal(payload.model, expectedPaisioModel);
   assert.equal(payload.duration, 8);
 }
+assert.equal(canvasVideoProviderForBody({ model: "minimax-h3", modelMode: "minimax-h3" }), "paisio", "minimax-h3 must route through Paisio");
+const miniMaxPayload = await buildPaisioMiniMaxH3ChatPayload({
+  model: "minimax-h3",
+  prompt: "MiniMax H3 路由测试",
+  duration: 8,
+  ratio: "16:9",
+  assets: [{ id: "reference-1", name: "参考图.png", url: "https://cdn.example/reference.png", mediaType: "image" }],
+});
+assert.equal(miniMaxPayload.model, "minimax-h3");
+assert.equal(miniMaxPayload.duration, 8);
+assert.equal(miniMaxPayload.resolution, "2k");
+assert.equal(miniMaxPayload.messages[0].content[1].type, "image_url");
+assert.equal(miniMaxPayload.messages[0].content[1].image_url.url, "https://cdn.example/reference.png");
+await assert.rejects(
+  () => buildPaisioMiniMaxH3ChatPayload({ model: "minimax-h3", prompt: "缺少参考图" }),
+  /至少需要一张参考图/,
+  "minimax-h3 must require at least one reference image",
+);
+assert.equal(
+  normalizePaisioMiniMaxH3Status({ choices: [{ message: { content: "https://cdn.example/videos/minimax-h3.mp4" } }] }).videoUrl,
+  "https://cdn.example/videos/minimax-h3.mp4",
+  "minimax-h3 chat responses must expose the returned video URL",
+);
 assert.notEqual(canvasVideoProviderForBody({ model: "seedance-2-0-super", modelMode: "seedance-2-0-super" }), "paisio", "removed super model must not route through Paisio");
 assert.equal(normalizePaisioDuration(1, "seedance-2-0-m"), 4, "Seedance 2.0 M requires at least four seconds");
 assert.equal(normalizePaisioDuration(99, "seedance-2-0-m"), 15, "Seedance 2.0 M is capped at fifteen seconds");
@@ -88,9 +111,11 @@ assert.doesNotMatch(canvasHtml, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.match(index, /value="seedance-2-0-m">Seedance 2\.0 M/);
 assert.match(index, /value="seedance-2-0-m-fast">Seedance 2\.0 M fast/);
 assert.match(index, /value="seedance-2-0-m-fast-mini">Seedance 2\.0 M fast mini/);
+assert.match(index, /value="minimax-h3">MiniMax H3/);
 assert.match(canvasHtml, /value="seedance-2-0-m">Seedance 2\.0 M/);
 assert.match(canvasHtml, /value="seedance-2-0-m-fast">Seedance 2\.0 M fast/);
 assert.match(canvasHtml, /value="seedance-2-0-m-fast-mini">Seedance 2\.0 M fast mini/);
+assert.match(canvasHtml, /value="minimax-h3">MiniMax H3/);
 assert.doesNotMatch(index, /value="sd3-(?:480p|720p)"/);
 assert.doesNotMatch(canvasHtml, /value="sd3-(?:480p|720p)"/);
 

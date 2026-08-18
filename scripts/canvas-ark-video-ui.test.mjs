@@ -65,6 +65,7 @@ assert.match(modelOptions, /<option value="seedance-2-0">Seedance 2\.0<\/option>
 assert.match(modelOptions, /<option value="seedance-2-0-m">Seedance 2\.0 M<\/option>/, "canvas must offer the merged Paisio Seedance 2.0 M model");
 assert.match(modelOptions, /<option value="seedance-2-0-m-fast">Seedance 2\.0 M fast<\/option>/, "canvas must offer Paisio Seedance 2.0 M fast");
 assert.match(modelOptions, /<option value="seedance-2-0-m-fast-mini">Seedance 2\.0 M fast mini<\/option>/, "canvas must offer Paisio Seedance 2.0 M fast mini");
+assert.match(modelOptions, /<option value="minimax-h3">MiniMax H3<\/option>/, "canvas must offer Paisio MiniMax H3");
 assert.doesNotMatch(modelOptions, /value="sd3-(?:480p|720p)"/, "canvas must not expose Paisio resolutions as separate models");
 assert.doesNotMatch(modelOptions, /seedance-2-0-person-reference|人物参考/, "removed person-reference model must not remain selectable");
 assert.match(html, /<input[^>]*max="30"[^>]*data-node-field="duration"/, "video duration control must expose the 30-second Seedance 2.5 range");
@@ -73,6 +74,7 @@ assert.match(videoResolutionOptions, /value="480p"/, "video resolution must offe
 assert.match(videoResolutionOptions, /value="720p"/, "video resolution must offer 720p");
 assert.match(videoResolutionOptions, /value="1080p"/, "video resolution must offer 1080p");
 assert.match(videoResolutionOptions, /value="4k"/, "video resolution must offer 4k");
+assert.match(videoResolutionOptions, /value="2k"/, "video resolution must offer 2k");
 assert.match(js, /data-video-action="toggle-settings"/, "video settings toggle must be wired in the canvas controller");
 assert.match(js, /const responseText = await res\.text\(\)/, "canvas API must inspect response text before JSON parsing");
 assert.match(js, /可能是登录页或错误网关/, "canvas API must explain HTML responses instead of surfacing JSON parse errors");

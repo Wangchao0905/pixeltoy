@@ -10,7 +10,7 @@ const app = fs.readFileSync(path.join(root, "public/pixeltale/app.js"), "utf8");
 assert.match(app, /const SESSION_SNAPSHOT_KEY = `pixeltale\.story-forge-snapshot:\$\{sessionId\}`/, "项目快照必须按当前会话隔离");
 assert.match(app, /function persistSessionSnapshot\([\s\S]{0,800}JSON\.stringify/, "当前页面状态必须写入会话快照");
 assert.match(app, /function restoreSessionSnapshot\([\s\S]{0,1200}state\.stage = snapshot\.stage/, "刷新时必须恢复刷新前所在阶段");
-assert.match(app, /const restoredSession = restoreSessionSnapshot\(\);\s*renderStage\(\);\s*syncAgentState\(\{ silent: true \}\)/, "启动时必须先同步恢复当前会话页面，再后台读取服务端状态");
+assert.match(app, /const restoredSession = restoreSessionSnapshot\(\);\s*applyViewHash\(\);\s*renderStage\(\);\s*syncAgentState\(\{ silent: true \}\)/, "启动时必须先同步恢复当前会话页面与视图，再后台读取服务端状态");
 assert.doesNotMatch(app, /正在读取当前项目/, "刷新不得显示读取项目的等待页面");
 assert.doesNotMatch(app, /autoRestore/, "刷新不得自动切换到其他历史项目");
 assert.match(app, /timeoutMs[\s\S]{0,220}AbortController/, "状态请求必须有可控超时，不能无限等待");

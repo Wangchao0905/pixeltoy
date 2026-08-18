@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/pixel-toy-symbol.png" />
     <title>PixelTale / Story Forge</title>
-    <link rel="stylesheet" href="/pixeltale/styles.css?v=pixeltale-runtime-20260816-r73" />
+    <link rel="stylesheet" href="/pixeltale/styles.css?v=pixeltale-runtime-20260818-r74" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="#brief" aria-label="PixelTale Story Forge">
+        <a class="brand" href="#workbench" aria-label="PixelTale Story Forge">
           <span class="brand-mark">PX</span>
           <span class="brand-copy">
             <strong>PixelTale</strong>
@@ -62,7 +62,22 @@
         </aside>
 
         <main class="content-stage">
-          <div id="stageContent" class="stage-content"></div>
+          <div class="view-shell">
+            <nav id="viewNav" class="view-nav" aria-label="制作视图">
+              <div class="view-nav-heading">
+                <span class="eyebrow">AGENT WORKSPACE</span>
+                <strong>制作控制层</strong>
+              </div>
+              <div class="view-tabs" role="tablist" aria-label="制作视图页签">
+                <button type="button" class="view-tab is-active" data-view-tab="workbench" role="tab" aria-selected="true"><span>01</span><strong>工作台</strong><small>生产主线</small></button>
+                <button type="button" class="view-tab" data-view-tab="pulse" role="tab" aria-selected="false"><span>02</span><strong>剧情脉冲</strong><small>整季结构</small></button>
+                <button type="button" class="view-tab" data-view-tab="episode-card" role="tab" aria-selected="false"><span>03</span><strong>单集卡</strong><small>集级检视</small></button>
+                <button type="button" class="view-tab" data-view-tab="judge" role="tab" aria-selected="false"><span>04</span><strong>审核裁判</strong><small>证据投影</small></button>
+              </div>
+              <div id="viewContext" class="view-context">Agent 当前负责生产主线</div>
+            </nav>
+            <div id="stageContent" class="stage-content"></div>
+          </div>
         </main>
 
         <aside class="agent-rail" aria-label="PixelTale Agent">
@@ -138,6 +153,6 @@
         <div id="historyList" class="history-list" aria-live="polite"></div>
       </form>
     </dialog>
-    <script src="/pixeltale/app.js?v=pixeltale-runtime-20260816-r73"></script>
+    <script src="/pixeltale/app.js?v=pixeltale-runtime-20260818-r74"></script>
   </body>
 </html>

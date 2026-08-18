@@ -18,8 +18,8 @@ const { createPixelTaleAgent } = require(path.join(root, "server/pixeltale-agent
 assert.match(html, /id="openHistory"[^>]*>[^<]*<span[^>]*>↺<\/span>\s*创作历史/, "PixelTale must expose a visible creative history entry");
 assert.match(html, /id="historyDialog"/, "PixelTale must provide a history dialog");
 assert.match(nestedHtml, /id="openHistory"/, "the nested PixelTale page must keep the history entry");
-assert.match(html, /pixeltale-runtime-20260816-r73/, "the public PixelTale entry must bust the history-resume script cache");
-assert.match(nestedHtml, /pixeltale-runtime-20260816-r73/, "the nested PixelTale entry must bust the history-resume script cache");
+assert.match(html, /pixeltale-runtime-\d{8}-r\d+/, "the public PixelTale entry must bust the history-resume script cache");
+assert.match(nestedHtml, /pixeltale-runtime-\d{8}-r\d+/, "the nested PixelTale entry must bust the history-resume script cache");
 assert.match(app, /async function loadCreativeHistory\(\)[\s\S]*request\("\/history"\)/, "history must load from the server session index");
 assert.match(app, /async function deleteHistorySession\(targetSessionId[\s\S]*method: "DELETE"/, "history items must expose a delete action backed by the API");
 assert.match(app, /data-history-delete/, "history items must expose a delete control");

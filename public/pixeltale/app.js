@@ -80,6 +80,8 @@ const initialMode = pendingMode();
 const state = {
   mode: initialMode,
   stage: "brief",
+  view: "workbench",
+  selectedEpisode: null,
   stageSelectionVersion: 0,
   approved: new Set(),
   busy: false,
@@ -165,11 +167,45 @@ const modelMeta = {
 };
 
 const stageOrder = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue", "handoff"];
+const viewOrder = ["workbench", "pulse", "episode-card", "judge"];
 const productionStageTotal = stageOrder.length - 1;
 const RELEASE_QUALITY_FLOOR = 80;
 const RELEASE_DIMENSION_FLOOR = 75;
 const UNIT_STAGES = new Set(["arc", "scenes"]);
 const FAST_REVIEW_STAGES = new Set(["brief", "proposal", "characters", "dialogue"]);
+
+function parseViewHash(hash = typeof location !== "undefined" ? location.hash : "") {
+  const raw = String(hash || "").replace(/^#/, "").trim();
+  const [viewToken = "", episodeToken = ""] = raw.split("/");
+  if (stageOrder.includes(viewToken)) return { view: "workbench", stage: viewToken, episode: null };
+  if (viewToken === "workbench") {
+    return { view: "workbench", stage: stageOrder.includes(episodeToken) ? episodeToken : null, episode: null };
+  }
+  if (viewOrder.includes(viewToken) && viewToken !== "workbench") {
+    const episode = Number(episodeToken);
+    return { view: viewToken, stage: null, episode: Number.isInteger(episode) && episode >= 1 && episode <= 30 ? episode : null };
+  }
+  return { view: "workbench", stage: null, episode: null };
+}
+
+function viewHashForState() {
+  if (state.view === "workbench") return state.stage && state.stage !== "brief" ? `#workbench/${state.stage}` : "#workbench";
+  return state.selectedEpisode ? `#${state.view}/${state.selectedEpisode}` : `#${state.view}`;
+}
+
+function writeViewHash() {
+  if (typeof window === "undefined") return;
+  const nextHash = viewHashForState();
+  if (window.location.hash === nextHash) return;
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+}
+
+function applyViewHash() {
+  const parsed = parseViewHash();
+  state.view = parsed.view;
+  if (parsed.stage) state.stage = parsed.stage;
+  state.selectedEpisode = parsed.episode;
+}
 
 function requiredReviewSeatsFor(stage = state.stage, reviewContent = {}, artifact = null) {
   const stored = Number(reviewContent?.reviewPolicy?.requiredSeats);
@@ -587,7 +623,7 @@ function resumeHistorySession(nextSessionId) {
   const target = new URL(window.location.href);
   target.searchParams.set("session", nextSessionId);
   target.searchParams.set("resume", String(Date.now()));
-  target.hash = "brief";
+  target.hash = "workbench/brief";
   window.location.assign(target.toString());
 }
 
@@ -1088,7 +1124,9 @@ function navigateToStage(stage) {
   }
   state.stageSelectionVersion += 1;
   state.stage = stage;
+  state.view = "workbench";
   state.lastError = "";
+  writeViewHash();
   renderStage();
 }
 
@@ -1493,6 +1531,22 @@ function renderShellState() {
   const action = nextStepMeta();
   const flowStage = workflowStage();
   $("#modeLabel").textContent = modeLabel();
+  $$('[data-view-tab]').forEach((button) => {
+    const active = button.dataset.viewTab === state.view;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+    button.onclick = () => setView(button.dataset.viewTab || "workbench");
+  });
+  const viewContext = $("#viewContext");
+  if (viewContext) {
+    viewContext.textContent = state.view === "workbench"
+      ? `Agent 当前负责：${stageMeta[flowStage]?.title || "制作主线"}`
+      : state.view === "pulse"
+        ? "只读投影 · arc 分集结构"
+        : state.view === "episode-card"
+          ? `只读投影 · 第 ${state.selectedEpisode || "—"} 集`
+          : "只读投影 · 当前阶段审核证据";
+  }
   $("#agentTaskTitle").textContent = action.title;
   $("#agentTaskCopy").textContent = state.lastError || action.copy;
   $("#agentTaskCopy").setAttribute("role", state.lastError ? "alert" : "status");
@@ -2358,7 +2412,9 @@ function pulseText(value) {
 
 function pulseSignalValue(source, keys) {
   for (const key of keys) {
-    const value = Number(source?.[key]);
+    const raw = source?.[key];
+    if (key === "highlight" && raw && typeof raw === "object" && raw.enabled === false) continue;
+    const value = Number(raw && typeof raw === "object" ? raw.value ?? raw.score : raw);
     if (Number.isFinite(value)) return Math.max(0, Math.min(100, value));
   }
   return null;
@@ -2383,8 +2439,59 @@ function pulseEventsForUnit(unit) {
   ].filter(([, , detail]) => detail);
 }
 
-function renderPulseNode(number, type, label, detail) {
-  return `<button type="button" class="pulse-node is-${type}" data-pulse-node data-pulse-episode="${number}" data-pulse-type="${escapeHtml(type)}" data-pulse-label="${escapeHtml(label)}" data-pulse-detail="${escapeHtml(detail)}" aria-label="第 ${number} 集 ${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+function pulseLockFor(number) {
+  return state.agent?.unitLocks?.arc?.[number] || state.agent?.unitLocks?.arc?.[String(number)] || null;
+}
+
+function pulseBatchFor(number, progress = unitStageProgress("arc")) {
+  const batch = [...(progress?.batches || [])].reverse().find((entry) => Array.isArray(entry.units) && entry.units.map(Number).includes(number));
+  return batch || (progress?.current?.includes(number) ? { units: [number], status: "running" } : null);
+}
+
+function pulseUnitStatus(number, unit, progress = unitStageProgress("arc")) {
+  const lockStatus = String(pulseLockFor(number)?.status || "").toLowerCase();
+  if (["locked", "pinned"].includes(lockStatus)) return "locked";
+  const batchStatus = String(pulseBatchFor(number, progress)?.status || "").toLowerCase();
+  if (["running", "pending", "failed", "needs_review"].includes(batchStatus)) return "pending";
+  return unit ? "generated" : "missing";
+}
+
+function pulseStatusLabel(status) {
+  return { locked: "已锁定", generated: "已生成", pending: "处理中 / 待重跑", missing: "未生成" }[status] || "未知状态";
+}
+
+function normalizeArcPulseUnits(artifact = artifactForStage("arc")) {
+  const source = new Map(pulseUnitsForArtifact(artifact).map((unit) => [unit.pulseNumber, unit]));
+  const progress = unitStageProgress("arc") || { total: 0, locked: [], generated: [], pending: [], current: [], batches: [] };
+  return Array.from({ length: 30 }, (_, index) => {
+    const number = index + 1;
+    const unit = source.get(number) || null;
+    const status = pulseUnitStatus(number, unit, progress);
+    return {
+      number,
+      unit,
+      title: pulseText(unit?.title_zh || unit?.title_en),
+      hook: pulseText(unit?.hook_zh || unit?.cliffhanger_question_zh),
+      reversal: pulseText(unit?.reversal_zh || unit?.causal_turn_zh),
+      payoff: pulseText(unit?.payoff_zh),
+      highlight: pulseText(unit?.impact_zh || unit?.highlight_zh),
+      status,
+      statusLabel: pulseStatusLabel(status),
+      batchStatus: String(pulseBatchFor(number, progress)?.status || ""),
+      sourceArtifactId: artifact?.id || null,
+      sourceVersion: artifact?.version ?? null,
+    };
+  });
+}
+
+function normalizeSelectedEpisode(value, units = normalizeArcPulseUnits()) {
+  const number = Number(value);
+  if (Number.isInteger(number) && number >= 1 && number <= 30) return number;
+  return units.find((unit) => unit.unit)?.number || null;
+}
+
+function renderPulseNode(number, type, label, detail, status = "generated", selected = false) {
+  return `<button type="button" class="pulse-node is-${type} is-${status}${selected ? " is-selected" : ""}" data-pulse-node data-pulse-episode="${number}" data-pulse-type="${escapeHtml(type)}" data-pulse-label="${escapeHtml(label)}" data-pulse-detail="${escapeHtml(detail)}" data-pulse-status="${escapeHtml(status)}" aria-pressed="${selected ? "true" : "false"}" aria-label="第 ${number} 集 ${escapeHtml(label)} · ${escapeHtml(pulseStatusLabel(status))}">${escapeHtml(label)}</button>`;
 }
 
 function renderStoryPulse(artifact) {
@@ -2411,6 +2518,129 @@ function renderStoryPulse(artifact) {
     : "";
   const curve = linePoints ? `<svg class="pulse-curve" viewBox="0 0 1000 160" role="img" aria-label="剧情${signalKey === "tension" ? "张力" : signalKey === "emotion" ? "情绪" : "高光"}曲线"><line x1="24" y1="134" x2="976" y2="134" /><polyline points="${linePoints}" /><g>${signals.filter((item) => item[signalKey] !== null).map((item) => `<circle cx="${24 + ((item.number - 1) / 29) * 952}" cy="${134 - (item[signalKey] / 100) * 100}" r="3.5"><title>第 ${item.number} 集 · ${item[signalKey]}</title></circle>`).join("")}</g></svg>` : `<div class="pulse-no-curve">等待 rhythm_signals 数值；当前先显示真实的剧情节点。</div>`;
   return `<section class="story-pulse" aria-labelledby="storyPulseTitle"><div class="story-pulse-head"><div><span class="card-label"><i></i>STORY PULSE</span><h3 id="storyPulseTitle">剧情脉冲</h3><p>用一条时间轴看见每集的推进、悬念和回收。</p></div><span class="story-pulse-range">01—30 集</span></div><div class="pulse-chart"><div class="pulse-chart-label">${signalKey ? `${signalKey === "tension" ? "张力" : signalKey === "emotion" ? "情绪" : "高光"}曲线` : "剧情节点"}</div>${curve}<div class="pulse-axis">${axis}</div>${trackMarkup}</div><aside id="pulseInspector" class="pulse-inspector" aria-live="polite"><span class="card-label"><i></i>NODE INSPECTOR</span><strong data-pulse-inspector-title>选择一个节点</strong><p data-pulse-inspector-copy>点击钩子、反转、回收或高光节点，在固定检视区查看证据。</p><small data-pulse-inspector-meta>尚未选择 · 已载入 ${units.length} 集</small></aside></section>`;
+}
+
+function renderPulseTimeline(units, selectedEpisode) {
+  const tracks = [["hook", "钩子"], ["reversal", "反转"], ["payoff", "回收"]];
+  const axis = Array.from({ length: 30 }, (_, index) => `<span>${String(index + 1).padStart(2, "0")}</span>`).join("");
+  const trackMarkup = tracks.map(([type, label]) => {
+    const cells = units.map((unit) => {
+      const detail = unit[type];
+      if (detail) return `<span class="pulse-cell is-${unit.status}">${renderPulseNode(unit.number, type, label, detail, unit.status, unit.number === selectedEpisode)}</span>`;
+      const status = unit.status === "pending" ? "pending" : "missing";
+      const marker = status === "pending" ? "…" : "—";
+      return `<span class="pulse-cell is-${status}" title="第 ${unit.number} 集 · ${label}${status === "pending" ? "处理中或待重跑" : "暂无数据"}" aria-label="第 ${unit.number} 集 ${label} · ${status === "pending" ? "处理中或待重跑" : "暂无数据"}"><span class="pulse-slot is-${status}">${marker}</span></span>`;
+    }).join("");
+    return `<div class="pulse-track"><strong>${label}</strong><div class="pulse-track-grid">${cells}</div></div>`;
+  }).join("");
+  return `<div class="pulse-timeline" aria-label="第 1 至 30 集剧情脉冲时间轴"><div class="pulse-axis"><span class="pulse-axis-label">集数</span>${axis}</div>${trackMarkup}</div>`;
+}
+
+function renderPulseInspector(units, selectedEpisode) {
+  const selected = units.find((unit) => unit.number === selectedEpisode) || null;
+  if (!selected) {
+    return `<aside class="pulse-inspector pulse-inspector-empty" aria-live="polite"><span class="card-label"><i></i>EPISODE INSPECTOR</span><strong>暂无可检视集</strong><p>完成分集阶段后，Agent 会把真实集级证据投影到这里。</p><small>来源：arc · 当前没有可用单元</small></aside>`;
+  }
+  const fields = [["hook", "钩子"], ["reversal", "反转"], ["payoff", "回收"]].map(([key, label]) => {
+    const value = selected[key];
+    return `<div class="pulse-inspector-row${value ? " has-value" : " is-missing"}"><span>${label}</span><strong>${value ? escapeHtml(value) : "暂无数据"}</strong></div>`;
+  }).join("");
+  const source = selected.sourceArtifactId
+    ? `来源：${selected.sourceArtifactId} · v${selected.sourceVersion ?? "—"}`
+    : "来源：arc · 尚未生成产物";
+  return `<aside class="pulse-inspector" aria-live="polite"><div class="pulse-inspector-head"><span class="card-label"><i></i>EPISODE INSPECTOR</span><em class="pulse-status is-${selected.status}">${escapeHtml(selected.statusLabel)}</em></div><strong>第 ${selected.number} 集${selected.title ? ` · ${escapeHtml(selected.title)}` : ""}</strong><p class="pulse-inspector-note">集级字段只读展示；查看不会触发生成、确认或裁决。</p><div class="pulse-inspector-fields">${fields}</div><small>${escapeHtml(source)}</small><button type="button" class="view-secondary" data-view-action="workbench">返回工作台查看 Agent 任务 <span aria-hidden="true">→</span></button></aside>`;
+}
+
+function renderPulseView() {
+  const artifact = artifactForStage("arc");
+  const units = normalizeArcPulseUnits(artifact);
+  const selectedEpisode = normalizeSelectedEpisode(state.selectedEpisode, units);
+  state.selectedEpisode = selectedEpisode;
+  const present = units.filter((unit) => unit.unit).length;
+  const locked = units.filter((unit) => unit.status === "locked").length;
+  const pending = units.filter((unit) => unit.status === "pending").length;
+  const emptyNotice = artifact
+    ? ""
+    : `<div class="view-empty-banner"><strong>尚未生成分集产物</strong><span>时间轴保留 01—30 的位置；真实集级字段会在 arc 阶段完成后出现。</span><button type="button" class="view-secondary" data-view-action="workbench">返回工作台开始生成 <span aria-hidden="true">→</span></button></div>`;
+  return `<section class="agent-view pulse-view" aria-labelledby="pulseViewTitle"><header class="view-page-head"><div><span class="eyebrow">02 / STORY PULSE</span><h2 id="pulseViewTitle">剧情脉冲</h2><p>Agent 将分集产物拆成钩子、反转、回收三条可检视轨道，供后续镜头和空间控制层引用。</p></div><div class="view-page-metrics"><strong>${String(present).padStart(2, "0")} / 30</strong><span>已生成</span><small>${locked} 已锁定 · ${pending} 待处理</small></div></header>${emptyNotice}<div class="pulse-legend" aria-label="剧情脉冲状态图例"><span><i class="is-locked"></i>已锁定</span><span><i class="is-generated"></i>已生成</span><span><i class="is-pending"></i>处理中 / 待重跑</span><span><i class="is-missing"></i>暂无数据</span></div><div class="pulse-view-grid"><div class="pulse-timeline-wrap">${renderPulseTimeline(units, selectedEpisode)}<p class="view-footnote">点击节点更新右侧检视区；左右方向键移动集数，Enter / Space 打开当前节点。</p></div>${renderPulseInspector(units, selectedEpisode)}</div></section>`;
+}
+
+function selectedPulseUnit() {
+  const units = normalizeArcPulseUnits(artifactForStage("arc"));
+  const selectedEpisode = normalizeSelectedEpisode(state.selectedEpisode, units);
+  state.selectedEpisode = selectedEpisode;
+  return units.find((unit) => unit.number === selectedEpisode) || null;
+}
+
+function renderEpisodeCardView() {
+  const selected = selectedPulseUnit();
+  if (!selected) {
+    return `<section class="agent-view episode-card-view" aria-labelledby="episodeCardTitle"><header class="view-page-head"><div><span class="eyebrow">03 / EPISODE CARD</span><h2 id="episodeCardTitle">单集卡</h2><p>集级检视将承接剧情证据、角色连续性与后续空间控制信息。</p></div></header><div class="view-empty-banner"><strong>选择一个可用集</strong><span>先在剧情脉冲中选择集数，或完成 arc 阶段生成。</span><button type="button" class="view-primary" data-view-action="pulse">打开剧情脉冲 <span aria-hidden="true">→</span></button></div></section>`;
+  }
+  const rows = [["hook", "集尾钩子"], ["reversal", "关键反转"], ["payoff", "推进与回收"]].map(([key, label]) => `<div class="episode-card-row${selected[key] ? "" : " is-missing"}"><span>${label}</span><p>${selected[key] ? escapeHtml(selected[key]) : "暂无数据"}</p></div>`).join("");
+  return `<section class="agent-view episode-card-view" aria-labelledby="episodeCardTitle"><header class="view-page-head"><div><span class="eyebrow">03 / EPISODE CARD</span><h2 id="episodeCardTitle">单集卡</h2><p>把当前集的剧情因果压缩成下一层 Agent 可读取的事实卡。</p></div><div class="episode-card-index"><strong>EP ${String(selected.number).padStart(2, "0")}</strong><span class="pulse-status is-${selected.status}">${escapeHtml(selected.statusLabel)}</span></div></header><div class="episode-card-layout"><article class="episode-card-main"><div class="episode-card-title"><span class="card-label"><i></i>ARC EVIDENCE</span><h3>第 ${selected.number} 集${selected.title ? ` · ${escapeHtml(selected.title)}` : ""}</h3><p>只读来自 arc 产物的结构证据，缺失字段不会被 Agent 自动补写。</p></div><div class="episode-card-rows">${rows}</div></article><aside class="episode-card-side"><span class="card-label"><i></i>HANDOFF CONTEXT</span><strong>后续空间控制层入口</strong><p>本期先展示剧情事实。镜头布局、角色位置、场景连续性将在后续 P1/P2 生产层承接。</p><small>${selected.sourceArtifactId ? `来源：${escapeHtml(selected.sourceArtifactId)} · v${selected.sourceVersion ?? "—"}` : "来源：arc · 尚未生成产物"}</small><button type="button" class="view-secondary" data-view-action="pulse">回到剧情脉冲 <span aria-hidden="true">→</span></button></aside></div></section>`;
+}
+
+function renderJudgeView() {
+  const stage = workflowStage();
+  const artifact = artifactForStage(stage);
+  const reviewArtifact = reviewForArtifact(artifact);
+  const content = reviewArtifact?.content || {};
+  const decision = content.decision || {};
+  const quality = reviewQuality(content);
+  const status = decision.title || (quality === null ? "尚未审核" : content.pass === true ? "审核通过" : "待处理");
+  const body = reviewArtifact
+    ? `<div class="judge-summary"><div><span>当前阶段</span><strong>${escapeHtml(stageMeta[stage]?.title || stage)}</strong></div><div><span>系统裁判</span><strong>${escapeHtml(status)}</strong></div><div><span>质量分</span><strong>${quality === null ? "—" : `${Math.round(quality)} / 100`}</strong></div></div>${renderReviewScoreBars(content)}<p class="judge-readonly-note">这里是现有审核结果的只读投影。定向修订、人工裁决、重跑和确认仍由工作台右侧 Agent 任务承载。</p>`
+    : `<div class="view-empty-banner"><strong>当前没有可投影的审核结果</strong><span>完成一个阶段的生成与审核后，系统裁判证据会显示在这里。</span></div>`;
+  return `<section class="agent-view judge-view" aria-labelledby="judgeViewTitle"><header class="view-page-head"><div><span class="eyebrow">04 / SYSTEM JUDGE</span><h2 id="judgeViewTitle">审核裁判</h2><p>把规则校验、审核分数和系统决定集中展示，避免在只读视图里复制第二套裁决逻辑。</p></div><div class="judge-lockup"><span class="judge-mark">J</span><strong>只读证据层</strong></div></header>${body}<div class="view-action-row"><button type="button" class="view-primary" data-view-action="workbench">回到工作台执行任务 <span aria-hidden="true">→</span></button></div></section>`;
+}
+
+function renderCurrentView() {
+  if (state.view === "pulse") return renderPulseView();
+  if (state.view === "episode-card") return renderEpisodeCardView();
+  if (state.view === "judge") return renderJudgeView();
+  return "";
+}
+
+function setView(view, episode = state.selectedEpisode) {
+  if (!viewOrder.includes(view)) return;
+  state.view = view;
+  if (view === "workbench") state.selectedEpisode = null;
+  else state.selectedEpisode = normalizeSelectedEpisode(episode, normalizeArcPulseUnits(artifactForStage("arc")));
+  writeViewHash();
+  renderStage();
+}
+
+function selectPulseEpisode(episode) {
+  const units = normalizeArcPulseUnits(artifactForStage("arc"));
+  const selected = normalizeSelectedEpisode(episode, units);
+  if (!selected) return;
+  state.view = "pulse";
+  state.selectedEpisode = selected;
+  writeViewHash();
+  renderStage();
+  requestAnimationFrame(() => document.querySelector(`[data-pulse-episode="${selected}"]`)?.focus({ preventScroll: true }));
+}
+
+function bindViewActions() {
+  $$('[data-view-action]').forEach((button) => button.addEventListener("click", () => setView(button.dataset.viewAction || "workbench", state.selectedEpisode)));
+  $$('[data-pulse-node]').forEach((button) => button.addEventListener("click", () => selectPulseEpisode(button.dataset.pulseEpisode)));
+}
+
+function handleViewKeydown(event) {
+  if (state.view !== "pulse" || !document.querySelector(".pulse-view")) return;
+  if (event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName))) return;
+  if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
+    const current = Number(state.selectedEpisode || 1);
+    const next = Math.min(30, Math.max(1, current + (event.key === "ArrowRight" ? 1 : -1)));
+    event.preventDefault();
+    selectPulseEpisode(next);
+    return;
+  }
+  if ((event.key === "Enter" || event.key === " ") && event.target.closest("[data-pulse-node]")) {
+    event.preventDefault();
+    selectPulseEpisode(event.target.closest("[data-pulse-node]").dataset.pulseEpisode);
+  }
 }
 
 function scoreFromDimension(value) {
@@ -2735,6 +2965,14 @@ function renderRiskNote() {
 }
 
 function renderStage() {
+  if (state.view !== "workbench") {
+    $("#stageContent").innerHTML = renderCurrentView();
+    bindViewActions();
+    renderShellState();
+    renderRiskNote();
+    persistSessionSnapshot();
+    return;
+  }
   const flowStage = workflowStage();
   const renderer = state.stage === "brief" ? renderBrief : state.stage === "title" ? renderTitleStage : state.stage === "handoff" ? renderHandoff : renderArtifactStage;
   const currentArtifact = artifactForStage(state.stage);
@@ -3501,19 +3739,23 @@ function startNewDraft() {
   }
   const target = new URL(window.location.href);
   target.searchParams.set("session", freshSession);
-  target.hash = "brief";
+  target.hash = "workbench/brief";
   window.location.assign(target.toString());
 }
 
 $("#newDraft").addEventListener("click", startNewDraft);
 $$('[data-open-stage]').forEach((button) => button.addEventListener("click", () => {
   const target = button.dataset.openStage;
-  if (!stageAccessible(target)) return showToast(`请先完成“${stageMeta[workflowStage()]?.title || "当前阶段"}”`);
-  state.stage = target;
-  renderStage();
+  navigateToStage(target);
 }));
 
+window.addEventListener("hashchange", () => {
+  applyViewHash();
+  renderStage();
+});
+document.addEventListener("keydown", handleViewKeydown);
 const restoredSession = restoreSessionSnapshot();
+applyViewHash();
 renderStage();
 syncAgentState({ silent: true }).finally(() => {
   if (state.activeRun) void monitorBackgroundRun(state.activeRun);

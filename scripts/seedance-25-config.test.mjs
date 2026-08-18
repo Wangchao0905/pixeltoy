@@ -16,9 +16,6 @@ assert.equal(normalizeVideoResolution("1080p", "seedance-2-5"), "720p", "2.5 请
 assert.equal(normalizeVideoResolution("4k", "seedance-2-5"), "720p", "2.5 请求 4k 必须回退 720p");
 assert.equal(normalizeVideoResolution("720p", "seedance-2-5"), "720p", "2.5 720p 保持");
 assert.equal(normalizeVideoResolution("480p", "seedance-2-5"), "720p", "2.5 480p 必须回退到固定 720p");
-assert.equal(normalizeVideoResolution("1080p", "dreamina-seedance-2-5-260628"), "720p", "海外 2.5 请求 1080p 必须回退 720p");
-assert.equal(normalizeSeedanceDuration(30, "dreamina-seedance-2-5-260628"), 30, "海外 2.5 必须保留 30 秒");
-assert.equal(normalizeSeedanceDuration(31, "dreamina-seedance-2-5-260628"), 30, "海外 2.5 必须封顶 30 秒");
 // 标准 2.0 三项已固定走 Paisio 的截图模型规格。
 assert.equal(normalizeVideoResolution("1080p", "seedance-2-0"), "720p", "2.0 固定 720p");
 assert.equal(normalizeVideoResolution("4k", "seedance-2-0"), "720p", "2.0 固定 720p");
@@ -30,8 +27,7 @@ const serverSource = readFileSync(path.join(root, "server.js"), "utf8");
 assert.match(serverSource, /"seedance-2-5": \{ model: "sd2\.5-ultra-720p", resolution: "720p" \}/, "server 必须将标准 Seedance 2.5 固定映射到 Paisio 720p 模型");
 assert.doesNotMatch(serverSource, /doubao-seedance-2-5-260628/, "标准 Seedance 2.5 不得继续使用旧 Ark 模型");
 assert.doesNotMatch(serverSource, /process\.env\.SEEDANCE_25_MODEL\b/, "标准 Seedance 2.5 不得继续保留旧 Ark 环境变量");
-assert.match(serverSource, /"seedance-2-5": "dreamina-seedance-2-5-260628"/, "server 必须映射海外 Seedance 2.5 到 BytePlus 模型 ID");
-assert.match(serverSource, /BYTEPLUS_SEEDANCE_25_MODEL/, "海外 2.5 必须支持 env 覆盖（BYTEPLUS_SEEDANCE_25_MODEL）");
+assert.doesNotMatch(serverSource, /dreamina-seedance-2-5-260628|BYTEPLUS_SEEDANCE_25_MODEL|seedance-2-5-byteplus/, "海外 Seedance 2.5 必须从后端删除");
 assert.ok(serverSource.includes('const maxDuration = /(?:2-5|2\\.5)/i.test(String(model || "")) ? 30 : 15;'), "后端时长 2.5 必须放宽到 30 秒（2.0 保持 15）");
 
 const appSource = readFileSync(path.join(root, "public", "app.js"), "utf8");

@@ -340,7 +340,6 @@ const DEFAULT_WINDOWS = {
 };
 const VIDEO_MODEL_OPTIONS = {
   "seedance-2-5": "Seedance 2.5",
-  "seedance-2-5-byteplus": "Seedance 2.5（海外火山）",
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",
@@ -377,7 +376,6 @@ function normalizeVideoModelName(value) {
   if (["sd3-fast-480p", "sd3-fast-720p"].includes(raw)) return "seedance-2-0-m-fast";
   if (["sd2-video20-mini-480p", "sd2-video20-mini-720p"].includes(raw)) return "seedance-2-0-m-fast-mini";
   if (VIDEO_MODEL_OPTIONS[raw]) return raw;
-  if (/(?:byteplus|海外|modelark|ap-southeast)/.test(lower) && /2\.5|2-5/.test(lower)) return "seedance-2-5-byteplus";
   if (/2\.5|2-5/.test(lower)) return "seedance-2-5";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0";
   if (/2[.\- ]?0.*m.*fast.*mini|m.*fast.*mini/.test(lower)) return "seedance-2-0-m-fast-mini";

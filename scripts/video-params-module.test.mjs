@@ -15,7 +15,7 @@ assert.deepEqual(selectOptions("modernParamRatio"), ["9:16", "16:9", "1:1", "4:3
 assert.deepEqual(selectOptions("modernParamResolution"), ["480p", "720p", "1080p", "2k"], "the active workbench must expose its supported resolutions");
 assert.deepEqual(
   selectOptions("modernParamModel"),
-  ["seedance-2-5", "seedance-2-5-byteplus", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", "seedance-2-0-m-fast", "seedance-2-0-m-fast-mini", "minimax-h3", "seedance-2-0-byteplus", "grok-imagine-video"],
+  ["seedance-2-5", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", "seedance-2-0-m-fast", "seedance-2-0-m-fast-mini", "minimax-h3", "seedance-2-0-byteplus", "grok-imagine-video"],
   "the active workbench must expose the available video models",
 );
 for (const id of ["configModel", "configResolution", "configRatio", "configPromptMode", "configDialectEnabled", "configSfxEnabled"]) {
@@ -73,7 +73,6 @@ const context = {
   VIDEO_SFX_STYLE_OPTIONS: ["mystery", "epic", "palace", "vampire", "sci_fi", "disaster", "light", "comedy"],
   VIDEO_MODEL_OPTIONS: {
     "seedance-2-5": "Seedance 2.5",
-    "seedance-2-5-byteplus": "Seedance 2.5（海外火山）",
     "seedance-2-0": "Seedance 2.0",
     "seedance-2-0-fast": "Seedance 2.0 Fast",
     "seedance-2-0-mini": "Seedance 2.0 Mini",
@@ -130,7 +129,7 @@ for (const signature of [
 assert.equal(vm.runInContext('normalizeVideoModelName("Seedance 2.0 Mini")', context), "seedance-2-0-mini", "the Mini model label must normalize to its stable key");
 assert.equal(vm.runInContext('normalizeVideoModelName("Seedance 2.0 M fast")', context), "seedance-2-0-m-fast", "the Paisio fast model label must normalize to its stable key");
 assert.equal(vm.runInContext('normalizeVideoModelName("Seedance 2.0 M fast mini")', context), "seedance-2-0-m-fast-mini", "the Paisio fast mini model label must normalize to its stable key");
-assert.equal(vm.runInContext('normalizeVideoModelName("Seedance 2.5（海外火山）")', context), "seedance-2-5-byteplus", "the overseas Seedance 2.5 label must normalize to its stable key");
+assert.equal(vm.runInContext('normalizeVideoModelName("Seedance 2.5（海外火山）")', context), "seedance-2-5", "deleted overseas Seedance 2.5 configs must migrate to standard Seedance 2.5");
 vm.runInContext(
   'hydrateConfigInputs(JSON.stringify({ modelName: "seedance-2-0-person-reference", settings: { resolution: "1080p", ratio: "16:9", promptMode: "production_board", storyboardWorkflowExplicit: true, dialectStyle: "cantonese", sfxStyle: "搞笑无厘头" } }))',
   context,

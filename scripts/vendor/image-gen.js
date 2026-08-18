@@ -413,13 +413,18 @@ async function buildRequest(args, mode) {
 
   const image = requireArg(args, "image");
   if (mode === "image" && isPaisioGateway(args["base-url"])) {
-    // paisio 的 /v1/responses 图片生成未启用（403 Image generation is not enabled for this group），
-    // 必须走 /v1/images/edits（multipart form），否则被误报为鉴权失败。
+    // paisio 的 /v1/responses 图片生成未启用（403）；且 gpt-image2 系列带参考图在
+    // /v1/images/edits 也返回 500（仅 Nano banana 系列支持参考图编辑）。
+    const imageModel = args["image-model"] || "gpt-image2-medium";
+    if (/^gpt-image2/i.test(imageModel)) {
+      throw new UserError("provider_unsupported", "paisio 网关带参考图出图仅支持 Nano banana 系列（GPT Image 2 不带参考图）。请切换模型或移除参考图后重试。");
+    }
+    // paisio 的 /v1/images/edits（multipart form）——Nano banana 系列实测可用。
     const source = await imageToFormFile(image);
     const form = new FormData();
     form.append("image", source.blob, source.name);
     form.append("prompt", prompt);
-    form.append("model", args["image-model"] || "gpt-image2-medium");
+    form.append("model", imageModel);
     form.append("n", String(n));
     form.append("quality", args.quality || "auto");
     form.append("size", args.size || "1024x1024");

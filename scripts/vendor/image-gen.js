@@ -413,31 +413,27 @@ async function buildRequest(args, mode) {
 
   const image = requireArg(args, "image");
   if (mode === "image" && isPaisioGateway(args["base-url"])) {
-    // paisio 的 /v1/responses 图片生成未启用（403）；且 gpt-image2 系列带参考图在
-    // /v1/images/edits 也返回 500（仅 Nano banana 系列支持参考图编辑）。
-    const imageModel = args["image-model"] || "gpt-image2-medium";
-    if (/^gpt-image2/i.test(imageModel)) {
-      throw new UserError("provider_unsupported", "paisio 网关带参考图出图仅支持 Nano banana 系列（GPT Image 2 不带参考图）。请切换模型或移除参考图后重试。");
-    }
-    // paisio 的 /v1/images/edits（multipart form）——Nano banana 系列实测可用。
-    const source = await imageToFormFile(image);
-    const form = new FormData();
-    form.append("image", source.blob, source.name);
-    form.append("prompt", prompt);
-    form.append("model", imageModel);
-    form.append("n", String(n));
-    form.append("quality", args.quality || "auto");
-    form.append("size", args.size || "1024x1024");
-    form.append("response_format", "url");
+    // paisio 官方图生图格式：POST /v1/images/generations，JSON body 的 image 字段
+    // 传参考图（URL / Base64 / data-URI），model 支持 gpt-image2 与 nano banana 系列。
+    // （edits multipart 对 gpt-image2 返回 500；responses 未启用；此格式实测 200）
+    const imageRef = await imageToInputUrl(image);
     return {
-      url: buildApiUrl(args["base-url"], "/v1/images/edits"),
-      defaultOut: "edited-image.png",
+      url: buildApiUrl(args["base-url"], "/v1/images/generations"),
+      defaultOut: "generated-image.png",
       options: {
         method: "POST",
         headers: {
           Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
+          "Content-Type": "application/json",
         },
-        body: form,
+        body: JSON.stringify({
+          model: args["image-model"] || "gpt-image2-medium",
+          prompt,
+          image: imageRef,
+          size: args.size || "1024x1024",
+          quality: args.quality || "auto",
+          n,
+        }),
       },
     };
   }

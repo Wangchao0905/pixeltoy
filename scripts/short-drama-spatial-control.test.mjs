@@ -34,6 +34,9 @@ assert.match(js, /function renderModernSpatialControl\(/, "Short Drama must rend
 assert.match(js, /modernSpatialControlPanel/, "spatial control must be addressable from the modern focus router");
 assert.match(js, /state\.modernStudio\.spatialMapEditorMapId/, "spatial map selection must persist while editing");
 assert.match(js, /\/api\/project\/\$\{state\.selectedId\}\/spatial-maps/, "spatial control must use the existing spatial map API");
+assert.match(js, /\/api\/project\/\$\{encodeURIComponent\(state\.selectedId\)\}\/spatial-agent\/run/, "Short Drama must run the Space Agent task from the workspace");
+assert.match(js, /modernSpatialAgentFindings/, "Space Agent findings must be visible in the workspace");
+assert.match(html, /id="modernSpatialAgentFindings"/, "Short Drama must render Space Agent findings");
 assert.match(css, /modern-main\[data-modern-view="space"\]/, "spatial control must have a dedicated modern view");
 assert.match(css, /\.modern-spatial-control-panel\s*\{/, "spatial control layer must have dedicated layout styles");
 

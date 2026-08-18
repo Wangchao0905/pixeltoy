@@ -21741,6 +21741,42 @@ body.is-studio-modern .modern-spatial-agent-metrics span { display: grid; gap: 2
 body.is-studio-modern .modern-spatial-agent-metrics b { color: #aed5f7; font: 17px var(--mono); }
 body.is-studio-modern .modern-spatial-agent-metrics small { margin: 0; font: 9px var(--mono); }
 
+body.is-studio-modern .modern-spatial-agent-findings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+body.is-studio-modern .modern-spatial-agent-finding {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  max-width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--mv-line);
+  border-radius: 4px;
+  background: rgba(255,255,255,.025);
+  color: var(--mv-qt);
+  font: 9px/1.45 var(--mono);
+}
+
+body.is-studio-modern .modern-spatial-agent-finding b {
+  color: #f0b37e;
+  font-weight: 600;
+}
+
+body.is-studio-modern .modern-spatial-agent-finding span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.is-studio-modern .modern-spatial-agent-finding.is-block { border-color: rgba(234, 126, 126, .42); color: #f0b0b0; }
+body.is-studio-modern .modern-spatial-agent-finding.is-warning { border-color: rgba(238, 174, 117, .4); color: #f0c08f; }
+body.is-studio-modern .modern-spatial-agent-finding.is-ready { border-color: rgba(110, 231, 160, .35); color: #9fe2b5; }
+body.is-studio-modern .modern-spatial-agent-finding.is-info { color: var(--mv-qt); }
+
 body.is-studio-modern .modern-spatial-control-grid {
   display: grid;
   grid-template-columns: minmax(210px, .72fr) minmax(360px, 1.45fr) minmax(250px, .9fr);

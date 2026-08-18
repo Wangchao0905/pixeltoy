@@ -4477,6 +4477,7 @@ function defaultPaths(episodeRoot) {
     storyboard: path.join(episodeRoot, "02_storyboard", `${slug}_storyboard.md`),
     modelShotPlan: path.join(episodeRoot, "02_storyboard", `${slug}_model_shot_plan.json`),
     spatialMaps: path.join(episodeRoot, "02_storyboard", `${slug}_spatial_maps.json`),
+    spatialAgent: path.join(episodeRoot, "02_storyboard", `${slug}_spatial_agent.json`),
     assetManifest: resolveSeriesAssetManifestPath(episodeRoot),
     assetPrompts: path.join(episodeRoot, "03_asset_prompts", `${slug}_asset_prompts.md`),
     seedancePrompts: path.join(episodeRoot, VIDEO_PROMPTS_DIR, `${slug}_seedance_prompts.md`),
@@ -4525,6 +4526,10 @@ function normalizeSpatialMap(raw = {}, index = 0) {
       shadowDirection: compactLine(source.lighting?.shadowDirection || ""),
     },
     zones,
+    description: compactLine(source.description || ""),
+    source: compactLine(source.source || ""),
+    confidence: Number.isFinite(Number(source.confidence)) ? Math.max(0, Math.min(1, Number(source.confidence))) : null,
+    agentNote: compactLine(source.agentNote || ""),
     updatedAt: compactLine(source.updatedAt || ""),
   };
 }
@@ -4708,6 +4713,453 @@ function spatialPromptForShot(episodeRoot, shot = {}, config = {}, prompt = "") 
     .filter(Boolean)
     .join("\n\n")
     .trim();
+}
+
+const SPATIAL_AGENT_VERSION = 1;
+
+function spatialAgentPath(episodeRoot) {
+  return defaultPaths(episodeRoot).spatialAgent;
+}
+
+function normalizeSpatialAgentIssue(raw = {}) {
+  const severity = ["block", "warning", "info"].includes(raw?.severity) ? raw.severity : "warning";
+  return {
+    code: compactLine(raw?.code || "SPACE_AGENT_WARNING"),
+    severity,
+    scope: compactLine(raw?.scope || "project"),
+    shotName: compactLine(raw?.shotName || ""),
+    sceneRef: compactLine(raw?.sceneRef || ""),
+    message: compactLine(raw?.message || "待处理空间问题"),
+  };
+}
+
+function normalizeSpatialAgentState(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  return {
+    version: SPATIAL_AGENT_VERSION,
+    agent: "space",
+    runId: compactLine(source.runId || ""),
+    status: ["ready", "needs_review", "blocked", "needs_input", "error"].includes(source.status) ? source.status : "needs_input",
+    source: compactLine(source.source || ""),
+    model: compactLine(source.model || ""),
+    provider: compactLine(source.provider || ""),
+    summary: compactLine(source.summary || ""),
+    mapIds: [...new Set((Array.isArray(source.mapIds) ? source.mapIds : []).map(compactLine).filter(Boolean))],
+    issues: (Array.isArray(source.issues) ? source.issues : []).map(normalizeSpatialAgentIssue),
+    handoffs: (Array.isArray(source.handoffs) ? source.handoffs : []).map((item) => ({
+      from: compactLine(item?.from || ""),
+      to: compactLine(item?.to || ""),
+      sceneRef: compactLine(item?.sceneRef || ""),
+      mode: compactLine(item?.mode || ""),
+      status: compactLine(item?.status || "ready"),
+      reason: compactLine(item?.reason || ""),
+    })),
+    inputs: source.inputs && typeof source.inputs === "object"
+      ? {
+          scriptFingerprint: compactLine(source.inputs.scriptFingerprint || ""),
+          shotFingerprint: compactLine(source.inputs.shotFingerprint || ""),
+          assetFingerprint: compactLine(source.inputs.assetFingerprint || ""),
+        }
+      : { scriptFingerprint: "", shotFingerprint: "", assetFingerprint: "" },
+    trace: (Array.isArray(source.trace) ? source.trace : []).slice(-12).map((item) => ({
+      step: compactLine(item?.step || ""),
+      status: compactLine(item?.status || ""),
+      detail: compactLine(item?.detail || ""),
+      at: compactLine(item?.at || ""),
+    })),
+    updatedAt: compactLine(source.updatedAt || ""),
+  };
+}
+
+function readSpatialAgent(episodeRoot) {
+  const file = spatialAgentPath(episodeRoot);
+  if (!fs.existsSync(file)) return null;
+  try {
+    const parsed = normalizeSpatialAgentState(JSON.parse(readText(file)));
+    return { file, ...parsed };
+  } catch {
+    return null;
+  }
+}
+
+function writeSpatialAgent(episodeRoot, raw = {}) {
+  const file = spatialAgentPath(episodeRoot);
+  const state = normalizeSpatialAgentState({ ...raw, updatedAt: new Date().toISOString() });
+  writeText(file, `${JSON.stringify(state, null, 2)}\n`);
+  return { file, ...state };
+}
+
+function spatialAgentSlug(value = "", fallback = "SCENE") {
+  const clean = compactLine(value)
+    .replace(/[^A-Za-z0-9\u4e00-\u9fff]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 44);
+  return clean || fallback;
+}
+
+function spatialAgentAssetLookup(manifest = {}) {
+  return new Map(
+    (Array.isArray(manifest?.items) ? manifest.items : [])
+      .map((item) => [compactLine(item?.id || ""), {
+        manifestType: compactLine(item?.type || ""),
+        label: compactLine(item?.label || item?.id || ""),
+        evidence: compactLine(item?.evidence || ""),
+        visual: compactLine(item?.visual || ""),
+      }])
+      .filter(([id]) => id),
+  );
+}
+
+function spatialAgentSceneRefForShot(shot = {}, assetLookup = new Map()) {
+  return compactLine(
+    shot?.sceneRef ||
+      (Array.isArray(shot?.refs) ? shot.refs : []).find((ref) => assetLookup.get(compactLine(ref))?.manifestType === "Scene") ||
+      "",
+  );
+}
+
+function spatialAgentScenes({ script = "", shots = [], manifest = {} } = {}) {
+  const assetLookup = spatialAgentAssetLookup(manifest);
+  const scenes = [];
+  const add = (sceneRef, title = "", evidence = "") => {
+    const ref = compactLine(sceneRef);
+    if (!ref || scenes.some((scene) => scene.sceneRef === ref)) return;
+    const asset = assetLookup.get(ref);
+    scenes.push({
+      sceneRef: ref,
+      title: compactLine(title || asset?.label || ref),
+      evidence: compactLine(evidence || asset?.evidence || asset?.visual || ""),
+    });
+  };
+  (Array.isArray(shots) ? shots : []).forEach((shot) => {
+    const sceneRef = spatialAgentSceneRefForShot(shot, assetLookup);
+    if (sceneRef) add(sceneRef, assetLookup.get(sceneRef)?.label || sceneRef, shot.beat || shot.title || "");
+  });
+  (Array.isArray(manifest?.items) ? manifest.items : [])
+    .filter((item) => item?.type === "Scene")
+    .forEach((item) => add(item.id, item.label, item.evidence || item.visual));
+  if (!scenes.length) {
+    String(script || "")
+      .split(/\r?\n/)
+      .map(compactLine)
+      .filter(isSceneHeadingLine)
+      .forEach((line, index) => add(`SCENE_${String(index + 1).padStart(3, "0")}`, line, line));
+  }
+  if (!scenes.length && compactLine(script)) add("SCENE_001", "剧本主场景", compactLine(script).slice(0, 180));
+  return { scenes, assetLookup };
+}
+
+function spatialAgentLightingForText(text = "") {
+  const source = /夜|夜晚|黑暗|阴天|雨|dark|night|noir|storm/i.test(text) ? "scene practicals and ambient night light" : "natural daylight and scene practicals";
+  const direction = /窗|天窗|window|sunlight|阳光|月光/i.test(text) ? "window-side key at 45 degrees" : "front-left key at 45 degrees";
+  const shadowDirection = /逆光|backlight|逆着光/i.test(text) ? "toward camera" : "back-right from the key light";
+  return { source, direction, shadowDirection };
+}
+
+function spatialAgentDraftMap({ sceneRef = "", title = "", evidence = "", index = 0, script = "", modelMap = null } = {}) {
+  const lighting = spatialAgentLightingForText(`${title} ${evidence} ${script}`);
+  const fallback = {
+    id: `MAP_${String(index + 1).padStart(3, "0")}_${spatialAgentSlug(sceneRef)}`,
+    sceneRef: compactLine(sceneRef),
+    title: compactLine(title || sceneRef),
+    status: "draft",
+    version: 1,
+    description: compactLine(evidence || title || sceneRef),
+    anchors: [
+      { id: "primary_action_zone", label: "主表演区", screenPosition: "center", distanceM: 0 },
+      { id: "primary_entry", label: "主要入口", screenPosition: "frame-left", distanceM: 4 },
+    ],
+    axis: { cameraSide: "camera-left", line: "primary_action_zone-to-primary_entry", crossing: "forbidden" },
+    lighting,
+    zones: [{ id: "primary_action", anchor: "primary_action_zone", purpose: "人物主要表演与对白区域" }],
+    source: "space-agent",
+    confidence: 0.6,
+    agentNote: "由 Space Agent 根据场景资产和剧本生成的草稿；锁定前需要人工确认地标和光向。",
+  };
+  const candidate = modelMap && typeof modelMap === "object" ? modelMap : {};
+  return normalizeSpatialMap({
+    ...fallback,
+    ...candidate,
+    anchors: Array.isArray(candidate.anchors) && candidate.anchors.length ? candidate.anchors : fallback.anchors,
+    axis: { ...fallback.axis, ...(candidate.axis && typeof candidate.axis === "object" ? candidate.axis : {}) },
+    lighting: { ...fallback.lighting, ...(candidate.lighting && typeof candidate.lighting === "object" ? candidate.lighting : {}) },
+    zones: Array.isArray(candidate.zones) && candidate.zones.length ? candidate.zones : fallback.zones,
+    id: fallback.id,
+    sceneRef: fallback.sceneRef,
+    title: compactLine(candidate.title || fallback.title),
+    status: "draft",
+    version: 1,
+    source: candidate.source || "space-agent",
+    agentNote: candidate.agentNote || fallback.agentNote,
+  });
+}
+
+function spatialAgentShotState(shot = {}, map = null, assetLookup = new Map(), modelState = {}, previousShot = null, previousState = null) {
+  const sceneRef = spatialAgentSceneRefForShot(shot, assetLookup);
+  const zone = map?.zones?.[0]?.id || "primary_action";
+  const characterRefs = (Array.isArray(shot.refs) ? shot.refs : [])
+    .filter((ref) => assetLookup.get(compactLine(ref))?.manifestType === "Character")
+    .map(compactLine)
+    .filter(Boolean);
+  const blocking = Array.isArray(modelState?.blocking) && modelState.blocking.length
+    ? modelState.blocking
+    : characterRefs.map((actor, index) => ({
+        actor,
+        zone,
+        screenPosition: index === 0 ? "frame-left" : "frame-right",
+        facing: "toward scene center",
+        gaze: "toward the active character or prop",
+      }));
+  const sameScene = !!previousShot && sceneRef && spatialAgentSceneRefForShot(previousShot, assetLookup) === sceneRef;
+  const entryState = compactLine(modelState?.entryState || shot.startState || (sameScene ? previousState?.exitState : "") || "从场景主表演区进入，保持地图地标关系");
+  const exitState = compactLine(modelState?.exitState || shot.endState || "保留人物站位、视线、道具手位和主光方向供下一段接续");
+  return {
+    sceneRef,
+    cameraSide: compactLine(modelState?.cameraSide || map?.axis?.cameraSide || "camera-left"),
+    cameraDistanceM: Number.isFinite(Number(modelState?.cameraDistanceM)) ? Number(modelState.cameraDistanceM) : null,
+    blocking,
+    propStates: Array.isArray(modelState?.propStates) ? modelState.propStates : [],
+    entryState,
+    exitState,
+    handoffMode: !previousShot ? "opening" : sameScene ? (shot.useTailFrame ? "tail_frame" : "same_scene_cut") : "hard_cut",
+  };
+}
+
+function spatialAgentEvaluate({ script = "", scenes = [], shots = [], maps = [], assetLookup = new Map(), promptMode = "prompt" } = {}) {
+  const normalizedMaps = (Array.isArray(maps) ? maps : []).map(normalizeSpatialMap);
+  const mapByScene = new Map(normalizedMaps.map((map) => [map.sceneRef, map]));
+  const issues = [];
+  const addIssue = (code, severity, scope, message, shotName = "", sceneRef = "") => {
+    issues.push(normalizeSpatialAgentIssue({ code, severity, scope, message, shotName, sceneRef }));
+  };
+  if (!compactLine(script)) addIssue("SCRIPT_EMPTY", "block", "project", "没有可供 Space Agent 分析的剧本");
+  if (!scenes.length) addIssue("SCENE_UNRESOLVED", "block", "project", "剧本和资产清单中都没有可绑定的场景");
+  if (!shots.length) addIssue("NO_VIDEO_CONFIG", "info", "project", "尚未生成视频配置；地图可以先建立，镜头交接要等视频配置生成后再检查");
+  normalizedMaps.forEach((map) => {
+    const errors = spatialMapValidationErrors(map);
+    errors.forEach((message) => addIssue("MAP_INCOMPLETE", map.status === "locked" ? "block" : "warning", "map", `${map.title || map.sceneRef}：${message}`, "", map.sceneRef));
+  });
+  const handoffs = [];
+  let previousState = null;
+  (Array.isArray(shots) ? shots : []).forEach((shot, index) => {
+    const shotName = compactLine(shot?.name || `V${String(index + 1).padStart(2, "0")}`);
+    const sceneRef = spatialAgentSceneRefForShot(shot, assetLookup);
+    if (!sceneRef) {
+      addIssue("SHOT_SCENE_MISSING", "block", "shot", `${shotName}：没有场景引用，无法建立空间交接`, shotName);
+      return;
+    }
+    const map = mapByScene.get(sceneRef);
+    if (!map) {
+      addIssue("MAP_MISSING", "block", "shot", `${shotName}：场景 ${sceneRef} 没有空间地图`, shotName, sceneRef);
+      return;
+    }
+    if (promptMode === "prompt" && map.status !== "locked") {
+      addIssue("MAP_NOT_LOCKED", "block", "shot", `${shotName}：${map.title || sceneRef} 仍是草稿，提示词模式不能提交`, shotName, sceneRef);
+    }
+    if (Object.prototype.hasOwnProperty.call(shot, "spatialMapVersion") && Number.isFinite(Number(shot.spatialMapVersion)) && Number(shot.spatialMapVersion) !== Number(map.version)) {
+      addIssue("MAP_VERSION_STALE", "block", "shot", `${shotName}：绑定地图 v${shot.spatialMapVersion} 已过期，当前为 v${map.version}`, shotName, sceneRef);
+    }
+    if (!compactLine(shot.startState || shot.spatialState?.entryState)) addIssue("ENTRY_STATE_MISSING", "warning", "shot", `${shotName}：缺少明确的进入状态`, shotName, sceneRef);
+    if (!compactLine(shot.endState || shot.spatialState?.exitState)) addIssue("EXIT_STATE_MISSING", "warning", "shot", `${shotName}：缺少明确的退出状态`, shotName, sceneRef);
+    const previousShot = index > 0 ? shots[index - 1] : null;
+    const previousScene = previousShot ? spatialAgentSceneRefForShot(previousShot, assetLookup) : "";
+    const sameScene = !!previousShot && previousScene === sceneRef;
+    const mode = !previousShot ? "opening" : sameScene ? (shot.useTailFrame ? "tail_frame" : "same_scene_cut") : "hard_cut";
+    if (sameScene && previousShot?.spatialState?.cameraSide && shot?.spatialState?.cameraSide && previousShot.spatialState.cameraSide !== shot.spatialState.cameraSide) {
+      addIssue("AXIS_SIDE_CONFLICT", "block", "handoff", `${shotName}：与上一段的摄影机侧不一致，可能越过 180° 轴线`, shotName, sceneRef);
+    }
+    if (previousShot && sameScene && !compactLine(shot.transitionIn || shot.spatialState?.entryState || shot.startState)) {
+      addIssue("HANDOFF_ENTRY_MISSING", "warning", "handoff", `${shotName}：同场景接续没有写明上一段退出状态如何成为本段进入状态`, shotName, sceneRef);
+    }
+    if (previousShot && !sameScene && !compactLine(shot.transitionIn || shot.spatialState?.entryState || shot.startState)) {
+      addIssue("NEW_SCENE_ENTRY_MISSING", "warning", "handoff", `${shotName}：换场后没有写明新场景的首帧进入关系`, shotName, sceneRef);
+    }
+    const state = shot.spatialState || {};
+    const currentState = {
+      entryState: compactLine(state.entryState || shot.startState || ""),
+      exitState: compactLine(state.exitState || shot.endState || ""),
+    };
+    if (previousShot) {
+      handoffs.push({
+        from: compactLine(previousShot.name || ""),
+        to: shotName,
+        sceneRef: sameScene ? sceneRef : `${previousScene} -> ${sceneRef}`,
+        mode,
+        status: issues.some((item) => item.shotName === shotName && item.scope === "handoff" && item.severity === "block") ? "blocked" : "ready",
+        reason: sameScene ? "保持场景地标和摄影机侧，按上一段退出状态切入" : "换场后用新场景资产建立新的地标和主光源",
+      });
+    }
+    previousState = currentState;
+  });
+  const hasBlock = issues.some((item) => item.severity === "block");
+  return {
+    status: hasBlock ? "blocked" : issues.some((item) => item.severity === "warning") ? "needs_review" : shots.length ? "ready" : "needs_input",
+    issues,
+    handoffs,
+    blockingCount: issues.filter((item) => item.severity === "block").length,
+    warningCount: issues.filter((item) => item.severity === "warning").length,
+  };
+}
+
+function spaceAgentContext(episodeRoot) {
+  const rawScript = readText(findProjectFile(episodeRoot, "script"));
+  const script = modelPlanningScript(rawScript);
+  const configRecord = readVideoConfig(episodeRoot);
+  const config = configRecord?.data && typeof configRecord.data === "object" ? configRecord.data : {};
+  const modelPlan = readStoryboardModelPlan(episodeRoot);
+  const shots = Array.isArray(config.shots) && config.shots.length ? config.shots : Array.isArray(modelPlan?.shots) ? modelPlan.shots : [];
+  const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const { scenes, assetLookup } = spatialAgentScenes({ script, shots, manifest });
+  return { script, configRecord, config, modelPlan, shots, manifest, scenes, assetLookup };
+}
+
+async function requestSpatialAgentModel({ model = "", script = "", scenes = [], shots = [], manifest = {} } = {}) {
+  const requestedModel = compactLine(model || process.env.SPATIAL_AGENT_MODEL || defaultStoryboardModel());
+  if (!requestedModel || requestedModel === "rules") return { ok: false, source: "local_rules", reason: "显式使用本地规则" };
+  const modelConfig = superPixelModelConfig(requestedModel);
+  if (!modelConfig?.apiKey) return { ok: false, source: "local_rules", reason: `Space Agent 模型未配置：${requestedModel}` };
+  try {
+    const result = await callSuperPixelTextModel({
+      model: requestedModel,
+      purpose: "space-agent",
+      timeoutMs: Math.max(10_000, Number(process.env.SPATIAL_AGENT_TIMEOUT_MS || 90_000)),
+      maxTokens: 5_000,
+      system: [
+        "你是 Pixel Toy Short Drama 的 Space Agent。你负责把剧本和正式资产转换为可复用的空间控制层，不负责改写剧情。",
+        "只能使用输入中已有的 sceneRef、镜头名和资产 ID；不要创造不存在的资产 ID。",
+        "为每个场景给出 2-5 个稳定地标、一个摄影机侧、运动轴线、一个主光源和阴影方向。",
+        "为每个镜头给出人物站位、进入状态、退出状态和摄影机侧。",
+        "必须只返回 JSON：{maps:[...], shotStates:[...], summary:string}。",
+      ].join("\n"),
+      user: JSON.stringify({
+        script: String(script || "").slice(0, 24000),
+        scenes,
+        shots: shots.map((shot) => ({
+          name: shot.name,
+          sceneRef: shot.sceneRef,
+          refs: shot.refs,
+          beat: shot.beat,
+          startState: shot.startState,
+          endState: shot.endState,
+          transitionIn: shot.transitionIn,
+          transitionOut: shot.transitionOut,
+        })),
+        assets: (manifest.items || []).map((item) => ({ id: item.id, type: item.type, label: item.label, evidence: item.evidence, visual: item.visual })),
+      }),
+    });
+    return { ok: true, source: "model", model: requestedModel, provider: result.provider, data: result.content };
+  } catch (error) {
+    return { ok: false, source: "local_rules", model: requestedModel, reason: compactLine(error?.message || "Space Agent 模型请求失败") };
+  }
+}
+
+function applySpatialAgentShotBindings(episodeRoot, shots = [], maps = [], assetLookup = new Map()) {
+  const record = readVideoConfig(episodeRoot);
+  if (!record?.data || !Array.isArray(record.data.shots)) return false;
+  const mapByScene = new Map((Array.isArray(maps) ? maps : []).map((map) => [map.sceneRef, normalizeSpatialMap(map)]));
+  const agentShotByName = new Map((Array.isArray(shots) ? shots : []).map((shot) => [compactLine(shot?.name || ""), shot]));
+  const nextShots = record.data.shots.map((shot, index) => {
+    const agentShot = agentShotByName.get(compactLine(shot?.name || "")) || shot;
+    const sceneRef = spatialAgentSceneRefForShot(agentShot, assetLookup);
+    const map = mapByScene.get(sceneRef);
+    const next = { ...shot };
+    if (sceneRef && !next.sceneRef) next.sceneRef = sceneRef;
+    if (map) {
+      next.spatialMapId = map.id;
+      next.spatialMapVersion = map.version;
+      next.spatialState = agentShot.spatialState && typeof agentShot.spatialState === "object"
+        ? agentShot.spatialState
+        : spatialAgentShotState(agentShot, map, assetLookup, {}, index ? record.data.shots[index - 1] : null, null);
+    }
+    return next;
+  });
+  const changed = JSON.stringify(nextShots) !== JSON.stringify(record.data.shots);
+  if (changed) writeVideoConfigRecord(record, { ...record.data, shots: nextShots, spatialAgentUpdatedAt: new Date().toISOString() });
+  return changed;
+}
+
+function refreshSpatialAgentState(episodeRoot) {
+  const previous = readSpatialAgent(episodeRoot);
+  if (!previous?.runId) return null;
+  const context = spaceAgentContext(episodeRoot);
+  const maps = readSpatialMaps(episodeRoot).maps;
+  const configUpdated = applySpatialAgentShotBindings(episodeRoot, context.shots, maps, context.assetLookup);
+  const evaluatedContext = configUpdated ? spaceAgentContext(episodeRoot) : context;
+  const evaluation = spatialAgentEvaluate({
+    script: evaluatedContext.script,
+    scenes: evaluatedContext.scenes,
+    shots: evaluatedContext.shots,
+    maps,
+    assetLookup: evaluatedContext.assetLookup,
+    promptMode: evaluatedContext.config.settings?.promptMode || evaluatedContext.config.promptMode || "prompt",
+  });
+  return writeSpatialAgent(episodeRoot, {
+    ...previous,
+    status: evaluation.status,
+    summary: evaluation.status === "ready" ? "空间地图和镜头交接检查通过" : `空间 Agent 发现 ${evaluation.issues.length} 项待处理问题`,
+    mapIds: maps.map((map) => map.id),
+    issues: evaluation.issues,
+    handoffs: evaluation.handoffs,
+  });
+}
+
+async function runSpatialAgent(episodeRoot, body = {}) {
+  const context = spaceAgentContext(episodeRoot);
+  const runId = `space_${crypto.randomUUID()}`;
+  const trace = [{ step: "collect_inputs", status: "complete", detail: `${context.scenes.length} 个场景 / ${context.shots.length} 个镜头`, at: new Date().toISOString() }];
+  const modelResult = await requestSpatialAgentModel({
+    model: body.model,
+    script: context.script,
+    scenes: context.scenes,
+    shots: context.shots,
+    manifest: context.manifest,
+  });
+  trace.push({ step: "scene_reasoning", status: modelResult.ok ? "complete" : "fallback", detail: modelResult.reason || modelResult.model || "local rules", at: new Date().toISOString() });
+  const existing = readSpatialMaps(episodeRoot).maps;
+  const existingByScene = new Map(existing.map((map) => [map.sceneRef, map]));
+  const modelMaps = new Map((Array.isArray(modelResult.data?.maps) ? modelResult.data.maps : []).map((map) => [compactLine(map?.sceneRef || ""), map]));
+  const newMaps = context.scenes
+    .filter((scene) => !existingByScene.has(scene.sceneRef))
+    .map((scene, index) => spatialAgentDraftMap({ ...scene, index, script: context.script, modelMap: modelMaps.get(scene.sceneRef) }));
+  const persisted = newMaps.length ? writeSpatialMaps(episodeRoot, { maps: newMaps }) : readSpatialMaps(episodeRoot);
+  trace.push({ step: "write_scene_maps", status: "complete", detail: `新增 ${newMaps.length} 张草稿地图`, at: new Date().toISOString() });
+  const mapByScene = new Map(persisted.maps.map((map) => [map.sceneRef, map]));
+  const modelStates = new Map((Array.isArray(modelResult.data?.shotStates) ? modelResult.data.shotStates : []).map((item) => [compactLine(item?.shotName || item?.name || ""), item]));
+  const enrichedShots = context.shots.map((shot, index) => {
+    const map = mapByScene.get(spatialAgentSceneRefForShot(shot, context.assetLookup));
+    const previous = index ? context.shots[index - 1] : null;
+    const previousState = index ? spatialAgentShotState(previous, mapByScene.get(spatialAgentSceneRefForShot(previous, context.assetLookup)), context.assetLookup, modelStates.get(previous.name) || {}, index > 1 ? context.shots[index - 2] : null, null) : null;
+    return { ...shot, spatialState: spatialAgentShotState(shot, map, context.assetLookup, modelStates.get(shot.name) || {}, previous, previousState) };
+  });
+  const enrichedContext = { ...context, shots: enrichedShots };
+  const evaluation = spatialAgentEvaluate({
+    script: context.script,
+    scenes: context.scenes,
+    shots: enrichedShots,
+    maps: persisted.maps,
+    assetLookup: context.assetLookup,
+    promptMode: context.config.settings?.promptMode || context.config.promptMode || "prompt",
+  });
+  const configUpdated = applySpatialAgentShotBindings(episodeRoot, enrichedShots, persisted.maps, context.assetLookup);
+  trace.push({ step: "validate_handoffs", status: evaluation.status, detail: `${evaluation.issues.length} 项问题`, at: new Date().toISOString() });
+  const result = writeSpatialAgent(episodeRoot, {
+    runId,
+    status: evaluation.status,
+    source: modelResult.source,
+    model: modelResult.model || "local-rules",
+    provider: modelResult.provider || "local",
+    summary: evaluation.status === "ready" ? "空间地图、镜头状态和交接检查通过" : `空间 Agent 发现 ${evaluation.issues.length} 项待处理问题`,
+    mapIds: persisted.maps.map((map) => map.id),
+    issues: evaluation.issues,
+    handoffs: evaluation.handoffs,
+    inputs: {
+      scriptFingerprint: sha1Text(context.script),
+      shotFingerprint: sha1Text(JSON.stringify(context.shots.map((shot) => ({ name: shot.name, sceneRef: shot.sceneRef, beat: shot.beat })))),
+      assetFingerprint: assetManifestIdentityFingerprint(context.manifest),
+    },
+    trace,
+  });
+  return { ...result, maps: persisted.maps, configUpdated, shotCount: enrichedContext.shots.length };
 }
 
 const MODEL_SHOT_PLAN_VERSION = 2;
@@ -11963,6 +12415,7 @@ function fullProjectState(episodeRoot) {
     },
     assetManifest: normalizedAssetManifest,
     spatialMaps: readSpatialMaps(episodeRoot).maps,
+    spatialAgent: readSpatialAgent(episodeRoot),
     assets: visibleAssets,
     assetSlots,
     assetStyleReference: readAssetStyleReference(episodeRoot),
@@ -28277,6 +28730,16 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && action === "spatial-maps") {
     const result = writeSpatialMaps(episodeRoot, await readBody(req));
+    const agent = refreshSpatialAgentState(episodeRoot);
+    return send(res, 200, { ok: true, ...result, agent, state: fullProjectState(episodeRoot) });
+  }
+
+  if (req.method === "GET" && action === "spatial-agent") {
+    return send(res, 200, { ok: true, agent: readSpatialAgent(episodeRoot) });
+  }
+
+  if (req.method === "POST" && action === "spatial-agent/run") {
+    const result = await runSpatialAgent(episodeRoot, await readBody(req));
     return send(res, 200, { ok: true, ...result, state: fullProjectState(episodeRoot) });
   }
 
@@ -29304,6 +29767,14 @@ module.exports = {
       statePromptText: spatialStatePromptText,
       handoffPromptText: spatialHandoffPromptText,
       promptForShot: spatialPromptForShot,
+    },
+    spaceAgent: {
+      read: readSpatialAgent,
+      write: writeSpatialAgent,
+      draftMap: spatialAgentDraftMap,
+      evaluate: spatialAgentEvaluate,
+      run: runSpatialAgent,
+      refresh: refreshSpatialAgentState,
     },
     assetJobRetry: {
       shouldAutoRetryTransientAssetJob,

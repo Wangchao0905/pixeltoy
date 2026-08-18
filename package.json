@@ -9,7 +9,7 @@
     "verify:deploy": "node scripts/verify-deploy.mjs",
     "test:final-cut": "node scripts/final-cut-stale.test.mjs",
     "test:film-studio": "node scripts/film-studio.test.mjs",
-    "test:short-drama": "node scripts/short-drama-pipeline-contract.test.mjs && node scripts/short-drama-spatial-control.test.mjs",
+    "test:short-drama": "node scripts/short-drama-pipeline-contract.test.mjs && node scripts/short-drama-spatial-control.test.mjs && node scripts/space-agent.test.mjs",
     "test:pixeltale": "node scripts/pixeltale-refresh-recovery.test.mjs && node scripts/pixeltale-workflow.test.mjs && node scripts/pixeltale-run-jobs.test.mjs && node scripts/pixeltale-docx-format.test.mjs && node scripts/pixeltale-episode-isolation.test.mjs",
     "test:seedance-director": "node scripts/seedance-director.test.mjs",
     "test:paisio-sd3": "node scripts/paisio-sd3.test.mjs",

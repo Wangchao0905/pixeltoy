@@ -6507,7 +6507,14 @@ function renderModernSpatialControl(data = state.project, shots = modernShotReco
     ? maps.find((map) => map.id === state.modernStudio.spatialMapEditorMapId)
     : modernSpatialMapForShot(data, selected);
   const lockedCount = maps.filter((map) => map?.status === "locked").length;
-  const issueCount = promptMode === "prompt" ? modernSpatialMapIssueCount(data, shots) : 0;
+  const agent = data?.spatialAgent || null;
+  const agentIssues = Array.isArray(agent?.issues) ? agent.issues : [];
+  const issueCount = promptMode === "prompt"
+    ? agent
+      ? agentIssues.length
+      : modernSpatialMapIssueCount(data, shots)
+    : 0;
+  const blockingCount = agentIssues.filter((item) => item?.severity === "block").length;
   const mapCount = $("#modernSpatialMapCount");
   const lockedCountNode = $("#modernSpatialLockedCount");
   const issueCountNode = $("#modernSpatialIssueCount");
@@ -6528,15 +6535,35 @@ function renderModernSpatialControl(data = state.project, shots = modernShotReco
   if (promptMode !== "prompt") {
     if (status) status.textContent = "Production Board 模式不会读取空间地图";
     if (next) next.textContent = "空间地图仍可作为导演记录保存，但不会阻塞 Production Board 视频生成。";
+  } else if (!agent) {
+    if (status) status.textContent = "Space Agent 尚未运行";
+    if (next) next.textContent = "运行 Agent 后，它会读取剧本、资产清单和镜头，自动建立场景地图并检查交接。";
   } else if (!maps.length) {
     if (status) status.textContent = "空间 Agent 等待场景地图";
     if (next) next.textContent = "先从视频配置生成场景引用，或打开当前镜头创建第一张空间地图。";
-  } else if (issueCount) {
-    if (status) status.textContent = `空间 Agent 发现 ${issueCount} 项待处理`;
-    if (next) next.textContent = selected ? `优先检查镜头 ${String(selected.number).padStart(2, "0")} 的地图绑定与版本。` : "选择一个镜头查看地图绑定与版本。";
+  } else if (agent.status === "blocked" || blockingCount) {
+    if (status) status.textContent = `Space Agent 阻塞 ${blockingCount || issueCount} 项`;
+    if (next) next.textContent = selected ? `优先处理镜头 ${String(selected.number).padStart(2, "0")} 的空间问题，再锁定地图。` : "先处理下方阻塞项，再锁定地图。";
+  } else if (agent.status === "needs_review" || issueCount) {
+    if (status) status.textContent = `Space Agent 待确认 ${issueCount} 项`;
+    if (next) next.textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")} 仍有交接或状态需要确认。` : "确认下方的交接和状态提示。";
   } else {
-    if (status) status.textContent = "空间 Agent 检查通过";
-    if (next) next.textContent = "场景地图、镜头轴线和片段交接均已锁定，可进入视频配置。";
+    if (status) status.textContent = "Space Agent 检查通过";
+    if (next) next.textContent = `来源：${agent.source === "model" ? `${agent.provider || "模型"} 解析` : "本地规则兜底"} · 场景地图、镜头轴线和片段交接均已锁定。`;
+  }
+
+  const findings = $("#modernSpatialAgentFindings");
+  if (findings) {
+    if (promptMode !== "prompt") {
+      findings.innerHTML = `<span class="modern-spatial-agent-finding is-info">Production Board 模式不会读取空间 Agent 的强校验结果。</span>`;
+    } else if (!agent) {
+      findings.innerHTML = `<span class="modern-spatial-agent-finding is-info">尚未运行 Agent。运行后这里会显示可执行的阻塞原因和镜头交接结果。</span>`;
+    } else if (!agentIssues.length) {
+      findings.innerHTML = `<span class="modern-spatial-agent-finding is-ready">本次检查没有待处理问题 · ${escapeHtml(agent.summary || "空间控制层已就绪")}</span>`;
+    } else {
+      findings.innerHTML = agentIssues.slice(0, 5).map((item) => `<span class="modern-spatial-agent-finding is-${escapeAttr(item.severity || "warning")}"><b>${escapeHtml(item.code || "SPACE")}</b><span>${escapeHtml(item.message || "待处理空间问题")}</span></span>`).join("")
+        + (agentIssues.length > 5 ? `<span class="modern-spatial-agent-finding is-info">还有 ${agentIssues.length - 5} 项问题，按镜头交接列表逐项处理。</span>` : "");
+    }
   }
 
   const mapList = $("#modernSpatialMapList");
@@ -11803,15 +11830,21 @@ function bind() {
     state.modernStudio.spatialMapEditorOpen = !state.modernStudio.spatialMapEditorOpen;
     renderModernStudio(state.project);
   });
-  $("#modernSpatialAgentRun")?.addEventListener("click", () => {
-    const shots = modernShotRecords(state.project);
-    const shot = shots[state.modernStudio.shotIndex] || null;
-    const map = modernSpatialMapForShot(state.project, shot);
-    state.modernStudio.spatialMapEditorMapId = map?.id || "";
-    state.modernStudio.spatialMapEditorOpen = true;
+  async function runModernSpatialAgent() {
+    if (!state.selectedId) throw new Error("请先打开一个项目");
+    const result = await api(`/api/project/${encodeURIComponent(state.selectedId)}/spatial-agent/run`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (result.state) setProjectState(result.state);
     state.modernStudio.focus = "space";
-    renderModernStudio(state.project);
-    toast(map ? `已定位镜头 ${String(shot.number).padStart(2, "0")} 的空间地图` : "已打开当前镜头的空间地图草稿");
+    state.modernStudio.spatialMapEditorMapId = result.maps?.[0]?.id || state.modernStudio.spatialMapEditorMapId || "";
+    state.modernStudio.spatialMapEditorOpen = !!result.maps?.length;
+    renderWorkspace();
+    toast(result.agent?.status === "ready" ? "Space Agent 检查通过" : `Space Agent 已完成：${result.agent?.issues?.length || 0} 项待处理`);
+  }
+  $("#modernSpatialAgentRun")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, runModernSpatialAgent).catch((error) => toast(error.message));
   });
   $("#modernSpatialMapList")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-spatial-map-id]");

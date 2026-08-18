@@ -6427,9 +6427,16 @@ function renderModernStudio(data = state.project) {
   $("#modernPipelineProgress").style.width = `${Math.round((pipelineComplete.filter(Boolean).length / pipelineComplete.length) * 100)}%`;
   $("#modernAssetStep").textContent = manifest.confirmed ? `${manifest.items?.length || data.assets?.length || 0} 个资产已确认` : (manifest.items?.length ? "待确认分类" : "等待解析");
   $("#modernAssetImageStep").textContent = confirmedAssetCount ? `${Math.min(generatedAssetCount, confirmedAssetCount)}/${confirmedAssetCount} 已生成` : "等待确认资产";
-  $("#modernSpatialStep").textContent = spatialMaps.length
-    ? `${spatialLockedCount}/${spatialMaps.length} 个地图已锁定`
-    : "等待分析场景";
+  const spatialGate = data.videoConfigStatus?.spatialAgent || null;
+  $("#modernSpatialStep").textContent = spatialGate?.status === "not_required"
+    ? (spatialMaps.length ? `${spatialLockedCount}/${spatialMaps.length} 个地图已锁定` : "可选空间记录")
+    : !spatialGate?.ran
+      ? "Space Agent 未运行"
+      : spatialGate.stale
+        ? "Space Agent 输入过期"
+        : spatialGate.ready
+          ? `${spatialLockedCount}/${spatialMaps.length} 个地图已锁定 · Agent 已通过`
+          : `Space Agent 待处理 ${spatialGate.issueCount || spatialGate.missing?.length || 0} 项`;
   $("#modernVideoStep").textContent = durationMismatch
     ? `需重生成 · ${visibleShotCount} 个镜头 / ${visibleDuration}s`
     : data.videoConfigStatus?.ready
@@ -6508,13 +6515,16 @@ function renderModernSpatialControl(data = state.project, shots = modernShotReco
     : modernSpatialMapForShot(data, selected);
   const lockedCount = maps.filter((map) => map?.status === "locked").length;
   const agent = data?.spatialAgent || null;
+  const agentGate = data?.videoConfigStatus?.spatialAgent || null;
   const agentIssues = Array.isArray(agent?.issues) ? agent.issues : [];
   const issueCount = promptMode === "prompt"
     ? agent
       ? agentIssues.length
       : modernSpatialMapIssueCount(data, shots)
     : 0;
-  const blockingCount = agentIssues.filter((item) => item?.severity === "block").length;
+  const blockingCount = Number.isFinite(Number(agentGate?.blockingCount))
+    ? Number(agentGate.blockingCount)
+    : agentIssues.filter((item) => item?.severity === "block").length;
   const mapCount = $("#modernSpatialMapCount");
   const lockedCountNode = $("#modernSpatialLockedCount");
   const issueCountNode = $("#modernSpatialIssueCount");
@@ -6528,23 +6538,27 @@ function renderModernSpatialControl(data = state.project, shots = modernShotReco
   const configNotice = $("#modernSpatialConfigNotice");
   if (mode) mode.textContent = promptMode === "prompt" ? "提示词模式 · 强校验" : "Production Board · 可选参考";
   if (configNotice) {
+    const readinessMissing = data?.videoConfigStatus?.missing?.find(Boolean);
     configNotice.textContent = data?.videoConfigStatus?.exists
-      ? issueCount ? "地图变更后需重新生成视频配置" : "当前配置已读取空间控制层"
+      ? readinessMissing || (issueCount ? "地图变更后需重新生成视频配置" : "当前配置已读取空间控制层")
       : "视频配置尚未生成";
   }
   if (promptMode !== "prompt") {
     if (status) status.textContent = "Production Board 模式不会读取空间地图";
     if (next) next.textContent = "空间地图仍可作为导演记录保存，但不会阻塞 Production Board 视频生成。";
-  } else if (!agent) {
+  } else if (!agent || agentGate?.ran === false) {
     if (status) status.textContent = "Space Agent 尚未运行";
     if (next) next.textContent = "运行 Agent 后，它会读取剧本、资产清单和镜头，自动建立场景地图并检查交接。";
+  } else if (agentGate?.stale) {
+    if (status) status.textContent = "Space Agent 输入已过期";
+    if (next) next.textContent = "剧本、镜头或资产清单已变化；重新运行 Agent 后才能提交当前提示词。";
   } else if (!maps.length) {
     if (status) status.textContent = "空间 Agent 等待场景地图";
     if (next) next.textContent = "先从视频配置生成场景引用，或打开当前镜头创建第一张空间地图。";
   } else if (agent.status === "blocked" || blockingCount) {
     if (status) status.textContent = `Space Agent 阻塞 ${blockingCount || issueCount} 项`;
     if (next) next.textContent = selected ? `优先处理镜头 ${String(selected.number).padStart(2, "0")} 的空间问题，再锁定地图。` : "先处理下方阻塞项，再锁定地图。";
-  } else if (agent.status === "needs_review" || issueCount) {
+  } else if (agent.status === "needs_review" || issueCount || agentGate?.ready === false) {
     if (status) status.textContent = `Space Agent 待确认 ${issueCount} 项`;
     if (next) next.textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")} 仍有交接或状态需要确认。` : "确认下方的交接和状态提示。";
   } else {
@@ -6556,8 +6570,10 @@ function renderModernSpatialControl(data = state.project, shots = modernShotReco
   if (findings) {
     if (promptMode !== "prompt") {
       findings.innerHTML = `<span class="modern-spatial-agent-finding is-info">Production Board 模式不会读取空间 Agent 的强校验结果。</span>`;
-    } else if (!agent) {
+    } else if (!agent || agentGate?.ran === false) {
       findings.innerHTML = `<span class="modern-spatial-agent-finding is-info">尚未运行 Agent。运行后这里会显示可执行的阻塞原因和镜头交接结果。</span>`;
+    } else if (agentGate?.stale) {
+      findings.innerHTML = `<span class="modern-spatial-agent-finding is-warning"><b>INPUT_STALE</b><span>剧本、镜头或资产清单已变化，请重新运行 Space Agent。</span></span>`;
     } else if (!agentIssues.length) {
       findings.innerHTML = `<span class="modern-spatial-agent-finding is-ready">本次检查没有待处理问题 · ${escapeHtml(agent.summary || "空间控制层已就绪")}</span>`;
     } else {
@@ -9384,13 +9400,18 @@ function renderVideoConfigStatus(config) {
     return;
   }
   const missing = config.missing?.length ? config.missing.map((item) => `<span class="pill warn">${escapeHtml(item)}</span>`).join("") : `<span class="pill ok">可直接生成视频</span>`;
+  const generateLabel = canGenerate
+    ? "视频生成"
+    : config.missing?.some((item) => /Space Agent/.test(item))
+      ? "先处理 Space Agent"
+      : "先补齐参考图";
   node.innerHTML = `
     <div class="status-grid">
       <div>
         <span>生成入口</span>
         <strong>操作台</strong>
         <div class="canvas-actions">
-          <button class="mini-action primary" type="button" data-generate-all-segments-inline ${canGenerate ? "" : "disabled"}>${canGenerate ? "视频生成" : "先补齐参考图"}</button>
+          <button class="mini-action primary" type="button" data-generate-all-segments-inline ${canGenerate ? "" : "disabled"}>${generateLabel}</button>
         </div>
       </div>
       <div>

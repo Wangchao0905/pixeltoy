@@ -5013,6 +5013,78 @@ function spaceAgentContext(episodeRoot) {
   return { script, configRecord, config, modelPlan, shots, manifest, scenes, assetLookup };
 }
 
+function spatialAgentShotFingerprint(shots = []) {
+  return sha1Text(JSON.stringify((Array.isArray(shots) ? shots : []).map((shot) => ({
+    name: compactLine(shot?.name || ""),
+    sceneRef: compactLine(shot?.sceneRef || ""),
+    refs: (Array.isArray(shot?.refs) ? shot.refs : []).map(compactLine).filter(Boolean),
+    beat: compactLine(shot?.beat || ""),
+    duration: Number(shot?.duration || 0),
+    startState: compactLine(shot?.startState || ""),
+    endState: compactLine(shot?.endState || ""),
+    transitionIn: compactLine(shot?.transitionIn || ""),
+    transitionOut: compactLine(shot?.transitionOut || ""),
+  }))));
+}
+
+function spatialAgentInputFingerprints(episodeRoot, context = null) {
+  const current = context || spaceAgentContext(episodeRoot);
+  return {
+    scriptFingerprint: sha1Text(current.script),
+    shotFingerprint: spatialAgentShotFingerprint(current.shots),
+    assetFingerprint: assetManifestIdentityFingerprint(current.manifest),
+  };
+}
+
+function spatialAgentReadiness(episodeRoot, config = {}, selectedShots = null) {
+  const agent = readSpatialAgent(episodeRoot);
+  const context = spaceAgentContext(episodeRoot);
+  const expected = spatialAgentInputFingerprints(episodeRoot, context);
+  const stored = agent?.inputs || {};
+  const hasRun = Boolean(agent?.runId);
+  const inputsMatch = hasRun
+    && stored.scriptFingerprint === expected.scriptFingerprint
+    && stored.shotFingerprint === expected.shotFingerprint
+    && stored.assetFingerprint === expected.assetFingerprint;
+  const stale = hasRun && !inputsMatch;
+  const issues = Array.isArray(agent?.issues) ? agent.issues : [];
+  const blockingCount = issues.filter((item) => item?.severity === "block").length;
+  const warningCount = issues.filter((item) => item?.severity === "warning").length;
+  const missing = [];
+  if (!hasRun) {
+    missing.push("尚未运行 Space Agent");
+  } else if (stale) {
+    missing.push("Space Agent 输入已过期，请重新运行");
+  }
+  if (agent?.status === "blocked" || blockingCount) {
+    missing.push(`Space Agent 发现 ${blockingCount || issues.length} 个阻塞项`);
+  } else if (agent?.status === "needs_review" || warningCount) {
+    missing.push(`Space Agent 仍有 ${warningCount || issues.length} 项待确认`);
+  } else if (agent && agent.status !== "ready") {
+    missing.push(`Space Agent 当前状态为 ${agent.status || "未就绪"}`);
+  }
+  const currentShotNames = new Set(context.shots.map((shot) => compactLine(shot?.name || "")).filter(Boolean));
+  const selectedShotNames = Array.isArray(selectedShots) && selectedShots.length
+    ? selectedShots.map((shot) => compactLine(shot?.name || "")).filter(Boolean)
+    : [];
+  const uncheckedShots = selectedShotNames.filter((name) => !currentShotNames.has(name));
+  if (uncheckedShots.length) missing.push(`Space Agent 未检查当前镜头：${uncheckedShots.join("、")}`);
+  const status = agent?.status || "not_run";
+  return {
+    ready: hasRun && inputsMatch && status === "ready" && blockingCount === 0 && warningCount === 0 && !uncheckedShots.length,
+    ran: hasRun,
+    stale,
+    inputsMatch,
+    status,
+    runId: agent?.runId || "",
+    issueCount: issues.length,
+    blockingCount,
+    warningCount,
+    checkedShotCount: context.shots.length,
+    missing,
+  };
+}
+
 async function requestSpatialAgentModel({ model = "", script = "", scenes = [], shots = [], manifest = {} } = {}) {
   const requestedModel = compactLine(model || process.env.SPATIAL_AGENT_MODEL || defaultStoryboardModel());
   if (!requestedModel || requestedModel === "rules") return { ok: false, source: "local_rules", reason: "显式使用本地规则" };
@@ -5141,6 +5213,7 @@ async function runSpatialAgent(episodeRoot, body = {}) {
     promptMode: context.config.settings?.promptMode || context.config.promptMode || "prompt",
   });
   const configUpdated = applySpatialAgentShotBindings(episodeRoot, enrichedShots, persisted.maps, context.assetLookup);
+  const finalContext = configUpdated ? spaceAgentContext(episodeRoot) : context;
   trace.push({ step: "validate_handoffs", status: evaluation.status, detail: `${evaluation.issues.length} 项问题`, at: new Date().toISOString() });
   const result = writeSpatialAgent(episodeRoot, {
     runId,
@@ -5152,11 +5225,7 @@ async function runSpatialAgent(episodeRoot, body = {}) {
     mapIds: persisted.maps.map((map) => map.id),
     issues: evaluation.issues,
     handoffs: evaluation.handoffs,
-    inputs: {
-      scriptFingerprint: sha1Text(context.script),
-      shotFingerprint: sha1Text(JSON.stringify(context.shots.map((shot) => ({ name: shot.name, sceneRef: shot.sceneRef, beat: shot.beat })))),
-      assetFingerprint: assetManifestIdentityFingerprint(context.manifest),
-    },
+    inputs: spatialAgentInputFingerprints(episodeRoot, finalContext),
     trace,
   });
   return { ...result, maps: persisted.maps, configUpdated, shotCount: enrichedContext.shots.length };
@@ -10849,6 +10918,17 @@ function configReadiness(episodeRoot, configData = null) {
       tailFrameContinuity: true,
       spatialMaps: 0,
       spatialMapWarnings: [],
+      spatialAgent: {
+        ready: false,
+        ran: false,
+        stale: false,
+        status: "not_required",
+        issueCount: 0,
+        blockingCount: 0,
+        warningCount: 0,
+        checkedShotCount: 0,
+        missing: [],
+      },
       workflowGuide: "",
     };
   }
@@ -10859,6 +10939,17 @@ function configReadiness(episodeRoot, configData = null) {
   const storyboards = Array.isArray(config.storyboardReferences) ? config.storyboardReferences : [];
   const shots = Array.isArray(config.shots) ? config.shots : [];
   const spatialMapWarnings = [];
+  let spatialAgentStatus = {
+    ready: false,
+    ran: false,
+    stale: false,
+    status: "not_required",
+    issueCount: 0,
+    blockingCount: 0,
+    warningCount: 0,
+    checkedShotCount: 0,
+    missing: [],
+  };
   const actualDuration = shots.reduce((sum, shot) => sum + Number(shot.duration || 0), 0);
   const fixed15Mismatch = durationMode === DURATION_MODE_SHORT_DRAMA_15 && shots.some((shot) => Number(shot.duration || 0) !== PRODUCTION_BOARD_MAX_SECONDS);
   const variableRangeMismatch = durationMode === DURATION_MODE_SHORT_DRAMA_VARIABLE && shots.some((shot) => {
@@ -10908,6 +10999,8 @@ function configReadiness(episodeRoot, configData = null) {
   }
   const spatialMapsRequired = !storyboardMode && config.spatialMapPolicy?.requireLockedMap === true;
   if (spatialMapsRequired) {
+    spatialAgentStatus = spatialAgentReadiness(episodeRoot, config);
+    if (!spatialAgentStatus.ready) missing.push(...spatialAgentStatus.missing);
     const spatialMaps = readSpatialMaps(episodeRoot).maps;
     shots.forEach((shot) => {
       if (!shot || !shot.sceneRef) {
@@ -10963,6 +11056,7 @@ function configReadiness(episodeRoot, configData = null) {
     tailFrameContinuity: config.settings?.tailFrameContinuity !== false,
     spatialMaps: spatialMapsRequired ? readSpatialMaps(episodeRoot).maps.length : 0,
     spatialMapWarnings,
+    spatialAgent: spatialAgentStatus,
     workflowGuide: compactLine(config.workflowGuide?.phase || ""),
   };
 }
@@ -10972,7 +11066,7 @@ function assertPromptSpatialMapsReady(episodeRoot, config = {}, selectedShots = 
   const shots = Array.isArray(selectedShots) && selectedShots.length
     ? selectedShots
     : Array.isArray(config.shots) ? config.shots : [];
-  const warnings = [];
+  const warnings = spatialAgentReadiness(episodeRoot, config, shots).missing;
   for (const shot of shots) {
     if (!shot?.sceneRef) {
       warnings.push(`${shot?.name || "未命名镜头"}：缺少场景引用，无法绑定空间地图`);
@@ -29775,6 +29869,8 @@ module.exports = {
       evaluate: spatialAgentEvaluate,
       run: runSpatialAgent,
       refresh: refreshSpatialAgentState,
+      inputFingerprints: spatialAgentInputFingerprints,
+      readiness: spatialAgentReadiness,
     },
     assetJobRetry: {
       shouldAutoRetryTransientAssetJob,

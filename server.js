@@ -206,6 +206,7 @@ const DEFAULT_PAISIO_MODEL_ID = "sd3-720p";
 const PAISIO_SEEDANCE_M_MODEL = "seedance-2-0-m";
 const PAISIO_SEEDANCE_M_FAST_MODEL = "seedance-2-0-m-fast";
 const PAISIO_SEEDANCE_M_FAST_MINI_MODEL = "seedance-2-0-m-fast-mini";
+const PAISIO_SEEDANCE_25_M_MODEL = "seedance-2-5-m";
 const PAISIO_MINIMAX_H3_MODEL = "minimax-h3";
 // 标准 Seedance 2.0 / Fast / 2.5 保留前端键名，并固定映射到 Paisio 模型广场中的 720p 规格。
 const PAISIO_FIXED_SEEDANCE_MODEL_MAP = {
@@ -215,6 +216,7 @@ const PAISIO_FIXED_SEEDANCE_MODEL_MAP = {
 };
 const PAISIO_MODEL_RESOLUTION_MAP = {
   "seedance-2-0-mini": { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" },
+  [PAISIO_SEEDANCE_25_M_MODEL]: { "480p": "paisiodance-2.5-480p", "720p": "paisiodance-2.5-720p" },
   [PAISIO_SEEDANCE_M_MODEL]: { "480p": "sd3-480p", "720p": "sd3-720p" },
   [PAISIO_SEEDANCE_M_FAST_MODEL]: { "480p": "sd3-fast-480p", "720p": "sd3-fast-720p" },
   [PAISIO_SEEDANCE_M_FAST_MINI_MODEL]: { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" },
@@ -13627,7 +13629,7 @@ function normalizeVideoConfigModelName(value = "") {
   const lower = raw.toLowerCase();
   const paisioModelFamily = paisioModelFamilyForRequest(raw);
   if (paisioModelFamily) return paisioModelFamily;
-  if (["seedance-2-5", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MINIMAX_H3_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
+  if (["seedance-2-5", PAISIO_SEEDANCE_25_M_MODEL, "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MINIMAX_H3_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"].includes(raw)) return raw;
   if (/grok|xai/.test(lower)) return "grok-imagine-video";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0";
   if (/(?:2[.-]?5)/.test(lower)) return "seedance-2-5";
@@ -24095,7 +24097,7 @@ function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
 function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
   const name = compactLine(shotName || "");
   const requestedModel = compactLine(modelName || "");
-  const supportedModels = new Set(["seedance-2-5", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MINIMAX_H3_MODEL, ...PAISIO_MODEL_IDS, "seedance-2-0-byteplus", "grok-imagine-video"]);
+  const supportedModels = new Set(["seedance-2-5", PAISIO_SEEDANCE_25_M_MODEL, "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MINIMAX_H3_MODEL, ...PAISIO_MODEL_IDS, "seedance-2-0-byteplus", "grok-imagine-video"]);
   if (!name) throw new Error("缺少视频片段");
   if (!supportedModels.has(requestedModel)) throw new Error("不支持的视频模型");
   const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];
@@ -26767,7 +26769,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The video description." },
-          videoModel: { type: "string", enum: ["seedance-2-5", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MINIMAX_H3_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
+          videoModel: { type: "string", enum: ["seedance-2-5", PAISIO_SEEDANCE_25_M_MODEL, "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MINIMAX_H3_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
           duration: { type: "number", minimum: 1, default: 5 },
           ratio: { type: "string", default: "9:16" },
           firstFrameUrl: { type: "string" },

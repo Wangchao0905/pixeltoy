@@ -340,6 +340,7 @@ const DEFAULT_WINDOWS = {
 };
 const VIDEO_MODEL_OPTIONS = {
   "seedance-2-5": "Seedance 2.5",
+  "seedance-2-5-m": "Seedance 2.5 M",
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",

@@ -198,6 +198,7 @@ const LEGACY_MODEL_MIGRATIONS = {
 };
 const VIDEO_MODEL_LABELS = {
   "seedance-2-5": "Seedance 2.5",
+  "seedance-2-5-m": "Seedance 2.5 M",
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
   "seedance-2-0-mini": "Seedance 2.0 Mini",
@@ -2285,6 +2286,9 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
     "seedance-2-0-m-fast",
     "seedance-2-0-m-fast-mini",
     "seedance-2-0-mini",
+    "seedance-2-5-m",
+    "paisiodance-2.5-480p",
+    "paisiodance-2.5-720p",
     "sd3-480p",
     "sd3-720p",
     "sd3-fast-480p",

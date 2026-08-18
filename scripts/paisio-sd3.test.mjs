@@ -10,6 +10,7 @@ const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPais
 
 for (const [model, expectedModels] of [
   ["seedance-2-5", { "720p": "sd2.5-ultra-720p" }],
+  ["seedance-2-5-m", { "480p": "paisiodance-2.5-480p", "720p": "paisiodance-2.5-720p" }],
   ["seedance-2-0", { "720p": "sd2-ultra-720p" }],
   ["seedance-2-0-fast", { "720p": "sd2-ultra-fast-720p" }],
   ["seedance-2-0-mini", { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" }],
@@ -31,6 +32,11 @@ const paisio25Payload = await buildPaisioVideoGenerationPayload({
 });
 assert.equal(paisio25Payload.model, "sd2.5-ultra-720p");
 assert.equal(paisio25Payload.duration, 30, "Paisio Seedance 2.5 must preserve the 30-second limit");
+assert.equal(
+  (await buildPaisioVideoGenerationPayload({ model: "seedance-2-5-m", prompt: "Seedance 2.5 M 长视频测试", duration: 30, resolution: "480p" })).duration,
+  30,
+  "Seedance 2.5 M must preserve the 30-second limit",
+);
 assert.equal(
   (await buildPaisioVideoGenerationPayload({ model: "seedance-2-0", prompt: "固定规格测试", resolution: "4k" })).model,
   "sd2-ultra-720p",

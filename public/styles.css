@@ -21620,3 +21620,254 @@ body.admin-page .admin-models em { max-width: 104px; overflow: hidden; border: 1
   body.admin-page .admin-user-actions { grid-column: auto; }
   body.admin-page .admin-user-actions button { flex: 1 1 calc(50% - 6px); }
 }
+
+/* Short Drama spatial control layer. Production Board remains a compatibility
+   surface, while the primary pipeline owns scene geometry and handoff state. */
+.modern-main:not([data-modern-view="space"]) .modern-spatial-control-panel { display: none; }
+.modern-main[data-modern-view="space"] .modern-source-panel,
+.modern-main[data-modern-view="space"] .modern-kit-bar,
+.modern-main[data-modern-view="space"] .modern-asset-image-panel,
+.modern-main[data-modern-view="space"] .modern-film-studio-panel,
+.modern-main[data-modern-view="space"] .modern-storyboard-studio,
+.modern-main[data-modern-view="space"] .modern-workbench,
+.modern-main[data-modern-view="space"] .modern-cut-panel { display: none; }
+.modern-main[data-modern-view="space"] .modern-spatial-control-panel { display: grid; }
+
+body.is-studio-modern .modern-spatial-control-panel {
+  min-width: 0;
+  gap: 14px;
+  padding: 18px 26px 28px;
+  color: var(--mv-tx);
+}
+
+body.is-studio-modern .modern-spatial-control-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--mv-line);
+}
+
+body.is-studio-modern .modern-spatial-control-head h2 {
+  margin: 6px 0 0;
+  color: var(--mv-tx);
+  font-size: 25px;
+  font-weight: 560;
+}
+
+body.is-studio-modern .modern-spatial-control-head p {
+  max-width: 720px;
+  margin: 8px 0 0;
+  color: var(--mv-qt);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+body.is-studio-modern .modern-spatial-control-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+body.is-studio-modern .modern-spatial-agent-status {
+  color: var(--mv-mut);
+  font: 10px var(--mono);
+  white-space: nowrap;
+}
+
+body.is-studio-modern .modern-spatial-control-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--mv-line-2);
+  border-radius: 4px;
+  background: var(--mv-s2);
+  color: var(--mv-mut);
+  font-size: 11px;
+}
+
+body.is-studio-modern .modern-spatial-control-actions button:hover {
+  border-color: rgba(255,255,255,.3);
+  background: var(--mv-s3);
+  color: var(--mv-tx);
+}
+
+body.is-studio-modern .modern-spatial-control-actions button.is-primary {
+  border-color: #77aeea;
+  background: #477fc0;
+  color: #f7fbff;
+}
+
+body.is-studio-modern .modern-spatial-agent-bar {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid rgba(94, 145, 202, .28);
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgba(40, 72, 107, .5), rgba(25, 30, 43, .7));
+}
+
+body.is-studio-modern .modern-spatial-agent-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(129, 187, 255, .55);
+  border-radius: 4px;
+  color: #a9d6ff;
+  font: 11px var(--mono);
+}
+
+body.is-studio-modern .modern-spatial-agent-bar strong,
+body.is-studio-modern .modern-spatial-agent-bar small {
+  display: block;
+}
+
+body.is-studio-modern .modern-spatial-agent-bar strong { font-size: 12px; font-weight: 600; }
+body.is-studio-modern .modern-spatial-agent-bar small { margin-top: 4px; color: var(--mv-qt); font-size: 10px; line-height: 1.4; }
+
+body.is-studio-modern .modern-spatial-agent-metrics {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+body.is-studio-modern .modern-spatial-agent-metrics span { display: grid; gap: 2px; min-width: 48px; }
+body.is-studio-modern .modern-spatial-agent-metrics b { color: #aed5f7; font: 17px var(--mono); }
+body.is-studio-modern .modern-spatial-agent-metrics small { margin: 0; font: 9px var(--mono); }
+
+body.is-studio-modern .modern-spatial-control-grid {
+  display: grid;
+  grid-template-columns: minmax(210px, .72fr) minmax(360px, 1.45fr) minmax(250px, .9fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+body.is-studio-modern .modern-spatial-map-rail,
+body.is-studio-modern .modern-spatial-map-workspace,
+body.is-studio-modern .modern-spatial-handoff {
+  min-width: 0;
+  min-height: 340px;
+  border: 1px solid var(--mv-line);
+  border-radius: 5px;
+  background: var(--mv-s1);
+}
+
+body.is-studio-modern .modern-spatial-map-rail > header,
+body.is-studio-modern .modern-spatial-handoff > header,
+body.is-studio-modern .modern-spatial-workspace-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 54px;
+  padding: 12px 13px;
+  border-bottom: 1px solid var(--mv-line);
+}
+
+body.is-studio-modern .modern-spatial-map-rail header strong,
+body.is-studio-modern .modern-spatial-handoff header strong,
+body.is-studio-modern .modern-spatial-workspace-head strong { display: block; margin-top: 4px; font-size: 13px; font-weight: 550; }
+body.is-studio-modern .modern-spatial-map-rail header > span,
+body.is-studio-modern .modern-spatial-handoff header > span { color: var(--mv-qt); font: 9px var(--mono); }
+
+body.is-studio-modern .modern-spatial-map-list,
+body.is-studio-modern .modern-spatial-handoff-list { display: grid; gap: 6px; padding: 9px; }
+
+body.is-studio-modern .modern-spatial-map-card,
+body.is-studio-modern .modern-spatial-handoff-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mv-mut);
+  text-align: left;
+  cursor: pointer;
+}
+
+body.is-studio-modern .modern-spatial-map-card:hover,
+body.is-studio-modern .modern-spatial-handoff-item:hover { border-color: var(--mv-line-2); background: var(--mv-s2); color: var(--mv-tx); }
+body.is-studio-modern .modern-spatial-map-card.is-active,
+body.is-studio-modern .modern-spatial-handoff-item.is-active { border-color: rgba(122, 178, 235, .55); background: rgba(68, 119, 180, .17); color: var(--mv-tx); }
+body.is-studio-modern .modern-spatial-map-card-index,
+body.is-studio-modern .modern-spatial-handoff-shot { color: #9bc7f0; font: 11px var(--mono); }
+body.is-studio-modern .modern-spatial-map-card-copy,
+body.is-studio-modern .modern-spatial-handoff-item > span:nth-child(2) { min-width: 0; }
+body.is-studio-modern .modern-spatial-map-card-copy strong,
+body.is-studio-modern .modern-spatial-map-card-copy small,
+body.is-studio-modern .modern-spatial-handoff-item strong,
+body.is-studio-modern .modern-spatial-handoff-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-studio-modern .modern-spatial-map-card-copy strong,
+body.is-studio-modern .modern-spatial-handoff-item strong { font-size: 11px; font-weight: 550; }
+body.is-studio-modern .modern-spatial-map-card-copy small,
+body.is-studio-modern .modern-spatial-handoff-item small { margin-top: 3px; color: var(--mv-qt); font: 9px/1.35 var(--mono); }
+body.is-studio-modern .modern-spatial-map-card em,
+body.is-studio-modern .modern-spatial-handoff-item em { padding: 3px 5px; border: 1px solid var(--mv-line-2); border-radius: 3px; color: var(--mv-qt); font: 9px var(--mono); font-style: normal; white-space: nowrap; }
+body.is-studio-modern .modern-spatial-map-card em.is-locked,
+body.is-studio-modern .modern-spatial-handoff-item em.is-ready { border-color: rgba(110, 231, 160, .35); color: #9fe2b5; }
+body.is-studio-modern .modern-spatial-map-card em.is-draft,
+body.is-studio-modern .modern-spatial-handoff-item em.is-warning,
+body.is-studio-modern .modern-spatial-handoff-item em.is-draft { border-color: rgba(238, 174, 117, .4); color: #f0b37e; }
+
+body.is-studio-modern .modern-spatial-map-workspace { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); }
+body.is-studio-modern .modern-spatial-workspace-head { align-items: center; }
+body.is-studio-modern .modern-spatial-workspace-head small { display: block; margin-top: 4px; color: var(--mv-qt); font: 9px var(--mono); }
+body.is-studio-modern .modern-spatial-map-mode { padding: 4px 6px; border: 1px solid rgba(122, 178, 235, .3); border-radius: 3px; color: #9bc7f0; font: 9px var(--mono); white-space: nowrap; }
+
+body.is-studio-modern .modern-spatial-map-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  margin: 10px 12px 0;
+  padding: 7px 8px;
+  border: 1px solid var(--mv-line);
+  border-radius: 4px;
+  background: rgba(255,255,255,.025);
+  cursor: pointer;
+}
+
+body.is-studio-modern .modern-spatial-map-brief { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 10px 12px 0; border: 1px solid var(--mv-line); background: var(--mv-line); }
+body.is-studio-modern .modern-spatial-map-brief div { min-width: 0; padding: 8px; background: var(--mv-s2); }
+body.is-studio-modern .modern-spatial-map-brief span,
+body.is-studio-modern .modern-spatial-map-brief strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-studio-modern .modern-spatial-map-brief span { color: var(--mv-qt); font: 9px var(--mono); }
+body.is-studio-modern .modern-spatial-map-brief strong { margin-top: 4px; color: var(--mv-tx); font-size: 10px; font-weight: 500; }
+body.is-studio-modern .modern-spatial-map-workspace .modern-spatial-map-editor { align-self: end; margin: 10px 12px 12px; padding: 10px; border: 1px solid rgba(122, 178, 235, .25); border-radius: 4px; background: rgba(10, 17, 27, .56); }
+
+body.is-studio-modern .modern-spatial-empty { display: grid; gap: 5px; padding: 18px 10px; color: var(--mv-qt); }
+body.is-studio-modern .modern-spatial-empty strong { color: var(--mv-mut); font-size: 11px; font-weight: 550; }
+body.is-studio-modern .modern-spatial-empty small { font-size: 10px; line-height: 1.5; }
+body.is-studio-modern .modern-spatial-control-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 2px; color: var(--mv-qt); font: 9px var(--mono); }
+body.is-studio-modern .modern-spatial-control-footer strong { color: #9bc7f0; font-weight: 500; }
+
+@media (max-width: 1080px) {
+  body.is-studio-modern .modern-spatial-control-grid { grid-template-columns: minmax(190px, .7fr) minmax(0, 1.3fr); }
+  body.is-studio-modern .modern-spatial-handoff { grid-column: 1 / -1; min-height: 0; }
+  body.is-studio-modern .modern-spatial-handoff-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  body.is-studio-modern .modern-spatial-control-panel { padding: 14px; }
+  body.is-studio-modern .modern-spatial-control-head { align-items: stretch; flex-direction: column; gap: 12px; }
+  body.is-studio-modern .modern-spatial-control-actions { justify-content: flex-start; }
+  body.is-studio-modern .modern-spatial-agent-bar { grid-template-columns: 34px minmax(0, 1fr); }
+  body.is-studio-modern .modern-spatial-agent-metrics { grid-column: 1 / -1; justify-content: space-between; padding-top: 4px; border-top: 1px solid var(--mv-line); }
+  body.is-studio-modern .modern-spatial-control-grid { grid-template-columns: 1fr; }
+  body.is-studio-modern .modern-spatial-map-rail,
+  body.is-studio-modern .modern-spatial-map-workspace,
+  body.is-studio-modern .modern-spatial-handoff { min-height: 0; }
+  body.is-studio-modern .modern-spatial-handoff-list { grid-template-columns: 1fr; }
+  body.is-studio-modern .modern-spatial-control-footer { align-items: flex-start; flex-direction: column; }
+}

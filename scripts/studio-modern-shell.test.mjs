@@ -159,9 +159,9 @@ assert.doesNotMatch(js, /runHiddenLegacyAction/, "modern actions must not proxy 
 assert.match(js, /data-modern-view/, "pipeline clicks must switch the modern core view");
 assert.doesNotMatch(js, /target\.scrollIntoView\(\{ behavior: "smooth"/, "pipeline clicks must not scroll the whole page");
 const pipelineFocuses = [...html.matchAll(/<button[^>]*data-modern-focus="([a-z]+)"/g)].map((m) => m[1]);
-assert.deepEqual(pipelineFocuses, ["assets", "assetimg", "storyboard", "video", "cut"], "pipeline 必须按顺序包含五个独立步骤");
+assert.deepEqual(pipelineFocuses, ["assets", "assetimg", "space", "video", "cut"], "pipeline 必须按顺序包含五个独立步骤");
 assert.equal(pipelineFocuses.indexOf("assetimg"), pipelineFocuses.indexOf("assets") + 1, "资产图步骤必须紧跟资产文档");
-assert.equal(pipelineFocuses.indexOf("storyboard"), pipelineFocuses.indexOf("assetimg") + 1, "故事板必须紧跟资产图步骤");
+assert.equal(pipelineFocuses.indexOf("space"), pipelineFocuses.indexOf("assetimg") + 1, "空间控制层必须紧跟资产图步骤");
 const sourcePanelStart = html.indexOf('id="modernSourcePanel"');
 const kitBarStart = html.indexOf('id="modernKitBar"');
 const assetWallStart = html.indexOf('id="modernAssetWall"');
@@ -274,7 +274,7 @@ assert.match(js, /modern-video-queue-number[\s\S]*modern-video-queue-status[\s\S
 assert.match(css, /\.modern-video-queue-frame\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/, "video queue frames must use a 9:16 ratio");
 assert.match(css, /\.modern-video-queue-frame::after\s*\{[^}]*linear-gradient/, "video queue frames must include a bottom readability mask");
 assert.match(css, /\.modern-video-queue-card\.is-active[^}]*box-shadow:\s*0 0 0 2px rgba\(217,45,69/, "selected queue card must use the signal frame ring");
-assert.match(css, /\.modern-main\[data-modern-view="storyboard"\]\s+\.modern-source-panel,[\s\S]*?\{\s*display:\s*none/, "storyboard view must hide the source panel");
+assert.match(css, /\.modern-main\[data-modern-view="space"\]\s+\.modern-source-panel,[\s\S]*?\{\s*display:\s*none/, "spatial control view must hide the source panel");
 assert.match(css, /\.modern-video-queue-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill/, "video queue must use a responsive card grid");
 assert.match(html, /id="modernVideoQueueProgress"[^>]*class="modern-video-queue-meter"/, "queue overview meter must use its own layout class");
 assert.match(css, /\.modern-video-queue-meter\s*\{[^}]*flex:\s*1\s+1\s+auto/, "queue overview meter must remain in the toolbar flow");

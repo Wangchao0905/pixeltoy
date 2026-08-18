@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=paisio-sd3-20260817-r3" />
+    <link rel="stylesheet" href="/styles.css?v=short-drama-space-20260818-r1" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -1004,7 +1004,7 @@
             <span class="modern-pipeline-link" aria-hidden="true">→</span>
             <button type="button" data-modern-focus="assetimg"><span class="modern-pipeline-mark">02</span><div><b>资产图</b><small id="modernAssetImageStep">等待生成</small></div></button>
             <span class="modern-pipeline-link" aria-hidden="true">→</span>
-            <button type="button" data-modern-focus="storyboard"><span class="modern-pipeline-mark">03</span><div><b>故事板</b><small id="modernBoardStep">等待生成</small></div></button>
+            <button type="button" data-modern-focus="space"><span class="modern-pipeline-mark">03</span><div><b>空间控制层</b><small id="modernSpatialStep">等待分析场景</small></div></button>
             <span class="modern-pipeline-link" aria-hidden="true">→</span>
             <button type="button" data-modern-focus="video"><span class="modern-pipeline-mark">04</span><div><b>视频生成</b><small id="modernVideoStep">等待配置</small></div></button>
             <span class="modern-pipeline-link" aria-hidden="true">→</span>
@@ -1157,12 +1157,57 @@
               </div>
             </aside>
           </section>
+          <section id="modernSpatialControlPanel" class="modern-spatial-control-panel" aria-label="空间控制层">
+            <header class="modern-spatial-control-head">
+              <div>
+                <span class="modern-eyebrow">SPACE CONTROL LAYER</span>
+                <h2>空间控制层</h2>
+                <p>由空间 Agent 把场景地图、摄影机轴线、人物站位、光线方向和片段交接锁成可复用的控制层，再交给视频提示词生成。</p>
+              </div>
+              <div class="modern-spatial-control-actions">
+                <span id="modernSpatialAgentStatus" class="modern-spatial-agent-status" aria-live="polite">等待接管场景</span>
+                <button id="modernSpatialAgentRun" class="is-primary" type="button">运行空间检查</button>
+              </div>
+            </header>
+            <div class="modern-spatial-agent-bar">
+              <div class="modern-spatial-agent-mark" aria-hidden="true">SA</div>
+              <div><strong>Space Agent</strong><small id="modernSpatialAgentNext">先选择一个镜头，系统会定位它的场景地图和连续性缺口。</small></div>
+              <div class="modern-spatial-agent-metrics"><span><b id="modernSpatialMapCount">0</b><small>场景地图</small></span><span><b id="modernSpatialLockedCount">0</b><small>已锁定</small></span><span><b id="modernSpatialIssueCount">0</b><small>待处理</small></span></div>
+            </div>
+            <div class="modern-spatial-control-grid">
+              <aside class="modern-spatial-map-rail" aria-label="场景地图列表">
+                <header><div><span class="modern-eyebrow">SCENE MAPS</span><strong>场景地图</strong></div><span id="modernSpatialMapScope">全剧共享</span></header>
+                <div id="modernSpatialMapList" class="modern-spatial-map-list" role="list"></div>
+              </aside>
+              <section class="modern-spatial-map-workspace" aria-label="当前空间地图">
+                <header class="modern-spatial-workspace-head">
+                  <div><span class="modern-eyebrow">ACTIVE MAP</span><strong id="modernSpatialMapSummary">尚未选择空间地图</strong><small id="modernSpatialMapBinding">选择镜头后显示绑定关系</small></div>
+                  <span id="modernSpatialMapMode" class="modern-spatial-map-mode">提示词模式</span>
+                </header>
+                <div id="modernSpatialMapStatus" class="modern-spatial-map-status hidden" aria-live="polite"></div>
+                <div class="modern-spatial-map-brief">
+                  <div><span>摄影机侧</span><strong id="modernSpatialCameraSide">待定义</strong></div>
+                  <div><span>运动轴线</span><strong id="modernSpatialAxisLine">待定义</strong></div>
+                  <div><span>光源方向</span><strong id="modernSpatialLightDirection">待定义</strong></div>
+                  <div><span>交接策略</span><strong id="modernSpatialHandoffPolicy">尾状态 → 下一镜头首状态</strong></div>
+                </div>
+                <div id="modernSpatialMapEditor" class="modern-spatial-map-editor hidden" aria-label="空间地图编辑器">
+                  <div class="modern-spatial-map-editor-head"><span>空间地图 JSON</span><small>保存草稿可继续修改；锁定后提示词模式会校验版本。</small></div>
+                  <textarea id="modernSpatialMapJson" spellcheck="false" aria-label="空间地图 JSON"></textarea>
+                  <div class="modern-spatial-map-editor-actions"><button id="modernSpatialMapSaveDraft" type="button">保存草稿</button><button id="modernSpatialMapSaveLocked" class="is-primary" type="button">保存并锁定</button></div>
+                </div>
+              </section>
+              <aside class="modern-spatial-handoff" aria-label="镜头连续性交接">
+                <header><div><span class="modern-eyebrow">SHOT HANDOFF</span><strong>镜头交接</strong></div><span>空间 Agent</span></header>
+                <div id="modernSpatialHandoffList" class="modern-spatial-handoff-list"></div>
+              </aside>
+            </div>
+            <div class="modern-spatial-control-footer"><span>锁定后写入视频提示词：地标位置 · 视线轴 · 光影方向 · 进入状态 · 退出状态</span><strong id="modernSpatialConfigNotice">视频配置尚未生成</strong></div>
+          </section>
           <!--
-            THESIS: 故事板先回答“这一格要生成哪段剧情”，而不是展示一张白纸。
-            OWN-WORLD: 深色制作台表面、细线网格、荧光绿当前状态和等宽时间数据。
-            STORY: 每个格子都是一个 15 秒剧情单元；第 9 格把动作出口交给下一页第 1 格。
-            FIRST VIEWPORT: 顶部命令条、3×3 剧情格矩阵、底部连续性轨道，生成操作固定在右上。
-            FORM: Operate / command-center matrix；沿用制作台现有信息密度，不引入纸张文档皮肤。
+            Legacy Production Board compatibility surface. The primary Short Drama
+            pipeline uses the spatial control layer above; Production Board remains
+            available only when an existing project explicitly selects that mode.
           -->
           <section id="modernStoryboardStudio" class="modern-storyboard-studio storyboard-document" aria-label="15秒九宫格故事板">
             <header class="storyboard-document-toolbar">
@@ -1230,12 +1275,6 @@
                   <div class="modern-video-param modern-video-param-verification"><span>真人验证</span><label class="modern-dialect-toggle" title="开启后，人物图会先通过火山私域素材认证，再提交视频模型"><input id="modernRealPersonVerification" type="checkbox" aria-label="启用人物图真人验证" /><span>启用</span></label></div>
                 </div>
                 <span id="modernVideoPromptModeHint" class="modern-video-mode-hint" aria-live="polite">按模型导演的镜头提示词生成；连续动作才使用上一段尾帧。</span>
-                <div id="modernSpatialMapStatus" class="modern-spatial-map-status hidden" aria-live="polite"></div>
-                <div id="modernSpatialMapEditor" class="modern-spatial-map-editor hidden" aria-label="空间地图编辑器">
-                  <div class="modern-spatial-map-editor-head"><span>场景空间地图</span><small>只在提示词模式生效 · 保存后重新生成视频配置以更新镜头版本</small></div>
-                  <textarea id="modernSpatialMapJson" spellcheck="false" aria-label="空间地图 JSON"></textarea>
-                  <div class="modern-spatial-map-editor-actions"><button id="modernSpatialMapSaveDraft" type="button">保存草稿</button><button id="modernSpatialMapSaveLocked" class="is-primary" type="button">保存并锁定</button></div>
-                </div>
                 <span id="modernSelectedShotSummary" class="modern-shot-summary-compat" aria-hidden="true"></span>
               </div>
               <div class="modern-shot-actions" aria-label="视频生成操作">
@@ -1454,7 +1493,7 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=paisio-sd3-20260817-r3"></script>
+    <script src="/app.js?v=short-drama-space-20260818-r1"></script>
     <script src="/auth-modal.js?v=auth-modal-20260804-username-login-1"></script>
   </body>
 </html>

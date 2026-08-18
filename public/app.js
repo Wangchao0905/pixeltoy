@@ -2025,6 +2025,8 @@ function resetProjectScopedUiState() {
   state.modernStudio.filmStudioSelection = [];
   state.modernStudio.filmStudioSelectionDirty = false;
   state.modernStudio.filmStudioBusy = false;
+  state.modernStudio.spatialMapEditorOpen = false;
+  state.modernStudio.spatialMapEditorMapId = "";
 }
 
 function loadProjects(keepSelection = true, { force = false } = {}) {
@@ -5396,6 +5398,10 @@ function modernShotRecords(data = state.project) {
       tailFrameSource: shot.tailFrameSource || "",
       sharedSceneContinuity: shot.sharedSceneContinuity === true,
       continuityNote: shot.continuityNote || "",
+      sceneRef: shot.sceneRef || "",
+      spatialMapId: shot.spatialMapId || "",
+      spatialMapVersion: Number(shot.spatialMapVersion || 0) || 0,
+      spatialState: shot.spatialState && typeof shot.spatialState === "object" ? shot.spatialState : {},
       transitionIn: shot.transitionIn || "",
       transitionOut: shot.transitionOut || "",
       startState: shot.startState || "",
@@ -6260,8 +6266,9 @@ function renderModernStudio(data = state.project) {
   if (!root || !data?.project) return;
   syncModernSeriesNav();
   renderModernDurationMode(data);
-  const modernFocus = ["assets", "assetimg", "filmstudio", "storyboard", "video", "cut"].includes(state.modernStudio.focus)
-    ? state.modernStudio.focus
+  const requestedFocus = state.modernStudio.focus === "storyboard" ? "space" : state.modernStudio.focus;
+  const modernFocus = ["assets", "assetimg", "filmstudio", "space", "video", "cut"].includes(requestedFocus)
+    ? requestedFocus
     : "assets";
   state.modernStudio.focus = modernFocus;
   root.querySelector(".modern-main")?.setAttribute("data-modern-view", modernFocus);
@@ -6340,6 +6347,7 @@ function renderModernStudio(data = state.project) {
     state.modernStudio.storyboardContinuityLoadedFor = state.selectedId;
   }
   renderModernStoryboardStudio(data, shots);
+  renderModernSpatialControl(data, shots);
   renderModernFilmStudio(data);
   const total = shots.length || Number(progress.total || 0);
   const visibleShotCount = durationMismatch?.expected?.shotCount || total;
@@ -6365,12 +6373,14 @@ function renderModernStudio(data = state.project) {
   const confirmedAssetCount = manifest.confirmed ? Number(manifest.items?.length || 0) : 0;
   const generatedAssetCount = Array.isArray(data.assets) ? data.assets.filter((asset) => asset?.url).length : 0;
   const videoConfigExists = Boolean(data.videoConfigStatus?.exists && total);
-  const storyboardReady = Boolean(data.storyboards?.length);
+  const spatialMaps = Array.isArray(data.spatialMaps) ? data.spatialMaps : [];
+  const spatialLockedCount = spatialMaps.filter((map) => map?.status === "locked").length;
+  const spatialControlReady = spatialMaps.length > 0 && spatialLockedCount > 0;
   const finalCutReady = finalCutOutputReady(data.finalCut);
   const pipelineComplete = [
     Boolean(manifest.confirmed),
     Boolean(confirmedAssetCount > 0 && generatedAssetCount >= confirmedAssetCount),
-    storyboardReady || videoConfigExists,
+    spatialControlReady || videoConfigExists,
     Boolean(total && completed === total),
     finalCutReady,
   ];
@@ -6383,13 +6393,13 @@ function renderModernStudio(data = state.project) {
   $("#modernProjectCrumb").textContent = projectName;
   $("#modernEpisodeCrumb").textContent = episodeTitle;
   $("#modernRatioBadge").textContent = ratio;
-  $("#modernEpisodeCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
+  $("#modernEpisodeCopy").textContent = project.description || "从资产文档、空间控制层到视频 Take，当前项目的全部状态在这里集中管理。";
   // 眉标与正下方的 hero 标题同值时会上下叠出两个「E01」(episodeCode 与
   // episodeTitle 在当前数据下都是 E01)。同值就退回类目词,眉标本来就是类目标签。
   const kicker = project.episodeCode || project.episodeSlug || "";
   $("#modernEpisodeKicker").textContent = kicker && kicker !== episodeTitle ? kicker : "EPISODE";
   $("#modernEpisodeHeroTitle").textContent = episodeTitle;
-  $("#modernEpisodeHeroCopy").textContent = project.description || "从资产文档、故事板到视频 Take，当前项目的全部状态在这里集中管理。";
+  $("#modernEpisodeHeroCopy").textContent = project.description || "从资产文档、空间控制层到视频 Take，当前项目的全部状态在这里集中管理。";
   $("#modernShotCount").textContent = visibleShotCount;
   $("#modernCompletedCount").textContent = `${pct}%`;
   $("#modernSeriesProgress").style.width = `${pct}%`;
@@ -6417,7 +6427,9 @@ function renderModernStudio(data = state.project) {
   $("#modernPipelineProgress").style.width = `${Math.round((pipelineComplete.filter(Boolean).length / pipelineComplete.length) * 100)}%`;
   $("#modernAssetStep").textContent = manifest.confirmed ? `${manifest.items?.length || data.assets?.length || 0} 个资产已确认` : (manifest.items?.length ? "待确认分类" : "等待解析");
   $("#modernAssetImageStep").textContent = confirmedAssetCount ? `${Math.min(generatedAssetCount, confirmedAssetCount)}/${confirmedAssetCount} 已生成` : "等待确认资产";
-  $("#modernBoardStep").textContent = storyboardReady ? `${data.storyboards.length} 个故事板已生成` : videoConfigExists ? "可选 · 已跳过" : "可选 · 未生成";
+  $("#modernSpatialStep").textContent = spatialMaps.length
+    ? `${spatialLockedCount}/${spatialMaps.length} 个地图已锁定`
+    : "等待分析场景";
   $("#modernVideoStep").textContent = durationMismatch
     ? `需重生成 · ${visibleShotCount} 个镜头 / ${visibleDuration}s`
     : data.videoConfigStatus?.ready
@@ -6425,7 +6437,7 @@ function renderModernStudio(data = state.project) {
       : "等待配置";
   $("#modernCutStep").textContent = finalCutReady ? "成片已组装" : "等待片段";
   $("#modernKitShot").textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")}` : "当前镜头";
-  $("#modernKitNames").textContent = selected?.assets?.length ? selected.assets.join(" · ") : "等待故事板分配";
+  $("#modernKitNames").textContent = selected?.assets?.length ? selected.assets.join(" · ") : "等待空间层绑定";
   $("#modernKitStatus").textContent = selected?.assets?.length ? "已引用" : "待确认";
   const modernKitButton = $("#modernKitButton");
   if (modernKitButton) {
@@ -6459,6 +6471,113 @@ function syncModernSeriesNav() {
   toggle.title = collapsed ? "展开项目导航" : "收起项目导航";
   const icon = toggle.querySelector("[data-nav-toggle-icon]");
   if (icon) icon.textContent = collapsed ? "›" : "‹";
+}
+
+function modernSpatialMapForShot(data = state.project, shot = null) {
+  const maps = Array.isArray(data?.spatialMaps) ? data.spatialMaps : [];
+  if (!shot) return null;
+  const configShot = shot.name ? videoPromptShot(shot.name) : null;
+  return maps.find((map) => map.id === shot.spatialMapId)
+    || maps.find((map) => map.id === configShot?.spatialMapId)
+    || maps.find((map) => map.sceneRef === shot.sceneRef || map.sceneRef === configShot?.sceneRef)
+    || null;
+}
+
+function modernSpatialMapIssueCount(data = state.project, shots = []) {
+  const maps = Array.isArray(data?.spatialMaps) ? data.spatialMaps : [];
+  const mapById = new Map(maps.map((map) => [map.id, map]));
+  return (Array.isArray(shots) ? shots : []).reduce((total, shot) => {
+    const configShot = shot?.name ? videoPromptShot(shot.name) : null;
+    const map = mapById.get(shot?.spatialMapId) || mapById.get(configShot?.spatialMapId)
+      || maps.find((item) => item.sceneRef === shot?.sceneRef || item.sceneRef === configShot?.sceneRef);
+    if (!map) return total + 1;
+    if (map.status !== "locked") return total + 1;
+    if (shot?.spatialMapVersion && Number(shot.spatialMapVersion) !== Number(map.version)) return total + 1;
+    return total;
+  }, 0);
+}
+
+function renderModernSpatialControl(data = state.project, shots = modernShotRecords(data)) {
+  const panel = $("#modernSpatialControlPanel");
+  if (!panel) return;
+  const maps = Array.isArray(data?.spatialMaps) ? data.spatialMaps : [];
+  const promptMode = selectedVideoPromptMode();
+  const selected = shots[state.modernStudio.shotIndex] || null;
+  const selectedMap = state.modernStudio.spatialMapEditorMapId
+    ? maps.find((map) => map.id === state.modernStudio.spatialMapEditorMapId)
+    : modernSpatialMapForShot(data, selected);
+  const lockedCount = maps.filter((map) => map?.status === "locked").length;
+  const issueCount = promptMode === "prompt" ? modernSpatialMapIssueCount(data, shots) : 0;
+  const mapCount = $("#modernSpatialMapCount");
+  const lockedCountNode = $("#modernSpatialLockedCount");
+  const issueCountNode = $("#modernSpatialIssueCount");
+  if (mapCount) mapCount.textContent = String(maps.length);
+  if (lockedCountNode) lockedCountNode.textContent = String(lockedCount);
+  if (issueCountNode) issueCountNode.textContent = String(issueCount);
+
+  const status = $("#modernSpatialAgentStatus");
+  const next = $("#modernSpatialAgentNext");
+  const mode = $("#modernSpatialMapMode");
+  const configNotice = $("#modernSpatialConfigNotice");
+  if (mode) mode.textContent = promptMode === "prompt" ? "提示词模式 · 强校验" : "Production Board · 可选参考";
+  if (configNotice) {
+    configNotice.textContent = data?.videoConfigStatus?.exists
+      ? issueCount ? "地图变更后需重新生成视频配置" : "当前配置已读取空间控制层"
+      : "视频配置尚未生成";
+  }
+  if (promptMode !== "prompt") {
+    if (status) status.textContent = "Production Board 模式不会读取空间地图";
+    if (next) next.textContent = "空间地图仍可作为导演记录保存，但不会阻塞 Production Board 视频生成。";
+  } else if (!maps.length) {
+    if (status) status.textContent = "空间 Agent 等待场景地图";
+    if (next) next.textContent = "先从视频配置生成场景引用，或打开当前镜头创建第一张空间地图。";
+  } else if (issueCount) {
+    if (status) status.textContent = `空间 Agent 发现 ${issueCount} 项待处理`;
+    if (next) next.textContent = selected ? `优先检查镜头 ${String(selected.number).padStart(2, "0")} 的地图绑定与版本。` : "选择一个镜头查看地图绑定与版本。";
+  } else {
+    if (status) status.textContent = "空间 Agent 检查通过";
+    if (next) next.textContent = "场景地图、镜头轴线和片段交接均已锁定，可进入视频配置。";
+  }
+
+  const mapList = $("#modernSpatialMapList");
+  if (mapList) {
+    mapList.innerHTML = maps.length
+      ? maps.map((map) => {
+        const active = selectedMap?.id === map.id;
+        const mapShots = shots.filter((shot) => modernSpatialMapForShot(data, shot)?.id === map.id).length;
+        const stateLabel = map.status === "locked" ? "已锁定" : "草稿";
+        return `<button type="button" class="modern-spatial-map-card${active ? " is-active" : ""}" data-spatial-map-id="${escapeAttr(map.id)}" role="listitem" aria-pressed="${active ? "true" : "false"}"><span class="modern-spatial-map-card-index">${String(map.version || 1).padStart(2, "0")}</span><span class="modern-spatial-map-card-copy"><strong>${escapeHtml(map.title || map.sceneRef || map.id)}</strong><small>${escapeHtml(map.sceneRef || "未绑定场景")} · ${mapShots} 个镜头</small></span><em class="is-${escapeAttr(map.status || "draft")}">${stateLabel}</em></button>`;
+      }).join("")
+      : `<div class="modern-spatial-empty"><strong>尚未建立场景地图</strong><small>选择镜头后，空间 Agent 会为当前场景准备地图草稿。</small></div>`;
+  }
+
+  const summary = $("#modernSpatialMapSummary");
+  const binding = $("#modernSpatialMapBinding");
+  if (summary) summary.textContent = selectedMap ? (selectedMap.title || selectedMap.sceneRef || selectedMap.id) : "尚未选择空间地图";
+  if (binding) binding.textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")} · ${selected.sceneRef || selectedMap?.sceneRef || "未绑定场景"}` : "选择镜头后显示绑定关系";
+  const brief = {
+    modernSpatialCameraSide: selectedMap?.axis?.cameraSide || "待定义",
+    modernSpatialAxisLine: selectedMap?.axis?.line || "待定义",
+    modernSpatialLightDirection: selectedMap?.lighting?.direction || "待定义",
+  };
+  Object.entries(brief).forEach(([id, value]) => {
+    const node = $(`#${id}`);
+    if (node) node.textContent = value;
+  });
+
+  const handoff = $("#modernSpatialHandoffList");
+  if (handoff) {
+    const visibleShots = (Array.isArray(shots) ? shots : []).slice(0, 8);
+    handoff.innerHTML = visibleShots.length
+      ? visibleShots.map((shot, index) => {
+        const map = modernSpatialMapForShot(data, shot);
+        const stale = map && shot.spatialMapVersion && Number(shot.spatialMapVersion) !== Number(map.version);
+        const state = !map ? "缺地图" : stale ? "版本过期" : map.status === "locked" ? "已锁定" : "草稿";
+        const active = index === Number(state.modernStudio?.shotIndex);
+        return `<button type="button" class="modern-spatial-handoff-item${active ? " is-active" : ""}" data-spatial-shot-index="${index}"><span class="modern-spatial-handoff-shot">${String(shot.number).padStart(2, "0")}</span><span><strong>${escapeHtml(shot.name)}</strong><small>${escapeHtml(shot.startState || "进入状态待定义")} → ${escapeHtml(shot.endState || "退出状态待定义")}</small></span><em class="is-${!map || stale ? "warning" : map.status === "locked" ? "ready" : "draft"}">${state}</em></button>`;
+      }).join("")
+      : `<div class="modern-spatial-empty"><strong>等待视频配置</strong><small>生成视频配置后，这里会列出每个镜头的空间交接。</small></div>`;
+  }
 }
 
 function renderModernAssetGenerationControls(data = state.project) {
@@ -7010,8 +7129,11 @@ function renderModernSelectedShot(data, shot, index) {
   const promptMode = selectedVideoPromptMode();
   const spatialMaps = Array.isArray(data?.spatialMaps) ? data.spatialMaps : [];
   const shotSpatialMap = promptMode === "prompt"
-    ? spatialMaps.find((map) => map.id === configShot?.spatialMapId || map.sceneRef === configShot?.sceneRef)
+    ? spatialMaps.find((map) => map.id === shot?.spatialMapId || map.id === configShot?.spatialMapId || map.sceneRef === shot?.sceneRef || map.sceneRef === configShot?.sceneRef)
     : null;
+  const editorSpatialMap = state.modernStudio.spatialMapEditorMapId
+    ? spatialMaps.find((map) => map.id === state.modernStudio.spatialMapEditorMapId)
+    : shotSpatialMap;
   const spatialStatus = $("#modernSpatialMapStatus");
   const spatialEditor = $("#modernSpatialMapEditor");
   if (spatialStatus) {
@@ -7028,10 +7150,12 @@ function renderModernSelectedShot(data, shot, index) {
     }
   }
   if (spatialEditor) {
-    const editorVisible = promptMode === "prompt" && !!shot && state.modernStudio.spatialMapEditorOpen === true;
+    const editorVisible = promptMode === "prompt"
+      && (!!shot || !!editorSpatialMap)
+      && state.modernStudio.spatialMapEditorOpen === true;
     spatialEditor.classList.toggle("hidden", !editorVisible);
     if (editorVisible) {
-      const editorMap = shotSpatialMap || {
+      const editorMap = editorSpatialMap || (shot ? {
         id: `MAP_${String(shot.number || index + 1).padStart(3, "0")}`,
         sceneRef: configShot?.sceneRef || "",
         title: configShot?.sceneRef || "",
@@ -7041,9 +7165,9 @@ function renderModernSelectedShot(data, shot, index) {
         axis: { cameraSide: "", line: "", crossing: "forbidden" },
         lighting: { source: "", direction: "", shadowDirection: "" },
         zones: [],
-      };
+      } : null);
       const textarea = $("#modernSpatialMapJson");
-      if (textarea && document.activeElement !== textarea) textarea.value = JSON.stringify(editorMap, null, 2);
+      if (textarea && editorMap && document.activeElement !== textarea) textarea.value = JSON.stringify(editorMap, null, 2);
     }
   }
   const modernRatio = $("#modernParamRatio");
@@ -11009,8 +11133,10 @@ function bind() {
   const focusModernPane = (focus) => {
     const nextFocus = focus === "kit"
       ? "assets"
-      : ["assetimg", "filmstudio", "storyboard", "video", "cut"].includes(focus)
-        ? focus
+      : focus === "storyboard"
+        ? "space"
+        : ["assetimg", "filmstudio", "space", "video", "cut"].includes(focus)
+          ? focus
         : "assets";
     if (nextFocus !== "assets") state.modernStudio.assetManageMode = false;
     state.modernStudio.focus = nextFocus;
@@ -11021,8 +11147,8 @@ function bind() {
       ? $("#modernAssetImagePanel")
       : nextFocus === "filmstudio"
         ? $("#modernFilmStudioPanel")
-      : nextFocus === "storyboard"
-        ? $("#modernStoryboardStudio")
+      : nextFocus === "space"
+        ? $("#modernSpatialControlPanel")
         : nextFocus === "cut"
           ? $("#modernCutPanel")
           : $("#modernMotionTitle")?.closest(".modern-stage-pane");
@@ -11081,7 +11207,7 @@ function bind() {
     toast("修改已暂存，将用于下一次生成");
   });
   $("#modernStillEdit")?.addEventListener("click", () => {
-    focusModernPane("storyboard");
+    focusModernPane("space");
   });
   $("#modernVideoQueueFilters")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-modern-queue-filter]");
@@ -11675,6 +11801,33 @@ function bind() {
   $("#modernSpatialMapStatus")?.addEventListener("click", () => {
     if (selectedVideoPromptMode() !== "prompt") return;
     state.modernStudio.spatialMapEditorOpen = !state.modernStudio.spatialMapEditorOpen;
+    renderModernStudio(state.project);
+  });
+  $("#modernSpatialAgentRun")?.addEventListener("click", () => {
+    const shots = modernShotRecords(state.project);
+    const shot = shots[state.modernStudio.shotIndex] || null;
+    const map = modernSpatialMapForShot(state.project, shot);
+    state.modernStudio.spatialMapEditorMapId = map?.id || "";
+    state.modernStudio.spatialMapEditorOpen = true;
+    state.modernStudio.focus = "space";
+    renderModernStudio(state.project);
+    toast(map ? `已定位镜头 ${String(shot.number).padStart(2, "0")} 的空间地图` : "已打开当前镜头的空间地图草稿");
+  });
+  $("#modernSpatialMapList")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-spatial-map-id]");
+    if (!button) return;
+    state.modernStudio.spatialMapEditorMapId = button.dataset.spatialMapId || "";
+    state.modernStudio.spatialMapEditorOpen = true;
+    renderModernStudio(state.project);
+  });
+  $("#modernSpatialHandoffList")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-spatial-shot-index]");
+    if (!button) return;
+    const shotIndex = Math.max(0, Number(button.dataset.spatialShotIndex) || 0);
+    const shots = modernShotRecords(state.project);
+    state.modernStudio.shotIndex = shotIndex;
+    state.modernStudio.spatialMapEditorMapId = modernSpatialMapForShot(state.project, shots[shotIndex])?.id || "";
+    state.modernStudio.spatialMapEditorOpen = true;
     renderModernStudio(state.project);
   });
   async function saveModernSpatialMap(status) {

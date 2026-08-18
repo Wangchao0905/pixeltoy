@@ -11,7 +11,7 @@ const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPais
 for (const [model, expectedModels] of [
   ["seedance-2-0", { "720p": "sd2-ultra-720p" }],
   ["seedance-2-0-fast", { "720p": "sd2-ultra-fast-720p" }],
-  ["seedance-2-0-mini", { "480p": "sd2-video20-mini-480p" }],
+  ["seedance-2-0-mini", { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" }],
   ["seedance-2-0-m", { "480p": "sd3-480p", "720p": "sd3-720p" }],
   ["seedance-2-0-m-fast", { "480p": "sd3-fast-480p", "720p": "sd3-fast-720p" }],
   ["seedance-2-0-m-fast-mini", { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" }],
@@ -29,8 +29,8 @@ assert.equal(
 );
 assert.equal(
   (await buildPaisioVideoGenerationPayload({ model: "seedance-2-0-mini", prompt: "固定规格测试", resolution: "720p" })).model,
-  "sd2-video20-mini-480p",
-  "Seedance 2.0 Mini must keep the fixed 480p Paisio model even when 720p is requested",
+  "sd2-video20-mini-720p",
+  "Seedance 2.0 Mini must select the 720p Paisio model when 720p is requested",
 );
 for (const [model, expectedPaisioModel] of [
   ["sd3-480p", "sd3-480p"],

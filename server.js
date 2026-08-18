@@ -211,13 +211,13 @@ const PAISIO_SEEDANCE_M_MODEL = "seedance-2-0-m";
 const PAISIO_SEEDANCE_M_FAST_MODEL = "seedance-2-0-m-fast";
 const PAISIO_SEEDANCE_M_FAST_MINI_MODEL = "seedance-2-0-m-fast-mini";
 const PAISIO_MINIMAX_H3_MODEL = "minimax-h3";
-// 标准 Seedance 2.0 三项保留前端键名，但固定映射到 Paisio 模型广场中的规格。
+// 标准 Seedance 2.0 / Fast 保留前端键名，并固定映射到 Paisio 模型广场中的 720p 规格。
 const PAISIO_FIXED_SEEDANCE_MODEL_MAP = {
   "seedance-2-0": { model: "sd2-ultra-720p", resolution: "720p" },
   "seedance-2-0-fast": { model: "sd2-ultra-fast-720p", resolution: "720p" },
-  "seedance-2-0-mini": { model: "sd2-video20-mini-480p", resolution: "480p" },
 };
 const PAISIO_MODEL_RESOLUTION_MAP = {
+  "seedance-2-0-mini": { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" },
   [PAISIO_SEEDANCE_M_MODEL]: { "480p": "sd3-480p", "720p": "sd3-720p" },
   [PAISIO_SEEDANCE_M_FAST_MODEL]: { "480p": "sd3-fast-480p", "720p": "sd3-fast-720p" },
   [PAISIO_SEEDANCE_M_FAST_MINI_MODEL]: { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" },

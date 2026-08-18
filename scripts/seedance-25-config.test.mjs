@@ -23,7 +23,7 @@ assert.equal(normalizeSeedanceDuration(31, "dreamina-seedance-2-5-260628"), 30, 
 assert.equal(normalizeVideoResolution("1080p", "seedance-2-0"), "720p", "2.0 固定 720p");
 assert.equal(normalizeVideoResolution("4k", "seedance-2-0"), "720p", "2.0 固定 720p");
 assert.equal(normalizeVideoResolution("1080p", "seedance-2-0-fast"), "720p", "2.0 Fast 固定 720p");
-assert.equal(normalizeVideoResolution("720p", "seedance-2-0-mini"), "480p", "2.0 Mini 固定 480p");
+assert.equal(normalizeVideoResolution("720p", "seedance-2-0-mini"), "720p", "2.0 Mini 支持 720p");
 
 // 2) 静态断言：模型映射 + 前端选项 + 文本归一
 const serverSource = readFileSync(path.join(root, "server.js"), "utf8");

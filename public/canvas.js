@@ -2276,7 +2276,6 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
   const fixedPaisioResolution = {
     "seedance-2-0": "720p",
     "seedance-2-0-fast": "720p",
-    "seedance-2-0-mini": "480p",
   }[model] || "";
   const isFastOrMini = /(?:fast|mini)/i.test(model);
   const is25 = /(?:2-5|2\.5)/i.test(model);
@@ -2284,6 +2283,7 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
     "seedance-2-0-m",
     "seedance-2-0-m-fast",
     "seedance-2-0-m-fast-mini",
+    "seedance-2-0-mini",
     "sd3-480p",
     "sd3-720p",
     "sd3-fast-480p",

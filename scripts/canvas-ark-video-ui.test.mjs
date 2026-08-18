@@ -121,7 +121,7 @@ assert.match(js, /function createImageFromConnectionMenu\(/, "image output conne
 assert.match(js, /data-connection-create='image'/, "image generation connection action must be wired");
 assert.match(js, /fixedPaisioResolution/, "video resolution sync must account for fixed Paisio specifications");
 assert.match(js, /"seedance-2-0": "720p"/, "Seedance 2.0 must be fixed to 720p in the canvas");
-assert.match(js, /"seedance-2-0-mini": "480p"/, "Seedance 2.0 Mini must be fixed to 480p in the canvas");
+assert.match(js, /"seedance-2-0-mini",/, "Seedance 2.0 Mini must expose both Paisio resolutions in the canvas");
 assert.match(js, /option\.hidden = !enabled;/, "unsupported resolutions must be hidden from the model selector");
 assert.doesNotMatch(js, /\[PERSON_REFERENCE_MODEL\]|Seedance 2\.0 · 人物参考/, "video model summaries must not expose the removed person-reference label");
 assert.match(js, /<video src=\"\$\{escapeHtml\(previewSrc\)\}\" controls playsinline preload=\"metadata\"/, "completed video previews must expose native controls without autoplay");

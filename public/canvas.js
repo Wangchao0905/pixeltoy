@@ -2260,7 +2260,8 @@ function syncVideoDurationOptions(element, node = {}) {
   const field = element?.querySelector('input[data-node-field="duration"]');
   if (!field) return;
   const model = node.settings?.model || VIDEO_NODE_DEFAULTS.model;
-  const maxDuration = /(?:2-5|2\.5)/i.test(model) ? 30 : 15;
+  const is30SecondModel = /(?:2-5|2\.5|sd2\.5-ultra-720p)/i.test(model);
+  const maxDuration = is30SecondModel ? 30 : 15;
   field.max = String(maxDuration);
   const value = Math.max(4, Math.min(maxDuration, Number(field.value || VIDEO_NODE_DEFAULTS.duration)));
   if (Number(field.value) !== value) {
@@ -2274,6 +2275,7 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
   if (!select) return;
   const model = settings.model || VIDEO_NODE_DEFAULTS.model;
   const fixedPaisioResolution = {
+    "seedance-2-5": "720p",
     "seedance-2-0": "720p",
     "seedance-2-0-fast": "720p",
   }[model] || "";

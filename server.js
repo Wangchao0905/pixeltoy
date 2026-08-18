@@ -183,8 +183,6 @@ const DEFAULT_DAILY_VIDEO_LIMIT = 10;
 const DEFAULT_CONCURRENT_VIDEO_LIMIT = 2;
 const ACTIVE_VIDEO_TASK_TTL_MS = 1000 * 60 * 60 * 6;
 const DEFAULT_SEEDANCE_MODEL_MAP = {
-  // 2026-08-10：火山方舟已发布 Seedance 2.5（doubao-seedance-2-5-260628，仅 480p/720p，4-30s）
-  "seedance-2-5": "doubao-seedance-2-5-260628",
   "seedance-2-0": "doubao-seedance-2-0-260128",
   "seedance-2-0-fast": "doubao-seedance-2-0-fast-260128",
   "seedance-2-0-mini": "doubao-seedance-2-0-mini-260615",
@@ -211,8 +209,9 @@ const PAISIO_SEEDANCE_M_MODEL = "seedance-2-0-m";
 const PAISIO_SEEDANCE_M_FAST_MODEL = "seedance-2-0-m-fast";
 const PAISIO_SEEDANCE_M_FAST_MINI_MODEL = "seedance-2-0-m-fast-mini";
 const PAISIO_MINIMAX_H3_MODEL = "minimax-h3";
-// 标准 Seedance 2.0 / Fast 保留前端键名，并固定映射到 Paisio 模型广场中的 720p 规格。
+// 标准 Seedance 2.0 / Fast / 2.5 保留前端键名，并固定映射到 Paisio 模型广场中的 720p 规格。
 const PAISIO_FIXED_SEEDANCE_MODEL_MAP = {
+  "seedance-2-5": { model: "sd2.5-ultra-720p", resolution: "720p" },
   "seedance-2-0": { model: "sd2-ultra-720p", resolution: "720p" },
   "seedance-2-0-fast": { model: "sd2-ultra-fast-720p", resolution: "720p" },
 };
@@ -13583,7 +13582,6 @@ function normalizeSeedanceModel(value, provider = "") {
     return bp[raw] || raw;
   }
   const map = {
-    "seedance-2-5": process.env.SEEDANCE_25_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-5"],
     "seedance-2-0": process.env.SEEDANCE_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0"],
     "seedance-2-0-fast": process.env.SEEDANCE_FAST_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0-fast"],
     "seedance-2-0-mini": process.env.SEEDANCE_MINI_MODEL || DEFAULT_SEEDANCE_MODEL_MAP["seedance-2-0-mini"],
@@ -16038,7 +16036,10 @@ async function getGravitexCanvasVideoGeneration(taskId) {
 
 function normalizePaisioDuration(value, model = "") {
   const number = Math.round(Number(value || 6));
-  const isSd3 = PAISIO_4_15_VIDEO_MODELS.has(compactLine(model));
+  const normalizedModel = compactLine(model);
+  const is30SecondModel = /(?:2-5|2\.5)/i.test(normalizedModel)
+    || normalizedModel === "sd2.5-ultra-720p";
+  const isSd3 = PAISIO_4_15_VIDEO_MODELS.has(normalizedModel) && !is30SecondModel;
   if (!Number.isFinite(number)) return 6;
   return Math.max(isSd3 ? 4 : 1, Math.min(isSd3 ? 15 : 30, number));
 }

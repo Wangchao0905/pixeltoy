@@ -9,6 +9,7 @@ const { __test } = moduleNamespace.default?.__test ? moduleNamespace.default : m
 const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus } = __test.canvasVideo;
 
 for (const [model, expectedModels] of [
+  ["seedance-2-5", { "720p": "sd2.5-ultra-720p" }],
   ["seedance-2-0", { "720p": "sd2-ultra-720p" }],
   ["seedance-2-0-fast", { "720p": "sd2-ultra-fast-720p" }],
   ["seedance-2-0-mini", { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" }],
@@ -22,6 +23,14 @@ for (const [model, expectedModels] of [
     assert.equal(payload.model, expectedModels[resolution], `${model} ${resolution} must select the matching Paisio model ID`);
   }
 }
+const paisio25Payload = await buildPaisioVideoGenerationPayload({
+  model: "seedance-2-5",
+  prompt: "Seedance 2.5 长视频测试",
+  duration: 30,
+  resolution: "480p",
+});
+assert.equal(paisio25Payload.model, "sd2.5-ultra-720p");
+assert.equal(paisio25Payload.duration, 30, "Paisio Seedance 2.5 must preserve the 30-second limit");
 assert.equal(
   (await buildPaisioVideoGenerationPayload({ model: "seedance-2-0", prompt: "固定规格测试", resolution: "4k" })).model,
   "sd2-ultra-720p",

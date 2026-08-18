@@ -116,11 +116,12 @@ assert.match(css, /\.video-node \.video-generate-button[^}]*grid-column:\s*6/s, 
 assert.match(css, /\.video-node \.video-settings-strip[^}]*pointer-events:\s*auto/s, "video compact settings strip must accept pointer input");
 assert.match(js, /function syncVideoResolutionOptions\(/, "video resolution choices must be synced with the selected model");
 assert.match(js, /function syncVideoDurationOptions\(element, node = \{\}\)/, "canvas must sync duration options to the selected model");
-assert.match(js, /2-5\|2\\.5\)\/i\.test\(model\) \? 30 : 15/, "Seedance 2.5 duration cap must extend to 30 seconds");
+assert.match(js, /is30SecondModel/, "Seedance 2.5 duration cap must extend to 30 seconds");
 assert.match(js, /function createImageFromConnectionMenu\(/, "image output connection menu must create an image node");
 assert.match(js, /data-connection-create='image'/, "image generation connection action must be wired");
 assert.match(js, /fixedPaisioResolution/, "video resolution sync must account for fixed Paisio specifications");
 assert.match(js, /"seedance-2-0": "720p"/, "Seedance 2.0 must be fixed to 720p in the canvas");
+assert.match(js, /"seedance-2-5": "720p"/, "Seedance 2.5 must be fixed to 720p in the canvas");
 assert.match(js, /"seedance-2-0-mini",/, "Seedance 2.0 Mini must expose both Paisio resolutions in the canvas");
 assert.match(js, /option\.hidden = !enabled;/, "unsupported resolutions must be hidden from the model selector");
 assert.doesNotMatch(js, /\[PERSON_REFERENCE_MODEL\]|Seedance 2\.0 · 人物参考/, "video model summaries must not expose the removed person-reference label");

@@ -5,6 +5,7 @@ const storyboard = serverModule.__test?.durationMode;
 const videoRetry = serverModule.__test?.videoRetry;
 assert.ok(storyboard?.productionBoardShotsFromSlots, "Production Board duration helper must be exported");
 assert.ok(videoRetry?.projectVideoPayloadForShot, "video payload helper must be exported");
+const SHORT15 = storyboard.DURATION_MODE_SHORT_DRAMA_15;
 
 const assets = [
   { name: "S001_CABIN", type: "Scene", manifestType: "Scene", label: "小屋", assetUrl: "asset://S001_CABIN" },
@@ -62,6 +63,22 @@ assert.deepEqual(boardShots.map((shot) => shot.storyboardRefs), [
 ]);
 assert.deepEqual(boardShots[0].storyboardSourceShots, ["E01_V001", "E01_V002"]);
 assert.equal(boardShots[0].videoPromptMode, "production_board");
+
+const fixedBoardShots = storyboard.productionBoardShotsFromSlots(sourceShots, [
+  { ...slots[0], duration: 8 },
+  { ...slots[1], duration: 7 },
+], "zh", assetLookup, SHORT15);
+assert.deepEqual(fixedBoardShots.map((shot) => shot.duration), [15, 15], "15-second short-drama mode must normalize every Production Board clip");
+
+const variableBoardShots = storyboard.productionBoardShotsFromSlots(sourceShots, [
+  { ...slots[0], duration: 30 },
+], "zh", assetLookup, storyboard.DURATION_MODE_SHORT_DRAMA_VARIABLE);
+assert.deepEqual(variableBoardShots.map((shot) => shot.duration), [30], "variable short-drama mode must accept a 30-second Production Board clip");
+assert.throws(
+  () => storyboard.productionBoardShotsFromSlots(sourceShots, [{ ...slots[0], duration: 31 }], "zh", assetLookup, storyboard.DURATION_MODE_SHORT_DRAMA_VARIABLE),
+  /4-30s/u,
+  "variable short-drama mode must reject a Production Board clip over 30 seconds",
+);
 
 const rebuiltSegments = storyboard.storyboardSegmentsFromShots(boardShots, "zh");
 assert.deepEqual(rebuiltSegments.map((segment) => segment.sourceShotNames), [

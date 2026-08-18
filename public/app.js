@@ -2,6 +2,7 @@ const DEFAULT_ASSET_ANALYZER_MODEL = "claude-opus-4-8";
 const DURATION_MODE_TK = "tk";
 const DURATION_MODE_FREE = "free";
 const DURATION_MODE_SHORT_DRAMA_15 = "short_drama_15s";
+const DURATION_MODE_SHORT_DRAMA_VARIABLE = "short_drama_variable";
 const WORKSPACE_LAYOUT_VERSION = "green-flow-v5-no-map";
 const WORKSPACE_SCALE_KEY = `pixelToys.workspaceScale.${WORKSPACE_LAYOUT_VERSION}`;
 const STUDIO_TAB_KEY = `pixelToys.activeStudioTab.${WORKSPACE_LAYOUT_VERSION}`;
@@ -1781,7 +1782,9 @@ function projectDialogueLanguageFrom(data) {
 function normalizeDurationMode(value, fallback = DURATION_MODE_TK) {
   if (value === DURATION_MODE_FREE || value === "自由模式") return DURATION_MODE_FREE;
   if (value === DURATION_MODE_SHORT_DRAMA_15 || value === "15 秒短剧模式" || value === "固定15秒") return DURATION_MODE_SHORT_DRAMA_15;
+  if (value === DURATION_MODE_SHORT_DRAMA_VARIABLE || value === "可变时长短剧模式" || value === "可变时长") return DURATION_MODE_SHORT_DRAMA_VARIABLE;
   if (value === DURATION_MODE_TK || value === "TK 模式") return DURATION_MODE_TK;
+  if (fallback === DURATION_MODE_SHORT_DRAMA_VARIABLE) return DURATION_MODE_SHORT_DRAMA_VARIABLE;
   if (fallback === DURATION_MODE_SHORT_DRAMA_15) return DURATION_MODE_SHORT_DRAMA_15;
   return fallback === DURATION_MODE_FREE ? DURATION_MODE_FREE : DURATION_MODE_TK;
 }
@@ -1793,7 +1796,7 @@ function projectDurationModeFrom(data) {
     data?.assetManifest?.production?.durationMode ||
     data?.videoConfigStatus?.durationMode ||
     "";
-  return [DURATION_MODE_FREE, DURATION_MODE_TK, DURATION_MODE_SHORT_DRAMA_15].includes(value) ? value : "";
+  return [DURATION_MODE_FREE, DURATION_MODE_TK, DURATION_MODE_SHORT_DRAMA_15, DURATION_MODE_SHORT_DRAMA_VARIABLE].includes(value) ? value : "";
 }
 
 function modernDurationModeFrom(data = state.project) {
@@ -1808,12 +1811,14 @@ function modernVideoParameterPolicy(data, ratio = "9:16") {
   const selectedRatio = String(ratio || "9:16");
   const free = mode === DURATION_MODE_FREE;
   const fixed15 = mode === DURATION_MODE_SHORT_DRAMA_15;
+  const variableDuration = mode === DURATION_MODE_SHORT_DRAMA_VARIABLE;
   return {
     free,
     fixed15,
-    heroRatio: free ? `${selectedRatio} 自由可选` : fixed15 ? `${selectedRatio} · 15秒固定` : `${selectedRatio} 已锁定`,
+    variableDuration,
+    heroRatio: free ? `${selectedRatio} 自由可选` : fixed15 ? `${selectedRatio} · 15秒固定` : variableDuration ? `${selectedRatio} · 4-30秒可变` : `${selectedRatio} 已锁定`,
     ratioAriaLabel: free ? "自由选择视频比例" : "视频比例",
-    parameterHint: free ? "自由模式：模型、比例、规格可调" : fixed15 ? "短剧模式：每个视频片段固定 15 秒" : "用于当前片段",
+    parameterHint: free ? "自由模式：模型、比例、规格可调" : fixed15 ? "短剧模式：每个视频片段固定 15 秒" : variableDuration ? "可变时长短剧：每个视频片段可使用 4-30 秒" : "用于当前片段",
   };
 }
 

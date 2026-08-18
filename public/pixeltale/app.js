@@ -624,6 +624,18 @@ async function fetchVisualAssetDocument() {
   };
 }
 
+async function fetchVideoPromptPack() {
+  const response = await fetch(agentApiPath("/video-prompt-pack/download"), { headers: agentRequestHeaders() });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || `视频提示词包下载失败：${response.status}`);
+  }
+  return {
+    blob: await response.blob(),
+    fileName: fileNameFromContentDisposition(response.headers.get("Content-Disposition"), "PixelTale_video_prompt_pack.json"),
+  };
+}
+
 function triggerBlobDownload(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -642,6 +654,11 @@ async function downloadScriptDocument() {
 
 async function downloadVisualAssetDocument() {
   const { blob, fileName } = await fetchVisualAssetDocument();
+  triggerBlobDownload(blob, fileName);
+}
+
+async function downloadVideoPromptPack() {
+  const { blob, fileName } = await fetchVideoPromptPack();
   triggerBlobDownload(blob, fileName);
 }
 
@@ -2640,11 +2657,15 @@ function renderHandoff() {
   const latest = state.agent?.handoffs?.at(-1);
   const scriptDocument = latest?.scriptDocument || state.agent?.scriptDocument;
   const visualAssetDocument = state.agent?.visualAssetDocument;
-  const visualAssetAction = visualAssetDocument?.status === "ready"
+  const baseVisualAssetAction = visualAssetDocument?.status === "ready"
     ? `<button type="button" class="stage-primary visual-asset-download" data-download-visual-assets ${state.documentBusy ? "disabled" : ""}>下载视觉资产 DOCX <span aria-hidden="true">↓</span></button>`
     : visualAssetDocument?.status === "failed"
       ? `<span class="visual-asset-error">视觉资产文档生成失败：${escapeHtml(visualAssetDocument.error || "请重新导出")}</span>`
       : "";
+  const videoPromptPackAction = state.agent?.videoPromptPack
+    ? `<button type="button" class="stage-secondary video-prompt-pack-download" data-download-video-prompts ${state.documentBusy ? "disabled" : ""}>下载视频生成提示词包 JSON <span aria-hidden="true">↓</span></button>`
+    : "";
+  const visualAssetAction = `${baseVisualAssetAction}${videoPromptPackAction}`;
   const scriptReady = scriptDocument?.status === "ready";
   const scriptStatus = !ready
     ? "等待全剧确认"
@@ -3366,6 +3387,7 @@ function bindStageActions() {
   $("[data-regenerate-title]")?.addEventListener("click", () => runCurrentStage("title"));
   $("[data-download-script]")?.addEventListener("click", () => void runDocumentAction(downloadScriptDocument));
   $("[data-download-visual-assets]")?.addEventListener("click", () => void runDocumentAction(downloadVisualAssetDocument));
+  $("[data-download-video-prompts]")?.addEventListener("click", () => void runDocumentAction(downloadVideoPromptPack));
   $("[data-save-script]")?.addEventListener("click", () => void runDocumentAction(saveScriptDocument));
   $("#episodeScaleRange")?.addEventListener("input", syncBriefRanges);
   $("#durationRange")?.addEventListener("input", syncBriefRanges);

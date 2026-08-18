@@ -13,6 +13,7 @@ const LEGACY_ROUTE_MODELS = new Set([...LEGACY_MODEL_IDS, ...RETIRED_SEAT_MODELS
 const RETIRED_MODEL_IDS = new Set(LEGACY_MODEL_IDS);
 const { fallbackVisualAssets } = require("./pixeltale-visual-assets.js");
 const { runStageRules, EPISODE_TITLE_CODENAME, DISPLAY_NAME_CODE } = require("./pixeltale-review-rules.js");
+const { compileVideoPromptPack } = require("./pixeltale-video.js");
 
 const STAGES = ["brief", "title", "proposal", "characters", "arc", "scenes", "dialogue"];
 const SHORT_DRAMA_MODES = new Set(["tk_short_drama", "cn_short_drama"]);
@@ -2991,6 +2992,7 @@ function emptyState({ projectId, mode = "tk", now = () => new Date() }) {
     visualAssetReview: null,
     visualAssetDocument: null,
     scriptDocument: null,
+    videoPromptPack: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -4448,6 +4450,17 @@ function approve(params = {}) {
     const storyRoot = params.pixelTaleRoot || params.episodeRoot;
     const sourceArtifacts = Object.fromEntries(STAGES.map((stage) => [stage, approvedForStage(state, stage)?.content || {}]));
     payload.sourceArtifacts = sourceArtifacts;
+    const videoPromptPack = compileVideoPromptPack({
+      projectId: state.projectId,
+      storyTitle: payload.storyTitle,
+      mode: state.mode,
+      durationMode: state.input?.durationMode || state.input?.segmentDurationMode || state.input?.segmentDurationPolicy,
+      characters: sourceArtifacts.characters,
+      arc: sourceArtifacts.arc,
+      scenes: sourceArtifacts.scenes,
+      dialogue: sourceArtifacts.dialogue,
+    });
+    payload.videoPromptPack = videoPromptPack;
     const packageFile = writeHandoffFile(storyRoot, payload);
     let visualAssetDocument = { status: "unavailable", fileName: "", error: "" };
     if (typeof writeVisualAssetDocument === "function") {
@@ -4494,6 +4507,7 @@ function approve(params = {}) {
     state.visualAssetReview = visualAssetReview;
     state.visualAssetDocument = visualAssetDocument;
     state.scriptDocument = scriptDocument;
+    state.videoPromptPack = videoPromptPack;
     const handoff = { id: payload.id, status: "ready", artifactIds: payload.artifactIds, packageFile, visualAssetDocument, scriptDocument, createdAt: payload.createdAt, formalFilesUntouched: true };
     state.handoffs.push(handoff);
     state.stage = "handoff";

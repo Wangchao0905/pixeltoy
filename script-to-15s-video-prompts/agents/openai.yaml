@@ -1,0 +1,4 @@
+interface:
+  display_name: "短剧视频提示词生成"
+  short_description: "把完整脚本拆成默认15秒、可变4-30秒的视频提示词与镜头衔接方案"
+  default_prompt: "使用 $script-to-15s-video-prompts，把这段脚本拆成默认每段15秒、必要时可在4-30秒间调整的可生成视频提示词。"

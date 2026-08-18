@@ -13,7 +13,7 @@ const serverModule = require("../server.js");
 const duration = serverModule.__test?.durationMode;
 
 assert.ok(duration, "duration mode helpers must be exported");
-const { DURATION_MODE_TK: TK, DURATION_MODE_FREE: FREE } = duration;
+const { DURATION_MODE_TK: TK, DURATION_MODE_FREE: FREE, DURATION_MODE_SHORT_DRAMA_15: SHORT15 } = duration;
 const series = serverModule.__test?.seriesAssets;
 
 const persistenceRoot = fs.mkdtempSync(path.join(process.cwd(), ".duration-mode-test-"));
@@ -42,6 +42,7 @@ const gudongScript = ends.map((end, index) => {
 const twentyBeats = Array.from({ length: 20 }, (_, index) => `咕咚完成第 ${index + 1} 个连续动作节拍。`);
 
 assert.equal(duration.normalizeDurationMode(), TK, "duration mode must default to TK");
+assert.equal(duration.normalizeDurationMode("15 秒短剧模式"), SHORT15, "15-second short-drama mode must normalize consistently");
 const declared45SecondScript = `# 自由模式时长测试\n\n总时长：约 45 秒\n\n[场景1]\n咕咚在小屋内完成连续动作并停下。`;
 assert.equal(
   duration.scriptDeclaredDurationSeconds(declared45SecondScript),
@@ -115,6 +116,33 @@ const declared45Plan = duration.planEpisodeDuration({
 assert.equal(declared45Plan.target, 45, "a 45-second script must keep a 45-second free-mode target");
 assert.equal(declared45Plan.shotCount, 3, "a 45-second script must produce three 15-second-cap clips");
 assert.deepEqual(declared45Plan.durations, [15, 15, 15], "a 45-second script must not expand to eight 15-second clips");
+const shortDrama45Plan = duration.planEpisodeDuration({
+  shotCount: twentyBeats.length,
+  beats: twentyBeats,
+  durationMode: SHORT15,
+  script: declared45SecondScript,
+});
+assert.equal(shortDrama45Plan.target, 45, "15-second short-drama mode must preserve a 45-second script target");
+assert.equal(shortDrama45Plan.shotCount, 3, "45 seconds must become three fixed 15-second clips");
+assert.deepEqual(shortDrama45Plan.durations, [15, 15, 15], "every short-drama clip must be exactly 15 seconds");
+const shortDrama90Script = "总时长：90秒\n\n00:00-00:15 开场。\n00:15-00:30 发展。\n00:30-00:45 冲突。";
+const shortDrama90Plan = duration.planEpisodeDuration({
+  shotCount: 3,
+  beats: ["开场", "发展", "冲突"],
+  durationMode: SHORT15,
+  script: shortDrama90Script,
+});
+assert.equal(shortDrama90Plan.shotCount, 6, "90 seconds must become six fixed 15-second clips");
+assert.deepEqual(shortDrama90Plan.durations, Array(6).fill(15), "90-second short-drama plan must contain only 15-second clips");
+assert.equal(
+  duration.modelShotPlanNeedsRefresh({
+    scriptFingerprint: crypto.createHash("sha1").update(declared45SecondScript).digest("hex"),
+    durationMode: SHORT15,
+    shots: [{ duration: 15 }],
+  }, declared45SecondScript, SHORT15),
+  true,
+  "a fixed 15-second plan with the wrong clip count must be invalidated",
+);
 assert.equal(duration.scriptTimecodeTotalSeconds(gudongScript), 49, "48.5 seconds must round to a 49 second target");
 assert.equal(typeof duration.modelPlanningScript, "function", "video-config plan rebuild must expose its script preparation path");
 const configPlanningScript = duration.modelPlanningScript(gudongScript);
@@ -317,6 +345,6 @@ assert.match(html, /id="modernDurationModeFree"[^>]*role="menuitemradio"/);
 assert.match(appSource, /function renderModernDurationMode[\s\S]*aria-checked/);
 assert.match(appSource, /persistProjectDurationMode[\s\S]*\/duration-mode/);
 assert.match(styles, /\.modern-project-menu button\.is-active,[\s\S]*var\(--mv-lime\)/);
-assert.equal((appSource.match(/durationMode:\s*state\.durationMode/g) || []).length, 2, "draft and config requests must carry duration mode");
+assert.equal((appSource.match(/durationMode:\s*state\.durationMode/g) || []).length, 3, "draft, full config, and single-shot config requests must carry duration mode");
 
 console.log("duration mode tests passed");

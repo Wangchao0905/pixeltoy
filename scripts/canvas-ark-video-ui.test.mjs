@@ -119,8 +119,9 @@ assert.match(js, /function syncVideoDurationOptions\(element, node = \{\}\)/, "c
 assert.match(js, /2-5\|2\\.5\)\/i\.test\(model\) \? 30 : 15/, "Seedance 2.5 duration cap must extend to 30 seconds");
 assert.match(js, /function createImageFromConnectionMenu\(/, "image output connection menu must create an image node");
 assert.match(js, /data-connection-create='image'/, "image generation connection action must be wired");
-assert.match(js, /supports4k/, "video resolution sync must account for 4k support");
-assert.match(js, /const supports4k = model === "seedance-2-0";/, "only the main Seedance 2.0 model must expose 4k");
+assert.match(js, /fixedPaisioResolution/, "video resolution sync must account for fixed Paisio specifications");
+assert.match(js, /"seedance-2-0": "720p"/, "Seedance 2.0 must be fixed to 720p in the canvas");
+assert.match(js, /"seedance-2-0-mini": "480p"/, "Seedance 2.0 Mini must be fixed to 480p in the canvas");
 assert.match(js, /option\.hidden = !enabled;/, "unsupported resolutions must be hidden from the model selector");
 assert.doesNotMatch(js, /\[PERSON_REFERENCE_MODEL\]|Seedance 2\.0 · 人物参考/, "video model summaries must not expose the removed person-reference label");
 assert.match(js, /<video src=\"\$\{escapeHtml\(previewSrc\)\}\" controls playsinline preload=\"metadata\"/, "completed video previews must expose native controls without autoplay");

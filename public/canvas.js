@@ -2273,6 +2273,11 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
   const select = element?.querySelector('select[data-node-field="resolution"]');
   if (!select) return;
   const model = settings.model || VIDEO_NODE_DEFAULTS.model;
+  const fixedPaisioResolution = {
+    "seedance-2-0": "720p",
+    "seedance-2-0-fast": "720p",
+    "seedance-2-0-mini": "480p",
+  }[model] || "";
   const isFastOrMini = /(?:fast|mini)/i.test(model);
   const is25 = /(?:2-5|2\.5)/i.test(model);
   const isPaisioSd3 = [
@@ -2297,6 +2302,19 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
     select.value = "2k";
     if (node.settings?.resolution !== "2k") {
       node.settings = { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}), resolution: "2k" };
+    }
+    return;
+  }
+  if (fixedPaisioResolution) {
+    select.querySelectorAll("option").forEach((option) => {
+      const enabled = String(option.value).toLowerCase() === fixedPaisioResolution;
+      option.disabled = !enabled;
+      option.hidden = !enabled;
+      option.title = enabled ? "" : `当前模型固定使用 ${fixedPaisioResolution}`;
+    });
+    select.value = fixedPaisioResolution;
+    if (node.settings?.resolution !== fixedPaisioResolution) {
+      node.settings = { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}), resolution: fixedPaisioResolution };
     }
     return;
   }

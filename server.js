@@ -211,15 +211,25 @@ const PAISIO_SEEDANCE_M_MODEL = "seedance-2-0-m";
 const PAISIO_SEEDANCE_M_FAST_MODEL = "seedance-2-0-m-fast";
 const PAISIO_SEEDANCE_M_FAST_MINI_MODEL = "seedance-2-0-m-fast-mini";
 const PAISIO_MINIMAX_H3_MODEL = "minimax-h3";
+// 标准 Seedance 2.0 三项保留前端键名，但固定映射到 Paisio 模型广场中的规格。
+const PAISIO_FIXED_SEEDANCE_MODEL_MAP = {
+  "seedance-2-0": { model: "sd2-ultra-720p", resolution: "720p" },
+  "seedance-2-0-fast": { model: "sd2-ultra-fast-720p", resolution: "720p" },
+  "seedance-2-0-mini": { model: "sd2-video20-mini-480p", resolution: "480p" },
+};
 const PAISIO_MODEL_RESOLUTION_MAP = {
   [PAISIO_SEEDANCE_M_MODEL]: { "480p": "sd3-480p", "720p": "sd3-720p" },
   [PAISIO_SEEDANCE_M_FAST_MODEL]: { "480p": "sd3-fast-480p", "720p": "sd3-fast-720p" },
   [PAISIO_SEEDANCE_M_FAST_MINI_MODEL]: { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" },
 };
-const PAISIO_MODEL_IDS = Object.values(PAISIO_MODEL_RESOLUTION_MAP).flatMap((models) => Object.values(models));
+const PAISIO_MODEL_IDS = [
+  ...Object.values(PAISIO_MODEL_RESOLUTION_MAP).flatMap((models) => Object.values(models)),
+  ...Object.values(PAISIO_FIXED_SEEDANCE_MODEL_MAP).map(({ model }) => model),
+];
 const PAISIO_SD3_MODELS = new Set([
   ...Object.keys(PAISIO_MODEL_RESOLUTION_MAP),
   ...PAISIO_MODEL_IDS,
+  ...Object.keys(PAISIO_FIXED_SEEDANCE_MODEL_MAP),
 ]);
 const PAISIO_VIDEO_MODELS = new Set([...PAISIO_SD3_MODELS, PAISIO_MINIMAX_H3_MODEL]);
 const PAISIO_4_15_VIDEO_MODELS = new Set([...PAISIO_SD3_MODELS, PAISIO_MINIMAX_H3_MODEL]);
@@ -13592,17 +13602,24 @@ function normalizeGravitexSeedanceModel(value) {
 function paisioModelFamilyForRequest(value = "") {
   const raw = compactLine(value);
   if (raw === PAISIO_MINIMAX_H3_MODEL) return raw;
+  if (PAISIO_FIXED_SEEDANCE_MODEL_MAP[raw]) return raw;
   if (PAISIO_MODEL_RESOLUTION_MAP[raw]) return raw;
   for (const [family, resolutions] of Object.entries(PAISIO_MODEL_RESOLUTION_MAP)) {
     if (Object.values(resolutions).includes(raw)) return family;
+  }
+  for (const [family, fixedModel] of Object.entries(PAISIO_FIXED_SEEDANCE_MODEL_MAP)) {
+    if (fixedModel.model === raw) return family;
   }
   return "";
 }
 
 function paisioResolutionForRequest(model = "", value = "") {
   const rawResolution = compactLine(value).toLowerCase();
-  if (["480p", "720p"].includes(rawResolution)) return rawResolution;
   const requestedModel = compactLine(model);
+  const fixedModel = PAISIO_FIXED_SEEDANCE_MODEL_MAP[requestedModel]
+    || Object.values(PAISIO_FIXED_SEEDANCE_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
+  if (fixedModel) return fixedModel.resolution;
+  if (["480p", "720p"].includes(rawResolution)) return rawResolution;
   for (const resolutions of Object.values(PAISIO_MODEL_RESOLUTION_MAP)) {
     for (const [resolution, upstreamModel] of Object.entries(resolutions)) {
       if (upstreamModel === requestedModel) return resolution;
@@ -13647,6 +13664,10 @@ function normalizeReferenceVideoRatio(value) {
 function normalizeVideoResolution(value, model = "") {
   const raw = compactLine(value || "720p");
   const lower = raw.toLowerCase();
+  const requestedModel = compactLine(model);
+  const fixedPaisioModel = PAISIO_FIXED_SEEDANCE_MODEL_MAP[requestedModel]
+    || Object.values(PAISIO_FIXED_SEEDANCE_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
+  if (fixedPaisioModel) return fixedPaisioModel.resolution;
   const isFastOrMini = /(?:fast|mini)/i.test(String(model || ""));
   if (compactLine(model) === PAISIO_MINIMAX_H3_MODEL) return "2k";
   // Seedance 2.5 仅支持 480p/720p（无 1080p/4k）
@@ -16131,9 +16152,10 @@ async function buildPaisioVideoGenerationPayload(body = {}, options = {}) {
   const paisioResolution = paisioResolutionForRequest(requestedModel, body.resolution);
   const paisioModel = paisioModelFamily === PAISIO_MINIMAX_H3_MODEL
     ? PAISIO_MINIMAX_H3_MODEL
-    : paisioModelFamily
-      ? PAISIO_MODEL_RESOLUTION_MAP[paisioModelFamily][paisioResolution]
-    : DEFAULT_PAISIO_MODEL_ID;
+    : PAISIO_FIXED_SEEDANCE_MODEL_MAP[paisioModelFamily]?.model
+      || (paisioModelFamily
+        ? PAISIO_MODEL_RESOLUTION_MAP[paisioModelFamily][paisioResolution]
+        : DEFAULT_PAISIO_MODEL_ID);
   const imageReferences = [];
   const videoReferences = [];
   const audioReferences = [];

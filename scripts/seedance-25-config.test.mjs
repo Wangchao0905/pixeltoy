@@ -19,9 +19,11 @@ assert.equal(normalizeVideoResolution("480p", "seedance-2-5"), "480p", "2.5 480p
 assert.equal(normalizeVideoResolution("1080p", "dreamina-seedance-2-5-260628"), "720p", "海外 2.5 请求 1080p 必须回退 720p");
 assert.equal(normalizeSeedanceDuration(30, "dreamina-seedance-2-5-260628"), 30, "海外 2.5 必须保留 30 秒");
 assert.equal(normalizeSeedanceDuration(31, "dreamina-seedance-2-5-260628"), 30, "海外 2.5 必须封顶 30 秒");
-// 2.0 不受影响
-assert.equal(normalizeVideoResolution("1080p", "seedance-2-0"), "1080p", "2.0 1080p 保持");
-assert.equal(normalizeVideoResolution("4k", "seedance-2-0"), "4k", "2.0 4k 保持");
+// 标准 2.0 三项已固定走 Paisio 的截图模型规格。
+assert.equal(normalizeVideoResolution("1080p", "seedance-2-0"), "720p", "2.0 固定 720p");
+assert.equal(normalizeVideoResolution("4k", "seedance-2-0"), "720p", "2.0 固定 720p");
+assert.equal(normalizeVideoResolution("1080p", "seedance-2-0-fast"), "720p", "2.0 Fast 固定 720p");
+assert.equal(normalizeVideoResolution("720p", "seedance-2-0-mini"), "480p", "2.0 Mini 固定 480p");
 
 // 2) 静态断言：模型映射 + 前端选项 + 文本归一
 const serverSource = readFileSync(path.join(root, "server.js"), "utf8");

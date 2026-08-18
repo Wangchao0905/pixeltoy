@@ -60,36 +60,36 @@ assert.equal(
 
 assert.equal(
   canvasVideoProviderForBody({ model: "seedance-2-0-fast", modelMode: "seedance-2-0-fast", assets: [aiPhotoreal] }),
-  "ark",
+  "paisio",
 );
 for (const model of ARK_MODELS) {
   assert.equal(
     canvasVideoProviderForBody({ model, modelMode: model, assets: [aiPhotoreal] }),
-    "ark",
-    `${model} should keep the selected/default provider for an AI photoreal asset`,
+    "paisio",
+    `${model} should use the fixed Paisio route for an AI photoreal asset`,
   );
 }
 assert.equal(
   canvasVideoProviderForBody({ model: "seedance-2-0", modelMode: "seedance-2-0", frameControl: "first_last", assets: [] }),
-  "ark",
+  "paisio",
 );
 process.env.CANVAS_VIDEO_PROVIDER = "ark";
 assert.equal(
   canvasVideoProviderForBody({ model: "seedance-2-0-fast", modelMode: "seedance-2-0-fast", assets: [aiPhotoreal] }),
-  "ark",
-  "unbound image references should keep the configured provider",
+  "paisio",
+  "fixed standard Seedance models should ignore the configured provider",
 );
 process.env.CANVAS_VIDEO_PROVIDER = "gravitex";
 assert.equal(
   canvasVideoProviderForBody({ model: "seedance-2-0", modelMode: "seedance-2-0", assets: [aiPhotoreal] }),
-  "gravitex",
-  "unbound image references should keep the configured provider",
+  "paisio",
+  "fixed standard Seedance models should ignore the configured provider",
 );
 for (const model of ARK_MODELS) {
   assert.equal(
     canvasVideoProviderForBody({ model, modelMode: model, assets: [arkPerson] }),
-    "ark",
-    `${model} must use Ark when a private-library asset is bound`,
+    "paisio",
+    `${model} must keep the fixed Paisio route when a private-library asset is bound`,
   );
 }
 process.env.CANVAS_VIDEO_PROVIDER = "ark";

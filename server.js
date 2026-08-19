@@ -4478,6 +4478,7 @@ function defaultPaths(episodeRoot) {
     modelShotPlan: path.join(episodeRoot, "02_storyboard", `${slug}_model_shot_plan.json`),
     spatialMaps: path.join(episodeRoot, "02_storyboard", `${slug}_spatial_maps.json`),
     spatialAgent: path.join(episodeRoot, "02_storyboard", `${slug}_spatial_agent.json`),
+    videoDirectorAgent: path.join(episodeRoot, "02_storyboard", `${slug}_video_director_agent.json`),
     assetManifest: resolveSeriesAssetManifestPath(episodeRoot),
     assetPrompts: path.join(episodeRoot, "03_asset_prompts", `${slug}_asset_prompts.md`),
     seedancePrompts: path.join(episodeRoot, VIDEO_PROMPTS_DIR, `${slug}_seedance_prompts.md`),
@@ -4754,6 +4755,10 @@ function normalizeSpatialAgentState(raw = {}) {
       status: compactLine(item?.status || "ready"),
       reason: compactLine(item?.reason || ""),
     })),
+    shotStates: (Array.isArray(source.shotStates) ? source.shotStates : []).map((item) => ({
+      shotName: compactLine(item?.shotName || item?.name || ""),
+      spatialState: item?.spatialState && typeof item.spatialState === "object" ? item.spatialState : {},
+    })).filter((item) => item.shotName),
     inputs: source.inputs && typeof source.inputs === "object"
       ? {
           scriptFingerprint: compactLine(source.inputs.scriptFingerprint || ""),
@@ -5015,15 +5020,13 @@ function spaceAgentContext(episodeRoot) {
 
 function spatialAgentShotFingerprint(shots = []) {
   return sha1Text(JSON.stringify((Array.isArray(shots) ? shots : []).map((shot) => ({
-    name: compactLine(shot?.name || ""),
+    name: compactLine(shot?.name || shot?.id || ""),
     sceneRef: compactLine(shot?.sceneRef || ""),
     refs: (Array.isArray(shot?.refs) ? shot.refs : []).map(compactLine).filter(Boolean),
     beat: compactLine(shot?.beat || ""),
     duration: Number(shot?.duration || 0),
     startState: compactLine(shot?.startState || ""),
     endState: compactLine(shot?.endState || ""),
-    transitionIn: compactLine(shot?.transitionIn || ""),
-    transitionOut: compactLine(shot?.transitionOut || ""),
   }))));
 }
 
@@ -5172,6 +5175,7 @@ function refreshSpatialAgentState(episodeRoot) {
     mapIds: maps.map((map) => map.id),
     issues: evaluation.issues,
     handoffs: evaluation.handoffs,
+    shotStates: evaluatedContext.shots.map((shot) => ({ shotName: shot.name, spatialState: shot.spatialState || {} })),
   });
 }
 
@@ -5225,10 +5229,259 @@ async function runSpatialAgent(episodeRoot, body = {}) {
     mapIds: persisted.maps.map((map) => map.id),
     issues: evaluation.issues,
     handoffs: evaluation.handoffs,
+    shotStates: enrichedShots.map((shot) => ({ shotName: shot.name, spatialState: shot.spatialState || {} })),
     inputs: spatialAgentInputFingerprints(episodeRoot, finalContext),
     trace,
   });
   return { ...result, maps: persisted.maps, configUpdated, shotCount: enrichedContext.shots.length };
+}
+
+const VIDEO_DIRECTOR_AGENT_VERSION = 1;
+
+function videoDirectorAgentPath(episodeRoot) {
+  return defaultPaths(episodeRoot).videoDirectorAgent;
+}
+
+function normalizeVideoDirectorIssue(raw = {}) {
+  return {
+    code: compactLine(raw?.code || "VIDEO_DIRECTOR_WARNING"),
+    severity: ["block", "warning", "info"].includes(raw?.severity) ? raw.severity : "warning",
+    scope: compactLine(raw?.scope || "project"),
+    shotName: compactLine(raw?.shotName || ""),
+    message: compactLine(raw?.message || "待处理导演决策"),
+  };
+}
+
+function normalizeVideoDirectorState(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  return {
+    version: VIDEO_DIRECTOR_AGENT_VERSION,
+    agent: "video_director",
+    runId: compactLine(source.runId || ""),
+    status: ["ready", "needs_review", "blocked", "needs_input", "error"].includes(source.status) ? source.status : "needs_input",
+    source: compactLine(source.source || ""),
+    model: compactLine(source.model || ""),
+    summary: compactLine(source.summary || ""),
+    shotNames: [...new Set((Array.isArray(source.shotNames) ? source.shotNames : []).map(compactLine).filter(Boolean))],
+    decisions: (Array.isArray(source.decisions) ? source.decisions : []).map((item) => ({
+      shotName: compactLine(item?.shotName || ""),
+      sceneRef: compactLine(item?.sceneRef || ""),
+      duration: Number(item?.duration || 0),
+      transitionMode: compactLine(item?.transitionMode || ""),
+      referencePolicy: compactLine(item?.referencePolicy || ""),
+      spatialMapId: compactLine(item?.spatialMapId || ""),
+      spatialMapVersion: Number(item?.spatialMapVersion || 0) || 0,
+      lighting: compactLine(item?.lighting || ""),
+    })).filter((item) => item.shotName),
+    issues: (Array.isArray(source.issues) ? source.issues : []).map(normalizeVideoDirectorIssue),
+    inputs: source.inputs && typeof source.inputs === "object"
+      ? {
+          scriptFingerprint: compactLine(source.inputs.scriptFingerprint || ""),
+          shotFingerprint: compactLine(source.inputs.shotFingerprint || ""),
+          assetFingerprint: compactLine(source.inputs.assetFingerprint || ""),
+          spatialAgentRunId: compactLine(source.inputs.spatialAgentRunId || ""),
+          promptMode: compactLine(source.inputs.promptMode || ""),
+          durationMode: compactLine(source.inputs.durationMode || ""),
+        }
+      : { scriptFingerprint: "", shotFingerprint: "", assetFingerprint: "", spatialAgentRunId: "", promptMode: "", durationMode: "" },
+    trace: (Array.isArray(source.trace) ? source.trace : []).slice(-12).map((item) => ({
+      step: compactLine(item?.step || ""),
+      status: compactLine(item?.status || ""),
+      detail: compactLine(item?.detail || ""),
+      at: compactLine(item?.at || ""),
+    })),
+    updatedAt: compactLine(source.updatedAt || ""),
+  };
+}
+
+function readVideoDirectorAgent(episodeRoot) {
+  const file = videoDirectorAgentPath(episodeRoot);
+  if (!fs.existsSync(file)) return null;
+  try {
+    return { file, ...normalizeVideoDirectorState(JSON.parse(readText(file))) };
+  } catch {
+    return null;
+  }
+}
+
+function writeVideoDirectorAgent(episodeRoot, raw = {}) {
+  const file = videoDirectorAgentPath(episodeRoot);
+  const state = normalizeVideoDirectorState({ ...raw, updatedAt: new Date().toISOString() });
+  writeText(file, `${JSON.stringify(state, null, 2)}\n`);
+  return { file, ...state };
+}
+
+function videoDirectorShotFingerprint(shots = []) {
+  return sha1Text(JSON.stringify((Array.isArray(shots) ? shots : []).map((shot) => ({
+    name: compactLine(shot?.name || shot?.id || ""),
+    duration: Number(shot?.duration || 0),
+    prompt: compactLine(shot?.prompt || shot?.videoPrompt || ""),
+    refs: (Array.isArray(shot?.refs) ? shot.refs : []).map(compactLine).filter(Boolean),
+    sceneRef: compactLine(shot?.sceneRef || ""),
+    spatialMapId: compactLine(shot?.spatialMapId || ""),
+    spatialMapVersion: Number(shot?.spatialMapVersion || 0) || 0,
+    startState: compactLine(shot?.startState || ""),
+    endState: compactLine(shot?.endState || ""),
+    transitionIn: compactLine(shot?.transitionIn || ""),
+    transitionOut: compactLine(shot?.transitionOut || ""),
+    videoPromptMode: compactLine(shot?.videoPromptMode || ""),
+    storyboardRefs: (Array.isArray(shot?.storyboardRefs) ? shot.storyboardRefs : []).map(compactLine).filter(Boolean),
+  }))));
+}
+
+function videoDirectorInputFingerprints({ script = "", shots = [], manifest = {}, spatialAgent = null, promptMode = "prompt", durationMode = "tk" } = {}) {
+  return {
+    scriptFingerprint: sha1Text(script),
+    shotFingerprint: videoDirectorShotFingerprint(shots),
+    assetFingerprint: assetManifestIdentityFingerprint(manifest),
+    spatialAgentRunId: compactLine(spatialAgent?.runId || ""),
+    promptMode: compactLine(promptMode),
+    durationMode: normalizeDurationMode(durationMode),
+  };
+}
+
+function videoDirectorShotStateMap(spatialAgent = null) {
+  return new Map(
+    (Array.isArray(spatialAgent?.shotStates) ? spatialAgent.shotStates : [])
+      .map((item) => [compactLine(item?.shotName || ""), item?.spatialState || {}])
+      .filter(([name]) => name),
+  );
+}
+
+function applyVideoDirectorSpatialStates(shots = [], spatialAgent = null) {
+  const stateByShot = videoDirectorShotStateMap(spatialAgent);
+  return (Array.isArray(shots) ? shots : []).map((shot) => ({
+    ...shot,
+    spatialState: shot?.spatialState && Object.keys(shot.spatialState).length
+      ? shot.spatialState
+      : stateByShot.get(compactLine(shot?.name || shot?.id || "")) || {},
+  }));
+}
+
+function videoDirectorDecisionForShot(shot = {}, index = 0, shots = [], promptMode = "prompt") {
+  const previous = index > 0 ? shots[index - 1] : null;
+  const sameScene = !!previous && compactLine(previous.sceneRef || "") && compactLine(previous.sceneRef || "") === compactLine(shot.sceneRef || "");
+  const transitionMode = !previous ? "opening" : shot.useTailFrame ? "tail_frame" : sameScene ? "same_scene_cut" : "hard_cut";
+  return {
+    shotName: compactLine(shot.name || `V${String(index + 1).padStart(2, "0")}`),
+    sceneRef: compactLine(shot.sceneRef || ""),
+    duration: Number(shot.duration || 0),
+    transitionMode,
+    referencePolicy: promptMode === "production_board" ? "production_board_plus_official_assets" : "official_assets_plus_spatial_map",
+    spatialMapId: compactLine(shot.spatialMapId || ""),
+    spatialMapVersion: Number(shot.spatialMapVersion || 0) || 0,
+    lighting: compactLine(shot.lighting || shot.spatialState?.lighting || ""),
+  };
+}
+
+function videoDirectorEvaluate({ script = "", shots = [], promptMode = "prompt", durationMode = "tk", spatialAgent = null, spatialReadiness = null } = {}) {
+  const normalizedMode = normalizeDurationMode(durationMode);
+  const issues = [];
+  const addIssue = (code, severity, scope, message, shotName = "") => issues.push(normalizeVideoDirectorIssue({ code, severity, scope, message, shotName }));
+  if (!compactLine(script)) addIssue("SCRIPT_EMPTY", "block", "project", "Video Director Agent 没有可执行的剧本");
+  if (!Array.isArray(shots) || !shots.length) addIssue("NO_SHOTS", "block", "project", "Video Director Agent 没有收到可执行镜头");
+  const promptOnly = promptMode !== "production_board";
+  if (promptOnly && spatialReadiness && !spatialReadiness.ready) {
+    const detail = Array.isArray(spatialReadiness.missing) && spatialReadiness.missing.length
+      ? spatialReadiness.missing.join("；")
+      : "空间控制层尚未就绪";
+    addIssue("SPACE_AGENT_NOT_READY", "block", "project", `提示词模式不能执行：${detail}`);
+  }
+  (Array.isArray(shots) ? shots : []).forEach((shot, index) => {
+    const name = compactLine(shot?.name || `V${String(index + 1).padStart(2, "0")}`);
+    const duration = Number(shot?.duration || 0);
+    const min = normalizedMode === DURATION_MODE_SHORT_DRAMA_15 ? PRODUCTION_BOARD_MAX_SECONDS : normalizedMode === DURATION_MODE_SHORT_DRAMA_VARIABLE ? MIN_SEGMENT_SECONDS : VIDEO_MIN_SECONDS;
+    const max = normalizedMode === DURATION_MODE_SHORT_DRAMA_15 ? PRODUCTION_BOARD_MAX_SECONDS : normalizedMode === DURATION_MODE_SHORT_DRAMA_VARIABLE ? MAX_SEGMENT_SECONDS : VIDEO_MAX_SECONDS;
+    if (!Number.isFinite(duration) || duration < min || duration > max || (normalizedMode === DURATION_MODE_SHORT_DRAMA_15 && duration !== PRODUCTION_BOARD_MAX_SECONDS)) {
+      addIssue("DURATION_OUT_OF_RANGE", "block", "shot", `${name}：时长 ${duration}s 不符合 ${normalizedMode === DURATION_MODE_SHORT_DRAMA_15 ? "固定 15 秒" : `${min}-${max} 秒`}规则`, name);
+    }
+    if (!compactLine(shot?.prompt || shot?.videoPrompt || "")) addIssue("PROMPT_EMPTY", "block", "shot", `${name}：没有可提交的视频提示词`, name);
+    if (!Array.isArray(shot?.refs) || !shot.refs.length) addIssue("REFERENCES_EMPTY", "warning", "shot", `${name}：没有正式资产图引用，将退化为文本提示词`, name);
+    if (promptOnly && (!compactLine(shot?.sceneRef || "") || !compactLine(shot?.spatialMapId || "") || !Number(shot?.spatialMapVersion || 0))) {
+      addIssue("SPATIAL_BINDING_MISSING", "block", "shot", `${name}：提示词模式缺少场景或空间地图版本绑定`, name);
+    }
+    if (!compactLine(shot?.startState || shot?.spatialState?.entryState || "")) addIssue("ENTRY_STATE_MISSING", "warning", "shot", `${name}：缺少进入状态`, name);
+    if (!compactLine(shot?.endState || shot?.spatialState?.exitState || "")) addIssue("EXIT_STATE_MISSING", "warning", "shot", `${name}：缺少退出状态`, name);
+    if (index > 0 && !compactLine(shot?.transitionIn || "")) addIssue("TRANSITION_IN_MISSING", "warning", "shot", `${name}：缺少片段进入衔接`, name);
+  });
+  const blockingCount = issues.filter((item) => item.severity === "block").length;
+  const warningCount = issues.filter((item) => item.severity === "warning").length;
+  return {
+    status: blockingCount ? "blocked" : warningCount ? "needs_review" : shots.length ? "ready" : "needs_input",
+    issues,
+    blockingCount,
+    warningCount,
+  };
+}
+
+function runVideoDirectorAgent(episodeRoot, { script = "", shots = [], manifest = {}, spatialAgent = readSpatialAgent(episodeRoot), spatialReadiness = null, promptMode = "prompt", durationMode = "tk", model = "" } = {}) {
+  const normalizedShots = applyVideoDirectorSpatialStates(shots, spatialAgent);
+  const decisions = normalizedShots.map((shot, index) => videoDirectorDecisionForShot(shot, index, normalizedShots, promptMode));
+  const enrichedShots = normalizedShots.map((shot, index) => ({ ...shot, directorDecision: decisions[index] }));
+  const gate = spatialReadiness || (promptMode === "production_board"
+    ? { ready: true, ran: false, status: "not_required", missing: [] }
+    : { ready: spatialAgent?.status === "ready", ran: !!spatialAgent?.runId, status: spatialAgent?.status || "not_run", missing: [] });
+  const evaluation = videoDirectorEvaluate({ script, shots: enrichedShots, promptMode, durationMode, spatialAgent, spatialReadiness: gate });
+  const runId = `video_director_${crypto.randomUUID()}`;
+  const state = writeVideoDirectorAgent(episodeRoot, {
+    runId,
+    status: evaluation.status,
+    source: "director-agent-compiler",
+    model: compactLine(model || "persisted-model-plan"),
+    summary: evaluation.status === "ready" ? "镜头节奏、资产引用、空间绑定和片段衔接已编译" : `Video Director Agent 发现 ${evaluation.issues.length} 项待处理问题`,
+    shotNames: enrichedShots.map((shot) => shot.name),
+    decisions,
+    issues: evaluation.issues,
+    inputs: videoDirectorInputFingerprints({ script, shots: enrichedShots, manifest, spatialAgent, promptMode, durationMode }),
+    trace: [
+      { step: "collect_inputs", status: "complete", detail: `${enrichedShots.length} 个镜头 / ${promptMode} / ${normalizeDurationMode(durationMode)}`, at: new Date().toISOString() },
+      { step: "compile_director_decisions", status: "complete", detail: `${decisions.length} 个镜头决策`, at: new Date().toISOString() },
+      { step: "validate_generation_contract", status: evaluation.status, detail: `${evaluation.issues.length} 项问题`, at: new Date().toISOString() },
+    ],
+  });
+  return { ...state, ...evaluation, shots: enrichedShots };
+}
+
+function videoDirectorAgentReadiness(episodeRoot, config = {}) {
+  const shots = Array.isArray(config?.shots) ? config.shots : [];
+  if (!shots.length) return { ready: false, ran: false, stale: false, status: "not_required", issueCount: 0, blockingCount: 0, warningCount: 0, missing: [] };
+  // Legacy hand-authored configs predate the Director Agent. Keep their
+  // existing readiness contract; newly compiled configs carry this marker.
+  if (!config?.videoDirectorAgent && !shots.some((shot) => shot?.directorDecision)) {
+    return { ready: false, ran: false, stale: false, status: "not_required", issueCount: 0, blockingCount: 0, warningCount: 0, missing: [] };
+  }
+  const agent = readVideoDirectorAgent(episodeRoot);
+  const rawScript = readText(findProjectFile(episodeRoot, "script"));
+  const script = scriptForVideoBeats(cleanStoryScriptForDraft(rawScript));
+  const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const promptMode = compactLine(config.settings?.promptMode || config.promptMode || "prompt").toLowerCase() === "production_board" ? "production_board" : "prompt";
+  const durationMode = normalizeDurationMode(config.durationMode || config.settings?.durationMode || projectDurationMode(episodeRoot));
+  const spatialAgent = readSpatialAgent(episodeRoot);
+  const expected = videoDirectorInputFingerprints({ script, shots, manifest, spatialAgent, promptMode, durationMode });
+  const stored = agent?.inputs || {};
+  const ran = Boolean(agent?.runId);
+  const inputsMatch = ran && ["scriptFingerprint", "shotFingerprint", "assetFingerprint", "spatialAgentRunId", "promptMode", "durationMode"].every((key) => stored[key] === expected[key]);
+  const stale = ran && !inputsMatch;
+  const issues = Array.isArray(agent?.issues) ? agent.issues : [];
+  const blockingCount = issues.filter((item) => item?.severity === "block").length;
+  const warningCount = issues.filter((item) => item?.severity === "warning").length;
+  const missing = [];
+  if (!ran) missing.push("尚未运行 Video Director Agent");
+  else if (stale) missing.push("Video Director Agent 输入已过期，请重新运行");
+  if (agent?.status === "blocked" || blockingCount) missing.push(`Video Director Agent 发现 ${blockingCount || issues.length} 个阻塞项`);
+  else if (agent?.status === "needs_review" || warningCount) missing.push(`Video Director Agent 仍有 ${warningCount || issues.length} 项待确认`);
+  return {
+    ready: ran && inputsMatch && agent.status === "ready" && blockingCount === 0 && warningCount === 0,
+    ran,
+    stale,
+    inputsMatch,
+    status: agent?.status || "not_run",
+    runId: agent?.runId || "",
+    issueCount: issues.length,
+    blockingCount,
+    warningCount,
+    missing,
+  };
 }
 
 const MODEL_SHOT_PLAN_VERSION = 2;
@@ -10929,6 +11182,16 @@ function configReadiness(episodeRoot, configData = null) {
         checkedShotCount: 0,
         missing: [],
       },
+      videoDirectorAgent: {
+        ready: false,
+        ran: false,
+        stale: false,
+        status: "not_required",
+        issueCount: 0,
+        blockingCount: 0,
+        warningCount: 0,
+        missing: [],
+      },
       workflowGuide: "",
     };
   }
@@ -10950,6 +11213,10 @@ function configReadiness(episodeRoot, configData = null) {
     checkedShotCount: 0,
     missing: [],
   };
+  let videoDirectorAgentStatus = videoDirectorAgentReadiness(episodeRoot, config);
+  if (videoDirectorAgentStatus.status !== "not_required" && !videoDirectorAgentStatus.ready) {
+    missing.push(...videoDirectorAgentStatus.missing);
+  }
   const actualDuration = shots.reduce((sum, shot) => sum + Number(shot.duration || 0), 0);
   const fixed15Mismatch = durationMode === DURATION_MODE_SHORT_DRAMA_15 && shots.some((shot) => Number(shot.duration || 0) !== PRODUCTION_BOARD_MAX_SECONDS);
   const variableRangeMismatch = durationMode === DURATION_MODE_SHORT_DRAMA_VARIABLE && shots.some((shot) => {
@@ -11057,6 +11324,7 @@ function configReadiness(episodeRoot, configData = null) {
     spatialMaps: spatialMapsRequired ? readSpatialMaps(episodeRoot).maps.length : 0,
     spatialMapWarnings,
     spatialAgent: spatialAgentStatus,
+    videoDirectorAgent: videoDirectorAgentStatus,
     workflowGuide: compactLine(config.workflowGuide?.phase || ""),
   };
 }
@@ -12510,6 +12778,7 @@ function fullProjectState(episodeRoot) {
     assetManifest: normalizedAssetManifest,
     spatialMaps: readSpatialMaps(episodeRoot).maps,
     spatialAgent: readSpatialAgent(episodeRoot),
+    videoDirectorAgent: readVideoDirectorAgent(episodeRoot),
     assets: visibleAssets,
     assetSlots,
     assetStyleReference: readAssetStyleReference(episodeRoot),
@@ -12622,6 +12891,8 @@ function projectStatusSnapshot(episodeRoot) {
     jobs: localJobs.map(jobSummary),
     assetManifest: normalizedAssetManifest,
     spatialMaps,
+    spatialAgent: readSpatialAgent(episodeRoot),
+    videoDirectorAgent: readVideoDirectorAgent(episodeRoot),
     assets: productionAssets,
     assetSlots,
     storyboards: storyboardAssets,
@@ -26324,7 +26595,7 @@ async function buildVideoConfig(episodeRoot, body = {}) {
   const videoStyleDirective = videoStyleDirectiveFromProductionAssets(productionAssets, body);
   const dialogueLanguage = modelPlanDialogueLanguageForConfig(modelPlan, script, requestedDialogueLanguage);
   persistProjectDialogueLanguage(episodeRoot, dialogueLanguage);
-  const { shots: modelShots } = modelShotPlanForConfig({
+  let { shots: modelShots } = modelShotPlanForConfig({
     episodeRoot,
     modelPlan,
     script,
@@ -26335,6 +26606,11 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     promptMode: videoPromptMode,
     durationMode: requestedDurationMode,
   });
+  const spatialAgent = readSpatialAgent(episodeRoot);
+  const spatialReadinessForDirector = videoPromptMode === "prompt"
+    ? spatialAgentReadiness(episodeRoot)
+    : { ready: true, ran: false, stale: false, status: "not_required", missing: [] };
+  modelShots = applyVideoDirectorSpatialStates(modelShots, spatialAgent);
   const referenceWarnings = [];
   modelShots.forEach((shot) => {
     const unavailableRefs = Array.isArray(shot.unavailableRefs) ? shot.unavailableRefs : [];
@@ -26560,9 +26836,28 @@ async function buildVideoConfig(episodeRoot, body = {}) {
     },
   };
   const filmStudio = readFilmStudio(episodeRoot);
-  const config = filmStudio.videoConfigEnabled && filmStudio.selectedReferenceIds.length
+  const configWithFilmStudio = filmStudio.videoConfigEnabled && filmStudio.selectedReferenceIds.length
     ? applyFilmStudioToVideoConfig(baseConfig, filmStudio)
     : baseConfig;
+  const videoDirectorResult = runVideoDirectorAgent(episodeRoot, {
+    script,
+    shots: configWithFilmStudio.shots,
+    manifest,
+    spatialAgent,
+    spatialReadiness: spatialReadinessForDirector,
+    promptMode: videoPromptMode,
+    durationMode: requestedDurationMode,
+    model: modelPlan.model,
+  });
+  const config = {
+    ...configWithFilmStudio,
+    shots: videoDirectorResult.shots,
+    videoDirectorAgent: {
+      runId: videoDirectorResult.runId,
+      status: videoDirectorResult.status,
+      version: VIDEO_DIRECTOR_AGENT_VERSION,
+    },
+  };
   const resetVideoState = resetVideoGenerationStateForNewConfig(episodeRoot, config);
   config.resetVideoState = resetVideoState;
   writeText(configPath, `${JSON.stringify(config, null, 2)}\n`);
@@ -26717,15 +27012,12 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
     requestedSfxStyle,
   );
 
+  const nextConfigShots = previousShots.map((shot, index) => (index === shotIndex ? nextShot : shot));
   const filmStudio = readFilmStudio(episodeRoot);
-  if (filmStudio.videoConfigEnabled && filmStudio.selectedReferenceIds.length) {
-    const visualBible = filmStudio.visualBible?.directive
-      ? filmStudio.visualBible
-      : filmStudioVisualBibleForCandidates(filmStudio.candidates, filmStudio.selectedReferenceIds, filmStudio.extractedSignals);
-    nextShot.prompt = filmStudioPromptForShot(nextShot.prompt, visualBible);
-    nextShot.filmStudioApplied = true;
-  }
-
+  const spatialAgent = readSpatialAgent(episodeRoot);
+  const spatialReadinessForDirector = storyboardsActive
+    ? { ready: true, ran: false, stale: false, status: "not_required", missing: [] }
+    : spatialAgentReadiness(episodeRoot);
   const config = {
     ...previous,
     durationMode: requestedDurationMode,
@@ -26744,7 +27036,7 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
       dialectStyle: requestedDialectStyle,
       sfxStyle: requestedSfxStyle,
     },
-    shots: previousShots.map((shot, index) => (index === shotIndex ? nextShot : shot)),
+    shots: nextConfigShots,
     updatedAt: new Date().toISOString(),
     lastSingleShotConfig: {
       shotName,
@@ -26754,10 +27046,29 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
   const configWithFilmStudio = filmStudio.videoConfigEnabled && filmStudio.selectedReferenceIds.length
     ? applyFilmStudioToVideoConfig(config, filmStudio)
     : config;
-  writeVideoConfigRecord(configRecord, configWithFilmStudio);
-  const savedShot = configWithFilmStudio.shots.find((shot) => shot.name === shotName) || nextShot;
-  syncProjectShotsToCanvasState(episodeRoot, configWithFilmStudio, [savedShot], { forcePrompt: true });
-  return { configPath: configRecord.file, config: configWithFilmStudio, shotName };
+  const videoDirectorResult = runVideoDirectorAgent(episodeRoot, {
+    script,
+    shots: configWithFilmStudio.shots,
+    manifest,
+    spatialAgent,
+    spatialReadiness: spatialReadinessForDirector,
+    promptMode: storyboardsActive ? "production_board" : "prompt",
+    durationMode: requestedDurationMode,
+    model: modelPlan.model,
+  });
+  const finalizedConfig = {
+    ...configWithFilmStudio,
+    shots: videoDirectorResult.shots,
+    videoDirectorAgent: {
+      runId: videoDirectorResult.runId,
+      status: videoDirectorResult.status,
+      version: VIDEO_DIRECTOR_AGENT_VERSION,
+    },
+  };
+  writeVideoConfigRecord(configRecord, finalizedConfig);
+  const savedShot = finalizedConfig.shots.find((shot) => shot.name === shotName) || nextShot;
+  syncProjectShotsToCanvasState(episodeRoot, finalizedConfig, [savedShot], { forcePrompt: true });
+  return { configPath: configRecord.file, config: finalizedConfig, shotName };
 }
 
 function clearVideoArtifactsForNewCanvas(episodeRoot) {
@@ -29871,6 +30182,14 @@ module.exports = {
       refresh: refreshSpatialAgentState,
       inputFingerprints: spatialAgentInputFingerprints,
       readiness: spatialAgentReadiness,
+    },
+    videoDirectorAgent: {
+      read: readVideoDirectorAgent,
+      write: writeVideoDirectorAgent,
+      evaluate: videoDirectorEvaluate,
+      run: runVideoDirectorAgent,
+      readiness: videoDirectorAgentReadiness,
+      inputFingerprints: videoDirectorInputFingerprints,
     },
     assetJobRetry: {
       shouldAutoRetryTransientAssetJob,

@@ -1878,6 +1878,7 @@ function projectShellStateFromSummary(summary = {}) {
     storyboards: [],
     storyboardSlots: [],
     spatialMaps: [],
+    videoDirectorAgent: null,
     referenceKits: [],
     referenceKitShots: [],
     teamReferences: [],
@@ -1917,6 +1918,7 @@ function mergeProjectStatus(status = {}) {
     storyboards: status.storyboards !== undefined ? status.storyboards : state.project.storyboards,
     storyboardSlots: status.storyboardSlots !== undefined ? status.storyboardSlots : state.project.storyboardSlots,
     spatialMaps: status.spatialMaps !== undefined ? status.spatialMaps : state.project.spatialMaps,
+    videoDirectorAgent: status.videoDirectorAgent !== undefined ? status.videoDirectorAgent : state.project.videoDirectorAgent,
     referenceKits: status.referenceKits !== undefined ? status.referenceKits : state.project.referenceKits,
     referenceKitShots: status.referenceKitShots !== undefined ? status.referenceKitShots : state.project.referenceKitShots,
     teamReferences: status.teamReferences !== undefined ? status.teamReferences : state.project.teamReferences,
@@ -6284,6 +6286,26 @@ function renderModernStudio(data = state.project) {
   const videoConfigAvailable = Boolean(data.videoConfigStatus?.exists);
   const durationPlan = data.videoConfigStatus?.durationPlan || null;
   const durationMismatch = data.videoConfigStatus?.durationMismatch || null;
+  const directorGate = data.videoConfigStatus?.videoDirectorAgent || data.videoDirectorAgent || null;
+  const directorRan = directorGate?.ran ?? Boolean(directorGate?.runId);
+  const directorStatus = !directorRan
+    ? "pending"
+    : directorGate?.stale
+      ? "stale"
+      : directorGate?.status === "blocked" || Number(directorGate?.blockingCount || 0) > 0
+        ? "blocked"
+        : directorGate?.status === "needs_review" || Number(directorGate?.warningCount || 0) > 0
+          ? "review"
+          : directorGate?.status === "ready" && directorGate?.ready !== false
+            ? "ready"
+            : "pending";
+  const directorLabel = {
+    pending: "Video Director Agent 未运行",
+    stale: "Video Director Agent 输入过期",
+    blocked: "Video Director Agent 阻塞",
+    review: "Video Director Agent 待确认",
+    ready: "Video Director Agent 已通过",
+  }[directorStatus];
   const videoRunning = videoProgressHasActiveWork(data.videoProgress || {});
   syncModernDraftAction(data);
   renderModernAssetExtractAction();
@@ -6297,8 +6319,16 @@ function renderModernStudio(data = state.project) {
       : durationMismatch
         ? "当前视频配置与剧本时长不一致，请重新生成分镜草稿后再生成视频配置"
         : scriptSource.trim()
-          ? "根据剧本、资产和模型导演设计生成视频配置"
+          ? `根据剧本、资产和模型导演设计生成视频配置；${directorLabel}`
           : "请先输入或上传剧本";
+  }
+  const directorStatusNode = $("#modernVideoDirectorStatus");
+  if (directorStatusNode) {
+    directorStatusNode.className = `modern-video-director-status is-${directorStatus}`;
+    directorStatusNode.textContent = directorLabel;
+    directorStatusNode.title = Array.isArray(directorGate?.missing) && directorGate.missing.length
+      ? directorGate.missing.join("；")
+      : directorLabel;
   }
   const videoGenerateButton = $("#modernVideoGenerate");
   if (videoGenerateButton) {
@@ -6313,7 +6343,7 @@ function renderModernStudio(data = state.project) {
       : videoConfigReady
         ? "提交全部视频片段生成任务"
         : videoConfigAvailable
-          ? `配置已生成，但还缺：${configMissing || "参考图校验"}`
+          ? `配置已生成，但还缺：${configMissing || directorLabel || "参考图校验"}`
           : "请先生成视频配置";
   }
   const scriptStatus = $("#modernScriptSourceStatus");
@@ -6439,9 +6469,11 @@ function renderModernStudio(data = state.project) {
           : `Space Agent 待处理 ${spatialGate.issueCount || spatialGate.missing?.length || 0} 项`;
   $("#modernVideoStep").textContent = durationMismatch
     ? `需重生成 · ${visibleShotCount} 个镜头 / ${visibleDuration}s`
-    : data.videoConfigStatus?.ready
-      ? `${total} 个镜头已配置`
-      : "等待配置";
+    : directorStatus !== "ready"
+      ? directorLabel
+      : data.videoConfigStatus?.ready
+        ? `${total} 个镜头已配置`
+        : "等待配置";
   $("#modernCutStep").textContent = finalCutReady ? "成片已组装" : "等待片段";
   $("#modernKitShot").textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")}` : "当前镜头";
   $("#modernKitNames").textContent = selected?.assets?.length ? selected.assets.join(" · ") : "等待空间层绑定";

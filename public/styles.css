@@ -20180,6 +20180,29 @@ body.is-studio-modern .modern-video-mode-hint {
   font-size: 9px;
   line-height: 1.35;
 }
+body.is-studio-modern .modern-video-director-status {
+  flex: 1 0 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--mv-qt);
+  font: 9px var(--mono);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.is-studio-modern .modern-video-director-status::before {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 6px 1px 0;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+body.is-studio-modern .modern-video-director-status.is-ready { color: #8fe0b0; }
+body.is-studio-modern .modern-video-director-status.is-review,
+body.is-studio-modern .modern-video-director-status.is-stale { color: #f6ae75; }
+body.is-studio-modern .modern-video-director-status.is-blocked { color: #f0a49a; }
 body.is-studio-modern .modern-spatial-map-status {
   flex: 1 0 100%;
   display: flex;

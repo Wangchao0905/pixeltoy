@@ -1118,6 +1118,10 @@ function isPublicStaticPath(pathname = "") {
     pathname === "/auth.html" ||
     pathname === "/auth.js" ||
     pathname === "/styles.css" ||
+    pathname === "/pixels-studio.html" ||
+    pathname === "/pixels-studio.js" ||
+    pathname === "/pixels-studio.css" ||
+    pathname.startsWith("/pixels-studio/") ||
     pathname === "/infinity-3d.png" ||
     pathname === "/pixel-infinity-logo.png" ||
     pathname === "/pixel-toys-logo.png" ||

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101112" />
+    <title>Pixels Studio | Ecommerce content engine</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/pixels-studio.css?v=20260819-r3" />
+  </head>
+  <body>
+    <div class="pixels-page" id="pixelsPage">
+      <aside class="pixels-sidebar" id="pixelsSidebar" aria-label="Pixels Studio navigation">
+        <a class="pixels-brand" href="/" aria-label="返回 Pixel Toys">
+          <span class="pixels-brand-mark" aria-hidden="true">PX</span>
+          <span><strong>Pixels Studio</strong><small>Commerce content engine</small></span>
+        </a>
+        <nav class="pixels-nav" aria-label="工作区">
+          <button class="is-active" type="button" data-nav="home"><span aria-hidden="true">01</span>Home</button>
+          <button type="button" data-nav="generations"><span aria-hidden="true">02</span>My generations</button>
+          <button type="button" data-nav="favorites"><span aria-hidden="true">03</span>Favorites</button>
+          <button type="button" data-nav="projects"><span aria-hidden="true">04</span>Projects</button>
+          <button type="button" data-nav="assets"><span aria-hidden="true">05</span>Assets</button>
+        </nav>
+        <div class="pixels-sidebar-foot">
+          <span class="pixels-sidebar-label">WORKSPACE</span>
+          <button type="button" data-nav="new-project"><span aria-hidden="true">+</span>New project</button>
+        </div>
+      </aside>
+
+      <main class="pixels-main">
+        <header class="pixels-topbar">
+          <button class="pixels-mobile-menu" type="button" data-mobile-menu aria-label="打开工作区菜单" aria-expanded="false">Menu</button>
+          <div class="pixels-breadcrumb"><span>MARKETING STUDIO</span><strong>Pixels Studio</strong></div>
+          <div class="pixels-top-actions">
+            <span id="pixelsSaveState">All changes saved</span>
+            <button type="button" data-command title="聚焦提示词">Command</button>
+            <a href="/" title="返回 Pixel Toys">Pixel Toys</a>
+          </div>
+        </header>
+
+        <div class="pixels-content">
+          <section class="pixels-workspace" aria-labelledby="pixelsHeadline">
+            <div class="pixels-hero-copy">
+              <span class="pixels-kicker">READY-TO-POST COMMERCE CONTENT</span>
+              <h1 id="pixelsHeadline">TURN ANY PRODUCT INTO<br /><em>CONTENT THAT SELLS.</em></h1>
+              <p>从一张商品图开始，生成适用于详情页、社媒和广告投放的完整素材组合。</p>
+            </div>
+
+            <div class="pixels-categories" role="tablist" aria-label="电商场景">
+              <button class="is-active" type="button" role="tab" aria-selected="true" data-category="product-shot">Product shot</button>
+              <button type="button" role="tab" aria-selected="false" data-category="marketplace">Marketplace</button>
+              <button type="button" role="tab" aria-selected="false" data-category="ugc">UGC</button>
+              <button type="button" role="tab" aria-selected="false" data-category="motion">Motion</button>
+              <button type="button" role="tab" aria-selected="false" data-category="ads">Ads</button>
+              <button type="button" role="tab" aria-selected="false" data-category="posters">Posters</button>
+            </div>
+
+            <form class="pixels-composer" id="pixelsComposer">
+              <div class="pixels-composer-head">
+                <div class="pixels-mode" role="tablist" aria-label="生成模式">
+                  <button class="is-active" type="button" role="tab" aria-selected="true" data-mode="image">Image</button>
+                  <button type="button" role="tab" aria-selected="false" data-mode="video">Video</button>
+                </div>
+                <span id="pixelsCreditLabel">1 generation / 3.6 credits</span>
+              </div>
+
+              <div class="pixels-prompt-shell">
+                <textarea id="pixels-prompt" rows="4" maxlength="4000" placeholder="Describe the product content you want to create..." aria-label="商品广告描述"></textarea>
+                <div class="pixels-prompt-tools">
+                  <button type="button" id="pixelsReferenceButton"><span aria-hidden="true">+</span>Add reference</button>
+                  <input id="pixels-upload" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+                  <span id="pixelsUploadStatus" aria-live="polite"></span>
+                </div>
+              </div>
+
+              <div class="pixels-slots" aria-label="素材槽位">
+                <button class="pixels-slot" type="button" data-slot="product" aria-pressed="false"><span class="pixels-slot-add" aria-hidden="true">+</span><span><strong>Product</strong><small>Add product image</small></span></button>
+                <button class="pixels-slot" type="button" data-slot="avatar" aria-pressed="false"><span class="pixels-slot-add" aria-hidden="true">+</span><span><strong>Avatar</strong><small>Add a person or creator</small></span></button>
+                <button class="pixels-slot" type="button" data-slot="reference" aria-pressed="false"><span class="pixels-slot-add" aria-hidden="true">+</span><span><strong>Reference</strong><small>Add style or mood</small></span></button>
+              </div>
+
+              <div class="pixels-settings">
+                <label class="pixels-model-field"><span class="pixels-setting-label"><span>Model</span><small id="pixelsModelHint" aria-live="polite">GPT / Fast product shots</small></span><select id="pixels-model" aria-label="生成模型"><option value="gpt-image2-medium">GPT Image 2 Medium</option><option value="gpt-image2-high">GPT Image 2 High</option><option value="gemini-3-pro-image-preview">Nano Banana Pro</option><option value="gemini-3.1-flash-image-preview">Nano Banana 2</option><option value="seedream-5-0-pro">Seedream 5 Pro</option><option value="seedream-5-0-lite">Seedream 5 Lite</option><option value="grok-imagine-image">Grok Imagine Image</option></select></label>
+                <label><span>Style</span><select id="pixels-style" aria-label="生成风格"><option value="closeup">Closeup</option><option value="editorial">Editorial</option><option value="ugc">UGC</option><option value="studio-white">Studio white</option><option value="color-pop">Color pop</option><option value="natural">Natural</option><option value="usage">Usage</option></select></label>
+                <label><span>Aspect ratio</span><select id="pixels-ratio" aria-label="画幅比例"><option value="3:4">3:4</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="21:9">21:9</option></select></label>
+                <label class="pixels-duration"><span>Duration <output id="pixels-duration-value">5s</output></span><input id="pixels-duration" type="range" min="5" max="15" step="1" value="5" aria-label="视频时长" /></label>
+                <label class="pixels-batch"><span>Batch</span><span class="pixels-stepper"><button id="pixels-batch-down" type="button" aria-label="减少生成数量">-</button><output id="pixels-batch">1</output><button id="pixels-batch-up" type="button" aria-label="增加生成数量">+</button></span></label>
+              </div>
+
+              <div class="pixels-composer-foot">
+                <span id="pixelsStatus" aria-live="polite">Add a product image or describe your product</span>
+                <button class="pixels-generate" id="pixels-generate" type="submit">Generate campaign <span aria-hidden="true">-></span></button>
+              </div>
+            </form>
+          </section>
+
+          <section class="pixels-section pixels-templates" aria-labelledby="pixelsTemplatesTitle">
+            <div class="pixels-section-head"><div><span class="pixels-kicker">START WITH A TEMPLATE</span><h2 id="pixelsTemplatesTitle">Explore templates</h2></div><button type="button" data-view-all>View all <span aria-hidden="true">-></span></button></div>
+            <div class="pixels-template-grid">
+              <button class="pixels-template is-wide" type="button" data-template="product-shot" data-template-prompt="A premium studio product shot, soft directional light, clean composition, product centered and ready for ecommerce listing." data-template-style="editorial">
+                <img src="/pixels-studio/editorial-beast.png" alt="Product shot editorial template" loading="lazy" /><span><strong>Product shot 010</strong><small>Product shot / Closeup</small></span>
+              </button>
+              <button class="pixels-template" type="button" data-template="marketplace" data-template-prompt="Marketplace hero image, clean white background, precise product proportions, commercial lighting, generous negative space." data-template-style="studio-white">
+                <img src="/pixels-studio/lookbook-fashion.png" alt="Marketplace lookbook template" loading="lazy" /><span><strong>Marketplace 026</strong><small>Marketplace / Studio white</small></span>
+              </button>
+              <button class="pixels-template" type="button" data-template="ugc" data-template-prompt="Natural UGC product recommendation, creator holding the product in a bright everyday setting, authentic social commerce frame." data-template-style="ugc">
+                <span class="pixels-template-art is-ugc" aria-hidden="true"></span><span><strong>UGC 009</strong><small>UGC / Natural</small></span>
+              </button>
+              <button class="pixels-template" type="button" data-template="motion" data-template-prompt="Short product reveal video, controlled camera orbit, tactile closeups, clean background, polished ecommerce advertising motion." data-template-style="editorial">
+                <span class="pixels-template-art is-motion" aria-hidden="true"></span><span><strong>Motion 028</strong><small>Motion / Product reveal</small></span>
+              </button>
+            </div>
+          </section>
+
+          <section class="pixels-section pixels-results" aria-labelledby="pixelsResultsTitle" id="pixelsResultsSection">
+            <div class="pixels-section-head"><div><span class="pixels-kicker">YOUR CAMPAIGN</span><h2 id="pixelsResultsTitle">Generated content</h2></div><button type="button" data-clear-results>Clear</button></div>
+            <div class="pixels-result-grid" id="pixelsResults" aria-live="polite"></div>
+            <div class="pixels-empty" id="pixelsEmptyResults"><span aria-hidden="true">+</span><strong>Your campaign will appear here</strong><small>Generate a product shot, social frame, or ad variation to start.</small></div>
+          </section>
+        </div>
+      </main>
+
+      <aside class="pixels-assets-panel hidden" id="pixelsAssetsPanel" aria-label="素材库">
+        <div class="pixels-assets-head"><div><span class="pixels-kicker">ASSET LIBRARY</span><strong>Assets</strong></div><button type="button" data-close-assets aria-label="关闭素材库">Close</button></div>
+        <div class="pixels-assets-tools"><input id="pixelsAssetSearch" type="search" placeholder="Search assets" aria-label="搜索素材" /><button type="button" data-refresh-assets aria-label="刷新素材库">Refresh</button></div>
+        <div id="pixelsAssetList" class="pixels-asset-list" aria-live="polite"></div>
+      </aside>
+      <div class="pixels-toast" id="pixelsToast" role="status" aria-live="polite"></div>
+    </div>
+    <script src="/pixels-studio.js?v=20260819-r4"></script>
+  </body>
+</html>

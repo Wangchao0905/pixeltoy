@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=short-drama-director-20260819-r2" />
+    <link rel="stylesheet" href="/styles.css?v=pixels-studio-20260819-r1" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -21,7 +21,8 @@
             <button type="button" data-explore-canvas-home data-explore-primary-canvas>Canvas</button>
             <button type="button" data-explore-tool="image-generation">Image</button>
             <button type="button" data-explore-tool="asset-library">素材库</button>
-            <button type="button" class="hidden" data-explore-tool="super-pixel" title="Super Pixel：对话式剧集创作">Super Pixel</button>
+            <a class="explore-tool-link pixels-studio-entry" href="/pixels-studio.html" title="Pixels Studio：电商素材生成">Pixels Studio</a>
+            <button type="button" class="hidden" data-explore-tool="super-pixel" title="Legacy Super Pixel">Super Pixel</button>
           </nav>
           <div class="explore-account-actions">
             <span id="exploreAuthUserLabel"></span>
@@ -204,7 +205,7 @@
           FIRST VIEWPORT: a centered prompt above one anchored composer; the asset rail stays off-canvas until requested.
           FORM: single-column operating surface, selected for a chat-first creative workflow.
         -->
-        <section id="superPixelView" class="super-pixel-view hidden" aria-label="Super Pixel">
+        <section id="superPixelView" class="super-pixel-view hidden pixels-studio-view" aria-label="Pixels Studio">
           <div class="super-pixel-hex" aria-hidden="true"></div>
           <div class="super-pixel-glow" aria-hidden="true"></div>
           <div class="super-pixel-layout">
@@ -219,7 +220,7 @@
                 </svg>
               </span>
             </button>
-            <aside id="superPixelAssetRail" class="super-pixel-asset-rail" aria-label="资产库">
+            <aside id="superPixelAssetRail" class="super-pixel-asset-rail pixels-studio-asset-panel hidden" aria-label="资产库">
               <header class="super-pixel-asset-rail-head">
                 <div>
                   <span class="super-pixel-asset-rail-kicker">ASSET LIBRARY</span>
@@ -231,67 +232,106 @@
               <div id="superPixelAssetRailList" class="super-pixel-asset-rail-list" aria-live="polite"></div>
               <div id="superPixelAssetRailEmpty" class="super-pixel-asset-rail-empty hidden">暂无资产</div>
             </aside>
-            <div id="superPixelStage" class="super-pixel-stage">
-              <div class="super-pixel-logo" aria-hidden="true">S</div>
-              <h1 id="superPixelTitle" class="super-pixel-title">今天要拍什么？</h1>
-              <div class="super-pixel-stage-actions">
-                <button id="superPixelHistoryToggle" class="super-pixel-history-toggle" type="button" aria-label="历史对话" aria-expanded="false" aria-controls="superPixelHistoryPanel">历史</button>
+            <aside class="pixels-studio-sidebar" aria-label="Pixels Studio navigation">
+              <button class="pixels-studio-brand" type="button" data-explore-canvas-home aria-label="返回 Pixel Toys">
+                <span class="pixels-studio-brand-mark" aria-hidden="true">P</span>
+                <span><strong>Pixels Studio</strong><small>Commerce content engine</small></span>
+              </button>
+              <nav class="pixels-studio-nav" aria-label="工作区">
+                <button class="is-active" type="button" data-pixels-nav="home"><span aria-hidden="true">⌂</span>Home</button>
+                <button type="button" data-pixels-nav="generations"><span aria-hidden="true">◫</span>My generations</button>
+                <button type="button" data-pixels-nav="favorites"><span aria-hidden="true">♡</span>Favorites</button>
+                <button type="button" data-pixels-nav="projects"><span aria-hidden="true">▣</span>Projects</button>
+                <button type="button" data-pixels-nav="assets"><span aria-hidden="true">▧</span>Assets</button>
+              </nav>
+              <div class="pixels-studio-sidebar-footer">
+                <span class="pixels-studio-sidebar-label">WORKSPACE</span>
+                <button type="button" data-pixels-new-project><span aria-hidden="true">＋</span>New project</button>
               </div>
-              <section id="superPixelHistoryPanel" class="super-pixel-history-panel hidden" aria-label="历史对话">
-                <header>
-                  <strong>历史对话</strong>
-                  <button id="superPixelHistoryNew" type="button">新会话</button>
-                </header>
-                <div id="superPixelHistoryList" class="super-pixel-history-list"></div>
-              </section>
-              <div id="superPixelMessages" class="super-pixel-messages" aria-live="polite"></div>
-              <div id="superPixelDock" class="super-pixel-dock">
-              <form id="superPixelComposer" class="super-pixel-composer">
-                <div id="superPixelAttachments" class="super-pixel-attachments hidden" aria-label="已附加图片"></div>
-                <textarea id="superPixelInput" class="super-pixel-input" rows="1"
-                  placeholder="说出你的想法。"
-                  aria-label="剧集创作输入"></textarea>
-                <div class="super-pixel-toolbar">
-                  <button id="superPixelAttach" class="super-pixel-tool" type="button">
-                    <span aria-hidden="true">＋</span> <span id="superPixelScriptLabel">剧本</span>
-                  </button>
-                  <input id="superPixelScriptUpload" class="hidden" type="file" accept=".md,.txt,.docx,.pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" />
-                  <button id="superPixelImagePick" class="super-pixel-tool" type="button">
-                    <span aria-hidden="true">＋</span> 图片
-                  </button>
-                  <input id="superPixelImageUpload" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple />
-                  <label class="super-pixel-select">
-                    <span class="sr-only">模型</span>
-                    <select id="superPixelModel" aria-label="模型">
-                      <optgroup label="Claude">
-                        <option value="claude-opus-5">Claude Opus 5</option>
-                        <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
-                      </optgroup>
-                      <optgroup label="ChatGPT">
-                        <option value="gpt-5.6-terra">GPT-5.6 Terra</option>
-                        <option value="gpt-5.6-sol">GPT-5.6 Sol</option>
-                        <option value="gpt-5.6-luna">GPT-5.6 Luna</option>
-                      </optgroup>
-                      <optgroup label="Grok">
-                        <option value="grok-4.5">Grok 4.5</option>
-                      </optgroup>
-                    </select>
-                  </label>
-                  <label class="super-pixel-select">
-                    <span class="sr-only">模式</span>
-                    <select id="superPixelMode" aria-label="模式">
-                      <option value="ask">Ask</option>
-                      <option value="agent">Agent</option>
-                    </select>
-                  </label>
-                  <button id="superPixelSend" class="super-pixel-send" type="submit" aria-label="发送">
-                    <span aria-hidden="true">↑</span>
-                  </button>
-                  <button id="superPixelStop" class="super-pixel-stop hidden" type="button" aria-label="停止">停止</button>
+            </aside>
+            <main class="pixels-studio-main">
+              <header class="pixels-studio-topbar">
+                <div><span class="pixels-studio-eyebrow">MARKETING STUDIO</span><strong>Pixels Studio</strong></div>
+                <div class="pixels-studio-top-actions">
+                  <span id="pixelsStudioSaveState">All changes saved</span>
+                  <button type="button" data-pixels-command aria-label="打开命令菜单" title="命令菜单">⌘ K</button>
+                  <button type="button" data-pixels-account aria-label="打开账户">◉</button>
                 </div>
-              </form>
-              </div>
-            </div>
+              </header>
+              <section class="pixels-studio-workspace" aria-labelledby="pixelsStudioHeadline">
+                <div class="pixels-studio-workspace-copy">
+                  <span class="pixels-studio-kicker">READY-TO-POST COMMERCE CONTENT</span>
+                  <h1 id="pixelsStudioHeadline">TURN ANY PRODUCT INTO<br /><em>CONTENT THAT SELLS.</em></h1>
+                  <p>从一张商品图开始，生成适用于详情页、社媒和广告投放的完整素材组合。</p>
+                </div>
+                <div class="pixels-studio-categories" role="tablist" aria-label="电商场景">
+                  <button class="is-active" type="button" role="tab" aria-selected="true" data-pixels-category="product-shot">Product shot</button>
+                  <button type="button" role="tab" aria-selected="false" data-pixels-category="marketplace">Marketplace</button>
+                  <button type="button" role="tab" aria-selected="false" data-pixels-category="ugc">UGC</button>
+                  <button type="button" role="tab" aria-selected="false" data-pixels-category="motion">Motion</button>
+                  <button type="button" role="tab" aria-selected="false" data-pixels-category="ads">Ads</button>
+                  <button type="button" role="tab" aria-selected="false" data-pixels-category="posters">Posters</button>
+                </div>
+                <form id="pixelsStudioComposer" class="pixels-studio-composer">
+                  <div class="pixels-studio-composer-head">
+                    <div class="pixels-studio-mode" role="tablist" aria-label="生成模式">
+                      <button class="is-active" type="button" role="tab" aria-selected="true" data-pixels-mode="image">Image</button>
+                      <button type="button" role="tab" aria-selected="false" data-pixels-mode="video">Video</button>
+                    </div>
+                    <span id="pixelsStudioCreditLabel">1 generation · 3.6 credits</span>
+                  </div>
+                  <div class="pixels-studio-prompt-wrap">
+                    <textarea id="pixelsStudioPrompt" rows="3" maxlength="4000" placeholder="Describe the product content you want to create..." aria-label="Pixels Studio 商品广告描述"></textarea>
+                    <div class="pixels-studio-prompt-footer">
+                      <button id="pixelsStudioReferencePicker" type="button"><span aria-hidden="true">＋</span>Add reference</button>
+                      <input id="pixelsStudioUpload" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+                      <span id="pixelsStudioUploadStatus" aria-live="polite"></span>
+                    </div>
+                  </div>
+                  <div class="pixels-studio-slots" aria-label="素材槽位">
+                    <button type="button" class="pixels-studio-slot" data-pixels-slot="product" aria-pressed="false"><span class="pixels-studio-slot-icon">＋</span><span><strong>Product</strong><small>Add product image</small></span></button>
+                    <button type="button" class="pixels-studio-slot" data-pixels-slot="avatar" aria-pressed="false"><span class="pixels-studio-slot-icon">＋</span><span><strong>Avatar</strong><small>Add a person or creator</small></span></button>
+                    <button type="button" class="pixels-studio-slot" data-pixels-slot="reference" aria-pressed="false"><span class="pixels-studio-slot-icon">＋</span><span><strong>Reference</strong><small>Add style or mood</small></span></button>
+                  </div>
+                  <div class="pixels-studio-settings">
+                    <label><span>Model</span><select id="pixelsStudioModel" aria-label="生成模型"><option value="gpt-image2-medium">GPT Image 2</option><option value="gpt-image2-high">GPT Image 2 High</option><option value="gemini-3-pro-image-preview">Nano Banana Pro</option><option value="seedream-5-0-pro">Seedream 5 Pro</option><option value="grok-imagine-image">Grok Imagine</option><option value="seedance-2-0">Seedance 2.0</option></select></label>
+                    <label><span>Style</span><select id="pixelsStudioStyle" aria-label="生成风格"><option value="closeup">Closeup</option><option value="editorial">Editorial</option><option value="ugc">UGC</option><option value="studio-white">Studio white</option><option value="color-pop">Color pop</option><option value="natural">Natural</option><option value="usage">Usage</option></select></label>
+                    <label><span>Aspect ratio</span><select id="pixelsStudioRatio" aria-label="画幅比例"><option value="3:4" selected>3:4</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="21:9">21:9</option></select></label>
+                    <label class="pixels-studio-duration"><span>Duration <output id="pixelsStudioDurationValue">5s</output></span><input id="pixelsStudioDuration" type="range" min="5" max="15" step="1" value="5" aria-label="视频时长" /></label>
+                    <label class="pixels-studio-batch"><span>Batch</span><button id="pixelsStudioBatchDown" type="button" aria-label="减少生成数量">−</button><output id="pixelsStudioBatch">1</output><button id="pixelsStudioBatchUp" type="button" aria-label="增加生成数量">＋</button></label>
+                  </div>
+                  <div class="pixels-studio-composer-foot">
+                    <span id="pixelsStudioStatus" aria-live="polite">Add a product image to start</span>
+                    <button id="pixelsStudioGenerate" type="submit">Generate campaign <span aria-hidden="true">↗</span></button>
+                  </div>
+                </form>
+              </section>
+              <section class="pixels-studio-template-section" aria-labelledby="pixelsStudioTemplatesTitle">
+                <div class="pixels-studio-section-head"><div><span class="pixels-studio-kicker">START WITH A TEMPLATE</span><h2 id="pixelsStudioTemplatesTitle">Explore templates</h2></div><button type="button" data-pixels-view-all>View all <span aria-hidden="true">→</span></button></div>
+                <div id="pixelsStudioTemplateGrid" class="pixels-studio-template-grid">
+                  <button type="button" class="pixels-studio-template is-wide" data-pixels-template="product-shot" data-pixels-template-prompt="A premium studio product shot, soft directional light, clean composition, product centered and ready for ecommerce listing."><img src="/pixels-studio/editorial-beast.png" alt="Editorial product shot template" loading="lazy" /><span><strong>Product shot 010</strong><small>Product shot · Closeup</small></span></button>
+                  <button type="button" class="pixels-studio-template" data-pixels-template="marketplace" data-pixels-template-prompt="Marketplace hero image, clean white background, precise product proportions, commercial lighting, generous negative space."><img src="/pixels-studio/lookbook-fashion.png" alt="Marketplace lookbook template" loading="lazy" /><span><strong>Marketplace 026</strong><small>Marketplace · Studio white</small></span></button>
+                  <button type="button" class="pixels-studio-template" data-pixels-template="ugc" data-pixels-template-prompt="Natural UGC product recommendation, creator holding the product in a bright everyday setting, authentic social commerce frame."><span class="pixels-studio-template-placeholder is-ugc" aria-hidden="true"></span><span><strong>UGC 009</strong><small>UGC · Natural</small></span></button>
+                  <button type="button" class="pixels-studio-template" data-pixels-template="motion" data-pixels-template-prompt="Short product reveal video, controlled camera orbit, tactile closeups, clean background, polished ecommerce advertising motion."><span class="pixels-studio-template-placeholder is-motion" aria-hidden="true"></span><span><strong>Motion 028</strong><small>Motion · 2D product</small></span></button>
+                </div>
+              </section>
+              <section id="superPixelStage" class="pixels-studio-results" aria-labelledby="pixelsStudioResultsTitle">
+                <div class="pixels-studio-section-head"><div><span class="pixels-studio-kicker">YOUR CAMPAIGN</span><h2 id="pixelsStudioResultsTitle">Generated content</h2></div><button type="button" data-pixels-clear-results>Clear</button></div>
+                <div id="superPixelMessages" class="super-pixel-messages" aria-live="polite"></div>
+              </section>
+            </main>
+          </div>
+          <div class="pixels-studio-legacy hidden" aria-hidden="true">
+            <div id="superPixelDock" class="super-pixel-dock"><form id="superPixelComposer" class="super-pixel-composer">
+              <div id="superPixelAttachments" class="super-pixel-attachments hidden"></div>
+              <textarea id="superPixelInput" class="super-pixel-input" rows="1" placeholder="说出你的想法。" aria-label="剧集创作输入"></textarea>
+              <button id="superPixelAttach" class="super-pixel-tool" type="button">剧本</button><input id="superPixelScriptUpload" class="hidden" type="file" accept=".md,.txt,.docx,.pdf" /><span id="superPixelScriptLabel"></span>
+              <button id="superPixelImagePick" class="super-pixel-tool" type="button">图片</button><input id="superPixelImageUpload" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+              <label class="super-pixel-select"><select id="superPixelModel" aria-label="模型"><optgroup label="Claude"><option value="claude-opus-5">Claude Opus 5</option><option value="claude-haiku-4-5">Claude Haiku 4.5</option></optgroup><optgroup label="ChatGPT"><option value="gpt-5.6-terra">GPT-5.6 Terra</option><option value="gpt-5.6-sol">GPT-5.6 Sol</option><option value="gpt-5.6-luna">GPT-5.6 Luna</option></optgroup><optgroup label="Grok"><option value="grok-4.5">Grok 4.5</option></optgroup></select></label>
+              <label class="super-pixel-select"><select id="superPixelMode" aria-label="模式"><option value="ask">Ask</option><option value="agent">Agent</option></select></label>
+              <button id="superPixelSend" class="super-pixel-send" type="submit" aria-label="发送">↑</button><button id="superPixelStop" class="super-pixel-stop hidden" type="button" aria-label="停止">停止</button>
+            </form></div>
+          </div>
           </div>
         </section>
         <footer class="site-beian" aria-label="备案信息">
@@ -1515,7 +1555,7 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=short-drama-director-20260819-r2"></script>
+    <script src="/app.js?v=pixels-studio-20260819-r1"></script>
     <script src="/auth-modal.js?v=auth-modal-20260804-username-login-1"></script>
   </body>
 </html>

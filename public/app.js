@@ -142,8 +142,22 @@ const state = {
   ui: { exploreEnabled: false },
   exploreEnabled: false,
   exploreView: INITIAL_EXPLORE_VIEW,
-  // attachments: 待发送的资产图（从资产库或本地拖入），发出后并入该条 user 消息
+  // attachments: legacy Super Pixel 对话引用。Pixels Studio 使用 slots 组织商品素材。
   superPixel: { model: "claude-opus-5", mode: "ask", messages: [], scriptText: "", scriptName: "", sending: false, controller: null, uploading: 0, uploadError: "", attachments: [] },
+  pixelsStudio: {
+    category: "product-shot",
+    mode: "image",
+    prompt: "",
+    model: "gpt-image2-medium",
+    style: "closeup",
+    ratio: "3:4",
+    duration: 5,
+    batch: 1,
+    activeSlot: "product",
+    nav: "home",
+    generating: false,
+    slots: { product: null, avatar: null, reference: null },
+  },
   exploreProjectSearch: "",
   exploreCanvasFilter: "all",
   exploreScopeFilter: "all",
@@ -269,7 +283,7 @@ function superPixelHistorySnapshot() {
 }
 
 function writeSuperPixelHistorySnapshot() {
-  if (state.authUser?.role !== "admin") return;
+  if (!state.authUser) return;
   const key = superPixelHistoryStorageKey();
   const messages = superPixelHistorySnapshot();
   try {
@@ -296,7 +310,7 @@ function writeSuperPixelHistorySnapshot() {
 }
 
 function persistSuperPixelHistory({ immediate = false } = {}) {
-  if (state.authUser?.role !== "admin") return;
+  if (!state.authUser) return;
   clearTimeout(superPixelHistorySaveTimer);
   if (immediate) {
     writeSuperPixelHistorySnapshot();
@@ -514,7 +528,7 @@ async function syncAuthUser() {
   const exploreRefresh = $("#exploreRefresh");
   const exploreAccount = $("#exploreAccount");
   const canvasCard = $(".canvas-entry-card");
-  // Super Pixel 仍在开发中，入口仅对管理员开放
+  // Pixels Studio 是登录用户可用的电商素材工作区。
   const superPixelEntry = $('[data-explore-tool="super-pixel"]');
   // PixelTale 编剧 Agent 入口仅对管理员开放
   const pixelTaleEntry = $('[data-pixeltale-entry]');
@@ -526,7 +540,7 @@ async function syncAuthUser() {
     clearLegacyLayoutPreferences();
     state.imageStudio.history = readImageExploreHistory(state.authUser);
     state.imageStudio.storyboardHistory = readImageExploreStoryboardHistory(state.authUser);
-    if (data.user?.role === "admin") restoreSuperPixelHistory();
+    if (data.user) restoreSuperPixelHistory();
     else state.superPixel.messages = [];
     recoverImageExploreStoryboards().catch(() => {});
     resumeImageExploreGenerations().catch(() => {});
@@ -541,13 +555,12 @@ async function syncAuthUser() {
     exploreLoginLink?.classList.toggle("hidden", !!data.user);
     exploreRegisterLink?.classList.toggle("hidden", !!data.user);
     exploreAdminLink?.classList.toggle("hidden", data.user?.role !== "admin");
-    superPixelEntry?.classList.toggle("hidden", data.user?.role !== "admin");
+    superPixelEntry?.classList.add("hidden");
     pixelTaleEntry?.classList.toggle("hidden", data.user?.role !== "admin");
     exploreTeamButton?.classList.toggle("hidden", !data.user);
     exploreRefresh?.classList.toggle("hidden", !data.user);
     exploreAccount?.classList.toggle("hidden", !data.user);
     canvasCard?.classList.toggle("hidden", !data.user?.canvasEnabled);
-    if (data.user?.role !== "admin" && state.exploreView === "superpixel") showExploreCanvasHome();
     if (data.user?.canvasEnabled && state.exploreView === "canvas") loadBlankCanvasList().catch(() => {});
     loadTeam().catch((error) => toast(error.message));
   } catch {
@@ -569,7 +582,6 @@ async function syncAuthUser() {
     exploreRefresh?.classList.add("hidden");
     exploreAccount?.classList.add("hidden");
     canvasCard?.classList.add("hidden");
-    if (state.exploreView === "superpixel") showExploreCanvasHome();
     state.team = null;
     renderTeamPanel();
   }
@@ -2793,11 +2805,12 @@ function renderSuperPixelAssetRail() {
 }
 
 function setSuperPixelAssetRailOpen(open, { persist = true } = {}) {
-  const layout = $(".super-pixel-layout");
+  const layout = $(".pixels-studio-view .super-pixel-layout") || $(".super-pixel-layout");
   const toggle = $("#superPixelAssetRailToggle");
   if (!layout || !toggle) return;
   const isOpen = open === true;
   layout.classList.toggle("is-rail-open", isOpen);
+  $("#superPixelAssetRail")?.classList.toggle("hidden", !isOpen);
   toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
   if (persist) localStorage.setItem(SUPER_PIXEL_RAIL_OPEN_KEY, isOpen ? "1" : "0");
 }
@@ -3814,6 +3827,271 @@ async function submitSuperPixelChat(prompt) {
   }
 }
 
+const PIXELS_STUDIO_CATEGORY_LABELS = Object.freeze({
+  "product-shot": "product shot",
+  marketplace: "marketplace listing",
+  ugc: "UGC social commerce",
+  motion: "product motion",
+  ads: "paid social ad",
+  posters: "campaign poster",
+});
+
+const PIXELS_STUDIO_STYLE_LABELS = Object.freeze({
+  closeup: "close-up",
+  editorial: "editorial",
+  ugc: "authentic UGC",
+  "studio-white": "studio white",
+  "color-pop": "color pop",
+  natural: "natural lifestyle",
+  usage: "in-use demonstration",
+});
+
+function pixelsStudioReferenceImages() {
+  return Object.values(state.pixelsStudio.slots)
+    .filter((image) => image?.url)
+    .slice(0, 4);
+}
+
+function pixelsStudioCampaignPrompt() {
+  const studio = state.pixelsStudio;
+  const prompt = String(studio.prompt || "").trim() || `Create a ${PIXELS_STUDIO_CATEGORY_LABELS[studio.category] || "commerce"} campaign asset for this product.`;
+  const style = PIXELS_STUDIO_STYLE_LABELS[studio.style] || studio.style;
+  const medium = studio.mode === "video" ? `a ${studio.duration}-second product video` : "a finished ecommerce image";
+  return `${prompt}\n\nCommerce direction: create ${medium} for a ${PIXELS_STUDIO_CATEGORY_LABELS[studio.category] || "commerce"} campaign. Use a ${style} visual language, preserve the product identity and proportions, keep the composition ready for text overlay, and make the main selling point immediately legible. Output ratio: ${studio.ratio}.`;
+}
+
+function renderPixelsStudio() {
+  const studio = state.pixelsStudio;
+  const view = $("#superPixelView");
+  if (!view) return;
+  $$("[data-pixels-category]").forEach((button) => {
+    const active = button.dataset.pixelsCategory === studio.category;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  $$("[data-pixels-mode]").forEach((button) => {
+    const active = button.dataset.pixelsMode === studio.mode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  $$("[data-pixels-nav]").forEach((button) => button.classList.toggle("is-active", button.dataset.pixelsNav === studio.nav));
+  const model = $("#pixelsStudioModel");
+  const style = $("#pixelsStudioStyle");
+  const ratio = $("#pixelsStudioRatio");
+  const duration = $("#pixelsStudioDuration");
+  if (model && model.value !== studio.model) model.value = studio.model;
+  if (style && style.value !== studio.style) style.value = studio.style;
+  if (ratio && ratio.value !== studio.ratio) ratio.value = studio.ratio;
+  if (duration && Number(duration.value) !== studio.duration) duration.value = String(studio.duration);
+  $("#pixelsStudioDurationValue").textContent = `${studio.duration}s`;
+  $("#pixelsStudioBatch").textContent = String(studio.batch);
+  $("#pixelsStudioCreditLabel").textContent = `${studio.batch} generation${studio.batch > 1 ? "s" : ""} · ${studio.mode === "video" ? "29.8" : "3.6"} credits`;
+  $(".pixels-studio-duration")?.classList.toggle("hidden", studio.mode !== "video");
+  const prompt = String(studio.prompt || "").trim();
+  const hasReferences = pixelsStudioReferenceImages().length > 0;
+  const status = $("#pixelsStudioStatus");
+  if (status) status.textContent = studio.generating ? "Submitting campaign..." : hasReferences ? `${pixelsStudioReferenceImages().length} reference${hasReferences ? "s" : ""} ready` : prompt ? "Ready to generate" : "Add a product image or describe your product";
+  const generate = $("#pixelsStudioGenerate");
+  if (generate) {
+    generate.disabled = studio.generating || (!prompt && !hasReferences);
+    generate.setAttribute("aria-busy", studio.generating ? "true" : "false");
+    generate.innerHTML = studio.generating ? "Generating <span aria-hidden=\"true\">…</span>" : "Generate campaign <span aria-hidden=\"true\">↗</span>";
+  }
+  $$("[data-pixels-slot]").forEach((button) => {
+    const slot = button.dataset.pixelsSlot;
+    const image = studio.slots[slot];
+    button.classList.toggle("has-media", !!image?.url);
+    button.setAttribute("aria-pressed", image?.url ? "true" : "false");
+    button.innerHTML = image?.url
+      ? `<img src="${escapeAttr(image.preview || image.url)}" alt="${escapeAttr(image.name || `${slot} image`)}" /><span><strong>${escapeHtml(image.name || slot)}</strong><small>Ready · click to replace</small></span>`
+      : `<span class="pixels-studio-slot-icon">＋</span><span><strong>${slot[0].toUpperCase()}${slot.slice(1)}</strong><small>${slot === "product" ? "Add product image" : slot === "avatar" ? "Add a person or creator" : "Add style or mood"}</small></span>`;
+  });
+}
+
+function setPixelsStudioMode(mode) {
+  const nextMode = mode === "video" ? "video" : "image";
+  state.pixelsStudio.mode = nextMode;
+  const isVideoModel = String(state.pixelsStudio.model || "").startsWith("seedance");
+  if (nextMode === "video" && !isVideoModel) state.pixelsStudio.model = "seedance-2-0";
+  if (nextMode === "image" && isVideoModel) state.pixelsStudio.model = "gpt-image2-medium";
+  renderPixelsStudio();
+}
+
+async function submitPixelsStudioImageCard(card) {
+  try {
+    const data = await api("/api/canvas/image-generation", {
+      method: "POST",
+      body: JSON.stringify({
+        prompt: card.meta.prompt,
+        imageModel: card.meta.imageModel,
+        ratio: card.meta.ratio,
+        resolution: "1k",
+        referenceImages: card.meta.referenceImages.map((image) => image.url),
+      }),
+    });
+    const result = data.result || {};
+    if (result.status === "completed" && result.url) {
+      card.status = "completed";
+      card.url = result.url;
+      card.message = "";
+      renderSuperPixelMessages();
+      return;
+    }
+    if (!result.taskId) throw new Error(result.message || "图片接口没有返回 taskId");
+    card.taskId = result.taskId;
+    card.status = "running";
+    card.message = result.message || "图片生成中";
+    renderSuperPixelMessages();
+    startSuperPixelImagePoll(card);
+  } catch (error) {
+    card.status = "failed";
+    card.message = error.message || "图片生成失败";
+    renderSuperPixelMessages();
+  }
+}
+
+async function submitPixelsStudioCampaign() {
+  const studio = state.pixelsStudio;
+  const prompt = pixelsStudioCampaignPrompt();
+  const references = pixelsStudioReferenceImages();
+  if (!String(studio.prompt || "").trim() && !references.length) return;
+  if (studio.generating) return;
+  studio.generating = true;
+  const cards = [];
+  for (let index = 0; index < studio.batch; index += 1) {
+    const callId = `pixels-${Date.now()}-${index + 1}`;
+    if (studio.mode === "video") {
+      cards.push({
+        role: "tool",
+        kind: "video",
+        callId,
+        args: {
+          prompt,
+          videoModel: studio.model,
+          duration: studio.duration,
+          ratio: studio.ratio,
+          referenceImages: references.map((image) => image.url),
+        },
+        referenceImages: references,
+        status: "confirming",
+      });
+    } else {
+      cards.push({
+        role: "tool",
+        kind: "image",
+        callId,
+        meta: {
+          prompt,
+          imageModel: studio.model,
+          ratio: studio.ratio,
+          resolution: "1k",
+          referenceImages: references,
+        },
+        status: "submitting",
+        message: "正在提交图片任务",
+      });
+    }
+  }
+  state.superPixel.messages.push(...cards);
+  persistSuperPixelHistory({ immediate: true });
+  renderSuperPixelMessages();
+  renderPixelsStudio();
+  try {
+    if (studio.mode === "image") await Promise.all(cards.map((card) => submitPixelsStudioImageCard(card)));
+  } finally {
+    studio.generating = false;
+    persistSuperPixelHistory();
+    renderPixelsStudio();
+    renderSuperPixelMessages();
+  }
+}
+
+async function uploadPixelsStudioFiles(fileList) {
+  const files = [...(fileList || [])].filter((file) => SUPER_PIXEL_IMAGE_TYPES.test(file.type) && file.size <= SUPER_PIXEL_MAX_IMAGE_BYTES);
+  if (!files.length) return;
+  const studio = state.pixelsStudio;
+  const slot = studio.activeSlot || "reference";
+  $("#pixelsStudioUploadStatus").textContent = "Uploading reference...";
+  try {
+    const image = await uploadSuperPixelImage(files[0]);
+    image.slot = slot;
+    studio.slots[slot] = image;
+    $("#pixelsStudioUploadStatus").textContent = `${image.name} ready`;
+    renderPixelsStudio();
+  } catch (error) {
+    $("#pixelsStudioUploadStatus").textContent = error.message || "Upload failed";
+    toast(error.message);
+  }
+}
+
+function resetPixelsStudio() {
+  stopSuperPixelGenerationPolls();
+  state.pixelsStudio.prompt = "";
+  state.pixelsStudio.slots = { product: null, avatar: null, reference: null };
+  state.pixelsStudio.generating = false;
+  state.superPixel.messages = [];
+  renderPixelsStudio();
+  renderSuperPixelMessages();
+}
+
+function bindPixelsStudio() {
+  renderPixelsStudio();
+  $("#pixelsStudioPrompt")?.addEventListener("input", (event) => {
+    state.pixelsStudio.prompt = event.target.value;
+    renderPixelsStudio();
+  });
+  $("#pixelsStudioComposer")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitPixelsStudioCampaign().catch((error) => toast(error.message));
+  });
+  $$("[data-pixels-category]").forEach((button) => button.addEventListener("click", () => {
+    state.pixelsStudio.category = button.dataset.pixelsCategory;
+    renderPixelsStudio();
+  }));
+  $$("[data-pixels-mode]").forEach((button) => button.addEventListener("click", () => setPixelsStudioMode(button.dataset.pixelsMode)));
+  $("#pixelsStudioModel")?.addEventListener("change", (event) => { state.pixelsStudio.model = event.target.value; renderPixelsStudio(); });
+  $("#pixelsStudioStyle")?.addEventListener("change", (event) => { state.pixelsStudio.style = event.target.value; renderPixelsStudio(); });
+  $("#pixelsStudioRatio")?.addEventListener("change", (event) => { state.pixelsStudio.ratio = event.target.value; renderPixelsStudio(); });
+  $("#pixelsStudioDuration")?.addEventListener("input", (event) => { state.pixelsStudio.duration = Number(event.target.value) || 5; renderPixelsStudio(); });
+  $("#pixelsStudioBatchDown")?.addEventListener("click", () => { state.pixelsStudio.batch = Math.max(1, state.pixelsStudio.batch - 1); renderPixelsStudio(); });
+  $("#pixelsStudioBatchUp")?.addEventListener("click", () => { state.pixelsStudio.batch = Math.min(4, state.pixelsStudio.batch + 1); renderPixelsStudio(); });
+  const upload = $("#pixelsStudioUpload");
+  $("#pixelsStudioReferencePicker")?.addEventListener("click", () => { state.pixelsStudio.activeSlot = "reference"; upload?.click(); });
+  upload?.addEventListener("change", async (event) => { await uploadPixelsStudioFiles(event.target.files); event.target.value = ""; });
+  $$("[data-pixels-slot]").forEach((button) => button.addEventListener("click", () => {
+    state.pixelsStudio.activeSlot = button.dataset.pixelsSlot;
+    upload?.click();
+  }));
+  $$("[data-pixels-template]").forEach((button) => button.addEventListener("click", () => {
+    state.pixelsStudio.category = button.dataset.pixelsTemplate || "product-shot";
+    state.pixelsStudio.prompt = button.dataset.pixelsTemplatePrompt || "";
+    const prompt = $("#pixelsStudioPrompt");
+    if (prompt) prompt.value = state.pixelsStudio.prompt;
+    renderPixelsStudio();
+    prompt?.focus();
+  }));
+  $$("[data-pixels-nav]").forEach((button) => button.addEventListener("click", () => {
+    const nav = button.dataset.pixelsNav;
+    state.pixelsStudio.nav = nav;
+    if (nav === "assets") {
+      setSuperPixelAssetRailOpen(true);
+      renderSuperPixelAssetRail();
+    } else if (nav === "generations" || nav === "favorites") {
+      $("#superPixelStage")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (nav === "projects") {
+      toast("项目工作区即将接入 Pixels Studio");
+    }
+    renderPixelsStudio();
+  }));
+  $("[data-pixels-clear-results]")?.addEventListener("click", () => {
+    state.superPixel.messages = [];
+    persistSuperPixelHistory({ immediate: true });
+    renderSuperPixelMessages();
+  });
+  $("[data-pixels-new-project]")?.addEventListener("click", resetPixelsStudio);
+  $("[data-pixels-view-all]")?.addEventListener("click", () => toast("更多电商模板正在整理中"));
+}
+
 function enhanceSuperPixelSelect(select) {
   if (!select || select.dataset.superPixelEnhanced === "true") return;
   const wrapper = select.closest(".super-pixel-select");
@@ -4423,8 +4701,6 @@ async function openExploreTool(tool) {
     return;
   }
   if (tool === "super-pixel") {
-    // 开发中功能：非管理员即使绕过隐藏的入口也不放行
-    if (state.authUser?.role !== "admin") return;
     showExploreSuperPixel();
     return;
   }
@@ -11000,6 +11276,7 @@ function bind() {
     if (event.target.closest("[data-explore-canvas-new]")) return openBlankCanvasProject();
   });
   bindSuperPixel();
+  bindPixelsStudio();
   $("#exploreRefresh")?.addEventListener("click", () => loadProjects(false, { force: true }).catch((error) => toast(error.message)));
   $("#exploreAccount")?.addEventListener("click", openPersonalCenter);
   $("[data-close-personal-center]")?.addEventListener("click", closePersonalCenter);

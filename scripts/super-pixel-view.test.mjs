@@ -7,15 +7,16 @@ const html = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
-// 入口按钮已激活（不再是 disabled 占位）
+// 旧 Super Pixel 入口保留为隐藏兼容层；新的公开入口位于顶栏同一位置。
 const entry = html.match(/<button[^>]*data-explore-tool="super-pixel"[^>]*>/);
-assert.ok(entry, "Super Pixel 入口必须带 data-explore-tool");
-assert.doesNotMatch(entry[0], /disabled/, "入口按钮不得再是 disabled");
+assert.ok(entry, "Super Pixel 兼容入口必须带 data-explore-tool");
+assert.doesNotMatch(entry[0], /disabled/, "兼容入口不得使用 disabled");
+assert.match(html, /<a[^>]*href="\/pixels-studio\.html"[^>]*>Pixels Studio<\/a>/, "顶栏必须提供独立 Pixels Studio 入口");
 assert.doesNotMatch(html, /data-explore-placeholder="super-pixel"/, "占位标记应已移除");
 assert.doesNotMatch(html, /Coming soon: conversational model/, "Coming soon 文案应已移除");
 
 // 视图容器与结构
-assert.match(html, /id="superPixelView"[^>]*class="super-pixel-view hidden"/, "视图容器必须存在且默认隐藏");
+assert.match(html, /id="superPixelView"[^>]*class="super-pixel-view hidden pixels-studio-view"/, "视图容器必须存在且默认隐藏");
 assert.match(html, /id="superPixelInput"/, "输入框必须存在");
 assert.match(html, /id="superPixelInput"[\s\S]*?placeholder="说出你的想法。"/, "Super Pixel 输入框提示文字必须简洁为说出你的想法");
 assert.match(html, /id="superPixelModel"/, "模型选择器必须存在");
@@ -168,12 +169,10 @@ assert.match(narrow, /\.super-pixel-toolbar\s*\{[^}]*flex-wrap:\s*nowrap/, "窄�
 const dimAlpha = Number(viewRule.match(/--sp-dim:\s*rgba\([^)]*?,\s*([\d.]+)\)/)?.[1]);
 assert.ok(dimAlpha >= 0.65, `--sp-dim 透明度需 ≥0.65 以达 7:1 对比度，当前 ${dimAlpha}`);
 
-// 权限：入口默认隐藏，仅管理员可见；且函数层有二次拦截
-assert.match(entry[0], /class="hidden"/, "入口必须默认隐藏，避免鉴权前闪现");
-assert.match(app, /superPixelEntry\?\.classList\.toggle\("hidden", data\.user\?\.role !== "admin"\)/, "登录态须按 admin 切换入口可见性");
-assert.match(app, /superPixelEntry\?\.classList\.add\("hidden"\)/, "未登录/鉴权失败须隐藏入口");
-assert.match(app, /tool === "super-pixel"[\s\S]{0,160}role !== "admin"\) return/, "openExploreTool 须对非管理员二次拦截");
-assert.match(app, /data\.user\?\.role !== "admin" && state\.exploreView === "superpixel"\) showExploreCanvasHome\(\)/, "直接访问 Super Pixel 路由时仍须遵守管理员权限");
+// 权限：入口公开展示，生成 API 仍由服务端鉴权。
+assert.match(entry[0], /class="hidden"/, "旧 Super Pixel 入口应隐藏，避免与独立页面重复");
+assert.match(app, /superPixelEntry\?\.classList\.add\("hidden"\)/, "旧 Super Pixel 兼容入口必须保持隐藏");
+assert.doesNotMatch(app, /tool === "super-pixel"[\s\S]{0,160}!state\.authUser/, "兼容视图不应在 openExploreTool 中绕过独立入口");
 
 // 制作台入口使用稳定 URL + ETag 重验证，不依赖手动版本戳。
 assert.match(html, /<link rel="stylesheet" href="\/styles\.css\?v=[0-9a-zA-Z._-]+"\s*\/>/);

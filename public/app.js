@@ -6472,7 +6472,7 @@ function renderModernStudio(data = state.project) {
     : directorStatus !== "ready"
       ? directorLabel
       : data.videoConfigStatus?.ready
-        ? `${total} 个镜头已配置`
+        ? `导演 Agent 已通过 · ${total} 个镜头`
         : "等待配置";
   $("#modernCutStep").textContent = finalCutReady ? "成片已组装" : "等待片段";
   $("#modernKitShot").textContent = selected ? `镜头 ${String(selected.number).padStart(2, "0")}` : "当前镜头";

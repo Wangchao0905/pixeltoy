@@ -1656,7 +1656,12 @@ function upstreamAssetsForNode(node) {
   for (const sourceId of upstreamIds) {
     const sourceNode = canvasState.nodes.find((item) => item.id === sourceId);
     if (!sourceNode) continue;
-    for (const assetId of sourceNode.assets || []) {
+    const sourceAssetIds = [
+      ...(sourceNode.assets || []),
+      sourceNode.kind === "image" ? sourceNode.generatedAssetId : "",
+    ];
+    for (const assetId of sourceAssetIds) {
+      if (!assetId) continue;
       if (!assetIds.includes(assetId)) assetIds.push(assetId);
     }
   }

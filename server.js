@@ -17102,8 +17102,26 @@ function paisioChatContentItem(url, kind) {
   return { type: "image_url", image_url: { url } };
 }
 
+function normalizePaisioReferenceMentions(prompt = "") {
+  return String(prompt || "")
+    .replace(/@(图片|图像)\s*(\d+)/gi, "@Image$2")
+    .replace(/@(视频)\s*(\d+)/gi, "@Video$2")
+    .replace(/@(音频)\s*(\d+)/gi, "@Audio$2")
+    .replace(/@(img|image)\s*(\d+)/gi, "@Image$2")
+    .replace(/@(vid|video)\s*(\d+)/gi, "@Video$2")
+    .replace(/@(aud|audio)\s*(\d+)/gi, "@Audio$2");
+}
+
+function paisioReferenceMentionLimit(prompt, kind) {
+  const label = kind === "video" ? "Video" : kind === "audio" ? "Audio" : "Image";
+  let max = 0;
+  const pattern = new RegExp(`@${label}(\\d+)`, "gi");
+  for (const match of String(prompt || "").matchAll(pattern)) max = Math.max(max, Number(match[1]) || 0);
+  return max;
+}
+
 async function buildPaisioMiniMaxH3ChatPayload(body = {}, options = {}) {
-  const prompt = cleanSeedancePromptForSubmission(body.prompt);
+  const prompt = normalizePaisioReferenceMentions(cleanSeedancePromptForSubmission(body.prompt));
   if (!prompt) throw new Error("缺少视频提示词");
   const imageReferences = [];
   const videoReferences = [];
@@ -17127,6 +17145,18 @@ async function buildPaisioMiniMaxH3ChatPayload(body = {}, options = {}) {
     );
   }
   if (!imageReferences.length) throw new Error("mx-h3 至少需要一张参考图");
+  const referenceLimits = [
+    ["image", imageReferences.length],
+    ["video", videoReferences.length],
+    ["audio", audioReferences.length],
+  ];
+  for (const [kind, available] of referenceLimits) {
+    const requested = paisioReferenceMentionLimit(prompt, kind);
+    if (requested > available) {
+      const label = kind === "video" ? "@Video" : kind === "audio" ? "@Audio" : "@Image";
+      throw new Error(`mx-h3 引用了 ${label}${requested}，但只提供了 ${available} 个对应素材`);
+    }
+  }
   const content = [
     { type: "text", text: String(prompt) },
     ...imageReferences.map((reference) => paisioChatContentItem(reference.url, "image")),

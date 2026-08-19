@@ -72,6 +72,27 @@ assert.equal(miniMaxPayload.duration, 8);
 assert.equal(miniMaxPayload.resolution, "2k");
 assert.equal(miniMaxPayload.messages[0].content[1].type, "image_url");
 assert.equal(miniMaxPayload.messages[0].content[1].image_url.url, "https://cdn.example/reference.png");
+const miniMaxReferencePayload = await buildPaisioMiniMaxH3ChatPayload({
+  model: "mx-h3",
+  prompt: "@图片1 和@图片2 对话，@视频1 作为动作参考，@音频1 作为声音参考",
+  duration: 8,
+  assets: [
+    { id: "image-1", name: "人物1.png", url: "https://cdn.example/person-1.png", mediaType: "image" },
+    { id: "image-2", name: "人物2.png", url: "https://cdn.example/person-2.png", mediaType: "image" },
+    { id: "video-1", name: "动作.mp4", url: "https://cdn.example/motion.mp4", mediaType: "video" },
+    { id: "audio-1", name: "对白.mp3", url: "https://cdn.example/dialogue.mp3", mediaType: "audio" },
+  ],
+});
+assert.match(miniMaxReferencePayload.messages[0].content[0].text, /@Image1/);
+assert.match(miniMaxReferencePayload.messages[0].content[0].text, /@Image2/);
+assert.match(miniMaxReferencePayload.messages[0].content[0].text, /@Video1/);
+assert.match(miniMaxReferencePayload.messages[0].content[0].text, /@Audio1/);
+assert.doesNotMatch(miniMaxReferencePayload.messages[0].content[0].text, /@图片|@视频|@音频/);
+assert.deepEqual(
+  miniMaxReferencePayload.messages[0].content.slice(1).map((item) => item.type),
+  ["image_url", "image_url", "video_url", "audio_url"],
+  "mx-h3 content items must preserve the image/video/audio reference order",
+);
 assert.equal(
   (await buildPaisioMiniMaxH3ChatPayload({
     model: "minimax-h3",

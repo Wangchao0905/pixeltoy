@@ -24,6 +24,11 @@ assert.match(
 );
 assert.match(
   canvas,
+  /function upstreamAssetsForNode\(node\)[\s\S]*?sourceNode\.assets \|\| \[\][\s\S]*?sourceNode\.generatedAssetId/,
+  "video submission must include an upstream image node's generated asset even when its legacy assets array is empty",
+);
+assert.match(
+  canvas,
   /if \(hasReferenceInputs\) \{[\s\S]*?ensurePhotorealReferencesReady\(\[node\]\)/,
   "reference readiness checks must not delay direct text-to-video submission",
 );

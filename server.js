@@ -27071,6 +27071,47 @@ async function buildVideoConfigForShot(episodeRoot, body = {}) {
   return { configPath: configRecord.file, config: finalizedConfig, shotName };
 }
 
+function rerunVideoDirectorAgent(episodeRoot) {
+  const configRecord = ensureVideoConfigIsolation(episodeRoot);
+  const config = configRecord?.data || {};
+  const shots = Array.isArray(config.shots) ? config.shots : [];
+  if (!shots.length) throw new Error("请先生成视频配置，再运行 Video Director Agent");
+  const rawScript = readText(findProjectFile(episodeRoot, "script"));
+  const script = scriptForVideoBeats(cleanStoryScriptForDraft(rawScript));
+  if (!script.trim()) throw new Error("剧本为空，无法运行 Video Director Agent");
+  const manifest = normalizeAssetManifest(readAssetManifest(episodeRoot)?.data || {});
+  const promptMode = compactLine(config.settings?.promptMode || config.promptMode || "prompt").toLowerCase() === "production_board"
+    ? "production_board"
+    : "prompt";
+  const durationMode = normalizeDurationMode(config.durationMode || config.settings?.durationMode || projectDurationMode(episodeRoot));
+  const spatialAgent = readSpatialAgent(episodeRoot);
+  const spatialReadiness = promptMode === "production_board"
+    ? { ready: true, ran: false, stale: false, status: "not_required", missing: [] }
+    : spatialAgentReadiness(episodeRoot);
+  const result = runVideoDirectorAgent(episodeRoot, {
+    script,
+    shots,
+    manifest,
+    spatialAgent,
+    spatialReadiness,
+    promptMode,
+    durationMode,
+    model: config.modelName || "persisted-model-plan",
+  });
+  const nextConfig = {
+    ...config,
+    shots: result.shots,
+    videoDirectorAgent: {
+      runId: result.runId,
+      status: result.status,
+      version: VIDEO_DIRECTOR_AGENT_VERSION,
+    },
+    directorAgentUpdatedAt: new Date().toISOString(),
+  };
+  writeVideoConfigRecord(configRecord, nextConfig);
+  return { configPath: configRecord.file, config: nextConfig, agent: readVideoDirectorAgent(episodeRoot) };
+}
+
 function clearVideoArtifactsForNewCanvas(episodeRoot) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const rawDir = path.join(episodeRoot, "06_videos", "raw");
@@ -29531,6 +29572,12 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
   }
 
+  if (req.method === "POST" && action === "video-director-agent") {
+    ensureWorkflowNamespace(episodeRoot, "video director agent request");
+    const result = rerunVideoDirectorAgent(episodeRoot);
+    return send(res, 200, { ok: true, result, state: fullProjectState(episodeRoot) });
+  }
+
   if (req.method === "GET" && action === "cover-designs") {
     return send(res, 200, { ok: true, coverDesign: refreshCoverDesignState(episodeRoot) });
   }
@@ -30188,6 +30235,7 @@ module.exports = {
       write: writeVideoDirectorAgent,
       evaluate: videoDirectorEvaluate,
       run: runVideoDirectorAgent,
+      rerun: rerunVideoDirectorAgent,
       readiness: videoDirectorAgentReadiness,
       inputFingerprints: videoDirectorInputFingerprints,
     },

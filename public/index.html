@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pixel Toys</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=short-drama-director-20260819-r1" />
+    <link rel="stylesheet" href="/styles.css?v=short-drama-director-20260819-r2" />
     <link rel="stylesheet" href="/studio-feedback.css?v=studio-buttons-20260724" />
   </head>
   <body>
@@ -1296,6 +1296,25 @@
                   <span id="modernVideoQueueCounts">0 个片段</span>
                 </div>
               </header>
+              <section id="modernVideoDirectorPanel" class="modern-video-director-panel" aria-labelledby="modernVideoDirectorTitle">
+                <header class="modern-video-director-head">
+                  <div>
+                    <span class="modern-eyebrow">DIRECTOR AGENT</span>
+                    <strong id="modernVideoDirectorTitle">当前镜头导演决策</strong>
+                    <small id="modernVideoDirectorRun">等待视频配置</small>
+                  </div>
+                  <div class="modern-video-director-actions">
+                    <span id="modernVideoDirectorPanelStatus" class="modern-video-director-panel-status is-pending">未运行</span>
+                    <button id="modernVideoDirectorRerun" type="button" title="只重新编译镜头决策，不重新生成视频">重新编译</button>
+                  </div>
+                </header>
+                <div class="modern-video-director-grid">
+                  <div><span>片段衔接</span><strong id="modernVideoDirectorTransition">-</strong></div>
+                  <div><span>资产引用</span><strong id="modernVideoDirectorReferences">-</strong></div>
+                  <div><span>空间地图</span><strong id="modernVideoDirectorSpatial">-</strong></div>
+                  <div><span>光影决策</span><strong id="modernVideoDirectorLighting">-</strong></div>
+                </div>
+              </section>
               <div class="modern-video-queue-toolbar">
                 <div id="modernVideoQueueProgress" class="modern-video-queue-meter" aria-hidden="true"><span></span></div>
                 <div id="modernVideoQueueFilters" class="modern-video-queue-filters" role="tablist" aria-label="视频片段筛选">
@@ -1495,7 +1514,7 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
     <script src="/workspace-shell.js"></script>
-    <script src="/app.js?v=short-drama-director-20260819-r1"></script>
+    <script src="/app.js?v=short-drama-director-20260819-r2"></script>
     <script src="/auth-modal.js?v=auth-modal-20260804-username-login-1"></script>
   </body>
 </html>

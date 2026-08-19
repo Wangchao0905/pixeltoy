@@ -7,6 +7,7 @@ import serverModule from "../server.js";
 
 const director = serverModule.__test?.videoDirectorAgent;
 assert.equal(typeof director?.run, "function", "Video Director Agent must expose an executable run");
+assert.equal(typeof director?.rerun, "function", "Video Director Agent must expose a config-only rerun");
 assert.equal(typeof director?.read, "function", "Video Director Agent state must be readable");
 assert.equal(typeof director?.evaluate, "function", "Video Director Agent must evaluate its output");
 assert.equal(typeof director?.inputFingerprints, "function", "Video Director Agent must fingerprint its inputs");

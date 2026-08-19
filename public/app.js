@@ -6489,6 +6489,7 @@ function renderModernStudio(data = state.project) {
   renderModernEpisodes(project, pct, total, completed);
   renderModernAssetResults(data);
   renderModernVideoQueue(shots, selectedIndex, data);
+  renderModernVideoDirector(data, selected, selectedIndex);
   renderCoverDesign(data);
   renderModernFinalCutTrack(shots);
   renderModernSelectedShot(data, selected, selectedIndex);
@@ -7082,6 +7083,70 @@ function renderModernVideoQueue(shots, selectedIndex, data) {
     if (progressBar) progressBar.style.width = `${status === "complete" ? 100 : Math.max(0, Math.min(100, Number(shot.progress) || 0))}%`;
   }
   renderModernVideoQueueInspector(data);
+}
+
+function modernVideoDirectorData(data = state.project) {
+  return data?.videoDirectorAgent || data?.videoConfigStatus?.videoDirectorAgent || null;
+}
+
+function modernVideoDirectorDecision(data = state.project, shot = null) {
+  const agent = modernVideoDirectorData(data);
+  const shotName = shot?.name || "";
+  return agent?.decisions?.find((item) => item.shotName === shotName)
+    || shot?.directorDecision
+    || null;
+}
+
+function modernVideoDirectorStatus(agent = null) {
+  if (!agent?.runId && !agent?.ran) return { key: "pending", label: "未运行" };
+  if (agent.stale) return { key: "stale", label: "输入过期" };
+  if (agent.status === "blocked" || Number(agent.blockingCount || 0) > 0) return { key: "blocked", label: "阻塞" };
+  if (agent.status === "needs_review" || Number(agent.warningCount || 0) > 0) return { key: "review", label: "待确认" };
+  if (agent.status === "ready") return { key: "ready", label: "已通过" };
+  return { key: "pending", label: "未运行" };
+}
+
+function renderModernVideoDirector(data = state.project, shot = null) {
+  const agent = modernVideoDirectorData(data);
+  const panel = $("#modernVideoDirectorPanel");
+  if (!panel) return;
+  const decision = modernVideoDirectorDecision(data, shot);
+  const status = modernVideoDirectorStatus(agent);
+  const transitionLabels = {
+    opening: "开场建立",
+    tail_frame: "尾帧续接",
+    same_scene_cut: "同场景切镜",
+    hard_cut: "换场切镜",
+  };
+  const referenceLabels = {
+    official_assets_plus_spatial_map: "正式资产 + 空间地图",
+    production_board_plus_official_assets: "Production Board + 正式资产",
+  };
+  panel.classList.toggle("is-empty", !shot);
+  const panelStatus = $("#modernVideoDirectorPanelStatus");
+  if (panelStatus) {
+    panelStatus.className = `modern-video-director-panel-status is-${status.key}`;
+    panelStatus.textContent = status.label;
+  }
+  $("#modernVideoDirectorTitle").textContent = shot ? `${shot.name} · 导演决策` : "当前镜头导演决策";
+  $("#modernVideoDirectorRun").textContent = agent?.updatedAt
+    ? `最近编译 ${new Date(agent.updatedAt).toLocaleString("zh-CN", { hour12: false })}`
+    : "等待视频配置";
+  $("#modernVideoDirectorTransition").textContent = decision?.transitionMode ? (transitionLabels[decision.transitionMode] || decision.transitionMode) : "-";
+  $("#modernVideoDirectorReferences").textContent = decision?.referencePolicy ? (referenceLabels[decision.referencePolicy] || decision.referencePolicy) : (shot?.refs?.length ? `${shot.refs.length} 项正式资产` : "-");
+  $("#modernVideoDirectorSpatial").textContent = decision?.spatialMapId
+    ? `${decision.spatialMapId} · v${decision.spatialMapVersion || "-"}`
+    : shot?.spatialMapId
+      ? `${shot.spatialMapId} · v${shot.spatialMapVersion || "-"}`
+      : "未绑定";
+  $("#modernVideoDirectorLighting").textContent = decision?.lighting || shot?.lighting || shot?.spatialState?.lighting || "沿用场景主光源";
+  const rerun = $("#modernVideoDirectorRerun");
+  if (rerun) {
+    const busy = rerun.dataset.studioFeedbackBusy === "true";
+    rerun.disabled = busy || !data?.videoConfigStatus?.exists;
+    rerun.textContent = busy ? "编译中..." : "重新编译";
+    rerun.title = data?.videoConfigStatus?.exists ? "只重新编译镜头决策，不重新生成视频" : "请先生成视频配置";
+  }
 }
 
 function renderModernVideoQueueInspector(data = state.project) {
@@ -10745,6 +10810,18 @@ async function buildConfig(button = $("#modernBuildConfig")) {
   }
 }
 
+async function rerunModernVideoDirectorAgent() {
+  if (!state.selectedId) return;
+  const data = await api(`/api/project/${state.selectedId}/video-director-agent`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  setProjectState(data.state);
+  renderWorkspace();
+  const status = data.state?.videoConfigStatus?.videoDirectorAgent;
+  toast(status?.ready ? "Video Director Agent 已通过" : `Director Agent 已重新编译：${(status?.missing || []).join("、") || "请检查当前镜头"}`);
+}
+
 async function refreshVideoConfig({ silent } = { silent: false }) {
   await saveFileQuiet("seedancePrompts");
   const project = state.project?.project || {};
@@ -11323,6 +11400,9 @@ function bind() {
   $("#modernVideoQueueConfig")?.addEventListener("click", (event) => {
     const shotName = state.selectedVideoShotName;
     withStudioButtonFeedback(event.currentTarget, () => generateVideoConfigForSegment(shotName)).catch((error) => toast(error.message));
+  });
+  $("#modernVideoDirectorRerun")?.addEventListener("click", (event) => {
+    withStudioButtonFeedback(event.currentTarget, () => rerunModernVideoDirectorAgent()).catch((error) => toast(error.message));
   });
   $("#modernVideoEdit")?.addEventListener("click", () => {
     focusModernPane("video");

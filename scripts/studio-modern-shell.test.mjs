@@ -27,6 +27,12 @@ for (const id of [
   "modernAssetGallery",
   "modernBuildConfig",
   "modernVideoDirectorStatus",
+  "modernVideoDirectorPanel",
+  "modernVideoDirectorRerun",
+  "modernVideoDirectorTransition",
+  "modernVideoDirectorReferences",
+  "modernVideoDirectorSpatial",
+  "modernVideoDirectorLighting",
   "modernVideoQueue",
   "modernVideoQueueGrid",
   "modernVideoQueueFilters",
@@ -114,8 +120,11 @@ assert.doesNotMatch(modernCommandbarHtml, /class="modern-command-status"|modern-
 assert.doesNotMatch(js, /modernStillLineage|modernMotionLineage/, "the removed workflow lineage block must not remain wired in runtime");
 assert.doesNotMatch(css, /modern-command-status/, "the removed workflow lineage block must not retain modern-specific styles");
 assert.match(html, /<script src="\/app\.js(?:\?[^\"]+)?"><\/script>/, "modern studio UI changes must carry a version stamp");
-assert.match(html, /short-drama-director-20260819-r1/, "Short Drama Director Agent UI must invalidate the old browser cache");
+assert.match(html, /short-drama-director-20260819-r2/, "Short Drama Director Agent UI must invalidate the old browser cache");
 assert.match(js, /导演 Agent 已通过/, "the pipeline video step must expose the Director Agent state");
+assert.match(js, /function renderModernVideoDirector\(/, "the video workbench must render Director Agent decisions");
+assert.match(js, /video-director-agent/, "the Short Drama UI must expose the Director Agent rerun endpoint");
+assert.match(js, /modernVideoDirectorTransition[\s\S]*modernVideoDirectorReferences[\s\S]*modernVideoDirectorSpatial[\s\S]*modernVideoDirectorLighting/, "the Director Agent panel must expose transition, assets, spatial map, and lighting decisions");
 assert.match(modernCommandbarHtml, /id="modernSelectedShotTitle"[^>]*class="[^"]*modern-shot-title-compat/, "shot title must remain only as a hidden runtime compatibility node");
 assert.match(css, /body\.is-studio-modern \.modern-shot-title-compat,[\s\S]*display:\s*none/, "shot title must not occupy the command bar visually");
 assert.match(css, /body\.is-studio-modern \.modern-shot-commandbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/, "command bar must use a compact three-part layout");

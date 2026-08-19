@@ -195,6 +195,7 @@ const LEGACY_MODEL_MIGRATIONS = {
   "sd3-fast-720p": "seedance-2-0-m-fast",
   "sd2-video20-mini-480p": "seedance-2-0-m-fast-mini",
   "sd2-video20-mini-720p": "seedance-2-0-m-fast-mini",
+  "minimax-h3": "mx-h3",
 };
 const VIDEO_MODEL_LABELS = {
   "seedance-2-5": "Seedance 2.5",
@@ -205,7 +206,7 @@ const VIDEO_MODEL_LABELS = {
   "seedance-2-0-m": "Seedance 2.0 M",
   "seedance-2-0-m-fast": "Seedance 2.0 M fast",
   "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini",
-  "minimax-h3": "MiniMax H3",
+  "mx-h3": "mx-h3",
   [BYTEPLUS_MODEL]: "Seedance 2.0(海外火山)",
 };
 // 海外火山(BytePlus)会对生成的音频做内容审核,判定敏感就整段失败。命中这个错误时自动关音频重试一次。
@@ -2297,13 +2298,13 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
     "sd2-video20-mini-480p",
     "sd2-video20-mini-720p",
   ].includes(model);
-  const isMiniMaxH3 = model === "minimax-h3";
+  const isMiniMaxH3 = model === "mx-h3";
   if (isMiniMaxH3) {
     select.querySelectorAll("option").forEach((option) => {
       const enabled = String(option.value).toLowerCase() === "2k";
       option.disabled = !enabled;
       option.hidden = !enabled;
-      option.title = enabled ? "" : "MiniMax H3 固定使用 2K 输出";
+      option.title = enabled ? "" : "mx-h3 固定使用 2K 输出";
     });
     select.value = "2k";
     if (node.settings?.resolution !== "2k") {

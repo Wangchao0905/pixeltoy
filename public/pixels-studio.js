@@ -65,7 +65,7 @@
     { value: "seedance-2-0-m", label: "Seedance 2.0 M", provider: "Paisio", hint: "Motion with references" },
     { value: "seedance-2-0-m-fast", label: "Seedance 2.0 M Fast", provider: "Paisio", hint: "Fast reference motion" },
     { value: "seedance-2-0-m-fast-mini", label: "Seedance 2.0 M Fast Mini", provider: "Paisio", hint: "Rapid concept tests" },
-    { value: "minimax-h3", label: "MiniMax H3", provider: "Paisio", hint: "Image-to-video motion" },
+    { value: "mx-h3", label: "mx-h3", provider: "Paisio", hint: "Image-to-video motion" },
     { value: "seedance-2-0-byteplus", label: "Seedance 2.0 BytePlus", provider: "BytePlus", hint: "Overseas Ark route" },
     { value: "grok-imagine-video", label: "Grok Imagine Video", provider: "Grok", hint: "Concept-led motion" },
   ]);

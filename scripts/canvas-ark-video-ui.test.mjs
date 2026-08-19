@@ -66,7 +66,8 @@ assert.match(modelOptions, /<option value="seedance-2-0">Seedance 2\.0<\/option>
 assert.match(modelOptions, /<option value="seedance-2-0-m">Seedance 2\.0 M<\/option>/, "canvas must offer the merged Paisio Seedance 2.0 M model");
 assert.match(modelOptions, /<option value="seedance-2-0-m-fast">Seedance 2\.0 M fast<\/option>/, "canvas must offer Paisio Seedance 2.0 M fast");
 assert.match(modelOptions, /<option value="seedance-2-0-m-fast-mini">Seedance 2\.0 M fast mini<\/option>/, "canvas must offer Paisio Seedance 2.0 M fast mini");
-assert.match(modelOptions, /<option value="minimax-h3">MiniMax H3<\/option>/, "canvas must offer Paisio MiniMax H3");
+assert.match(modelOptions, /<option value="mx-h3">mx-h3<\/option>/, "canvas must offer the Paisio mx-h3 model");
+assert.doesNotMatch(modelOptions, /minimax-h3/, "canvas must remove the old MiniMax H3 model ID");
 assert.doesNotMatch(modelOptions, /value="sd3-(?:480p|720p)"/, "canvas must not expose Paisio resolutions as separate models");
 assert.doesNotMatch(modelOptions, /seedance-2-0-person-reference|人物参考/, "removed person-reference model must not remain selectable");
 assert.match(html, /<input[^>]*max="30"[^>]*data-node-field="duration"/, "video duration control must expose the 30-second Seedance 2.5 range");

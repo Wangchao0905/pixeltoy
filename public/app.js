@@ -362,7 +362,7 @@ const VIDEO_MODEL_OPTIONS = {
   "seedance-2-0-m": "Seedance 2.0 M",
   "seedance-2-0-m-fast": "Seedance 2.0 M fast",
   "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini",
-  "minimax-h3": "MiniMax H3",
+  "mx-h3": "mx-h3",
   "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
   "grok-imagine-video": "Grok Imagine Video",
 };

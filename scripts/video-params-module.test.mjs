@@ -15,7 +15,7 @@ assert.deepEqual(selectOptions("modernParamRatio"), ["9:16", "16:9", "1:1", "4:3
 assert.deepEqual(selectOptions("modernParamResolution"), ["480p", "720p", "1080p", "2k"], "the active workbench must expose its supported resolutions");
 assert.deepEqual(
   selectOptions("modernParamModel"),
-  ["seedance-2-5", "seedance-2-5-m", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", "seedance-2-0-m-fast", "seedance-2-0-m-fast-mini", "minimax-h3", "seedance-2-0-byteplus", "grok-imagine-video"],
+  ["seedance-2-5", "seedance-2-5-m", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", "seedance-2-0-m-fast", "seedance-2-0-m-fast-mini", "mx-h3", "seedance-2-0-byteplus", "grok-imagine-video"],
   "the active workbench must expose the available video models",
 );
 for (const id of ["configModel", "configResolution", "configRatio", "configPromptMode", "configDialectEnabled", "configSfxEnabled"]) {
@@ -80,7 +80,7 @@ const context = {
     "seedance-2-0-m": "Seedance 2.0 M",
     "seedance-2-0-m-fast": "Seedance 2.0 M fast",
     "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini",
-    "minimax-h3": "MiniMax H3",
+    "mx-h3": "mx-h3",
     "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
   },
   document: {

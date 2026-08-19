@@ -17439,15 +17439,14 @@ function canvasImageModelConfig(value) {
 }
 
 // 特定模型走独立网关（gpt-image-2 → beefapi，其余 → PIXEL_TOYS_IMAGE_BASE_URL）
-const IMAGE_MODEL_GATEWAY_OVERRIDES = {
-  "gpt-image-2": {
-    baseUrl: process.env.PIXEL_TOYS_IMAGE_BEEF_BASE_URL || "https://beefapi.com/v1",
-    apiKey: process.env.PIXEL_TOYS_IMAGE_BEEF_API_KEY || "sk-OdztSA6vUrHGzh3y6x8lUy4Sk6S7buF89MMD5u9GFrzw4F92",
-  },
-};
-
 function canvasImageGatewayFor(modelKey = "") {
-  return IMAGE_MODEL_GATEWAY_OVERRIDES[modelKey] || null;
+  if (modelKey === "gpt-image-2") {
+    return {
+      baseUrl: process.env.PIXEL_TOYS_IMAGE_BEEF_BASE_URL || "https://beefapi.com/v1",
+      apiKey: process.env.PIXEL_TOYS_IMAGE_BEEF_API_KEY || "sk-OdztSA6vUrHGzh3y6x8lUy4Sk6S7buF89MMD5u9GFrzw4F92",
+    };
+  }
+  return null;
 }
 
 function canvasImageBaseUrl(modelKey = "") {

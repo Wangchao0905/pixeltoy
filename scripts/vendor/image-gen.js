@@ -167,6 +167,24 @@ async function imageToInputUrl(image) {
   return `data:${contentTypeFromPath(image)};base64,${bytes.toString("base64")}`;
 }
 
+// paisio 图生图：参考图转 data-URI 内嵌，避免 paisio 抓取外部 URL 时
+// 401（"upload failed: 401: Oauth token is not valid"）。
+async function imageToPaisioDataUri(image) {
+  if (/^data:/i.test(image)) return image;
+  let bytes;
+  let contentType = "image/png";
+  if (/^https?:\/\//i.test(image)) {
+    const source = await fetchImageUrl(image);
+    bytes = Buffer.from(source.bytes);
+    contentType = source.contentType || contentType;
+  } else {
+    await assertLocalImageReadable(image);
+    bytes = await readFile(image);
+    contentType = contentTypeFromPath(image);
+  }
+  return `data:${contentType};base64,${bytes.toString("base64")}`;
+}
+
 async function imageToFormFile(image) {
   if (/^https?:\/\//i.test(image)) {
     const source = await fetchImageUrl(image);
@@ -465,7 +483,8 @@ async function buildRequest(args, mode) {
     // paisio 官方图生图格式：POST /v1/images/generations，JSON body 的 image 字段
     // 传参考图（URL / Base64 / data-URI），model 支持 gpt-image2 与 nano banana 系列。
     // 尺寸控制推荐 imageSize+aspectRatio（size 像素会被 paisio 处理异常/忽略）。
-    const imageRef = await imageToInputUrl(image);
+    // 参考图转 data-URI 内嵌（paisio 抓外部 URL 会 401 upload failed）
+    const imageRef = await imageToPaisioDataUri(image);
     const imageSize = paisioImageSize(args["resolution"]);
     const aspectRatio = paisioAspectRatio(args["ratio"]);
     const body = {

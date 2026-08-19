@@ -256,6 +256,7 @@ const IMAGE_NODE_DEFAULTS = {
 };
 
 const IMAGE_MODEL_LABELS = {
+  "gpt-image-2": "GPT Image 2",
   "gpt-image2-high": "GPT Image 2 High",
   "gpt-image2-medium": "GPT Image 2 Medium",
   "gemini-3-pro-image-preview": "Nano banana pro",

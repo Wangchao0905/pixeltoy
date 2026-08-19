@@ -3083,7 +3083,9 @@ function getDraftJob(episodeRoot, jobId, user = null) {
   return { jobId: job.jobId, status: "running", elapsedMs: Math.max(0, Date.now() - job.createdAt) };
 }
 
-function imageApiKey() {
+function imageApiKey(modelKey = "") {
+  const override = canvasImageGatewayFor(modelKey);
+  if (override?.apiKey) return override.apiKey;
   for (const name of IMAGE_API_KEY_ENV_NAMES) {
     if (process.env[name]) return process.env[name];
   }
@@ -17384,6 +17386,8 @@ const SEEDREAM_MIN_IMAGE_PIXELS = 3_686_400;
 
 function normalizeCanvasImageModel(value) {
   const raw = compactLine(value || "gpt-image2-medium").toLowerCase();
+  // gpt-image-2（beefapi 网关独立通道）
+  if (["gpt-image-2", "gptimage2", "gpt-image2"].includes(raw)) return "gpt-image-2";
   if (["grok-imagine-image", "grok-imagine"].includes(raw)) return "grok-imagine-image";
   if (["seedream-5-0-pro", "seedream-5.0-pro", "seedream-5-pro", "doubao-seedream-5-0-260128"].includes(raw)) return "seedream-5-0-pro";
   if (["seedream-5-0-lite", "seedream-5.0-lite", "seedream-5-lite", "doubao-seedream-5-0-lite-260128"].includes(raw)) return "seedream-5-0-lite";
@@ -17416,6 +17420,9 @@ function canvasImageModelConfig(value) {
       model: process.env.VOLC_ARK_IMAGE_LITE_MODEL || process.env.SEEDREAM_5_LITE_MODEL || DEFAULT_SEEDREAM_5_LITE_MODEL,
     };
   }
+  if (key === "gpt-image-2") {
+    return { key, provider: "gpt", model: "gpt-image-2", supportsSize: true };
+  }
   if (key === "gpt-image2-high") {
     return { key, provider: "gpt", model: "gpt-image2-high", supportsSize: true };
   }
@@ -17431,7 +17438,21 @@ function canvasImageModelConfig(value) {
   return { key, provider: "gpt", model: GPT_IMAGE_MODEL, supportsSize: true };
 }
 
-function canvasImageBaseUrl() {
+// 特定模型走独立网关（gpt-image-2 → beefapi，其余 → PIXEL_TOYS_IMAGE_BASE_URL）
+const IMAGE_MODEL_GATEWAY_OVERRIDES = {
+  "gpt-image-2": {
+    baseUrl: process.env.PIXEL_TOYS_IMAGE_BEEF_BASE_URL || "https://beefapi.com/v1",
+    apiKey: process.env.PIXEL_TOYS_IMAGE_BEEF_API_KEY || "sk-OdztSA6vUrHGzh3y6x8lUy4Sk6S7buF89MMD5u9GFrzw4F92",
+  },
+};
+
+function canvasImageGatewayFor(modelKey = "") {
+  return IMAGE_MODEL_GATEWAY_OVERRIDES[modelKey] || null;
+}
+
+function canvasImageBaseUrl(modelKey = "") {
+  const override = canvasImageGatewayFor(modelKey);
+  if (override?.baseUrl) return String(override.baseUrl).replace(/\/+$/, "");
   return (process.env.PIXEL_TOYS_IMAGE_BASE_URL || DEFAULT_CANVAS_IMAGE_BASE_URL).replace(/\/+$/, "");
 }
 
@@ -18022,20 +18043,19 @@ async function createCanvasImageGeneration(body = {}) {
         "--ratio", ratio, "--resolution", resolution,
         "--model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini",
         "--image-model", modelConfig.model,
-        "--api-key", imageApiKey(),
-        "--base-url", canvasImageBaseUrl(),
+        "--api-key", imageApiKey(modelConfig.key),
+        "--base-url", canvasImageBaseUrl(modelConfig.key),
         "--out", outPath, "--timeout", timeout,
       ];
       // 用 path.delimiter(冒号)拼接会把 https:// 切碎,第二张起静默丢失。
       // \n 不可能出现在 URL 或文件路径里,是安全的分隔符。
       if (referenceInputs.length > 1) args.push("--reference-image", referenceInputs.slice(1).join("\n"));
     } else {
-      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--ratio", ratio, "--resolution", resolution, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--api-key", imageApiKey(), "--base-url", canvasImageBaseUrl(), "--out", outPath, "--timeout", timeout];
+      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--ratio", ratio, "--resolution", resolution, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--api-key", imageApiKey(modelConfig.key), "--base-url", canvasImageBaseUrl(modelConfig.key), "--out", outPath, "--timeout", timeout];
     }
   }
-  const env = { ...process.env, OPENAI_API_KEY: imageApiKey() || process.env.OPENAI_API_KEY || "", OPENAI_BASE_URL: canvasImageBaseUrl() };
-  // 2026-08-18 调试：确认 pm2 运行时 key/baseUrl/模型（定位鉴权失败）
-  console.log(`[image-gen] task=${taskId.slice(0, 8)} model=${modelConfig.model} key=${(imageApiKey() || "").slice(0, 10) || "EMPTY"} base=${canvasImageBaseUrl()} args=${JSON.stringify(args).slice(0, 300)}`);
+  const env = { ...process.env, OPENAI_API_KEY: imageApiKey(modelConfig.key) || process.env.OPENAI_API_KEY || "", OPENAI_BASE_URL: canvasImageBaseUrl(modelConfig.key) };
+  console.log(`[image-gen] task=${taskId.slice(0, 8)} model=${modelConfig.model} key=${(imageApiKey(modelConfig.key) || "").slice(0, 10) || "EMPTY"} base=${canvasImageBaseUrl(modelConfig.key)} args=${JSON.stringify(args).slice(0, 300)}`);
   canvasImageJobs.set(taskId, {
     taskId, // fix:image_undefined — finalize 用 entry.taskId 生成库 id,缺此字段会导致 id 恒为 image_undefined,每次覆盖同一条
     status: "running",

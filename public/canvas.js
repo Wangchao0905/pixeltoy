@@ -2515,7 +2515,18 @@ function syncVideoNodeDimensions(element, node) {
   element.style.setProperty("--video-node-height", `${size.height}px`);
 }
 
+function syncVideoPromptState(node) {
+  if (!node || node.kind !== "video") return compactNodeText(node?.prompt);
+  const element = qs(`[data-node-id="${CSS.escape(node.id)}"]`);
+  const prompt = element?.querySelector(".node-prompt");
+  if (prompt && typeof prompt.value === "string" && prompt.value !== node.prompt) {
+    node.prompt = prompt.value;
+  }
+  return compactNodeText(node.prompt);
+}
+
 function videoNodePayload(node, { forceNoAudio = false } = {}) {
+  const prompt = syncVideoPromptState(node);
   const settings = { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}) };
   const frameAssets = selectedFrameAssetsForVideoNode(node);
   const frameAssetIds = new Set([frameAssets.first?.id, frameAssets.last?.id].filter(Boolean));
@@ -2554,7 +2565,7 @@ function videoNodePayload(node, { forceNoAudio = false } = {}) {
     nodeId: node.id,
     source: node.source || "",
     projectShotName: node.projectShotName || "",
-    prompt: nodePrompt(node),
+    prompt,
     model: modelMode === BYTEPLUS_MODEL
       ? "seedance-2-0"
       : modelMode,

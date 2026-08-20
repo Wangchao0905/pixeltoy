@@ -221,7 +221,7 @@ const PAISIO_SEEDANCE_25_C_MODEL = "seedance-2-5-c";
 const PAISIO_SEEDANCE_25_C_UPSTREAM_MODEL = "seedance2.5-4-1-720p";
 const PAISIO_MX_H3_MODEL = "mx-h3";
 const LEGACY_PAISIO_MINIMAX_H3_MODEL = "minimax-h3";
-const PAISIO_CHAT_VIDEO_MODEL_MAP = {
+const PAISIO_SPECIAL_VIDEO_MODEL_MAP = {
   [PAISIO_SEEDANCE_25_C_MODEL]: { model: PAISIO_SEEDANCE_25_C_UPSTREAM_MODEL, resolution: "720p" },
 };
 // 标准 Seedance 2.0 / Fast / 2.5 保留前端键名，并固定映射到 Paisio 模型广场中的 720p 规格。
@@ -248,7 +248,7 @@ const PAISIO_SD3_MODELS = new Set([
 ]);
 const PAISIO_VIDEO_MODELS = new Set([...PAISIO_SD3_MODELS, PAISIO_MX_H3_MODEL, LEGACY_PAISIO_MINIMAX_H3_MODEL]);
 const PAISIO_4_15_VIDEO_MODELS = new Set([...PAISIO_SD3_MODELS, PAISIO_MX_H3_MODEL, LEGACY_PAISIO_MINIMAX_H3_MODEL]);
-for (const [family, { model }] of Object.entries(PAISIO_CHAT_VIDEO_MODEL_MAP)) {
+for (const [family, { model }] of Object.entries(PAISIO_SPECIAL_VIDEO_MODEL_MAP)) {
   PAISIO_VIDEO_MODELS.add(family);
   PAISIO_VIDEO_MODELS.add(model);
 }
@@ -14500,8 +14500,8 @@ function normalizeGravitexSeedanceModel(value) {
 function paisioModelFamilyForRequest(value = "") {
   const raw = compactLine(value);
   if (raw === PAISIO_MX_H3_MODEL || raw === LEGACY_PAISIO_MINIMAX_H3_MODEL) return PAISIO_MX_H3_MODEL;
-  if (PAISIO_CHAT_VIDEO_MODEL_MAP[raw]) return raw;
-  for (const [family, { model }] of Object.entries(PAISIO_CHAT_VIDEO_MODEL_MAP)) {
+  if (PAISIO_SPECIAL_VIDEO_MODEL_MAP[raw]) return raw;
+  for (const [family, { model }] of Object.entries(PAISIO_SPECIAL_VIDEO_MODEL_MAP)) {
     if (model === raw) return family;
   }
   if (PAISIO_FIXED_SEEDANCE_MODEL_MAP[raw]) return raw;
@@ -14518,9 +14518,9 @@ function paisioModelFamilyForRequest(value = "") {
 function paisioResolutionForRequest(model = "", value = "") {
   const rawResolution = compactLine(value).toLowerCase();
   const requestedModel = compactLine(model);
-  const chatModel = PAISIO_CHAT_VIDEO_MODEL_MAP[requestedModel]
-    || Object.values(PAISIO_CHAT_VIDEO_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
-  if (chatModel) return chatModel.resolution;
+  const specialModel = PAISIO_SPECIAL_VIDEO_MODEL_MAP[requestedModel]
+    || Object.values(PAISIO_SPECIAL_VIDEO_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
+  if (specialModel) return specialModel.resolution;
   const fixedModel = PAISIO_FIXED_SEEDANCE_MODEL_MAP[requestedModel]
     || Object.values(PAISIO_FIXED_SEEDANCE_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
   if (fixedModel) return fixedModel.resolution;
@@ -14572,9 +14572,9 @@ function normalizeVideoResolution(value, model = "") {
   const raw = compactLine(value || "720p");
   const lower = raw.toLowerCase();
   const requestedModel = compactLine(model);
-  const chatModel = PAISIO_CHAT_VIDEO_MODEL_MAP[requestedModel]
-    || Object.values(PAISIO_CHAT_VIDEO_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
-  if (chatModel) return chatModel.resolution;
+  const specialModel = PAISIO_SPECIAL_VIDEO_MODEL_MAP[requestedModel]
+    || Object.values(PAISIO_SPECIAL_VIDEO_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
+  if (specialModel) return specialModel.resolution;
   const fixedPaisioModel = PAISIO_FIXED_SEEDANCE_MODEL_MAP[requestedModel]
     || Object.values(PAISIO_FIXED_SEEDANCE_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
   if (fixedPaisioModel) return fixedPaisioModel.resolution;
@@ -17063,9 +17063,11 @@ async function buildPaisioVideoGenerationPayload(body = {}, options = {}) {
   const requestedModel = compactLine(body.modelMode || body.model || "");
   const paisioModelFamily = paisioModelFamilyForRequest(requestedModel);
   const paisioResolution = paisioResolutionForRequest(requestedModel, body.resolution);
+  const specialVideoModel = PAISIO_SPECIAL_VIDEO_MODEL_MAP[paisioModelFamily];
   const paisioModel = paisioModelFamily === PAISIO_MX_H3_MODEL
     ? PAISIO_MX_H3_MODEL
-    : PAISIO_FIXED_SEEDANCE_MODEL_MAP[paisioModelFamily]?.model
+    : specialVideoModel?.model
+      || PAISIO_FIXED_SEEDANCE_MODEL_MAP[paisioModelFamily]?.model
       || (paisioModelFamily
         ? PAISIO_MODEL_RESOLUTION_MAP[paisioModelFamily][paisioResolution]
         : DEFAULT_PAISIO_MODEL_ID);
@@ -17096,6 +17098,12 @@ async function buildPaisioVideoGenerationPayload(body = {}, options = {}) {
       asset.name || asset.id,
       paisioReferenceKind(asset),
     );
+  }
+  if (specialVideoModel) {
+    if (videoReferences.length || audioReferences.length || /@(?:Video|Audio|视频|音频)\s*\d+/i.test(prompt)) {
+      throw new Error("Seedance 2.5 C 只支持图片参考，不支持视频或音频参考");
+    }
+    if (imageReferences.length > 10) throw new Error("Seedance 2.5 C 最多支持 10 张图片参考");
   }
   const payload = {
     model: paisioModel,
@@ -17192,44 +17200,6 @@ async function buildPaisioMiniMaxH3ChatPayload(body = {}, options = {}) {
   };
 }
 
-async function buildPaisioSeedance25CChatPayload(body = {}, options = {}) {
-  const prompt = normalizePaisioReferenceMentions(cleanSeedancePromptForSubmission(body.prompt));
-  if (!prompt) throw new Error("缺少视频提示词");
-  if (/@(?:Video|Audio)\d+/i.test(prompt)) throw new Error("Seedance 2.5 C 只支持图片参考，不支持视频或音频参考");
-  const imageReferences = [];
-  const addImageReference = async (source, name) => {
-    const cleanSource = compactLine(source);
-    if (!cleanSource) return;
-    const reference = await paisioVideoReference(cleanSource, name, "image", options);
-    imageReferences.push(reference);
-  };
-  const firstFrameSource = compactLine(body.firstFrameUrl || body.startFrameUrl || body.first_frame_url || body.start_image_url || "");
-  if (firstFrameSource) await addImageReference(firstFrameSource, "首帧");
-  const assets = canvasVideoSubmitCapableAssets(body.assets);
-  for (const asset of assets) {
-    if (paisioReferenceKind(asset) !== "image") throw new Error("Seedance 2.5 C 只支持图片参考，不支持视频或音频参考");
-    await addImageReference(asset.url || asset.publicUrl || asset.previewUrl || asset.localUrl, asset.name || asset.id);
-  }
-  if (imageReferences.length > 10) throw new Error("Seedance 2.5 C 最多支持 10 张图片参考");
-  const requestedImages = paisioReferenceMentionLimit(prompt, "image");
-  if (requestedImages > imageReferences.length) {
-    throw new Error(`Seedance 2.5 C 引用了 @Image${requestedImages}，但只提供了 ${imageReferences.length} 张图片参考`);
-  }
-  return {
-    model: PAISIO_SEEDANCE_25_C_UPSTREAM_MODEL,
-    messages: [{
-      role: "user",
-      content: [
-        { type: "text", text: String(prompt) },
-        ...imageReferences.map((reference) => paisioChatContentItem(reference.url, "image")),
-      ],
-    }],
-    duration: normalizePaisioDuration(body.duration, PAISIO_SEEDANCE_25_C_MODEL),
-    resolution: "720p",
-    aspect_ratio: normalizeVideoRatio(body.ratio || body.aspect_ratio) === "adaptive" ? "9:16" : normalizeVideoRatio(body.ratio || body.aspect_ratio),
-  };
-}
-
 function normalizePaisioChatVideoStatus(raw = {}, modelLabel = "Paisio 视频模型") {
   const direct = findVideoUrlDeep(raw);
   if (direct) {
@@ -17278,21 +17248,6 @@ async function createPaisioMiniMaxH3CanvasVideoGeneration(body = {}) {
   });
   const result = normalizePaisioMiniMaxH3Status(raw);
   if (!result.videoUrl) throw new Error(result.message || "mx-h3 未返回视频地址");
-  return {
-    ...result,
-    provider: "paisio",
-    request: { ...payload, messages: "[multimodal messages]" },
-  };
-}
-
-async function createPaisioSeedance25CCanvasVideoGeneration(body = {}) {
-  const payload = await buildPaisioSeedance25CChatPayload(body);
-  const raw = await callPaisioJson("/v1/chat/completions", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  const result = normalizePaisioChatVideoStatus(raw, "Seedance 2.5 C");
-  if (!result.videoUrl) throw new Error(result.message || "Seedance 2.5 C 未返回视频地址");
   return {
     ...result,
     provider: "paisio",
@@ -17457,7 +17412,6 @@ async function createCanvasVideoGeneration(body = {}) {
   if (provider === "paisio") {
     const modelFamily = paisioModelFamilyForRequest(body.modelMode || body.model);
     if (modelFamily === PAISIO_MX_H3_MODEL) return createPaisioMiniMaxH3CanvasVideoGeneration(body);
-    if (PAISIO_CHAT_VIDEO_MODEL_MAP[modelFamily]) return createPaisioSeedance25CCanvasVideoGeneration(body);
     return createPaisioCanvasVideoGeneration(body);
   }
   if (provider === "gravitex") return createGravitexCanvasVideoGeneration(body);
@@ -25183,7 +25137,7 @@ function updateVideoPromptInConfig(rawConfig, shotName, prompt) {
 function updateVideoModelForShotInConfig(rawConfig, shotName, modelName) {
   const name = compactLine(shotName || "");
   const requestedModel = compactLine(modelName || "");
-  const supportedModels = new Set(["seedance-2-5", PAISIO_SEEDANCE_25_C_MODEL, PAISIO_SEEDANCE_25_M_MODEL, "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MX_H3_MODEL, LEGACY_PAISIO_MINIMAX_H3_MODEL, ...PAISIO_MODEL_IDS, ...Object.values(PAISIO_CHAT_VIDEO_MODEL_MAP).map(({ model }) => model), "seedance-2-0-byteplus", "grok-imagine-video"]);
+  const supportedModels = new Set(["seedance-2-5", PAISIO_SEEDANCE_25_C_MODEL, PAISIO_SEEDANCE_25_M_MODEL, "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MX_H3_MODEL, LEGACY_PAISIO_MINIMAX_H3_MODEL, ...PAISIO_MODEL_IDS, ...Object.values(PAISIO_SPECIAL_VIDEO_MODEL_MAP).map(({ model }) => model), "seedance-2-0-byteplus", "grok-imagine-video"]);
   if (!name) throw new Error("缺少视频片段");
   if (!supportedModels.has(requestedModel)) throw new Error("不支持的视频模型");
   const shots = Array.isArray(rawConfig?.shots) ? rawConfig.shots : [];
@@ -28822,7 +28776,6 @@ async function handleApi(req, res, url) {
       ? await (async () => {
           const modelFamily = paisioModelFamilyForRequest(body.modelMode || body.model);
           if (modelFamily === PAISIO_MX_H3_MODEL) return buildPaisioMiniMaxH3ChatPayload(body);
-          if (PAISIO_CHAT_VIDEO_MODEL_MAP[modelFamily]) return buildPaisioSeedance25CChatPayload(body);
           return buildPaisioVideoGenerationPayload(body);
         })()
       : provider === "gravitex"
@@ -30410,7 +30363,6 @@ module.exports = {
       buildSeedanceGenerationPayload,
       buildPaisioVideoGenerationPayload,
       buildPaisioMiniMaxH3ChatPayload,
-      buildPaisioSeedance25CChatPayload,
       normalizePaisioMiniMaxH3Status,
       normalizePaisioChatVideoStatus,
       grokVideoPayload,

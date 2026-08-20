@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const moduleNamespace = await import(path.join(root, "server.js"));
 const { __test } = moduleNamespace.default?.__test ? moduleNamespace.default : moduleNamespace;
-const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, buildPaisioSeedance25CChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus } = __test.canvasVideo;
+const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus } = __test.canvasVideo;
 
 for (const [model, expectedModels] of [
   ["seedance-2-5", { "720p": "sd2.5-ultra-720p" }],
@@ -73,7 +73,7 @@ assert.equal(miniMaxPayload.resolution, "2k");
 assert.equal(miniMaxPayload.messages[0].content[1].type, "image_url");
 assert.equal(miniMaxPayload.messages[0].content[1].image_url.url, "https://cdn.example/reference.png");
 assert.equal(canvasVideoProviderForBody({ model: "seedance-2-5-c", modelMode: "seedance-2-5-c" }), "paisio", "Seedance 2.5 C must route through Paisio");
-const seedance25CPayload = await buildPaisioSeedance25CChatPayload({
+const seedance25CPayload = await buildPaisioVideoGenerationPayload({
   model: "seedance-2-5-c",
   prompt: "@图片1 作为首帧，保持人物动作连续",
   duration: 30,
@@ -83,12 +83,28 @@ const seedance25CPayload = await buildPaisioSeedance25CChatPayload({
 });
 assert.equal(seedance25CPayload.model, "seedance2.5-4-1-720p");
 assert.equal(seedance25CPayload.duration, 30);
-assert.equal(seedance25CPayload.resolution, "720p");
-assert.equal(seedance25CPayload.messages[0].content[1].image_url.url, "https://cdn.example/seedance-c.png");
+assert.equal(seedance25CPayload.image_url, "https://cdn.example/seedance-c.png");
 await assert.rejects(
-  () => buildPaisioSeedance25CChatPayload({ model: "seedance-2-5-c", prompt: "使用@视频1", assets: [{ url: "https://cdn.example/ref.mp4", mediaType: "video" }] }),
+  () => buildPaisioVideoGenerationPayload({ model: "seedance-2-5-c", prompt: "使用@视频1", assets: [{ url: "https://cdn.example/ref.mp4", mediaType: "video" }] }),
   /只支持图片参考/,
   "Seedance 2.5 C must reject unsupported video references",
+);
+await assert.rejects(
+  () => buildPaisioVideoGenerationPayload({ model: "seedance-2-5-c", prompt: "使用@视频1" }),
+  /只支持图片参考/,
+  "Seedance 2.5 C must reject video mentions even without an attached video",
+);
+assert.equal(
+  (await buildPaisioVideoGenerationPayload({
+    model: "seedance-2-5-c",
+    prompt: "@图片1 @图片2",
+    assets: [
+      { url: "https://cdn.example/ref-1.png", mediaType: "image" },
+      { url: "https://cdn.example/ref-2.png", mediaType: "image" },
+    ],
+  })).extra_images.length,
+  1,
+  "Seedance 2.5 C must use the standard extra_images payload",
 );
 assert.equal(normalizePaisioDuration(99, "seedance-2-5-c"), 30, "Seedance 2.5 C must support up to 30 seconds");
 assert.equal(normalizePaisioDuration(1, "seedance-2-5-c"), 4, "Seedance 2.5 C must start at four seconds");
@@ -181,6 +197,8 @@ const canvasHtml = fs.readFileSync(path.join(root, "public", "canvas.html"), "ut
 assert.match(server, /PAISIO_SD3_MODELS/);
 assert.match(server, /PAISIO_SEEDANCE_M_MODEL/);
 assert.match(server, /callPaisioJson\("\/v1\/videos"/);
+assert.match(server, /PAISIO_SPECIAL_VIDEO_MODEL_MAP/);
+assert.doesNotMatch(server, /buildPaisioSeedance25CChatPayload/);
 assert.doesNotMatch(server, /PAISIO_SEEDANCE_SUPER_MODEL|seedance-2-0-super/);
 assert.doesNotMatch(app, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.doesNotMatch(canvas, /seedance-2-0-super|Seedance 2\.0 super/);

@@ -219,6 +219,10 @@ const PAISIO_SEEDANCE_M_FAST_MINI_MODEL = "seedance-2-0-m-fast-mini";
 const PAISIO_SEEDANCE_25_M_MODEL = "seedance-2-5-m";
 const PAISIO_SEEDANCE_25_C_MODEL = "seedance-2-5-c";
 const PAISIO_SEEDANCE_25_C_UPSTREAM_MODEL = "seedance2.5-4-1-720p";
+const PAISIO_SEEDANCE_25_C_REQUEST_TIMEOUT_MS = Math.max(
+  PAISIO_VIDEO_REQUEST_TIMEOUT_MS,
+  Number(process.env.PAISIO_SEEDANCE_25_C_REQUEST_TIMEOUT_MS || 180_000),
+);
 const PAISIO_MX_H3_MODEL = "mx-h3";
 const LEGACY_PAISIO_MINIMAX_H3_MODEL = "minimax-h3";
 const PAISIO_SPECIAL_VIDEO_MODEL_MAP = {
@@ -16366,14 +16370,19 @@ async function callVideoJson(
     text = result.body;
   } catch (error) {
     const message = normalizeVideoGenerationErrorMessage(error.message || "视频网关请求失败");
+    const submissionMayHaveSucceeded =
+      provider === "paisio" && method === "POST" && /\/v1\/videos$/.test(String(url)) && error.code === "VIDEO_API_TIMEOUT";
+    const surfacedMessage = submissionMayHaveSucceeded
+      ? `${message}；提交请求可能已被上游接收，请先检查 Paisio 任务或账单后再重试，避免重复计费。`
+      : message;
     appendVideoApiLog({
       provider,
       method,
       url,
       status: error.code || error.name || "NETWORK_ERROR",
-      message,
+      message: surfacedMessage,
     });
-    throw new Error(message);
+    throw new Error(surfacedMessage);
   }
   let data = {};
   try {
@@ -16461,13 +16470,13 @@ async function callGrokJson(pathname, options = {}) {
   );
 }
 
-async function callPaisioJson(pathname, options = {}) {
+async function callPaisioJson(pathname, options = {}, timeoutMs = PAISIO_VIDEO_REQUEST_TIMEOUT_MS) {
   return callVideoJson(
     paisioVideoUrl(pathname),
     options,
     "缺少 Paisio 视频 API Key：请在 .env.local 配置 PAISIO_API_KEY 后重启服务。",
     "paisio",
-    PAISIO_VIDEO_REQUEST_TIMEOUT_MS,
+    timeoutMs,
   );
 }
 
@@ -16956,6 +16965,13 @@ function normalizePaisioDuration(value, model = "") {
   return Math.max(isSd3 || is30SecondModel ? 4 : 1, Math.min(isSd3 ? 15 : 30, number));
 }
 
+function paisioVideoSubmitTimeoutForBody(body = {}) {
+  const model = compactLine(body.modelMode || body.model || "");
+  return model === PAISIO_SEEDANCE_25_C_MODEL
+    ? PAISIO_SEEDANCE_25_C_REQUEST_TIMEOUT_MS
+    : PAISIO_VIDEO_REQUEST_TIMEOUT_MS;
+}
+
 function normalizePaisioStatus(raw = {}) {
   const result = normalizeSeedanceStatus(raw);
   const directVideoUrl = compactLine(
@@ -17260,7 +17276,7 @@ async function createPaisioCanvasVideoGeneration(body = {}) {
   const raw = await callPaisioJson("/v1/videos", {
     method: "POST",
     body: JSON.stringify(payload),
-  });
+  }, paisioVideoSubmitTimeoutForBody(body));
   const result = normalizePaisioStatus(raw);
   return {
     ...result,
@@ -30369,6 +30385,7 @@ module.exports = {
       normalizeVideoResolution,
       normalizeSeedanceDuration,
       normalizePaisioDuration,
+      paisioVideoSubmitTimeoutForBody,
       normalizePaisioStatus,
     },
     videoReferences: {

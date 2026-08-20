@@ -6,7 +6,18 @@ import { fileURLToPath } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const moduleNamespace = await import(path.join(root, "server.js"));
 const { __test } = moduleNamespace.default?.__test ? moduleNamespace.default : moduleNamespace;
-const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus } = __test.canvasVideo;
+const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus, paisioVideoSubmitTimeoutForBody } = __test.canvasVideo;
+
+assert.equal(
+  paisioVideoSubmitTimeoutForBody({ model: "seedance-2-5-c", modelMode: "seedance-2-5-c" }),
+  180_000,
+  "Seedance 2.5 C must allow a longer Paisio submission window for 30-second jobs",
+);
+assert.equal(
+  paisioVideoSubmitTimeoutForBody({ model: "sd3-720p", modelMode: "sd3-720p" }),
+  45_000,
+  "other Paisio video models must keep the default submission timeout",
+);
 
 for (const [model, expectedModels] of [
   ["seedance-2-5", { "720p": "sd2.5-ultra-720p" }],
@@ -198,6 +209,8 @@ assert.match(server, /PAISIO_SD3_MODELS/);
 assert.match(server, /PAISIO_SEEDANCE_M_MODEL/);
 assert.match(server, /callPaisioJson\("\/v1\/videos"/);
 assert.match(server, /PAISIO_SPECIAL_VIDEO_MODEL_MAP/);
+assert.match(server, /PAISIO_SEEDANCE_25_C_REQUEST_TIMEOUT_MS/);
+assert.match(server, /提交请求可能已被上游接收/);
 assert.doesNotMatch(server, /buildPaisioSeedance25CChatPayload/);
 assert.doesNotMatch(server, /PAISIO_SEEDANCE_SUPER_MODEL|seedance-2-0-super/);
 assert.doesNotMatch(app, /seedance-2-0-super|Seedance 2\.0 super/);

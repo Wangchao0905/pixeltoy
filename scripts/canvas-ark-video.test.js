@@ -147,5 +147,17 @@ process.env.CANVAS_VIDEO_PROVIDER = "ark";
     "https://preview.example/cartoon-character.png",
     "cartoon uploads must use the ordinary public reference path without Ark certification",
   );
+  const inlineInstructionPrompt = "根据@图片3 的分镜生成视频（1-10秒），全程固定机位，没有背景音乐。没有字幕。不出现瞪眼的夸张表情。严格按照分镜顺序。@图片1 场景 @图片2 咕咚";
+  const inlineInstructionPayload = await buildSeedanceGenerationPayload({
+    prompt: inlineInstructionPrompt,
+    model: "sd2-fast",
+    ratio: "9:16",
+    duration: 10,
+  });
+  assert.match(
+    inlineInstructionPayload.content[0].text,
+    /根据@图片3 的分镜生成视频.*@图片1 场景 @图片2 咕咚/s,
+    "a natural-language prompt containing inline instructions must not be cleared as metadata",
+  );
   console.log("canvas Ark video tests passed.");
 })();

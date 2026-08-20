@@ -15774,7 +15774,9 @@ function stripSeedanceMetaInstructions(value = "") {
   return String(value || "")
     .split(/\n+/)
     .map((line) => line.trim())
-    .filter((line) => line && !/(?:严格按照|必须遵守|提示词规则|规则如下|不要混杂|不要添加|不得添加|只输出|输出格式|素材引用规则)/i.test(line))
+    // 仅丢弃以规则提示开头的独立行；自然语言提示词经常在同一行中
+    // 同时包含“严格按照/没有字幕”等要求，不能因此把整条画面描述清空。
+    .filter((line) => line && !/^(?:严格按照|必须遵守|提示词规则|规则如下|不要混杂|不要添加|不得添加|只输出|输出格式|素材引用规则)/i.test(line))
     .join("\n")
     .replace(/\s*(?:严格按照|必须)\s*(?:以上|上述)?(?:描述|规则|要求)[，。；;]?\s*/g, "")
     .trim();

@@ -46,7 +46,7 @@ assert.match(js, /const VIDEO_MODEL_OPTIONS\s*=\s*Object\.freeze/, "必须定义
 for (const model of ["gpt-image2-medium", "gpt-image2-high", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"]) {
   assert.match(js, new RegExp(`value: "${model}"`), `图片模型目录缺少 ${model}`);
 }
-for (const model of ["seedance-2-5", "seedance-2-5-c", "seedance-2-5-m", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", "seedance-2-0-m-fast", "seedance-2-0-m-fast-mini", "mx-h3", "seedance-2-0-byteplus", "grok-imagine-video"]) {
+for (const model of ["sd2", "sd2-fast", "seedance-2-5", "seedance-2-5-c", "seedance-2-5-m", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", "seedance-2-0-m-fast", "seedance-2-0-m-fast-mini", "mx-h3", "seedance-2-0-byteplus", "grok-imagine-video"]) {
   assert.match(js, new RegExp(`value: "${model}"`), `视频模型目录缺少 ${model}`);
 }
 assert.match(js, /imageModel:\s*result\.model/, "图片请求必须使用当前选中的图片模型");

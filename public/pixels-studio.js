@@ -57,6 +57,8 @@
     { value: "grok-imagine-image", label: "Grok Imagine Image", provider: "Grok", hint: "Concept-led imagery" },
   ]);
   const VIDEO_MODEL_OPTIONS = Object.freeze([
+    { value: "sd2", label: "sd2", provider: "Paisio", hint: "480p 0.230/秒 · 720p 0.290/秒" },
+    { value: "sd2-fast", label: "sd2-fast", provider: "Paisio", hint: "720p 0.230/秒" },
     { value: "seedance-2-5", label: "Seedance 2.5", provider: "Ark", hint: "Cinematic product motion" },
     { value: "seedance-2-5-c", label: "Seedance 2.5 C", provider: "Paisio", hint: "720p motion up to 30 seconds" },
     { value: "seedance-2-5-m", label: "Seedance 2.5 M", provider: "Paisio", hint: "Motion with references" },

@@ -196,9 +196,14 @@ const LEGACY_MODEL_MIGRATIONS = {
   "sd2-video20-mini-480p": "seedance-2-0-m-fast-mini",
   "sd2-video20-mini-720p": "seedance-2-0-m-fast-mini",
   "seedance2.5-4-1-720p": "seedance-2-5-c",
+  "sd2-480p": "sd2",
+  "sd2-720p": "sd2",
+  "sd2-fast-720p": "sd2-fast",
   "minimax-h3": "mx-h3",
 };
 const VIDEO_MODEL_LABELS = {
+  "sd2": "sd2",
+  "sd2-fast": "sd2-fast",
   "seedance-2-5": "Seedance 2.5",
   "seedance-2-5-c": "Seedance 2.5 C",
   "seedance-2-5-m": "Seedance 2.5 M",
@@ -210,6 +215,10 @@ const VIDEO_MODEL_LABELS = {
   "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini",
   "mx-h3": "mx-h3",
   [BYTEPLUS_MODEL]: "Seedance 2.0(海外火山)",
+};
+const VIDEO_MODEL_PRICE_HINTS = {
+  "sd2": { "480p": "0.230/秒", "720p": "0.290/秒" },
+  "sd2-fast": { "720p": "0.230/秒" },
 };
 // 海外火山(BytePlus)会对生成的音频做内容审核,判定敏感就整段失败。命中这个错误时自动关音频重试一次。
 // 同时匹配 BytePlus 原文与服务端翻译后的中文提示(server 会把该错误归一化成"…音频被海外火山判定含敏感…")。
@@ -2076,6 +2085,10 @@ function videoModelLabel(node) {
   return VIDEO_MODEL_LABELS[model] || model || VIDEO_MODEL_LABELS[VIDEO_NODE_DEFAULTS.model];
 }
 
+function videoModelPriceHint(model, resolution) {
+  return VIDEO_MODEL_PRICE_HINTS[String(model || "").trim()]?.[String(resolution || "720p").toLowerCase()] || "";
+}
+
 function videoPollDelay(base = 5000) {
   return base + Math.floor(Math.random() * 900);
 }
@@ -2284,6 +2297,7 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
   if (!select) return;
   const model = settings.model || VIDEO_NODE_DEFAULTS.model;
   const fixedPaisioResolution = {
+    "sd2-fast": "720p",
     "seedance-2-5": "720p",
     "seedance-2-5-c": "720p",
     "seedance-2-0": "720p",
@@ -2292,6 +2306,7 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
   const isFastOrMini = /(?:fast|mini)/i.test(model);
   const is25 = /(?:2-5|2\.5)/i.test(model);
   const isPaisioSd3 = [
+    "sd2",
     "seedance-2-0-m",
     "seedance-2-0-m-fast",
     "seedance-2-0-m-fast-mini",
@@ -2383,7 +2398,8 @@ function syncVideoNodeShell(element, node) {
   element.dataset.videoModel = effectiveSettings.model || VIDEO_NODE_DEFAULTS.model;
   const modelLabel = VIDEO_MODEL_LABELS[effectiveSettings.model] || effectiveSettings.model || "Seedance";
   const audioLabel = effectiveSettings.generateAudio === false ? "无音效" : "音效";
-  const summary = `${modelLabel} · ${effectiveSettings.ratio || "9:16"} · ${effectiveSettings.resolution || "720p"} · ${effectiveSettings.duration || 5}s · ${audioLabel}`;
+  const price = videoModelPriceHint(effectiveSettings.model, effectiveSettings.resolution);
+  const summary = `${modelLabel} · ${effectiveSettings.ratio || "9:16"} · ${effectiveSettings.resolution || "720p"}${price ? ` · ${price}` : ""} · ${effectiveSettings.duration || 5}s · ${audioLabel}`;
   const kind = element.querySelector(".video-titlebar .node-kind");
   if (kind) kind.textContent = "视频生成";
   const title = element.querySelector(".video-titlebar h2");

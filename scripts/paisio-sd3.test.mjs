@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const moduleNamespace = await import(path.join(root, "server.js"));
 const { __test } = moduleNamespace.default?.__test ? moduleNamespace.default : moduleNamespace;
-const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus, paisioVideoSubmitTimeoutForBody } = __test.canvasVideo;
+const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus, normalizeVideoResolution, paisioVideoSubmitTimeoutForBody } = __test.canvasVideo;
 
 assert.equal(
   paisioVideoSubmitTimeoutForBody({ model: "seedance-2-5-c", modelMode: "seedance-2-5-c" }),
@@ -20,6 +20,8 @@ assert.equal(
 );
 
 for (const [model, expectedModels] of [
+  ["sd2", { "480p": "sd2-480p", "720p": "sd2-720p" }],
+  ["sd2-fast", { "720p": "sd2-fast-720p" }],
   ["seedance-2-5", { "720p": "sd2.5-ultra-720p" }],
   ["seedance-2-5-m", { "480p": "paisiodance-2.5-480p", "720p": "paisiodance-2.5-720p" }],
   ["seedance-2-0", { "720p": "sd2-ultra-720p" }],
@@ -119,6 +121,8 @@ assert.equal(
 );
 assert.equal(normalizePaisioDuration(99, "seedance-2-5-c"), 30, "Seedance 2.5 C must support up to 30 seconds");
 assert.equal(normalizePaisioDuration(1, "seedance-2-5-c"), 4, "Seedance 2.5 C must start at four seconds");
+assert.equal(normalizeVideoResolution("480p", "sd2-fast"), "720p", "sd2-fast must fall back to its only 720p resolution");
+assert.equal(normalizeVideoResolution("480p", "sd2"), "480p", "sd2 must keep its selectable 480p resolution");
 const miniMaxReferencePayload = await buildPaisioMiniMaxH3ChatPayload({
   model: "mx-h3",
   prompt: "@图片1 和@图片2 对话，@视频1 作为动作参考，@音频1 作为声音参考",
@@ -204,11 +208,14 @@ const app = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const canvas = fs.readFileSync(path.join(root, "public", "canvas.js"), "utf8");
 const index = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const canvasHtml = fs.readFileSync(path.join(root, "public", "canvas.html"), "utf8");
+const pixelsStudio = fs.readFileSync(path.join(root, "public", "pixels-studio.js"), "utf8");
 
 assert.match(server, /PAISIO_SD3_MODELS/);
 assert.match(server, /PAISIO_SEEDANCE_M_MODEL/);
 assert.match(server, /callPaisioJson\("\/v1\/videos"/);
 assert.match(server, /PAISIO_SPECIAL_VIDEO_MODEL_MAP/);
+assert.match(server, /\[PAISIO_SD2_MODEL\]: \{ "480p": "sd2-480p", "720p": "sd2-720p" \}/);
+assert.match(server, /\[PAISIO_SD2_FAST_MODEL\]: \{ "720p": "sd2-fast-720p" \}/);
 assert.match(server, /PAISIO_SEEDANCE_25_C_REQUEST_TIMEOUT_MS/);
 assert.match(server, /提交请求可能已被上游接收/);
 assert.doesNotMatch(server, /buildPaisioSeedance25CChatPayload/);
@@ -227,6 +234,9 @@ assert.match(canvasHtml, /value="seedance-2-0-m-fast-mini">Seedance 2\.0 M fast 
 assert.match(canvasHtml, /value="mx-h3">mx-h3/);
 assert.match(index, /value="seedance-2-5-c">Seedance 2\.5 C/);
 assert.match(canvasHtml, /value="seedance-2-5-c">Seedance 2\.5 C/);
+assert.match(index, /id="modernVideoModelPrice"/);
+assert.match(pixelsStudio, /sd2.*0\.230\/秒.*0\.290\/秒/s);
+assert.match(pixelsStudio, /sd2-fast.*0\.230\/秒/s);
 assert.doesNotMatch(index, /value="sd3-(?:480p|720p)"/);
 assert.doesNotMatch(canvasHtml, /value="sd3-(?:480p|720p)"/);
 

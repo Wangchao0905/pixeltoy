@@ -60,6 +60,8 @@ const modelOptions = [...html.matchAll(/<select(?:\s[^>]*)?>[\s\S]*?<\/select>/g
   .find((block) => block.includes('value="seedance-2-0"')) || "";
 assert.doesNotMatch(modelOptions, /文生视频/, "video model options must not use the generic text-to-video prefix");
 assert.match(modelOptions, /<option value="seedance-2-5">Seedance 2\.5<\/option>/, "canvas must offer Seedance 2.5");
+assert.match(modelOptions, /<option value="sd2"[^>]*>sd2<\/option>/, "canvas must offer the original sd2 model name");
+assert.match(modelOptions, /<option value="sd2-fast"[^>]*>sd2-fast<\/option>/, "canvas must offer the original sd2-fast model name");
 assert.match(modelOptions, /<option value="seedance-2-5-c">Seedance 2\.5 C<\/option>/, "canvas must offer Paisio Seedance 2.5 C");
 assert.match(modelOptions, /<option value="seedance-2-5-m">Seedance 2\.5 M<\/option>/, "canvas must offer the merged Paisio Seedance 2.5 M model");
 assert.doesNotMatch(modelOptions, /seedance-2-5-byteplus|Seedance 2\.5\(海外火山\)/, "canvas must remove overseas Seedance 2.5");

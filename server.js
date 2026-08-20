@@ -219,6 +219,8 @@ const PAISIO_SEEDANCE_M_FAST_MINI_MODEL = "seedance-2-0-m-fast-mini";
 const PAISIO_SEEDANCE_25_M_MODEL = "seedance-2-5-m";
 const PAISIO_SEEDANCE_25_C_MODEL = "seedance-2-5-c";
 const PAISIO_SEEDANCE_25_C_UPSTREAM_MODEL = "seedance2.5-4-1-720p";
+const PAISIO_SD2_MODEL = "sd2";
+const PAISIO_SD2_FAST_MODEL = "sd2-fast";
 const PAISIO_SEEDANCE_25_C_REQUEST_TIMEOUT_MS = Math.max(
   PAISIO_VIDEO_REQUEST_TIMEOUT_MS,
   Number(process.env.PAISIO_SEEDANCE_25_C_REQUEST_TIMEOUT_MS || 180_000),
@@ -235,6 +237,8 @@ const PAISIO_FIXED_SEEDANCE_MODEL_MAP = {
   "seedance-2-0-fast": { model: "sd2-ultra-fast-720p", resolution: "720p" },
 };
 const PAISIO_MODEL_RESOLUTION_MAP = {
+  [PAISIO_SD2_MODEL]: { "480p": "sd2-480p", "720p": "sd2-720p" },
+  [PAISIO_SD2_FAST_MODEL]: { "720p": "sd2-fast-720p" },
   "seedance-2-0-mini": { "480p": "sd2-video20-mini-480p", "720p": "sd2-video20-mini-720p" },
   [PAISIO_SEEDANCE_25_M_MODEL]: { "480p": "paisiodance-2.5-480p", "720p": "paisiodance-2.5-720p" },
   [PAISIO_SEEDANCE_M_MODEL]: { "480p": "sd3-480p", "720p": "sd3-720p" },
@@ -14528,6 +14532,12 @@ function paisioResolutionForRequest(model = "", value = "") {
   const fixedModel = PAISIO_FIXED_SEEDANCE_MODEL_MAP[requestedModel]
     || Object.values(PAISIO_FIXED_SEEDANCE_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
   if (fixedModel) return fixedModel.resolution;
+  const modelFamily = paisioModelFamilyForRequest(requestedModel);
+  const modelResolutions = PAISIO_MODEL_RESOLUTION_MAP[modelFamily];
+  if (modelResolutions && rawResolution) {
+    if (modelResolutions[rawResolution]) return rawResolution;
+    return Object.keys(modelResolutions)[0] || "720p";
+  }
   if (["480p", "720p"].includes(rawResolution)) return rawResolution;
   for (const resolutions of Object.values(PAISIO_MODEL_RESOLUTION_MAP)) {
     for (const [resolution, upstreamModel] of Object.entries(resolutions)) {
@@ -14582,6 +14592,9 @@ function normalizeVideoResolution(value, model = "") {
   const fixedPaisioModel = PAISIO_FIXED_SEEDANCE_MODEL_MAP[requestedModel]
     || Object.values(PAISIO_FIXED_SEEDANCE_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
   if (fixedPaisioModel) return fixedPaisioModel.resolution;
+  const modelFamily = paisioModelFamilyForRequest(requestedModel);
+  const modelResolutions = PAISIO_MODEL_RESOLUTION_MAP[modelFamily];
+  if (modelResolutions) return modelResolutions[lower] ? lower : Object.keys(modelResolutions)[0] || "720p";
   const isFastOrMini = /(?:fast|mini)/i.test(String(model || ""));
   if (paisioModelFamilyForRequest(model) === PAISIO_MX_H3_MODEL) return "2k";
   // Seedance 2.5 仅支持 480p/720p（无 1080p/4k）
@@ -27908,7 +27921,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The video description." },
-          videoModel: { type: "string", enum: ["seedance-2-5", PAISIO_SEEDANCE_25_C_MODEL, PAISIO_SEEDANCE_25_M_MODEL, "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MX_H3_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
+          videoModel: { type: "string", enum: [PAISIO_SD2_MODEL, PAISIO_SD2_FAST_MODEL, "seedance-2-5", PAISIO_SEEDANCE_25_C_MODEL, PAISIO_SEEDANCE_25_M_MODEL, "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", PAISIO_SEEDANCE_M_MODEL, PAISIO_SEEDANCE_M_FAST_MODEL, PAISIO_SEEDANCE_M_FAST_MINI_MODEL, PAISIO_MX_H3_MODEL, "seedance-2-0-byteplus", "grok-imagine-video"], default: "seedance-2-0" },
           duration: { type: "number", minimum: 1, default: 5 },
           ratio: { type: "string", default: "9:16" },
           firstFrameUrl: { type: "string" },

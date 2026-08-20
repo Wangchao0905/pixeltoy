@@ -354,6 +354,8 @@ const DEFAULT_WINDOWS = {
   storyboards: { left: 24, top: 672, width: 874, height: 420 },
 };
 const VIDEO_MODEL_OPTIONS = {
+  "sd2": "sd2",
+  "sd2-fast": "sd2-fast",
   "seedance-2-5": "Seedance 2.5",
   "seedance-2-5-c": "Seedance 2.5 C",
   "seedance-2-5-m": "Seedance 2.5 M",
@@ -366,6 +368,11 @@ const VIDEO_MODEL_OPTIONS = {
   "mx-h3": "mx-h3",
   "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
   "grok-imagine-video": "Grok Imagine Video",
+};
+
+const VIDEO_MODEL_PRICE_HINTS = {
+  "sd2": { "480p": "0.230/秒", "720p": "0.290/秒" },
+  "sd2-fast": { "720p": "0.230/秒" },
 };
 
 function mergeCanvasAssetState(existing = {}, incoming = {}) {
@@ -393,6 +400,8 @@ function normalizeVideoModelName(value) {
   if (["sd3-fast-480p", "sd3-fast-720p"].includes(raw)) return "seedance-2-0-m-fast";
   if (["sd2-video20-mini-480p", "sd2-video20-mini-720p"].includes(raw)) return "seedance-2-0-m-fast-mini";
   if (VIDEO_MODEL_OPTIONS[raw]) return raw;
+  if (/^sd2-(?:480p|720p)$/i.test(raw)) return "sd2";
+  if (/^sd2-fast-720p$/i.test(raw)) return "sd2-fast";
   if (/seedance\s*2\.5\s*c|seedance2\.5-4-1-720p/i.test(raw)) return "seedance-2-5-c";
   if (/2\.5|2-5/.test(lower)) return "seedance-2-5";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0";
@@ -406,6 +415,18 @@ function normalizeVideoModelName(value) {
 function videoModelLabel(value) {
   const normalized = normalizeVideoModelName(value);
   return VIDEO_MODEL_OPTIONS[normalized] || VIDEO_MODEL_OPTIONS["seedance-2-0"];
+}
+
+function videoModelPriceHint(model, resolution) {
+  const prices = VIDEO_MODEL_PRICE_HINTS[normalizeVideoModelName(model)];
+  if (!prices) return "";
+  return prices[String(resolution || "720p").toLowerCase()] || "";
+}
+
+function syncModernVideoModelPrice() {
+  const price = $("#modernVideoModelPrice");
+  if (!price) return;
+  price.textContent = videoModelPriceHint($("#modernParamModel")?.value, $("#modernParamResolution")?.value);
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -7592,6 +7613,7 @@ function renderModernSelectedShot(data, shot, index) {
   const modernResolution = $("#modernParamResolution");
   if (modernRatio && modernSettings.ratio) modernRatio.value = modernSettings.ratio;
   if (modernResolution && modernSettings.resolution) modernResolution.value = modernSettings.resolution;
+  syncModernVideoModelPrice();
   setModernVideoPromptMode(selectedVideoPromptMode());
   $("#modernSelectedShotSummary").textContent = shot
     ? `${shot.duration}s · ${shot.model || "模型未配置"} · ${shot.assets.length} 个引用资产`
@@ -12298,6 +12320,7 @@ function bind() {
   $("#modernSpatialMapSaveLocked")?.addEventListener("click", () => saveModernSpatialMap("locked").catch((error) => toast(error.message)));
   ["modernParamRatio", "modernParamResolution"].forEach((id) => {
     $(`#${id}`)?.addEventListener("change", () => {
+      syncModernVideoModelPrice();
       saveVideoSettings({
         ratio: id === "modernParamRatio" ? $("#modernParamRatio")?.value : "",
         resolution: id === "modernParamResolution" ? $("#modernParamResolution")?.value : "",
@@ -12305,6 +12328,7 @@ function bind() {
     });
   });
   $("#modernParamModel")?.addEventListener("change", () => {
+    syncModernVideoModelPrice();
     saveVideoRetryModel().catch((error) => toast(error.message));
   });
   ["modernDialectEnabled", "modernDialectStyle"].forEach((id) => {

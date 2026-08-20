@@ -58,6 +58,7 @@
   ]);
   const VIDEO_MODEL_OPTIONS = Object.freeze([
     { value: "seedance-2-5", label: "Seedance 2.5", provider: "Ark", hint: "Cinematic product motion" },
+    { value: "seedance-2-5-c", label: "Seedance 2.5 C", provider: "Paisio", hint: "720p motion up to 30 seconds" },
     { value: "seedance-2-5-m", label: "Seedance 2.5 M", provider: "Paisio", hint: "Motion with references" },
     { value: "seedance-2-0", label: "Seedance 2.0", provider: "Ark", hint: "Balanced product video" },
     { value: "seedance-2-0-fast", label: "Seedance 2.0 Fast", provider: "Paisio", hint: "Fast social variations" },

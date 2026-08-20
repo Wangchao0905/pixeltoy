@@ -60,6 +60,7 @@ const modelOptions = [...html.matchAll(/<select(?:\s[^>]*)?>[\s\S]*?<\/select>/g
   .find((block) => block.includes('value="seedance-2-0"')) || "";
 assert.doesNotMatch(modelOptions, /文生视频/, "video model options must not use the generic text-to-video prefix");
 assert.match(modelOptions, /<option value="seedance-2-5">Seedance 2\.5<\/option>/, "canvas must offer Seedance 2.5");
+assert.match(modelOptions, /<option value="seedance-2-5-c">Seedance 2\.5 C<\/option>/, "canvas must offer Paisio Seedance 2.5 C");
 assert.match(modelOptions, /<option value="seedance-2-5-m">Seedance 2\.5 M<\/option>/, "canvas must offer the merged Paisio Seedance 2.5 M model");
 assert.doesNotMatch(modelOptions, /seedance-2-5-byteplus|Seedance 2\.5\(海外火山\)/, "canvas must remove overseas Seedance 2.5");
 assert.match(modelOptions, /<option value="seedance-2-0">Seedance 2\.0<\/option>/, "base Seedance option must use its short display name");
@@ -124,6 +125,7 @@ assert.match(js, /data-connection-create='image'/, "image generation connection 
 assert.match(js, /fixedPaisioResolution/, "video resolution sync must account for fixed Paisio specifications");
 assert.match(js, /"seedance-2-0": "720p"/, "Seedance 2.0 must be fixed to 720p in the canvas");
 assert.match(js, /"seedance-2-5": "720p"/, "Seedance 2.5 must be fixed to 720p in the canvas");
+assert.match(js, /"seedance-2-5-c": "720p"/, "Seedance 2.5 C must be fixed to 720p in the canvas");
 assert.match(js, /"seedance-2-0-mini",/, "Seedance 2.0 Mini must expose both Paisio resolutions in the canvas");
 assert.match(js, /option\.hidden = !enabled;/, "unsupported resolutions must be hidden from the model selector");
 assert.doesNotMatch(js, /\[PERSON_REFERENCE_MODEL\]|Seedance 2\.0 · 人物参考/, "video model summaries must not expose the removed person-reference label");

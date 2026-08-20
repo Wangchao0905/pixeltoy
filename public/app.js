@@ -355,6 +355,7 @@ const DEFAULT_WINDOWS = {
 };
 const VIDEO_MODEL_OPTIONS = {
   "seedance-2-5": "Seedance 2.5",
+  "seedance-2-5-c": "Seedance 2.5 C",
   "seedance-2-5-m": "Seedance 2.5 M",
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
@@ -392,6 +393,7 @@ function normalizeVideoModelName(value) {
   if (["sd3-fast-480p", "sd3-fast-720p"].includes(raw)) return "seedance-2-0-m-fast";
   if (["sd2-video20-mini-480p", "sd2-video20-mini-720p"].includes(raw)) return "seedance-2-0-m-fast-mini";
   if (VIDEO_MODEL_OPTIONS[raw]) return raw;
+  if (/seedance\s*2\.5\s*c|seedance2\.5-4-1-720p/i.test(raw)) return "seedance-2-5-c";
   if (/2\.5|2-5/.test(lower)) return "seedance-2-5";
   if (/person|人物|真人|liveness/.test(lower)) return "seedance-2-0";
   if (/2[.\- ]?0.*m.*fast.*mini|m.*fast.*mini/.test(lower)) return "seedance-2-0-m-fast-mini";

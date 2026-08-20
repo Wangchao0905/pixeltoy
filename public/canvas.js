@@ -195,10 +195,12 @@ const LEGACY_MODEL_MIGRATIONS = {
   "sd3-fast-720p": "seedance-2-0-m-fast",
   "sd2-video20-mini-480p": "seedance-2-0-m-fast-mini",
   "sd2-video20-mini-720p": "seedance-2-0-m-fast-mini",
+  "seedance2.5-4-1-720p": "seedance-2-5-c",
   "minimax-h3": "mx-h3",
 };
 const VIDEO_MODEL_LABELS = {
   "seedance-2-5": "Seedance 2.5",
+  "seedance-2-5-c": "Seedance 2.5 C",
   "seedance-2-5-m": "Seedance 2.5 M",
   "seedance-2-0": "Seedance 2.0",
   "seedance-2-0-fast": "Seedance 2.0 Fast",
@@ -2267,7 +2269,7 @@ function syncVideoDurationOptions(element, node = {}) {
   const field = element?.querySelector('input[data-node-field="duration"]');
   if (!field) return;
   const model = node.settings?.model || VIDEO_NODE_DEFAULTS.model;
-  const is30SecondModel = /(?:2-5|2\.5|sd2\.5-ultra-720p)/i.test(model);
+  const is30SecondModel = /(?:2-5|2\.5|sd2\.5-ultra-720p|seedance2\.5-4-1-720p)/i.test(model);
   const maxDuration = is30SecondModel ? 30 : 15;
   field.max = String(maxDuration);
   const value = Math.max(4, Math.min(maxDuration, Number(field.value || VIDEO_NODE_DEFAULTS.duration)));
@@ -2283,6 +2285,7 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
   const model = settings.model || VIDEO_NODE_DEFAULTS.model;
   const fixedPaisioResolution = {
     "seedance-2-5": "720p",
+    "seedance-2-5-c": "720p",
     "seedance-2-0": "720p",
     "seedance-2-0-fast": "720p",
   }[model] || "";

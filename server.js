@@ -16336,6 +16336,9 @@ function extractVideoApiError(data = {}) {
 function normalizeVideoGenerationErrorMessage(message = "") {
   const raw = compactLine(message);
   if (!raw) return "视频生成失败";
+  if (/<!doctype\s+html|<html[\s>]/i.test(raw)) {
+    return "视频网关返回了 HTML 页面，而不是 JSON API 响应，请检查登录状态、网关地址或稍后重试。";
+  }
   let parsed = null;
   if (/^\{/.test(raw)) {
     try {
@@ -30402,6 +30405,7 @@ module.exports = {
       normalizePaisioDuration,
       paisioVideoSubmitTimeoutForBody,
       normalizePaisioStatus,
+      normalizeVideoGenerationErrorMessage,
     },
     videoReferences: {
       assertVideoConfigAssetsReady,

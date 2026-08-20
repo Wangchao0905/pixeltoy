@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const moduleNamespace = await import(path.join(root, "server.js"));
 const { __test } = moduleNamespace.default?.__test ? moduleNamespace.default : moduleNamespace;
-const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus, normalizeVideoResolution, paisioVideoSubmitTimeoutForBody } = __test.canvasVideo;
+const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus, normalizeVideoResolution, paisioVideoSubmitTimeoutForBody, normalizeVideoGenerationErrorMessage } = __test.canvasVideo;
+
+assert.equal(
+  normalizeVideoGenerationErrorMessage("<!DOCTYPE html><html><body>upstream error</body></html>"),
+  "视频网关返回了 HTML 页面，而不是 JSON API 响应，请检查登录状态、网关地址或稍后重试。",
+  "HTML gateway responses must become a concise actionable error",
+);
 
 assert.equal(
   paisioVideoSubmitTimeoutForBody({ model: "seedance-2-5-c", modelMode: "seedance-2-5-c" }),

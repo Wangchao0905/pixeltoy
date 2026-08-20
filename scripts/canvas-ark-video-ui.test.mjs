@@ -122,6 +122,9 @@ assert.match(css, /\.video-node \.video-settings-strip[^}]*pointer-events:\s*aut
 assert.match(js, /function syncVideoResolutionOptions\(/, "video resolution choices must be synced with the selected model");
 assert.match(js, /function syncVideoDurationOptions\(element, node = \{\}\)/, "canvas must sync duration options to the selected model");
 assert.match(js, /is30SecondModel/, "Seedance 2.5 duration cap must extend to 30 seconds");
+assert.match(js, /paisioSchedulerRetryVideoNodes/, "canvas must track Paisio scheduler retries per video node");
+assert.match(js, /function isPaisioSchedulerCapacityFailure\(/, "canvas must recognize transient Paisio scheduler capacity failures");
+assert.match(js, /自动重试/, "transient Paisio scheduler failures must retry with visible status");
 assert.match(js, /function createImageFromConnectionMenu\(/, "image output connection menu must create an image node");
 assert.match(js, /data-connection-create='image'/, "image generation connection action must be wired");
 assert.match(js, /fixedPaisioResolution/, "video resolution sync must account for fixed Paisio specifications");

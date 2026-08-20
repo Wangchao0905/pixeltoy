@@ -235,6 +235,14 @@ const VIDEO_MODEL_PRICE_HINTS = {
 const OUTPUT_AUDIO_SENSITIVE_RE = /output audio.*(sensitive|敏感)|OutputAudioSensitiveContentDetected|音频[^。]*敏感/i;
 // 记录本次会话里已因音频敏感自动重试过的视频节点,避免无限重试。
 const audioRetriedVideoNodes = new Set();
+// Paisio may accept a task and then fail while waiting for an upstream account.
+// Retry this transient capacity error once; a second failure remains visible so
+// an unavailable model is not hidden behind an endless client-side loop.
+const PAISIO_SCHEDULER_RETRY_DELAY_MS = 5000;
+const paisioSchedulerRetryVideoNodes = new Set();
+function isPaisioSchedulerCapacityFailure(message) {
+  return /scheduler\s+claim\s+wait\s+timed\s+out|no\s+eligible\s+account|no\s+available\s+(?:account|channel)|无可用账号|无可用渠道/i.test(String(message || ""));
+}
 // 画布可拖拽上传的文件类型:图片 + 视频。视频会在服务端抽首帧作为参考图。
 const CANVAS_UPLOAD_ACCEPT_RE = /\.(png|jpe?g|webp|mp4|mov|webm|m4v)$/i;
 const CANVAS_VIDEO_FILE_RE = /\.(mp4|mov|webm|m4v)$/i;
@@ -3656,8 +3664,26 @@ async function persistNodeTailFrame(nodeId, result = {}, generationToken = ensur
 function markVideoNodeFailed(nodeId, message, options = {}) {
   if (!videoOperationIsCurrent(nodeId, options)) return false;
   clearVideoPoll(nodeId);
-  // 海外火山音频审核拦截:若本节点开着音频且还没自动重试过,自动关音频重试一次,而不是直接判失败。
+  const schedulerFailure = isPaisioSchedulerCapacityFailure(message);
   const node = canvasState.nodes.find((item) => item.id === nodeId);
+  if (node && schedulerFailure && !paisioSchedulerRetryVideoNodes.has(nodeId)) {
+    paisioSchedulerRetryVideoNodes.add(nodeId);
+    const retryToken = beginVideoGeneration(nodeId);
+    updateVideoNodeStatus(nodeId, {
+      status: "running",
+      statusMessage: "上游账号调度暂时超时，5 秒后自动重试…",
+      progress: null,
+    });
+    toast("Paisio 账号调度暂时繁忙，正在自动重试");
+    window.setTimeout(() => {
+      if (!videoOperationIsCurrent(nodeId, { generationToken: retryToken })) return;
+      generateVideoNode(nodeId, { schedulerRetry: true, generationToken: retryToken }).catch((error) =>
+        markVideoNodeFailed(nodeId, error.message || "Paisio 调度重试失败", { generationToken: retryToken }),
+      );
+    }, PAISIO_SCHEDULER_RETRY_DELAY_MS);
+    return true;
+  }
+  // 海外火山音频审核拦截:若本节点开着音频且还没自动重试过,自动关音频重试一次,而不是直接判失败。
   const audioWasOn = node && (node.settings?.generateAudio !== false);
   if (
     node &&
@@ -4000,6 +4026,7 @@ function applyVideoGenerationResult(nodeId, result = {}, options = {}) {
       taskProvider: result.provider || node?.taskProvider || "",
       progress: 100,
     });
+    paisioSchedulerRetryVideoNodes.delete(nodeId);
     persistNodeTailFrame(nodeId, result, generationToken);
     toast("视频已生成");
     scheduleTailFrameSync(nodeId, 0, generationToken);
@@ -4070,6 +4097,7 @@ async function generateVideoNode(nodeId, options = {}) {
   clearVideoPoll(nodeId);
   // 手动发起(非音频重试)时,清掉旧的重试标记,让本轮可以重新尝试带音频。
   if (!options.forceNoAudio) audioRetriedVideoNodes.delete(nodeId);
+  if (!options.schedulerRetry) paisioSchedulerRetryVideoNodes.delete(nodeId);
   const projectShotName = shotNameFromProjectVideoNode(node);
   if (isProjectVideoNode(node) && projectShotName) {
     updateVideoNodeStatus(nodeId, {

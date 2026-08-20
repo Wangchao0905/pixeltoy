@@ -2410,6 +2410,7 @@ function syncVideoNodeShell(element, node) {
   syncVideoNodeDimensions(element, node);
   const settings = { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}) };
   syncVideoResolutionOptions(element, node, settings);
+  syncVideoDurationOptions(element, node);
   const effectiveSettings = { ...settings, ...(node.settings || {}) };
   element.dataset.videoStatus = node.status || "idle";
   element.dataset.videoRatio = effectiveSettings.ratio || VIDEO_NODE_DEFAULTS.ratio;

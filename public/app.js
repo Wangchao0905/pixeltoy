@@ -373,7 +373,30 @@ const VIDEO_MODEL_OPTIONS = {
 const VIDEO_MODEL_PRICE_HINTS = {
   "sd2": { "480p": "0.230/秒", "720p": "0.290/秒" },
   "sd2-fast": { "720p": "0.230/秒" },
+  "seedance-2-5": { "720p": "1.270/秒" },
+  "seedance-2-5-c": { "720p": "3.500/秒" },
+  "seedance-2-5-m": { "480p": "0.570/秒", "720p": "0.970/秒" },
+  "seedance-2-0": { "720p": "0.730/秒" },
+  "seedance-2-0-fast": { "720p": "0.620/秒" },
+  "seedance-2-0-mini": { "480p": "0.210/秒", "720p": "0.280/秒" },
+  "seedance-2-0-m": { "480p": "0.420/秒", "720p": "0.560/秒" },
+  "seedance-2-0-m-fast": { "480p": "0.350/秒", "720p": "0.490/秒" },
+  "seedance-2-0-m-fast-mini": { "480p": "0.210/秒", "720p": "0.280/秒" },
+  "mx-h3": { "2k": "2.800/秒" },
 };
+
+function videoModelPriceTitle(model) {
+  const prices = VIDEO_MODEL_PRICE_HINTS[normalizeVideoModelName(model)];
+  if (!prices) return "";
+  return Object.entries(prices).map(([resolution, price]) => `${resolution} ${price}`).join("；");
+}
+
+function syncVideoModelPriceTitles() {
+  document.querySelectorAll("#modernParamModel option, #videoPromptInspectorModel option").forEach((option) => {
+    const title = videoModelPriceTitle(option.value);
+    if (title) option.title = title;
+  });
+}
 
 function mergeCanvasAssetState(existing = {}, incoming = {}) {
   const existingActive = String(existing.validationStatus || "").toLowerCase() === "active" && /^asset:\/\//i.test(existing.assetUrl || "");
@@ -427,6 +450,7 @@ function syncModernVideoModelPrice() {
   const price = $("#modernVideoModelPrice");
   if (!price) return;
   price.textContent = videoModelPriceHint($("#modernParamModel")?.value, $("#modernParamResolution")?.value);
+  syncVideoModelPriceTitles();
 }
 
 const $ = (selector) => document.querySelector(selector);

@@ -57,18 +57,18 @@
     { value: "grok-imagine-image", label: "Grok Imagine Image", provider: "Grok", hint: "Concept-led imagery" },
   ]);
   const VIDEO_MODEL_OPTIONS = Object.freeze([
-    { value: "sd2", label: "sd2", provider: "Paisio", hint: "480p 0.230/秒 · 720p 0.290/秒" },
-    { value: "sd2-fast", label: "sd2-fast", provider: "Paisio", hint: "720p 0.230/秒" },
-    { value: "seedance-2-5", label: "Seedance 2.5", provider: "Ark", hint: "Cinematic product motion" },
-    { value: "seedance-2-5-c", label: "Seedance 2.5 C", provider: "Paisio", hint: "720p motion up to 30 seconds" },
-    { value: "seedance-2-5-m", label: "Seedance 2.5 M", provider: "Paisio", hint: "Motion with references" },
-    { value: "seedance-2-0", label: "Seedance 2.0", provider: "Ark", hint: "Balanced product video" },
-    { value: "seedance-2-0-fast", label: "Seedance 2.0 Fast", provider: "Paisio", hint: "Fast social variations" },
-    { value: "seedance-2-0-mini", label: "Seedance 2.0 Mini", provider: "Paisio", hint: "Lightweight iterations" },
-    { value: "seedance-2-0-m", label: "Seedance 2.0 M", provider: "Paisio", hint: "Motion with references" },
-    { value: "seedance-2-0-m-fast", label: "Seedance 2.0 M Fast", provider: "Paisio", hint: "Fast reference motion" },
-    { value: "seedance-2-0-m-fast-mini", label: "Seedance 2.0 M Fast Mini", provider: "Paisio", hint: "Rapid concept tests" },
-    { value: "mx-h3", label: "mx-h3", provider: "Paisio", hint: "Image-to-video motion" },
+    { value: "sd2", label: "sd2", provider: "Paisio", hint: "480p / 720p", price: "480p 0.230/秒；720p 0.290/秒" },
+    { value: "sd2-fast", label: "sd2-fast", provider: "Paisio", hint: "720p", price: "720p 0.230/秒" },
+    { value: "seedance-2-5", label: "Seedance 2.5", provider: "Paisio", hint: "720p cinematic product motion", price: "720p 1.270/秒" },
+    { value: "seedance-2-5-c", label: "Seedance 2.5 C", provider: "Paisio", hint: "720p motion up to 30 seconds", price: "720p 3.500/秒" },
+    { value: "seedance-2-5-m", label: "Seedance 2.5 M", provider: "Paisio", hint: "480p / 720p motion with references", price: "480p 0.570/秒；720p 0.970/秒" },
+    { value: "seedance-2-0", label: "Seedance 2.0", provider: "Paisio", hint: "720p balanced product video", price: "720p 0.730/秒" },
+    { value: "seedance-2-0-fast", label: "Seedance 2.0 Fast", provider: "Paisio", hint: "720p fast social variations", price: "720p 0.620/秒" },
+    { value: "seedance-2-0-mini", label: "Seedance 2.0 Mini", provider: "Paisio", hint: "480p / 720p lightweight iterations", price: "480p 0.210/秒；720p 0.280/秒" },
+    { value: "seedance-2-0-m", label: "Seedance 2.0 M", provider: "Paisio", hint: "480p / 720p motion with references", price: "480p 0.420/秒；720p 0.560/秒" },
+    { value: "seedance-2-0-m-fast", label: "Seedance 2.0 M Fast", provider: "Paisio", hint: "480p / 720p fast reference motion", price: "480p 0.350/秒；720p 0.490/秒" },
+    { value: "seedance-2-0-m-fast-mini", label: "Seedance 2.0 M Fast Mini", provider: "Paisio", hint: "480p / 720p rapid concept tests", price: "480p 0.210/秒；720p 0.280/秒" },
+    { value: "mx-h3", label: "mx-h3", provider: "Paisio", hint: "2K image-to-video motion", price: "2K 2.800/秒" },
     { value: "seedance-2-0-byteplus", label: "Seedance 2.0 BytePlus", provider: "BytePlus", hint: "Overseas Ark route" },
     { value: "grok-imagine-video", label: "Grok Imagine Video", provider: "Grok", hint: "Concept-led motion" },
   ]);
@@ -84,7 +84,7 @@
     const selected = options.find((option) => option.value === state.model) || options[0];
     if (state.model !== selected.value) state.model = selected.value;
     if (select.dataset.mode !== state.mode || select.options.length !== options.length) {
-      select.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join("");
+      select.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}"${option.price ? ` title="${escapeHtml(option.price)}"` : ""}>${escapeHtml(option.label)}</option>`).join("");
       select.dataset.mode = state.mode;
     }
     select.value = state.model;

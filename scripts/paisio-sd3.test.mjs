@@ -209,6 +209,23 @@ const canvas = fs.readFileSync(path.join(root, "public", "canvas.js"), "utf8");
 const index = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const canvasHtml = fs.readFileSync(path.join(root, "public", "canvas.html"), "utf8");
 const pixelsStudio = fs.readFileSync(path.join(root, "public", "pixels-studio.js"), "utf8");
+const expectedPaisioPrices = [
+  ["sd2", "0.230/秒", "0.290/秒"],
+  ["sd2-fast", "0.230/秒"],
+  ["Seedance 2.5", "1.270/秒"],
+  ["Seedance 2.5 C", "3.500/秒"],
+  ["Seedance 2.5 M", "0.570/秒", "0.970/秒"],
+  ["Seedance 2.0", "0.730/秒"],
+  ["Seedance 2.0 Fast", "0.620/秒"],
+  ["Seedance 2.0 Mini", "0.210/秒", "0.280/秒"],
+  ["Seedance 2.0 M", "0.420/秒", "0.560/秒"],
+  ["Seedance 2.0 M fast", "0.350/秒", "0.490/秒"],
+  ["Seedance 2.0 M fast mini", "0.210/秒", "0.280/秒"],
+  ["mx-h3", "2.800/秒"],
+];
+for (const [label, ...prices] of expectedPaisioPrices) {
+  for (const price of prices) assert.match(`${index}\n${canvasHtml}\n${pixelsStudio}`, new RegExp(price.replace("/", "\\/")), `${label} must expose its Paisio price`);
+}
 
 assert.match(server, /PAISIO_SD3_MODELS/);
 assert.match(server, /PAISIO_SEEDANCE_M_MODEL/);
@@ -224,16 +241,18 @@ assert.doesNotMatch(app, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.doesNotMatch(canvas, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.doesNotMatch(index, /seedance-2-0-super|Seedance 2\.0 super/);
 assert.doesNotMatch(canvasHtml, /seedance-2-0-super|Seedance 2\.0 super/);
-assert.match(index, /value="seedance-2-0-m">Seedance 2\.0 M/);
-assert.match(index, /value="seedance-2-0-m-fast">Seedance 2\.0 M fast/);
-assert.match(index, /value="seedance-2-0-m-fast-mini">Seedance 2\.0 M fast mini/);
-assert.match(index, /value="mx-h3">mx-h3/);
-assert.match(canvasHtml, /value="seedance-2-0-m">Seedance 2\.0 M/);
-assert.match(canvasHtml, /value="seedance-2-0-m-fast">Seedance 2\.0 M fast/);
-assert.match(canvasHtml, /value="seedance-2-0-m-fast-mini">Seedance 2\.0 M fast mini/);
-assert.match(canvasHtml, /value="mx-h3">mx-h3/);
-assert.match(index, /value="seedance-2-5-c">Seedance 2\.5 C/);
-assert.match(canvasHtml, /value="seedance-2-5-c">Seedance 2\.5 C/);
+assert.match(index, /value="seedance-2-0-m"[^>]*>Seedance 2\.0 M/);
+assert.match(index, /value="seedance-2-0-m-fast"[^>]*>Seedance 2\.0 M fast/);
+assert.match(index, /value="seedance-2-0-m-fast-mini"[^>]*>Seedance 2\.0 M fast mini/);
+assert.match(index, /value="mx-h3"[^>]*>mx-h3/);
+assert.match(index, /value="seedance-2-0-m-fast"[^>]*title="480p 0\.350\/秒；720p 0\.490\/秒"/);
+assert.match(canvasHtml, /value="seedance-2-0-m"[^>]*>Seedance 2\.0 M/);
+assert.match(canvasHtml, /value="seedance-2-0-m-fast"[^>]*>Seedance 2\.0 M fast/);
+assert.match(canvasHtml, /value="seedance-2-0-m-fast-mini"[^>]*>Seedance 2\.0 M fast mini/);
+assert.match(canvasHtml, /value="mx-h3"[^>]*>mx-h3/);
+assert.match(canvasHtml, /value="seedance-2-0-m-fast"[^>]*title="480p 0\.350\/秒；720p 0\.490\/秒"/);
+assert.match(index, /value="seedance-2-5-c"[^>]*>Seedance 2\.5 C/);
+assert.match(canvasHtml, /value="seedance-2-5-c"[^>]*>Seedance 2\.5 C/);
 assert.match(index, /id="modernVideoModelPrice"/);
 assert.match(pixelsStudio, /sd2.*0\.230\/秒.*0\.290\/秒/s);
 assert.match(pixelsStudio, /sd2-fast.*0\.230\/秒/s);

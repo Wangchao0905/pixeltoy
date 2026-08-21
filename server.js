@@ -17599,6 +17599,10 @@ function canvasImageProviderSizeFor(ratio, resolution = "1k") {
   if (width === height) return size === "2k" || size === "4k" ? "2048x2048" : "1024x1024";
   if (width > height) {
     if (size === "4k") return "3840x2160";
+    // n1n GPT Image 2 文档没有 1K 的 16:9 尺寸；1536x1024 是 3:2，
+    // 交给后处理强裁成 16:9 会切掉画面上下边缘（常见结果是人物头部/脚部被裁）。
+    // 直接使用文档支持的 2048x1152，保持源图与画布目标同为 16:9。
+    if (width / height === 16 / 9) return "2048x1152";
     if (size === "2k") return "2048x1152";
     return "1536x1024";
   }

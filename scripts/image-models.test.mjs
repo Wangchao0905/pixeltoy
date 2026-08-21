@@ -55,7 +55,7 @@ assert.equal(image.canvasImageModelConfig("gemini-3-pro-image-preview").model, "
 assert.equal(image.canvasImageBaseUrl("gpt-image-2"), process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1");
 assert.equal(image.canvasImageBaseUrl("gemini-3.1-flash-image-preview"), process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1");
 assert.equal(image.canvasImageBaseUrl("gemini-3-pro-image-preview"), process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1");
-assert.equal(image.canvasImageProviderSizeFor("16:9", "1k"), "1536x1024");
+assert.equal(image.canvasImageProviderSizeFor("16:9", "1k"), "2048x1152");
 assert.equal(image.canvasImageProviderSizeFor("16:9", "2k"), "2048x1152");
 assert.equal(image.canvasImageProviderSizeFor("16:9", "4k"), "3840x2160");
 assert.equal(image.canvasImageProviderSizeFor("9:16", "4k"), "2160x3840");

@@ -44,7 +44,7 @@ function usage() {
     "",
     "通用参数：",
     "  --api-key <key>       默认读取 OPENAI_API_KEY",
-    "  --base-url <url>      默认 https://api.apikey.fun/v1，兼容不带 /v1",
+    "  --base-url <url>      默认 https://llm-api.net/v1，兼容不带 /v1",
     "  --mode <mode>         text=文生图，image=文+图生图，edit=图片编辑",
     "  --prompt <text>       提示词",
     "  --image <path|url>    image/edit 模式必填，支持本地图片或 http(s) URL",
@@ -81,33 +81,14 @@ function normalizeMode(mode) {
 }
 
 function buildApiUrl(baseUrl, pathWithV1) {
-  const base = (baseUrl || "https://api.apikey.fun/v1").replace(/\/+$/, "");
+  const base = (baseUrl || "https://llm-api.net/v1").replace(/\/+$/, "");
   const apiPath = pathWithV1.startsWith("/") ? pathWithV1 : `/${pathWithV1}`;
   if (base.endsWith("/v1") && apiPath.startsWith("/v1/")) return `${base}${apiPath.slice(3)}`;
   return `${base}${apiPath}`;
 }
 
-function isPaisioGateway(baseUrl) {
-  return /(^|:\/\/)(?:www\.)?api\.paisio\.online(?::\d+)?(?:\/|$)/i.test(String(baseUrl || ""));
-}
-
-// paisio 图片生成尺寸档位（文档：imageSize 1K/2K/4K）
-function paisioImageSize(resolution) {
-  const raw = String(resolution || "").toLowerCase();
-  if (raw === "2k") return "2K";
-  if (raw === "4k") return "4K";
-  return "1K";
-}
-
-// paisio 支持的比例枚举：1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9 / 9:21
-// 画布 4:5 / 3:2 / 2:3 等做就近映射，避免生成比例与槽位不符。
-function paisioAspectRatio(ratio) {
-  const supported = new Set(["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"]);
-  const raw = String(ratio || "");
-  if (supported.has(raw)) return raw;
-  const map = { "4:5": "3:4", "2:3": "2:3", "5:4": "4:3", "3:4": "3:4" };
-  if (map[raw]) return map[raw];
-  return "";
+function isN1nGateway(baseUrl) {
+  return /(^|:\/\/)(?:www\.)?llm-api\.net(?::\d+)?(?:\/|$)/i.test(String(baseUrl || ""));
 }
 
 function isXibApiGateway(baseUrl) {
@@ -157,32 +138,14 @@ async function fetchImageUrl(url) {
 
 async function imageToInputUrl(image) {
   if (/^https?:\/\//i.test(image)) {
-    // api.apikey.fun can fetch a public reference URL, but its Responses
-    // gateway times out when the same image is embedded as a data URL.
+    // Keep public URLs intact; some gateways time out when a remote image is
+    // downloaded and re-embedded as a data URL.
     return image;
   }
   if (/^data:/i.test(image)) return image;
   await assertLocalImageReadable(image);
   const bytes = await readFile(image);
   return `data:${contentTypeFromPath(image)};base64,${bytes.toString("base64")}`;
-}
-
-// paisio 图生图：参考图转 data-URI 内嵌，避免 paisio 抓取外部 URL 时
-// 401（"upload failed: 401: Oauth token is not valid"）。
-async function imageToPaisioDataUri(image) {
-  if (/^data:/i.test(image)) return image;
-  let bytes;
-  let contentType = "image/png";
-  if (/^https?:\/\//i.test(image)) {
-    const source = await fetchImageUrl(image);
-    bytes = Buffer.from(source.bytes);
-    contentType = source.contentType || contentType;
-  } else {
-    await assertLocalImageReadable(image);
-    bytes = await readFile(image);
-    contentType = contentTypeFromPath(image);
-  }
-  return `data:${contentType};base64,${bytes.toString("base64")}`;
 }
 
 async function imageToFormFile(image) {
@@ -402,6 +365,28 @@ async function buildRequest(args, mode) {
   const prompt = requireArg(args, "prompt");
   const n = intArg(args, "n", 1);
   if (mode === "text") {
+    if (isN1nGateway(args["base-url"])) {
+      return {
+        url: buildApiUrl(args["base-url"], "/v1/images/generations"),
+        defaultOut: "generated-image.png",
+        options: {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            model: args.model || "gpt-image-2",
+            prompt,
+            n,
+            size: args.size || "1024x1024",
+            quality: args.quality || "auto",
+            format: args.format || "png",
+          }),
+        },
+      };
+    }
     if (isXibApiGateway(args["base-url"])) {
       return {
         url: buildXibApiChatUrl(args["base-url"]),
@@ -414,7 +399,7 @@ async function buildRequest(args, mode) {
             Accept: "application/json",
           },
           body: JSON.stringify({
-            model: args.model || "gpt-image2-medium",
+            model: args.model || "gpt-image-2",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.7,
             size: args.size || "1024x1024",
@@ -422,36 +407,6 @@ async function buildRequest(args, mode) {
             style: args.style || "vivid",
             n,
           }),
-        },
-      };
-    }
-    if (mode === "text" && isPaisioGateway(args["base-url"])) {
-      // paisio 文生图：imageSize+aspectRatio 控制尺寸，返回 URL（不传 b64_json）
-      const imageSize = paisioImageSize(args["resolution"]);
-      const aspectRatio = paisioAspectRatio(args["ratio"]);
-      const body = {
-        model: args.model || "gpt-image2-medium",
-        prompt,
-        n,
-        quality: args.quality || "auto",
-      };
-      if (aspectRatio) {
-        body.imageSize = imageSize;
-        body.aspectRatio = aspectRatio;
-      } else {
-        body.size = args.size || "1024x1024";
-      }
-      return {
-        url: buildApiUrl(args["base-url"], "/v1/images/generations"),
-        defaultOut: "generated-image.png",
-        options: {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify(body),
         },
       };
     }
@@ -466,7 +421,7 @@ async function buildRequest(args, mode) {
           Accept: "application/json",
         },
         body: JSON.stringify({
-          model: args.model || "gpt-image2-medium",
+          model: args.model || "gpt-image-2",
           prompt,
           n,
           size: args.size || "1024x1024",
@@ -479,41 +434,7 @@ async function buildRequest(args, mode) {
   }
 
   const image = requireArg(args, "image");
-  if (mode === "image" && isPaisioGateway(args["base-url"])) {
-    // paisio 官方图生图格式：POST /v1/images/generations，JSON body 的 image 字段
-    // 传参考图（URL / Base64 / data-URI），model 支持 gpt-image2 与 nano banana 系列。
-    // 尺寸控制推荐 imageSize+aspectRatio（size 像素会被 paisio 处理异常/忽略）。
-    // 参考图转 data-URI 内嵌（paisio 抓外部 URL 会 401 upload failed）
-    const imageRef = await imageToPaisioDataUri(image);
-    const imageSize = paisioImageSize(args["resolution"]);
-    const aspectRatio = paisioAspectRatio(args["ratio"]);
-    const body = {
-      model: args["image-model"] || "gpt-image2-medium",
-      prompt,
-      image: imageRef,
-      n,
-      quality: args.quality || "auto",
-    };
-    if (aspectRatio) {
-      body.imageSize = imageSize;
-      body.aspectRatio = aspectRatio;
-    } else {
-      body.size = args.size || "1024x1024";
-    }
-    return {
-      url: buildApiUrl(args["base-url"], "/v1/images/generations"),
-      defaultOut: "generated-image.png",
-      options: {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      },
-    };
-  }
-  if (mode === "image") {
+  if (mode === "image" && !isN1nGateway(args["base-url"])) {
     // 主图 + 附加参考图（--reference-image，多张用平台分隔符隔开）全部作为 input_image 传入，
     // gpt-image-2 会直接看到这些像素作为参考。此前只发主图，--reference-image 被静默丢弃。
     const extraReferences = String(args["reference-image"] || "")
@@ -549,7 +470,7 @@ async function buildRequest(args, mode) {
           }],
           tools: [{
             type: "image_generation",
-            model: args["image-model"] || "gpt-image2-medium",
+            model: args["image-model"] || "gpt-image-2",
             size: args.size || "1024x1024",
             quality: args.quality || "auto",
             output_format: args["output-format"] || "png",
@@ -560,16 +481,25 @@ async function buildRequest(args, mode) {
     };
   }
 
-  const source = await imageToFormFile(image);
   const form = new FormData();
-  form.append("image", source.blob, source.name);
+  const extraReferences = isN1nGateway(args["base-url"]) && mode === "image"
+    ? String(args["reference-image"] || "").split("\n").map((item) => item.trim()).filter(Boolean)
+    : [];
+  for (const input of [image, ...extraReferences]) {
+    const source = await imageToFormFile(input);
+    form.append("image", source.blob, source.name);
+  }
   form.append("prompt", prompt);
-  form.append("model", args.model || "gpt-image2-medium");
+  form.append("model", args["image-model"] || args.model || "gpt-image-2");
   form.append("n", String(n));
   form.append("quality", args.quality || "auto");
   form.append("size", args.size || "1024x1024");
-  form.append("stream", "true");
-  form.append("response_format", "b64_json");
+  form.append("format", args.format || "png");
+  const accept = isN1nGateway(args["base-url"]) ? "application/json" : "text/event-stream";
+  if (!isN1nGateway(args["base-url"])) {
+    form.append("stream", "true");
+    form.append("response_format", "b64_json");
+  }
   return {
     url: buildApiUrl(args["base-url"], "/v1/images/edits"),
     defaultOut: "edited-image.png",
@@ -577,7 +507,7 @@ async function buildRequest(args, mode) {
       method: "POST",
       headers: {
         Authorization: `Bearer ${requireArg(args, "api-key", process.env.OPENAI_API_KEY || "")}`,
-        Accept: "text/event-stream",
+        Accept: accept,
       },
       body: form,
     },
@@ -601,7 +531,7 @@ function buildTextResponsesRequest(args) {
         input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
         tools: [{
           type: "image_generation",
-          model: args.model || "gpt-image2-medium",
+          model: args.model || "gpt-image-2",
           size: args.size || "1024x1024",
           quality: args.quality || "auto",
           output_format: args["output-format"] || "png",

@@ -23,7 +23,7 @@ assert.match(styles, /\.cover-design-grid\s*\{[^}]*grid-template-rows:\s*repeat\
 assert.match(styles, /\.cover-design-focus\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,1fr\)/, "enlarged cover preview must stay inside the same window");
 assert.match(styles, /\.cover-design-focus figure img\s*\{[^}]*height:\s*100%/, "enlarged cover preview must fill the bounded preview area");
 assert.match(serverSource, /action === "cover-designs"/, "the project needs a cover design route");
-assert.match(serverSource, /imageModel:\s*"gpt-image2-medium"/, "covers must use gpt-image2-medium");
+assert.match(serverSource, /imageModel:\s*"gpt-image-2"/, "covers must use gpt-image-2");
 assert.match(serverSource, /COVER_DESIGN_STYLES/, "cover styles must be explicit and distinct");
 
 const coverDesign = __test?.coverDesign;

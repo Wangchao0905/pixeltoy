@@ -280,23 +280,19 @@ const CANVAS_NODE_RATIO_DIMENSIONS = Object.freeze({
   adaptive: { width: 9, height: 16, preferredWidth: 520 },
 });
 const IMAGE_NODE_DEFAULTS = {
-  model: "gpt-image2-medium",
+  model: "gpt-image-2",
   ratio: "16:9",
   resolution: "1k",
 };
 
 const IMAGE_MODEL_LABELS = {
   "gpt-image-2": "GPT Image 2",
-  "gpt-image2-high": "GPT Image 2 High",
-  "gpt-image2-medium": "GPT Image 2 Medium",
-  "gemini-3-pro-image-preview": "Nano banana pro",
-  "gemini-3.1-flash-image-preview": "Nano banana 2",
   "seedream-5-0-pro": "Seedream 5.0 Pro",
   "seedream-5-0-lite": "Seedream 5.0 Lite",
   "grok-imagine-image": "Grok Imagine Image",
 };
 function imageModelLabel(model) {
-  return IMAGE_MODEL_LABELS[model] || model || "GPT Image 2 Medium";
+  return IMAGE_MODEL_LABELS[model] || model || "GPT Image 2";
 }
 // 视频编辑器外壳以桌面端 16:9 布局为基准固定尺寸；所选比例只影响槽内画面。
 const VIDEO_EDITOR_DEFAULT_WIDTH = 620;

@@ -15,7 +15,7 @@
     category: "product-shot",
     mode: "image",
     prompt: "",
-    model: "gpt-image2-medium",
+    model: "gpt-image-2",
     style: "closeup",
     ratio: "3:4",
     duration: 5,
@@ -48,10 +48,7 @@
   };
   const slotLabels = { product: "Product", avatar: "Avatar", reference: "Reference" };
   const IMAGE_MODEL_OPTIONS = Object.freeze([
-    { value: "gpt-image2-medium", label: "GPT Image 2 Medium", provider: "GPT", hint: "Fast product shots" },
-    { value: "gpt-image2-high", label: "GPT Image 2 High", provider: "GPT", hint: "Higher fidelity detail" },
-    { value: "gemini-3-pro-image-preview", label: "Nano Banana Pro", provider: "Gemini", hint: "Reference-led edits" },
-    { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2", provider: "Gemini", hint: "Fast visual variations" },
+    { value: "gpt-image-2", label: "GPT Image 2", provider: "GPT", hint: "Flexible 1K / 2K / 4K output" },
     { value: "seedream-5-0-pro", label: "Seedream 5 Pro", provider: "Ark", hint: "Commercial detail" },
     { value: "seedream-5-0-lite", label: "Seedream 5 Lite", provider: "Ark", hint: "Faster exploration" },
     { value: "grok-imagine-image", label: "Grok Imagine Image", provider: "Grok", hint: "Concept-led imagery" },
@@ -584,7 +581,7 @@
     state.category = "product-shot";
     state.mode = "image";
     state.prompt = "";
-    state.model = "gpt-image2-medium";
+    state.model = "gpt-image-2";
     state.style = "closeup";
     state.ratio = "3:4";
     state.duration = 5;

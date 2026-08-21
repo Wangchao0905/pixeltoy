@@ -107,7 +107,7 @@ const SERIES_ASSET_DESCRIPTION_NAME = "project_asset_description.md";
 // 于是重新点击解析毫无反应——必须换版本号才能让旧结果失效。
 const ASSET_PARSER_VERSION = "asset-parser-v4-tool-call-payload";
 const IMAGE_API_KEY_ENV_NAMES = [
-  "PIXEL_TOYS_IMAGE_API_KEY",
+  "PIXEL_TOYS_IMAGE_N1N_API_KEY",
   "IMAGE_GEN_API_KEY",
   "APIKEY_FUN_API_KEY",
   "APIKEYFUN_API_KEY",
@@ -148,8 +148,6 @@ const PAISIO_VIDEO_API_KEY_ENV_NAMES = [
   "APIKEY_FUN_API_KEY",
   "APIKEYFUN_API_KEY",
   "PIXEL_TOYS_VIDEO_API_KEY",
-  // APIKEY.FUN 的同一账户密钥通常也用于 Pixel Toys 图片通道；显式 Paisio key 仍优先。
-  "PIXEL_TOYS_IMAGE_API_KEY",
 ];
 // 火山方舟(Ark)官方视频网关。Gravitex 使用独立的 Seedance 网关。
 // BytePlus ModelArk 是 Ark 的国际版(ap-southeast 区),API 结构与火山中国区一致,仅 base URL / key / 模型 ID 前缀不同(dreamina- vs doubao-)。
@@ -17506,27 +17504,20 @@ const CANVAS_IMAGE_SIZE_TABLE = {
   "2:3": { "1k": "1024x1536", "2k": "2048x3072", "4k": "2304x3456" },
   "1:1": { "1k": "1024x1024", "2k": "2048x2048", "4k": "2880x2880" },
 };
-const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image2-medium";
-const DEFAULT_CANVAS_IMAGE_BASE_URL = "https://beefapi.com/v1";
+const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
+const DEFAULT_CANVAS_IMAGE_BASE_URL = "https://llm-api.net/v1";
 const DEFAULT_SEEDREAM_5_PRO_MODEL = "doubao-seedream-5-0-260128";
 const DEFAULT_SEEDREAM_5_LITE_MODEL = "doubao-seedream-5-0-lite-260128";
 const SEEDREAM_MIN_IMAGE_PIXELS = 3_686_400;
 
 function normalizeCanvasImageModel(value) {
-  const raw = compactLine(value || "gpt-image2-medium").toLowerCase();
-  // gpt-image-2（beefapi 网关独立通道）
+  const raw = compactLine(value || "gpt-image-2").toLowerCase();
+  // gpt-image-2：统一使用 n1n 网关。
   if (["gpt-image-2", "gptimage2", "gpt-image2"].includes(raw)) return "gpt-image-2";
   if (["grok-imagine-image", "grok-imagine"].includes(raw)) return "grok-imagine-image";
   if (["seedream-5-0-pro", "seedream-5.0-pro", "seedream-5-pro", "doubao-seedream-5-0-260128"].includes(raw)) return "seedream-5-0-pro";
   if (["seedream-5-0-lite", "seedream-5.0-lite", "seedream-5-lite", "doubao-seedream-5-0-lite-260128"].includes(raw)) return "seedream-5-0-lite";
-  // GPT Image 2 分档：gpt-image2-high / gpt-image2-medium（paisio 网关模型 ID）
-  if (["gpt-image2-high", "gpt-image-2-high", "gptimage2high", "gpt-image2-high"].includes(raw)) return "gpt-image2-high";
-  if (["gpt-image2-medium", "gpt-image-2-medium", "gptimage2medium", "gpt-image2-medium"].includes(raw)) return "gpt-image2-medium";
-  // Nano banana（paisio gemini 图片模型）：
-  // gemini-3-pro-image-preview = Nano banana pro；gemini-3.1-flash-image-preview = Nano banana 2
-  if (["gemini-3-pro-image-preview", "nanobanana-pro", "nanobanana-pro-1k", "firefly-nano-banana-pro"].includes(raw)) return "gemini-3-pro-image-preview";
-  if (["gemini-3.1-flash-image-preview", "gemini-3-1-flash-image-preview", "nanobanana2", "nanobanana-2", "firefly-nano-banana2"].includes(raw)) return "gemini-3.1-flash-image-preview";
-  return "gpt-image2-medium";
+  return "gpt-image-2";
 }
 
 function canvasImageModelConfig(value) {
@@ -17549,29 +17540,17 @@ function canvasImageModelConfig(value) {
     };
   }
   if (key === "gpt-image-2") {
-    return { key, provider: "gpt", model: "gpt-image-2", supportsSize: true };
-  }
-  if (key === "gpt-image2-high") {
-    return { key, provider: "gpt", model: "gpt-image2-high", supportsSize: true };
-  }
-  if (key === "gpt-image2-medium") {
-    return { key, provider: "gpt", model: "gpt-image2-medium", supportsSize: true };
-  }
-  if (key === "gemini-3-pro-image-preview") {
-    return { key, provider: "gpt", model: "gemini-3-pro-image-preview", supportsSize: true };
-  }
-  if (key === "gemini-3.1-flash-image-preview") {
-    return { key, provider: "gpt", model: "gemini-3.1-flash-image-preview", supportsSize: true };
+    return { key, provider: "gpt", model: "gpt-image-2", quality: "medium", supportsSize: true };
   }
   return { key, provider: "gpt", model: GPT_IMAGE_MODEL, supportsSize: true };
 }
 
-// 特定模型走独立网关（gpt-image-2 → beefapi，其余 → PIXEL_TOYS_IMAGE_BASE_URL）
+// GPT Image 2 使用 n1n 的 OpenAI-compatible 图像接口；其它模型继续使用原有网关。
 function canvasImageGatewayFor(modelKey = "") {
-  if (modelKey === "gpt-image-2") {
+  if (normalizeCanvasImageModel(modelKey) === "gpt-image-2") {
     return {
-      baseUrl: process.env.PIXEL_TOYS_IMAGE_BEEF_BASE_URL || "https://beefapi.com/v1",
-      apiKey: process.env.PIXEL_TOYS_IMAGE_BEEF_API_KEY || "sk-OdztSA6vUrHGzh3y6x8lUy4Sk6S7buF89MMD5u9GFrzw4F92",
+      baseUrl: process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1",
+      apiKey: process.env.PIXEL_TOYS_IMAGE_N1N_API_KEY || "",
     };
   }
   return null;
@@ -17580,7 +17559,7 @@ function canvasImageGatewayFor(modelKey = "") {
 function canvasImageBaseUrl(modelKey = "") {
   const override = canvasImageGatewayFor(modelKey);
   if (override?.baseUrl) return String(override.baseUrl).replace(/\/+$/, "");
-  return (process.env.PIXEL_TOYS_IMAGE_BASE_URL || DEFAULT_CANVAS_IMAGE_BASE_URL).replace(/\/+$/, "");
+  return (process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || DEFAULT_CANVAS_IMAGE_BASE_URL).replace(/\/+$/, "");
 }
 
 function canvasImageSizeFor(ratio, resolution) {
@@ -17606,11 +17585,18 @@ function seedreamImageSizeFor(ratio, resolution) {
 
 // GPT Image 的 image_generation 工具只接受方形、横向或纵向三种尺寸。
 // 具体比例在生成完成后按 CANVAS_IMAGE_SIZE_TABLE 裁切，避免网关静默忽略自定义尺寸。
-function canvasImageProviderSizeFor(ratio) {
+function canvasImageProviderSizeFor(ratio, resolution = "1k") {
   const [width, height] = String(ratio || "16:9").split(":").map(Number);
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return "1536x1024";
-  if (width === height) return "1024x1024";
-  return width > height ? "1536x1024" : "1024x1536";
+  const size = String(resolution || "1k").toLowerCase();
+  if (width === height) return size === "2k" || size === "4k" ? "2048x2048" : "1024x1024";
+  if (width > height) {
+    if (size === "4k") return "3840x2160";
+    if (size === "2k") return "2048x1152";
+    return "1536x1024";
+  }
+  if (size === "4k") return "2160x3840";
+  return "1024x1536";
 }
 
 // GPT Image 2 的参考图下载器比输出尺寸更严格：部分网关只接受
@@ -17780,7 +17766,7 @@ function recoverCanvasImageJobFromOutput(taskId = "") {
     status: "completed",
     url: `/public-assets/${encodeURIComponent(fileName)}?v=${version}`,
     message: "生成完成（已从本地图片恢复）",
-    imageModel: "gpt-image2-medium",
+    imageModel: "gpt-image-2",
     provider: "gpt",
   };
 }
@@ -18115,7 +18101,7 @@ async function createCanvasImageGeneration(body = {}) {
   if (!prompt) throw new Error("请先填写图片描述（prompt）");
   const modelConfig = canvasImageModelConfig(body.imageModel || body.model);
   if (modelConfig.provider === "gpt") {
-    if (!imageApiKey()) throw new Error("缺少图片生成 API Key：请在 .env.local 配置 PIXEL_TOYS_IMAGE_API_KEY 后重启服务。");
+    if (!imageApiKey()) throw new Error("缺少图片生成 API Key：请在 .env.local 配置 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。");
     if (!IMAGE_GEN_SKILL_SCRIPT || !fs.existsSync(IMAGE_GEN_SKILL_SCRIPT)) throw new Error("缺少 image-gen 脚本：请先安装 apikey.fun 的 image-gen skill。");
   } else if (modelConfig.provider === "grok") {
     if (!process.env.XAI_API_KEY) throw new Error("缺少 XAI_API_KEY：Grok 出图需要在 .env.local 配置后重启服务。");
@@ -18126,7 +18112,7 @@ async function createCanvasImageGeneration(body = {}) {
   const ratio = supportsSize && CANVAS_IMAGE_SIZE_TABLE[body.ratio] ? body.ratio : supportsSize ? "16:9" : "";
   const resolution = supportsSize && ["1k", "2k", "4k"].includes(String(body.resolution || "").toLowerCase()) ? String(body.resolution).toLowerCase() : supportsSize ? "1k" : "";
   const size = supportsSize ? canvasImageSizeFor(ratio, resolution) : "";
-  const providerSize = modelConfig.provider === "ark" ? seedreamImageSizeFor(ratio, resolution) : modelConfig.provider === "gpt" ? canvasImageProviderSizeFor(ratio) : "";
+  const providerSize = modelConfig.provider === "ark" ? seedreamImageSizeFor(ratio, resolution) : modelConfig.provider === "gpt" ? canvasImageProviderSizeFor(ratio, resolution) : "";
   fs.mkdirSync(CANVAS_PUBLIC_ASSET_DIR, { recursive: true });
   const taskId = crypto.randomUUID();
   const fileName = `canvas-image-${taskId}.png`;
@@ -18170,6 +18156,7 @@ async function createCanvasImageGeneration(body = {}) {
         "--ratio", ratio, "--resolution", resolution,
         "--model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini",
         "--image-model", modelConfig.model,
+        "--quality", modelConfig.quality || "auto",
         "--api-key", imageApiKey(modelConfig.key),
         "--base-url", canvasImageBaseUrl(modelConfig.key),
         "--out", outPath, "--timeout", timeout,
@@ -18178,7 +18165,7 @@ async function createCanvasImageGeneration(body = {}) {
       // \n 不可能出现在 URL 或文件路径里,是安全的分隔符。
       if (referenceInputs.length > 1) args.push("--reference-image", referenceInputs.slice(1).join("\n"));
     } else {
-      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--ratio", ratio, "--resolution", resolution, "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--api-key", imageApiKey(modelConfig.key), "--base-url", canvasImageBaseUrl(modelConfig.key), "--out", outPath, "--timeout", timeout];
+      args = [IMAGE_GEN_SKILL_SCRIPT, "--mode", "text", "--prompt", prompt, "--size", providerSize, "--ratio", ratio, "--resolution", resolution, "--quality", modelConfig.quality || "auto", "--model", modelConfig.model, "--orchestration-model", process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || "gpt-5.4-mini", "--api-key", imageApiKey(modelConfig.key), "--base-url", canvasImageBaseUrl(modelConfig.key), "--out", outPath, "--timeout", timeout];
     }
   }
   const env = { ...process.env, OPENAI_API_KEY: imageApiKey(modelConfig.key) || process.env.OPENAI_API_KEY || "", OPENAI_BASE_URL: canvasImageBaseUrl(modelConfig.key) };
@@ -18236,7 +18223,7 @@ function getCanvasImageGeneration(taskId) {
     size: job.size,
     ratio: job.ratio,
     resolution: job.resolution,
-    imageModel: job.imageModel || "gpt-image2-medium",
+    imageModel: job.imageModel || "gpt-image-2",
     provider: job.provider || "gpt",
     referenceImageCount: Number(job.referenceImageCount) || 0,
     libraryAssetId: job.libraryAssetId || "",
@@ -25428,7 +25415,7 @@ function readCoverDesignState(episodeRoot) {
     status: compactLine(state.status || "idle") || "idle",
     runId: compactLine(state.runId || ""),
     title: compactLine(state.title || ""),
-    model: compactLine(state.model || "gpt-image2-medium") || "gpt-image2-medium",
+    model: compactLine(state.model || "gpt-image-2") || "gpt-image-2",
     ratio: compactLine(state.ratio || "9:16") || "9:16",
     createdAt: compactLine(state.createdAt || ""),
     updatedAt: compactLine(state.updatedAt || ""),
@@ -25556,7 +25543,7 @@ async function generateProjectCoverDesigns(episodeRoot, { ownerUserId = "" } = {
     runId,
     status: "running",
     title,
-    model: "gpt-image2-medium",
+    model: "gpt-image-2",
     ratio: "9:16",
     createdAt: new Date().toISOString(),
     message: "正在生成 4 个封面方向",
@@ -25577,7 +25564,7 @@ async function generateProjectCoverDesigns(episodeRoot, { ownerUserId = "" } = {
         prompt: promptForCoverStyle(style, { title, referenceNames }),
         ratio: "9:16",
         resolution: "1k",
-        imageModel: "gpt-image2-medium",
+        imageModel: "gpt-image-2",
         referenceImages,
         ownerUserId,
       });
@@ -27550,7 +27537,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
     if (!manifest?.items?.length) throw new Error("还没有资产解析结果，请先提取资产再生成");
     if (!manifest.confirmed) throw new Error("资产解析尚未确认，请先确认分类再生图");
     if (!isDryRun && !imageApiKey()) {
-      throw new Error("缺少图片生成 API Key：请在项目 .env.local 中配置 PIXEL_TOYS_IMAGE_API_KEY，然后重启服务。");
+      throw new Error("缺少图片生成 API Key：请在项目 .env.local 中配置 PIXEL_TOYS_IMAGE_N1N_API_KEY，然后重启服务。");
     }
     // The asset document's text-to-image blocks are the source of truth. Keep
     // the optional style-reference image as a separate input; never inject a
@@ -27652,7 +27639,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
       recordUserImageTask(body.authUser, {
         kind: isEdit ? "asset-edit" : isRegenerate ? "asset-regenerate" : "asset",
         projectId: encodeId(episodeRoot),
-        model: "gpt-image2-medium",
+        model: "gpt-image-2",
         provider: "gpt",
         count: targetAssetNames.length,
       });
@@ -27664,7 +27651,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
     const isDryRun = type === "storyboards-dry-run" || type === "storyboard-regenerate-dry-run";
     const isRegenerate = type === "storyboard-regenerate" || type === "storyboard-regenerate-dry-run";
     if (!isDryRun && !imageApiKey()) {
-      throw new Error("缺少图片生成 API Key：Production Board 需要通过 gpt-image-2 生图模型生成，请在项目 .env.local 配置 PIXEL_TOYS_IMAGE_API_KEY 后重启服务。");
+      throw new Error("缺少图片生成 API Key：Production Board 需要通过 gpt-image-2 生图模型生成，请在项目 .env.local 配置 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。");
     }
     const size = IMAGE_SIZE_BY_QUALITY_16_9[String(body.quality || "1k").toLowerCase()] || DEFAULT_IMAGE_SIZE_16_9;
     persistProjectDialogueLanguage(
@@ -27716,7 +27703,7 @@ async function startToolJob(episodeRoot, type, body = {}) {
       recordUserImageTask(body.authUser, {
         kind: isRegenerate ? "storyboard-regenerate" : "storyboard",
         projectId: encodeId(episodeRoot),
-        model: "gpt-image2-medium",
+        model: "gpt-image-2",
         provider: "gpt",
         count: selectedStoryboardNames.length,
       });
@@ -27933,7 +27920,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The image description." },
-          imageModel: { type: "string", enum: ["gpt-image2-high", "gpt-image2-medium", "gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image2-medium" },
+          imageModel: { type: "string", enum: ["gpt-image-2", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image-2" },
           ratio: { type: "string", enum: Object.keys(CANVAS_IMAGE_SIZE_TABLE), default: "16:9" },
           resolution: { type: "string", enum: ["1k", "2k", "4k"], default: "1k" },
           referenceImages: { type: "array", items: { type: "string" }, maxItems: 4 },
@@ -28124,7 +28111,7 @@ async function executeSuperPixelTool({ req, context, callId, name, rawArguments,
       });
       const meta = {
         prompt,
-        imageModel: result.imageModel || compactLine(args.imageModel || "gpt-image2-medium"),
+        imageModel: result.imageModel || compactLine(args.imageModel || "gpt-image-2"),
         ratio: result.ratio || compactLine(args.ratio || "16:9"),
         resolution: result.resolution || compactLine(args.resolution || "1k"),
         referenceImages,

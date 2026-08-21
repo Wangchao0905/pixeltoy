@@ -148,7 +148,7 @@ const state = {
     category: "product-shot",
     mode: "image",
     prompt: "",
-    model: "gpt-image2-medium",
+    model: "gpt-image-2",
     style: "closeup",
     ratio: "3:4",
     duration: 5,
@@ -167,7 +167,7 @@ const state = {
     history: readImageExploreHistory(),
     storyboardHistory: readImageExploreStoryboardHistory(),
     prompt: "",
-    model: "gpt-image2-medium",
+    model: "gpt-image-2",
     ratio: "16:9",
     resolution: "1k",
     count: 1,
@@ -1945,7 +1945,7 @@ function projectShellStateFromSummary(summary = {}) {
     videoProgress: { total: 0, completed: 0, items: [] },
     videoConfigStatus: {},
     finalCut: null,
-    coverDesign: { status: "idle", items: [], model: "gpt-image2-medium", ratio: "9:16" },
+    coverDesign: { status: "idle", items: [], model: "gpt-image-2", ratio: "9:16" },
     jobs: [],
     summary: null,
   };
@@ -2710,7 +2710,7 @@ function renderImageExploreView() {
   const view = $("#imageExploreView");
   if (!view) return;
   $("#imageExplorePrompt").value = state.imageStudio.prompt;
-  $("#imageExploreModel").value = state.imageStudio.model || "gpt-image2-medium";
+  $("#imageExploreModel").value = state.imageStudio.model || "gpt-image-2";
   $("#imageExploreRatio").value = state.imageStudio.ratio;
   $("#imageExploreResolution").value = state.imageStudio.resolution;
   const grokImageSelected = state.imageStudio.model === "grok-imagine-image";
@@ -3138,7 +3138,7 @@ function renderSuperPixelImageCard(message) {
   const details = document.createElement("div");
   details.className = "super-pixel-tool-card-details";
   appendSuperPixelCardMeta(details, "提示词", meta.prompt || "");
-  appendSuperPixelCardMeta(details, "模型", meta.imageModel || "gpt-image2-medium");
+  appendSuperPixelCardMeta(details, "模型", meta.imageModel || "gpt-image-2");
   appendSuperPixelCardMeta(details, "画幅", [meta.ratio, meta.resolution].filter(Boolean).join(" · "));
   card.appendChild(details);
   return card;
@@ -3427,7 +3427,7 @@ async function retrySuperPixelImageCard(card) {
       method: "POST",
       body: JSON.stringify({
         prompt,
-        imageModel: meta.imageModel || "gpt-image2-medium",
+        imageModel: meta.imageModel || "gpt-image-2",
         ratio: meta.ratio || "16:9",
         resolution: meta.resolution || "1k",
         referenceImages,
@@ -3960,7 +3960,7 @@ function setPixelsStudioMode(mode) {
   state.pixelsStudio.mode = nextMode;
   const isVideoModel = String(state.pixelsStudio.model || "").startsWith("seedance");
   if (nextMode === "video" && !isVideoModel) state.pixelsStudio.model = "seedance-2-0";
-  if (nextMode === "image" && isVideoModel) state.pixelsStudio.model = "gpt-image2-medium";
+  if (nextMode === "image" && isVideoModel) state.pixelsStudio.model = "gpt-image-2";
   renderPixelsStudio();
 }
 
@@ -4394,7 +4394,7 @@ async function runImageExploreGeneration(item) {
           prompt: item.prompt,
           ratio: item.ratio,
           resolution: item.resolution,
-          imageModel: item.model || "gpt-image2-medium",
+          imageModel: item.model || "gpt-image-2",
           referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
         }),
       });
@@ -4438,7 +4438,7 @@ async function runImageExploreStoryboardGeneration(item) {
           prompt: item.prompt,
           ratio: "16:9",
           resolution: item.resolution,
-          imageModel: item.model || "gpt-image2-medium",
+          imageModel: item.model || "gpt-image-2",
           referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : [],
         }),
       });
@@ -4585,7 +4585,7 @@ async function submitImageExploreStoryboard(event) {
     .filter((reference) => !reference.uploading)
     .map((reference) => reference.url || reference.localUrl)
     .filter(Boolean);
-  const model = state.imageStudio.model || "gpt-image2-medium";
+  const model = state.imageStudio.model || "gpt-image-2";
   const batchId = `storyboard-batch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
   const items = Array.from({ length: boardCount }, (_, index) => ({
@@ -4652,7 +4652,7 @@ async function submitImageExploreGeneration(event) {
     .filter((reference) => !reference.uploading)
     .map((reference) => reference.localUrl || reference.url)
     .filter(Boolean);
-  const model = state.imageStudio.model || "gpt-image2-medium";
+  const model = state.imageStudio.model || "gpt-image-2";
   const items = Array.from({ length: count }, (_, index) => ({
     id: `image-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
     status: "running",
@@ -10405,7 +10405,7 @@ function coverDesignStatusLabel(status = "") {
 
 function coverDesignState(data = state.project) {
   const cover = data?.coverDesign;
-  return cover && typeof cover === "object" ? cover : { status: "idle", items: [], model: "gpt-image2-medium", ratio: "9:16" };
+  return cover && typeof cover === "object" ? cover : { status: "idle", items: [], model: "gpt-image-2", ratio: "9:16" };
 }
 
 function renderCoverDesign(data = state.project) {
@@ -10419,7 +10419,7 @@ function renderCoverDesign(data = state.project) {
   const meta = $("#modernCoverDesignMeta");
   if (meta) {
     const title = cover.title || displayProjectTitle(data?.project || {});
-    meta.textContent = title ? `${title} · 人物 / 场景 / 道具 · ${cover.model || "gpt-image2-medium"}` : "使用人物、场景、道具与剧名生成四个封面方向";
+    meta.textContent = title ? `${title} · 人物 / 场景 / 道具 · ${cover.model || "gpt-image-2"}` : "使用人物、场景、道具与剧名生成四个封面方向";
   }
   const button = $("#modernCoverGenerate");
   if (button) {
@@ -10432,7 +10432,7 @@ function renderCoverDesign(data = state.project) {
   if (statusNode) {
     statusNode.className = `cover-design-status is-${cover.status || "idle"}`;
     statusNode.innerHTML = running
-      ? `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>正在生成封面</strong><small>${complete}/4 完成 · ${escapeHtml(cover.model || "gpt-image2-medium")} · ${escapeHtml(cover.ratio || "9:16")}</small>`
+      ? `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>正在生成封面</strong><small>${complete}/4 完成 · ${escapeHtml(cover.model || "gpt-image-2")} · ${escapeHtml(cover.ratio || "9:16")}</small>`
       : failed
         ? `<span class="cover-design-status-dot" aria-hidden="true"></span><strong>${complete}/4 可用</strong><small>${failed} 张失败，可点击重新生成</small>`
         : complete === 4
@@ -11381,7 +11381,7 @@ function bind() {
     state.imageStudio.prompt = event.currentTarget.value;
   });
   $("#imageExploreModel")?.addEventListener("change", (event) => {
-    state.imageStudio.model = event.currentTarget.value || "gpt-image2-medium";
+    state.imageStudio.model = event.currentTarget.value || "gpt-image-2";
   });
   $("#imageExploreStoryboardToggle")?.addEventListener("click", () => {
     state.imageStudio.storyboardMode = !state.imageStudio.storyboardMode;
@@ -11456,7 +11456,7 @@ function bind() {
           .filter(Boolean);
         runImageExploreStoryboardGeneration({
           ...storyboardTarget,
-          model: storyboardTarget.model || state.imageStudio.model || "gpt-image2-medium",
+          model: storyboardTarget.model || state.imageStudio.model || "gpt-image-2",
           referenceImages: Array.isArray(storyboardTarget.referenceImages) ? storyboardTarget.referenceImages : fallbackReferences,
         }).finally(() => {
           endImageExploreGeneration();
@@ -11476,7 +11476,7 @@ function bind() {
         .filter(Boolean);
       runImageExploreGeneration({
         ...target,
-        model: target.model || state.imageStudio.model || "gpt-image2-medium",
+        model: target.model || state.imageStudio.model || "gpt-image-2",
         referenceImages: Array.isArray(target.referenceImages) ? target.referenceImages : fallbackReferences,
       }).finally(() => {
         endImageExploreGeneration();

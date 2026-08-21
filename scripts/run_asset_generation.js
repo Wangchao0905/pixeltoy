@@ -17,7 +17,7 @@ const IMAGE_GEN_CANDIDATES = [
 const IMAGE_GEN = IMAGE_GEN_CANDIDATES.find((candidate) => fs.existsSync(candidate)) || IMAGE_GEN_CANDIDATES[0];
 const IMAGE_GEN_SKILL_URL = "https://apikey.fun/install/skill/image-gen";
 const IMAGE_API_KEY_ENV_NAMES = [
-  "PIXEL_TOYS_IMAGE_API_KEY",
+  "PIXEL_TOYS_IMAGE_N1N_API_KEY",
   "IMAGE_GEN_API_KEY",
   "OPENAI_API_KEY",
   "APIKEY_FUN_API_KEY",
@@ -25,9 +25,9 @@ const IMAGE_API_KEY_ENV_NAMES = [
   "ASSET_ANALYZER_API_KEY",
   "STORYBOARD_API_KEY",
 ];
-const IMAGE_GEN_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || process.env.IMAGE_GEN_IMAGE_MODEL || "gpt-image2-medium";
+const IMAGE_GEN_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || process.env.IMAGE_GEN_IMAGE_MODEL || "gpt-image-2";
 const IMAGE_GEN_ORCHESTRATION_MODEL = process.env.PIXEL_TOYS_IMAGE_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_ORCHESTRATION_MODEL || process.env.IMAGE_GEN_MODEL || "gpt-5.4-mini";
-const IMAGE_GEN_BASE_URL = (process.env.PIXEL_TOYS_IMAGE_BASE_URL || "https://beefapi.com/v1").replace(/\/+$/, "");
+const IMAGE_GEN_BASE_URL = (process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1").replace(/\/+$/, "");
 const DEFAULT_IMAGE_TIMEOUT_SECONDS = Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10);
 // 生产实测:同一张 Production Board 成功耗时横跨 31s ~ 430s,失败的 7 次全部是
 // 180s 上限砍断(日志里 payload 明写 "timeout": 180)。故事板是**最慢**的资产类型
@@ -2317,7 +2317,7 @@ async function main() {
   }
   const requiresRemoteImageGen = assets.some((asset) => ["Character", "Scene", "Prop", "Insert", "Storyboard"].includes(asset.type));
   if (!args.dryRun && requiresRemoteImageGen && !IMAGE_API_KEY_ENV_NAMES.some((name) => process.env[name])) {
-    throw new Error("missing PIXEL_TOYS_IMAGE_API_KEY for image generation");
+    throw new Error("missing PIXEL_TOYS_IMAGE_N1N_API_KEY for image generation");
   }
   console.log(`${new Date().toISOString()} generation order: characters first, scenes second, props/inserts last`);
   if (args.assetName) console.log(`${new Date().toISOString()} selected asset: ${args.assetName}`);

@@ -17960,6 +17960,13 @@ function enqueueCanvasImageJob(taskId, run) {
   drainCanvasImageQueue();
 }
 
+function canRetryCanvasImageJob(env, attempt, diagnostics = "") {
+  // n1n 可能在响应断开前已经接受并计费；再次启动子进程无法安全幂等，
+  // 因此只对其他网关保留原有的有限重试。
+  if (isN1nGateway(env?.OPENAI_BASE_URL)) return false;
+  return attempt < 2 && /stream|api_stream_error|no_image_result|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|rate.?limit|429|500|502|503|504|522|523|524|限流|超时|流/i.test(diagnostics);
+}
+
 function runCanvasImageJob(taskId, args, env, attempt = 0, policyRetried = false) {
   return new Promise((resolve) => {
     let child;
@@ -18007,7 +18014,7 @@ function runCanvasImageJob(taskId, args, env, attempt = 0, policyRetried = false
               runCanvasImageJob(taskId, withCanvasImagePrompt(args, policySafeCanvasImagePrompt(entry.prompt)), env, attempt, true).then(resolve, resolve);
             }, 0);
           // 网络、流中断、空结果、限流和 5xx 自动重试,最多 2 次;审核/参数类不重试。
-          } else if (attempt < 2 && /stream|api_stream_error|no_image_result|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|rate.?limit|429|500|502|503|504|522|523|524|限流|超时|流/i.test(diagnostics)) {
+          } else if (canRetryCanvasImageJob(env, attempt, diagnostics)) {
             Object.assign(entry, { status: "running", message: `上游波动，正在自动重试（${attempt + 1}/2）…` });
             entry.child = null;
             retryScheduled = true;

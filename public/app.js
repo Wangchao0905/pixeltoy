@@ -4569,6 +4569,7 @@ async function retryImageExploreStoryboardBatch(failedItem) {
 
 async function submitImageExploreStoryboard(event) {
   event?.preventDefault();
+  if (state.imageStudio.generating) return;
   const prompt = String(state.imageStudio.prompt || "").trim();
   if (!prompt) {
     toast("请先填写故事或情节");
@@ -4638,6 +4639,7 @@ async function submitImageExploreStoryboard(event) {
 
 async function submitImageExploreGeneration(event) {
   event?.preventDefault();
+  if (state.imageStudio.generating) return;
   if (state.imageStudio.storyboardMode === true) return submitImageExploreStoryboard(event);
   const prompt = String(state.imageStudio.prompt || "").trim();
   if (!prompt) {

@@ -6694,7 +6694,8 @@ qsa("[data-create-node]").forEach((button) => {
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    createNode(button.dataset.createNode, { ...canvasState.menuPoint });
+    const kind = button.dataset.createNode;
+    createNode(kind, { ...canvasState.menuPoint }, kind === "video" ? { preserveDropPoint: true } : {});
   });
 });
 

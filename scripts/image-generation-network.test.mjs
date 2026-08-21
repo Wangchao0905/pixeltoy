@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 const root = path.resolve(new URL("..", import.meta.url).pathname);
 const imageGen = fs.readFileSync(path.join(root, "scripts/vendor/image-gen.js"), "utf8");
 const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const app = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 
 function extractAsyncFunction(source, name) {
   const start = source.indexOf(`async function ${name}`);
@@ -43,7 +44,7 @@ if (!imageGen.includes('Accept: "application/json"') || !imageGen.includes("stre
 if (!imageGen.includes("function isXibApiGateway") || !imageGen.includes("function buildXibApiChatUrl") || !imageGen.includes('`${base}/v1/chat/completions`') || !imageGen.includes('messages: [{ role: "user", content: prompt }]') || !imageGen.includes("temperature: 0.7")) {
   throw new Error("xibapi image generation must use the documented chat completions request contract");
 }
-if (!imageGen.includes('isXibApiGateway(args["base-url"]) || !shouldFallbackToResponses(error)')) {
+if (!imageGen.includes('isXibApiGateway(args["base-url"]) || !shouldFallbackToResponses(error, args["base-url"])')) {
   throw new Error("xibapi image errors must not fall back to the Responses image route");
 }
 if (!imageGen.includes("return image;") || !imageGen.includes('Accept: "text/event-stream"')) {
@@ -63,6 +64,14 @@ assert.equal(await referenceContext.imageToInputUrl(publicReference), publicRefe
 if (!imageGen.includes("function buildTextResponsesRequest") || !imageGen.includes("function shouldFallbackToResponses")) {
   throw new Error("text image generation must fall back to the Responses image tool when the direct route is rejected");
 }
+if (!imageGen.includes('shouldFallbackToResponses(error, args["base-url"])')) {
+  throw new Error("n1n image generation must not blindly fall back to a second paid route");
+}
+const retryContext = {};
+vm.createContext(retryContext);
+vm.runInContext(`${extractFunction(imageGen, "isN1nGateway")}; ${extractFunction(imageGen, "retryCountForGateway")}; globalThis.retryCountForGateway = retryCountForGateway;`, retryContext);
+assert.equal(retryContext.retryCountForGateway("https://llm-api.net/v1"), 0, "n1n requests must not be retried after an uncertain network result");
+assert.equal(retryContext.retryCountForGateway("https://example.com/v1"), 2, "other gateways retain bounded network retries");
 function extractFunction(source, name) {
   const start = source.indexOf(`function ${name}`);
   if (start < 0) throw new Error(`missing ${name}`);
@@ -76,7 +85,7 @@ function extractFunction(source, name) {
 }
 const fallbackContext = {};
 vm.createContext(fallbackContext);
-vm.runInContext(`${extractFunction(imageGen, "shouldFallbackToResponses")}; globalThis.shouldFallbackToResponses = shouldFallbackToResponses;`, fallbackContext);
+vm.runInContext(`${extractFunction(imageGen, "isN1nGateway")}; ${extractFunction(imageGen, "shouldFallbackToResponses")}; globalThis.shouldFallbackToResponses = shouldFallbackToResponses;`, fallbackContext);
 if (!fallbackContext.shouldFallbackToResponses({ detail: { status: 503, body: '{"error":{"message":"No available compatible accounts"}}' } })) {
   throw new Error("503 no-account text generation failures must fall back to the Responses image tool");
 }
@@ -86,11 +95,20 @@ if (!fallbackContext.shouldFallbackToResponses({ detail: { status: 502, body: "B
 if (!fallbackContext.shouldFallbackToResponses({ detail: { status: 504, body: "Gateway Timeout" } })) {
   throw new Error("504 gateway failures must fall back to the Responses image tool");
 }
+if (fallbackContext.shouldFallbackToResponses({ detail: { status: 504, body: "Gateway Timeout" } }, "https://llm-api.net/v1")) {
+  throw new Error("n1n gateway failures must not trigger a second paid Responses request");
+}
 if (fallbackContext.shouldFallbackToResponses({ detail: { status: 503, body: '{"error":{"message":"service temporarily unavailable"}}' } })) {
   throw new Error("generic 503 failures must not trigger an unbounded second generation route");
 }
 if (!server.includes('--orchestration-model') || !server.includes("const detail = parseImageGenFailure(text)")) {
   throw new Error("image generation failures must retain the orchestration model and upstream HTTP details");
+}
+if (!server.includes("function canRetryCanvasImageJob") || !server.includes("canRetryCanvasImageJob(env, attempt, diagnostics)")) {
+  throw new Error("canvas image jobs must suppress uncertain n1n retries");
+}
+if (!app.includes("async function submitImageExploreGeneration") || !app.includes("if (state.imageStudio.generating) return;")) {
+  throw new Error("image generation submit handlers must reject duplicate concurrent submissions");
 }
 
 console.log("image generation network routing test passed");

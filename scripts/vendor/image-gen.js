@@ -190,6 +190,11 @@ async function fetchWithTimeout(url, options, timeoutSeconds, retries = 2) {
   throw new UserError("network_error", "接口请求网络失败", { url, reason: lastError && lastError.message, attempts: retries + 1 });
 }
 
+function retryCountForGateway(baseUrl) {
+  // n1n 请求可能已经被上游接受后才断开连接；重试会把一次生成变成两次计费。
+  return isN1nGateway(baseUrl) ? 0 : 2;
+}
+
 async function ensureOkResponse(response, url) {
   if (response.ok) return;
   throw new UserError("api_http_error", "生图接口返回非成功状态码", {
@@ -314,7 +319,10 @@ async function readImageResponse(response, timeoutSeconds = 0) {
   throw new UserError("no_image_result", "流结束前没有收到图片结果数据");
 }
 
-function shouldFallbackToResponses(error) {
+function shouldFallbackToResponses(error, baseUrl = "") {
+  // /images/generations 与 /responses 都是独立计费入口，n1n 无法证明
+  // 502/504 发生在上游接收请求之前，因此禁止自动发起第二次生成。
+  if (isN1nGateway(baseUrl)) return false;
   const status = Number(error?.detail?.status || 0);
   const text = `${error?.message || ""} ${error?.detail?.body || ""}`.toLowerCase();
   // A 502/504 is emitted by the gateway or its upstream before a generation
@@ -555,13 +563,13 @@ async function main() {
   let activeRequest;
   let usedResponsesFallback = false;
   try {
-    activeRequest = await fetchWithTimeout(request.url, request.options, timeout);
+    activeRequest = await fetchWithTimeout(request.url, request.options, timeout, retryCountForGateway(args["base-url"]));
     await ensureOkResponse(activeRequest.response, request.url);
   } catch (error) {
     activeRequest?.clear();
-    if (mode !== "text" || isXibApiGateway(args["base-url"]) || !shouldFallbackToResponses(error)) throw error;
+    if (mode !== "text" || isXibApiGateway(args["base-url"]) || !shouldFallbackToResponses(error, args["base-url"])) throw error;
     const fallback = buildTextResponsesRequest(args);
-    activeRequest = await fetchWithTimeout(fallback.url, fallback.options, timeout);
+    activeRequest = await fetchWithTimeout(fallback.url, fallback.options, timeout, retryCountForGateway(args["base-url"]));
     await ensureOkResponse(activeRequest.response, fallback.url);
     usedResponsesFallback = true;
   }

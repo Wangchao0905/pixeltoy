@@ -16363,6 +16363,13 @@ function normalizeVideoGenerationErrorMessage(message = "") {
   return nested;
 }
 
+function isTransientVideoGatewayResponse(response, body = "", method = "GET") {
+  if (String(method || "GET").toUpperCase() !== "GET") return false;
+  const status = Number(response?.status || 0);
+  if (!(status === 409 || status >= 500)) return false;
+  return /<!doctype\s+html|<html[\s>]/i.test(String(body || ""));
+}
+
 async function callVideoJson(
   url,
   options = {},
@@ -16418,6 +16425,12 @@ async function callVideoJson(
       message,
       response: data,
     });
+    if (isTransientVideoGatewayResponse(response, text, method)) {
+      const retryError = new Error("视频网关暂时不可用，正在重试任务状态…");
+      retryError.code = "VIDEO_API_TRANSIENT";
+      retryError.status = response.status;
+      throw retryError;
+    }
     throw new Error(message || "视频网关请求失败");
   }
   return data;
@@ -17306,8 +17319,21 @@ async function createPaisioCanvasVideoGeneration(body = {}) {
 async function getPaisioCanvasVideoGeneration(taskId) {
   const cleanTaskId = compactLine(taskId);
   if (!cleanTaskId) throw new Error("缺少任务 ID");
-  const raw = await callPaisioJson(`/v1/videos/${encodeURIComponent(cleanTaskId)}`, { method: "GET" });
-  return { ...normalizePaisioStatus(raw), provider: "paisio" };
+  try {
+    const raw = await callPaisioJson(`/v1/videos/${encodeURIComponent(cleanTaskId)}`, { method: "GET" });
+    return { ...normalizePaisioStatus(raw), provider: "paisio" };
+  } catch (error) {
+    if (error?.code !== "VIDEO_API_TRANSIENT") throw error;
+    return {
+      status: "running",
+      statusRaw: "gateway_retry",
+      taskId: cleanTaskId,
+      progress: null,
+      message: "视频网关暂时不可用，正在重试任务状态…",
+      provider: "paisio",
+      retryable: true,
+    };
+  }
 }
 
 function grokVideoPayload({ prompt, duration, ratio, referenceUrl } = {}) {
@@ -30406,6 +30432,7 @@ module.exports = {
       paisioVideoSubmitTimeoutForBody,
       normalizePaisioStatus,
       normalizeVideoGenerationErrorMessage,
+      isTransientVideoGatewayResponse,
     },
     videoReferences: {
       assertVideoConfigAssetsReady,

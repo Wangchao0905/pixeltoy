@@ -6,12 +6,27 @@ import { fileURLToPath } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const moduleNamespace = await import(path.join(root, "server.js"));
 const { __test } = moduleNamespace.default?.__test ? moduleNamespace.default : moduleNamespace;
-const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus, normalizeVideoResolution, paisioVideoSubmitTimeoutForBody, normalizeVideoGenerationErrorMessage } = __test.canvasVideo;
+const { canvasVideoProviderForBody, buildPaisioVideoGenerationPayload, buildPaisioMiniMaxH3ChatPayload, normalizePaisioMiniMaxH3Status, normalizePaisioDuration, normalizePaisioStatus, normalizeVideoResolution, paisioVideoSubmitTimeoutForBody, normalizeVideoGenerationErrorMessage, isTransientVideoGatewayResponse } = __test.canvasVideo;
 
 assert.equal(
   normalizeVideoGenerationErrorMessage("<!DOCTYPE html><html><body>upstream error</body></html>"),
   "视频网关返回了 HTML 页面，而不是 JSON API 响应，请检查登录状态、网关地址或稍后重试。",
   "HTML gateway responses must become a concise actionable error",
+);
+assert.equal(
+  isTransientVideoGatewayResponse({ status: 409 }, "<!DOCTYPE html><html><title>Could not find host</title></html>", "GET"),
+  true,
+  "Cloudflare HTML polling failures must be retryable",
+);
+assert.equal(
+  isTransientVideoGatewayResponse({ status: 409 }, JSON.stringify({ error: { code: "TASK_NOT_FOUND" } }), "GET"),
+  false,
+  "JSON task errors must remain terminal",
+);
+assert.equal(
+  isTransientVideoGatewayResponse({ status: 502 }, "<!DOCTYPE html><html><title>Bad gateway</title></html>", "POST"),
+  false,
+  "submission failures must never be retried automatically",
 );
 
 assert.equal(

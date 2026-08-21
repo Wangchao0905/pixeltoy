@@ -43,7 +43,7 @@ assert.match(js, /\/api\/canvas\/video-generations\//, "视频模式必须轮询
 assert.match(js, /\/api\/asset-library/, "必须接入素材库接口");
 assert.match(js, /const IMAGE_MODEL_OPTIONS\s*=\s*Object\.freeze/, "必须定义真实图片模型目录");
 assert.match(js, /const VIDEO_MODEL_OPTIONS\s*=\s*Object\.freeze/, "必须定义真实视频模型目录");
-for (const model of ["gpt-image-2", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"]) {
+for (const model of ["gpt-image-2", "gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"]) {
   assert.match(js, new RegExp(`value: "${model}"`), `图片模型目录缺少 ${model}`);
 }
 for (const model of ["sd2", "sd2-fast", "seedance-2-5", "seedance-2-5-c", "seedance-2-5-m", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", "seedance-2-0-m-fast", "seedance-2-0-m-fast-mini", "mx-h3", "seedance-2-0-byteplus", "grok-imagine-video"]) {

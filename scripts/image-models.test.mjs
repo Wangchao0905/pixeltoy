@@ -13,6 +13,8 @@ const imageGen = fs.readFileSync(path.join(root, "scripts", "vendor", "image-gen
 const assetGenerator = fs.readFileSync(path.join(root, "scripts", "run_asset_generation.js"), "utf8");
 
 assert.match(html, /value="gpt-image-2"[^>]*>GPT Image 2/);
+assert.match(html, /value="gemini-3\.1-flash-image-preview"[^>]*>Nano Banana 2/);
+assert.match(html, /value="gemini-3-pro-image-preview"[^>]*>Nano Banana Pro/);
 assert.match(html, /value="seedream-5-0-pro">Seedream 5\.0 Pro/);
 assert.match(html, /value="seedream-5-0-lite">Seedream 5\.0 Lite/);
 assert.match(canvasHtml, /data-node-field="model"/);
@@ -26,8 +28,6 @@ for (const legacyImageConfig of [
   "PIXEL_TOYS_IMAGE_BEEF_BASE_URL",
   "gpt-image2-high",
   "gpt-image2-medium",
-  "gemini-3-pro-image-preview",
-  "gemini-3.1-flash-image-preview",
 ]) {
   assert.doesNotMatch(`${server}\n${html}\n${canvasHtml}\n${imageGen}`, new RegExp(legacyImageConfig.replace(/[.]/g, "\\.")), `legacy image config must be removed: ${legacyImageConfig}`);
 }
@@ -43,12 +43,18 @@ const require = createRequire(import.meta.url);
 const loaded = require(path.join(root, "server.js"));
 const image = loaded.__test.canvasImage;
 assert.equal(image.normalizeCanvasImageModel("gpt-image-2"), "gpt-image-2");
+assert.equal(image.normalizeCanvasImageModel("gemini-3.1-flash-image-preview"), "gemini-3.1-flash-image-preview");
+assert.equal(image.normalizeCanvasImageModel("gemini-3-pro-image-preview"), "gemini-3-pro-image-preview");
 assert.equal(image.normalizeCanvasImageModel("seedream-5-0-pro"), "seedream-5-0-pro");
 assert.equal(image.normalizeCanvasImageModel("seedream-5-0-lite"), "seedream-5-0-lite");
 assert.equal(image.canvasImageModelConfig("seedream-5-0-pro").provider, "ark");
 assert.equal(image.canvasImageModelConfig("seedream-5-0-lite").provider, "ark");
 assert.equal(image.canvasImageModelConfig("gpt-image-2").provider, "gpt");
+assert.equal(image.canvasImageModelConfig("gemini-3.1-flash-image-preview").model, "gemini-3.1-flash-image-preview");
+assert.equal(image.canvasImageModelConfig("gemini-3-pro-image-preview").model, "gemini-3-pro-image-preview");
 assert.equal(image.canvasImageBaseUrl("gpt-image-2"), process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1");
+assert.equal(image.canvasImageBaseUrl("gemini-3.1-flash-image-preview"), process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1");
+assert.equal(image.canvasImageBaseUrl("gemini-3-pro-image-preview"), process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1");
 assert.equal(image.canvasImageProviderSizeFor("16:9", "1k"), "1536x1024");
 assert.equal(image.canvasImageProviderSizeFor("16:9", "2k"), "2048x1152");
 assert.equal(image.canvasImageProviderSizeFor("16:9", "4k"), "3840x2160");

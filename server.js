@@ -115,6 +115,8 @@ const IMAGE_API_KEY_ENV_NAMES = [
   "STORYBOARD_API_KEY",
   "OPENAI_API_KEY",
 ];
+const N1N_NANO_BANANA_2_MODEL = "gemini-3.1-flash-image-preview";
+const N1N_NANO_BANANA_PRO_MODEL = "gemini-3-pro-image-preview";
 const VIDEO_API_KEY_ENV_NAMES = [
   "VOLC_ARK_API_KEY",
   "ARK_API_KEY",
@@ -17514,6 +17516,8 @@ function normalizeCanvasImageModel(value) {
   const raw = compactLine(value || "gpt-image-2").toLowerCase();
   // gpt-image-2：统一使用 n1n 网关。
   if (["gpt-image-2", "gptimage2", "gpt-image2"].includes(raw)) return "gpt-image-2";
+  if ([N1N_NANO_BANANA_2_MODEL, "nano-banana-2", "nanobanana-2"].includes(raw)) return N1N_NANO_BANANA_2_MODEL;
+  if ([N1N_NANO_BANANA_PRO_MODEL, "nano-banana-pro", "nanobanana-pro"].includes(raw)) return N1N_NANO_BANANA_PRO_MODEL;
   if (["grok-imagine-image", "grok-imagine"].includes(raw)) return "grok-imagine-image";
   if (["seedream-5-0-pro", "seedream-5.0-pro", "seedream-5-pro", "doubao-seedream-5-0-260128"].includes(raw)) return "seedream-5-0-pro";
   if (["seedream-5-0-lite", "seedream-5.0-lite", "seedream-5-lite", "doubao-seedream-5-0-lite-260128"].includes(raw)) return "seedream-5-0-lite";
@@ -17542,12 +17546,15 @@ function canvasImageModelConfig(value) {
   if (key === "gpt-image-2") {
     return { key, provider: "gpt", model: "gpt-image-2", quality: "medium", supportsSize: true };
   }
+  if (key === N1N_NANO_BANANA_2_MODEL || key === N1N_NANO_BANANA_PRO_MODEL) {
+    return { key, provider: "gpt", model: key, supportsSize: true };
+  }
   return { key, provider: "gpt", model: GPT_IMAGE_MODEL, supportsSize: true };
 }
 
 // GPT Image 2 使用 n1n 的 OpenAI-compatible 图像接口；其它模型继续使用原有网关。
 function canvasImageGatewayFor(modelKey = "") {
-  if (normalizeCanvasImageModel(modelKey) === "gpt-image-2") {
+  if (["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL].includes(normalizeCanvasImageModel(modelKey))) {
     return {
       baseUrl: process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1",
       apiKey: process.env.PIXEL_TOYS_IMAGE_N1N_API_KEY || "",
@@ -27920,7 +27927,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The image description." },
-          imageModel: { type: "string", enum: ["gpt-image-2", "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image-2" },
+          imageModel: { type: "string", enum: ["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image-2" },
           ratio: { type: "string", enum: Object.keys(CANVAS_IMAGE_SIZE_TABLE), default: "16:9" },
           resolution: { type: "string", enum: ["1k", "2k", "4k"], default: "1k" },
           referenceImages: { type: "array", items: { type: "string" }, maxItems: 4 },

@@ -53,7 +53,7 @@
     { value: "gemini-3-pro-image-preview", label: "Nano Banana Pro", provider: "n1n", hint: "Lowest-price image generation" },
     { value: "seedream-5-0-pro", label: "Seedream 5 Pro", provider: "Ark", hint: "Commercial detail" },
     { value: "seedream-5-0-lite", label: "Seedream 5 Lite", provider: "Ark", hint: "Faster exploration" },
-    { value: "grok-imagine-image", label: "Grok Imagine Image", provider: "Grok", hint: "Concept-led imagery" },
+    { value: "grok-imagine-image-quality", label: "Grok image", provider: "Grok", hint: "High-detail 2K image generation" },
   ]);
   const VIDEO_MODEL_OPTIONS = Object.freeze([
     { value: "sd2", label: "sd2 · 0.230/秒起", provider: "Paisio", hint: "480p / 720p", price: "480p 0.230/秒；720p 0.290/秒" },

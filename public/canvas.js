@@ -299,7 +299,8 @@ const IMAGE_MODEL_LABELS = {
   "gemini-3-pro-image-preview": "Nano Banana Pro",
   "seedream-5-0-pro": "Seedream 5.0 Pro",
   "seedream-5-0-lite": "Seedream 5.0 Lite",
-  "grok-imagine-image": "Grok Imagine Image",
+  "grok-imagine-image-quality": "Grok image",
+  "grok-imagine-image": "Grok image",
 };
 function imageModelLabel(model) {
   return IMAGE_MODEL_LABELS[model] || model || "GPT Image 2";
@@ -4287,7 +4288,7 @@ async function batchGenerateVideoNodes() {
 }
 
 function syncImageModelControls(element, settings = {}) {
-  const hidden = settings.model === "grok-imagine-image";
+  const hidden = ["grok-imagine-image-quality", "grok-imagine-image"].includes(settings.model);
   element.querySelectorAll('[data-node-field="ratio"], [data-node-field="resolution"]').forEach((field) => {
     field.closest("label")?.toggleAttribute("hidden", hidden);
   });

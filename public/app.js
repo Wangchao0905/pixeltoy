@@ -2736,11 +2736,12 @@ function renderImageExploreGallery() {
 function renderImageExploreView() {
   const view = $("#imageExploreView");
   if (!view) return;
+  if (state.imageStudio.model === "grok-imagine-image") state.imageStudio.model = "grok-imagine-image-quality";
   $("#imageExplorePrompt").value = state.imageStudio.prompt;
   $("#imageExploreModel").value = state.imageStudio.model || "gpt-image-2";
   $("#imageExploreRatio").value = state.imageStudio.ratio;
   $("#imageExploreResolution").value = state.imageStudio.resolution;
-  const grokImageSelected = state.imageStudio.model === "grok-imagine-image";
+  const grokImageSelected = ["grok-imagine-image-quality", "grok-imagine-image"].includes(state.imageStudio.model);
   $("#imageExploreRatio")?.closest("label")?.toggleAttribute("hidden", grokImageSelected);
   $("#imageExploreResolution")?.closest("label")?.toggleAttribute("hidden", grokImageSelected);
   $("#imageExploreCount").textContent = String(state.imageStudio.count);
@@ -11410,7 +11411,9 @@ function bind() {
     state.imageStudio.prompt = event.currentTarget.value;
   });
   $("#imageExploreModel")?.addEventListener("change", (event) => {
-    state.imageStudio.model = event.currentTarget.value || "gpt-image-2";
+    state.imageStudio.model = event.currentTarget.value === "grok-imagine-image"
+      ? "grok-imagine-image-quality"
+      : event.currentTarget.value || "gpt-image-2";
   });
   $("#imageExploreStoryboardToggle")?.addEventListener("click", () => {
     state.imageStudio.storyboardMode = !state.imageStudio.storyboardMode;

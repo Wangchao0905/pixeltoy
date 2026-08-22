@@ -17721,7 +17721,7 @@ function normalizeCanvasImageModel(value) {
   if (["gpt-image-2", "gptimage2", "gpt-image2"].includes(raw)) return "gpt-image-2";
   if ([N1N_NANO_BANANA_2_MODEL, "nano-banana-2", "nanobanana-2"].includes(raw)) return N1N_NANO_BANANA_2_MODEL;
   if ([N1N_NANO_BANANA_PRO_MODEL, "nano-banana-pro", "nanobanana-pro"].includes(raw)) return N1N_NANO_BANANA_PRO_MODEL;
-  if (["grok-imagine-image", "grok-imagine"].includes(raw)) return "grok-imagine-image";
+  if (["grok-imagine-image-quality", "grok-imagine-image", "grok-imagine"].includes(raw)) return "grok-imagine-image-quality";
   if (["seedream-5-0-pro", "seedream-5.0-pro", "seedream-5-pro", "doubao-seedream-5-0-260128"].includes(raw)) return "seedream-5-0-pro";
   if (["seedream-5-0-lite", "seedream-5.0-lite", "seedream-5-lite", "doubao-seedream-5-0-lite-260128"].includes(raw)) return "seedream-5-0-lite";
   return "gpt-image-2";
@@ -17729,8 +17729,8 @@ function normalizeCanvasImageModel(value) {
 
 function canvasImageModelConfig(value) {
   const key = normalizeCanvasImageModel(value);
-  if (key === "grok-imagine-image") {
-    return { key, provider: "grok", model: "grok-imagine-image", supportsSize: false };
+  if (key === "grok-imagine-image-quality") {
+    return { key, provider: "grok", model: "grok-imagine-image-quality", supportsSize: false };
   }
   if (key === "seedream-5-0-pro") {
     return {
@@ -18040,7 +18040,7 @@ function seedreamImagePayload(entry = {}) {
 
 function grokImagePayload(entry = {}) {
   return {
-    model: "grok-imagine-image",
+    model: "grok-imagine-image-quality",
     prompt: compactLine(entry.prompt),
     response_format: "b64_json",
   };
@@ -28142,7 +28142,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The image description." },
-          imageModel: { type: "string", enum: ["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image"], default: "gpt-image-2" },
+          imageModel: { type: "string", enum: ["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image-quality"], default: "gpt-image-2" },
           ratio: { type: "string", enum: Object.keys(CANVAS_IMAGE_SIZE_TABLE), default: "16:9" },
           resolution: { type: "string", enum: ["1k", "2k", "4k"], default: "1k" },
           referenceImages: { type: "array", items: { type: "string" }, maxItems: 4 },

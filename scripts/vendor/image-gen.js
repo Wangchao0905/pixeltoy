@@ -391,6 +391,10 @@ async function buildRequest(args, mode) {
             size: args.size || "1024x1024",
             quality: args.quality || "auto",
             format: args.format || "png",
+            // n1n may return a protected/short-lived URL for Grok image unless
+            // the OpenAI-compatible base64 response is requested explicitly.
+            // Keep the documented format field for all other image models.
+            response_format: args.model === "grok-imagine-image-quality" ? "b64_json" : undefined,
           }),
         },
       };

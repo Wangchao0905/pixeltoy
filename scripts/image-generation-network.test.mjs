@@ -41,6 +41,12 @@ if (!server.includes('PIXEL_TOYS_IMAGE_CONCURRENCY || "4"') || !server.includes(
 if (!imageGen.includes('Accept: "application/json"') || !imageGen.includes("stream: false")) {
   throw new Error("text image generation must support the standard non-streaming JSON response");
 }
+const n1nTextRequestStart = imageGen.indexOf('if (isN1nGateway(args["base-url"]))');
+const n1nTextRequestEnd = imageGen.indexOf('if (isXibApiGateway(args["base-url"]))', n1nTextRequestStart);
+const n1nTextRequest = imageGen.slice(n1nTextRequestStart, n1nTextRequestEnd);
+if (!/response_format:\s*args\.model\s*===\s*"grok-imagine-image-quality"\s*\?\s*"b64_json"\s*:\s*undefined/.test(n1nTextRequest)) {
+  throw new Error("Grok image requests through n1n must request b64_json so the server does not need to fetch a remote URL");
+}
 if (!imageGen.includes("function isXibApiGateway") || !imageGen.includes("function buildXibApiChatUrl") || !imageGen.includes('`${base}/v1/chat/completions`') || !imageGen.includes('messages: [{ role: "user", content: prompt }]') || !imageGen.includes("temperature: 0.7")) {
   throw new Error("xibapi image generation must use the documented chat completions request contract");
 }

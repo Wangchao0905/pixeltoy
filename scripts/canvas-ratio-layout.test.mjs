@@ -14,6 +14,8 @@ assert.match(js, /function ratioSizedNodeDimensions\(/,
   "canvas nodes need a ratio-aware size calculation");
 assert.match(js, /const IMAGE_PREVIEW_MAX_HEIGHT = 360;/,
   "portrait image previews need a bounded height so the composer stays scannable");
+assert.match(js, /const RATIO_LAYOUT_CHROME_HEIGHT = \{ image: 500, video: 300 \};/,
+  "image nodes need enough bottom chrome for the fixed 16:9 prompt and visible parameters");
 assert.match(js, /const naturalPreviewHeight = Math\.round\(width \* ratioSize\.height \/ ratioSize\.width\)/,
   "image preview sizing should start from the selected ratio");
 assert.match(js, /const previewHeight = ratioSize\.height > ratioSize\.width\s*\?\s*Math\.min\(naturalPreviewHeight, IMAGE_PREVIEW_MAX_HEIGHT\)\s*:\s*naturalPreviewHeight/,

@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(root, "public", "canvas.html"), "utf8");
 const js = fs.readFileSync(path.join(root, "public", "canvas.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public", "canvas.css"), "utf8");
 
-assert.match(html, /<script src="\/canvas\.js\?v=canvas-viewport-select-20260822-r1"><\/script>/, "canvas script cache key must change when viewport selection behavior changes");
+assert.match(html, /<script src="\/canvas\.js\?v=canvas-video-module-20260822-r1"><\/script>/, "canvas script cache key must change when video module layout changes");
 assert.match(html, /data-frame-control/, "video node must expose frame control");
 assert.match(html, /data-ark-person-panel/, "video node must expose Ark person binding controls");
 assert.match(html, /data-ark-person-action="verify"/, "Ark person binding must link to the official verification flow");

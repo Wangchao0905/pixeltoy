@@ -5165,6 +5165,27 @@ body.canvas-page .canvas-topbar {
   grid-auto-rows: minmax(50px, auto);
 }
 
+/* PixVerse adds operation and source-video controls to the base parameter
+   strip. Keep them in an explicit row so they never fall into a clipped
+   implicit grid row. The JS height calculation reserves the same extra space. */
+.video-node.is-pixverse .video-composer {
+  height: 398px;
+}
+
+.video-node.is-pixverse .video-settings-strip {
+  grid-template-rows: 48px 50px 50px;
+}
+
+.video-node.is-pixverse .video-setting-row > [data-pixverse-extra]:nth-child(4) {
+  grid-column: 1 / 3 !important;
+  grid-row: 3 !important;
+}
+
+.video-node.is-pixverse .video-setting-row > [data-pixverse-extra]:nth-child(5) {
+  grid-column: 3 / -1 !important;
+  grid-row: 3 !important;
+}
+
 .video-node .video-setting-row > .video-setting-model {
   grid-column: 1 / -1 !important;
   grid-row: 1;
@@ -5753,6 +5774,10 @@ body.canvas-page .canvas-topbar {
     grid-template-rows: 44px 44px 44px 44px;
   }
 
+  .video-node.is-pixverse .video-settings-strip {
+    grid-template-rows: 44px 44px 44px 44px 44px;
+  }
+
   .video-node .video-setting-row > .video-setting-model {
     grid-column: 1 / -1 !important;
     grid-row: 1 !important;
@@ -5773,16 +5798,38 @@ body.canvas-page .canvas-topbar {
     grid-row: 3 !important;
   }
 
+  .video-node.is-pixverse .video-setting-row > [data-pixverse-extra]:nth-child(4) {
+    grid-column: 1 !important;
+    grid-row: 3 !important;
+  }
+
+  .video-node.is-pixverse .video-setting-row > [data-pixverse-extra]:nth-child(5) {
+    grid-column: 2 / -1 !important;
+    grid-row: 3 !important;
+  }
+
+  .video-node.is-pixverse .video-duration-field {
+    grid-row: 4 !important;
+  }
+
   .video-node .video-settings-button {
     grid-column: 3 !important;
     grid-row: 4 !important;
     width: 100%;
   }
 
+  .video-node.is-pixverse .video-settings-button {
+    grid-row: 5 !important;
+  }
+
   .video-node .video-generate-button {
     grid-column: 1 / 3 !important;
     grid-row: 4 !important;
     width: 100%;
+  }
+
+  .video-node.is-pixverse .video-generate-button {
+    grid-row: 5 !important;
   }
 }
 

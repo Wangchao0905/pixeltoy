@@ -320,6 +320,8 @@ const ASSET_NODE_MIN_HEIGHT = 64;
 const ASSET_NODE_MAX_HEIGHT = 560;
 const VIDEO_NODE_DEFAULT_WIDTH = VIDEO_EDITOR_DEFAULT_WIDTH;
 const VIDEO_NODE_DEFAULT_HEIGHT = VIDEO_EDITOR_DEFAULT_HEIGHT;
+const PIXVERSE_VIDEO_COMPOSER_EXTRA_HEIGHT = 58;
+const PIXVERSE_VIDEO_MODELS = new Set(["pixverse-v6", "pixverse-c1"]);
 const VIDEO_NODE_MIN_WIDTH = 420;
 const VIDEO_NODE_MAX_WIDTH = 1400;
 const VIDEO_NODE_MIN_HEIGHT = 420;
@@ -2433,7 +2435,8 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
 }
 
 function syncPixverseControls(element, settings = {}) {
-  const enabled = ["pixverse-v6", "pixverse-c1"].includes(String(settings.model || ""));
+  const enabled = PIXVERSE_VIDEO_MODELS.has(String(settings.model || ""));
+  element?.classList.toggle("is-pixverse", enabled);
   element?.querySelectorAll("[data-pixverse-extra]").forEach((control) => {
     control.hidden = !enabled;
   });
@@ -2507,7 +2510,12 @@ function ratioSizedNodeDimensions(node = {}, kind = "video") {
       // The prompt composer has a fixed height; only the media area grows with
       // the selected ratio so portrait shots do not leave horizontal shots
       // with a large empty tail.
-      height: clampNodeDimension(previewHeight + 386, VIDEO_NODE_MIN_HEIGHT, VIDEO_NODE_MAX_HEIGHT, VIDEO_EDITOR_DEFAULT_HEIGHT),
+      height: clampNodeDimension(
+        previewHeight + 386 + (PIXVERSE_VIDEO_MODELS.has(settings.model) ? PIXVERSE_VIDEO_COMPOSER_EXTRA_HEIGHT : 0),
+        VIDEO_NODE_MIN_HEIGHT,
+        VIDEO_NODE_MAX_HEIGHT,
+        VIDEO_EDITOR_DEFAULT_HEIGHT,
+      ),
       previewWidth,
       previewHeight,
     };
@@ -3643,6 +3651,7 @@ function refreshVideoNodeElement(nodeId) {
   }
   const summary = element.querySelector(".node-flow-summary");
   if (summary) summary.textContent = videoModeSummary(node);
+  syncPixverseControls(element, { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}) });
   const assets = element.querySelector(".node-assets");
   if (assets) {
     // Only rebuild the reference chips when their content actually changes.

@@ -23,6 +23,6 @@ assert.match(
   "same-origin media URLs should still receive a cache-busting generation marker",
 );
 assert.match(canvas, /videoPreviewSrc\(node\)/, "video preview renderer must use the safe URL helper");
-assert.match(html, /canvas\.js\?v=canvas-viewport-select-20260822-r1/);
+assert.match(html, /canvas\.js\?v=canvas-video-module-20260822-r1/);
 
 console.log("canvas signed video URL tests passed");

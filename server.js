@@ -16515,18 +16515,6 @@ async function callArkJson(pathname, options = {}) {
   );
 }
 
-async function callArkImageJson(payload = {}) {
-  return callVideoJson(
-    arkImageUrl("/images/generations"),
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-    "缺少火山方舟图片 API Key：请在 .env.local 配置 VOLC_ARK_API_KEY 后重启服务。",
-    "ark",
-  );
-}
-
 async function callBytePlusArkJson(pathname, options = {}) {
   return callVideoJson(
     bytePlusArkVideoUrl(pathname),
@@ -17692,7 +17680,7 @@ async function getCanvasVideoGeneration(taskId, provider = canvasVideoProvider()
   return getArkCanvasVideoGeneration(taskId);
 }
 
-// ---- 画布图片生成通道（GPT Image 2 + Seedream 5.0，输出到画布公共资产目录） ----
+// ---- 画布图片生成通道（GPT Image 2、Nano Banana、Grok，输出到画布公共资产目录） ----
 const canvasImageJobs = new Map();
 const canvasImageQueue = [];
 let canvasImageActiveJobs = 0;
@@ -17711,9 +17699,6 @@ const CANVAS_IMAGE_SIZE_TABLE = {
 };
 const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
 const DEFAULT_CANVAS_IMAGE_BASE_URL = "https://llm-api.net/v1";
-const DEFAULT_SEEDREAM_5_PRO_MODEL = "doubao-seedream-5-0-260128";
-const DEFAULT_SEEDREAM_5_LITE_MODEL = "doubao-seedream-5-0-lite-260128";
-const SEEDREAM_MIN_IMAGE_PIXELS = 3_686_400;
 
 function normalizeCanvasImageModel(value) {
   const raw = compactLine(value || "gpt-image-2").toLowerCase();
@@ -17722,8 +17707,6 @@ function normalizeCanvasImageModel(value) {
   if ([N1N_NANO_BANANA_2_MODEL, "nano-banana-2", "nanobanana-2"].includes(raw)) return N1N_NANO_BANANA_2_MODEL;
   if ([N1N_NANO_BANANA_PRO_MODEL, "nano-banana-pro", "nanobanana-pro"].includes(raw)) return N1N_NANO_BANANA_PRO_MODEL;
   if (["grok-imagine-image-quality", "grok-imagine-image", "grok-imagine"].includes(raw)) return "grok-imagine-image-quality";
-  if (["seedream-5-0-pro", "seedream-5.0-pro", "seedream-5-pro", "doubao-seedream-5-0-260128"].includes(raw)) return "seedream-5-0-pro";
-  if (["seedream-5-0-lite", "seedream-5.0-lite", "seedream-5-lite", "doubao-seedream-5-0-lite-260128"].includes(raw)) return "seedream-5-0-lite";
   return "gpt-image-2";
 }
 
@@ -17731,20 +17714,6 @@ function canvasImageModelConfig(value) {
   const key = normalizeCanvasImageModel(value);
   if (key === "grok-imagine-image-quality") {
     return { key, provider: "gpt", model: "grok-imagine-image-quality", supportsSize: true };
-  }
-  if (key === "seedream-5-0-pro") {
-    return {
-      key,
-      provider: "ark",
-      model: process.env.VOLC_ARK_IMAGE_PRO_MODEL || process.env.SEEDREAM_5_PRO_MODEL || DEFAULT_SEEDREAM_5_PRO_MODEL,
-    };
-  }
-  if (key === "seedream-5-0-lite") {
-    return {
-      key,
-      provider: "ark",
-      model: process.env.VOLC_ARK_IMAGE_LITE_MODEL || process.env.SEEDREAM_5_LITE_MODEL || DEFAULT_SEEDREAM_5_LITE_MODEL,
-    };
   }
   if (key === "gpt-image-2") {
     return { key, provider: "gpt", model: "gpt-image-2", quality: "medium", supportsSize: true };
@@ -17779,22 +17748,6 @@ function isN1nGateway(baseUrl = "") {
 function canvasImageSizeFor(ratio, resolution) {
   const r = CANVAS_IMAGE_SIZE_TABLE[ratio] || CANVAS_IMAGE_SIZE_TABLE["16:9"];
   return r[String(resolution || "1k").toLowerCase()] || r["1k"];
-}
-
-// Seedream 5.0 rejects requests below 3,686,400 total pixels. Keep the UI's
-// resolution/output size unchanged, but upscale only the provider request to
-// the smallest 16px-aligned size that satisfies the model constraint.
-function seedreamImageSizeFor(ratio, resolution) {
-  const requested = canvasImageSizeFor(ratio, resolution);
-  const match = requested.match(/^(\d+)x(\d+)$/);
-  if (!match) return "2560x1440";
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  if (width * height >= SEEDREAM_MIN_IMAGE_PIXELS) return requested;
-  const scale = Math.sqrt(SEEDREAM_MIN_IMAGE_PIXELS / (width * height));
-  const alignedWidth = Math.ceil((width * scale) / 16) * 16;
-  const alignedHeight = Math.ceil((height * scale) / 16) * 16;
-  return `${alignedWidth}x${alignedHeight}`;
 }
 
 // GPT Image 的 image_generation 工具只接受方形、横向或纵向三种尺寸。
@@ -17989,59 +17942,6 @@ function recoverCanvasImageJobFromOutput(taskId = "") {
   };
 }
 
-function seedreamImageResult(raw = {}) {
-  const candidates = [
-    raw?.data?.[0],
-    raw?.output?.[0],
-    raw?.images?.[0],
-    raw?.result?.data?.[0],
-    raw?.result?.output?.[0],
-  ].filter(Boolean);
-  for (const item of candidates) {
-    if (typeof item === "string") return { url: item };
-    if (item.url || item.image_url || item.b64_json || item.base64 || item.image_base64) {
-      return {
-        url: item.url || item.image_url || "",
-        b64: item.b64_json || item.base64 || item.image_base64 || "",
-      };
-    }
-  }
-  return null;
-}
-
-async function writeSeedreamImageResult(entry, raw) {
-  const result = seedreamImageResult(raw);
-  if (!result) throw new Error("Seedream 图片接口没有返回图片结果");
-  let buffer;
-  if (result.b64) {
-    buffer = Buffer.from(result.b64, "base64");
-  } else if (isDataImageUrl(result.url)) {
-    buffer = decodeDataImageUrl(result.url)?.buffer;
-  } else if (/^https?:\/\//i.test(result.url)) {
-    const response = await fetchWithTimeout(result.url, { headers: { Accept: "image/*" } }, 180_000);
-    if (!response.ok) throw new Error(`Seedream 返回图片下载失败（HTTP ${response.status}）`);
-    buffer = Buffer.from(await response.arrayBuffer());
-  }
-  if (!buffer?.length || buffer.length > 50 * 1024 * 1024) throw new Error("Seedream 返回的图片内容无效");
-  fs.writeFileSync(entry.outPath, buffer);
-}
-
-function seedreamImagePayload(entry = {}) {
-  const payload = {
-    model: entry.providerModel,
-    prompt: entry.providerPrompt || entry.prompt,
-    size: entry.providerSize || entry.size,
-    response_format: "url",
-    watermark: false,
-    stream: false,
-  };
-  if (entry.referencePaths?.length) {
-    const images = entry.referencePaths.map((file) => fileToDataUrl(file));
-    payload.image = images.length === 1 ? images[0] : images;
-  }
-  return payload;
-}
-
 function grokImagePayload(entry = {}) {
   return {
     model: "grok-imagine-image-quality",
@@ -18101,27 +18001,6 @@ function withCanvasImagePrompt(args = [], prompt = "") {
   const next = [...args];
   next[promptIndex + 1] = prompt;
   return next;
-}
-
-async function runSeedreamCanvasImageJob(taskId, policyRetried = false, requestPrompt = "") {
-  const entry = canvasImageJobs.get(taskId);
-  if (!entry) return;
-  try {
-    const raw = await callArkImageJson(seedreamImagePayload({ ...entry, prompt: requestPrompt || entry.prompt }));
-    await writeSeedreamImageResult(entry, raw);
-    await completeCanvasImageJob(entry);
-  } catch (error) {
-    const detail = error?.message || "Seedream 图片生成失败";
-    if (!policyRetried && isCanvasImagePolicyFailure(detail)) {
-      Object.assign(entry, {
-        status: "running",
-        message: "提示词触发审核，正在按安全表达自动重试…",
-        policyRetry: true,
-      });
-      return runSeedreamCanvasImageJob(taskId, true, policySafeCanvasImagePrompt(entry.prompt));
-    }
-    Object.assign(entry, { status: "failed", message: classifyImageGenError(detail, "ark") });
-  }
 }
 
 async function runGrokCanvasImageJob(taskId) {
@@ -18290,9 +18169,7 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
     if (upstreamMessage && !/invalid.*api.?key|authentication|unauthorized/i.test(upstreamMessage)) {
       return `上游拒绝图片请求：${String(upstreamMessage).slice(0, 200)}`;
     }
-    return provider === "ark"
-      ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
-      : provider === "grok"
+    return provider === "grok"
         ? "Grok 出图鉴权失败：请检查 XAI_API_KEY。"
       : "出图鉴权失败：请检查图片生成 API Key 配置。";
   }
@@ -18310,9 +18187,7 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
   if (status >= 500 && upstreamMessage) return `生图上游服务异常（HTTP ${status}）：${upstreamMessage}`;
   if (status && upstreamMessage) return `生图接口失败（HTTP ${status}）：${upstreamMessage}`;
   if (/invalid|unauthorized|401|api key|token|鉴权|密钥/i.test(text)) {
-    return provider === "ark"
-      ? "Seedream 出图鉴权失败：请检查 VOLC_ARK_API_KEY。"
-      : provider === "grok"
+    return provider === "grok"
         ? "Grok 出图鉴权失败：请检查 XAI_API_KEY。"
       : "出图鉴权失败：请检查图片生成 API Key 配置。";
   }
@@ -18328,14 +18203,12 @@ async function createCanvasImageGeneration(body = {}) {
   if (modelConfig.provider === "gpt") {
     if (!imageApiKey(modelConfig.key)) throw new Error("缺少图片生成 API Key：请在 .env.local 配置 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。");
     if (!IMAGE_GEN_SKILL_SCRIPT || !fs.existsSync(IMAGE_GEN_SKILL_SCRIPT)) throw new Error("缺少 image-gen 脚本：请先安装 apikey.fun 的 image-gen skill。");
-  } else if (!videoApiKey("ark")) {
-    throw new Error("缺少 VOLC_ARK_API_KEY：Seedream 5.0 Pro/Lite 出图需要火山方舟 API Key，请在 .env.local 配置后重启服务。");
   }
   const supportsSize = modelConfig.supportsSize !== false;
   const ratio = supportsSize && CANVAS_IMAGE_SIZE_TABLE[body.ratio] ? body.ratio : supportsSize ? "16:9" : "";
   const resolution = supportsSize && ["1k", "2k", "4k"].includes(String(body.resolution || "").toLowerCase()) ? String(body.resolution).toLowerCase() : supportsSize ? "1k" : "";
   const size = supportsSize ? canvasImageSizeFor(ratio, resolution) : "";
-  const providerSize = modelConfig.provider === "ark" ? seedreamImageSizeFor(ratio, resolution) : modelConfig.provider === "gpt" ? canvasImageProviderSizeFor(ratio, resolution) : "";
+  const providerSize = canvasImageProviderSizeFor(ratio, resolution);
   fs.mkdirSync(CANVAS_PUBLIC_ASSET_DIR, { recursive: true });
   const taskId = crypto.randomUUID();
   const fileName = `canvas-image-${taskId}.png`;
@@ -18429,8 +18302,7 @@ async function createCanvasImageGeneration(body = {}) {
       provider: modelConfig.provider,
     },
   );
-  if (modelConfig.provider === "ark") enqueueCanvasImageJob(taskId, () => runSeedreamCanvasImageJob(taskId));
-  else enqueueCanvasImageJob(taskId, () => runCanvasImageJob(taskId, args, env));
+  enqueueCanvasImageJob(taskId, () => runCanvasImageJob(taskId, args, env));
   // 清理老任务（>30 分钟）避免内存无界增长。
   for (const [id, job] of canvasImageJobs) {
     if (Date.now() - (job.createdAt || 0) > 30 * 60 * 1000 && job.status !== "running") canvasImageJobs.delete(id);
@@ -28147,7 +28019,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The image description." },
-          imageModel: { type: "string", enum: ["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "seedream-5-0-pro", "seedream-5-0-lite", "grok-imagine-image-quality"], default: "gpt-image-2" },
+          imageModel: { type: "string", enum: ["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "grok-imagine-image-quality"], default: "gpt-image-2" },
           ratio: { type: "string", enum: Object.keys(CANVAS_IMAGE_SIZE_TABLE), default: "16:9" },
           resolution: { type: "string", enum: ["1k", "2k", "4k"], default: "1k" },
           referenceImages: { type: "array", items: { type: "string" }, maxItems: 4 },
@@ -30707,9 +30579,6 @@ module.exports = {
       normalizeCanvasImageReferenceForProvider,
       classifyImageGenError,
       grokImagePayload,
-      seedreamImageSizeFor,
-      seedreamImageResult,
-      seedreamImagePayload,
       canvasImagePromptWithReferences,
     },
     arkVirtualPerson: {

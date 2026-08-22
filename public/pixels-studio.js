@@ -51,8 +51,6 @@
     { value: "gpt-image-2", label: "GPT Image 2", provider: "GPT", hint: "Flexible 1K / 2K / 4K output" },
     { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2", provider: "n1n", hint: "Lowest-price image generation" },
     { value: "gemini-3-pro-image-preview", label: "Nano Banana Pro", provider: "n1n", hint: "Lowest-price image generation" },
-    { value: "seedream-5-0-pro", label: "Seedream 5 Pro", provider: "Ark", hint: "Commercial detail" },
-    { value: "seedream-5-0-lite", label: "Seedream 5 Lite", provider: "Ark", hint: "Faster exploration" },
     { value: "grok-imagine-image-quality", label: "Grok image", provider: "Grok", hint: "High-detail 2K image generation" },
   ]);
   const VIDEO_MODEL_OPTIONS = Object.freeze([

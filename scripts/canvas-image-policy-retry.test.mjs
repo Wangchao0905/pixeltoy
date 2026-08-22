@@ -49,8 +49,4 @@ assert.match(gptRunner, /isCanvasImagePolicyFailure/, "GPT canvas jobs must bran
 assert.match(gptRunner, /withCanvasImagePrompt\(args, policySafeCanvasImagePrompt\(entry\.prompt\)\)/, "GPT retries must replace only the child process prompt");
 assert.doesNotMatch(gptRunner, /entry\.prompt\s*=/, "the original user prompt must remain unchanged");
 
-const seedreamRunner = extractFunction("async function runSeedreamCanvasImageJob(");
-assert.match(seedreamRunner, /isCanvasImagePolicyFailure/, "Seedream canvas jobs must branch to the policy retry");
-assert.doesNotMatch(seedreamRunner, /entry\.prompt\s*=/, "Seedream retries must also preserve the original prompt");
-
 console.log("canvas image policy retry tests passed");

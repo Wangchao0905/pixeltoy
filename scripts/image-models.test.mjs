@@ -15,8 +15,9 @@ const assetGenerator = fs.readFileSync(path.join(root, "scripts", "run_asset_gen
 assert.match(html, /value="gpt-image-2"[^>]*>GPT Image 2/);
 assert.match(html, /value="gemini-3\.1-flash-image-preview"[^>]*>Nano Banana 2/);
 assert.match(html, /value="gemini-3-pro-image-preview"[^>]*>Nano Banana Pro/);
-assert.match(html, /value="seedream-5-0-pro">Seedream 5\.0 Pro/);
-assert.match(html, /value="seedream-5-0-lite">Seedream 5\.0 Lite/);
+for (const seedreamModel of ["seedream-5-0-pro", "seedream-5-0-lite"]) {
+  assert.doesNotMatch(`${html}\n${canvasHtml}\n${server}`, new RegExp(seedreamModel), `Seedream image model must be removed: ${seedreamModel}`);
+}
 assert.match(canvasHtml, /data-node-field="model"/);
 assert.match(canvas, /model: "gpt-image-2"/);
 assert.match(canvas, /imageModel: settings\.model/);
@@ -31,9 +32,7 @@ for (const legacyImageConfig of [
 ]) {
   assert.doesNotMatch(`${server}\n${html}\n${canvasHtml}\n${imageGen}`, new RegExp(legacyImageConfig.replace(/[.]/g, "\\.")), `legacy image config must be removed: ${legacyImageConfig}`);
 }
-assert.match(server, /VOLC_ARK_IMAGE_PRO_MODEL/);
-assert.match(server, /VOLC_ARK_IMAGE_LITE_MODEL/);
-assert.match(server, /runSeedreamCanvasImageJob/);
+assert.doesNotMatch(server, /VOLC_ARK_IMAGE_(?:PRO|LITE)_MODEL|runSeedreamCanvasImageJob|seedreamImagePayload|seedreamImageSizeFor/);
 assert.match(assetGenerator, /const IMAGE_GEN_BASE_URL = \(process\.env\.PIXEL_TOYS_IMAGE_N1N_BASE_URL \|\| "https:\/\/llm-api\.net\/v1"\)/, "Image asset generation must use the n1n gateway");
 assert.match(assetGenerator, /"--base-url",\s*IMAGE_GEN_BASE_URL/, "Image asset generation must pass the shared gateway to image-gen");
 assert.match(imageGen, /const allImages = \[image, \.\.\.extraReferences\]/, "GPT Image requests must include the primary and additional reference images");
@@ -45,10 +44,10 @@ const image = loaded.__test.canvasImage;
 assert.equal(image.normalizeCanvasImageModel("gpt-image-2"), "gpt-image-2");
 assert.equal(image.normalizeCanvasImageModel("gemini-3.1-flash-image-preview"), "gemini-3.1-flash-image-preview");
 assert.equal(image.normalizeCanvasImageModel("gemini-3-pro-image-preview"), "gemini-3-pro-image-preview");
-assert.equal(image.normalizeCanvasImageModel("seedream-5-0-pro"), "seedream-5-0-pro");
-assert.equal(image.normalizeCanvasImageModel("seedream-5-0-lite"), "seedream-5-0-lite");
-assert.equal(image.canvasImageModelConfig("seedream-5-0-pro").provider, "ark");
-assert.equal(image.canvasImageModelConfig("seedream-5-0-lite").provider, "ark");
+assert.equal(image.normalizeCanvasImageModel("seedream-5-0-pro"), "gpt-image-2", "removed Seedream drafts must fall back to GPT Image 2");
+assert.equal(image.normalizeCanvasImageModel("seedream-5-0-lite"), "gpt-image-2", "removed Seedream drafts must fall back to GPT Image 2");
+assert.equal(image.canvasImageModelConfig("seedream-5-0-pro").provider, "gpt");
+assert.equal(image.canvasImageModelConfig("seedream-5-0-lite").provider, "gpt");
 assert.equal(image.canvasImageModelConfig("gpt-image-2").provider, "gpt");
 assert.equal(image.canvasImageModelConfig("gemini-3.1-flash-image-preview").model, "gemini-3.1-flash-image-preview");
 assert.equal(image.canvasImageModelConfig("gemini-3-pro-image-preview").model, "gemini-3-pro-image-preview");
@@ -65,13 +64,6 @@ assert.match(
   /参考图画幅不符合 GPT Image 2/,
   "aspect-ratio download errors must become actionable Chinese feedback",
 );
-assert.equal(image.seedreamImageSizeFor("16:9", "1k"), "2560x1440");
-assert.equal(image.seedreamImageSizeFor("9:16", "1k"), "1440x2560");
-assert.equal(image.seedreamImageSizeFor("1:1", "1k"), "1920x1920");
-const payload = image.seedreamImagePayload({ providerModel: "doubao-seedream-5-0-260128", prompt: "test", size: "1280x720", providerSize: "2560x1440" });
-assert.equal(payload.model, "doubao-seedream-5-0-260128");
-assert.equal(payload.size, "2560x1440");
-assert.equal(payload.response_format, "url");
 const referencePrompt = image.canvasImagePromptWithReferences("一只橙色的猫", 2);
 assert.match(referencePrompt, /Treat every supplied reference image as the visual source of truth/);
 assert.match(referencePrompt, /Attached reference images: 2/);
@@ -86,15 +78,6 @@ try {
   normalizedReferencePath = image.normalizeCanvasImageReferenceForProvider(referencePath, "1536x1024", `image-reference-test-${process.pid}`, 0);
   assert.notEqual(normalizedReferencePath, referencePath, "GPT reference images must be normalized before upload");
   assert.ok(fs.existsSync(normalizedReferencePath), "normalized GPT reference image must be written locally");
-  const payloadWithReference = image.seedreamImagePayload({
-    providerModel: "doubao-seedream-5-0-260128",
-    prompt: "用户原始提示词",
-    providerPrompt: referencePrompt,
-    providerSize: "2560x1440",
-    referencePaths: [referencePath],
-  });
-  assert.equal(payloadWithReference.prompt, referencePrompt, "Seedream must receive the reference-aware prompt");
-  assert.match(payloadWithReference.image, /^data:image\/png;base64,/, "Seedream must receive the uploaded reference pixels");
 } finally {
   fs.rmSync(referencePath, { force: true });
   if (normalizedReferencePath && normalizedReferencePath !== referencePath) fs.rmSync(normalizedReferencePath, { force: true });

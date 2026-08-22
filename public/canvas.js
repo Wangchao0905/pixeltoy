@@ -297,8 +297,6 @@ const IMAGE_MODEL_LABELS = {
   "gpt-image-2": "GPT Image 2",
   "gemini-3.1-flash-image-preview": "Nano Banana 2",
   "gemini-3-pro-image-preview": "Nano Banana Pro",
-  "seedream-5-0-pro": "Seedream 5.0 Pro",
-  "seedream-5-0-lite": "Seedream 5.0 Lite",
   "grok-imagine-image-quality": "Grok image",
   "grok-imagine-image": "Grok image",
 };

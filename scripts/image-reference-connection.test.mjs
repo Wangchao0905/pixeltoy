@@ -27,7 +27,7 @@ assert.match(imageGenerationRoute, /const failedReference = referenceRecords\.fi
 assert.match(imageGenerationRoute, /if \(failedReference\) throw new Error\(`参考图准备失败：/, "image generation must block submission when any reference cannot be prepared");
 assert.match(imageGenerationRoute, /const providerPrompt = canvasImagePromptWithReferences\(prompt, references\.length\)/, "image generation must add an explicit visual-reference instruction after every reference has resolved");
 assert.match(imageGenerationRoute, /"--prompt", providerPrompt/, "GPT Image requests must send the explicit visual-reference instruction to the image tool");
-assert.match(imageGenerationRoute, /providerPrompt,/, "Seedream requests must retain the explicit visual-reference instruction separately from the user-visible prompt");
+assert.match(imageGenerationRoute, /providerPrompt,/, "image requests must retain the explicit visual-reference instruction separately from the user-visible prompt");
 assert.match(imageGenerationRoute, /referenceImageCount: references\.length/, "image jobs must retain the resolved reference count for request diagnostics");
 
 console.log("image reference connection tests passed");

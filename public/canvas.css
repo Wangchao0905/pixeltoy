@@ -5382,6 +5382,15 @@ body.canvas-page .canvas-topbar {
   overflow: hidden;
 }
 
+/* The prompt is an editing surface, not part of the selected output ratio.
+   Keep its readable 16:9 workspace stable while the preview above changes
+   between landscape, square, and portrait outputs. */
+.image-node .image-prompt-field {
+  flex: 0 0 auto;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+}
+
 .image-node .image-prompt-field .node-prompt {
   min-height: 0;
   overflow: auto;

@@ -44,6 +44,10 @@ assert.match(css, /\.image-node\.is-composer-open \.image-preview-slot[\s\S]*?wi
   "portrait image previews should narrow inside the composer instead of stretching the node");
 assert.match(css, /\.image-node\.is-composer-open \.image-preview-slot[\s\S]*?height:\s*var\(--image-preview-height, auto\)[\s\S]*?max-height:\s*360px/s,
   "image preview height should be capped in the final layout rule");
+assert.match(css, /\.image-node \.image-prompt-field[\s\S]*?flex:\s*0 0 auto[\s\S]*?aspect-ratio:\s*16\s*\/\s*9/s,
+  "image prompt fields should keep a stable 16:9 editing surface independent of preview ratio");
+assert.match(css, /\.image-node \.image-prompt-field[\s\S]*?min-height:\s*0/s,
+  "fixed-ratio image prompt fields should not collapse or inherit a ratio-driven minimum height");
 assert.match(css, /\.video-settings-strip[\s\S]*?grid-template-columns:/s,
   "video parameters should remain in a dedicated bottom strip");
 assert.match(html, /class="video-reference-dock"[\s\S]*class="node-assets video-reference-assets"/,

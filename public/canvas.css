@@ -7684,3 +7684,10 @@ body.canvas-page {
     transition: none;
   }
 }
+
+/* Chromium paints native select menus outside transformed ancestors. Keep
+   their option text proportional to the canvas zoom instead of letting it
+   dwarf a zoomed-out node. The closed control still follows the node scale. */
+.canvas-node select option {
+  font-size: calc(1em * var(--canvas-viewport-scale, 1));
+}

@@ -1054,11 +1054,17 @@ function clampCanvasScale(value) {
 
 function applyCanvasViewport() {
   const { x, y, scale } = canvasState.viewport;
-  const transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) scale(${scale})`;
+  const transform = scale === 1 && x === 0 && y === 0
+    ? "none"
+    : `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) scale(${scale})`;
   const nodes = qs("#canvasNodes");
   const links = qs("#canvasLinks");
   const linksGroup = qs("#canvasLinksContent");
   if (nodes) nodes.style.transform = transform;
+  // Native select popovers are rendered outside the transformed canvas layer.
+  // Expose the current world scale so their option text can keep the same
+  // visual size as the scaled node controls.
+  if (nodes) nodes.style.setProperty("--canvas-viewport-scale", String(scale));
   if (links) links.style.transform = "none";
   if (linksGroup) {
     linksGroup.setAttribute("transform", `translate(${Math.round(x)} ${Math.round(y)}) scale(${scale})`);

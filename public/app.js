@@ -354,20 +354,22 @@ const DEFAULT_WINDOWS = {
   storyboards: { left: 24, top: 672, width: 874, height: 420 },
 };
 const VIDEO_MODEL_OPTIONS = {
-  "sd2": "sd2",
-  "sd2-fast": "sd2-fast",
-  "seedance-2-5": "Seedance 2.5",
-  "seedance-2-5-c": "Seedance 2.5 C",
-  "seedance-2-5-m": "Seedance 2.5 M",
-  "seedance-2-0": "Seedance 2.0",
-  "seedance-2-0-fast": "Seedance 2.0 Fast",
-  "seedance-2-0-mini": "Seedance 2.0 Mini",
-  "seedance-2-0-m": "Seedance 2.0 M",
-  "seedance-2-0-m-fast": "Seedance 2.0 M fast",
-  "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini",
-  "mx-h3": "mx-h3",
+  "sd2": "sd2 · 0.230/秒起",
+  "sd2-fast": "sd2-fast · 0.230/秒起",
+  "seedance-2-5": "Seedance 2.5 · 1.270/秒起",
+  "seedance-2-5-c": "Seedance 2.5 C · 3.500/秒起",
+  "seedance-2-5-m": "Seedance 2.5 M · 0.570/秒起",
+  "seedance-2-0": "Seedance 2.0 · 0.730/秒起",
+  "seedance-2-0-fast": "Seedance 2.0 Fast · 0.620/秒起",
+  "seedance-2-0-mini": "Seedance 2.0 Mini · 0.210/秒起",
+  "seedance-2-0-m": "Seedance 2.0 M · 0.420/秒起",
+  "seedance-2-0-m-fast": "Seedance 2.0 M fast · 0.350/秒起",
+  "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini · 0.210/秒起",
+  "mx-h3": "mx-h3 · 2.800/秒起",
+  "pixverse-v6": "PixVerse V6 · $0.0301/秒起",
+  "pixverse-c1": "PixVerse C1 · $0.0362/秒起",
   "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
-  "grok-imagine-video": "Grok Imagine Video",
+  "grok-imagine-video": "Grok Imagine Video 1.5 Preview · $0.0706/秒起",
 };
 
 const VIDEO_MODEL_PRICE_HINTS = {
@@ -383,6 +385,9 @@ const VIDEO_MODEL_PRICE_HINTS = {
   "seedance-2-0-m-fast": { "480p": "0.350/秒", "720p": "0.490/秒" },
   "seedance-2-0-m-fast-mini": { "480p": "0.210/秒", "720p": "0.280/秒" },
   "mx-h3": { "2k": "2.800/秒" },
+  "pixverse-v6": { "360p": "$0.0301/秒", "540p": "$0.0422/秒", "720p": "$0.0543/秒", "1080p": "$0.1085/秒" },
+  "pixverse-c1": { "360p": "$0.0362/秒", "540p": "$0.0482/秒", "720p": "$0.0603/秒", "1080p": "$0.1146/秒" },
+  "grok-imagine-video": { "480p": "$0.0706/秒", "720p": "$0.1235/秒" },
 };
 
 function videoModelPriceTitle(model) {
@@ -393,6 +398,8 @@ function videoModelPriceTitle(model) {
 
 function syncVideoModelPriceTitles() {
   document.querySelectorAll("#modernParamModel option, #videoPromptInspectorModel option").forEach((option) => {
+    const label = VIDEO_MODEL_OPTIONS[normalizeVideoModelName(option.value)];
+    if (label) option.textContent = label;
     const title = videoModelPriceTitle(option.value);
     if (title) option.title = title;
   });
@@ -447,10 +454,30 @@ function videoModelPriceHint(model, resolution) {
 }
 
 function syncModernVideoModelPrice() {
+  syncModernVideoResolutionOptions();
   const price = $("#modernVideoModelPrice");
   if (!price) return;
   price.textContent = videoModelPriceHint($("#modernParamModel")?.value, $("#modernParamResolution")?.value);
   syncVideoModelPriceTitles();
+}
+
+function syncModernVideoResolutionOptions() {
+  const model = $("#modernParamModel")?.value || "";
+  const resolution = $("#modernParamResolution");
+  if (!resolution) return;
+  const isPixverse = ["pixverse-v6", "pixverse-c1"].includes(model);
+  const isGrokVideo = model === "grok-imagine-video";
+  const supported = isPixverse
+    ? new Set(["360p", "540p", "720p", "1080p"])
+    : isGrokVideo
+      ? new Set(["480p", "720p"])
+      : null;
+  resolution.querySelectorAll("option").forEach((option) => {
+    const enabled = !supported || supported.has(option.value.toLowerCase());
+    option.disabled = !enabled;
+    option.hidden = !enabled;
+  });
+  if (supported && !supported.has(resolution.value.toLowerCase())) resolution.value = "720p";
 }
 
 const $ = (selector) => document.querySelector(selector);

@@ -12,10 +12,10 @@ function selectOptions(id) {
 }
 
 assert.deepEqual(selectOptions("modernParamRatio"), ["9:16", "16:9", "1:1", "4:3", "3:4"], "the active workbench must expose its supported ratios");
-assert.deepEqual(selectOptions("modernParamResolution"), ["480p", "720p", "1080p", "2k"], "the active workbench must expose its supported resolutions");
+assert.deepEqual(selectOptions("modernParamResolution"), ["360p", "480p", "540p", "720p", "1080p", "2k"], "the active workbench must expose its supported resolutions");
 assert.deepEqual(
   selectOptions("modernParamModel"),
-  ["sd2", "sd2-fast", "seedance-2-5", "seedance-2-5-c", "seedance-2-5-m", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", "seedance-2-0-m-fast", "seedance-2-0-m-fast-mini", "mx-h3", "seedance-2-0-byteplus", "grok-imagine-video"],
+  ["sd2", "sd2-fast", "seedance-2-5", "seedance-2-5-c", "seedance-2-5-m", "seedance-2-0", "seedance-2-0-fast", "seedance-2-0-mini", "seedance-2-0-m", "seedance-2-0-m-fast", "seedance-2-0-m-fast-mini", "mx-h3", "pixverse-v6", "pixverse-c1", "seedance-2-0-byteplus", "grok-imagine-video"],
   "the active workbench must expose the available video models",
 );
 for (const id of ["configModel", "configResolution", "configRatio", "configPromptMode", "configDialectEnabled", "configSfxEnabled"]) {
@@ -72,18 +72,20 @@ const context = {
   VIDEO_DIALECT_STYLE_OPTIONS: ["northeastern", "sichuan", "cantonese"],
   VIDEO_SFX_STYLE_OPTIONS: ["mystery", "epic", "palace", "vampire", "sci_fi", "disaster", "light", "comedy"],
   VIDEO_MODEL_OPTIONS: {
-    "sd2": "sd2",
-    "sd2-fast": "sd2-fast",
-    "seedance-2-5": "Seedance 2.5",
-    "seedance-2-5-c": "Seedance 2.5 C",
-    "seedance-2-5-m": "Seedance 2.5 M",
-    "seedance-2-0": "Seedance 2.0",
-    "seedance-2-0-fast": "Seedance 2.0 Fast",
-    "seedance-2-0-mini": "Seedance 2.0 Mini",
-    "seedance-2-0-m": "Seedance 2.0 M",
-    "seedance-2-0-m-fast": "Seedance 2.0 M fast",
-    "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini",
-    "mx-h3": "mx-h3",
+    "sd2": "sd2 · 0.230/秒起",
+    "sd2-fast": "sd2-fast · 0.230/秒起",
+    "seedance-2-5": "Seedance 2.5 · 1.270/秒起",
+    "seedance-2-5-c": "Seedance 2.5 C · 3.500/秒起",
+    "seedance-2-5-m": "Seedance 2.5 M · 0.570/秒起",
+    "seedance-2-0": "Seedance 2.0 · 0.730/秒起",
+    "seedance-2-0-fast": "Seedance 2.0 Fast · 0.620/秒起",
+    "seedance-2-0-mini": "Seedance 2.0 Mini · 0.210/秒起",
+    "seedance-2-0-m": "Seedance 2.0 M · 0.420/秒起",
+    "seedance-2-0-m-fast": "Seedance 2.0 M fast · 0.350/秒起",
+    "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini · 0.210/秒起",
+    "mx-h3": "mx-h3 · 2.800/秒起",
+    "pixverse-v6": "PixVerse V6 · $0.0301/秒起",
+    "pixverse-c1": "PixVerse C1 · $0.0362/秒起",
     "seedance-2-0-byteplus": "Seedance 2.0（海外火山）",
   },
   document: {

@@ -172,6 +172,8 @@ const VIDEO_NODE_DEFAULTS = {
   resolution: "720p",
   generateAudio: true,
   frameControl: "reference",
+  pixverseOperation: "auto",
+  pixverseSourceVideoId: "",
   firstFrameAssetId: "",
   lastFrameAssetId: "",
 };
@@ -202,18 +204,21 @@ const LEGACY_MODEL_MIGRATIONS = {
   "minimax-h3": "mx-h3",
 };
 const VIDEO_MODEL_LABELS = {
-  "sd2": "sd2",
-  "sd2-fast": "sd2-fast",
-  "seedance-2-5": "Seedance 2.5",
-  "seedance-2-5-c": "Seedance 2.5 C",
-  "seedance-2-5-m": "Seedance 2.5 M",
-  "seedance-2-0": "Seedance 2.0",
-  "seedance-2-0-fast": "Seedance 2.0 Fast",
-  "seedance-2-0-mini": "Seedance 2.0 Mini",
-  "seedance-2-0-m": "Seedance 2.0 M",
-  "seedance-2-0-m-fast": "Seedance 2.0 M fast",
-  "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini",
-  "mx-h3": "mx-h3",
+  "sd2": "sd2 · 0.230/秒起",
+  "sd2-fast": "sd2-fast · 0.230/秒起",
+  "seedance-2-5": "Seedance 2.5 · 1.270/秒起",
+  "seedance-2-5-c": "Seedance 2.5 C · 3.500/秒起",
+  "seedance-2-5-m": "Seedance 2.5 M · 0.570/秒起",
+  "seedance-2-0": "Seedance 2.0 · 0.730/秒起",
+  "seedance-2-0-fast": "Seedance 2.0 Fast · 0.620/秒起",
+  "seedance-2-0-mini": "Seedance 2.0 Mini · 0.210/秒起",
+  "seedance-2-0-m": "Seedance 2.0 M · 0.420/秒起",
+  "seedance-2-0-m-fast": "Seedance 2.0 M fast · 0.350/秒起",
+  "seedance-2-0-m-fast-mini": "Seedance 2.0 M fast mini · 0.210/秒起",
+  "mx-h3": "mx-h3 · 2.800/秒起",
+  "pixverse-v6": "PixVerse V6 · $0.0301/秒起",
+  "pixverse-c1": "PixVerse C1 · $0.0362/秒起",
+  "grok-imagine-video": "Grok Imagine Video 1.5 Preview · $0.0706/秒起",
   [BYTEPLUS_MODEL]: "Seedance 2.0(海外火山)",
 };
 const VIDEO_MODEL_PRICE_HINTS = {
@@ -229,6 +234,9 @@ const VIDEO_MODEL_PRICE_HINTS = {
   "seedance-2-0-m-fast": { "480p": "0.350/秒", "720p": "0.490/秒" },
   "seedance-2-0-m-fast-mini": { "480p": "0.210/秒", "720p": "0.280/秒" },
   "mx-h3": { "2k": "2.800/秒" },
+  "pixverse-v6": { "360p": "$0.0301/秒", "540p": "$0.0422/秒", "720p": "$0.0543/秒", "1080p": "$0.1085/秒" },
+  "pixverse-c1": { "360p": "$0.0362/秒", "540p": "$0.0482/秒", "720p": "$0.0603/秒", "1080p": "$0.1146/秒" },
+  "grok-imagine-video": { "480p": "$0.0706/秒", "720p": "$0.1235/秒" },
 };
 // 海外火山(BytePlus)会对生成的音频做内容审核,判定敏感就整段失败。命中这个错误时自动关音频重试一次。
 // 同时匹配 BytePlus 原文与服务端翻译后的中文提示(server 会把该错误归一化成"…音频被海外火山判定含敏感…")。
@@ -2308,10 +2316,45 @@ function syncVideoDurationOptions(element, node = {}) {
   }
 }
 
+function syncVideoModelOptionLabels(element) {
+  element?.querySelectorAll('select[data-node-field="model"] option').forEach((option) => {
+    const label = VIDEO_MODEL_LABELS[String(option.value || "").trim()];
+    if (label) option.textContent = label;
+  });
+}
+
 function syncVideoResolutionOptions(element, node, settings = {}) {
   const select = element?.querySelector('select[data-node-field="resolution"]');
   if (!select) return;
   const model = settings.model || VIDEO_NODE_DEFAULTS.model;
+  if (["pixverse-v6", "pixverse-c1"].includes(model)) {
+    const supported = new Set(["360p", "540p", "720p", "1080p"]);
+    let value = String(settings.resolution || "720p").toLowerCase();
+    if (!supported.has(value)) value = "720p";
+    select.querySelectorAll("option").forEach((option) => {
+      const enabled = supported.has(String(option.value).toLowerCase());
+      option.disabled = !enabled;
+      option.hidden = !enabled;
+      option.title = enabled ? "" : "PixVerse 当前档位不支持此分辨率";
+    });
+    select.value = value;
+    if (node.settings?.resolution !== value) node.settings = { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}), resolution: value };
+    return;
+  }
+  if (model === "grok-imagine-video") {
+    const supported = new Set(["480p", "720p"]);
+    let value = String(settings.resolution || "720p").toLowerCase();
+    if (!supported.has(value)) value = "720p";
+    select.querySelectorAll("option").forEach((option) => {
+      const enabled = supported.has(String(option.value).toLowerCase());
+      option.disabled = !enabled;
+      option.hidden = !enabled;
+      option.title = enabled ? "" : "Grok Imagine Video 1.5 Preview 当前仅支持 480p / 720p";
+    });
+    select.value = value;
+    if (node.settings?.resolution !== value) node.settings = { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}), resolution: value };
+    return;
+  }
   const fixedPaisioResolution = {
     "sd2-fast": "720p",
     "seedance-2-5": "720p",
@@ -2381,6 +2424,13 @@ function syncVideoResolutionOptions(element, node, settings = {}) {
     option.title = enabled ? "" : "当前模型不支持此分辨率";
   });
   select.value = value;
+}
+
+function syncPixverseControls(element, settings = {}) {
+  const enabled = ["pixverse-v6", "pixverse-c1"].includes(String(settings.model || ""));
+  element?.querySelectorAll("[data-pixverse-extra]").forEach((control) => {
+    control.hidden = !enabled;
+  });
 }
 
 function videoModeSummary(node) {
@@ -2582,6 +2632,8 @@ function videoNodePayload(node, { forceNoAudio = false } = {}) {
     storyboardGuidance: node.storyboardGuidance || null,
     livenessGroupId: node.liveness?.groupId || "",
     livenessAssetUrl: node.liveness?.assetUrl || "",
+    pixverseOperation: settings.pixverseOperation || "auto",
+    sourceVideoId: settings.pixverseSourceVideoId || "",
     assets,
   };
 }
@@ -4265,6 +4317,7 @@ function syncNodeControls(element, node) {
   if (node.kind !== "video") return;
   const settings = { ...VIDEO_NODE_DEFAULTS, ...(node.settings || {}) };
   if (prompt) bindPromptMentionMenu(prompt, node);
+  syncVideoModelOptionLabels(element);
   syncVideoNodeShell(element, node);
   element.querySelectorAll("[data-node-field]").forEach((field) => {
     const key = field.dataset.nodeField;
@@ -4307,6 +4360,7 @@ function syncNodeControls(element, node) {
   });
   syncVideoResolutionOptions(element, node, { ...settings, ...(node.settings || {}) });
   syncVideoDurationOptions(element, node);
+  syncPixverseControls(element, settings);
   const durationField = element.querySelector('input[data-node-field="duration"]');
   element.querySelectorAll("[data-duration-step]").forEach((button) => {
     button.addEventListener("click", () => {

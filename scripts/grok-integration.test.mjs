@@ -17,7 +17,9 @@ assert.match(server, /const SUPER_PIXEL_GROK_MODELS = new Set\(\["grok-4\.5", "g
 assert.match(server, /apiKey: process\.env\.XAI_API_KEY, kind: "grok"/);
 assert.match(server, /grok-imagine-image/);
 assert.match(server, /response_format: "b64_json"/);
-assert.match(server, /grok-imagine-video/);
+assert.match(server, /grok-imagine-video-1\.5-preview/);
+assert.match(server, /grokVideoApiUrl/);
+assert.match(server, /callGrokVideoJson/);
 assert.match(server, /payload\.image = \{ url: referenceUrl \}/);
 assert.match(server, /\/v1\/videos\/\$\{encodeURIComponent\(cleanTaskId\)\}\/content/);
 // 视频 content 是需鉴权的相对路径，不带 Authorization 会拿到 401 空响应
@@ -32,6 +34,7 @@ const videoTool = server.match(/name: "generate_video"[\s\S]*?\n  \},\n  \{/i)?.
 assert.match(imageTool, /"grok-imagine-image"/, "Agent 出图工具必须允许 Grok");
 assert.match(videoTool, /"grok-imagine-video"/, "Agent 出片工具必须允许 Grok");
 assert.match(app, /status === "confirming"/, "出片确认卡必须保留 confirming 状态");
+assert.match(app, /Grok Imagine Video 1\.5 Preview · \$0\.0706\/秒起/, "新 Grok 视频模型必须显示截图中的起价");
 
 const require = createRequire(import.meta.url);
 const { __test } = require(path.join(root, "server.js"));
@@ -48,15 +51,18 @@ const grokVideoPayload = __test.canvasVideo.grokVideoPayload({
   prompt: "product rotates",
   duration: 5,
   ratio: "9:16",
+  resolution: "720p",
   referenceUrl: "https://assets.example/product.png",
 });
 assert.deepEqual(grokVideoPayload, {
-  model: "grok-imagine-video",
+  model: "grok-imagine-video-1.5-preview",
   prompt: "product rotates",
   duration: 5,
   aspect_ratio: "9:16",
+  resolution: "720p",
   image: { url: "https://assets.example/product.png" },
 });
 assert.equal("image_url" in grokVideoPayload, false, "Grok 出片不得发送会被忽略的 image_url 字段");
+assert.equal(__test.canvasVideo.grokVideoApiUrl("/v1/videos/generations"), "https://llm-api.net/v1/videos/generations");
 
 console.log("grok integration tests passed");

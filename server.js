@@ -143,7 +143,13 @@ const BYTEPLUS_ARK_VIDEO_API_KEY_ENV_NAMES = [
   "BYTEPLUS_ARK_API_KEY",
   "BYTEPLUS_API_KEY",
 ];
-const GROK_VIDEO_API_KEY_ENV_NAMES = ["XAI_API_KEY"];
+const GROK_VIDEO_API_KEY_ENV_NAMES = [
+  "GROK_VIDEO_API_KEY",
+  "PIXEL_TOYS_VIDEO_N1N_API_KEY",
+  "PIXEL_TOYS_GROK_VIDEO_API_KEY",
+  "PIXEL_TOYS_IMAGE_N1N_API_KEY",
+  "XAI_API_KEY",
+];
 const PAISIO_VIDEO_API_KEY_ENV_NAMES = [
   "PAISIO_API_KEY",
   "PAISIO_VIDEO_API_KEY",
@@ -151,17 +157,26 @@ const PAISIO_VIDEO_API_KEY_ENV_NAMES = [
   "APIKEYFUN_API_KEY",
   "PIXEL_TOYS_VIDEO_API_KEY",
 ];
+const PIXVERSE_VIDEO_API_KEY_ENV_NAMES = [
+  "PIXEL_TOYS_PIXVERSE_API_KEY",
+  "PIXVERSE_VIDEO_API_KEY",
+  "PIXEL_TOYS_VIDEO_N1N_API_KEY",
+  "PIXEL_TOYS_IMAGE_N1N_API_KEY",
+];
 // 火山方舟(Ark)官方视频网关。Gravitex 使用独立的 Seedance 网关。
 // BytePlus ModelArk 是 Ark 的国际版(ap-southeast 区),API 结构与火山中国区一致,仅 base URL / key / 模型 ID 前缀不同(dreamina- vs doubao-)。
 const DEFAULT_VOLC_ARK_VIDEO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 const DEFAULT_BYTEPLUS_ARK_VIDEO_BASE_URL = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const DEFAULT_GRAVITEX_VIDEO_BASE_URL = "https://api.gravitex.ai/v1";
 const DEFAULT_PAISIO_VIDEO_BASE_URL = "https://api.paisio.online/v1";
+const DEFAULT_PIXVERSE_VIDEO_BASE_URL = "https://llm-api.net";
 const PAISIO_VIDEO_REQUEST_TIMEOUT_MS = Math.max(15_000, Number(process.env.PAISIO_VIDEO_REQUEST_TIMEOUT_MS || 45_000));
 const PAISIO_PUBLIC_ASSET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const paisioReferenceUrlCache = new Map();
 const paisioPublicAssetTokens = new Map();
 const GROK_API_BASE_URL = "https://apikey.fun/v1";
+const GROK_VIDEO_MODEL = "grok-imagine-video-1.5-preview";
+const DEFAULT_GROK_VIDEO_BASE_URL = "https://llm-api.net/v1";
 const VIDEO_API_LOG_PATH = path.join(APP_ROOT, ".pixel-toys-video-api.log");
 const VIDEO_API_REQUEST_TIMEOUT_MS = Math.max(10_000, Number(process.env.VIDEO_API_REQUEST_TIMEOUT_MS || 120_000));
 const PROJECT_VIDEO_RANGE_CHUNK_BYTES = Math.max(64 * 1024, Number(process.env.PROJECT_VIDEO_RANGE_CHUNK_BYTES || 128 * 1024));
@@ -256,6 +271,7 @@ const PAISIO_SD3_MODELS = new Set([
 ]);
 const PAISIO_VIDEO_MODELS = new Set([...PAISIO_SD3_MODELS, PAISIO_MX_H3_MODEL, LEGACY_PAISIO_MINIMAX_H3_MODEL]);
 const PAISIO_4_15_VIDEO_MODELS = new Set([...PAISIO_SD3_MODELS, PAISIO_MX_H3_MODEL, LEGACY_PAISIO_MINIMAX_H3_MODEL]);
+const PIXVERSE_VIDEO_MODELS = new Set(["pixverse-video", "pixverse-v6", "pixverse-c1", "pixverse-video:v6", "pixverse-video:c1"]);
 for (const [family, { model }] of Object.entries(PAISIO_SPECIAL_VIDEO_MODEL_MAP)) {
   PAISIO_VIDEO_MODELS.add(family);
   PAISIO_VIDEO_MODELS.add(model);
@@ -3125,7 +3141,9 @@ function imageApiKeySource() {
 function videoApiKeyNamesForProvider(provider = canvasVideoProvider()) {
   if (provider === "gravitex") return GRAVITEX_VIDEO_API_KEY_ENV_NAMES;
   if (provider === "byteplus") return BYTEPLUS_ARK_VIDEO_API_KEY_ENV_NAMES;
+  if (provider === "grok-image") return ["XAI_API_KEY"];
   if (provider === "grok") return GROK_VIDEO_API_KEY_ENV_NAMES;
+  if (provider === "pixverse") return PIXVERSE_VIDEO_API_KEY_ENV_NAMES;
   if (provider === "paisio") return PAISIO_VIDEO_API_KEY_ENV_NAMES;
   return ARK_VIDEO_API_KEY_ENV_NAMES;
 }
@@ -3149,6 +3167,7 @@ function normalizeCanvasVideoProvider(value) {
   if (["gravitex", "gravitex-ai", "gravitexai", "seedance", "seedance-2", "seedance-2-0"].includes(raw)) return "gravitex";
   if (["byteplus", "byteplus-ark", "byteplus-modelark", "modelark", "ark-intl", "ark-international"].includes(raw)) return "byteplus";
   if (["grok", "xai"].includes(raw)) return "grok";
+  if (["pixverse", "pixverse-video", "n1n", "llm-api"].includes(raw)) return "pixverse";
   if (["paisio", "apikey.fun", "apikeyfun", "api-key-fun"].includes(raw)) return "paisio";
   if (["ark", "volc", "volcengine", "volcengine-ark", "bytedance-ark"].includes(raw)) return "ark";
   return "ark";
@@ -3161,6 +3180,7 @@ function canvasVideoProvider() {
 function canvasVideoProviderForBody(body = {}) {
   const modelMode = compactLine(body.modelMode || body.model || "");
   if (modelMode === "grok-imagine-video") return "grok";
+  if (PIXVERSE_VIDEO_MODELS.has(modelMode)) return "pixverse";
   if (PAISIO_VIDEO_MODELS.has(modelMode)) return "paisio";
   // 显式选择「海外火山」模型选项时,本次生成走 BytePlus ModelArk(ap-southeast 区),优先于全局默认与自动路由。
   if (/^seedance-2-0-byteplus$/i.test(modelMode)) return "byteplus";
@@ -3195,6 +3215,23 @@ function paisioVideoBaseUrl() {
   return (process.env.PAISIO_VIDEO_BASE_URL || process.env.PAISIO_BASE_URL || DEFAULT_PAISIO_VIDEO_BASE_URL).replace(/\/+$/, "");
 }
 
+function pixverseVideoBaseUrl() {
+  return (
+    process.env.PIXEL_TOYS_PIXVERSE_BASE_URL ||
+    process.env.PIXVERSE_VIDEO_BASE_URL ||
+    process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL ||
+    DEFAULT_PIXVERSE_VIDEO_BASE_URL
+  ).replace(/\/+$/, "");
+}
+
+function pixverseVideoUrl(pathname) {
+  const clean = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const baseUrl = pixverseVideoBaseUrl();
+  if (baseUrl.endsWith("/v1") && clean.startsWith("/openapi/")) return `${baseUrl.slice(0, -3)}${clean}`;
+  if (baseUrl.endsWith("/v1") && clean.startsWith("/v1/")) return `${baseUrl}${clean.slice(3)}`;
+  return `${baseUrl}${clean}`;
+}
+
 function paisioVideoUrl(pathname) {
   const clean = pathname.startsWith("/") ? pathname : `/${pathname}`;
   const baseUrl = paisioVideoBaseUrl();
@@ -3206,11 +3243,21 @@ function grokApiBaseUrl() {
   return GROK_API_BASE_URL;
 }
 
+function grokVideoApiBaseUrl() {
+  return (
+    process.env.GROK_VIDEO_BASE_URL
+    || process.env.PIXEL_TOYS_GROK_VIDEO_BASE_URL
+    || process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL
+    || DEFAULT_GROK_VIDEO_BASE_URL
+  ).replace(/\/+$/, "");
+}
+
 function canvasVideoBaseUrl() {
   const provider = canvasVideoProvider();
   if (provider === "gravitex") return gravitexVideoBaseUrl();
   if (provider === "byteplus") return bytePlusArkVideoBaseUrl();
-  if (provider === "grok") return grokApiBaseUrl();
+  if (provider === "grok") return grokVideoApiBaseUrl();
+  if (provider === "pixverse") return pixverseVideoBaseUrl();
   if (provider === "paisio") return paisioVideoBaseUrl();
   return volcArkVideoBaseUrl();
 }
@@ -14455,6 +14502,13 @@ function grokApiUrl(pathname) {
   return `${baseUrl}${clean}`;
 }
 
+function grokVideoApiUrl(pathname) {
+  const clean = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const baseUrl = grokVideoApiBaseUrl();
+  if (baseUrl.endsWith("/v1") && clean.startsWith("/v1/")) return `${baseUrl}${clean.slice(3)}`;
+  return `${baseUrl}${clean}`;
+}
+
 function volcArkImageBaseUrl() {
   return (
     process.env.VOLC_ARK_IMAGE_BASE_URL ||
@@ -14550,6 +14604,9 @@ function paisioResolutionForRequest(model = "", value = "") {
 function normalizeVideoConfigModelName(value = "") {
   const raw = compactLine(value || DEFAULT_VIDEO_CONFIG_MODEL);
   const lower = raw.toLowerCase();
+  if (["pixverse-v6", "pixverse-video:v6", "pixverse_v6", "v6"].includes(lower)) return "pixverse-v6";
+  if (["pixverse-c1", "pixverse-video:c1", "pixverse_c1", "c1"].includes(lower)) return "pixverse-c1";
+  if (lower === "pixverse-video") return "pixverse-v6";
   if (raw === LEGACY_PAISIO_MINIMAX_H3_MODEL) return PAISIO_MX_H3_MODEL;
   const paisioModelFamily = paisioModelFamilyForRequest(raw);
   if (paisioModelFamily) return paisioModelFamily;
@@ -14586,6 +14643,12 @@ function normalizeVideoResolution(value, model = "") {
   const raw = compactLine(value || "720p");
   const lower = raw.toLowerCase();
   const requestedModel = compactLine(model);
+  if (["pixverse-v6", "pixverse-c1", "pixverse-video"].includes(requestedModel.toLowerCase())) {
+    return ["360p", "540p", "720p", "1080p"].includes(lower) ? lower : "720p";
+  }
+  if (requestedModel.toLowerCase() === "grok-imagine-video") {
+    return ["480p", "720p"].includes(lower) ? lower : "720p";
+  }
   const specialModel = PAISIO_SPECIAL_VIDEO_MODEL_MAP[requestedModel]
     || Object.values(PAISIO_SPECIAL_VIDEO_MODEL_MAP).find(({ model: upstreamModel }) => upstreamModel === requestedModel);
   if (specialModel) return specialModel.resolution;
@@ -16497,6 +16560,15 @@ async function callGrokJson(pathname, options = {}) {
     grokApiUrl(pathname),
     options,
     "缺少 XAI_API_KEY：Grok 生成需要在 .env.local 配置后重启服务。",
+    "grok-image",
+  );
+}
+
+async function callGrokVideoJson(pathname, options = {}) {
+  return callVideoJson(
+    grokVideoApiUrl(pathname),
+    options,
+    "缺少 Grok 视频 API Key：请在 .env.local 配置 GROK_VIDEO_API_KEY，或复用 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。",
     "grok",
   );
 }
@@ -16507,6 +16579,16 @@ async function callPaisioJson(pathname, options = {}, timeoutMs = PAISIO_VIDEO_R
     options,
     "缺少 Paisio 视频 API Key：请在 .env.local 配置 PAISIO_API_KEY 后重启服务。",
     "paisio",
+    timeoutMs,
+  );
+}
+
+async function callPixverseJson(pathname, options = {}, timeoutMs = VIDEO_API_REQUEST_TIMEOUT_MS) {
+  return callVideoJson(
+    pixverseVideoUrl(pathname),
+    options,
+    "缺少 PixVerse 视频 API Key：请在 .env.local 配置 PIXEL_TOYS_PIXVERSE_API_KEY，或复用 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。",
+    "pixverse",
     timeoutMs,
   );
 }
@@ -17336,13 +17418,128 @@ async function getPaisioCanvasVideoGeneration(taskId) {
   }
 }
 
-function grokVideoPayload({ prompt, duration, ratio, referenceUrl } = {}) {
+function pixverseModelVersion(model = "") {
+  return ["pixverse-c1", "pixverse-video:c1"].includes(compactLine(model).toLowerCase()) ? "c1" : "v6";
+}
+
+function normalizePixverseDuration(value) {
+  const number = Math.round(Number(value || 5));
+  if (!Number.isFinite(number)) return 5;
+  return Math.max(1, Math.min(15, number));
+}
+
+function pixverseOperationForBody(body = {}, imageCount = 0) {
+  const explicit = compactLine(body.pixverseOperation || body.operation || "").toLowerCase();
+  if (["text", "text2video", "text-to-video"].includes(explicit)) return "text";
+  if (["image", "img", "img2video", "image-to-video"].includes(explicit)) return "image";
+  if (["transition", "first-last", "first_last"].includes(explicit)) return "transition";
+  if (["extend", "video-extend", "video-extension"].includes(explicit)) return "extend";
+  if (["fusion", "multi-reference", "multi-subject"].includes(explicit)) return "fusion";
+  if (body.sourceVideoId || body.source_video_id || body.videoId || body.video_id) return "extend";
+  if (body.firstFrameUrl && body.lastFrameUrl) return "transition";
+  if (imageCount > 1 && pixverseModelVersion(body.modelMode || body.model) === "c1") return "fusion";
+  return imageCount ? "image" : "text";
+}
+
+async function buildPixverseVideoGenerationPayload(body = {}) {
+  const prompt = cleanSeedancePromptForSubmission(body.prompt);
+  if (!prompt) throw new Error("缺少视频提示词");
+  const modelKey = compactLine(body.modelMode || body.model || "pixverse-v6").toLowerCase();
+  const model = pixverseModelVersion(modelKey);
+  const imageReferences = [];
+  const assets = canvasVideoSubmitCapableAssets(body.assets);
+  const addImage = async (source, name) => {
+    const url = await paisioPublicReferenceUrl(source, name);
+    imageReferences.push({ img_id: url, type: "subject", name: compactLine(name || "参考图") });
+  };
+  const firstFrameSource = compactLine(body.firstFrameUrl || body.startFrameUrl || body.first_frame_img || "");
+  const lastFrameSource = compactLine(body.lastFrameUrl || body.lastFrameImg || body.last_frame_img || "");
+  const imageCount = (firstFrameSource ? 1 : 0) + assets.filter((asset) => paisioReferenceKind(asset) === "image").length;
+  const operation = pixverseOperationForBody({ ...body, firstFrameUrl: firstFrameSource, lastFrameUrl: lastFrameSource }, imageCount);
+  if (operation === "transition") {
+    if (!firstFrameSource || !lastFrameSource) throw new Error("PixVerse 首尾帧模式需要同时提供首帧和尾帧");
+  } else if (firstFrameSource) {
+    await addImage(firstFrameSource, "首帧");
+  }
+  for (const asset of assets) {
+    const kind = paisioReferenceKind(asset);
+    if (kind !== "image") {
+      if (operation === "extend" && kind === "video") continue;
+      throw new Error(`PixVerse ${model.toUpperCase()} 仅接受图片参考；视频延长请提供 source_video_id`);
+    }
+    await addImage(asset.url || asset.publicUrl || asset.previewUrl || asset.localUrl, asset.name || asset.id);
+  }
+  if (operation === "fusion" && model !== "c1") throw new Error("PixVerse V6 不支持多主体融合，请切换到 C1");
+  const resolution = normalizeVideoResolution(body.resolution, modelKey);
   const payload = {
-    model: "grok-imagine-video",
+    prompt: String(prompt).replace(/@图片/gi, "@Image").replace(/@视频/gi, "@Video"),
+    model,
+    quality: resolution,
+    duration: normalizePixverseDuration(body.duration),
+  };
+  const ratio = normalizeVideoRatio(body.ratio || body.aspect_ratio);
+  if (operation === "text" || operation === "fusion") payload.aspect_ratio = ratio === "adaptive" ? "9:16" : ratio;
+  if (body.seed !== undefined && Number.isFinite(Number(body.seed))) payload.seed = Number(body.seed);
+  if (operation === "image") payload.img_id = imageReferences[0]?.img_id;
+  if (operation === "fusion") payload.image_references = imageReferences.map(({ img_id, type }) => ({ img_id, type }));
+  if (operation === "transition") {
+    payload.first_frame_img = await paisioPublicReferenceUrl(firstFrameSource, "首帧");
+    payload.last_frame_img = await paisioPublicReferenceUrl(lastFrameSource, "尾帧");
+  }
+  if (operation === "extend") {
+    const sourceVideoId = Number(body.sourceVideoId || body.source_video_id || body.videoId || body.video_id);
+    if (!Number.isSafeInteger(sourceVideoId) || sourceVideoId <= 0) throw new Error("PixVerse 视频延长需要有效的 source_video_id");
+    if (model !== "v6") throw new Error("PixVerse C1 不支持视频延长，请切换到 V6");
+    payload.source_video_id = sourceVideoId;
+    payload.water_mark = false;
+    payload.seed = Number.isFinite(Number(body.seed)) ? Number(body.seed) : 0;
+  }
+  return { operation, payload };
+}
+
+function pixverseSubmitPath(operation) {
+  return {
+    text: "/openapi/v2/video/text/generate",
+    image: "/openapi/v2/video/img/generate",
+    transition: "/openapi/v2/video/transition/generate",
+    extend: "/openapi/v2/video/extend/generate",
+    fusion: "/openapi/v2/video/fusion/generate",
+  }[operation] || "/openapi/v2/video/text/generate";
+}
+
+async function createPixverseCanvasVideoGeneration(body = {}) {
+  const { operation, payload } = await buildPixverseVideoGenerationPayload(body);
+  const raw = await callPixverseJson(pixverseSubmitPath(operation), {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const taskId = findFirstStringDeep(raw, ["task_id", "taskId", "id", "request_id", "requestId"]);
+  if (!taskId) throw new Error("PixVerse 视频接口没有返回 task_id");
+  return {
+    status: "running",
+    taskId,
+    progress: 0,
+    message: "视频生成中",
+    provider: "pixverse",
+    request: payload,
+  };
+}
+
+async function getPixverseCanvasVideoGeneration(taskId) {
+  const cleanTaskId = compactLine(taskId);
+  if (!cleanTaskId) throw new Error("缺少任务 ID");
+  const raw = await callPixverseJson(`/v1/video/tasks/${encodeURIComponent(cleanTaskId)}`, { method: "GET" });
+  return { ...normalizeSeedanceStatus(raw), provider: "pixverse" };
+}
+
+function grokVideoPayload({ prompt, duration, ratio, resolution, referenceUrl } = {}) {
+  const payload = {
+    model: GROK_VIDEO_MODEL,
     prompt: compactLine(prompt),
     duration: Number(duration) || 5,
   };
   if (ratio) payload.aspect_ratio = ratio;
+  if (["480p", "720p"].includes(compactLine(resolution).toLowerCase())) payload.resolution = compactLine(resolution).toLowerCase();
   if (referenceUrl) payload.image = { url: referenceUrl };
   return payload;
 }
@@ -17370,11 +17567,15 @@ async function buildGrokVideoGenerationPayload(body = {}) {
   if (!prompt) throw new Error("缺少视频提示词");
   const duration = Number(body.duration);
   const ratio = ["9:16", "16:9"].includes(compactLine(body.ratio || "")) ? compactLine(body.ratio) : "";
+  const resolution = ["480p", "720p"].includes(compactLine(body.resolution || "").toLowerCase())
+    ? compactLine(body.resolution).toLowerCase()
+    : "720p";
   const referenceUrl = await grokVideoReferenceUrl(body);
   return grokVideoPayload({
     prompt,
     duration: Number.isFinite(duration) && duration > 0 ? duration : 5,
     ratio,
+    resolution,
     referenceUrl,
   });
 }
@@ -17414,10 +17615,10 @@ async function downloadGrokCanvasVideoContent(taskId) {
   if (!cleanTaskId) throw new Error("缺少 Grok 视频任务 ID");
   if (grokCanvasVideoDownloads.has(cleanTaskId)) return grokCanvasVideoDownloads.get(cleanTaskId);
   const download = (async () => {
-    const key = process.env.XAI_API_KEY;
-    if (!key) throw new Error("缺少 XAI_API_KEY：Grok 生成需要在 .env.local 配置后重启服务。");
+    const key = videoApiKey("grok");
+    if (!key) throw new Error("缺少 Grok 视频 API Key：请配置 GROK_VIDEO_API_KEY，或复用 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。");
     const response = await fetchWithTimeout(
-      grokApiUrl(`/v1/videos/${encodeURIComponent(cleanTaskId)}/content`),
+      grokVideoApiUrl(`/v1/videos/${encodeURIComponent(cleanTaskId)}/content`),
       { headers: { Authorization: `Bearer ${key}` } },
       VIDEO_API_REQUEST_TIMEOUT_MS,
     );
@@ -17441,7 +17642,7 @@ async function downloadGrokCanvasVideoContent(taskId) {
 
 async function createGrokCanvasVideoGeneration(body = {}) {
   const payload = await buildGrokVideoGenerationPayload(body);
-  const raw = await callGrokJson("/v1/videos/generations", {
+  const raw = await callGrokVideoJson("/v1/videos/generations", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -17460,7 +17661,7 @@ async function createGrokCanvasVideoGeneration(body = {}) {
 async function getGrokCanvasVideoGeneration(taskId) {
   const cleanTaskId = compactLine(taskId);
   if (!cleanTaskId) throw new Error("缺少任务 ID");
-  const raw = await callGrokJson(`/v1/videos/${encodeURIComponent(cleanTaskId)}`, { method: "GET" });
+  const raw = await callGrokVideoJson(`/v1/videos/${encodeURIComponent(cleanTaskId)}`, { method: "GET" });
   const result = normalizeGrokVideoStatus(raw, cleanTaskId);
   if (result.status !== "completed") return { ...result, provider: "grok" };
   const videoUrl = await downloadGrokCanvasVideoContent(result.taskId || cleanTaskId);
@@ -17469,6 +17670,7 @@ async function getGrokCanvasVideoGeneration(taskId) {
 
 async function createCanvasVideoGeneration(body = {}) {
   const provider = canvasVideoProviderForBody(body);
+  if (provider === "pixverse") return createPixverseCanvasVideoGeneration(body);
   if (provider === "paisio") {
     const modelFamily = paisioModelFamilyForRequest(body.modelMode || body.model);
     if (modelFamily === PAISIO_MX_H3_MODEL) return createPaisioMiniMaxH3CanvasVideoGeneration(body);
@@ -17482,6 +17684,7 @@ async function createCanvasVideoGeneration(body = {}) {
 
 async function getCanvasVideoGeneration(taskId, provider = canvasVideoProvider()) {
   const normalizedProvider = normalizeCanvasVideoProvider(provider);
+  if (normalizedProvider === "pixverse") return getPixverseCanvasVideoGeneration(taskId);
   if (normalizedProvider === "paisio") return getPaisioCanvasVideoGeneration(taskId);
   if (normalizedProvider === "gravitex") return getGravitexCanvasVideoGeneration(taskId);
   if (normalizedProvider === "byteplus") return getBytePlusArkCanvasVideoGeneration(taskId);
@@ -27787,6 +27990,7 @@ function apiStatusRows() {
     { id: "byteplusVideo", label: "BytePlus ModelArk 视频 API", configured: configuredEnv(BYTEPLUS_ARK_VIDEO_API_KEY_ENV_NAMES) },
     { id: "gravitexVideo", label: "Gravitex/Seedance 视频 API", configured: configuredEnv(GRAVITEX_VIDEO_API_KEY_ENV_NAMES) },
     { id: "paisioVideo", label: "Paisio 视频 API", configured: configuredEnv(PAISIO_VIDEO_API_KEY_ENV_NAMES) },
+    { id: "pixverseVideo", label: "PixVerse/n1n 视频 API", configured: configuredEnv(PIXVERSE_VIDEO_API_KEY_ENV_NAMES) },
     { id: "publicStorage", label: "公开素材存储", configured: storageEnvNames.every((name) => configuredEnv([name])) },
   ];
 }
@@ -30428,9 +30632,17 @@ module.exports = {
       buildSeedanceGenerationPayload,
       buildPaisioVideoGenerationPayload,
       buildPaisioMiniMaxH3ChatPayload,
+      buildPixverseVideoGenerationPayload,
+      pixverseModelVersion,
+      pixverseOperationForBody,
+      pixverseSubmitPath,
+      pixverseVideoUrl,
+      getPixverseCanvasVideoGeneration,
       normalizePaisioMiniMaxH3Status,
       normalizePaisioChatVideoStatus,
       grokVideoPayload,
+      grokVideoApiUrl,
+      buildGrokVideoGenerationPayload,
       normalizeVideoResolution,
       normalizeSeedanceDuration,
       normalizePaisioDuration,

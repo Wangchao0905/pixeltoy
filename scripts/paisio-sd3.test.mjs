@@ -246,6 +246,7 @@ const expectedPaisioPrices = [
 ];
 for (const [label, ...prices] of expectedPaisioPrices) {
   for (const price of prices) assert.match(`${index}\n${canvasHtml}\n${pixelsStudio}`, new RegExp(price.replace("/", "\\/")), `${label} must expose its Paisio price`);
+  assert.match(`${index}\n${canvasHtml}\n${pixelsStudio}`, new RegExp(`${label.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")} · ${prices[0].replace("/", "\\/")}起`), `${label} must show its starting price after the model name`);
 }
 
 assert.match(server, /PAISIO_SD3_MODELS/);

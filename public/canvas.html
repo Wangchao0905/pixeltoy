@@ -371,20 +371,22 @@
             <div class="video-setting-row">
               <label class="video-setting video-setting-model" title="生成模式">
                 <select data-node-field="model" aria-label="生成模式">
-                  <option value="sd2" title="480p 0.230/秒；720p 0.290/秒">sd2</option>
-                  <option value="sd2-fast" title="720p 0.230/秒">sd2-fast</option>
-                  <option value="seedance-2-5" title="720p 1.270/秒">Seedance 2.5</option>
-                  <option value="seedance-2-5-c" title="720p 3.500/秒">Seedance 2.5 C</option>
-                  <option value="seedance-2-5-m" title="480p 0.570/秒；720p 0.970/秒">Seedance 2.5 M</option>
-                  <option value="seedance-2-0" title="720p 0.730/秒">Seedance 2.0</option>
-                  <option value="seedance-2-0-fast" title="720p 0.620/秒">Seedance 2.0 Fast</option>
-                  <option value="seedance-2-0-mini" title="480p 0.210/秒；720p 0.280/秒">Seedance 2.0 Mini</option>
-                  <option value="seedance-2-0-m" title="480p 0.420/秒；720p 0.560/秒">Seedance 2.0 M</option>
-                  <option value="seedance-2-0-m-fast" title="480p 0.350/秒；720p 0.490/秒">Seedance 2.0 M fast</option>
-                  <option value="seedance-2-0-m-fast-mini" title="480p 0.210/秒；720p 0.280/秒">Seedance 2.0 M fast mini</option>
-                  <option value="mx-h3" title="2K 2.800/秒">mx-h3</option>
+                  <option value="sd2" title="480p 0.230/秒；720p 0.290/秒">sd2 · 0.230/秒起</option>
+                  <option value="sd2-fast" title="720p 0.230/秒">sd2-fast · 0.230/秒起</option>
+                  <option value="seedance-2-5" title="720p 1.270/秒">Seedance 2.5 · 1.270/秒起</option>
+                  <option value="seedance-2-5-c" title="720p 3.500/秒">Seedance 2.5 C · 3.500/秒起</option>
+                  <option value="seedance-2-5-m" title="480p 0.570/秒；720p 0.970/秒">Seedance 2.5 M · 0.570/秒起</option>
+                  <option value="seedance-2-0" title="720p 0.730/秒">Seedance 2.0 · 0.730/秒起</option>
+                  <option value="seedance-2-0-fast" title="720p 0.620/秒">Seedance 2.0 Fast · 0.620/秒起</option>
+                  <option value="seedance-2-0-mini" title="480p 0.210/秒；720p 0.280/秒">Seedance 2.0 Mini · 0.210/秒起</option>
+                  <option value="seedance-2-0-m" title="480p 0.420/秒；720p 0.560/秒">Seedance 2.0 M · 0.420/秒起</option>
+                  <option value="seedance-2-0-m-fast" title="480p 0.350/秒；720p 0.490/秒">Seedance 2.0 M fast · 0.350/秒起</option>
+                  <option value="seedance-2-0-m-fast-mini" title="480p 0.210/秒；720p 0.280/秒">Seedance 2.0 M fast mini · 0.210/秒起</option>
+                  <option value="mx-h3" title="2K 2.800/秒">mx-h3 · 2.800/秒起</option>
+                  <option value="pixverse-v6" title="360p $0.0301/秒；540p $0.0422/秒；720p $0.0543/秒；1080p $0.1085/秒">PixVerse V6 · $0.0301/秒起</option>
+                  <option value="pixverse-c1" title="360p $0.0362/秒；540p $0.0482/秒；720p $0.0603/秒；1080p $0.1146/秒">PixVerse C1 · $0.0362/秒起</option>
                   <option value="seedance-2-0-byteplus">Seedance 2.0(海外火山)</option>
-                  <option value="grok-imagine-video">Grok Imagine Video</option>
+                  <option value="grok-imagine-video" title="480p $0.0706/秒；720p $0.1235/秒">Grok Imagine Video 1.5 Preview · $0.0706/秒起</option>
                 </select>
               </label>
               <label class="video-setting" title="画面比例">
@@ -400,12 +402,29 @@
               </label>
               <label class="video-setting" title="清晰度">
                 <select data-node-field="resolution" aria-label="清晰度">
+                  <option value="360p">360p</option>
                   <option value="480p">480p</option>
+                  <option value="540p">540p</option>
                   <option value="720p">720p</option>
                   <option value="1080p">1080p</option>
                   <option value="2k">2K</option>
                   <option value="4k">4K</option>
                 </select>
+              </label>
+              <label class="video-setting" data-pixverse-extra hidden title="PixVerse 专用操作">
+                <span>PixVerse 操作</span>
+                <select data-node-field="pixverseOperation" aria-label="PixVerse 操作">
+                  <option value="auto">自动</option>
+                  <option value="text">文生视频</option>
+                  <option value="image">图生视频</option>
+                  <option value="transition">首尾帧转场</option>
+                  <option value="fusion">多主体融合</option>
+                  <option value="extend">视频延长</option>
+                </select>
+              </label>
+              <label class="video-setting" data-pixverse-extra hidden title="PixVerse 源视频 ID">
+                <span>源视频 ID</span>
+                <input data-node-field="pixverseSourceVideoId" aria-label="PixVerse 源视频 ID" inputmode="numeric" placeholder="延长视频时填写" />
               </label>
             </div>
             <div class="video-advanced-controls" data-video-advanced-controls>

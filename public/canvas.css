@@ -4766,6 +4766,13 @@ body.canvas-page .canvas-topbar {
   box-shadow: none;
 }
 
+.image-node.is-composer-open .image-preview-slot {
+  width: min(100%, var(--image-preview-width, 100%));
+  height: var(--image-preview-height, auto);
+  max-height: 360px;
+  align-self: center;
+}
+
 .image-node .image-composer {
   flex: 1 1 auto;
   min-height: 0;

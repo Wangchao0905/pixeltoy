@@ -333,6 +333,7 @@ const IMAGE_NODE_MIN_WIDTH = 360;
 const IMAGE_NODE_MAX_WIDTH = 1200;
 const IMAGE_NODE_MIN_HEIGHT = 420;
 const IMAGE_NODE_MAX_HEIGHT = 1400;
+const IMAGE_PREVIEW_MAX_HEIGHT = 360;
 const RATIO_LAYOUT_CHROME_HEIGHT = { image: 430, video: 300 };
 const API_DEFAULT_TIMEOUT_MS = 45_000;
 const VIDEO_SUBMIT_TIMEOUT_MS = 150_000;
@@ -2538,10 +2539,16 @@ function ratioSizedNodeDimensions(node = {}, kind = "video") {
     };
   }
   const width = clampNodeDimension(ratioSize.preferredWidth, minWidth, maxWidth, fallbackWidth);
-  const previewHeight = Math.round(width * ratioSize.height / ratioSize.width);
+  const naturalPreviewHeight = Math.round(width * ratioSize.height / ratioSize.width);
+  const previewHeight = ratioSize.height > ratioSize.width
+    ? Math.min(naturalPreviewHeight, IMAGE_PREVIEW_MAX_HEIGHT)
+    : naturalPreviewHeight;
+  const previewWidth = Math.round(previewHeight * ratioSize.width / ratioSize.height);
   return {
     width,
     height: clampNodeDimension(previewHeight + RATIO_LAYOUT_CHROME_HEIGHT[kind], minHeight, maxHeight, fallbackHeight),
+    previewWidth,
+    previewHeight,
   };
 }
 
@@ -2558,6 +2565,13 @@ function syncImageNodeDimensions(element, node) {
   element.style.height = isOpen ? `${size.height}px` : "auto";
   element.style.setProperty("--image-node-width", `${size.width}px`);
   element.style.setProperty("--image-node-height", isOpen ? `${size.height}px` : "auto");
+  if (Number.isFinite(size.previewWidth) && Number.isFinite(size.previewHeight)) {
+    element.style.setProperty("--image-preview-width", `${size.previewWidth}px`);
+    element.style.setProperty("--image-preview-height", `${size.previewHeight}px`);
+  } else {
+    element.style.removeProperty("--image-preview-width");
+    element.style.removeProperty("--image-preview-height");
+  }
 }
 
 function videoNodeSize(node = {}) {

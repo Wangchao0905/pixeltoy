@@ -12,8 +12,20 @@ assert.match(js, /const CANVAS_NODE_RATIO_DIMENSIONS = Object\.freeze\(\{/,
   "canvas nodes need one shared aspect-ratio map");
 assert.match(js, /function ratioSizedNodeDimensions\(/,
   "canvas nodes need a ratio-aware size calculation");
+assert.match(js, /const IMAGE_PREVIEW_MAX_HEIGHT = 360;/,
+  "portrait image previews need a bounded height so the composer stays scannable");
+assert.match(js, /const naturalPreviewHeight = Math\.round\(width \* ratioSize\.height \/ ratioSize\.width\)/,
+  "image preview sizing should start from the selected ratio");
+assert.match(js, /const previewHeight = ratioSize\.height > ratioSize\.width\s*\?\s*Math\.min\(naturalPreviewHeight, IMAGE_PREVIEW_MAX_HEIGHT\)\s*:\s*naturalPreviewHeight/,
+  "only portrait image previews should be capped to the compact height");
+assert.match(js, /previewWidth,\s*previewHeight/,
+  "image sizing should expose the bounded preview dimensions to CSS");
 assert.match(js, /function syncImageNodeDimensions\(/,
   "image nodes need ratio-aware dimension syncing");
+assert.match(js, /element\.style\.setProperty\("--image-preview-width", `\$\{size\.previewWidth\}px`\)/,
+  "image nodes should apply the bounded preview width");
+assert.match(js, /element\.style\.setProperty\("--image-preview-height", `\$\{size\.previewHeight\}px`\)/,
+  "image nodes should apply the bounded preview height");
 assert.match(js, /syncImageNodeDimensions\(element, node\)/,
   "image refresh must apply ratio dimensions");
 assert.match(js, /ratioSizedNodeDimensions\(node, "video"\)/,
@@ -28,6 +40,10 @@ assert.match(css, /\.canvas-node\.video-node[\s\S]*?border:\s*0;/,
   "video modules must be frameless");
 assert.match(css, /\.image-parameter-strip[\s\S]*?display:\s*grid/s,
   "image parameters should be laid out as a clear strip");
+assert.match(css, /\.image-node\.is-composer-open \.image-preview-slot[\s\S]*?width:\s*min\(100%,\s*var\(--image-preview-width, 100%\)\)/s,
+  "portrait image previews should narrow inside the composer instead of stretching the node");
+assert.match(css, /\.image-node\.is-composer-open \.image-preview-slot[\s\S]*?height:\s*var\(--image-preview-height, auto\)[\s\S]*?max-height:\s*360px/s,
+  "image preview height should be capped in the final layout rule");
 assert.match(css, /\.video-settings-strip[\s\S]*?grid-template-columns:/s,
   "video parameters should remain in a dedicated bottom strip");
 assert.match(html, /class="video-reference-dock"[\s\S]*class="node-assets video-reference-assets"/,

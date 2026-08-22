@@ -277,19 +277,42 @@
             <textarea class="node-prompt" placeholder="描述主体、环境、光线和画面风格…"></textarea>
           </div>
           <div class="node-control-row image-control-row image-parameter-strip">
-            <label>
+            <div class="image-select-field" data-image-select="model">
               <span>模型</span>
-              <select data-node-field="model">
+              <button class="image-select-trigger" type="button" data-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span data-select-value>GPT Image 2</span><span class="image-select-chevron" aria-hidden="true">⌄</span>
+              </button>
+              <div class="image-select-menu" role="listbox" aria-label="图片模型">
+                <button type="button" role="option" data-select-option="gpt-image-2" aria-selected="true">GPT Image 2</button>
+                <button type="button" role="option" data-select-option="gemini-3.1-flash-image-preview" aria-selected="false">Nano Banana 2</button>
+                <button type="button" role="option" data-select-option="gemini-3-pro-image-preview" aria-selected="false">Nano Banana Pro</button>
+                <button type="button" role="option" data-select-option="grok-imagine-image-quality" aria-selected="false">Grok image</button>
+              </div>
+              <select class="image-native-select" data-node-field="model" tabindex="-1" aria-hidden="true">
                 <option value="gpt-image-2" selected>GPT Image 2</option>
                 <option value="gemini-3.1-flash-image-preview">Nano Banana 2</option>
                 <option value="gemini-3-pro-image-preview">Nano Banana Pro</option>
                 <option value="grok-imagine-image-quality">Grok image</option>
               </select>
-            </label>
-            <label>
+            </div>
+            <div class="image-select-field" data-image-select="ratio">
               <span>尺寸</span>
-              <select data-node-field="ratio">
-                <option value="16:9">横 16:9</option>
+              <button class="image-select-trigger" type="button" data-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span data-select-value>横 16:9</span><span class="image-select-chevron" aria-hidden="true">⌄</span>
+              </button>
+              <div class="image-select-menu" role="listbox" aria-label="图片比例">
+                <button type="button" role="option" data-select-option="16:9" aria-selected="true">横 16:9</button>
+                <button type="button" role="option" data-select-option="3:2" aria-selected="false">横 3:2</button>
+                <button type="button" role="option" data-select-option="4:3" aria-selected="false">横 4:3</button>
+                <button type="button" role="option" data-select-option="21:9" aria-selected="false">横 21:9</button>
+                <button type="button" role="option" data-select-option="9:16" aria-selected="false">竖 9:16</button>
+                <button type="button" role="option" data-select-option="2:3" aria-selected="false">竖 2:3</button>
+                <button type="button" role="option" data-select-option="3:4" aria-selected="false">竖 3:4</button>
+                <button type="button" role="option" data-select-option="4:5" aria-selected="false">竖 4:5</button>
+                <button type="button" role="option" data-select-option="1:1" aria-selected="false">方 1:1</button>
+              </div>
+              <select class="image-native-select" data-node-field="ratio" tabindex="-1" aria-hidden="true">
+                <option value="16:9" selected>横 16:9</option>
                 <option value="3:2">横 3:2</option>
                 <option value="4:3">横 4:3</option>
                 <option value="21:9">横 21:9</option>
@@ -299,15 +322,23 @@
                 <option value="4:5">竖 4:5</option>
                 <option value="1:1">方 1:1</option>
               </select>
-            </label>
-            <label>
+            </div>
+            <div class="image-select-field" data-image-select="resolution">
               <span>分辨率</span>
-              <select data-node-field="resolution">
-                <option value="1k">1K</option>
+              <button class="image-select-trigger" type="button" data-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span data-select-value>1K</span><span class="image-select-chevron" aria-hidden="true">⌄</span>
+              </button>
+              <div class="image-select-menu" role="listbox" aria-label="图片分辨率">
+                <button type="button" role="option" data-select-option="1k" aria-selected="true">1K</button>
+                <button type="button" role="option" data-select-option="2k" aria-selected="false">2K</button>
+                <button type="button" role="option" data-select-option="4k" aria-selected="false">4K</button>
+              </div>
+              <select class="image-native-select" data-node-field="resolution" tabindex="-1" aria-hidden="true">
+                <option value="1k" selected>1K</option>
                 <option value="2k">2K</option>
                 <option value="4k">4K</option>
               </select>
-            </label>
+            </div>
           </div>
           <div class="node-flow-summary">连入参考图或拖入素材作出图参考；输出可再作视频参考图。</div>
           <div class="node-assets"></div>

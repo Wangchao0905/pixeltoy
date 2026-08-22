@@ -4299,9 +4299,87 @@ async function batchGenerateVideoNodes() {
   toast(started ? `已提交 ${started} 个视频生成任务` : "没有通过校验的视频模块；请先验证超写实素材");
 }
 
+function closeImageCustomSelects(except = null) {
+  qsa(".image-select-field.is-open").forEach((field) => {
+    if (field !== except) {
+      field.classList.remove("is-open");
+      field.querySelector("[data-select-trigger]")?.setAttribute("aria-expanded", "false");
+    }
+  });
+}
+
+function syncImageCustomSelect(field) {
+  const select = field?.querySelector("select[data-node-field]");
+  const value = field?.querySelector("[data-select-value]");
+  if (!select || !value) return;
+  const selected = select.options[select.selectedIndex];
+  value.textContent = selected?.textContent || select.value;
+  field.querySelectorAll("[data-select-option]").forEach((option) => {
+    const active = option.dataset.selectOption === select.value;
+    option.setAttribute("aria-selected", active ? "true" : "false");
+    option.classList.toggle("is-selected", active);
+  });
+}
+
+function syncImageCustomSelects(element) {
+  element?.querySelectorAll("[data-image-select]").forEach(syncImageCustomSelect);
+}
+
+function bindImageCustomSelects(element) {
+  if (!element) return;
+  element.querySelectorAll("[data-image-select]").forEach((field) => {
+    if (field.dataset.selectBound === "true") return;
+    field.dataset.selectBound = "true";
+    const select = field.querySelector("select[data-node-field]");
+    const trigger = field.querySelector("[data-select-trigger]");
+    const menu = field.querySelector(".image-select-menu");
+    if (!select || !trigger || !menu) return;
+    trigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const open = !field.classList.contains("is-open");
+      closeImageCustomSelects(field);
+      field.classList.toggle("is-open", open);
+      trigger.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) field.querySelector(`[data-select-option="${CSS.escape(select.value)}"]`)?.focus();
+    });
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        trigger.click();
+      }
+    });
+    menu.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-select-option]");
+      if (!option) return;
+      event.preventDefault();
+      select.value = option.dataset.selectOption || "";
+      syncImageCustomSelect(field);
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      field.classList.remove("is-open");
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.focus();
+    });
+    menu.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        field.classList.remove("is-open");
+        trigger.setAttribute("aria-expanded", "false");
+        trigger.focus();
+      }
+    });
+    syncImageCustomSelect(field);
+  });
+  if (!document.documentElement.dataset.imageSelectOutsideBound) {
+    document.documentElement.dataset.imageSelectOutsideBound = "true";
+    document.addEventListener("pointerdown", (event) => {
+      if (!event.target.closest("[data-image-select]")) closeImageCustomSelects();
+    });
+  }
+}
+
 function syncImageModelControls(element, settings = {}) {
   element.querySelectorAll('[data-node-field="ratio"], [data-node-field="resolution"]').forEach((field) => {
-    field.closest("label")?.removeAttribute("hidden");
+    field.closest("label, [data-image-select]")?.removeAttribute("hidden");
   });
 }
 
@@ -4315,6 +4393,7 @@ function syncNodeControls(element, node) {
   if (node.kind === "image") {
     const settings = { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) };
     syncImageModelControls(element, settings);
+    bindImageCustomSelects(element);
     if (prompt) bindPromptMentionMenu(prompt, node);
     element.querySelectorAll("[data-node-field]").forEach((field) => {
       const key = field.dataset.nodeField;
@@ -4333,6 +4412,7 @@ function syncNodeControls(element, node) {
         scheduleCanvasSave();
       });
     });
+    syncImageCustomSelects(element);
     const generate = element.querySelector("[data-image-action='generate']");
     if (generate) {
       generate.disabled = node.status === "running";
@@ -6423,8 +6503,10 @@ function syncCanvasAgentNodeControls(node) {
     if (field.type === "checkbox") field.checked = settings[key] !== false;
     else field.value = settings[key] ?? "";
   });
-  if (node.kind === "image") syncImageModelControls(element, settings);
-  else syncVideoNodeShell(element, node);
+  if (node.kind === "image") {
+    syncImageModelControls(element, settings);
+    syncImageCustomSelects(element);
+  } else syncVideoNodeShell(element, node);
 }
 
 function applyCanvasAgentAction(action = {}) {

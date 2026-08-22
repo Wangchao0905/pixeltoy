@@ -36,6 +36,8 @@ assert.match(js, /ratioManualSize = true/,
   "manual corner resizing must remain available after automatic ratio sizing");
 assert.match(html, /class="node-control-row image-control-row image-parameter-strip"/,
   "image parameters should have an explicit bottom strip");
+assert.match(html, /data-image-select="model"[\s\S]*data-image-select="ratio"[\s\S]*data-image-select="resolution"/,
+  "image parameters should use custom compact selectors instead of browser-native menus");
 assert.match(css, /\.canvas-node\.image-node[\s\S]*?border:\s*0;/,
   "image modules must be frameless");
 assert.match(css, /\.canvas-node\.video-node[\s\S]*?border:\s*0;/,
@@ -80,6 +82,12 @@ assert.match(css, /\.canvas-node\.image-node,\s*\.canvas-node\.video-node[\s\S]*
   "media modules should keep a dark panel background without a border");
 assert.match(css, /\.image-node \.image-composer[\s\S]*?display:\s*flex[\s\S]*?flex-direction:\s*column/s,
   "image composer should keep its action row in a stable vertical layout");
+assert.match(css, /\.image-select-menu[\s\S]*?backdrop-filter:\s*blur\(/s,
+  "image selectors should use an Apple-style frosted menu");
+assert.match(js, /function bindImageCustomSelects\(/,
+  "image selectors should be driven by a custom menu rather than the native browser popup");
+assert.match(js, /select\.value = option\.dataset\.selectOption \|\| "";[\s\S]*?syncImageCustomSelect\(field\)/,
+  "image selector buttons should update their visible value immediately");
 assert.match(css, /\.image-node \.node-action-row[\s\S]*?flex:\s*0 0 auto/s,
   "image generate actions should remain visible at the bottom of the node");
 assert.doesNotMatch(html, /拖入参考图或资产/,

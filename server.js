@@ -17698,6 +17698,7 @@ const CANVAS_IMAGE_SIZE_TABLE = {
   "1:1": { "1k": "1024x1024", "2k": "2048x2048", "4k": "2880x2880" },
 };
 const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
+const GROK_IMAGE_PROVIDER_MODEL = "grok-3-image";
 const DEFAULT_CANVAS_IMAGE_BASE_URL = "https://llm-api.net/v1";
 
 function normalizeCanvasImageModel(value) {
@@ -17713,7 +17714,7 @@ function normalizeCanvasImageModel(value) {
 function canvasImageModelConfig(value) {
   const key = normalizeCanvasImageModel(value);
   if (key === "grok-imagine-image-quality") {
-    return { key, provider: "gpt", model: "grok-imagine-image-quality", supportsSize: true };
+    return { key, provider: "gpt", model: GROK_IMAGE_PROVIDER_MODEL, supportsSize: true };
   }
   if (key === "gpt-image-2") {
     return { key, provider: "gpt", model: "gpt-image-2", quality: "medium", supportsSize: true };
@@ -17768,6 +17769,16 @@ function canvasImageProviderSizeFor(ratio, resolution = "1k") {
   }
   if (size === "4k") return "2160x3840";
   return "1024x1536";
+}
+
+// Grok Image Create only accepts the five sizes documented by the gateway.
+// Map the canvas ratio to the nearest native orientation without post-cropping
+// the returned image, which can remove a subject's head or feet.
+function grokImageSizeFor(ratio = "1:1") {
+  const [width, height] = String(ratio || "1:1").split(":").map(Number);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width === height) return "960x960";
+  if (width > height) return width / height === 16 / 9 ? "1280x720" : "1168x784";
+  return width / height === 9 / 16 ? "720x1280" : "784x1168";
 }
 
 // GPT Image 2 的参考图下载器比输出尺寸更严格：部分网关只接受
@@ -17944,9 +17955,9 @@ function recoverCanvasImageJobFromOutput(taskId = "") {
 
 function grokImagePayload(entry = {}) {
   return {
-    model: "grok-imagine-image-quality",
+    model: GROK_IMAGE_PROVIDER_MODEL,
     prompt: compactLine(entry.prompt),
-    response_format: "b64_json",
+    size: compactLine(entry.size || grokImageSizeFor(entry.ratio)),
   };
 }
 
@@ -18205,10 +18216,11 @@ async function createCanvasImageGeneration(body = {}) {
     if (!IMAGE_GEN_SKILL_SCRIPT || !fs.existsSync(IMAGE_GEN_SKILL_SCRIPT)) throw new Error("缺少 image-gen 脚本：请先安装 apikey.fun 的 image-gen skill。");
   }
   const supportsSize = modelConfig.supportsSize !== false;
+  const isGrokImage = modelConfig.key === "grok-imagine-image-quality";
   const ratio = supportsSize && CANVAS_IMAGE_SIZE_TABLE[body.ratio] ? body.ratio : supportsSize ? "16:9" : "";
   const resolution = supportsSize && ["1k", "2k", "4k"].includes(String(body.resolution || "").toLowerCase()) ? String(body.resolution).toLowerCase() : supportsSize ? "1k" : "";
-  const size = supportsSize ? canvasImageSizeFor(ratio, resolution) : "";
-  const providerSize = canvasImageProviderSizeFor(ratio, resolution);
+  const providerSize = isGrokImage ? grokImageSizeFor(ratio) : canvasImageProviderSizeFor(ratio, resolution);
+  const size = isGrokImage ? providerSize : (supportsSize ? canvasImageSizeFor(ratio, resolution) : "");
   fs.mkdirSync(CANVAS_PUBLIC_ASSET_DIR, { recursive: true });
   const taskId = crypto.randomUUID();
   const fileName = `canvas-image-${taskId}.png`;
@@ -18284,7 +18296,7 @@ async function createCanvasImageGeneration(body = {}) {
     imageModel: modelConfig.key,
     provider: modelConfig.provider,
     providerModel: modelConfig.model,
-    normalizeOutput: supportsSize,
+    normalizeOutput: supportsSize && !isGrokImage,
     referencePaths: references,
     referenceImageCount: references.length,
     prompt,
@@ -30576,6 +30588,7 @@ module.exports = {
       canvasImageBaseUrl,
       isN1nGateway,
       canvasImageProviderSizeFor,
+      grokImageSizeFor,
       normalizeCanvasImageReferenceForProvider,
       classifyImageGenError,
       grokImagePayload,

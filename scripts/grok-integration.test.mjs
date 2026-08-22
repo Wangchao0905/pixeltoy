@@ -16,7 +16,7 @@ assert.match(html, /value="grok-imagine-video"/, "出片模型选择必须提供
 assert.match(server, /const SUPER_PIXEL_GROK_MODELS = new Set\(\["grok-4\.5", "grok-4\.5-latest", "grok-4\.3"\]\)/);
 assert.match(server, /apiKey: process\.env\.XAI_API_KEY, kind: "grok"/);
 assert.match(server, /grok-imagine-image-quality/);
-assert.match(server, /response_format: "b64_json"/);
+assert.match(server, /const GROK_IMAGE_PROVIDER_MODEL = "grok-3-image"/);
 assert.match(server, /grok-imagine-video-1\.5-preview/);
 assert.match(server, /grokVideoApiUrl/);
 assert.match(server, /callGrokVideoJson/);
@@ -48,14 +48,20 @@ const createImageSource = server.slice(server.indexOf("async function createCanv
 assert.doesNotMatch(createImageSource, /else if \(modelConfig\.provider === "grok"\)/, "Grok image quality 不得进入 XAI 专用创建分支");
 const grokImagePayload = __test.canvasImage.grokImagePayload({ prompt: "red circle" });
 assert.deepEqual(grokImagePayload, {
-  model: "grok-imagine-image-quality",
+  model: "grok-3-image",
   prompt: "red circle",
-  response_format: "b64_json",
+  size: "960x960",
 });
-assert.equal("size" in grokImagePayload, false, "未验证生效前不得向 Grok 出图暴露 size");
-assert.equal("aspect_ratio" in grokImagePayload, false, "未验证生效前不得向 Grok 出图暴露 aspect_ratio");
+assert.equal("response_format" in grokImagePayload, false, "Grok 文档未声明 response_format，不得发送该参数");
+assert.equal(__test.canvasImage.grokImageSizeFor("16:9"), "1280x720", "Grok 横向出图必须使用文档支持的 1280x720");
+assert.equal(__test.canvasImage.grokImageSizeFor("9:16"), "720x1280", "Grok 竖向出图必须使用文档支持的 720x1280");
+assert.equal(__test.canvasImage.grokImageSizeFor("1:1"), "960x960", "Grok 方形出图必须使用文档支持的 960x960");
+assert.equal(__test.canvasImage.grokImageSizeFor("3:2"), "1168x784", "Grok 横向非标准比例必须映射到文档支持尺寸而不是强裁切");
+assert.equal(__test.canvasImage.grokImageSizeFor("2:3"), "784x1168", "Grok 竖向非标准比例必须映射到文档支持尺寸而不是强裁切");
+assert.equal(__test.canvasImage.canvasImageModelConfig("grok-imagine-image-quality").model, "grok-3-image", "Grok image 前端兼容名必须调用文档模型 ID");
+assert.match(server, /const isGrokImage = modelConfig\.key === "grok-imagine-image-quality"[\s\S]*?normalizeOutput:\s*supportsSize && !isGrokImage/, "Grok 原生比例不能再经过中心裁切");
 assert.equal(__test.canvasImage.normalizeCanvasImageModel("grok-imagine-image"), "grok-imagine-image-quality", "旧 Grok image 草稿必须归一化到 quality 模型");
-assert.equal(__test.canvasImage.canvasImageModelConfig("grok-imagine-image").model, "grok-imagine-image-quality", "旧 Grok image 请求必须实际调用 quality 模型");
+assert.equal(__test.canvasImage.canvasImageModelConfig("grok-imagine-image").model, "grok-3-image", "旧 Grok image 请求必须实际调用文档模型 ID");
 assert.match(server, /normalizeCanvasImageModel\(value\)[\s\S]*?grok-imagine-image-quality/);
 assert.doesNotMatch(html, /value="grok-imagine-image"/);
 

@@ -3937,6 +3937,16 @@ function markImageNodeFailed(nodeId, message) {
   toast(message || "出图失败");
 }
 
+function syncImageGenerateButton(generate, running) {
+  if (!generate) return;
+  generate.disabled = running;
+  generate.classList.toggle("is-generating", running);
+  generate.setAttribute("aria-busy", running ? "true" : "false");
+  const label = generate.querySelector("[data-generate-label]");
+  if (label) label.textContent = running ? "生成中" : "生成图片";
+  else generate.textContent = running ? "生成中" : "生成图片";
+}
+
 function refreshImageNodeElement(nodeId) {
   const node = canvasState.nodes.find((item) => item.id === nodeId);
   const element = qs(`[data-node-id="${nodeId}"]`);
@@ -3972,8 +3982,7 @@ function refreshImageNodeElement(nodeId) {
   if (summary) summary.textContent = upstreamSummary(node);
   const generate = element.querySelector("[data-image-action='generate']");
   if (generate) {
-    generate.disabled = node.status === "running";
-    generate.textContent = node.status === "running" ? "生成中" : "生成图片";
+    syncImageGenerateButton(generate, node.status === "running");
   }
   return true;
 }
@@ -4415,8 +4424,7 @@ function syncNodeControls(element, node) {
     syncImageCustomSelects(element);
     const generate = element.querySelector("[data-image-action='generate']");
     if (generate) {
-      generate.disabled = node.status === "running";
-      generate.textContent = node.status === "running" ? "生成中" : "生成图片";
+      syncImageGenerateButton(generate, node.status === "running");
       generate.addEventListener("click", () => generateImageNode(node.id).catch((error) => markImageNodeFailed(node.id, error.message)));
     }
     return;

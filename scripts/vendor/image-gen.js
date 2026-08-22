@@ -374,6 +374,19 @@ async function buildRequest(args, mode) {
   const n = intArg(args, "n", 1);
   if (mode === "text") {
     if (isN1nGateway(args["base-url"])) {
+      const isGrokImage = args.model === "grok-3-image";
+      const body = {
+        model: args.model || "gpt-image-2",
+        prompt,
+        size: args.size || "1024x1024",
+      };
+      if (!isGrokImage) {
+        Object.assign(body, {
+          n,
+          quality: args.quality || "auto",
+          format: args.format || "png",
+        });
+      }
       return {
         url: buildApiUrl(args["base-url"], "/v1/images/generations"),
         defaultOut: "generated-image.png",
@@ -384,18 +397,7 @@ async function buildRequest(args, mode) {
             "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: JSON.stringify({
-            model: args.model || "gpt-image-2",
-            prompt,
-            n,
-            size: args.size || "1024x1024",
-            quality: args.quality || "auto",
-            format: args.format || "png",
-            // n1n may return a protected/short-lived URL for Grok image unless
-            // the OpenAI-compatible base64 response is requested explicitly.
-            // Keep the documented format field for all other image models.
-            response_format: args.model === "grok-imagine-image-quality" ? "b64_json" : undefined,
-          }),
+          body: JSON.stringify(body),
         },
       };
     }

@@ -38,6 +38,8 @@ assert.match(html, /class="node-control-row image-control-row image-parameter-st
   "image parameters should have an explicit bottom strip");
 assert.match(html, /data-image-select="model"[\s\S]*data-image-select="ratio"[\s\S]*data-image-select="resolution"/,
   "image parameters should use custom compact selectors instead of browser-native menus");
+assert.match(html, /data-image-action="generate"[\s\S]*image-generate-icon[\s\S]*data-generate-label/,
+  "image generation should use a designed icon-and-label action instead of plain text");
 assert.match(css, /\.canvas-node\.image-node[\s\S]*?border:\s*0;/,
   "image modules must be frameless");
 assert.match(css, /\.canvas-node\.video-node[\s\S]*?border:\s*0;/,
@@ -84,6 +86,10 @@ assert.match(css, /\.image-node \.image-composer[\s\S]*?display:\s*flex[\s\S]*?f
   "image composer should keep its action row in a stable vertical layout");
 assert.match(css, /\.image-select-menu[\s\S]*?backdrop-filter:\s*blur\(/s,
   "image selectors should use an Apple-style frosted menu");
+assert.match(css, /\.image-generate-button[\s\S]*?background:[\s\S]*?box-shadow:[\s\S]*?transition:/s,
+  "image generation buttons should have layered material, depth, and interaction states");
+assert.match(css, /\.image-generate-button\.is-generating[\s\S]*?animation:/s,
+  "image generation buttons should expose a distinct busy state");
 assert.match(js, /function bindImageCustomSelects\(/,
   "image selectors should be driven by a custom menu rather than the native browser popup");
 assert.match(js, /select\.value = option\.dataset\.selectOption \|\| "";[\s\S]*?syncImageCustomSelect\(field\)/,

@@ -17772,6 +17772,10 @@ function canvasImageBaseUrl(modelKey = "") {
   return (process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || DEFAULT_CANVAS_IMAGE_BASE_URL).replace(/\/+$/, "");
 }
 
+function isN1nGateway(baseUrl = "") {
+  return /(^|:\/\/)(?:www\.)?llm-api\.net(?::\d+)?(?:\/|$)/i.test(String(baseUrl || ""));
+}
+
 function canvasImageSizeFor(ratio, resolution) {
   const r = CANVAS_IMAGE_SIZE_TABLE[ratio] || CANVAS_IMAGE_SIZE_TABLE["16:9"];
   return r[String(resolution || "1k").toLowerCase()] || r["1k"];
@@ -30691,6 +30695,7 @@ module.exports = {
       normalizeCanvasImageModel,
       canvasImageModelConfig,
       canvasImageBaseUrl,
+      isN1nGateway,
       canvasImageProviderSizeFor,
       normalizeCanvasImageReferenceForProvider,
       classifyImageGenError,

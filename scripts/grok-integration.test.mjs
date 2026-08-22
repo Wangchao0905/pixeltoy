@@ -42,6 +42,8 @@ const grokImageConfig = __test.canvasImage.canvasImageModelConfig("grok-imagine-
 assert.equal(grokImageConfig.provider, "gpt", "Grok image quality 必须复用 Nano Banana 的图片 API provider");
 assert.equal(grokImageConfig.supportsSize, true, "Grok image quality 必须复用 Nano Banana 的尺寸参数");
 assert.equal(__test.canvasImage.canvasImageBaseUrl("grok-imagine-image-quality"), process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1", "Grok image quality 必须使用 n1n 图片网关");
+assert.equal(__test.canvasImage.isN1nGateway("https://llm-api.net/v1"), true, "服务端必须识别 n1n 网关，避免不安全重试");
+assert.equal(__test.canvasImage.isN1nGateway("https://example.com/v1"), false, "服务端不应把其他网关误判为 n1n");
 const createImageSource = server.slice(server.indexOf("async function createCanvasImageGeneration"), server.indexOf("function drainCanvasImageQueue"));
 assert.doesNotMatch(createImageSource, /else if \(modelConfig\.provider === "grok"\)/, "Grok image quality 不得进入 XAI 专用创建分支");
 const grokImagePayload = __test.canvasImage.grokImagePayload({ prompt: "red circle" });

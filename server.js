@@ -18348,6 +18348,13 @@ async function createCanvasImageGeneration(body = {}) {
     const providerLocalPath = modelConfig.provider === "gpt"
       ? normalizeCanvasImageReferenceForProvider(localPath, providerSize, taskId, index)
       : localPath;
+    // n1n 的 /images/edits 由本机 image-gen 子进程组装 multipart 请求；
+    // 直接传规范化后的本地文件，避免子进程再次抓取 pixeltoy.cn 公网地址。
+    // 公网地址可能受 DNS、对象存储或防盗链影响，导致“图片链接无法打开”，
+    // 即使画布服务器本地文件本身完全可读。
+    if (modelConfig.provider === "gpt" && isN1nGateway(canvasImageBaseUrl(modelConfig.key))) {
+      return { input: providerLocalPath, localPath: providerLocalPath };
+    }
     // Always submit a first-party public asset URL. The gateway may time out
     // while fetching an otherwise valid third-party URL, especially after
     // reference normalization falls back to the original local copy.

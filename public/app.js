@@ -2741,9 +2741,6 @@ function renderImageExploreView() {
   $("#imageExploreModel").value = state.imageStudio.model || "gpt-image-2";
   $("#imageExploreRatio").value = state.imageStudio.ratio;
   $("#imageExploreResolution").value = state.imageStudio.resolution;
-  const grokImageSelected = ["grok-imagine-image-quality", "grok-imagine-image"].includes(state.imageStudio.model);
-  $("#imageExploreRatio")?.closest("label")?.toggleAttribute("hidden", grokImageSelected);
-  $("#imageExploreResolution")?.closest("label")?.toggleAttribute("hidden", grokImageSelected);
   $("#imageExploreCount").textContent = String(state.imageStudio.count);
   const storyboardToggle = $("#imageExploreStoryboardToggle");
   const storyboardOptions = $("#imageExploreStoryboardOptions");

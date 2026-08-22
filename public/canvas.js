@@ -4288,9 +4288,8 @@ async function batchGenerateVideoNodes() {
 }
 
 function syncImageModelControls(element, settings = {}) {
-  const hidden = ["grok-imagine-image-quality", "grok-imagine-image"].includes(settings.model);
   element.querySelectorAll('[data-node-field="ratio"], [data-node-field="resolution"]').forEach((field) => {
-    field.closest("label")?.toggleAttribute("hidden", hidden);
+    field.closest("label")?.removeAttribute("hidden");
   });
 }
 

@@ -17730,7 +17730,7 @@ function normalizeCanvasImageModel(value) {
 function canvasImageModelConfig(value) {
   const key = normalizeCanvasImageModel(value);
   if (key === "grok-imagine-image-quality") {
-    return { key, provider: "grok", model: "grok-imagine-image-quality", supportsSize: false };
+    return { key, provider: "gpt", model: "grok-imagine-image-quality", supportsSize: true };
   }
   if (key === "seedream-5-0-pro") {
     return {
@@ -17755,9 +17755,9 @@ function canvasImageModelConfig(value) {
   return { key, provider: "gpt", model: GPT_IMAGE_MODEL, supportsSize: true };
 }
 
-// GPT Image 2 使用 n1n 的 OpenAI-compatible 图像接口；其它模型继续使用原有网关。
+// GPT Image 2、Nano Banana 和 Grok image 使用 n1n 的 OpenAI-compatible 图像接口；其它模型继续使用原有网关。
 function canvasImageGatewayFor(modelKey = "") {
-  if (["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL].includes(normalizeCanvasImageModel(modelKey))) {
+  if (["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "grok-imagine-image-quality"].includes(normalizeCanvasImageModel(modelKey))) {
     return {
       baseUrl: process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1",
       apiKey: process.env.PIXEL_TOYS_IMAGE_N1N_API_KEY || "",
@@ -18322,10 +18322,8 @@ async function createCanvasImageGeneration(body = {}) {
   if (!prompt) throw new Error("请先填写图片描述（prompt）");
   const modelConfig = canvasImageModelConfig(body.imageModel || body.model);
   if (modelConfig.provider === "gpt") {
-    if (!imageApiKey()) throw new Error("缺少图片生成 API Key：请在 .env.local 配置 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。");
+    if (!imageApiKey(modelConfig.key)) throw new Error("缺少图片生成 API Key：请在 .env.local 配置 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。");
     if (!IMAGE_GEN_SKILL_SCRIPT || !fs.existsSync(IMAGE_GEN_SKILL_SCRIPT)) throw new Error("缺少 image-gen 脚本：请先安装 apikey.fun 的 image-gen skill。");
-  } else if (modelConfig.provider === "grok") {
-    if (!process.env.XAI_API_KEY) throw new Error("缺少 XAI_API_KEY：Grok 出图需要在 .env.local 配置后重启服务。");
   } else if (!videoApiKey("ark")) {
     throw new Error("缺少 VOLC_ARK_API_KEY：Seedream 5.0 Pro/Lite 出图需要火山方舟 API Key，请在 .env.local 配置后重启服务。");
   }
@@ -18340,9 +18338,6 @@ async function createCanvasImageGeneration(body = {}) {
   const outPath = path.join(CANVAS_PUBLIC_ASSET_DIR, fileName);
   // 参考图（可选）：有则走 image 模式（首图为基准，其余为参考），否则纯文生图。
   const requestedReferences = (Array.isArray(body.referenceImages) ? body.referenceImages : []).map(compactLine).filter(Boolean).slice(0, 4);
-  if (modelConfig.provider === "grok" && requestedReferences.length) {
-    throw new Error("Grok 出图当前不支持参考图，请移除参考图后重试。");
-  }
   const referenceRecords = await Promise.all(requestedReferences.map(async (source, index) => {
     const localPath = await resolveCanvasImageReferenceToLocalPath(source);
     if (!localPath) return { error: "文件无法读取" };
@@ -18424,7 +18419,6 @@ async function createCanvasImageGeneration(body = {}) {
     },
   );
   if (modelConfig.provider === "ark") enqueueCanvasImageJob(taskId, () => runSeedreamCanvasImageJob(taskId));
-  else if (modelConfig.provider === "grok") enqueueCanvasImageJob(taskId, () => runGrokCanvasImageJob(taskId));
   else enqueueCanvasImageJob(taskId, () => runCanvasImageJob(taskId, args, env));
   // 清理老任务（>30 分钟）避免内存无界增长。
   for (const [id, job] of canvasImageJobs) {

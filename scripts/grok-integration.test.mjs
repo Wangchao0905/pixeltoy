@@ -38,6 +38,12 @@ assert.match(app, /Grok Imagine Video 1\.5 Preview · \$0\.0706\/秒起/, "新 G
 
 const require = createRequire(import.meta.url);
 const { __test } = require(path.join(root, "server.js"));
+const grokImageConfig = __test.canvasImage.canvasImageModelConfig("grok-imagine-image-quality");
+assert.equal(grokImageConfig.provider, "gpt", "Grok image quality 必须复用 Nano Banana 的图片 API provider");
+assert.equal(grokImageConfig.supportsSize, true, "Grok image quality 必须复用 Nano Banana 的尺寸参数");
+assert.equal(__test.canvasImage.canvasImageBaseUrl("grok-imagine-image-quality"), process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1", "Grok image quality 必须使用 n1n 图片网关");
+const createImageSource = server.slice(server.indexOf("async function createCanvasImageGeneration"), server.indexOf("function drainCanvasImageQueue"));
+assert.doesNotMatch(createImageSource, /else if \(modelConfig\.provider === "grok"\)/, "Grok image quality 不得进入 XAI 专用创建分支");
 const grokImagePayload = __test.canvasImage.grokImagePayload({ prompt: "red circle" });
 assert.deepEqual(grokImagePayload, {
   model: "grok-imagine-image-quality",

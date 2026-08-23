@@ -16,7 +16,7 @@ assert.match(html, /value="grok-imagine-video"/, "出片模型选择必须提供
 assert.match(server, /const SUPER_PIXEL_GROK_MODELS = new Set\(\["grok-4\.5", "grok-4\.5-latest", "grok-4\.3"\]\)/);
 assert.match(server, /apiKey: process\.env\.XAI_API_KEY, kind: "grok"/);
 assert.match(server, /grok-imagine-image-quality/);
-assert.match(server, /const GROK_IMAGE_PROVIDER_MODEL = "grok-3-image"/);
+assert.match(server, /const GROK_IMAGE_PROVIDER_MODEL = "grok-imagine-image-quality"/);
 assert.match(server, /grok-imagine-video-1\.5-preview/);
 assert.match(server, /grokVideoApiUrl/);
 assert.match(server, /callGrokVideoJson/);
@@ -48,7 +48,7 @@ const createImageSource = server.slice(server.indexOf("async function createCanv
 assert.doesNotMatch(createImageSource, /else if \(modelConfig\.provider === "grok"\)/, "Grok image quality 不得进入 XAI 专用创建分支");
 const grokImagePayload = __test.canvasImage.grokImagePayload({ prompt: "red circle" });
 assert.deepEqual(grokImagePayload, {
-  model: "grok-3-image",
+  model: "grok-imagine-image-quality",
   prompt: "red circle",
   size: "960x960",
 });
@@ -58,10 +58,15 @@ assert.equal(__test.canvasImage.grokImageSizeFor("9:16"), "720x1280", "Grok 竖�
 assert.equal(__test.canvasImage.grokImageSizeFor("1:1"), "960x960", "Grok 方形出图必须使用文档支持的 960x960");
 assert.equal(__test.canvasImage.grokImageSizeFor("3:2"), "1168x784", "Grok 横向非标准比例必须映射到文档支持尺寸而不是强裁切");
 assert.equal(__test.canvasImage.grokImageSizeFor("2:3"), "784x1168", "Grok 竖向非标准比例必须映射到文档支持尺寸而不是强裁切");
-assert.equal(__test.canvasImage.canvasImageModelConfig("grok-imagine-image-quality").model, "grok-3-image", "Grok image 前端兼容名必须调用文档模型 ID");
+assert.equal(__test.canvasImage.canvasImageModelConfig("grok-imagine-image-quality").model, "grok-imagine-image-quality", "Grok image 必须调用当前 key 实际暴露的 quality 模型 ID");
 assert.match(server, /const isGrokImage = modelConfig\.key === "grok-imagine-image-quality"[\s\S]*?normalizeOutput:\s*supportsSize && !isGrokImage/, "Grok 原生比例不能再经过中心裁切");
 assert.equal(__test.canvasImage.normalizeCanvasImageModel("grok-imagine-image"), "grok-imagine-image-quality", "旧 Grok image 草稿必须归一化到 quality 模型");
-assert.equal(__test.canvasImage.canvasImageModelConfig("grok-imagine-image").model, "grok-3-image", "旧 Grok image 请求必须实际调用文档模型 ID");
+assert.equal(__test.canvasImage.canvasImageModelConfig("grok-imagine-image").model, "grok-imagine-image-quality", "旧 Grok image 请求必须实际调用当前可用模型 ID");
+assert.equal(
+  __test.canvasImage.classifyImageGenError('{"detail":{"status":503,"body":"grok-3-image 无可用渠道 (distributor)"}}'),
+  "图片模型当前没有可用渠道：请在网关为该模型开通渠道，或切换到可用分组后重试。",
+  "无可用渠道错误必须收敛为可操作提示，不能把网关分组列表原样展示给用户",
+);
 assert.match(server, /normalizeCanvasImageModel\(value\)[\s\S]*?grok-imagine-image-quality/);
 assert.doesNotMatch(html, /value="grok-imagine-image"/);
 

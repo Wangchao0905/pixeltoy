@@ -24,8 +24,10 @@ const context = {
   },
 };
 vm.createContext(context);
+vm.runInContext(extractFunction("function isN1nGateway("), context, { filename: "server.js" });
 vm.runInContext(extractFunction("function isCanvasImagePolicyFailure("), context, { filename: "server.js" });
 vm.runInContext(extractFunction("function policySafeCanvasImagePrompt("), context, { filename: "server.js" });
+vm.runInContext(extractFunction("function shouldRetryCanvasImagePolicy("), context, { filename: "server.js" });
 
 const refusal = JSON.stringify({
   code: "api_stream_error",
@@ -37,6 +39,8 @@ const refusal = JSON.stringify({
 });
 assert.equal(context.isCanvasImagePolicyFailure(refusal), true, "content_filter must be recognized as a policy refusal");
 assert.equal(context.isCanvasImagePolicyFailure('{"code":"network_error","message":"fetch failed"}'), false, "network failures must preserve the normal retry path");
+assert.equal(context.shouldRetryCanvasImagePolicy({ OPENAI_BASE_URL: "https://llm-api.net/v1" }), false, "N1N policy failures must not issue a second paid request");
+assert.equal(context.shouldRetryCanvasImagePolicy({ OPENAI_BASE_URL: "https://example.com/v1" }), true, "non-N1N policy failures may retain the existing safe retry");
 
 const originalPrompt = "尸潮围住角色，鲜血流过地面，角色手持匕首对峙 zombie horde with blood and weapons";
 const safePrompt = context.policySafeCanvasImagePrompt(originalPrompt);
@@ -46,6 +50,7 @@ assert.match(safePrompt, /角色|紧张/i, "the fallback must keep the narrative
 
 const gptRunner = extractFunction("function runCanvasImageJob(");
 assert.match(gptRunner, /isCanvasImagePolicyFailure/, "GPT canvas jobs must branch to the policy retry");
+assert.match(gptRunner, /shouldRetryCanvasImagePolicy\(env\)/, "GPT canvas jobs must gate policy retry by gateway billing safety");
 assert.match(gptRunner, /withCanvasImagePrompt\(args, policySafeCanvasImagePrompt\(entry\.prompt\)\)/, "GPT retries must replace only the child process prompt");
 assert.doesNotMatch(gptRunner, /entry\.prompt\s*=/, "the original user prompt must remain unchanged");
 

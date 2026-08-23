@@ -44,10 +44,10 @@ if (!imageGen.includes('Accept: "application/json"') || !imageGen.includes("stre
 const n1nTextRequestStart = imageGen.indexOf('if (isN1nGateway(args["base-url"]))');
 const n1nTextRequestEnd = imageGen.indexOf('if (isXibApiGateway(args["base-url"]))', n1nTextRequestStart);
 const n1nTextRequest = imageGen.slice(n1nTextRequestStart, n1nTextRequestEnd);
-if (!/args\.model\s*===\s*"grok-3-image"/.test(n1nTextRequest) || !/size:\s*args\.size/.test(n1nTextRequest)) {
+if (!/args\.model\s*===\s*"grok-imagine-image-quality"/.test(n1nTextRequest) || !/size:\s*args\.size/.test(n1nTextRequest)) {
   throw new Error("Grok image requests through n1n must use the documented model and size fields");
 }
-if (/response_format:\s*args\.model\s*===\s*"grok-3-image"/.test(n1nTextRequest)) {
+if (/response_format:\s*args\.model\s*===\s*"grok-imagine-image-quality"/.test(n1nTextRequest)) {
   throw new Error("Grok image requests through n1n must not send undocumented response_format");
 }
 if (!imageGen.includes("function isXibApiGateway") || !imageGen.includes("function buildXibApiChatUrl") || !imageGen.includes('`${base}/v1/chat/completions`') || !imageGen.includes('messages: [{ role: "user", content: prompt }]') || !imageGen.includes("temperature: 0.7")) {
@@ -118,6 +118,9 @@ if (!server.includes('--orchestration-model') || !server.includes("const detail 
 }
 if (!server.includes("function canRetryCanvasImageJob") || !server.includes("canRetryCanvasImageJob(env, attempt, diagnostics)")) {
   throw new Error("canvas image jobs must suppress uncertain n1n retries");
+}
+if (!/function shouldRetryCanvasImagePolicy\(env/.test(server) || !server.includes("shouldRetryCanvasImagePolicy(env)")) {
+  throw new Error("N1N safety-policy failures must not trigger a second potentially billable request");
 }
 if (!app.includes("async function submitImageExploreGeneration") || !app.includes("if (state.imageStudio.generating) return;")) {
   throw new Error("image generation submit handlers must reject duplicate concurrent submissions");

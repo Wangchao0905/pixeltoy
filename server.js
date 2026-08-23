@@ -17698,7 +17698,9 @@ const CANVAS_IMAGE_SIZE_TABLE = {
   "1:1": { "1k": "1024x1024", "2k": "2048x2048", "4k": "2880x2880" },
 };
 const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.PIXEL_TOYS_IMAGE_MODEL || "gpt-image-2";
-const GROK_IMAGE_PROVIDER_MODEL = "grok-3-image";
+// The configured N1N key currently exposes this quality route; grok-3-image
+// exists in the docs but has no eligible channel for this key/group.
+const GROK_IMAGE_PROVIDER_MODEL = "grok-imagine-image-quality";
 const DEFAULT_CANVAS_IMAGE_BASE_URL = "https://llm-api.net/v1";
 
 function normalizeCanvasImageModel(value) {
@@ -18064,6 +18066,13 @@ function canRetryCanvasImageJob(env, attempt, diagnostics = "") {
   return attempt < 2 && /stream|api_stream_error|no_image_result|read_error|unexpected eof|timeout|timed out|ETIMEDOUT|ECONNRESET|network|fetch failed|no available|rate.?limit|429|500|502|503|504|522|523|524|限流|超时|流/i.test(diagnostics);
 }
 
+function shouldRetryCanvasImagePolicy(env = {}) {
+  // A policy refusal may already have reached a billable provider. N1N does
+  // not provide an idempotency key for image generation, so never issue a
+  // second request automatically on that gateway.
+  return !isN1nGateway(env?.OPENAI_BASE_URL);
+}
+
 function runCanvasImageJob(taskId, args, env, attempt = 0, policyRetried = false) {
   return new Promise((resolve) => {
     let child;
@@ -18099,7 +18108,7 @@ function runCanvasImageJob(taskId, args, env, attempt = 0, policyRetried = false
         } else {
           const diagnostics = stderr || spawnError;
           const failMessage = classifyImageGenError(diagnostics) || `出图失败（退出码 ${code}）`;
-          if (!policyRetried && isCanvasImagePolicyFailure(diagnostics)) {
+          if (!policyRetried && isCanvasImagePolicyFailure(diagnostics) && shouldRetryCanvasImagePolicy(env)) {
             Object.assign(entry, {
               status: "running",
               message: "提示词触发审核，正在按安全表达自动重试…",
@@ -18187,6 +18196,9 @@ function classifyImageGenError(stderr = "", provider = "gpt") {
   if (status === 429) return "生图接口限流（HTTP 429），请稍后重试。";
   if (status === 402 || /insufficient_balance|余额不足/i.test(upstreamMessage)) {
     return "图片生成余额不足：请到网关控制台充值后重试。";
+  }
+  if (/no available account|no available channel|无可用账号|无可用渠道/i.test(`${upstreamMessage} ${text}`) || status === 503) {
+    return "图片模型当前没有可用渠道：请在网关为该模型开通渠道，或切换到可用分组后重试。";
   }
   if (isCanvasImagePolicyFailure(`${upstreamMessage} ${text}`)) return "提示词被安全审核拦截，请调整后重试。";
   if (/aspect[\s_-]*ratio|宽高比|画幅比例/i.test(`${upstreamMessage} ${text}`)) {

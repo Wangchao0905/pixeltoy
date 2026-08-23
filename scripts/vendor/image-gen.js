@@ -374,7 +374,7 @@ async function buildRequest(args, mode) {
   const n = intArg(args, "n", 1);
   if (mode === "text") {
     if (isN1nGateway(args["base-url"])) {
-      const isGrokImage = args.model === "grok-3-image";
+      const isGrokImage = args.model === "grok-imagine-image-quality";
       const body = {
         model: args.model || "gpt-image-2",
         prompt,

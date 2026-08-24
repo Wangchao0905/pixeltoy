@@ -30,8 +30,9 @@ assert.match(canvas, /linksGroup\.setAttribute\("transform", `translate\(\$\{Mat
 assert.doesNotMatch(css, /\.canvas-links\s*\{[^}]*?will-change:\s*transform/, "the root link SVG must not be promoted as a scaled compositor layer");
 assert.match(css, /\.generation-progress-track\s*\{/, "static generation progress track styles must exist");
 assert.doesNotMatch(html, /class="context-icon|class="context-arrow/, "creation menus must display text without decorative icons");
-assert.match(css, /\.canvas-context-menu\s*\{[\s\S]*?width:\s*248px[\s\S]*?background:\s*rgba\(10,\s*12,\s*14,\s*0\.96\)/, "creation menu must use the compact dark surface");
-assert.match(css, /\.canvas-context-menu button\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)[\s\S]*?font-weight:\s*450/, "creation menu text must use a light single-column treatment");
+assert.match(css, /\.canvas-context-menu\s*\{[\s\S]*?width:\s*198px[\s\S]*?background:\s*rgba\(10,\s*12,\s*14,\s*0\.96\)/, "creation menu must use the compact dark surface");
+assert.match(css, /\.canvas-context-menu button\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)[\s\S]*?min-height:\s*34px[\s\S]*?font-weight:\s*450/, "creation menu items must stay compact while preserving a light single-column treatment");
 assert.match(css, /\.canvas-context-menu button:focus-visible\s*\{/, "creation menu items must keep a visible keyboard focus state");
+assert.match(canvas, /function showContextMenu\(event\)[\s\S]*?menu\.style\.removeProperty\("transform"\)/, "blank-canvas context menu must not retain a stale zoom transform");
 
 console.log("canvas design polish tests passed");

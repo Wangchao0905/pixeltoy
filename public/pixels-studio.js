@@ -52,6 +52,7 @@
     { value: "gemini-3.1-flash-image-preview", label: "Nano Banana 2", provider: "n1n", hint: "Lowest-price image generation" },
     { value: "gemini-3-pro-image-preview", label: "Nano Banana Pro", provider: "n1n", hint: "Lowest-price image generation" },
     { value: "grok-imagine-image-quality", label: "Grok image", provider: "Grok", hint: "High-detail 2K image generation" },
+    { value: "mj_imagine", label: "Midjourney", provider: "n1n", hint: "Async Imagine generation · $0.0882/image", price: "$0.0882/张" },
   ]);
   const VIDEO_MODEL_OPTIONS = Object.freeze([
     { value: "sd2", label: "sd2 · 0.230/秒起", provider: "Paisio", hint: "480p / 720p", price: "480p 0.230/秒；720p 0.290/秒" },

@@ -17701,6 +17701,7 @@ const GPT_IMAGE_MODEL = process.env.PIXEL_TOYS_IMAGE_TOOL_MODEL || process.env.P
 // The configured N1N key currently exposes this quality route; grok-3-image
 // exists in the docs but has no eligible channel for this key/group.
 const GROK_IMAGE_PROVIDER_MODEL = "grok-imagine-image-quality";
+const MIDJOURNEY_IMAGE_MODEL = "mj_imagine";
 const DEFAULT_CANVAS_IMAGE_BASE_URL = "https://llm-api.net/v1";
 
 function normalizeCanvasImageModel(value) {
@@ -17710,6 +17711,7 @@ function normalizeCanvasImageModel(value) {
   if ([N1N_NANO_BANANA_2_MODEL, "nano-banana-2", "nanobanana-2"].includes(raw)) return N1N_NANO_BANANA_2_MODEL;
   if ([N1N_NANO_BANANA_PRO_MODEL, "nano-banana-pro", "nanobanana-pro"].includes(raw)) return N1N_NANO_BANANA_PRO_MODEL;
   if (["grok-imagine-image-quality", "grok-imagine-image", "grok-imagine"].includes(raw)) return "grok-imagine-image-quality";
+  if ([MIDJOURNEY_IMAGE_MODEL, "midjourney", "mj-imagine", "mj-imagine-image"].includes(raw)) return MIDJOURNEY_IMAGE_MODEL;
   return "gpt-image-2";
 }
 
@@ -17717,6 +17719,9 @@ function canvasImageModelConfig(value) {
   const key = normalizeCanvasImageModel(value);
   if (key === "grok-imagine-image-quality") {
     return { key, provider: "gpt", model: GROK_IMAGE_PROVIDER_MODEL, supportsSize: true };
+  }
+  if (key === MIDJOURNEY_IMAGE_MODEL) {
+    return { key, provider: "midjourney", model: MIDJOURNEY_IMAGE_MODEL, supportsSize: true };
   }
   if (key === "gpt-image-2") {
     return { key, provider: "gpt", model: "gpt-image-2", quality: "medium", supportsSize: true };
@@ -17729,13 +17734,72 @@ function canvasImageModelConfig(value) {
 
 // GPT Image 2、Nano Banana 和 Grok image 使用 n1n 的 OpenAI-compatible 图像接口；其它模型继续使用原有网关。
 function canvasImageGatewayFor(modelKey = "") {
-  if (["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "grok-imagine-image-quality"].includes(normalizeCanvasImageModel(modelKey))) {
+  if (["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "grok-imagine-image-quality", "mj_imagine"].includes(normalizeCanvasImageModel(modelKey))) {
     return {
       baseUrl: process.env.PIXEL_TOYS_IMAGE_N1N_BASE_URL || "https://llm-api.net/v1",
       apiKey: process.env.PIXEL_TOYS_IMAGE_N1N_API_KEY || "",
     };
   }
   return null;
+}
+
+function midjourneyImagePayload({ prompt, ratio, referenceImages = [] } = {}) {
+  const cleanPrompt = compactLine(prompt);
+  const cleanRatio = /^\d+:\d+$/.test(compactLine(ratio)) ? compactLine(ratio) : "16:9";
+  const hasAspectRatio = /(?:^|\s)--ar\s+\d+:\d+(?:\s|$)/i.test(cleanPrompt);
+  return {
+    botType: "MID_JOURNEY",
+    prompt: hasAspectRatio ? cleanPrompt : `${cleanPrompt} --ar ${cleanRatio}`,
+    base64Array: Array.isArray(referenceImages) ? referenceImages.filter((value) => /^data:image\//i.test(String(value || ""))) : [],
+  };
+}
+
+function midjourneyGatewayRootUrl(modelKey = MIDJOURNEY_IMAGE_MODEL) {
+  const base = canvasImageBaseUrl(modelKey);
+  return base.replace(/\/v1\/?$/i, "");
+}
+
+async function callMidjourneyJson(pathname, options = {}) {
+  const key = imageApiKey(MIDJOURNEY_IMAGE_MODEL);
+  if (!key) throw new Error("缺少图片生成 API Key：请在 .env.local 配置 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。");
+  const clean = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const response = await fetchWithBodyTimeout(`${midjourneyGatewayRootUrl()}${clean}`, {
+    ...options,
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...(options.headers || {}) },
+  }, VIDEO_API_REQUEST_TIMEOUT_MS);
+  let data = {};
+  try { data = response.body ? JSON.parse(response.body) : {}; } catch { data = { message: response.body }; }
+  const responseCode = data?.code === undefined || data?.code === null ? null : Number(data.code);
+  if (!response.response.ok || (responseCode !== null && responseCode !== 1) || data?.success === false) {
+    throw new Error(normalizeVideoGenerationErrorMessage(extractVideoApiError(data) || `Midjourney 接口 HTTP ${response.response.status}`));
+  }
+  return data;
+}
+
+function normalizeMidjourneyStatus(raw = {}, fallbackTaskId = "") {
+  const statusRaw = compactLine(raw?.status || raw?.data?.status || "").toUpperCase();
+  const taskId = compactLine(raw?.id || raw?.taskId || raw?.task_id || fallbackTaskId);
+  const imageUrl = compactLine(raw?.imageUrl || raw?.image_url || raw?.data?.imageUrl || raw?.data?.image_url || "");
+  const progressRaw = compactLine(raw?.progress || raw?.data?.progress || "");
+  const progressMatch = progressRaw.match(/(\d+(?:\.\d+)?)\s*%?/);
+  const progress = progressMatch ? Math.max(0, Math.min(100, Number(progressMatch[1]))) : null;
+  const failure = compactLine(raw?.failReason || raw?.error?.message || raw?.message || raw?.description || "");
+  if (["SUCCESS", "SUCCEEDED", "COMPLETED", "DONE"].includes(statusRaw) || imageUrl) return { status: "completed", statusRaw, taskId, progress: 100, imageUrl, message: "生成完成", raw };
+  if (["FAILURE", "FAILED", "ERROR", "CANCELLED", "CANCELED"].includes(statusRaw)) return { status: "failed", statusRaw, taskId, progress: progress ?? 100, message: failure || "Midjourney 图片生成失败", raw };
+  return { status: "running", statusRaw: statusRaw || "PENDING", taskId, progress, message: failure || "生成中", raw };
+}
+
+async function downloadMidjourneyImage(entry, imageUrl) {
+  if (!/^https?:\/\//i.test(compactLine(imageUrl))) throw new Error("Midjourney 没有返回有效图片链接");
+  const response = await fetchWithBodyTimeout(imageUrl, {}, VIDEO_API_REQUEST_TIMEOUT_MS, "arrayBuffer");
+  if (!response.response.ok) throw new Error(`Midjourney 图片下载失败：HTTP ${response.response.status}`);
+  const buffer = Buffer.from(response.body);
+  if (!buffer.length || buffer.length > 50 * 1024 * 1024) throw new Error("Midjourney 返回的图片内容无效");
+  const contentType = compactLine(response.response.headers.get("content-type") || "image/png").toLowerCase();
+  const ext = /image\/jpe?g/.test(contentType) ? ".jpg" : /image\/webp/.test(contentType) ? ".webp" : ".png";
+  entry.fileName = entry.fileName.replace(/\.png$/i, ext);
+  entry.outPath = path.join(CANVAS_PUBLIC_ASSET_DIR, entry.fileName);
+  fs.writeFileSync(entry.outPath, buffer);
 }
 
 function canvasImageBaseUrl(modelKey = "") {
@@ -18031,6 +18095,34 @@ async function runGrokCanvasImageJob(taskId) {
   }
 }
 
+async function runMidjourneyCanvasImageJob(taskId, payload) {
+  const entry = canvasImageJobs.get(taskId);
+  if (!entry) return;
+  try {
+    const submitted = await callMidjourneyJson("/mj/submit/imagine", { method: "POST", body: JSON.stringify(payload) });
+    const upstreamTaskId = compactLine(submitted?.result || submitted?.taskId || submitted?.task_id || submitted?.data?.result || "");
+    if (!upstreamTaskId) throw new Error("Midjourney 提交接口没有返回任务 ID");
+    entry.providerTaskId = upstreamTaskId;
+    const deadline = Date.now() + Math.max(120_000, Number.parseInt(process.env.PIXEL_TOYS_MJ_TIMEOUT_MS || "900000", 10));
+    while (Date.now() < deadline) {
+      const raw = await callMidjourneyJson(`/mj/task/${encodeURIComponent(upstreamTaskId)}/fetch`, { method: "GET" });
+      const result = normalizeMidjourneyStatus(raw, upstreamTaskId);
+      entry.message = result.message || "生成中";
+      if (result.progress !== null && result.progress !== undefined) entry.progress = result.progress;
+      if (result.status === "failed") throw new Error(result.message || "Midjourney 图片生成失败");
+      if (result.status === "completed") {
+        await downloadMidjourneyImage(entry, result.imageUrl);
+        await completeCanvasImageJob(entry);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.max(2_000, Number.parseInt(process.env.PIXEL_TOYS_MJ_POLL_MS || "5000", 10))));
+    }
+    throw new Error("Midjourney 图片生成超时，请到网关任务记录确认状态后再重试。");
+  } catch (error) {
+    Object.assign(entry, { status: "failed", message: classifyImageGenError(error?.message || "Midjourney 图片生成失败", "gpt") });
+  }
+}
+
 function drainCanvasImageQueue() {
   while (canvasImageActiveJobs < CANVAS_IMAGE_MAX_CONCURRENCY && canvasImageQueue.length) {
     const queued = canvasImageQueue.shift();
@@ -18223,6 +18315,7 @@ async function createCanvasImageGeneration(body = {}) {
   const prompt = compactLine(body.prompt || "");
   if (!prompt) throw new Error("请先填写图片描述（prompt）");
   const modelConfig = canvasImageModelConfig(body.imageModel || body.model);
+  const isMidjourney = modelConfig.provider === "midjourney";
   if (modelConfig.provider === "gpt") {
     if (!imageApiKey(modelConfig.key)) throw new Error("缺少图片生成 API Key：请在 .env.local 配置 PIXEL_TOYS_IMAGE_N1N_API_KEY 后重启服务。");
     if (!IMAGE_GEN_SKILL_SCRIPT || !fs.existsSync(IMAGE_GEN_SKILL_SCRIPT)) throw new Error("缺少 image-gen 脚本：请先安装 apikey.fun 的 image-gen skill。");
@@ -18252,6 +18345,9 @@ async function createCanvasImageGeneration(body = {}) {
     if (modelConfig.provider === "gpt" && isN1nGateway(canvasImageBaseUrl(modelConfig.key))) {
       return { input: providerLocalPath, localPath: providerLocalPath };
     }
+    if (modelConfig.provider === "midjourney") {
+      return { input: providerLocalPath, localPath: providerLocalPath };
+    }
     // Always submit a first-party public asset URL. The gateway may time out
     // while fetching an otherwise valid third-party URL, especially after
     // reference normalization falls back to the original local copy.
@@ -18271,6 +18367,13 @@ async function createCanvasImageGeneration(body = {}) {
   const providerPrompt = canvasImagePromptWithReferences(prompt, references.length);
   const timeout = String(Number.parseInt(process.env.PIXEL_TOYS_IMAGE_TIMEOUT_SECONDS || "900", 10));
   let args;
+  let midjourneyPayload = null;
+  if (isMidjourney) {
+    const referenceImages = await Promise.all(references.map((file) => {
+      try { return fileToDataUrl(file); } catch { return ""; }
+    }));
+    midjourneyPayload = midjourneyImagePayload({ prompt: providerPrompt, ratio, referenceImages });
+  }
   if (modelConfig.provider === "gpt") {
     if (references.length) {
       args = [
@@ -18308,7 +18411,7 @@ async function createCanvasImageGeneration(body = {}) {
     imageModel: modelConfig.key,
     provider: modelConfig.provider,
     providerModel: modelConfig.model,
-    normalizeOutput: supportsSize && !isGrokImage,
+    normalizeOutput: supportsSize && !isGrokImage && !isMidjourney,
     referencePaths: references,
     referenceImageCount: references.length,
     prompt,
@@ -18326,7 +18429,9 @@ async function createCanvasImageGeneration(body = {}) {
       provider: modelConfig.provider,
     },
   );
-  enqueueCanvasImageJob(taskId, () => runCanvasImageJob(taskId, args, env));
+  enqueueCanvasImageJob(taskId, () => isMidjourney
+    ? runMidjourneyCanvasImageJob(taskId, midjourneyPayload)
+    : runCanvasImageJob(taskId, args, env));
   // 清理老任务（>30 分钟）避免内存无界增长。
   for (const [id, job] of canvasImageJobs) {
     if (Date.now() - (job.createdAt || 0) > 30 * 60 * 1000 && job.status !== "running") canvasImageJobs.delete(id);
@@ -18340,6 +18445,7 @@ function getCanvasImageGeneration(taskId) {
   if (!job) return recoverCanvasImageJobFromOutput(cleanTaskId) || { status: "failed", message: "任务不存在或已过期，请重新生成" };
   return {
     status: job.status,
+    progress: Number.isFinite(Number(job.progress)) ? Number(job.progress) : null,
     url: job.url || "",
     message: job.message || "",
     size: job.size,
@@ -28043,7 +28149,7 @@ const SUPER_PIXEL_TOOLS = [
         type: "object",
         properties: {
           prompt: { type: "string", description: "The image description." },
-          imageModel: { type: "string", enum: ["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "grok-imagine-image-quality"], default: "gpt-image-2" },
+          imageModel: { type: "string", enum: ["gpt-image-2", N1N_NANO_BANANA_2_MODEL, N1N_NANO_BANANA_PRO_MODEL, "grok-imagine-image-quality", MIDJOURNEY_IMAGE_MODEL], default: "gpt-image-2" },
           ratio: { type: "string", enum: Object.keys(CANVAS_IMAGE_SIZE_TABLE), default: "16:9" },
           resolution: { type: "string", enum: ["1k", "2k", "4k"], default: "1k" },
           referenceImages: { type: "array", items: { type: "string" }, maxItems: 4 },
@@ -30604,6 +30710,8 @@ module.exports = {
       normalizeCanvasImageReferenceForProvider,
       classifyImageGenError,
       grokImagePayload,
+      midjourneyImagePayload,
+      normalizeMidjourneyStatus,
       canvasImagePromptWithReferences,
     },
     arkVirtualPerson: {

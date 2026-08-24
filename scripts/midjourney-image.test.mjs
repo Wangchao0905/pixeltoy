@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+const server = readFileSync(`${root}/server.js`, "utf8");
+const marker = "if (process.env.NODE_ENV !== \"test\")";
+const testSource = server.slice(0, server.indexOf(marker));
+
+// The contract assertions never submit a generation request or contact the gateway.
+assert.match(testSource, /mj_imagine/, "必须注册 Midjourney Imagine 模型");
+assert.match(testSource, /\/mj\/submit\/imagine/, "必须调用 N1N Midjourney 提交接口");
+assert.match(testSource, /\/mj\/task\/\$\{encodeURIComponent\(.*\)\}\/fetch/, "必须调用 N1N Midjourney 状态接口");
+
+const require = createRequire(import.meta.url);
+const image = require(`${root}/server.js`);
+const api = image.__test?.canvasImage;
+assert.ok(api, "测试导出必须提供 canvasImage API");
+assert.equal(api.normalizeCanvasImageModel("midjourney"), "mj_imagine");
+assert.equal(api.normalizeCanvasImageModel("mj-imagine"), "mj_imagine");
+assert.deepEqual(api.midjourneyImagePayload({ prompt: "cat", ratio: "16:9" }), {
+  botType: "MID_JOURNEY",
+  prompt: "cat --ar 16:9",
+  base64Array: [],
+});
+assert.equal(api.normalizeMidjourneyStatus({ status: "SUCCESS", imageUrl: "https://cdn.example/image.png", progress: "100%" }, "task-1").status, "completed");
+assert.equal(api.normalizeMidjourneyStatus({ status: "FAILURE", failReason: "bad prompt" }, "task-1").status, "failed");
+assert.equal(api.normalizeMidjourneyStatus({ status: "IN_PROGRESS", progress: "42%" }, "task-1").progress, 42);
+console.log("midjourney image contract tests passed");

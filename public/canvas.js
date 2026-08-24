@@ -299,6 +299,7 @@ const IMAGE_MODEL_LABELS = {
   "gemini-3-pro-image-preview": "Nano Banana Pro",
   "grok-imagine-image-quality": "Grok image",
   "grok-imagine-image": "Grok image",
+  "mj_imagine": "Midjourney",
 };
 function imageModelLabel(model) {
   return IMAGE_MODEL_LABELS[model] || model || "GPT Image 2";
@@ -5484,6 +5485,9 @@ function showContextMenu(event) {
   const stage = stagePoint(event.clientX, event.clientY);
   const screen = screenPoint(event.clientX, event.clientY);
   canvasState.menuPoint = stage;
+  // The blank-canvas menu is screen-sized and must not inherit a stale
+  // transform from a previous transformed menu instance.
+  menu.style.removeProperty("transform");
   menu.style.left = `${screen.x}px`;
   menu.style.top = `${screen.y}px`;
   menu.classList.remove("hidden");

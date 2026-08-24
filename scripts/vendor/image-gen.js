@@ -379,6 +379,10 @@ async function buildRequest(args, mode) {
         model: args.model || "gpt-image-2",
         prompt,
         size: args.size || "1024x1024",
+        // Grok returns a short-lived/protected URL by default. Request the
+        // image bytes directly so the canvas does not need to fetch that URL
+        // after the billable generation request has completed.
+        response_format: isGrokImage ? "b64_json" : undefined,
       };
       if (!isGrokImage) {
         Object.assign(body, {

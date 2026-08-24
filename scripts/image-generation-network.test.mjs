@@ -47,8 +47,8 @@ const n1nTextRequest = imageGen.slice(n1nTextRequestStart, n1nTextRequestEnd);
 if (!/args\.model\s*===\s*"grok-imagine-image-quality"/.test(n1nTextRequest) || !/size:\s*args\.size/.test(n1nTextRequest)) {
   throw new Error("Grok image requests through n1n must use the documented model and size fields");
 }
-if (/response_format:\s*args\.model\s*===\s*"grok-imagine-image-quality"/.test(n1nTextRequest)) {
-  throw new Error("Grok image requests through n1n must not send undocumented response_format");
+if (!/response_format:\s*isGrokImage\s*\?\s*"b64_json"\s*:\s*undefined/.test(n1nTextRequest)) {
+  throw new Error("Grok image requests through n1n must request b64_json instead of a remote result URL");
 }
 if (!imageGen.includes("function isXibApiGateway") || !imageGen.includes("function buildXibApiChatUrl") || !imageGen.includes('`${base}/v1/chat/completions`') || !imageGen.includes('messages: [{ role: "user", content: prompt }]') || !imageGen.includes("temperature: 0.7")) {
   throw new Error("xibapi image generation must use the documented chat completions request contract");

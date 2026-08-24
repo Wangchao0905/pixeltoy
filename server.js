@@ -1174,7 +1174,7 @@ function isPixelTaleApiPath(pathname = "") {
 }
 
 function isStandaloneImageGenerationApiPath(pathname = "") {
-  return pathname === "/api/canvas/image-generation" || /^\/api\/canvas\/image-generations\/[^/]+$/.test(pathname);
+  return pathname === "/api/canvas/image-generation" || /^\/api\/canvas\/image-generations\/[^/]+(?:\/upscale)?$/.test(pathname);
 }
 
 function requireAuth(req, res, url) {
@@ -17754,6 +17754,13 @@ function midjourneyImagePayload({ prompt, ratio, referenceImages = [] } = {}) {
   };
 }
 
+function midjourneyUpscalePayload({ taskId, index } = {}) {
+  const cleanTaskId = compactLine(taskId);
+  const cleanIndex = Number.parseInt(index, 10);
+  if (!cleanTaskId || ![1, 2, 3, 4].includes(cleanIndex)) throw new Error("Midjourney 放大参数无效，请选择 U1-U4");
+  return { action: `UPSCALE_U${cleanIndex}`, taskId: cleanTaskId };
+}
+
 function midjourneyGatewayRootUrl(modelKey = MIDJOURNEY_IMAGE_MODEL) {
   const base = canvasImageBaseUrl(modelKey);
   return base.replace(/\/v1\/?$/i, "");
@@ -18123,6 +18130,74 @@ async function runMidjourneyCanvasImageJob(taskId, payload) {
   }
 }
 
+async function runMidjourneyUpscaleCanvasImageJob(taskId) {
+  const entry = canvasImageJobs.get(taskId);
+  if (!entry) return;
+  try {
+    const submitted = await callMidjourneyJson("/mj/submit/change", { method: "POST", body: JSON.stringify(midjourneyUpscalePayload({ taskId: entry.sourceProviderTaskId, index: entry.upscaleIndex })) });
+    const upstreamTaskId = compactLine(submitted?.result || submitted?.taskId || submitted?.task_id || submitted?.data?.result || "");
+    if (!upstreamTaskId) throw new Error("Midjourney 放大接口没有返回任务 ID");
+    entry.providerTaskId = upstreamTaskId;
+    const deadline = Date.now() + Math.max(120_000, Number.parseInt(process.env.PIXEL_TOYS_MJ_TIMEOUT_MS || "900000", 10));
+    while (Date.now() < deadline) {
+      const raw = await callMidjourneyJson(`/mj/task/${encodeURIComponent(upstreamTaskId)}/fetch`, { method: "GET" });
+      const result = normalizeMidjourneyStatus(raw, upstreamTaskId);
+      entry.message = result.message || "放大中";
+      if (result.progress !== null && result.progress !== undefined) entry.progress = result.progress;
+      if (result.status === "failed") throw new Error(result.message || "Midjourney 图片放大失败");
+      if (result.status === "completed") {
+        await downloadMidjourneyImage(entry, result.imageUrl);
+        await completeCanvasImageJob(entry);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.max(2_000, Number.parseInt(process.env.PIXEL_TOYS_MJ_POLL_MS || "5000", 10))));
+    }
+    throw new Error("Midjourney 图片放大超时，请稍后重试。");
+  } catch (error) {
+    Object.assign(entry, { status: "failed", message: classifyImageGenError(error?.message || "Midjourney 图片放大失败", "gpt") });
+  }
+}
+
+function createMidjourneyUpscaleGeneration({ sourceTaskId, index, ownerUserId } = {}) {
+  const source = canvasImageJobs.get(compactLine(sourceTaskId));
+  const cleanIndex = Number.parseInt(index, 10);
+  if (!source || source.provider !== "midjourney" || !source.providerTaskId) throw new Error("原 Midjourney 四宫格任务不存在或尚未完成");
+  if (source.status !== "completed") throw new Error("请等待 Midjourney 四宫格生成完成后再放大");
+  if (![1, 2, 3, 4].includes(cleanIndex)) throw new Error("请选择 U1-U4");
+  const taskId = crypto.randomUUID();
+  const fileName = `canvas-image-${taskId}.png`;
+  const outPath = path.join(CANVAS_PUBLIC_ASSET_DIR, fileName);
+  const entry = {
+    taskId,
+    status: "running",
+    message: `正在放大 U${cleanIndex}`,
+    url: "",
+    outPath,
+    fileName,
+    ratio: source.ratio,
+    resolution: source.resolution,
+    size: source.size,
+    providerSize: source.providerSize,
+    imageModel: MIDJOURNEY_IMAGE_MODEL,
+    provider: "midjourney",
+    providerModel: MIDJOURNEY_IMAGE_MODEL,
+    normalizeOutput: false,
+    sourceTaskId: source.taskId,
+    sourceProviderTaskId: source.providerTaskId,
+    upscaleIndex: cleanIndex,
+    referenceImageCount: 0,
+    prompt: source.prompt,
+    providerPrompt: source.providerPrompt,
+    ownerUserId: compactLine(ownerUserId || source.ownerUserId || ""),
+    createdAt: Date.now(),
+    child: null,
+  };
+  fs.mkdirSync(CANVAS_PUBLIC_ASSET_DIR, { recursive: true });
+  canvasImageJobs.set(taskId, entry);
+  enqueueCanvasImageJob(taskId, () => runMidjourneyUpscaleCanvasImageJob(taskId));
+  return { taskId, status: "running", sourceTaskId: source.taskId, upscaleIndex: cleanIndex, imageModel: MIDJOURNEY_IMAGE_MODEL, provider: "midjourney" };
+}
+
 function drainCanvasImageQueue() {
   while (canvasImageActiveJobs < CANVAS_IMAGE_MAX_CONCURRENCY && canvasImageQueue.length) {
     const queued = canvasImageQueue.shift();
@@ -18454,6 +18529,10 @@ function getCanvasImageGeneration(taskId) {
     resolution: job.resolution,
     imageModel: job.imageModel || "gpt-image-2",
     provider: job.provider || "gpt",
+    providerTaskId: job.providerTaskId || "",
+    canUpscale: job.provider === "midjourney" && Boolean(job.providerTaskId) && job.status === "completed",
+    sourceTaskId: job.sourceTaskId || "",
+    upscaleIndex: Number(job.upscaleIndex) || 0,
     referenceImageCount: Number(job.referenceImageCount) || 0,
     libraryAssetId: job.libraryAssetId || "",
     libraryAsset: job.libraryAsset || null,
@@ -29203,6 +29282,17 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, result });
   }
 
+  const canvasImageUpscaleMatch = url.pathname.match(/^\/api\/canvas\/image-generations\/([^/]+)\/upscale$/);
+  if (req.method === "POST" && canvasImageUpscaleMatch) {
+    const body = await readBody(req);
+    const result = createMidjourneyUpscaleGeneration({
+      sourceTaskId: decodeURIComponent(canvasImageUpscaleMatch[1]),
+      index: body.index,
+      ownerUserId: assetLibraryUserId(req),
+    });
+    return send(res, 200, { ok: true, result });
+  }
+
   const canvasImageMatch = url.pathname.match(/^\/api\/canvas\/image-generations\/([^/]+)$/);
   if (req.method === "GET" && canvasImageMatch) {
     return send(
@@ -30714,6 +30804,7 @@ module.exports = {
       midjourneyImagePayload,
       normalizeMidjourneyStatus,
       canvasImagePromptWithReferences,
+      midjourneyUpscalePayload,
     },
     arkVirtualPerson: {
       buildOpenApiRequest: buildArkAssetOpenApiRequest,

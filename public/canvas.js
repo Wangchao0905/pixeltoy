@@ -3878,11 +3878,20 @@ function imagePreviewSig(node) {
     asset?.arkPersonAsset?.status || "",
     asset?.arkPersonAsset?.assetId || "",
     asset?.arkPersonAsset?.assetUrl || "",
+    node.midjourneyProviderTaskId || "",
+    node.midjourneyUpscaleTaskId || "",
+    node.midjourneyUpscaleIndex || 0,
   ]);
 }
 
 function renderImagePreview(node) {
   const status = String(node.status || "idle");
+  const isMidjourney = String(node.settings?.model || "") === "mj_imagine";
+  const imageSrc = node.imageUrl ? thumbUrl(node.imageUrl, 640) : "";
+  if (status === "upscaling" && imageSrc) {
+    return `<img class="image-preview-img" draggable="false" src="${escapeHtml(imageSrc)}" alt="生成结果" loading="lazy" decoding="async" />` +
+      `<div class="image-preview-upscaling" role="status"><strong>正在放大 U${Number(node.midjourneyUpscaleIndex) || ""}</strong><span>${escapeHtml(node.statusMessage || "正在生成单图")}</span></div>`;
+  }
   if (status === "running") {
     const settings = { ...IMAGE_NODE_DEFAULTS, ...(node.settings || {}) };
     return `<div class="image-preview-state running generation-status" aria-label="生成中">
@@ -3901,6 +3910,9 @@ function renderImagePreview(node) {
         ? `<span class="ark-virtual-person-badge image-preview-certification-badge is-processing" data-certification-state="processing" title="方舟私域虚拟人像认证中" aria-label="方舟私域虚拟人像认证中">…</span>`
         : "";
     const downloadHref = imageDownloadHref(node);
+    const upscaleActions = isMidjourney && node.midjourneyProviderTaskId
+      ? `<div class="midjourney-upscale-actions" role="group" aria-label="选择 Midjourney 单图放大结果">${[1, 2, 3, 4].map((index) => `<button type="button" data-image-action="upscale" data-upscale-index="${index}" aria-label="放大第 ${index} 格">U${index}</button>`).join("")}</div>`
+      : "";
     return certificationBadge +
       `<img class="image-preview-img" draggable="false" src="${escapeHtml(thumbUrl(node.imageUrl, 640))}" alt="生成结果" loading="lazy" decoding="async" />` +
       `<div class="media-action-cluster">` +
@@ -3908,7 +3920,7 @@ function renderImagePreview(node) {
         (downloadHref
           ? `<a class="media-download-button" href="${escapeHtml(downloadHref)}" download="${escapeHtml(imageDownloadName(node))}" aria-label="下载生成图片">${DOWNLOAD_ICON_SVG}<span>下载</span></a>`
           : "") +
-      `</div>`;
+      `</div>${upscaleActions}`;
   }
   if (status === "failed") {
     return `<div class="image-preview-state failed"><strong>生成失败</strong><span>${escapeHtml(node.statusMessage || "请重试")}</span></div>`;
@@ -3921,6 +3933,12 @@ function bindImageRegenButton(slotEl, nodeId) {
   slotEl?.querySelector("[data-image-action='regenerate']")?.addEventListener("click", (event) => {
     event.stopPropagation();
     generateImageNode(nodeId).catch((error) => markImageNodeFailed(nodeId, error.message));
+  });
+  slotEl?.querySelectorAll("[data-image-action='upscale']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      upscaleMidjourneyImage(nodeId, Number(button.dataset.upscaleIndex));
+    });
   });
 }
 
@@ -3983,13 +4001,14 @@ function refreshImageNodeElement(nodeId) {
   if (summary) summary.textContent = upstreamSummary(node);
   const generate = element.querySelector("[data-image-action='generate']");
   if (generate) {
-    syncImageGenerateButton(generate, node.status === "running");
+    syncImageGenerateButton(generate, node.status === "running" || node.status === "upscaling");
   }
   return true;
 }
 
-async function pollImageNode(nodeId, taskId) {
+async function pollImageNode(nodeId, taskId, options = {}) {
   if (!taskId) return;
+  const upscaleIndex = Number(options.upscaleIndex) || 0;
   clearVideoPoll(nodeId);
   const tick = async () => {
     try {
@@ -4015,24 +4034,62 @@ async function pollImageNode(nodeId, taskId) {
           assetStyleLabel: "AI 写实",
           validationStatus: "ai-generated",
         }]);
-        updateImageNodeStatus(nodeId, { status: "completed", statusMessage: "生成完成", imageUrl: result.url, generatedAssetId: assetId, assets: [assetId] });
+        const patch = { status: "completed", statusMessage: upscaleIndex ? `U${upscaleIndex} 单图生成完成` : "生成完成", imageUrl: result.url, generatedAssetId: assetId, assets: [assetId], midjourneyUpscaleTaskId: "" };
+        if (!upscaleIndex && result.providerTaskId) {
+          patch.midjourneyProviderTaskId = result.providerTaskId;
+          patch.midjourneyGridUrl = result.url;
+        }
+        if (upscaleIndex) patch.midjourneyUpscaleIndex = upscaleIndex;
+        updateImageNodeStatus(nodeId, patch);
         refreshConnectedNodeElements(nodeId);
         renderLinks();
         toast("画布出图完成");
         return;
       }
       if (status === "failed") {
+        if (upscaleIndex) {
+          updateImageNodeStatus(nodeId, { status: "completed", statusMessage: result.message || `U${upscaleIndex} 单图放大失败`, midjourneyUpscaleTaskId: "" });
+          toast(result.message || "单图放大失败");
+          return;
+        }
         markImageNodeFailed(nodeId, result.message || "出图失败");
         return;
       }
       const timer = setTimeout(tick, videoPollDelay(4000));
       canvasState.pollTimers.set(nodeId, timer);
     } catch (error) {
+      if (upscaleIndex) {
+        updateImageNodeStatus(nodeId, { status: "completed", statusMessage: error.message || "单图放大失败", midjourneyUpscaleTaskId: "" });
+        toast(error.message || "单图放大失败");
+        return;
+      }
       markImageNodeFailed(nodeId, error.message);
     }
   };
   const timer = setTimeout(tick, videoPollDelay(2500));
   canvasState.pollTimers.set(nodeId, timer);
+}
+
+async function upscaleMidjourneyImage(nodeId, index) {
+  const node = canvasState.nodes.find((item) => item.id === nodeId);
+  if (!node || node.kind !== "image" || node.settings?.model !== "mj_imagine") return;
+  if (!node.taskId || !node.midjourneyProviderTaskId) return toast("请先完成 Midjourney 四宫格生成");
+  if (![1, 2, 3, 4].includes(Number(index))) return;
+  clearVideoPoll(nodeId);
+  updateImageNodeStatus(nodeId, { status: "upscaling", statusMessage: `正在提交 U${index} 单图放大`, midjourneyUpscaleIndex: Number(index), midjourneyUpscaleTaskId: "" });
+  try {
+    const data = await api(`/api/canvas/image-generations/${encodeURIComponent(node.taskId)}/upscale`, {
+      method: "POST",
+      body: JSON.stringify({ index: Number(index) }),
+    });
+    const taskId = data.result?.taskId || "";
+    if (!taskId) throw new Error("提交单图放大任务失败：未拿到 taskId");
+    updateImageNodeStatus(nodeId, { statusMessage: `正在放大 U${index}`, midjourneyUpscaleTaskId: taskId });
+    pollImageNode(nodeId, taskId, { upscaleIndex: Number(index) });
+  } catch (error) {
+    updateImageNodeStatus(nodeId, { status: "completed", statusMessage: error.message || "单图放大失败", midjourneyUpscaleTaskId: "" });
+    toast(error.message || "单图放大失败");
+  }
 }
 
 async function generateImageNode(nodeId) {
@@ -4048,7 +4105,7 @@ async function generateImageNode(nodeId) {
     return toast("部分参考图无法读取，请重新上传或导入后再生成");
   }
   clearVideoPoll(nodeId);
-  updateImageNodeStatus(nodeId, { status: "running", statusMessage: "正在提交出图任务", imageUrl: "" });
+  updateImageNodeStatus(nodeId, { status: "running", statusMessage: "正在提交出图任务", imageUrl: "", midjourneyProviderTaskId: "", midjourneyGridUrl: "", midjourneyUpscaleTaskId: "", midjourneyUpscaleIndex: 0 });
   try {
     const data = await api("/api/canvas/image-generation", {
       method: "POST",

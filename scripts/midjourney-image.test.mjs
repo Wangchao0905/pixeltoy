@@ -12,6 +12,7 @@ const testSource = server.slice(0, server.indexOf(marker));
 assert.match(testSource, /mj_imagine/, "必须注册 Midjourney Imagine 模型");
 assert.match(testSource, /\/mj\/submit\/imagine/, "必须调用 N1N Midjourney 提交接口");
 assert.match(testSource, /\/mj\/task\/\$\{encodeURIComponent\(.*\)\}\/fetch/, "必须调用 N1N Midjourney 状态接口");
+assert.match(testSource, /JSON\.stringify\(args \|\| \[\]\)\.slice/, "异步图片 provider 没有 args 时日志不能因 slice 崩溃");
 
 const require = createRequire(import.meta.url);
 const image = require(`${root}/server.js`);

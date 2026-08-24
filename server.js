@@ -18396,7 +18396,8 @@ async function createCanvasImageGeneration(body = {}) {
     }
   }
   const env = { ...process.env, OPENAI_API_KEY: imageApiKey(modelConfig.key) || process.env.OPENAI_API_KEY || "", OPENAI_BASE_URL: canvasImageBaseUrl(modelConfig.key) };
-  console.log(`[image-gen] task=${taskId.slice(0, 8)} model=${modelConfig.model} key=${(imageApiKey(modelConfig.key) || "").slice(0, 10) || "EMPTY"} base=${canvasImageBaseUrl(modelConfig.key)} args=${JSON.stringify(args).slice(0, 300)}`);
+  const serializedArgs = JSON.stringify(args || []).slice(0, 300);
+  console.log(`[image-gen] task=${taskId.slice(0, 8)} model=${modelConfig.model} key=${(imageApiKey(modelConfig.key) || "").slice(0, 10) || "EMPTY"} base=${canvasImageBaseUrl(modelConfig.key)} args=${serializedArgs}`);
   canvasImageJobs.set(taskId, {
     taskId, // fix:image_undefined — finalize 用 entry.taskId 生成库 id,缺此字段会导致 id 恒为 image_undefined,每次覆盖同一条
     status: "running",

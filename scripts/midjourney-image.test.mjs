@@ -13,8 +13,8 @@ const testSource = server.slice(0, server.indexOf(marker));
 assert.match(testSource, /mj_imagine/, "必须注册 Midjourney Imagine 模型");
 assert.match(testSource, /\/mj\/submit\/imagine/, "必须调用 N1N Midjourney 提交接口");
 assert.match(testSource, /\/mj\/task\/\$\{encodeURIComponent\(.*\)\}\/fetch/, "必须调用 N1N Midjourney 状态接口");
-assert.match(testSource, /\/mj\/submit\/change/, "必须调用 N1N Midjourney 单图放大接口");
-assert.match(testSource, /action: `UPSCALE_U\$\{cleanIndex\}`/, "单图放大必须发送 UPSCALE_U1-U4 动作");
+assert.match(testSource, /\/mj\/submit\/action/, "必须调用 N1N Midjourney Action 单图放大接口");
+assert.match(testSource, /customId: `MJ::JOB::upsample::\$\{cleanIndex\}::\$\{crypto\.randomUUID\(\)\}`/, "单图放大必须发送 N1N 文档规定的 customId");
 assert.match(canvas, /data-image-action="upscale"/, "画布必须显示 Midjourney 单图放大按钮");
 assert.match(canvas, /const upscaleActions = isMidjourney && node\.midjourneyProviderTaskId/, "只有 Midjourney 结果才显示单图放大按钮");
 assert.match(canvas, /node\.settings\?\.model !== "mj_imagine"\) return/, "只有 Midjourney 模型才允许提交单图放大");
@@ -34,9 +34,13 @@ assert.deepEqual(api.midjourneyImagePayload({ prompt: "cat", ratio: "16:9" }), {
   prompt: "cat --ar 16:9",
   base64Array: [],
 });
-assert.deepEqual(api.midjourneyUpscalePayload({ taskId: "mj-task-1", index: 2 }), {
-  action: "UPSCALE_U2",
+const upscalePayload = api.midjourneyUpscalePayload({ taskId: "mj-task-1", index: 2 });
+assert.deepEqual({ ...upscalePayload, customId: upscalePayload.customId.replace(/::[a-f0-9-]+$/, "::<uuid>") }, {
+  chooseSameChannel: true,
+  customId: "MJ::JOB::upsample::2::<uuid>",
   taskId: "mj-task-1",
+  notifyHook: "",
+  state: "",
 });
 assert.equal(api.normalizeMidjourneyStatus({ status: "SUCCESS", imageUrl: "https://cdn.example/image.png", progress: "100%" }, "task-1").status, "completed");
 assert.equal(api.normalizeMidjourneyStatus({ status: "FAILURE", failReason: "bad prompt" }, "task-1").status, "failed");

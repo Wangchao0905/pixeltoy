@@ -17758,7 +17758,13 @@ function midjourneyUpscalePayload({ taskId, index } = {}) {
   const cleanTaskId = compactLine(taskId);
   const cleanIndex = Number.parseInt(index, 10);
   if (!cleanTaskId || ![1, 2, 3, 4].includes(cleanIndex)) throw new Error("Midjourney 放大参数无效，请选择 U1-U4");
-  return { action: `UPSCALE_U${cleanIndex}`, taskId: cleanTaskId };
+  return {
+    chooseSameChannel: true,
+    customId: `MJ::JOB::upsample::${cleanIndex}::${crypto.randomUUID()}`,
+    taskId: cleanTaskId,
+    notifyHook: "",
+    state: "",
+  };
 }
 
 function midjourneyGatewayRootUrl(modelKey = MIDJOURNEY_IMAGE_MODEL) {
@@ -18134,7 +18140,7 @@ async function runMidjourneyUpscaleCanvasImageJob(taskId) {
   const entry = canvasImageJobs.get(taskId);
   if (!entry) return;
   try {
-    const submitted = await callMidjourneyJson("/mj/submit/change", { method: "POST", body: JSON.stringify(midjourneyUpscalePayload({ taskId: entry.sourceProviderTaskId, index: entry.upscaleIndex })) });
+    const submitted = await callMidjourneyJson("/mj/submit/action", { method: "POST", body: JSON.stringify(midjourneyUpscalePayload({ taskId: entry.sourceProviderTaskId, index: entry.upscaleIndex })) });
     const upstreamTaskId = compactLine(submitted?.result || submitted?.taskId || submitted?.task_id || submitted?.data?.result || "");
     if (!upstreamTaskId) throw new Error("Midjourney 放大接口没有返回任务 ID");
     entry.providerTaskId = upstreamTaskId;

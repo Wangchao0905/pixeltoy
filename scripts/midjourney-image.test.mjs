@@ -18,8 +18,10 @@ assert.match(testSource, /customId: `MJ::JOB::upsample::\$\{cleanIndex\}::\$\{cr
 assert.match(canvas, /data-image-action="upscale"/, "画布必须显示 Midjourney 单图放大按钮");
 assert.match(canvas, /const upscaleActions = isMidjourney && node\.midjourneyProviderTaskId/, "只有 Midjourney 结果才显示单图放大按钮");
 assert.match(canvas, /node\.settings\?\.model !== "mj_imagine"\) return/, "只有 Midjourney 模型才允许提交单图放大");
-assert.match(canvas, /showMidjourneyUpscaleWindow\(result\.url, upscaleIndex\)/, "单图放大完成后必须打开独立图片窗口");
-assert.match(canvas, /midjourney-upscale-dialog/, "必须提供 Midjourney 单图结果窗口");
+assert.doesNotMatch(canvas, /showMidjourneyUpscaleWindow|midjourney-upscale-dialog/, "单图放大不能打开独立图片窗口");
+assert.match(canvas, /const upscaleNode = createNode\("image"/, "单图放大必须先创建新的图片模块节点");
+assert.match(canvas, /pollImageNode\(upscaleNode\.id, taskId, \{ upscaleIndex: cleanIndex \}\)/, "单图放大结果必须回填到新图片模块节点");
+assert.match(canvas, /midjourneyUpscaleSourceNodeId = node\.id/, "新图片模块必须记录来源 Midjourney 节点");
 assert.match(canvas, /\/api\/canvas\/image-generations\/\$\{encodeURIComponent\(node\.taskId\)\}\/upscale/, "画布必须调用单图放大接口");
 assert.match(testSource, /JSON\.stringify\(args \|\| \[\]\)\.slice/, "异步图片 provider 没有 args 时日志不能因 slice 崩溃");
 

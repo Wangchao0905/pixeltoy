@@ -18158,11 +18158,12 @@ async function runMidjourneyUpscaleCanvasImageJob(taskId) {
   }
 }
 
-function createMidjourneyUpscaleGeneration({ sourceTaskId, index, ownerUserId } = {}) {
+function createMidjourneyUpscaleGeneration({ sourceTaskId, sourceProviderTaskId, index, ownerUserId } = {}) {
   const source = canvasImageJobs.get(compactLine(sourceTaskId));
   const cleanIndex = Number.parseInt(index, 10);
-  if (!source || source.provider !== "midjourney" || !source.providerTaskId) throw new Error("原 Midjourney 四宫格任务不存在或尚未完成");
-  if (source.status !== "completed") throw new Error("请等待 Midjourney 四宫格生成完成后再放大");
+  const providerTaskId = compactLine(source?.providerTaskId || sourceProviderTaskId);
+  if ((!source && !providerTaskId) || (source && source.provider !== "midjourney") || !providerTaskId) throw new Error("原 Midjourney 四宫格任务不存在或尚未完成");
+  if (source && source.status !== "completed") throw new Error("请等待 Midjourney 四宫格生成完成后再放大");
   if (![1, 2, 3, 4].includes(cleanIndex)) throw new Error("请选择 U1-U4");
   const taskId = crypto.randomUUID();
   const fileName = `canvas-image-${taskId}.png`;
@@ -18174,28 +18175,28 @@ function createMidjourneyUpscaleGeneration({ sourceTaskId, index, ownerUserId } 
     url: "",
     outPath,
     fileName,
-    ratio: source.ratio,
-    resolution: source.resolution,
-    size: source.size,
-    providerSize: source.providerSize,
+    ratio: source?.ratio || "16:9",
+    resolution: source?.resolution || "1k",
+    size: source?.size || "",
+    providerSize: source?.providerSize || "",
     imageModel: MIDJOURNEY_IMAGE_MODEL,
     provider: "midjourney",
     providerModel: MIDJOURNEY_IMAGE_MODEL,
     normalizeOutput: false,
-    sourceTaskId: source.taskId,
-    sourceProviderTaskId: source.providerTaskId,
+    sourceTaskId: source?.taskId || compactLine(sourceTaskId),
+    sourceProviderTaskId: providerTaskId,
     upscaleIndex: cleanIndex,
     referenceImageCount: 0,
-    prompt: source.prompt,
-    providerPrompt: source.providerPrompt,
-    ownerUserId: compactLine(ownerUserId || source.ownerUserId || ""),
+    prompt: source?.prompt || "",
+    providerPrompt: source?.providerPrompt || "",
+    ownerUserId: compactLine(ownerUserId || source?.ownerUserId || ""),
     createdAt: Date.now(),
     child: null,
   };
   fs.mkdirSync(CANVAS_PUBLIC_ASSET_DIR, { recursive: true });
   canvasImageJobs.set(taskId, entry);
   enqueueCanvasImageJob(taskId, () => runMidjourneyUpscaleCanvasImageJob(taskId));
-  return { taskId, status: "running", sourceTaskId: source.taskId, upscaleIndex: cleanIndex, imageModel: MIDJOURNEY_IMAGE_MODEL, provider: "midjourney" };
+  return { taskId, status: "running", sourceTaskId: source?.taskId || compactLine(sourceTaskId), upscaleIndex: cleanIndex, imageModel: MIDJOURNEY_IMAGE_MODEL, provider: "midjourney" };
 }
 
 function drainCanvasImageQueue() {
@@ -29287,6 +29288,7 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     const result = createMidjourneyUpscaleGeneration({
       sourceTaskId: decodeURIComponent(canvasImageUpscaleMatch[1]),
+      sourceProviderTaskId: body.providerTaskId,
       index: body.index,
       ownerUserId: assetLibraryUserId(req),
     });

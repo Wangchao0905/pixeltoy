@@ -3928,6 +3928,32 @@ function renderImagePreview(node) {
   return `<div class="image-preview-state">生成结果预览</div>`;
 }
 
+function showMidjourneyUpscaleWindow(url, index) {
+  if (!url) return;
+  let dialog = document.getElementById("midjourneyUpscaleDialog");
+  if (!dialog) {
+    dialog = document.createElement("div");
+    dialog.id = "midjourneyUpscaleDialog";
+    dialog.className = "midjourney-upscale-dialog";
+    dialog.innerHTML = `<div class="midjourney-upscale-dialog-backdrop" data-upscale-dialog-close></div>
+      <section class="midjourney-upscale-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="midjourneyUpscaleDialogTitle">
+        <header><div><span class="midjourney-upscale-dialog-kicker">MIDJOURNEY / UPSCALE</span><h2 id="midjourneyUpscaleDialogTitle">单图放大结果</h2></div><button type="button" class="midjourney-upscale-dialog-close" data-upscale-dialog-close aria-label="关闭图片窗口">×</button></header>
+        <div class="midjourney-upscale-dialog-body"><img data-upscale-dialog-image alt="Midjourney 单图放大结果" /></div>
+        <footer><span data-upscale-dialog-status></span><a data-upscale-dialog-download download="midjourney-upscale.png">下载图片</a></footer>
+      </section>`;
+    dialog.querySelectorAll("[data-upscale-dialog-close]").forEach((button) => button.addEventListener("click", () => dialog.remove()));
+    document.body.appendChild(dialog);
+  }
+  const image = dialog.querySelector("[data-upscale-dialog-image]");
+  const download = dialog.querySelector("[data-upscale-dialog-download]");
+  const status = dialog.querySelector("[data-upscale-dialog-status]");
+  image.src = url;
+  download.href = url;
+  download.download = `midjourney-upscale-u${Number(index) || 1}.png`;
+  status.textContent = `U${Number(index) || 1} 单图`;
+  dialog.classList.add("is-open");
+}
+
 // 给图片节点缩略图里的「重新生成」按钮绑定点击(preview.innerHTML 每次重建后都要重绑)。
 function bindImageRegenButton(slotEl, nodeId) {
   slotEl?.querySelector("[data-image-action='regenerate']")?.addEventListener("click", (event) => {
@@ -4017,6 +4043,13 @@ async function pollImageNode(nodeId, taskId, options = {}) {
       const status = String(result.status || "").toLowerCase();
       if (status === "completed" && result.url) {
         clearVideoPoll(nodeId);
+        if (upscaleIndex && options.standalone) {
+          clearVideoPoll(nodeId);
+          updateImageNodeStatus(nodeId, { status: "completed", statusMessage: `U${upscaleIndex} 单图已生成`, midjourneyUpscaleTaskId: "" });
+          showMidjourneyUpscaleWindow(result.url, upscaleIndex);
+          toast(`U${upscaleIndex} 单图生成完成`);
+          return;
+        }
         const assetId = `canvas_gen_${Date.now()}`;
         addAssets([{
           id: assetId,
@@ -4080,12 +4113,12 @@ async function upscaleMidjourneyImage(nodeId, index) {
   try {
     const data = await api(`/api/canvas/image-generations/${encodeURIComponent(node.taskId)}/upscale`, {
       method: "POST",
-      body: JSON.stringify({ index: Number(index) }),
+      body: JSON.stringify({ index: Number(index), providerTaskId: node.midjourneyProviderTaskId }),
     });
     const taskId = data.result?.taskId || "";
     if (!taskId) throw new Error("提交单图放大任务失败：未拿到 taskId");
     updateImageNodeStatus(nodeId, { statusMessage: `正在放大 U${index}`, midjourneyUpscaleTaskId: taskId });
-    pollImageNode(nodeId, taskId, { upscaleIndex: Number(index) });
+    pollImageNode(nodeId, taskId, { upscaleIndex: Number(index), standalone: true });
   } catch (error) {
     updateImageNodeStatus(nodeId, { status: "completed", statusMessage: error.message || "单图放大失败", midjourneyUpscaleTaskId: "" });
     toast(error.message || "单图放大失败");

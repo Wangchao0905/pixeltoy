@@ -1250,17 +1250,15 @@ body.canvas-page {
 
 .midjourney-upscale-actions {
   position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  inset: 0;
   z-index: 5;
+  pointer-events: none;
 }
 
 .midjourney-upscale-actions button {
-  min-height: 30px;
+  position: absolute;
+  width: 42px;
+  min-height: 28px;
   border: 1px solid rgba(180, 210, 235, 0.38);
   border-radius: 8px;
   color: rgba(240, 248, 255, 0.94);
@@ -1270,7 +1268,13 @@ body.canvas-page {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  pointer-events: auto;
 }
+
+.midjourney-upscale-actions button:nth-child(1) { right: calc(50% + 8px); bottom: calc(50% + 8px); }
+.midjourney-upscale-actions button:nth-child(2) { right: 8px; bottom: calc(50% + 8px); }
+.midjourney-upscale-actions button:nth-child(3) { right: calc(50% + 8px); bottom: 8px; }
+.midjourney-upscale-actions button:nth-child(4) { right: 8px; bottom: 8px; }
 
 .midjourney-upscale-actions button:hover,
 .midjourney-upscale-actions button:focus-visible {
@@ -1301,6 +1305,57 @@ body.canvas-page {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.midjourney-upscale-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.midjourney-upscale-dialog.is-open { display: flex; }
+
+.midjourney-upscale-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.midjourney-upscale-dialog-panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(820px, 92vw);
+  max-height: min(900px, 92vh);
+  overflow: hidden;
+  border: 1px solid rgba(163, 208, 245, 0.28);
+  border-radius: 16px;
+  background: #15191e;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.52);
+}
+
+.midjourney-upscale-dialog-panel header,
+.midjourney-upscale-dialog-panel footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+.midjourney-upscale-dialog-panel header { border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.midjourney-upscale-dialog-panel footer { border-top: 1px solid rgba(255, 255, 255, 0.08); color: rgba(210, 225, 238, 0.72); font-size: 12px; }
+.midjourney-upscale-dialog-kicker { color: #9ec9ee; font-size: 10px; letter-spacing: 0.12em; }
+.midjourney-upscale-dialog-panel h2 { margin: 3px 0 0; color: #f2f6fa; font-size: 17px; }
+.midjourney-upscale-dialog-close { width: 32px; height: 32px; border: 1px solid rgba(180, 210, 235, 0.3); border-radius: 8px; color: #edf6ff; background: rgba(255, 255, 255, 0.06); font-size: 22px; line-height: 1; cursor: pointer; }
+.midjourney-upscale-dialog-body { display: grid; place-items: center; min-height: 0; padding: 16px; background: #0c1015; }
+.midjourney-upscale-dialog-body img { display: block; max-width: 100%; max-height: calc(min(900px, 92vh) - 140px); object-fit: contain; border-radius: 10px; }
+.midjourney-upscale-dialog-panel footer a { padding: 8px 12px; border: 1px solid rgba(151, 210, 255, 0.55); border-radius: 8px; color: #eaf6ff; background: rgba(22, 135, 255, 0.54); text-decoration: none; font-weight: 700; }
 
 /* 认证徽章(右上角 z-index:10)存在时,按钮组整体左移让位,避免下载按钮被徽章压住。 */
 .image-preview-certification-badge ~ .media-action-cluster {
